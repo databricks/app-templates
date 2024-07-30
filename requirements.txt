@@ -1,0 +1,2 @@
+# Your App requirements goes here
+streamlit

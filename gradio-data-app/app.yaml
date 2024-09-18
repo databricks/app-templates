@@ -1,0 +1,7 @@
+command: [
+  "python", 
+  "app.py"
+]
+env:
+  - name: "DATABRICKS_WAREHOUSE_ID"
+    value: "58aa1b363649e722"

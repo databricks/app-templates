@@ -1,0 +1,4 @@
+dash
+dash-bootstrap-components
+databricks-sdk
+python-dotenv

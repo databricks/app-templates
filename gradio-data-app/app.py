@@ -5,8 +5,10 @@ import gradio as gr
 import pandas as pd
 
 def sqlQuery(query: str) -> pd.DataFrame:
-    # ensure the right environment variables are set
-    def defined(var: str) -> bool: return os.getenv(var) is not None
+    # Ensure the right environment variables are set
+    def defined(var: str) -> bool:
+        return os.getenv(var) is not None
+
     assert defined('DATABRICKS_WAREHOUSE_ID') and os.getenv('DATABRICKS_WAREHOUSE_ID') != "<your warehouse ID>", "To use SQL, set DATABRICKS_WAREHOUSE_ID in app.yaml. You can find your SQL Warehouse ID by navigating to SQL Warehouses, clicking on your warehouse, and then looking for the ID next to the Name."
     assert defined('DATABRICKS_HOST'), "To run outside of Lakehouse Apps, set the DATABRICKS_HOST environment variable to the name of your Databricks account."
     assert defined('DATABRICKS_TOKEN') or (defined('DATABRICKS_CLIENT_ID') and defined('DATABRICKS_CLIENT_SECRET')), "To run outside of Lakehouse Apps, set environment variables for authentication, such as DATABRICKS_TOKEN or DATABRICKS_CLIENT_ID/DATABRICKS_CLIENT_SECRET."
@@ -19,6 +21,7 @@ def sqlQuery(query: str) -> pd.DataFrame:
             cursor.execute(query)
             return cursor.fetchall_arrow().to_pandas()
 
+# This example query depends on the nyctaxi data set in Unity Catalog, see https://docs.databricks.com/en/discover/databricks-datasets.html for details
 data = sqlQuery("select * from samples.nyctaxi.trips limit 5000")
 
 # display the data with Gradio

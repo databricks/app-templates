@@ -2,6 +2,7 @@ import gradio as gr
 import logging
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.serving import ChatMessage, ChatMessageRole
+import os
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -10,13 +11,12 @@ logger = logging.getLogger(__name__)
 # Initialize the Databricks Workspace Client
 workspace_client = WorkspaceClient()
 
-# Replace with your serving endpoint name
-SERVING_ENDPOINT_NAME = 'databricks-meta-llama-3-1-70b-instruct'
-
 def query_llm(message, history):
     """
     Query the LLM with the given message and chat history.
     """
+    assert os.getenv('SERVING_ENDPOINT'), "SERVING_ENDPOINT must be set in app.yaml."
+
     if not message.strip():
         return "ERROR: The question should not be empty"
 
@@ -24,9 +24,9 @@ def query_llm(message, history):
     messages = [ChatMessage(role=ChatMessageRole.USER, content=prompt + message)]
 
     try:
-        logger.info(f"Sending request to model endpoint: {SERVING_ENDPOINT_NAME}")
+        logger.info(f"Sending request to model endpoint: {os.getenv('SERVING_ENDPOINT')}")
         response = workspace_client.serving_endpoints.query(
-            name=SERVING_ENDPOINT_NAME,
+            name=os.getenv('SERVING_ENDPOINT'),
             messages=messages,
             max_tokens=400
         )

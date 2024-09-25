@@ -4,6 +4,7 @@ from dash import html, Input, Output, State
 import dash_bootstrap_components as dbc
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.serving import ChatMessage, ChatMessageRole
+import os
 
 # Load environment variables (on local development)
 # load_dotenv()
@@ -70,6 +71,8 @@ chat_history = []
     prevent_initial_call=True
 )
 def update_chat(n_clicks, user_input, current_history):
+    assert os.getenv('SERVING_ENDPOINT'), "SERVING_ENDPOINT must be set in app.yaml."
+
     if not user_input:
         return current_history, ""
 
@@ -79,7 +82,7 @@ def update_chat(n_clicks, user_input, current_history):
     try:
         # Call the Databricks model using the call_model_endpoint function
         assistant_response = call_model_endpoint(
-            endpoint_name="databricks-meta-llama-3-1-405b-instruct",
+            endpoint_name=os.getenv('SERVING_ENDPOINT'),
             messages=chat_history
         )
 

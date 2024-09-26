@@ -11,12 +11,13 @@ logger = logging.getLogger(__name__)
 # Initialize the Databricks Workspace Client
 workspace_client = WorkspaceClient()
 
+# Ensure environment variables are set correctly
+assert os.getenv('SERVING_ENDPOINT'), "SERVING_ENDPOINT must be set in app.yaml."
+
 def query_llm(message, history):
     """
     Query the LLM with the given message and chat history.
     """
-    assert os.getenv('SERVING_ENDPOINT'), "SERVING_ENDPOINT must be set in app.yaml."
-
     if not message.strip():
         return "ERROR: The question should not be empty"
 

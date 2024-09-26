@@ -8,22 +8,13 @@ import dash_bootstrap_components as dbc
 import dash_ag_grid as dag
 from databricks.sdk.core import Config
 
+# Ensure the right environment variables are set
+assert os.getenv('DATABRICKS_WAREHOUSE_ID'), \
+    "To use SQL, set DATABRICKS_WAREHOUSE_ID in app.yaml. You can find your SQL Warehouse ID by " \
+    "navigating to SQL Warehouses, clicking on your warehouse, and then looking for the ID next to the Name."
+
 def sqlQuery(query: str) -> pd.DataFrame:
     """Execute a SQL query and return the result as a pandas DataFrame."""
-    # Ensure the right environment variables are set
-    def defined(var: str) -> bool:
-        return os.getenv(var) is not None
-
-    assert defined('DATABRICKS_WAREHOUSE_ID') and os.getenv('DATABRICKS_WAREHOUSE_ID') != "<your warehouse ID>", \
-        "To use SQL, set DATABRICKS_WAREHOUSE_ID in app.yaml. You can find your SQL Warehouse ID by " \
-        "navigating to SQL Warehouses, clicking on your warehouse, and then looking for the ID next to the Name."
-    assert defined('DATABRICKS_HOST'), \
-        "To run outside of Lakehouse Apps, set the DATABRICKS_HOST environment variable " \
-        "to the name of your Databricks account."
-    assert defined('DATABRICKS_TOKEN') or (defined('DATABRICKS_CLIENT_ID') and defined('DATABRICKS_CLIENT_SECRET')), \
-        "To run outside of Lakehouse Apps, set environment variables for authentication, " \
-        "such as DATABRICKS_TOKEN or DATABRICKS_CLIENT_ID/DATABRICKS_CLIENT_SECRET."
-
     cfg = Config()  # Pull environment variables for auth
     with sql.connect(
         server_hostname=os.getenv("DATABRICKS_HOST"),

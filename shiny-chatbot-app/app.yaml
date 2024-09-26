@@ -7,5 +7,5 @@ command: [
 ]
 
 env:
-  - name: "MODEL_ENDPOINT_NAME"
+  - name: "SERVING_ENDPOINT"
     valueFrom: "serving-endpoint"

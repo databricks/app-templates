@@ -1,16 +1,19 @@
-from dotenv import load_dotenv
+import os
 import dash
 from dash import html, Input, Output, State
 import dash_bootstrap_components as dbc
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.serving import ChatMessage, ChatMessageRole
-import os
+from dotenv import load_dotenv
 
 # Load environment variables (on local development)
 # load_dotenv()
 
 # Initialize Databricks WorkspaceClient
 w = WorkspaceClient()
+
+# Ensure environment variables are set correctly
+assert os.getenv('SERVING_ENDPOINT'), "SERVING_ENDPOINT must be set in app.yaml."
 
 # Initialize the Dash app with a clean theme
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.FLATLY])
@@ -71,8 +74,6 @@ chat_history = []
     prevent_initial_call=True
 )
 def update_chat(n_clicks, user_input, current_history):
-    assert os.getenv('SERVING_ENDPOINT'), "SERVING_ENDPOINT must be set in app.yaml."
-
     if not user_input:
         return current_history, ""
 

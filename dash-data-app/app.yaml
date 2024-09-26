@@ -5,4 +5,4 @@ command: [
 
 env:
   - name: "DATABRICKS_WAREHOUSE_ID"
-    valueFrom: "sql_warehouse"
+    valueFrom: "sql-warehouse"

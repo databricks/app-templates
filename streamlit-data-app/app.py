@@ -4,10 +4,8 @@ from databricks.sdk.core import Config
 import streamlit as st
 import pandas as pd
 
-# Ensure the right environment variables are set
-assert os.getenv('DATABRICKS_WAREHOUSE_ID'), \
-    "To use SQL, set DATABRICKS_WAREHOUSE_ID in app.yaml. You can find your SQL Warehouse ID by " \
-    "navigating to SQL Warehouses, clicking on your warehouse, and then looking for the ID next to the Name."
+# Ensure environment variable is set correctly
+assert os.getenv('DATABRICKS_WAREHOUSE_ID'), "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
 
 def sqlQuery(query: str) -> pd.DataFrame:
     cfg = Config() # Pull environment variables for auth

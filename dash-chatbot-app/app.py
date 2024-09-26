@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 # Initialize Databricks WorkspaceClient
 w = WorkspaceClient()
 
-# Ensure environment variables are set correctly
+# Ensure environment variable is set correctly
 assert os.getenv('SERVING_ENDPOINT'), "SERVING_ENDPOINT must be set in app.yaml."
 
 # Initialize the Dash app with a clean theme

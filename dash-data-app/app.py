@@ -8,10 +8,8 @@ import dash_bootstrap_components as dbc
 import dash_ag_grid as dag
 from databricks.sdk.core import Config
 
-# Ensure the right environment variables are set
-assert os.getenv('DATABRICKS_WAREHOUSE_ID'), \
-    "To use SQL, set DATABRICKS_WAREHOUSE_ID in app.yaml. You can find your SQL Warehouse ID by " \
-    "navigating to SQL Warehouses, clicking on your warehouse, and then looking for the ID next to the Name."
+# Ensure environment variable is set correctly
+assert os.getenv('DATABRICKS_WAREHOUSE_ID'), "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
 
 def sqlQuery(query: str) -> pd.DataFrame:
     """Execute a SQL query and return the result as a pandas DataFrame."""

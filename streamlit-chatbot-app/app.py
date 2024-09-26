@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 # Initialize the Databricks Workspace Client
 w = WorkspaceClient()
 
-# Ensure environment variables are set correctly
+# Ensure environment variable is set correctly
 assert os.getenv('SERVING_ENDPOINT'), "SERVING_ENDPOINT must be set in app.yaml."
 
 def get_user_info():

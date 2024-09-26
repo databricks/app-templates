@@ -4,7 +4,7 @@ from databricks.sdk import config
 from openai import AsyncOpenAI
 from shiny import App, ui, reactive
 
-# Make sure the serving endpoint is set
+# Ensure environment variable is set correctly
 assert os.getenv("SERVING_ENDPOINT"), "SERVING_ENDPOINT must be set in app.yaml."
 
 # UI is minimal with a 'clear chat' button and the chat dialog

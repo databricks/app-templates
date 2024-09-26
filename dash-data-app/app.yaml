@@ -1,11 +1,8 @@
 command: [
-  "streamlit", 
-  "run",
+  "python",
   "app.py"
 ]
 
 env:
   - name: "DATABRICKS_WAREHOUSE_ID"
     valueFrom: "sql_warehouse"
-  - name: STREAMLIT_BROWSER_GATHER_USAGE_STATS
-    value: "false"

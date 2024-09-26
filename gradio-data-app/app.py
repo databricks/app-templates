@@ -9,9 +9,11 @@ assert os.getenv('DATABRICKS_WAREHOUSE_ID'), "DATABRICKS_WAREHOUSE_ID must be se
 
 def sqlQuery(query: str) -> pd.DataFrame:
     cfg = Config() # Pull environment variables for auth
-    with sql.connect(server_hostname=os.getenv("DATABRICKS_HOST"),
-                     http_path=f"""/sql/1.0/warehouses/{os.getenv("DATABRICKS_WAREHOUSE_ID")}""",
-                     credentials_provider=lambda: cfg.authenticate) as connection:
+    with sql.connect(
+        server_hostname=cfg.host,
+        http_path=f"/sql/1.0/warehouses/{os.getenv('DATABRICKS_WAREHOUSE_ID')}",
+        credentials_provider=lambda: cfg.authenticate
+    ) as connection:
         with connection.cursor() as cursor:
             cursor.execute(query)
             return cursor.fetchall_arrow().to_pandas()

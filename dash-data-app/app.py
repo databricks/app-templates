@@ -15,7 +15,7 @@ def sqlQuery(query: str) -> pd.DataFrame:
     """Execute a SQL query and return the result as a pandas DataFrame."""
     cfg = Config()  # Pull environment variables for auth
     with sql.connect(
-        server_hostname=os.getenv("DATABRICKS_HOST"),
+        server_hostname=cfg.host,
         http_path=f"/sql/1.0/warehouses/{os.getenv('DATABRICKS_WAREHOUSE_ID')}",
         credentials_provider=lambda: cfg.authenticate
     ) as connection:

@@ -3,6 +3,3 @@ command: [
   "app.py"
 ]
 
-env:
-  - name: "DATABRICKS_WAREHOUSE_ID"
-    value: "sql-warehouse"

@@ -1,5 +1,6 @@
 command: [
-  "flask", "--app", 
+  "flask",
+  "--app",
   "app.py",
   "run"
 ]

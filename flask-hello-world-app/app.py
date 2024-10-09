@@ -1,5 +1,9 @@
 import pandas as pd
 from flask import Flask
+import logging
+
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
 
 flask_app = Flask(__name__)
 
@@ -10,4 +14,4 @@ def hello_world():
     return f'<h1>Hello, World!</h1> {chart_data.to_html(index=False)}'
 
 if __name__ == '__main__':
-    flask_app.run_server(debug=True)
+    flask_app.run(debug=True)

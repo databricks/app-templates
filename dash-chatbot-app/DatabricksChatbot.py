@@ -1,11 +1,12 @@
 import dash
-from dash import html, Input, Output, State, dcc
 import dash_bootstrap_components as dbc
+from dash import Input, Output, State, dcc, html
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.serving import ChatMessage, ChatMessageRole
 
 
 class DatabricksChatbot:
+
     def __init__(self, app, endpoint_name, height='600px'):
         self.app = app
         self.endpoint_name = endpoint_name
@@ -27,32 +28,33 @@ class DatabricksChatbot:
         return html.Div([
             html.H2('Chat with Databricks AI', className='chat-title mb-3'),
             dbc.Card([
-                dbc.CardBody([
-                    html.Div(id='chat-history', className='chat-history'),
-                ], className='d-flex flex-column chat-body')
-            ], className='chat-card mb-3'),
+                dbc.CardBody([html.Div(id='chat-history', className='chat-history'), ],
+                             className='d-flex flex-column chat-body')
+            ],
+                     className='chat-card mb-3'),
             dbc.InputGroup([
                 dbc.Input(id='user-input', placeholder='Type your message here...', type='text'),
                 dbc.Button('Send', id='send-button', color='success', n_clicks=0, className='ms-2'),
                 dbc.Button('Clear', id='clear-button', color='danger', n_clicks=0, className='ms-2'),
-            ], className='mb-3'),
+            ],
+                           className='mb-3'),
             dcc.Store(id='assistant-trigger'),
             dcc.Store(id='chat-history-store'),
             html.Div(id='dummy-output', style={'display': 'none'}),
-        ], className='d-flex flex-column chat-container p-3')
+        ],
+                        className='d-flex flex-column chat-container p-3')
 
     def _create_callbacks(self):
-        @self.app.callback(
-            Output('chat-history-store', 'data', allow_duplicate=True),
-            Output('chat-history', 'children', allow_duplicate=True),
-            Output('user-input', 'value'),
-            Output('assistant-trigger', 'data'),
-            Input('send-button', 'n_clicks'),
-            Input('user-input', 'n_submit'),
-            State('user-input', 'value'),
-            State('chat-history-store', 'data'),
-            prevent_initial_call=True
-        )
+
+        @self.app.callback(Output('chat-history-store', 'data', allow_duplicate=True),
+                           Output('chat-history', 'children', allow_duplicate=True),
+                           Output('user-input', 'value'),
+                           Output('assistant-trigger', 'data'),
+                           Input('send-button', 'n_clicks'),
+                           Input('user-input', 'n_submit'),
+                           State('user-input', 'value'),
+                           State('chat-history-store', 'data'),
+                           prevent_initial_call=True)
         def update_chat(send_clicks, user_submit, user_input, chat_history):
             if not user_input:
                 return dash.no_update, dash.no_update, dash.no_update, dash.no_update
@@ -64,46 +66,35 @@ class DatabricksChatbot:
 
             return chat_history, chat_display, '', {'trigger': True}
 
-        @self.app.callback(
-            Output('chat-history-store', 'data', allow_duplicate=True),
-            Output('chat-history', 'children', allow_duplicate=True),
-            Input('assistant-trigger', 'data'),
-            State('chat-history-store', 'data'),
-            prevent_initial_call=True
-        )
+        @self.app.callback(Output('chat-history-store', 'data', allow_duplicate=True),
+                           Output('chat-history', 'children', allow_duplicate=True),
+                           Input('assistant-trigger', 'data'),
+                           State('chat-history-store', 'data'),
+                           prevent_initial_call=True)
         def process_assistant_response(trigger, chat_history):
             if not trigger or not trigger.get('trigger'):
                 return dash.no_update, dash.no_update
 
             chat_history = chat_history or []
-            if (not chat_history or not isinstance(chat_history[-1], dict)
-                    or 'role' not in chat_history[-1]
+            if (not chat_history or not isinstance(chat_history[-1], dict) or 'role' not in chat_history[-1]
                     or chat_history[-1]['role'] != 'user'):
                 return dash.no_update, dash.no_update
 
             try:
                 assistant_response = self._call_model_endpoint(chat_history)
-                chat_history.append({
-                    'role': 'assistant',
-                    'content': assistant_response
-                })
+                chat_history.append({'role': 'assistant', 'content': assistant_response})
             except Exception as e:
                 error_message = f'Error: {str(e)}'
-                print(error_message)  # Log the error for debugging
-                chat_history.append({
-                    'role': 'assistant',
-                    'content': error_message
-                })
+                print(error_message) # Log the error for debugging
+                chat_history.append({'role': 'assistant', 'content': error_message})
 
             chat_display = self._format_chat_display(chat_history)
             return chat_history, chat_display
 
-        @self.app.callback(
-            Output('chat-history-store', 'data', allow_duplicate=True),
-            Output('chat-history', 'children', allow_duplicate=True),
-            Input('clear-button', 'n_clicks'),
-            prevent_initial_call=True
-        )
+        @self.app.callback(Output('chat-history-store', 'data', allow_duplicate=True),
+                           Output('chat-history', 'children', allow_duplicate=True),
+                           Input('clear-button', 'n_clicks'),
+                           prevent_initial_call=True)
         def clear_chat(n_clicks):
             print('Clearing chat')
             if n_clicks:
@@ -115,18 +106,14 @@ class DatabricksChatbot:
             raise Exception('WorkspaceClient is not initialized')
 
         chat_messages = [
-            ChatMessage(
-                content=message['content'],
-                role=ChatMessageRole[message['role'].upper()]
-            ) for message in messages
+            ChatMessage(content=message['content'], role=ChatMessageRole[message['role'].upper()])
+            for message in messages
         ]
         try:
             print('Calling model endpoint...')
-            response = self.w.serving_endpoints.query(
-                name=self.endpoint_name,
-                messages=chat_messages,
-                max_tokens=max_tokens
-            )
+            response = self.w.serving_endpoints.query(name=self.endpoint_name,
+                                                      messages=chat_messages,
+                                                      max_tokens=max_tokens)
             message = response.choices[0].message.content
             print('Model endpoint called successfully')
             return message
@@ -136,11 +123,9 @@ class DatabricksChatbot:
 
     def _format_chat_display(self, chat_history):
         return [
-            html.Div([
-                html.Div(msg['content'],
-                         className=f"chat-message {msg['role']}-message")
-            ], className=f"message-container {msg['role']}-container")
-            for msg in chat_history if isinstance(msg, dict) and 'role' in msg
+            html.Div([html.Div(msg['content'], className=f"chat-message {msg['role']}-message")],
+                     className=f"message-container {msg['role']}-container") for msg in chat_history
+            if isinstance(msg, dict) and 'role' in msg
         ]
 
     def _create_typing_indicator(self):
@@ -151,7 +136,8 @@ class DatabricksChatbot:
                          html.Div(className='typing-dot'),
                          html.Div(className='typing-dot')
                      ])
-        ], className='message-container assistant-container')
+        ],
+                        className='message-container assistant-container')
 
     def _add_custom_css(self):
         custom_css = '''
@@ -261,13 +247,10 @@ class DatabricksChatbot:
             flex-wrap: nowrap;
         }
         '''
-        self.app.index_string = self.app.index_string.replace(
-            '</head>',
-            f'<style>{custom_css}</style></head>'
-        )
+        self.app.index_string = self.app.index_string.replace('</head>',
+                                                              f'<style>{custom_css}</style></head>')
 
-        self.app.clientside_callback(
-            """
+        self.app.clientside_callback("""
             function(children) {
                 var chatHistory = document.getElementById('chat-history');
                 if(chatHistory) {
@@ -276,7 +259,6 @@ class DatabricksChatbot:
                 return '';
             }
             """,
-            Output('dummy-output', 'children'),
-            Input('chat-history', 'children'),
-            prevent_initial_call=True
-        )
+                                     Output('dummy-output', 'children'),
+                                     Input('chat-history', 'children'),
+                                     prevent_initial_call=True)

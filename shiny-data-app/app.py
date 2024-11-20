@@ -1,8 +1,9 @@
 import asyncio
-from shiny import App, ui, render, reactive
-from databricks.sdk import config
-from databricks import sql
 import os
+
+from databricks import sql
+from databricks.sdk import config
+from shiny import App, reactive, render, ui
 
 # Defined in `app.yaml`
 SQL_WAREHOUSE_ID = os.getenv("DATABRICKS_WAREHOUSE_ID")
@@ -23,11 +24,7 @@ def execute_query(connection, statement, max_rows=10000):
     try:
         with connection.cursor() as cursor:
             cursor.execute(statement)
-            res = (
-                cursor.fetchmany_arrow(max_rows)
-                if max_rows
-                else cursor.fetchall_arrow()
-            )
+            res = (cursor.fetchmany_arrow(max_rows) if max_rows else cursor.fetchall_arrow())
         return res
     except Exception as e:
         print(f"Error executing query: {e}")
@@ -39,26 +36,18 @@ app_ui = ui.page_navbar(
         "Query",
         # text input formatted to use monospace font
         ui.tags.head(ui.tags.style("#sql_query {font-family: monospace;}")),
-        ui.p(
-            "Queries are run with your permissions, a maximum of 10k rows will be returned. "
-            "A timeout of 60s is set."
-        ),
-        ui.input_text_area(
-            "sql_query", label="", rows=6, value=_INITIAL_QUERY, width="100%"
-        ),
-        ui.span(
-            ui.input_task_button(
-                "submit_query", label="Run Query", width="79%", class_="btn-primary"
-            ),
-            ui.input_action_button(
-                "cancel_query",
-                label="Cancel Query",
-                width="20%",
-                class_="btn-warning",
-                disabled=True,
-            ),
-            class_="inline",
-        ),
+        ui.p("Queries are run with your permissions, a maximum of 10k rows will be returned. "
+             "A timeout of 60s is set."),
+        ui.input_text_area("sql_query", label="", rows=6, value=_INITIAL_QUERY, width="100%"),
+        ui.span(ui.input_task_button("submit_query", label="Run Query", width="79%", class_="btn-primary"),
+                ui.input_action_button("cancel_query",
+                                       label="Cancel Query",
+                                       width="20%",
+                                       class_="btn-warning",
+                                       disabled=True,
+                                       ),
+                class_="inline",
+                ),
         ui.hr(),
         ui.output_data_frame("query_results"),
     ),
@@ -76,12 +65,11 @@ def server(input, output, session):
     async def run_query_task(query: str):
         try:
             # Connect to SQL warehouse inside the task to ensure thread safety
-            connection = sql.connect(
-                server_hostname=cfg.host,
-                http_path=f"/sql/1.0/warehouses/{SQL_WAREHOUSE_ID}",
-                credentials_provider=lambda: cfg.authenticate,
-                session_configuration={"STATEMENT_TIMEOUT": "60"},
-            )
+            connection = sql.connect(server_hostname=cfg.host,
+                                     http_path=f"/sql/1.0/warehouses/{SQL_WAREHOUSE_ID}",
+                                     credentials_provider=lambda: cfg.authenticate,
+                                     session_configuration={"STATEMENT_TIMEOUT": "60"},
+                                     )
             res = await asyncio.to_thread(execute_query, connection, query)
             ui.update_action_button("cancel_query", disabled=True)
             return res
@@ -112,14 +100,10 @@ def server(input, output, session):
     def query_results():
         res = run_query_task.result()
         if isinstance(res, Exception):
-            ui.notification_show(
-                f"Error executing query: {res}", type="error", duration=12
-            )
+            ui.notification_show(f"Error executing query: {res}", type="error", duration=12)
             return None
         elif res:
-            return render.DataGrid(
-                res.to_pandas(), height="700px", width="100%", filters=True
-            )
+            return render.DataGrid(res.to_pandas(), height="700px", width="100%", filters=True)
         else:
             return None
 

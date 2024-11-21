@@ -1,5 +1,6 @@
 import logging
 import os
+
 import streamlit as st
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.serving import ChatMessage, ChatMessageRole
@@ -14,13 +15,14 @@ w = WorkspaceClient()
 # Ensure environment variable is set correctly
 assert os.getenv('SERVING_ENDPOINT'), "SERVING_ENDPOINT must be set in app.yaml."
 
+
 def get_user_info():
     headers = st.context.headers
-    return dict(
-        user_name=headers.get("X-Forwarded-Preferred-Username"),
-        user_email=headers.get("X-Forwarded-Email"),
-        user_id=headers.get("X-Forwarded-User"),
-    )
+    return dict(user_name=headers.get("X-Forwarded-Preferred-Username"),
+                user_email=headers.get("X-Forwarded-Email"),
+                user_id=headers.get("X-Forwarded-User"),
+                )
+
 
 user_info = get_user_info()
 
@@ -49,18 +51,19 @@ if prompt := st.chat_input("What is up?"):
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    messages = [ChatMessage(role=ChatMessageRole.SYSTEM, content="You are a helpful assistant."),
-                ChatMessage(role=ChatMessageRole.USER, content=prompt)]
+    messages = [
+        ChatMessage(role=ChatMessageRole.SYSTEM, content="You are a helpful assistant."),
+        ChatMessage(role=ChatMessageRole.USER, content=prompt)
+    ]
 
     # Display assistant response in chat message container
     with st.chat_message("assistant"):
         # Query the Databricks serving endpoint
         try:
-            response = w.serving_endpoints.query(
-                name=os.getenv("SERVING_ENDPOINT"),
-                messages=messages,
-                max_tokens=400,
-            )
+            response = w.serving_endpoints.query(name=os.getenv("SERVING_ENDPOINT"),
+                                                 messages=messages,
+                                                 max_tokens=400,
+                                                 )
             assistant_response = response.choices[0].message.content
             st.markdown(assistant_response)
         except Exception as e:

@@ -4,12 +4,12 @@ Contributions are licensed on a license-in/license-out basis.
 # Contributing Guide
 
 ## Communication
-Before starting work on a new app template, please reach out to the Databricks Apps team. We will make sure no one else is already working on it and that it is aligned with the goals of the project.
+Before starting work on a new app template, please reach out to the Databricks Apps team. We will make sure no one else is already working on it and that it is aligned with the Databricks Apps team goals.
 This is to prevent your time being wasted, as well as ours.
 The GitHub review process for new app templates is important so that the databricks app team and contributors with commit access can come to agreement on design.
 
 ## Pull Request
-In the pull request, include a description of the changes and, if relevant, how the app was tested.
+In the pull request, include a description of the changes and, if relevant, how the app(s) was/were tested.
 
 ## Coding Style
 Code style is enforced by a formatter check in your pull request. We use [yapf](https://github.com/google/yapf) to format our code. Run `make fmt` to ensure your code is properly formatted prior to raising a pull request.

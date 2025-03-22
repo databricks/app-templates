@@ -12,13 +12,15 @@ import flask  # for request context
 # Ensure environment variable is set correctly
 assert os.getenv('DATABRICKS_WAREHOUSE_ID'), "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
 
+# config
+cfg = Config()
+
 def sqlQuery(query: str, user_token: str) -> pd.DataFrame:
     """Execute a SQL query and return the result as a pandas DataFrame."""
-    cfg = Config()  # Pull environment variables for auth
     with sql.connect(
         server_hostname=cfg.host,
-        http_path=f"/sql/1.0/warehouses/{os.getenv('DATABRICKS_WAREHOUSE_ID')}",
-        access_token=user_token
+        http_path=f"/sql/1.0/warehouses/{cfg.warehouse_id}",
+        access_token=user_token  # Pass the user token into the SQL connect to query on behalf of user
     ) as connection:
         with connection.cursor() as cursor:
             cursor.execute(query)
@@ -26,7 +28,7 @@ def sqlQuery(query: str, user_token: str) -> pd.DataFrame:
 
 def load_data() -> pd.DataFrame:
     try:
-
+        # Extract user access token from the request headers
         user_token = flask.request.headers.get('X-Forwarded-Access-Token')
         if not user_token:
             raise Exception("Missing access token in headers.")

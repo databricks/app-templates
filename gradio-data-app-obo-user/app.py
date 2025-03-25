@@ -10,11 +10,25 @@ assert os.getenv('DATABRICKS_WAREHOUSE_ID'), "DATABRICKS_WAREHOUSE_ID must be se
 # Databricks config
 cfg = Config()
 
-def sqlQuery(query: str, user_token:str = "") -> pd.DataFrame:
+# Query the SQL data with Service Principal credentials
+def sql_query_with_service_principal(query: str) -> pd.DataFrame:
+    """Execute a SQL query and return the result as a pandas DataFrame."""
     with sql.connect(
         server_hostname=cfg.host,
         http_path=f"/sql/1.0/warehouses/{cfg.warehouse_id}",
-        access_token=user_token
+        credentials_provider=lambda: cfg.authenticate  # Uses SP credentials from the environment variables
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query)
+            return cursor.fetchall_arrow().to_pandas()
+
+# Query the SQL data with the user credentials
+def sql_query_with_user_token(query: str, user_token: str) -> pd.DataFrame:
+    """Execute a SQL query and return the result as a pandas DataFrame."""
+    with sql.connect(
+        server_hostname=cfg.host,
+        http_path=f"/sql/1.0/warehouses/{cfg.warehouse_id}",
+        access_token=user_token  # Pass the user token into the SQL connect to query on behalf of user
     ) as connection:
         with connection.cursor() as cursor:
             cursor.execute(query)
@@ -36,7 +50,10 @@ with gr.Blocks() as demo:
     @gr.render(inputs=[trigger_text], triggers=[trigger_text.change])
     def load_everything(user_token):
         # This example query depends on the nyctaxi data set in Unity Catalog, see https://docs.databricks.com/en/discover/databricks-datasets.html for details
-        data = sqlQuery("select * from samples.nyctaxi.trips limit 5000", user_token)
+        # Query the SQL data with the user credentials
+        data = sql_query_with_user_token("SELECT * FROM samples.nyctaxi.trips LIMIT 5000", user_token=user_token)
+        # In order to query with Service Principal credentials, comment the above line and uncomment the below line
+        # data = sql_query_with_service_principal("SELECT * FROM samples.nyctaxi.trips LIMIT 5000")
 
         with gr.Row():
             with gr.Column(scale=3):

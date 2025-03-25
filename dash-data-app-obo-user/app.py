@@ -12,10 +12,23 @@ import flask  # for request context
 # Ensure environment variable is set correctly
 assert os.getenv('DATABRICKS_WAREHOUSE_ID'), "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
 
-# config
+# Databricks config
 cfg = Config()
 
-def sqlQuery(query: str, user_token: str) -> pd.DataFrame:
+# Query the SQL warehouse with Service Principal credentials
+def sql_query_with_service_principal(query: str) -> pd.DataFrame:
+    """Execute a SQL query and return the result as a pandas DataFrame."""
+    with sql.connect(
+        server_hostname=cfg.host,
+        http_path=f"/sql/1.0/warehouses/{cfg.warehouse_id}",
+        credentials_provider=lambda: cfg.authenticate  # Uses SP credentials from the environment variables
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query)
+            return cursor.fetchall_arrow().to_pandas()
+
+# Query the SQL warehouse with the user credentials
+def sql_query_with_user_token(query: str, user_token: str) -> pd.DataFrame:
     """Execute a SQL query and return the result as a pandas DataFrame."""
     with sql.connect(
         server_hostname=cfg.host,
@@ -32,7 +45,10 @@ def load_data() -> pd.DataFrame:
         user_token = flask.request.headers.get('X-Forwarded-Access-Token')
         if not user_token:
             raise Exception("Missing access token in headers.")
-        return sqlQuery("SELECT * FROM samples.nyctaxi.trips LIMIT 5000", user_token=user_token)
+        # Query the SQL data with the user credentials
+        return sql_query_with_user_token("SELECT * FROM samples.nyctaxi.trips LIMIT 5000", user_token=user_token)
+        # In order to query with Service Principal credentials, comment the above line and uncomment the below line
+        # return sql_query_with_service_principal("SELECT * FROM samples.nyctaxi.trips LIMIT 5000")
     except Exception as e:
         print(f"Data load failed: {str(e)}")
         return pd.DataFrame()

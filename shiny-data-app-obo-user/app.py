@@ -5,8 +5,7 @@ from databricks import sql
 import os
 
 # Defined in `app.yaml`
-SQL_WAREHOUSE_ID = os.getenv("DATABRICKS_WAREHOUSE_ID")
-assert SQL_WAREHOUSE_ID, "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
+assert os.getenv("DATABRICKS_WAREHOUSE_ID"), "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
 
 _INITIAL_QUERY = """
 SELECT
@@ -76,13 +75,23 @@ def server(input, output, session):
         try:
             # Get the user access token from the session request header
             user_token = session.http_conn.headers.get('X-Forwarded-Access-Token', None)
-            # Connect to SQL warehouse inside the task to ensure thread safety
-            connection = sql.connect(
+            # Create a connection with the user's access token
+            connection_with_user_creds = sql.connect(
                 server_hostname=cfg.host,
-                http_path=f"/sql/1.0/warehouses/{SQL_WAREHOUSE_ID}",
+                http_path=f"/sql/1.0/warehouses/{cfg.warehouse_id}",
                 access_token=user_token,
             )
-            res = await asyncio.to_thread(execute_query, connection, query)
+            # Create a connection with the service principal credentials
+            connection_with_service_principal_creds = sql.connect(
+                server_hostname=cfg.host,
+                http_path=f"/sql/1.0/warehouses/{cfg.warehouse_id}",
+                credentials_provider=lambda: cfg.authenticate  # Uses SP credentials from the environment variables
+            )
+
+            # Query the SQL data with the user credentials
+            res = await asyncio.to_thread(execute_query, connection_with_user_creds, query)
+            # In order to query with Service Principal credentials, comment the above line and uncomment the below line
+            # res = await asyncio.to_thread(execute_query, connection_with_service_principal_creds, query)
             ui.update_action_button("cancel_query", disabled=True)
             return res
         except Exception as e:

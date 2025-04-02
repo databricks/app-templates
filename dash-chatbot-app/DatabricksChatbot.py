@@ -1,24 +1,13 @@
 import dash
 from dash import html, Input, Output, State, dcc
 import dash_bootstrap_components as dbc
-from databricks.sdk import WorkspaceClient
-from databricks.sdk.service.serving import ChatMessage, ChatMessageRole
-
+from model_serving_utils import query_endpoint
 
 class DatabricksChatbot:
     def __init__(self, app, endpoint_name, height='600px'):
         self.app = app
         self.endpoint_name = endpoint_name
         self.height = height
-
-        try:
-            print('Initializing WorkspaceClient...')
-            self.w = WorkspaceClient()
-            print('WorkspaceClient initialized successfully')
-        except Exception as e:
-            print(f'Error initializing WorkspaceClient: {str(e)}')
-            self.w = None
-
         self.layout = self._create_layout()
         self._create_callbacks()
         self._add_custom_css()
@@ -111,25 +100,9 @@ class DatabricksChatbot:
             return dash.no_update, dash.no_update
 
     def _call_model_endpoint(self, messages, max_tokens=128):
-        if self.w is None:
-            raise Exception('WorkspaceClient is not initialized')
-
-        chat_messages = [
-            ChatMessage(
-                content=message['content'],
-                role=ChatMessageRole[message['role'].upper()]
-            ) for message in messages
-        ]
         try:
             print('Calling model endpoint...')
-            response = self.w.serving_endpoints.query(
-                name=self.endpoint_name,
-                messages=chat_messages,
-                max_tokens=max_tokens
-            )
-            message = response.choices[0].message.content
-            print('Model endpoint called successfully')
-            return message
+            return query_endpoint(self.endpoint_name, messages, max_tokens)
         except Exception as e:
             print(f'Error calling model endpoint: {str(e)}')
             raise

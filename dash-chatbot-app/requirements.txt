@@ -1,4 +1,4 @@
 dash
 dash-bootstrap-components
-databricks-sdk
+mlflow
 python-dotenv

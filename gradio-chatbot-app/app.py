@@ -1,15 +1,11 @@
 import gradio as gr
 import logging
-from databricks.sdk import WorkspaceClient
-from databricks.sdk.service.serving import ChatMessage, ChatMessageRole
 import os
+from model_serving_utils import query_endpoint
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Initialize the Databricks Workspace Client
-workspace_client = WorkspaceClient()
 
 # Ensure environment variable is set correctly
 assert os.getenv('SERVING_ENDPOINT'), "SERVING_ENDPOINT must be set in app.yaml."
@@ -21,18 +17,13 @@ def query_llm(message, history):
     if not message.strip():
         return "ERROR: The question should not be empty"
 
-    prompt = "Answer this question like a helpful assistant: "
-    messages = [ChatMessage(role=ChatMessageRole.USER, content=prompt + message)]
-
     try:
         logger.info(f"Sending request to model endpoint: {os.getenv('SERVING_ENDPOINT')}")
-        response = workspace_client.serving_endpoints.query(
-            name=os.getenv('SERVING_ENDPOINT'),
-            messages=messages,
+        return query_endpoint(
+            endpoint_name=os.getenv('SERVING_ENDPOINT'),
+            messages=[{"role": "user", "content": message}],
             max_tokens=400
         )
-        logger.info("Received response from model endpoint")
-        return response.choices[0].message.content
     except Exception as e:
         logger.error(f"Error querying model: {str(e)}", exc_info=True)
         return f"Error: {str(e)}"

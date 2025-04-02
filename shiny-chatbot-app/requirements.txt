@@ -1,4 +1,4 @@
 shiny==1.0.0
-databricks-sdk
+mlflow
 tokenizers
 openai

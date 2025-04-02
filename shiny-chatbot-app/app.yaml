@@ -9,4 +9,4 @@ command: [
 
 env:
   - name: "SERVING_ENDPOINT"
-    valueFrom: "agents_smurching-default-vs_index_export"
+    valueFrom: "serving-endpoint"

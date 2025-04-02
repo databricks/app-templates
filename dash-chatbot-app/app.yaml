@@ -5,4 +5,4 @@ command: [
 
 env:
   - name: "SERVING_ENDPOINT"
-    valueFrom: "serving-endpoint"
+    valueFrom: "agents_smurching-default-vs_index_export"

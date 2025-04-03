@@ -102,7 +102,7 @@ class DatabricksChatbot:
     def _call_model_endpoint(self, messages, max_tokens=128):
         try:
             print('Calling model endpoint...')
-            return query_endpoint(self.endpoint_name, messages, max_tokens)
+            return query_endpoint(self.endpoint_name, messages, max_tokens)["content"]
         except Exception as e:
             print(f'Error calling model endpoint: {str(e)}')
             raise

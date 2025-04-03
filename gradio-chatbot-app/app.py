@@ -23,7 +23,7 @@ def query_llm(message, history):
             endpoint_name=os.getenv('SERVING_ENDPOINT'),
             messages=[{"role": "user", "content": message}],
             max_tokens=400
-        )
+        )["content"]
     except Exception as e:
         logger.error(f"Error querying model: {str(e)}", exc_info=True)
         return f"Error: {str(e)}"

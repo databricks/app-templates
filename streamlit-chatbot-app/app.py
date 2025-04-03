@@ -48,16 +48,13 @@ if prompt := st.chat_input("What is up?"):
     # Display assistant response in chat message container
     with st.chat_message("assistant"):
         # Query the Databricks serving endpoint
-        try:
-            response = query_endpoint(
-                endpoint_name=os.getenv("SERVING_ENDPOINT"),
-                messages=st.session_state.messages,
-                max_tokens=400,
-            )
-            assistant_response = response.choices[0].message.content
-            st.markdown(assistant_response)
-        except Exception as e:
-            st.error(f"Error querying model: {e}")
+        assistant_response = query_endpoint(
+            endpoint_name=os.getenv("SERVING_ENDPOINT"),
+            messages=st.session_state.messages,
+            max_tokens=400,
+        )["content"]
+        st.markdown(assistant_response)
+
 
     # Add assistant response to chat history
     st.session_state.messages.append({"role": "assistant", "content": assistant_response})

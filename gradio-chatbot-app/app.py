@@ -22,7 +22,7 @@ def query_llm(message, history):
     # Convert from Gradio-style history to OpenAI-style messages
     message_history = []
     for user_msg, assistant_msg in history:
-        message_history.append({"role": "user", "content": user_msg})
+        message_history.append({"role": "user", "content": f"Be brief in responding to the following: {user_msg}"})
         message_history.append({"role": "assistant", "content": assistant_msg})
 
     # Add the latest user message
@@ -41,16 +41,56 @@ def query_llm(message, history):
         return f"Error: {str(e)}"
 
 # Create Gradio interface
+import time
+def slow_echo(message, history):
+    for i in range(len(message)):
+        time.sleep(0.05)
+        yield "You typed: " + message[: i + 1]
+
 demo = gr.ChatInterface(
     fn=query_llm,
-    title="Databricks LLM Chatbot",
-    description="Ask questions and get responses from a Databricks LLM model.",
+    title="Databricks AI Chatbot",
+    description="Ask questions and get responses from a Databricks LLM model or agent.",
     examples=[
         "What is machine learning?",
         "What are Large Language Models?",
         "What is Databricks?"
     ],
+    flagging_mode="manual",
+    flagging_options=["Like", "Spam", "Inappropriate", "Other"],
+    flagging_callback=lambda x: print(f"Flagged message: {x}"),
+    # save_history=True,
 )
 
 if __name__ == "__main__":
     demo.launch()
+
+
+
+
+
+#
+# import time
+# import gradio as gr
+#
+# def slow_echo(message, history):
+#     for i in range(len(message)):
+#         time.sleep(0.05)
+#         yield "You typed: " + message[: i + 1]
+#
+# demo = gr.ChatInterface(
+#     fn=slow_echo,
+#     title="Databricks LLM Chatbot",
+#     description="Ask questions and get responses from a Databricks LLM model.",
+#     examples=[
+#         "What is machine learning?",
+#         "What are Large Language Models?",
+#         "What is Databricks?"
+#     ],
+#     type="messages",
+#     flagging_mode="manual",
+#     flagging_options=["Like", "Spam", "Inappropriate", "Other"],
+#     save_history=True,
+# )
+#
+# demo.launch()

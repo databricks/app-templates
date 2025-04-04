@@ -3,13 +3,14 @@ import os
 import streamlit as st
 from model_serving_utils import query_endpoint
 
-# Set up logging
+# Logging setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Ensure environment variable is set correctly
+# Ensure environment variable is set
 assert os.getenv('SERVING_ENDPOINT'), "SERVING_ENDPOINT must be set in app.yaml."
 
+# Get user headers if needed
 def get_user_info():
     headers = st.context.headers
     return dict(
@@ -20,41 +21,48 @@ def get_user_info():
 
 user_info = get_user_info()
 
-# Streamlit app
-if "visibility" not in st.session_state:
-    st.session_state.visibility = "visible"
-    st.session_state.disabled = False
-
-st.title("🧱 Chatbot App")
-st.write(f"A basic chatbot using the your own serving endpoint")
-
-# Initialize chat history
+# Initialize state
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display chat messages from history on app rerun
-for message in st.session_state.messages:
+if "feedback" not in st.session_state:
+    st.session_state.feedback = {}
+
+st.title("🧱 Chatbot App")
+st.write("A basic chatbot using your own serving endpoint.")
+
+# Handle new prompt submission
+def chat(prompt):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    response = query_endpoint(
+        endpoint_name=os.getenv("SERVING_ENDPOINT"),
+        messages=st.session_state.messages,
+        max_tokens=400,
+    )["content"]
+    st.session_state.messages.append({"role": "assistant", "content": response})
+
+# Prompt input
+prompt = st.chat_input("What is up?")
+if prompt:
+    chat(prompt)  # Add new messages to session state *before* rendering anything
+
+# Render full message history with feedback
+for i, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Accept user input
-if prompt := st.chat_input("What is up?"):
-    # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    # Display user message in chat message container
-    with st.chat_message("user"):
-        st.markdown(prompt)
+        if message["role"] == "assistant":
+            # Add feedback buttons with separate columns
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                if st.button("👍", key=f"thumbs_up_{i}"):
+                    st.session_state.feedback[i] = "👍"
+                    logger.info(f"Feedback 👍 for message {i}: {message['content']}")
+            with col2:
+                if st.button("👎", key=f"thumbs_down_{i}"):
+                    st.session_state.feedback[i] = "👎"
+                    logger.info(f"Feedback 👎 for message {i}: {message['content']}")
 
-    # Display assistant response in chat message container
-    with st.chat_message("assistant"):
-        # Query the Databricks serving endpoint
-        assistant_response = query_endpoint(
-            endpoint_name=os.getenv("SERVING_ENDPOINT"),
-            messages=st.session_state.messages,
-            max_tokens=400,
-        )["content"]
-        st.markdown(assistant_response)
-
-
-    # Add assistant response to chat history
-    st.session_state.messages.append({"role": "assistant", "content": assistant_response})
+            # Show feedback acknowledgment
+            if i in st.session_state.feedback:
+                st.markdown(f"Feedback received: **{st.session_state.feedback[i]}**")

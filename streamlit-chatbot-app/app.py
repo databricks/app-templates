@@ -77,26 +77,30 @@ for i, element in enumerate(st.session_state.history):
 # --- Chat input (must run BEFORE rendering messages) ---
 if prompt := st.chat_input("What is up?"):
     # Add user message to chat history
-    st.session_state.history.append(UserMessage(content=prompt))
-    # Display user message in chat message container
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    # Display assistant response in chat message container
-    with st.chat_message("assistant"):
-        input_messages = [message for elem in st.session_state.history for message in elem.to_input_messages()]
-        # Query the Databricks serving endpoint
-        response_messages, request_id_opt = query_endpoint(
-            endpoint_name=SERVING_ENDPOINT,
-            messages=input_messages,
-            max_tokens=400,
-            return_traces=ENDPOINT_SUPPORTS_FEEDBACK
-        )
-        assistant_response = AssistantResponse(
-            messages=response_messages,
-            request_id=request_id_opt
-        )
-    # TODO: is it possible to not double-render the assistant section?
-    # We do want it to appear while the response generation is pending,
-    # but not double-render after it's complete.
+    user_msg = UserMessage(content=prompt)
+    st.session_state.history.append(user_msg)
+    user_msg.render(len(st.session_state.history) - 1)
+
+    # Placeholder for assistant response
+    placeholder = st.empty()
+    with placeholder.container():
+        with st.chat_message("assistant"):
+            st.markdown("_Thinking..._")  # Italic gray placeholder text
+
+    # Generate full message
+    input_messages = [msg for elem in st.session_state.history for msg in elem.to_input_messages()]
+    response_messages, request_id_opt = query_endpoint(
+        endpoint_name=SERVING_ENDPOINT,
+        messages=input_messages,
+        max_tokens=400,
+        return_traces=ENDPOINT_SUPPORTS_FEEDBACK
+    )
+
+    # Add actual assistant response to history
+    assistant_response = AssistantResponse(messages=response_messages, request_id=request_id_opt)
     st.session_state.history.append(assistant_response)
-    # assistant_response.render(len(st.session_state.history))
+
+    # Update the placeholder in-place with the actual assistant response
+    with placeholder.container():
+        assistant_response.render(len(st.session_state.history) - 1)
+

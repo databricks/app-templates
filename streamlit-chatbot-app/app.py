@@ -11,6 +11,34 @@ assert SERVING_ENDPOINT is not None, "SERVING_ENDPOINT must be set in app.yaml."
 
 ENDPOINT_SUPPORTS_FEEDBACK = endpoint_supports_feedback(SERVING_ENDPOINT)
 
+class UserMessage:
+    def __init__(self, content):
+        self.content = content
+
+    def to_input_messages(self):
+        return [{
+            "role": "user",
+            "content": self.content
+        }]
+
+    def render(self, idx):
+        with st.chat_message("user"):
+            st.markdown(self.content)
+
+class AssistantResponse:
+    def __init__(self, messages, request_id):
+        self.messages = messages
+        self.request_id = request_id
+
+    def to_input_messages(self):
+        return self.messages
+
+    def render(self, idx):
+        with st.chat_message("assistant"):
+            st.markdown(self.messages[-1]["content"])
+            if self.request_id is not None:
+                render_assistant_message_feedback(idx, self.request_id)
+
 
 def get_user_info():
     headers = st.context.headers
@@ -23,13 +51,8 @@ def get_user_info():
 user_info = get_user_info()
 
 # --- Init state ---
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-if "visibility" not in st.session_state:
-    st.session_state.visibility = "visible"
-    st.session_state.disabled = False
-
+if "history" not in st.session_state:
+    st.session_state.history = []
 
 st.title("🧱 Chatbot App")
 st.write("A basic chatbot using your own serving endpoint.")
@@ -48,41 +71,45 @@ def render_assistant_message_feedback(i, request_id):
 
 
 # --- Render chat history ---
-for i, message in enumerate(st.session_state.messages):
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+for i, element in enumerate(st.session_state.history):
+    element.render(i)
 
-        def save_feedback(index):
-            print(f"@SID got feedback {st.session_state[f'feedback_{index}']} for message {index}")
-            # st.session_state.messages[index]["feedback"] = st.session_state[f"feedback_{index}"]
-
-        # TODO: should we drop this? or also call render_assistant_message_feedback,
-        # but that results in duplicate key errors
-        if message["role"] == "assistant":
-            selection = st.feedback("thumbs", key=f"feedback_{i}", on_change=save_feedback, args=[i])
-            if selection is not None:
-                st.markdown(f"Feedback received: {'👍' if selection == 1 else '👎'}")
-            print("@SID rendering feedback for existing assistant message at index ", i)
-            # render_assistant_message_feedback(i)
+# for i, message in enumerate(st.session_state.messages):
+#     with st.chat_message(message["role"]):
+#         st.markdown(message["content"])
+#
+#         def save_feedback(index):
+#             print(f"@SID got feedback {st.session_state[f'feedback_{index}']} for message {index}")
+#             # st.session_state.messages[index]["feedback"] = st.session_state[f"feedback_{index}"]
+#
+#         # TODO: should we drop this? or also call render_assistant_message_feedback,
+#         # but that results in duplicate key errors
+#         if message["role"] == "assistant":
+#             selection = st.feedback("thumbs", key=f"feedback_{i}", on_change=save_feedback, args=[i])
+#             if selection is not None:
+#                 st.markdown(f"Feedback received: {'👍' if selection == 1 else '👎'}")
+#             print("@SID rendering feedback for existing assistant message at index ", i)
+#             # render_assistant_message_feedback(i)
 
 # --- Chat input (must run BEFORE rendering messages) ---
 if prompt := st.chat_input("What is up?"):
     # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    st.session_state.history.append(UserMessage(content=prompt))
     # Display user message in chat message container
     with st.chat_message("user"):
         st.markdown(prompt)
     # Display assistant response in chat message container
     with st.chat_message("assistant"):
+        input_messages = [message for elem in st.session_state.history for message in elem.to_input_messages()]
         # Query the Databricks serving endpoint
         response_obj, request_id_opt = query_endpoint(
             endpoint_name=SERVING_ENDPOINT,
-            messages=st.session_state.messages,
+            messages=input_messages,
             max_tokens=400,
             return_traces=ENDPOINT_SUPPORTS_FEEDBACK
         )
         response = response_obj["content"]
         st.markdown(response)
         if request_id_opt is not None:
-            render_assistant_message_feedback(len(st.session_state.messages), request_id_opt)
-    st.session_state.messages.append({"role": "assistant", "content": response, "request_id": request_id_opt})
+            render_assistant_message_feedback(len(st.session_state.history), request_id_opt)
+    st.session_state.history.append({"role": "assistant", "content": response, "request_id": request_id_opt})

@@ -28,7 +28,7 @@ def query_endpoint(endpoint_name, messages, max_tokens, return_traces):
     """
     response_messages, request_id = _query_endpoint(endpoint_name, messages, max_tokens, return_traces)
     # TODO: render intermediate tool calls as well
-    return response_messages[-1], request_id
+    return response_messages, request_id
 
 
 def submit_feedback(endpoint, request_id, rating):

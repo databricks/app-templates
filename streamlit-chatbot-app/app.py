@@ -74,23 +74,6 @@ def render_assistant_message_feedback(i, request_id):
 for i, element in enumerate(st.session_state.history):
     element.render(i)
 
-# for i, message in enumerate(st.session_state.messages):
-#     with st.chat_message(message["role"]):
-#         st.markdown(message["content"])
-#
-#         def save_feedback(index):
-#             print(f"@SID got feedback {st.session_state[f'feedback_{index}']} for message {index}")
-#             # st.session_state.messages[index]["feedback"] = st.session_state[f"feedback_{index}"]
-#
-#         # TODO: should we drop this? or also call render_assistant_message_feedback,
-#         # but that results in duplicate key errors
-#         if message["role"] == "assistant":
-#             selection = st.feedback("thumbs", key=f"feedback_{i}", on_change=save_feedback, args=[i])
-#             if selection is not None:
-#                 st.markdown(f"Feedback received: {'👍' if selection == 1 else '👎'}")
-#             print("@SID rendering feedback for existing assistant message at index ", i)
-#             # render_assistant_message_feedback(i)
-
 # --- Chat input (must run BEFORE rendering messages) ---
 if prompt := st.chat_input("What is up?"):
     # Add user message to chat history
@@ -102,14 +85,18 @@ if prompt := st.chat_input("What is up?"):
     with st.chat_message("assistant"):
         input_messages = [message for elem in st.session_state.history for message in elem.to_input_messages()]
         # Query the Databricks serving endpoint
-        response_obj, request_id_opt = query_endpoint(
+        response_messages, request_id_opt = query_endpoint(
             endpoint_name=SERVING_ENDPOINT,
             messages=input_messages,
             max_tokens=400,
             return_traces=ENDPOINT_SUPPORTS_FEEDBACK
         )
-        response = response_obj["content"]
-        st.markdown(response)
-        if request_id_opt is not None:
-            render_assistant_message_feedback(len(st.session_state.history), request_id_opt)
-    st.session_state.history.append({"role": "assistant", "content": response, "request_id": request_id_opt})
+        assistant_response = AssistantResponse(
+            messages=response_messages,
+            request_id=request_id_opt
+        )
+    # TODO: is it possible to not double-render the assistant section?
+    # We do want it to appear while the response generation is pending,
+    # but not double-render after it's complete.
+    st.session_state.history.append(assistant_response)
+    # assistant_response.render(len(st.session_state.history))

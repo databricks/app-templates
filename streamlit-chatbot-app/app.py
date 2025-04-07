@@ -35,9 +35,21 @@ class AssistantResponse:
 
     def render(self, idx):
         with st.chat_message("assistant"):
-            st.markdown(self.messages[-1]["content"])
+            for msg in self.messages:
+                if msg["role"] == "assistant" and "tool_calls" in msg:
+                    for call in msg["tool_calls"]:
+                        fn_name = call["function"]["name"]
+                        args = call["function"]["arguments"]
+                        st.markdown(f"🛠️ Calling **`{fn_name}`** with:\n```json\n{args}\n```")
+                elif msg["role"] == "tool":
+                    st.markdown("🧰 Tool Response:")
+                    st.code(msg["content"], language="json")
+                elif msg["role"] == "assistant" and msg.get("content"):
+                    st.markdown(msg["content"])
+
             if self.request_id is not None:
                 render_assistant_message_feedback(idx, self.request_id)
+
 
 
 def get_user_info():
@@ -75,7 +87,7 @@ for i, element in enumerate(st.session_state.history):
     element.render(i)
 
 # --- Chat input (must run BEFORE rendering messages) ---
-if prompt := st.chat_input("What is up?"):
+if prompt := st.chat_input("Ask a question"):
     # Add user message to chat history
     user_msg = UserMessage(content=prompt)
     st.session_state.history.append(user_msg)

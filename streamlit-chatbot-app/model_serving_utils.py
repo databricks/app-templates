@@ -27,7 +27,6 @@ def query_endpoint(endpoint_name, messages, max_tokens, return_traces):
     ID for feedback
     """
     response_messages, request_id = _query_endpoint(endpoint_name, messages, max_tokens, return_traces)
-    # TODO: render intermediate tool calls as well
     return response_messages, request_id
 
 

@@ -1,0 +1,73 @@
+name: Test All Apps
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-all:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run tests in each app directory
+        env:
+          GLOBAL_TEST_REQS: test-requirements.txt
+        run: |
+          # Define allowlist as an array
+          UNTESTED_APPS=(
+            flask-hello-world-app
+            gradio-data-app
+            gradio-data-app-obo-user
+            gradio-hello-world-app
+            shiny-data-app
+            shiny-data-app-obo-user
+            shiny-hello-world-app
+          )
+
+          is_untested() {
+            for app in "${UNTESTED_APPS[@]}"; do
+              [[ "$1" == "$app" ]] && return 0
+            done
+            return 1
+          }
+
+          for dir in */; do
+            base=$(basename "$dir")
+
+            if is_untested "$base"; then
+              echo "🟡 Skipping $base (allowlisted)"
+              continue
+            fi
+
+            if [[ ! -f "$dir/requirements.txt" ]]; then
+              echo "⚠️ Skipping $base (no requirements.txt)"
+              continue
+            fi
+
+            echo "🔧 Testing $base..."
+
+            VENV_DIR=".venv-${base}"
+            python3 -m venv "$VENV_DIR"
+            source "$VENV_DIR/bin/activate"
+
+            pip install -U pip
+            pip install -r "$GLOBAL_TEST_REQS"
+            pip install -r "$dir/requirements.txt"
+
+            test_dir="tests/${base}"
+            if [ -d "$test_dir" ]; then
+              echo "🧪 Running tests in $test_dir"
+              pytest --cov="$dir" --cov-fail-under=80 "$test_dir"
+            else
+              echo "❌ Missing tests directory for $base"
+              exit 1
+            fi
+
+            deactivate
+            rm -rf "$VENV_DIR"
+          done

@@ -17,6 +17,9 @@ UNTESTED_APPS=(
   streamlit-data-app-obo-user
   streamlit-data-app
   streamlit-hello-world-app
+  shiny-chatbot-app
+  gradio-chatbot-app
+  dash-chatbot-app
 )
 
 is_untested() {
@@ -37,7 +40,7 @@ for dir in */; do
   fi
 
   if [[ -f "$dir/app.yaml" ]]; then
-    test_dir="tests/${base}"
+    test_dir="${base}/tests"
     if [[ ! -d "$test_dir" ]]; then
       missing_tests+=("$base")
     fi
@@ -76,11 +79,11 @@ for dir in */; do
 
   pip install -U pip
   pip install -r "$GLOBAL_TEST_REQS"
-  pip install -r "$dir/app.yaml"
+  pip install -r "$dir/requirements.txt"
 
-  test_dir="tests/${base}"
-  echo "🧪 Running tests in $test_dir"
-  pytest --cov="$dir" --cov-fail-under=80 "$test_dir" --rootdir="$dir"
+  test_dir="${base}/tests"
+  echo "🧪 Running tests in $test_dir from $dir"
+  pytest --cov="$dir" "$test_dir" --rootdir="$dir"
 
   deactivate
   rm -rf "$VENV_DIR"

@@ -1,7 +1,7 @@
 import logging
 import os
 import streamlit as st
-from model_serving_utils import query_endpoint, endpoint_supports_feedback, submit_feedback
+from model_serving_utils import query_endpoint, endpoint_supports_feedback, submit_feedback, query_endpoint_stream
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -95,24 +95,51 @@ if prompt := st.chat_input("Ask a question"):
 
     # Placeholder for assistant response
     placeholder = st.empty()
+    full_response = ""
+    request_id_opt = None
+
     with placeholder.container():
         with st.chat_message("assistant"):
-            st.markdown("_Thinking..._")  # Italic gray placeholder text
+            response_area = st.empty()
+            response_area.markdown("_Thinking..._")  # Italic gray placeholder text
+            input_messages = [msg for elem in st.session_state.history for msg in elem.to_input_messages()]
+            try:
+                for chunk in query_endpoint_stream(
+                    endpoint_name=SERVING_ENDPOINT,
+                    messages=input_messages,
+                    max_tokens=400,
+                    return_traces=ENDPOINT_SUPPORTS_FEEDBACK
+                ):
+                    # Handle streaming chunks
+                    content_piece = chunk["delta"]["content"]
+                    full_response += content_piece
+                    response_area.markdown(full_response + "▌")  # Cursor indicator
 
-    # Generate full message
-    input_messages = [msg for elem in st.session_state.history for msg in elem.to_input_messages()]
-    response_messages, request_id_opt = query_endpoint(
-        endpoint_name=SERVING_ENDPOINT,
-        messages=input_messages,
-        max_tokens=400,
-        return_traces=ENDPOINT_SUPPORTS_FEEDBACK
-    )
+                    # If request_id is included at the end, save it
+                    if request_id := chunk.get("databricks_output", {}).get("databricks_request_id"):
+                        request_id_opt = request_id
 
-    # Add actual assistant response to history
-    assistant_response = AssistantResponse(messages=response_messages, request_id=request_id_opt)
-    st.session_state.history.append(assistant_response)
+                    response_area.markdown(full_response)
 
-    # Update the placeholder in-place with the actual assistant response
-    with placeholder.container():
-        assistant_response.render(len(st.session_state.history) - 1)
+                # Add complete assistant message to history
+                assistant_response = AssistantResponse(
+                    messages=[{"role": "assistant", "content": full_response}],
+                    request_id=request_id_opt
+                )
+                st.session_state.history.append(assistant_response)
+            except Exception:
+                response_area.markdown("_Ran into an error. Retrying..._")  # Italic gray placeholder text
+                logger.exception("Failed to query endpoint with streaming, retrying without streaming")
+                response_messages, request_id_opt = query_endpoint(
+                    endpoint_name=SERVING_ENDPOINT,
+                    messages=input_messages,
+                    max_tokens=400,
+                    return_traces=ENDPOINT_SUPPORTS_FEEDBACK
+                )
+                # Add actual assistant response to history
+                assistant_response = AssistantResponse(messages=response_messages, request_id=request_id_opt)
+                st.session_state.history.append(assistant_response)
+                # Update the placeholder in-place with the actual assistant response
+                with placeholder.container():
+                    assistant_response.render(len(st.session_state.history) - 1)
 

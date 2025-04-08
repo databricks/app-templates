@@ -2,7 +2,60 @@ from mlflow.deployments import get_deploy_client
 from databricks.sdk import WorkspaceClient
 import json
 
-def _query_endpoint(endpoint_name: str, messages: list[dict[str, str]], max_tokens, return_traces) -> list[dict[str, str]]:
+
+from mlflow.deployments import get_deploy_client
+import uuid
+
+def _throw_unexpected_endpoint_format():
+    raise Exception("This app can only run against:"
+                    "1) Databricks foundation model or external model endpoints with the chat task type (described in https://docs.databricks.com/aws/en/machine-learning/model-serving/score-foundation-models#chat-completion-model-query)\n"
+                    "2) Databricks agent serving endpoints that implement the conversational agent schema documented "
+                    "in https://docs.databricks.com/aws/en/generative-ai/agent-framework/author-agent")
+
+
+
+def query_endpoint_stream(endpoint_name: str, messages: list[dict[str, str]], max_tokens: int, return_traces: bool):
+    """Streams chat-completions style chunks and converts to ChatAgent-style streaming deltas."""
+    client = get_deploy_client("databricks")
+
+    # Prepare input payload
+    inputs = {
+        "messages": messages,
+        "max_tokens": max_tokens,
+    }
+    if return_traces:
+        inputs["databricks_options"] = {"return_trace": True}
+
+    stream_id = str(uuid.uuid4())  # Generate unique ID for the stream
+
+    for chunk in client.predict_stream(endpoint=endpoint_name, inputs=inputs):
+        if "choices" in chunk:
+            choices = chunk["choices"]
+            if len(choices) > 0:
+                # Convert from chat completions to ChatAgent format
+                content = choices[0]["delta"].get("content", "")
+                if content:
+                    yield {
+                        "delta": {
+                            "role": "assistant",
+                            "content": content,
+                            "id": stream_id
+                        },
+                    }
+        elif "delta" in chunk:
+            # Yield the ChatAgentChunk directly
+            yield chunk
+        else:
+            _throw_unexpected_endpoint_format()
+
+
+
+
+def query_endpoint(endpoint_name, messages, max_tokens, return_traces):
+    """
+    Query an endpoint, returning the string message content and request
+    ID for feedback
+    """
     """Calls a model serving endpoint."""
     inputs={'messages': messages, "max_tokens": max_tokens},
     if return_traces:
@@ -16,19 +69,7 @@ def _query_endpoint(endpoint_name: str, messages: list[dict[str, str]], max_toke
         return res["messages"], request_id
     elif "choices" in res:
         return [res["choices"][0]["message"]], request_id
-    raise Exception("This app can only run against:"
-                    "1) Databricks foundation model or external model endpoints with the chat task type (described in https://docs.databricks.com/aws/en/machine-learning/model-serving/score-foundation-models#chat-completion-model-query)"
-                    "2) Databricks agent serving endpoints that implement the conversational agent schema documented "
-                    "in https://docs.databricks.com/aws/en/generative-ai/agent-framework/author-agent")
-
-def query_endpoint(endpoint_name, messages, max_tokens, return_traces):
-    """
-    Query an endpoint, returning the string message content and request
-    ID for feedback
-    """
-    response_messages, request_id = _query_endpoint(endpoint_name, messages, max_tokens, return_traces)
-    return response_messages, request_id
-
+    _throw_unexpected_endpoint_format()
 
 def submit_feedback(endpoint, request_id, rating):
     """Submit feedback to the agent."""

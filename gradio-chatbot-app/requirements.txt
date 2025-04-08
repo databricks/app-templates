@@ -1,2 +1,2 @@
-gradio
-databricks-sdk>=0.1.0
+gradio==5.23.3
+mlflow>=2.21.2

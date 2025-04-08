@@ -1,9 +1,7 @@
 # Shiny for Python LLM Chat Example with Databricks
 import os
-from databricks.sdk import config
-from openai import AsyncOpenAI
 from shiny import App, ui, reactive
-
+from model_serving_utils import query_endpoint
 # Ensure environment variable is set correctly
 assert os.getenv("SERVING_ENDPOINT"), "SERVING_ENDPOINT must be set in app.yaml."
 
@@ -20,16 +18,6 @@ app_ui = ui.page_fillable(
 )
 
 def server(input, output, session):
-    # Application is using credentials via the `databricks.sdk`
-    cfg = config.Config()
-
-    # `openai` library can be configured to use Databricks model serving
-    # Databricks model endpoints are openai compatible
-    llm = AsyncOpenAI(
-        api_key='',
-        base_url=f"https://{cfg.hostname}/serving-endpoints",
-        default_headers=cfg.authenticate()
-    )
 
     chat = ui.Chat(id="chat", messages=[])
 
@@ -43,12 +31,12 @@ def server(input, output, session):
     @chat.on_user_submit
     async def _():
         messages = chat.messages(format="openai")
-        response = await llm.chat.completions.create(
-            model=os.getenv("SERVING_ENDPOINT"),
+        response = query_endpoint(
+            endpoint_name=os.getenv("SERVING_ENDPOINT"),
             messages=messages,
-            stream=True
+            max_tokens=400
         )
-        await chat.append_message_stream(response)
+        await chat.append_message(response)
 
 app = App(app_ui, server)
 

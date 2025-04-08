@@ -1,15 +1,11 @@
 import logging
 import os
 import streamlit as st
-from databricks.sdk import WorkspaceClient
-from databricks.sdk.service.serving import ChatMessage, ChatMessageRole
+from model_serving_utils import query_endpoint
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Initialize the Databricks Workspace Client
-w = WorkspaceClient()
 
 # Ensure environment variable is set correctly
 assert os.getenv('SERVING_ENDPOINT'), "SERVING_ENDPOINT must be set in app.yaml."
@@ -49,22 +45,16 @@ if prompt := st.chat_input("What is up?"):
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    messages = [ChatMessage(role=ChatMessageRole.SYSTEM, content="You are a helpful assistant."),
-                ChatMessage(role=ChatMessageRole.USER, content=prompt)]
-
     # Display assistant response in chat message container
     with st.chat_message("assistant"):
         # Query the Databricks serving endpoint
-        try:
-            response = w.serving_endpoints.query(
-                name=os.getenv("SERVING_ENDPOINT"),
-                messages=messages,
-                max_tokens=400,
-            )
-            assistant_response = response.choices[0].message.content
-            st.markdown(assistant_response)
-        except Exception as e:
-            st.error(f"Error querying model: {e}")
+        assistant_response = query_endpoint(
+            endpoint_name=os.getenv("SERVING_ENDPOINT"),
+            messages=st.session_state.messages,
+            max_tokens=400,
+        )["content"]
+        st.markdown(assistant_response)
+
 
     # Add assistant response to chat history
     st.session_state.messages.append({"role": "assistant", "content": assistant_response})

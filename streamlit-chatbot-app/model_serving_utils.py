@@ -12,8 +12,13 @@ def _query_endpoint(endpoint_name: str, messages: list[dict[str, str]], max_toke
         return [res["choices"][0]["message"]]
     raise Exception("This app can only run against:"
                     "1) Databricks foundation model or external model endpoints with the chat task type (described in https://docs.databricks.com/aws/en/machine-learning/model-serving/score-foundation-models#chat-completion-model-query)"
-                    "2) Databricks agent serving endpoints that implmeent the conversational agent schema documented "
+                    "2) Databricks agent serving endpoints that implement the conversational agent schema documented "
                     "in https://docs.databricks.com/aws/en/generative-ai/agent-framework/author-agent")
 
 def query_endpoint(endpoint_name, messages, max_tokens):
+    """
+    Query a chat-completions or agent serving endpoint
+    If querying an agent serving endpoint that returns multiple messages, this method
+    returns the last message
+    ."""
     return _query_endpoint(endpoint_name, messages, max_tokens)[-1]

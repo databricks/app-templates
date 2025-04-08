@@ -1,2 +1,3 @@
 pytest>=8.3.2
 pytest-cov
+dash[testing]==3.0.2

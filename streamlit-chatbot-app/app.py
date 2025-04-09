@@ -46,7 +46,7 @@ class UserMessage:
         with st.chat_message("user"):
             st.markdown(self.content)
 
-def render_message(msg, add_cursor=False):
+def render_message(msg):
     if msg["role"] == "assistant" and "tool_calls" in msg:
         for call in msg["tool_calls"]:
             fn_name = call["function"]["name"]
@@ -57,7 +57,7 @@ def render_message(msg, add_cursor=False):
         st.markdown("🧰 Tool Response:")
         st.code(msg["content"], language="json")
     elif msg["role"] == "assistant" and msg.get("content"):
-        st.markdown(msg["content"] + ("▌" if add_cursor else ""))
+        st.markdown(msg["content"])
 
 class AssistantResponse:
     def __init__(self, messages, request_id):
@@ -119,9 +119,6 @@ if prompt := st.chat_input("Ask a question"):
     message_buffers = OrderedDict()
     tool_areas = {}
 
-    # Track the render area of the previous assistant message to clear the cursor
-    previous_msg_id = None
-
     with placeholder.container():
         with st.chat_message("assistant"):
             response_area = st.empty()
@@ -154,21 +151,13 @@ if prompt := st.chat_input("Ask a question"):
                             "chunks": [],
                             "render_area": st.empty(),
                         }
-                        if previous_msg_id is not None:
-                            # re-render the previous message, removing any trailing cursor characters
-                            prev_msg_info = message_buffers[previous_msg_id]
-                            prev_msg_chunks = prev_msg_info["chunks"]
-                            prev_msg_render_area = prev_msg_info["render_area"]
-                            with prev_msg_render_area.container():
-                                render_message(reduce_chunks(prev_msg_chunks).model_dump_compat(exclude_none=True))
-                        previous_msg_id = message_id
                     message_buffers[message_id]["chunks"].append(chunk)
 
                     # Live update - render the current partial message's content
                     partial_message = reduce_chunks(message_buffers[message_id]["chunks"])
                     render_area = message_buffers[message_id]["render_area"]
                     with render_area.container():
-                        render_message(partial_message.model_dump_compat(exclude_none=True), add_cursor=True)
+                        render_message(partial_message.model_dump_compat(exclude_none=True))
 
                 # Finalize messages and append to history
                 messages = []

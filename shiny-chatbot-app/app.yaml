@@ -9,4 +9,4 @@ command: [
 
 env:
   - name: "SERVING_ENDPOINT"
-    valueFrom: "serving_endpoint"
+    valueFrom: "serving-endpoint"

@@ -1,2 +1,2 @@
-mlflow
-streamlit
+mlflow>=2.21.2
+streamlit==1.44.1

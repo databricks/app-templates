@@ -1,2 +1,2 @@
-gradio
-mlflow
+gradio==5.23.3
+mlflow>=2.21.2

@@ -44,6 +44,19 @@ class UserMessage:
         with st.chat_message("user"):
             st.markdown(self.content)
 
+def render_message(msg):
+    if msg["role"] == "assistant" and "tool_calls" in msg:
+        for call in msg["tool_calls"]:
+            fn_name = call["function"]["name"]
+            args = call["function"]["arguments"]
+            st.markdown(msg["content"])
+            st.markdown(f"🛠️ Calling **`{fn_name}`** with:\n```json\n{args}\n```")
+    elif msg["role"] == "tool":
+        st.markdown("🧰 Tool Response:")
+        st.code(msg["content"], language="json")
+    elif msg["role"] == "assistant" and msg.get("content"):
+        st.markdown(msg["content"])
+
 class AssistantResponse:
     def __init__(self, messages, request_id):
         self.messages = messages
@@ -55,16 +68,7 @@ class AssistantResponse:
     def render(self, idx):
         with st.chat_message("assistant"):
             for msg in self.messages:
-                if msg["role"] == "assistant" and "tool_calls" in msg:
-                    for call in msg["tool_calls"]:
-                        fn_name = call["function"]["name"]
-                        args = call["function"]["arguments"]
-                        st.markdown(f"🛠️ Calling **`{fn_name}`** with:\n```json\n{args}\n```")
-                elif msg["role"] == "tool":
-                    st.markdown("🧰 Tool Response:")
-                    st.code(msg["content"], language="json")
-                elif msg["role"] == "assistant" and msg.get("content"):
-                    st.markdown(msg["content"])
+                render_message(msg)
 
             if self.request_id is not None:
                 render_assistant_message_feedback(idx, self.request_id)
@@ -90,15 +94,12 @@ st.write("A basic chatbot using your own serving endpoint.")
 
 def render_assistant_message_feedback(i, request_id):
     def save_feedback(index):
-        # st.session_state.messages[index]["feedback"] = st.session_state[f"feedback_{index}"]
         submit_feedback(
             endpoint=SERVING_ENDPOINT,
             request_id=request_id,
             rating=st.session_state[f"feedback_{index}"]
         )
     selection = st.feedback("thumbs", key=f"feedback_{i}", on_change=save_feedback, args=[i])
-    if selection is not None:
-        st.markdown(f"Feedback received: {'👍' if selection == 1 else '👎'}")
 
 
 # --- Render chat history ---
@@ -118,6 +119,9 @@ if prompt := st.chat_input("Ask a question"):
     message_buffers = OrderedDict()
     tool_areas = {}
 
+    # Track the render area of the previous assistant message to clear the cursor
+    previous_msg_id = None
+
     with placeholder.container():
         with st.chat_message("assistant"):
             response_area = st.empty()
@@ -126,18 +130,14 @@ if prompt := st.chat_input("Ask a question"):
             input_messages = [msg for elem in st.session_state.history for msg in elem.to_input_messages()]
             request_id_opt = None
 
-
             try:
-                for raw_chunk in TEST_DICTS:
-                # for raw_chunk in query_endpoint_stream(
-                #         endpoint_name=SERVING_ENDPOINT,
-                #         messages=input_messages,
-                #         max_tokens=400,
-                #         return_traces=ENDPOINT_SUPPORTS_FEEDBACK
-                # ):
-                    import time
-                    time.sleep(0.3)
-                    response_area.empty()
+                for raw_chunk in query_endpoint_stream(
+                        endpoint_name=SERVING_ENDPOINT,
+                        messages=input_messages,
+                        max_tokens=400,
+                        return_traces=ENDPOINT_SUPPORTS_FEEDBACK
+                ):
+                    response_area.empty()  # Clear previous response
                     chunk = ChatAgentChunk.model_validate(raw_chunk)
                     delta = chunk.delta
                     message_id = delta.id
@@ -154,29 +154,28 @@ if prompt := st.chat_input("Ask a question"):
                             "chunks": [],
                             "render_area": st.empty(),
                         }
-
+                        if previous_msg_id is not None:
+                            # re-render the previous message, removing any trailing cursor characters
+                            prev_msg_info = message_buffers[previous_msg_id]
+                            prev_msg_chunks = prev_msg_info["chunks"]
+                            prev_msg_render_area = prev_msg_info["render_area"]
+                            with prev_msg_render_area.container():
+                                render_message(reduce_chunks(prev_msg_chunks).model_dump_compat(exclude_none=True))
+                        previous_msg_id = message_id
                     message_buffers[message_id]["chunks"].append(chunk)
 
                     # Live update - render the current partial message's content
                     partial_message = reduce_chunks(message_buffers[message_id]["chunks"])
                     render_area = message_buffers[message_id]["render_area"]
-                    if role == "assistant":
-                        print("rendering assistant response")
-                        render_area.markdown(partial_message.content + "▌")
-                    elif role == "tool":
-                        print("rendering tool response")
-                        with render_area.container():
-                            st.markdown("🧰 Tool Response:")
-                            st.code(partial_message.content, language="json")
+                    with render_area.container():
+                        render_message(partial_message.model_dump_compat(exclude_none=True))
 
                 # Finalize messages and append to history
                 messages = []
                 for msg_id, msg_info in message_buffers.items():
                     messages.append(reduce_chunks(msg_info["chunks"]))
 
-                st.session_state.history.append(
-                    AssistantResponse(messages=[message.model_dump_compat(exclude_none=True) for message in messages], request_id=request_id_opt)
-                )
+                assistant_response = AssistantResponse(messages=[message.model_dump_compat(exclude_none=True) for message in messages], request_id=request_id_opt)
             except Exception:
                 response_area.markdown("_Ran into an error. Retrying..._")  # Italic gray placeholder text
                 logger.exception("Failed to query endpoint with streaming, retrying without streaming")
@@ -186,10 +185,9 @@ if prompt := st.chat_input("Ask a question"):
                     max_tokens=400,
                     return_traces=ENDPOINT_SUPPORTS_FEEDBACK
                 )
-                # Add actual assistant response to history
                 assistant_response = AssistantResponse(messages=response_messages, request_id=request_id_opt)
-                st.session_state.history.append(assistant_response)
-                # Update the placeholder in-place with the actual assistant response
-                with placeholder.container():
-                    assistant_response.render(len(st.session_state.history) - 1)
-
+            # Add actual assistant response to history
+            st.session_state.history.append(assistant_response)
+            # Update the placeholder in-place with the actual assistant response
+            with placeholder.container():
+                assistant_response.render(len(st.session_state.history) - 1)

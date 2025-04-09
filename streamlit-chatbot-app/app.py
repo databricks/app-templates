@@ -2,6 +2,9 @@ import logging
 import os
 import streamlit as st
 from model_serving_utils import query_endpoint, endpoint_supports_feedback, submit_feedback, query_endpoint_stream
+from collections import OrderedDict
+from chunks import TEST_DICTS
+from mlflow.types.agent import ChatAgentChunk, ChatAgentMessage
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -10,6 +13,22 @@ SERVING_ENDPOINT = os.getenv('SERVING_ENDPOINT')
 assert SERVING_ENDPOINT is not None, "SERVING_ENDPOINT must be set in app.yaml."
 
 ENDPOINT_SUPPORTS_FEEDBACK = endpoint_supports_feedback(SERVING_ENDPOINT)
+
+def reduce_chunks(chunks):
+    """
+    Reduce a list of ChatAgentChunk objects corresponding to a particular
+    message into a single ChatAgentMessage
+    """
+    deltas = [chunk.delta for chunk in chunks]
+    first_delta = deltas[0]
+    result_msg = first_delta
+    for delta in deltas[1:]:
+        if delta.tool_calls:
+            result_msg = result_msg.copy(tool_calls=delta.tool_calls)
+        if delta.tool_call_id:
+            result_msg = result_msg.copy(tool_call_id=delta.tool_call_id)
+    return result_msg
+
 
 class UserMessage:
     def __init__(self, content):
@@ -95,7 +114,6 @@ if prompt := st.chat_input("Ask a question"):
 
     # Placeholder for assistant response
     placeholder = st.empty()
-    from collections import OrderedDict
 
     message_buffers = OrderedDict()
     tool_areas = {}
@@ -108,50 +126,56 @@ if prompt := st.chat_input("Ask a question"):
             input_messages = [msg for elem in st.session_state.history for msg in elem.to_input_messages()]
             request_id_opt = None
 
+
             try:
-                for chunk in query_endpoint_stream(
-                        endpoint_name=SERVING_ENDPOINT,
-                        messages=input_messages,
-                        max_tokens=400,
-                        return_traces=ENDPOINT_SUPPORTS_FEEDBACK
-                ):
-                    delta = chunk.get("delta", {})
-                    message_id = chunk.get("id")
-                    role = delta.get("role")
-                    content = delta.get("content", "")
-                    tool_call_id = delta.get("tool_call_id")
-                    request_id = chunk.get("databricks_output", {}).get("databricks_request_id")
+                for raw_chunk in TEST_DICTS:
+                # for raw_chunk in query_endpoint_stream(
+                #         endpoint_name=SERVING_ENDPOINT,
+                #         messages=input_messages,
+                #         max_tokens=400,
+                #         return_traces=ENDPOINT_SUPPORTS_FEEDBACK
+                # ):
+                    import time
+                    time.sleep(0.3)
+                    response_area.empty()
+                    chunk = ChatAgentChunk.model_validate(raw_chunk)
+                    delta = chunk.delta
+                    message_id = delta.id
+                    role = delta.role
+                    content = delta.content
+                    tool_call_id = delta.tool_call_id
+                    request_id = raw_chunk.get("databricks_output", {}).get("databricks_request_id")
 
                     if request_id:
                         request_id_opt = request_id
 
                     if message_id not in message_buffers:
                         message_buffers[message_id] = {
-                            "role": role,
-                            "content": "",
-                            "tool_call_id": tool_call_id,
-                            "render_area": st.empty() if role == "tool" else response_area,
+                            "chunks": [],
+                            "render_area": st.empty(),
                         }
 
-                    message_buffers[message_id]["content"] += content
+                    message_buffers[message_id]["chunks"].append(chunk)
 
-                    # Live update
+                    # Live update - render the current partial message's content
+                    partial_message = reduce_chunks(message_buffers[message_id]["chunks"])
                     render_area = message_buffers[message_id]["render_area"]
                     if role == "assistant":
                         print("rendering assistant response")
-                        render_area.markdown(message_buffers[message_id]["content"] + "▌")
+                        render_area.markdown(partial_message.content + "▌")
                     elif role == "tool":
                         print("rendering tool response")
-                        render_area.markdown("🧰 Tool Response:")
-                        render_area.code(message_buffers[message_id]["content"], language="json")
+                        with render_area.container():
+                            st.markdown("🧰 Tool Response:")
+                            st.code(partial_message.content, language="json")
 
                 # Finalize messages and append to history
                 messages = []
-                for msg_id, msg in message_buffers.items():
-                    messages.append(msg)
+                for msg_id, msg_info in message_buffers.items():
+                    messages.append(reduce_chunks(msg_info["chunks"]))
 
                 st.session_state.history.append(
-                    AssistantResponse(messages=[{key: value for key, value in msg_dict.items() if key != "render_area"} for msg_dict in messages], request_id=request_id_opt)
+                    AssistantResponse(messages=[message.model_dump_compat(exclude_none=True) for message in messages], request_id=request_id_opt)
                 )
             except Exception:
                 response_area.markdown("_Ran into an error. Retrying..._")  # Italic gray placeholder text

@@ -3,7 +3,6 @@ import os
 import streamlit as st
 from model_serving_utils import query_endpoint, endpoint_supports_feedback, submit_feedback, query_endpoint_stream
 from collections import OrderedDict
-from chunks import TEST_DICTS
 from mlflow.types.agent import ChatAgentChunk, ChatAgentMessage
 
 logging.basicConfig(level=logging.INFO)
@@ -22,11 +21,14 @@ def reduce_chunks(chunks):
     deltas = [chunk.delta for chunk in chunks]
     first_delta = deltas[0]
     result_msg = first_delta
+    msg_contents = [first_delta.content]
     for delta in deltas[1:]:
         if delta.tool_calls:
-            result_msg = result_msg.copy(tool_calls=delta.tool_calls)
+            result_msg = result_msg.copy(update={"tool_calls": delta.tool_calls})
         if delta.tool_call_id:
-            result_msg = result_msg.copy(tool_call_id=delta.tool_call_id)
+            result_msg = result_msg.copy(update={"tool_call_id": delta.tool_call_id})
+        msg_contents.append(delta.content)
+    result_msg = result_msg.copy(update={"content": "".join(msg_contents)})
     return result_msg
 
 
@@ -44,7 +46,7 @@ class UserMessage:
         with st.chat_message("user"):
             st.markdown(self.content)
 
-def render_message(msg):
+def render_message(msg, add_cursor=False):
     if msg["role"] == "assistant" and "tool_calls" in msg:
         for call in msg["tool_calls"]:
             fn_name = call["function"]["name"]
@@ -55,7 +57,7 @@ def render_message(msg):
         st.markdown("🧰 Tool Response:")
         st.code(msg["content"], language="json")
     elif msg["role"] == "assistant" and msg.get("content"):
-        st.markdown(msg["content"])
+        st.markdown(msg["content"] + ("▌" if add_cursor else ""))
 
 class AssistantResponse:
     def __init__(self, messages, request_id):
@@ -72,8 +74,6 @@ class AssistantResponse:
 
             if self.request_id is not None:
                 render_assistant_message_feedback(idx, self.request_id)
-
-
 
 def get_user_info():
     headers = st.context.headers
@@ -168,7 +168,7 @@ if prompt := st.chat_input("Ask a question"):
                     partial_message = reduce_chunks(message_buffers[message_id]["chunks"])
                     render_area = message_buffers[message_id]["render_area"]
                     with render_area.container():
-                        render_message(partial_message.model_dump_compat(exclude_none=True))
+                        render_message(partial_message.model_dump_compat(exclude_none=True), add_cursor=True)
 
                 # Finalize messages and append to history
                 messages = []
@@ -186,8 +186,8 @@ if prompt := st.chat_input("Ask a question"):
                     return_traces=ENDPOINT_SUPPORTS_FEEDBACK
                 )
                 assistant_response = AssistantResponse(messages=response_messages, request_id=request_id_opt)
+                # Update the placeholder with final assistant response
+                with placeholder.container():
+                    assistant_response.render(len(st.session_state.history) - 1)
             # Add actual assistant response to history
             st.session_state.history.append(assistant_response)
-            # Update the placeholder in-place with the actual assistant response
-            with placeholder.container():
-                assistant_response.render(len(st.session_state.history) - 1)

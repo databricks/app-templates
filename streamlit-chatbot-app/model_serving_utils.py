@@ -1,9 +1,6 @@
 from mlflow.deployments import get_deploy_client
 from databricks.sdk import WorkspaceClient
 import json
-
-
-from mlflow.deployments import get_deploy_client
 import uuid
 
 def _throw_unexpected_endpoint_format():
@@ -47,9 +44,6 @@ def query_endpoint_stream(endpoint_name: str, messages: list[dict[str, str]], ma
             yield chunk
         else:
             _throw_unexpected_endpoint_format()
-
-
-
 
 def query_endpoint(endpoint_name, messages, max_tokens, return_traces):
     """
@@ -106,4 +100,3 @@ def endpoint_supports_feedback(endpoint_name):
     w = WorkspaceClient()
     endpoint = w.serving_endpoints.get(endpoint_name)
     return "feedback" in [entity.entity_name for entity in endpoint.config.served_entities]
-

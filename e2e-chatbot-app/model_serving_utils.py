@@ -78,7 +78,7 @@ def submit_feedback(endpoint, request_id, rating):
         "dataframe_records": [
             {
                 "source": json.dumps({
-                    "id": "user@company.com",  # Or extract from auth
+                    "id": "e2e-chatbot-app",  # Or extract from auth
                     "type": "human"
                 }),
                 "request_id": request_id,

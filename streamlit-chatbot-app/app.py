@@ -95,68 +95,64 @@ if prompt := st.chat_input("Ask a question"):
 
     # Placeholder for assistant response
     placeholder = st.empty()
+    from collections import OrderedDict
+
+    message_buffers = OrderedDict()
+    tool_areas = {}
+
     with placeholder.container():
         with st.chat_message("assistant"):
             response_area = st.empty()
-            tool_areas = {}  # tool_call_id -> st.empty()
             response_area.markdown("_Thinking..._")
+
             input_messages = [msg for elem in st.session_state.history for msg in elem.to_input_messages()]
-            full_response = ""
             request_id_opt = None
-            tool_chunks_by_id = {}
+
             try:
-                current_message_id = None
                 for chunk in query_endpoint_stream(
                         endpoint_name=SERVING_ENDPOINT,
                         messages=input_messages,
                         max_tokens=400,
                         return_traces=ENDPOINT_SUPPORTS_FEEDBACK
                 ):
-                    message_id = chunk.get("id")
                     delta = chunk.get("delta", {})
+                    message_id = chunk.get("id")
                     role = delta.get("role")
                     content = delta.get("content", "")
                     tool_call_id = delta.get("tool_call_id")
                     request_id = chunk.get("databricks_output", {}).get("databricks_request_id")
-                    tool_calls = delta.get("tool_calls", [])
-                    for call in tool_calls:
-                        fn_name = call["function"]["name"]
-                        args = call["function"]["arguments"]
-                        st.markdown(f"🛠️ Calling **`{fn_name}`** with:\n```json\n{args}\n```")
 
-                    print(f"role: {role}, content: {content}, tool_call_id: {tool_call_id}, request_id: {request_id}, chunk: {chunk}")
                     if request_id:
                         request_id_opt = request_id
 
-                    # --- Assistant content ---
-                    if role == "assistant" and content:
-                        full_response += content
-                        response_area.markdown(full_response + "▌")
+                    if message_id not in message_buffers:
+                        message_buffers[message_id] = {
+                            "role": role,
+                            "content": "",
+                            "tool_call_id": tool_call_id,
+                            "render_area": st.empty() if role == "tool" else response_area,
+                        }
 
-                    # --- Tool message ---
+                    message_buffers[message_id]["content"] += content
+
+                    # Live update
+                    render_area = message_buffers[message_id]["render_area"]
+                    if role == "assistant":
+                        print("rendering assistant response")
+                        render_area.markdown(message_buffers[message_id]["content"] + "▌")
                     elif role == "tool":
-                        if not tool_call_id:
-                            continue  # ignore malformed
+                        print("rendering tool response")
+                        render_area.markdown("🧰 Tool Response:")
+                        render_area.code(message_buffers[message_id]["content"], language="json")
 
-                        if tool_call_id not in tool_chunks_by_id:
-                            tool_chunks_by_id[tool_call_id] = ""
-                            tool_areas[tool_call_id] = st.empty()
+                # Finalize messages and append to history
+                messages = []
+                for msg_id, msg in message_buffers.items():
+                    messages.append(msg)
 
-                        tool_chunks_by_id[tool_call_id] += content
-                        tool_areas[tool_call_id].markdown("🧰 Tool Response:")
-                        tool_areas[tool_call_id].code(tool_chunks_by_id[tool_call_id], language="json")
-
-                # Finalize assistant response
-                response_area.markdown(full_response)
-
-                # Save to history
-                assistant_response = AssistantResponse(
-                    messages=[{"role": "assistant", "content": full_response}]
-                             + [{"role": "tool", "name": delta.get("name"), "content": content, "tool_call_id": tool_call_id}
-                                for tool_call_id, content in tool_chunks_by_id.items()],
-                    request_id=request_id_opt,
+                st.session_state.history.append(
+                    AssistantResponse(messages=[{key: value for key, value in msg_dict.items() if key != "render_area"} for msg_dict in messages], request_id=request_id_opt)
                 )
-                st.session_state.history.append(assistant_response)
             except Exception:
                 response_area.markdown("_Ran into an error. Retrying..._")  # Italic gray placeholder text
                 logger.exception("Failed to query endpoint with streaming, retrying without streaming")

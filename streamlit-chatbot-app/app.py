@@ -95,36 +95,66 @@ if prompt := st.chat_input("Ask a question"):
 
     # Placeholder for assistant response
     placeholder = st.empty()
-    full_response = ""
-    request_id_opt = None
-
     with placeholder.container():
         with st.chat_message("assistant"):
             response_area = st.empty()
-            response_area.markdown("_Thinking..._")  # Italic gray placeholder text
+            tool_areas = {}  # tool_call_id -> st.empty()
+            response_area.markdown("_Thinking..._")
             input_messages = [msg for elem in st.session_state.history for msg in elem.to_input_messages()]
+            full_response = ""
+            request_id_opt = None
+            tool_chunks_by_id = {}
             try:
+                current_message_id = None
                 for chunk in query_endpoint_stream(
-                    endpoint_name=SERVING_ENDPOINT,
-                    messages=input_messages,
-                    max_tokens=400,
-                    return_traces=ENDPOINT_SUPPORTS_FEEDBACK
+                        endpoint_name=SERVING_ENDPOINT,
+                        messages=input_messages,
+                        max_tokens=400,
+                        return_traces=ENDPOINT_SUPPORTS_FEEDBACK
                 ):
-                    # Handle streaming chunks
-                    content_piece = chunk["delta"]["content"]
-                    full_response += content_piece
-                    response_area.markdown(full_response + "▌")  # Cursor indicator
+                    message_id = chunk.get("id")
+                    delta = chunk.get("delta", {})
+                    role = delta.get("role")
+                    content = delta.get("content", "")
+                    tool_call_id = delta.get("tool_call_id")
+                    request_id = chunk.get("databricks_output", {}).get("databricks_request_id")
+                    tool_calls = delta.get("tool_calls", [])
+                    for call in tool_calls:
+                        fn_name = call["function"]["name"]
+                        args = call["function"]["arguments"]
+                        st.markdown(f"🛠️ Calling **`{fn_name}`** with:\n```json\n{args}\n```")
 
-                    # If request_id is included at the end, save it
-                    if request_id := chunk.get("databricks_output", {}).get("databricks_request_id"):
+                    print(f"role: {role}, content: {content}, tool_call_id: {tool_call_id}, request_id: {request_id}, chunk: {chunk}")
+                    if request_id:
                         request_id_opt = request_id
 
-                    response_area.markdown(full_response)
+                    # --- Assistant content ---
+                    if role == "assistant" and content:
+                        full_response += content
+                        response_area.markdown(full_response + "▌")
 
-                # Add complete assistant message to history
+                    # --- Tool message ---
+                    elif role == "tool":
+                        if not tool_call_id:
+                            continue  # ignore malformed
+
+                        if tool_call_id not in tool_chunks_by_id:
+                            tool_chunks_by_id[tool_call_id] = ""
+                            tool_areas[tool_call_id] = st.empty()
+
+                        tool_chunks_by_id[tool_call_id] += content
+                        tool_areas[tool_call_id].markdown("🧰 Tool Response:")
+                        tool_areas[tool_call_id].code(tool_chunks_by_id[tool_call_id], language="json")
+
+                # Finalize assistant response
+                response_area.markdown(full_response)
+
+                # Save to history
                 assistant_response = AssistantResponse(
-                    messages=[{"role": "assistant", "content": full_response}],
-                    request_id=request_id_opt
+                    messages=[{"role": "assistant", "content": full_response}]
+                             + [{"role": "tool", "name": delta.get("name"), "content": content, "tool_call_id": tool_call_id}
+                                for tool_call_id, content in tool_chunks_by_id.items()],
+                    request_id=request_id_opt,
                 )
                 st.session_state.history.append(assistant_response)
             except Exception:

@@ -88,7 +88,6 @@ def submit_feedback(endpoint, request_id, rating):
             }
         ]
     }
-
     w = WorkspaceClient()
     return w.api_client.do(
         method='POST',

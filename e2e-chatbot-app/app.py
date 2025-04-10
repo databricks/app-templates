@@ -25,11 +25,11 @@ def reduce_chunks(chunks):
     msg_contents = [first_delta.content]
     for delta in deltas[1:]:
         if delta.tool_calls:
-            result_msg = result_msg.copy(update={"tool_calls": delta.tool_calls})
+            result_msg = result_msg.model_copy(update={"tool_calls": delta.tool_calls})
         if delta.tool_call_id:
-            result_msg = result_msg.copy(update={"tool_call_id": delta.tool_call_id})
+            result_msg = result_msg.model_copy(update={"tool_call_id": delta.tool_call_id})
         msg_contents.append(delta.content)
-    result_msg = result_msg.copy(update={"content": "".join(msg_contents)})
+    result_msg = result_msg.model_copy(update={"content": "".join(msg_contents)})
     return result_msg
 
 
@@ -103,6 +103,7 @@ st.title("🧱 Chatbot App")
 st.write(f"A basic chatbot using your own serving endpoint.")
 st.write(f"Endpoint name: `{SERVING_ENDPOINT}`")
 
+@st.fragment
 def render_assistant_message_feedback(i, request_id):
     def save_feedback(index):
         submit_feedback(
@@ -186,4 +187,3 @@ if prompt:
                 assistant_response.render(len(st.session_state.history) - 1)
             # Add actual assistant response to history
             st.session_state.history.append(assistant_response)
-

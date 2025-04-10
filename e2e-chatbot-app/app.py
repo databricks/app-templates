@@ -99,10 +99,6 @@ def render_message(msg):
 if "history" not in st.session_state:
     st.session_state.history = []
 
-if "in_progress" not in st.session_state:
-    st.session_state.in_progress = False
-
-
 st.title("🧱 Chatbot App")
 st.write(f"A basic chatbot using your own serving endpoint.")
 st.write(f"Endpoint name: `{SERVING_ENDPOINT}`")
@@ -121,7 +117,9 @@ def render_assistant_message_feedback(i, request_id):
 for i, element in enumerate(st.session_state.history):
     element.render(i)
 
-def handle_prompt(prompt):
+# --- Chat input (must run BEFORE rendering messages) ---
+prompt = st.chat_input("Ask a question")
+if prompt:
     # Add user message to chat history
     user_msg = UserMessage(content=prompt)
     st.session_state.history.append(user_msg)
@@ -189,14 +187,3 @@ def handle_prompt(prompt):
             # Add actual assistant response to history
             st.session_state.history.append(assistant_response)
 
-
-# --- Chat input (must run BEFORE rendering messages) ---
-print(f"Chat input: session state is {st.session_state.in_progress}")
-prompt = st.chat_input("Ask a question", disabled=st.session_state.in_progress)
-if prompt:
-    st.session_state.in_progress = True
-    try:
-        handle_prompt(prompt)
-    finally:
-        st.session_state.in_progress = False
-        st.rerun()

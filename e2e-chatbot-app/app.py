@@ -1,6 +1,7 @@
 import logging
 import os
 import streamlit as st
+from abc import ABC, abstractmethod
 from model_serving_utils import query_endpoint, endpoint_supports_feedback, submit_feedback, query_endpoint_stream
 from collections import OrderedDict
 from mlflow.types.agent import ChatAgentChunk, ChatAgentMessage
@@ -32,8 +33,24 @@ def reduce_chunks(chunks):
     return result_msg
 
 
-class UserMessage:
+class Message(ABC):
+    def __init__(self):
+        pass
+
+    @abstractmethod
+    def to_input_messages(self):
+        """Convert this message into a list of dicts suitable for the model API."""
+        pass
+
+    @abstractmethod
+    def render(self, idx):
+        """Render the message in the Streamlit app."""
+        pass
+
+
+class UserMessage(Message):
     def __init__(self, content):
+        super().__init__()
         self.content = content
 
     def to_input_messages(self):
@@ -46,21 +63,10 @@ class UserMessage:
         with st.chat_message("user"):
             st.markdown(self.content)
 
-def render_message(msg):
-    if msg["role"] == "assistant" and "tool_calls" in msg:
-        for call in msg["tool_calls"]:
-            fn_name = call["function"]["name"]
-            args = call["function"]["arguments"]
-            st.markdown(msg["content"])
-            st.markdown(f"🛠️ Calling **`{fn_name}`** with:\n```json\n{args}\n```")
-    elif msg["role"] == "tool":
-        st.markdown("🧰 Tool Response:")
-        st.code(msg["content"], language="json")
-    elif msg["role"] == "assistant" and msg.get("content"):
-        st.markdown(msg["content"])
 
-class AssistantResponse:
+class AssistantResponse(Message):
     def __init__(self, messages, request_id):
+        super().__init__()
         self.messages = messages
         self.request_id = request_id
 
@@ -75,22 +81,31 @@ class AssistantResponse:
             if self.request_id is not None:
                 render_assistant_message_feedback(idx, self.request_id)
 
-def get_user_info():
-    headers = st.context.headers
-    return dict(
-        user_name=headers.get("X-Forwarded-Preferred-Username"),
-        user_email=headers.get("X-Forwarded-Email"),
-        user_id=headers.get("X-Forwarded-User"),
-    )
 
-user_info = get_user_info()
+def render_message(msg):
+    if msg["role"] == "assistant" and "tool_calls" in msg:
+        for call in msg["tool_calls"]:
+            fn_name = call["function"]["name"]
+            args = call["function"]["arguments"]
+            st.markdown(msg["content"])
+            st.markdown(f"🛠️ Calling **`{fn_name}`** with:\n```json\n{args}\n```")
+    elif msg["role"] == "tool":
+        st.markdown("🧰 Tool Response:")
+        st.code(msg["content"], language="json")
+    elif msg["role"] == "assistant" and msg.get("content"):
+        st.markdown(msg["content"])
 
 # --- Init state ---
 if "history" not in st.session_state:
     st.session_state.history = []
 
+if "in_progress" not in st.session_state:
+    st.session_state.in_progress = False
+
+
 st.title("🧱 Chatbot App")
-st.write("A basic chatbot using your own serving endpoint.")
+st.write(f"A basic chatbot using your own serving endpoint.")
+st.write(f"Endpoint name: `{SERVING_ENDPOINT}`")
 
 def render_assistant_message_feedback(i, request_id):
     def save_feedback(index):
@@ -99,15 +114,14 @@ def render_assistant_message_feedback(i, request_id):
             request_id=request_id,
             rating=st.session_state[f"feedback_{index}"]
         )
-    selection = st.feedback("thumbs", key=f"feedback_{i}", on_change=save_feedback, args=[i])
+    st.feedback("thumbs", key=f"feedback_{i}", on_change=save_feedback, args=[i])
 
 
 # --- Render chat history ---
 for i, element in enumerate(st.session_state.history):
     element.render(i)
 
-# --- Chat input (must run BEFORE rendering messages) ---
-if prompt := st.chat_input("Ask a question"):
+def handle_prompt(prompt):
     # Add user message to chat history
     user_msg = UserMessage(content=prompt)
     st.session_state.history.append(user_msg)
@@ -115,10 +129,7 @@ if prompt := st.chat_input("Ask a question"):
 
     # Placeholder for assistant response
     placeholder = st.empty()
-
     message_buffers = OrderedDict()
-    tool_areas = {}
-
     with placeholder.container():
         with st.chat_message("assistant"):
             response_area = st.empty()
@@ -138,9 +149,6 @@ if prompt := st.chat_input("Ask a question"):
                     chunk = ChatAgentChunk.model_validate(raw_chunk)
                     delta = chunk.delta
                     message_id = delta.id
-                    role = delta.role
-                    content = delta.content
-                    tool_call_id = delta.tool_call_id
                     request_id = raw_chunk.get("databricks_output", {}).get("databricks_request_id")
 
                     if request_id:
@@ -175,8 +183,20 @@ if prompt := st.chat_input("Ask a question"):
                     return_traces=ENDPOINT_SUPPORTS_FEEDBACK
                 )
                 assistant_response = AssistantResponse(messages=response_messages, request_id=request_id_opt)
-                # Update the placeholder with final assistant response
-                with placeholder.container():
-                    assistant_response.render(len(st.session_state.history) - 1)
+            # Update the placeholder with final assistant response
+            with placeholder.container():
+                assistant_response.render(len(st.session_state.history) - 1)
             # Add actual assistant response to history
             st.session_state.history.append(assistant_response)
+
+
+# --- Chat input (must run BEFORE rendering messages) ---
+print(f"Chat input: session state is {st.session_state.in_progress}")
+prompt = st.chat_input("Ask a question", disabled=st.session_state.in_progress)
+if prompt:
+    st.session_state.in_progress = True
+    try:
+        handle_prompt(prompt)
+    finally:
+        st.session_state.in_progress = False
+        st.rerun()

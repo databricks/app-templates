@@ -67,9 +67,10 @@ def query_endpoint(endpoint_name, messages, max_tokens, return_traces):
 
 def submit_feedback(endpoint, request_id, rating):
     """Submit feedback to the agent."""
+    rating_string = "positive" if rating == 1 else "negative"
     text_assessments = [] if rating is None else [{
         "ratings": {
-            "answer_correct": {"value": rating},
+            "answer_correct": {"value": rating_string},
         },
         "free_text_comment": None
     }]

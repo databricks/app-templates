@@ -1,0 +1,11 @@
+command: [
+  "streamlit", 
+  "run",
+  "app.py"
+]
+
+env:
+  - name: STREAMLIT_BROWSER_GATHER_USAGE_STATS
+    value: "false"
+  - name: "SERVING_ENDPOINT"
+    valueFrom: "serving-endpoint"

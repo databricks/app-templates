@@ -26,7 +26,11 @@ if "visibility" not in st.session_state:
     st.session_state.disabled = False
 
 st.title("🧱 Chatbot App")
-st.write(f"A basic chatbot using the your own serving endpoint")
+st.markdown(
+    "ℹ️ This is a simple example. See "
+    "[Databricks docs](https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app) "
+    "for a more comprehensive example with streaming output and more."
+)
 
 # Initialize chat history
 if "messages" not in st.session_state:

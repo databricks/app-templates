@@ -15,6 +15,11 @@ class DatabricksChatbot:
     def _create_layout(self):
         return html.Div([
             html.H2('Chat with Databricks AI', className='chat-title mb-3'),
+            html.Div([
+                "Note: this is a simple example. See ",
+                html.A("Databricks docs", href="https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app", target="_blank"),
+                " for a more comprehensive example, with support for streaming output and more."
+            ]),
             dbc.Card([
                 dbc.CardBody([
                     html.Div(id='chat-history', className='chat-history'),

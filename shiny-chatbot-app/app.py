@@ -5,8 +5,12 @@ from model_serving_utils import query_endpoint
 # Ensure environment variable is set correctly
 assert os.getenv("SERVING_ENDPOINT"), "SERVING_ENDPOINT must be set in app.yaml."
 
-# UI is minimal with a 'clear chat' button and the chat dialog
 app_ui = ui.page_fillable(
+    ui.markdown(
+        "Note: this is a simple example. See "
+        "[Databricks docs](https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app) "
+        "for a more comprehensive example, with support for streaming output and more."
+    ),
     ui.panel_title(
         ui.row(
             ui.column(10, ui.h1("Databricks LLM Chat")),

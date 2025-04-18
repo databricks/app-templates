@@ -44,7 +44,11 @@ def query_llm(message, history):
 demo = gr.ChatInterface(
     fn=query_llm,
     title="Databricks LLM Chatbot",
-    description="Ask questions and get responses from a Databricks LLM model.",
+    description=(
+        "Note: this is a simple example. See "
+        "[Databricks docs](https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app) "
+        "for a more comprehensive example, with support for streaming output and more."
+    ),
     examples=[
         "What is machine learning?",
         "What are Large Language Models?",

@@ -22,7 +22,7 @@ def reduce_chunks(chunks):
     deltas = [chunk.delta for chunk in chunks]
     first_delta = deltas[0]
     result_msg = first_delta
-    msg_contents = [first_delta.content or ""]
+    msg_contents = []
     
     # Accumulate tool calls properly
     accumulated_tool_calls = []
@@ -36,26 +36,43 @@ def reduce_chunks(chunks):
         # Handle tool calls
         if hasattr(delta, 'tool_calls') and delta.tool_calls:
             for tool_call in delta.tool_calls:
-                call_id = tool_call.get("id")
+                # Handle both dict and object formats
+                if hasattr(tool_call, 'get'):
+                    # Dictionary format
+                    call_id = tool_call.get("id")
+                    tool_type = tool_call.get("type", "function")
+                    function_info = tool_call.get("function", {})
+                    func_name = function_info.get("name", "")
+                    func_args = function_info.get("arguments", "")
+                else:
+                    # Object format (Pydantic model)
+                    call_id = getattr(tool_call, 'id', None)
+                    tool_type = getattr(tool_call, 'type', "function")
+                    function_info = getattr(tool_call, 'function', None)
+                    if function_info:
+                        func_name = getattr(function_info, 'name', "")
+                        func_args = getattr(function_info, 'arguments', "")
+                    else:
+                        func_name = ""
+                        func_args = ""
+                
                 if call_id:
                     if call_id not in tool_call_map:
                         # New tool call
                         tool_call_map[call_id] = {
                             "id": call_id,
-                            "type": tool_call.get("type", "function"),
+                            "type": tool_type,
                             "function": {
-                                "name": tool_call.get("function", {}).get("name", ""),
-                                "arguments": tool_call.get("function", {}).get("arguments", "")
+                                "name": func_name,
+                                "arguments": func_args
                             }
                         }
                     else:
                         # Accumulate arguments for existing tool call
                         existing_args = tool_call_map[call_id]["function"]["arguments"]
-                        new_args = tool_call.get("function", {}).get("arguments", "")
-                        tool_call_map[call_id]["function"]["arguments"] = existing_args + new_args
+                        tool_call_map[call_id]["function"]["arguments"] = existing_args + func_args
                         
                         # Update function name if provided
-                        func_name = tool_call.get("function", {}).get("name", "")
                         if func_name:
                             tool_call_map[call_id]["function"]["name"] = func_name
         

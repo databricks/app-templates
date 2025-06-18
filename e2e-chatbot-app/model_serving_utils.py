@@ -84,14 +84,19 @@ def _query_responses_endpoint_stream(endpoint_name: str, messages: list[dict[str
         if msg["role"] == "user":
             input_messages.append({"role": "user", "content": msg["content"]})
         elif msg["role"] == "assistant":
-            input_messages.append({"role": "assistant", "content": msg["content"]})
+            # Handle assistant messages with tool calls
+            if msg.get("tool_calls"):
+                input_messages.append({"role": "assistant", "content": msg.get("content", "")})
+            else:
+                input_messages.append({"role": "assistant", "content": msg["content"]})
         elif msg["role"] == "tool":
             input_messages.append({"role": "tool", "content": msg["content"], "tool_call_id": msg.get("tool_call_id")})
     
     # Prepare input payload for ResponsesAgent
     inputs = {
         "input": input_messages,
-        "context": {}
+        "context": {},
+        "stream": True
     }
     if return_traces:
         inputs["databricks_options"] = {"return_trace": True}
@@ -99,11 +104,23 @@ def _query_responses_endpoint_stream(endpoint_name: str, messages: list[dict[str
     current_message_id = None
     
     for event_data in client.predict_stream(endpoint=endpoint_name, inputs=inputs):
-        print(f"@SID got event {event_data}")
         if "type" in event_data:
             event_type = event_data["type"]
             
-            if event_type == "response.output_item.done":
+            # Handle text delta events for streaming updates
+            if event_type == "response.output_text.delta":
+                delta_text = event_data.get("delta", "")
+                item_id = event_data.get("item_id", str(uuid.uuid4()))
+                if delta_text:
+                    yield {
+                        "delta": {
+                            "role": "assistant",
+                            "content": delta_text,
+                            "id": item_id
+                        },
+                    }
+            
+            elif event_type == "response.output_item.done":
                 # Output item completed - extract the item
                 item = event_data.get("item", {})
                 item_type = item.get("type")
@@ -199,7 +216,11 @@ def _query_responses_endpoint(endpoint_name, messages, max_tokens, return_traces
         if msg["role"] == "user":
             input_messages.append({"role": "user", "content": msg["content"]})
         elif msg["role"] == "assistant":
-            input_messages.append({"role": "assistant", "content": msg["content"]})
+            # Handle assistant messages with tool calls
+            if msg.get("tool_calls"):
+                input_messages.append({"role": "assistant", "content": msg.get("content", "")})
+            else:
+                input_messages.append({"role": "assistant", "content": msg["content"]})
         elif msg["role"] == "tool":
             input_messages.append({"role": "tool", "content": msg["content"], "tool_call_id": msg.get("tool_call_id")})
     

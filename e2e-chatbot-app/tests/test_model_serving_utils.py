@@ -149,7 +149,71 @@ def test_query_endpoint_stream_responses_format(mock_task_type, mock_get_client)
     mock_task_type.return_value = "agent/v1/responses"
     mock_client = mock_get_client.return_value
     
-    # Mock streaming events from MLflow deployments client
+    # Mock streaming events from MLflow deployments client - matches real ResponsesAgent format
+    mock_stream_events = [
+        {
+            "type": "response.output_item.done",
+            "item": {
+                "name": "check_outage_status_tool",
+                "id": "46239364-63b6-425d-b17a-ba045ba8d788",
+                "type": "function_call",
+                "call_id": "toolu_bdrk_016nu96XseH2irWK7Q1Lhu4x",
+                "arguments": '{"region":"Moscone Center"}'
+            },
+            "id": "f81af7c8-43ac-4ba9-aecb-c5977e1730df"
+        },
+        {
+            "type": "response.output_item.done",
+            "item": {
+                "type": "function_call_output",
+                "call_id": "toolu_bdrk_016nu96XseH2irWK7Q1Lhu4x",
+                "output": '{"timestamp": "2025-06-15T17:17:29Z"}'
+            },
+            "id": "f81af7c8-43ac-4ba9-aecb-c5977e1730df"
+        },
+        {
+            "type": "response.output_item.done",
+            "item": {
+                "role": "assistant",
+                "type": "message",
+                "id": "5357963b-196c-403b-b1b0-989de1ca014b",
+                "content": [
+                    {
+                        "type": "output_text",
+                        "text": "Yes, there is currently an active outage affecting the Moscone Center area."
+                    }
+                ]
+            },
+            "id": "f81af7c8-43ac-4ba9-aecb-c5977e1730df"
+        }
+    ]
+    mock_client.predict_stream.return_value = mock_stream_events
+    
+    results = list(query_endpoint_stream("dummy-endpoint", [{"role": "user", "content": "Hi"}], 400, False))
+    assert len(results) == 3
+    
+    # First result should be function call
+    assert results[0]["delta"]["role"] == "assistant"
+    assert results[0]["delta"]["tool_calls"][0]["id"] == "toolu_bdrk_016nu96XseH2irWK7Q1Lhu4x"
+    assert results[0]["delta"]["tool_calls"][0]["function"]["name"] == "check_outage_status_tool"
+    
+    # Second result should be function call output
+    assert results[1]["delta"]["role"] == "tool"
+    assert results[1]["delta"]["tool_call_id"] == "toolu_bdrk_016nu96XseH2irWK7Q1Lhu4x"
+    assert results[1]["delta"]["content"] == '{"timestamp": "2025-06-15T17:17:29Z"}'
+    
+    # Third result should be assistant message
+    assert results[2]["delta"]["role"] == "assistant"
+    assert results[2]["delta"]["content"] == "Yes, there is currently an active outage affecting the Moscone Center area."
+    assert results[2]["delta"]["id"] == "5357963b-196c-403b-b1b0-989de1ca014b"
+
+@patch("model_serving_utils.get_deploy_client")
+@patch("model_serving_utils._get_endpoint_task_type")
+def test_query_endpoint_stream_responses_with_deltas(mock_task_type, mock_get_client):
+    mock_task_type.return_value = "agent/v1/responses"
+    mock_client = mock_get_client.return_value
+    
+    # Mock streaming events with text deltas
     mock_stream_events = [
         {
             "type": "response.output_text.delta",
@@ -169,7 +233,7 @@ def test_query_endpoint_stream_responses_format(mock_task_type, mock_get_client)
                 "content": [
                     {
                         "type": "output_text",
-                        "text": "Full message content"
+                        "text": "Stream response"
                     }
                 ]
             }
@@ -183,7 +247,7 @@ def test_query_endpoint_stream_responses_format(mock_task_type, mock_get_client)
     assert results[0]["delta"]["id"] == "msg-123"
     assert results[1]["delta"]["content"] == "response"
     assert results[1]["delta"]["id"] == "msg-123"
-    assert results[2]["delta"]["content"] == "Full message content"
+    assert results[2]["delta"]["content"] == "Stream response"
     assert results[2]["delta"]["id"] == "msg-123"
 
 @patch("model_serving_utils.WorkspaceClient")

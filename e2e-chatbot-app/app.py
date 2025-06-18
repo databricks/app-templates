@@ -22,13 +22,52 @@ def reduce_chunks(chunks):
     deltas = [chunk.delta for chunk in chunks]
     first_delta = deltas[0]
     result_msg = first_delta
-    msg_contents = [first_delta.content]
-    for delta in deltas[1:]:
-        if delta.tool_calls:
-            result_msg = result_msg.model_copy(update={"tool_calls": delta.tool_calls})
-        if delta.tool_call_id:
+    msg_contents = [first_delta.content or ""]
+    
+    # Accumulate tool calls properly
+    accumulated_tool_calls = []
+    tool_call_map = {}  # Map call_id to tool call for accumulation
+    
+    for delta in deltas:
+        # Handle content
+        if delta.content:
+            msg_contents.append(delta.content)
+            
+        # Handle tool calls
+        if hasattr(delta, 'tool_calls') and delta.tool_calls:
+            for tool_call in delta.tool_calls:
+                call_id = tool_call.get("id")
+                if call_id:
+                    if call_id not in tool_call_map:
+                        # New tool call
+                        tool_call_map[call_id] = {
+                            "id": call_id,
+                            "type": tool_call.get("type", "function"),
+                            "function": {
+                                "name": tool_call.get("function", {}).get("name", ""),
+                                "arguments": tool_call.get("function", {}).get("arguments", "")
+                            }
+                        }
+                    else:
+                        # Accumulate arguments for existing tool call
+                        existing_args = tool_call_map[call_id]["function"]["arguments"]
+                        new_args = tool_call.get("function", {}).get("arguments", "")
+                        tool_call_map[call_id]["function"]["arguments"] = existing_args + new_args
+                        
+                        # Update function name if provided
+                        func_name = tool_call.get("function", {}).get("name", "")
+                        if func_name:
+                            tool_call_map[call_id]["function"]["name"] = func_name
+        
+        # Handle tool call IDs (for tool response messages)
+        if hasattr(delta, 'tool_call_id') and delta.tool_call_id:
             result_msg = result_msg.model_copy(update={"tool_call_id": delta.tool_call_id})
-        msg_contents.append(delta.content)
+    
+    # Convert tool call map back to list
+    if tool_call_map:
+        accumulated_tool_calls = list(tool_call_map.values())
+        result_msg = result_msg.model_copy(update={"tool_calls": accumulated_tool_calls})
+    
     result_msg = result_msg.model_copy(update={"content": "".join(msg_contents)})
     return result_msg
 
@@ -83,17 +122,20 @@ class AssistantResponse(Message):
 
 
 def render_message(msg):
-    if msg["role"] == "assistant" and "tool_calls" in msg:
-        for call in msg["tool_calls"]:
-            fn_name = call["function"]["name"]
-            args = call["function"]["arguments"]
+    if msg["role"] == "assistant":
+        # Render content first if it exists
+        if msg.get("content"):
             st.markdown(msg["content"])
-            st.markdown(f"🛠️ Calling **`{fn_name}`** with:\n```json\n{args}\n```")
+        
+        # Then render tool calls if they exist
+        if "tool_calls" in msg and msg["tool_calls"]:
+            for call in msg["tool_calls"]:
+                fn_name = call["function"]["name"]
+                args = call["function"]["arguments"]
+                st.markdown(f"🛠️ Calling **`{fn_name}`** with:\n```json\n{args}\n```")
     elif msg["role"] == "tool":
         st.markdown("🧰 Tool Response:")
         st.code(msg["content"], language="json")
-    elif msg["role"] == "assistant" and msg.get("content"):
-        st.markdown(msg["content"])
 
 # --- Init state ---
 if "history" not in st.session_state:
@@ -173,6 +215,7 @@ if prompt:
 
                 assistant_response = AssistantResponse(messages=[message.model_dump_compat(exclude_none=True) for message in messages], request_id=request_id_opt)
             except Exception:
+                raise
                 response_area.markdown("_Ran into an error. Retrying..._")  # Italic gray placeholder text
                 logger.exception("Failed to query endpoint with streaming, retrying without streaming")
                 response_messages, request_id_opt = query_endpoint(

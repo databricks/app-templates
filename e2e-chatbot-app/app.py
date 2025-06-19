@@ -330,9 +330,9 @@ def handle_responses_streaming(input_messages, max_tokens):
         response_area = st.empty()
         response_area.markdown("_Thinking..._")
         
-        message_parts = []
-        current_content = ""
-        current_tool_calls = []
+        # Track all the components that need to be rendered in order
+        rendered_components = []
+        all_messages = []
         request_id = None
         
         try:
@@ -355,37 +355,70 @@ def handle_responses_streaming(input_messages, max_tokens):
                         content = delta.get("content", "")
                         tool_calls = delta.get("tool_calls", [])
                         
-                        if content:
-                            current_content += content
-                            response_area.markdown(current_content)
-                        
+                        # Handle tool calls first
                         if tool_calls:
-                            current_tool_calls.extend(tool_calls)
-                            render_tool_calls_responses(current_tool_calls, response_area)
+                            for tool_call in tool_calls:
+                                fn_name = tool_call["function"]["name"]
+                                args = tool_call["function"]["arguments"]
+                                tool_call_text = f"🛠️ Calling **`{fn_name}`** with:\n```json\n{args}\n```"
+                                rendered_components.append({"type": "tool_call", "content": tool_call_text})
+                                
+                                # Add to messages for history
+                                all_messages.append({
+                                    "role": "assistant",
+                                    "content": "",
+                                    "tool_calls": [tool_call]
+                                })
+                        
+                        # Handle assistant content (this comes after tool execution)
+                        if content:
+                            # Look for existing assistant content component to update
+                            found_content = False
+                            for component in rendered_components:
+                                if component["type"] == "assistant_content":
+                                    component["content"] += content
+                                    found_content = True
+                                    break
+                            
+                            if not found_content:
+                                rendered_components.append({"type": "assistant_content", "content": content})
                     
                     elif role == "tool":
                         tool_content = delta.get("content", "")
                         tool_call_id = delta.get("tool_call_id")
                         
                         if tool_content and tool_call_id:
-                            message_parts.append({
+                            tool_response_text = f"🧰 Tool Response:\n```json\n{tool_content}\n```"
+                            rendered_components.append({"type": "tool_response", "content": tool_response_text})
+                            
+                            # Add to messages for history
+                            all_messages.append({
                                 "role": "tool",
                                 "content": tool_content,
                                 "tool_call_id": tool_call_id
                             })
-                            st.markdown("🧰 Tool Response:")
-                            st.code(tool_content, language="json")
+                
+                # Update the display with all components in order
+                display_content = []
+                for component in rendered_components:
+                    display_content.append(component["content"])
+                
+                if display_content:
+                    response_area.markdown("\n\n".join(display_content))
             
-            messages = []
-            if current_content or current_tool_calls:
-                msg = {"role": "assistant", "content": current_content}
-                if current_tool_calls:
-                    msg["tool_calls"] = current_tool_calls
-                messages.append(msg)
+            # Add final assistant content to messages if any
+            final_assistant_content = ""
+            for component in rendered_components:
+                if component["type"] == "assistant_content":
+                    final_assistant_content += component["content"]
             
-            messages.extend(message_parts)
+            if final_assistant_content:
+                all_messages.append({
+                    "role": "assistant", 
+                    "content": final_assistant_content
+                })
             
-            return AssistantResponse(messages=messages, request_id=request_id)
+            return AssistantResponse(messages=all_messages, request_id=request_id)
         
         except Exception:
             response_area.markdown("_Ran into an error. Retrying without streaming..._")
@@ -398,16 +431,6 @@ def handle_responses_streaming(input_messages, max_tokens):
             return AssistantResponse(messages=messages, request_id=request_id)
 
 
-def render_tool_calls_responses(tool_calls, response_area):
-    """Render tool calls for ResponsesAgent format."""
-    content_parts = []
-    for call in tool_calls:
-        fn_name = call["function"]["name"]
-        args = call["function"]["arguments"]
-        content_parts.append(f"🛠️ Calling **`{fn_name}`** with:\n```json\n{args}\n```")
-    
-    if content_parts:
-        response_area.markdown("\n\n".join(content_parts))
 
 
 # --- Chat input (must run BEFORE rendering messages) ---

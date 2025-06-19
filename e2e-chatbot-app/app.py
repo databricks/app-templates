@@ -2,9 +2,13 @@ import logging
 import os
 import streamlit as st
 from abc import ABC, abstractmethod
-from model_serving_utils import query_endpoint, endpoint_supports_feedback, submit_feedback, query_endpoint_stream
+from model_serving_utils import (
+    endpoint_supports_feedback, 
+    query_endpoint, 
+    query_endpoint_stream, 
+    _get_endpoint_task_type
+)
 from collections import OrderedDict
-from mlflow.types.agent import ChatAgentChunk, ChatAgentMessage
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -177,73 +181,259 @@ def render_assistant_message_feedback(i, request_id):
 for i, element in enumerate(st.session_state.history):
     element.render(i)
 
+def get_input_messages_for_endpoint(history, task_type):
+    """Convert message history to the format expected by the endpoint based on task type."""
+    if task_type == "agent/v1/responses":
+        # ResponsesAgent format
+        messages = []
+        for message in history:
+            if isinstance(message, UserMessage):
+                messages.append({"role": "user", "content": message.content})
+            elif isinstance(message, AssistantResponse):
+                for msg in message.messages:
+                    if msg["role"] == "assistant":
+                        if msg.get("tool_calls"):
+                            messages.append({"role": "assistant", "content": msg.get("content", "")})
+                        else:
+                            messages.append({"role": "assistant", "content": msg["content"]})
+                    elif msg["role"] == "tool":
+                        messages.append({
+                            "role": "tool", 
+                            "content": msg["content"],
+                            "tool_call_id": msg.get("tool_call_id")
+                        })
+        return messages
+    else:
+        # ChatCompletions and ChatAgent format (same input format)
+        messages = []
+        for elem in history:
+            messages.extend(elem.to_input_messages())
+        return messages
+
+
+def handle_streaming_response(task_type, input_messages, max_tokens):
+    """Handle streaming response based on task type."""
+    if task_type == "agent/v1/responses":
+        return handle_responses_streaming(input_messages, max_tokens)
+    elif task_type == "agents/v2/chat":
+        return handle_chat_agent_streaming(input_messages, max_tokens)
+    else:  # chat/completions
+        return handle_chat_completions_streaming(input_messages, max_tokens)
+
+
+def handle_chat_completions_streaming(input_messages, max_tokens):
+    """Handle ChatCompletions streaming format."""
+    with st.chat_message("assistant"):
+        response_area = st.empty()
+        response_area.markdown("_Thinking..._")
+        
+        accumulated_content = ""
+        request_id = None
+        
+        try:
+            for chunk in query_endpoint_stream(
+                endpoint_name=SERVING_ENDPOINT,
+                messages=input_messages,
+                max_tokens=max_tokens,
+                return_traces=ENDPOINT_SUPPORTS_FEEDBACK
+            ):
+                if "choices" in chunk and chunk["choices"]:
+                    delta = chunk["choices"][0].get("delta", {})
+                    content = delta.get("content", "")
+                    if content:
+                        accumulated_content += content
+                        response_area.markdown(accumulated_content)
+                
+                if "databricks_output" in chunk:
+                    req_id = chunk["databricks_output"].get("databricks_request_id")
+                    if req_id:
+                        request_id = req_id
+            
+            return AssistantResponse(
+                messages=[{"role": "assistant", "content": accumulated_content}],
+                request_id=request_id
+            )
+        
+        except Exception:
+            response_area.markdown("_Ran into an error. Retrying without streaming..._")
+            messages, request_id = query_endpoint(
+                endpoint_name=SERVING_ENDPOINT,
+                messages=input_messages,
+                max_tokens=max_tokens,
+                return_traces=ENDPOINT_SUPPORTS_FEEDBACK
+            )
+            return AssistantResponse(messages=messages, request_id=request_id)
+
+
+def handle_chat_agent_streaming(input_messages, max_tokens):
+    """Handle ChatAgent streaming format."""
+    from mlflow.types.agent import ChatAgentChunk
+    
+    with st.chat_message("assistant"):
+        response_area = st.empty()
+        response_area.markdown("_Thinking..._")
+        
+        message_buffers = OrderedDict()
+        request_id = None
+        
+        try:
+            for raw_chunk in query_endpoint_stream(
+                endpoint_name=SERVING_ENDPOINT,
+                messages=input_messages,
+                max_tokens=max_tokens,
+                return_traces=ENDPOINT_SUPPORTS_FEEDBACK
+            ):
+                response_area.empty()
+                chunk = ChatAgentChunk.model_validate(raw_chunk)
+                delta = chunk.delta
+                message_id = delta.id
+                
+                req_id = raw_chunk.get("databricks_output", {}).get("databricks_request_id")
+                if req_id:
+                    request_id = req_id
+                
+                if message_id not in message_buffers:
+                    message_buffers[message_id] = {
+                        "chunks": [],
+                        "render_area": st.empty(),
+                    }
+                message_buffers[message_id]["chunks"].append(chunk)
+                
+                partial_message = reduce_chunks(message_buffers[message_id]["chunks"])
+                render_area = message_buffers[message_id]["render_area"]
+                with render_area.container():
+                    render_message(partial_message.model_dump_compat(exclude_none=True))
+            
+            messages = []
+            for msg_id, msg_info in message_buffers.items():
+                messages.append(reduce_chunks(msg_info["chunks"]))
+            
+            return AssistantResponse(
+                messages=[message.model_dump_compat(exclude_none=True) for message in messages],
+                request_id=request_id
+            )
+        
+        except Exception:
+            response_area.markdown("_Ran into an error. Retrying without streaming..._")
+            messages, request_id = query_endpoint(
+                endpoint_name=SERVING_ENDPOINT,
+                messages=input_messages,
+                max_tokens=max_tokens,
+                return_traces=ENDPOINT_SUPPORTS_FEEDBACK
+            )
+            return AssistantResponse(messages=messages, request_id=request_id)
+
+
+def handle_responses_streaming(input_messages, max_tokens):
+    """Handle ResponsesAgent streaming format."""
+    with st.chat_message("assistant"):
+        response_area = st.empty()
+        response_area.markdown("_Thinking..._")
+        
+        message_parts = []
+        current_content = ""
+        current_tool_calls = []
+        request_id = None
+        
+        try:
+            for event in query_endpoint_stream(
+                endpoint_name=SERVING_ENDPOINT,
+                messages=input_messages,
+                max_tokens=max_tokens,
+                return_traces=ENDPOINT_SUPPORTS_FEEDBACK
+            ):
+                if "databricks_output" in event:
+                    req_id = event["databricks_output"].get("databricks_request_id")
+                    if req_id:
+                        request_id = req_id
+                
+                if "delta" in event:
+                    delta = event["delta"]
+                    role = delta.get("role")
+                    
+                    if role == "assistant":
+                        content = delta.get("content", "")
+                        tool_calls = delta.get("tool_calls", [])
+                        
+                        if content:
+                            current_content += content
+                            response_area.markdown(current_content)
+                        
+                        if tool_calls:
+                            current_tool_calls.extend(tool_calls)
+                            render_tool_calls_responses(current_tool_calls, response_area)
+                    
+                    elif role == "tool":
+                        tool_content = delta.get("content", "")
+                        tool_call_id = delta.get("tool_call_id")
+                        
+                        if tool_content and tool_call_id:
+                            message_parts.append({
+                                "role": "tool",
+                                "content": tool_content,
+                                "tool_call_id": tool_call_id
+                            })
+                            st.markdown("🧰 Tool Response:")
+                            st.code(tool_content, language="json")
+            
+            messages = []
+            if current_content or current_tool_calls:
+                msg = {"role": "assistant", "content": current_content}
+                if current_tool_calls:
+                    msg["tool_calls"] = current_tool_calls
+                messages.append(msg)
+            
+            messages.extend(message_parts)
+            
+            return AssistantResponse(messages=messages, request_id=request_id)
+        
+        except Exception:
+            response_area.markdown("_Ran into an error. Retrying without streaming..._")
+            messages, request_id = query_endpoint(
+                endpoint_name=SERVING_ENDPOINT,
+                messages=input_messages,
+                max_tokens=max_tokens,
+                return_traces=ENDPOINT_SUPPORTS_FEEDBACK
+            )
+            return AssistantResponse(messages=messages, request_id=request_id)
+
+
+def render_tool_calls_responses(tool_calls, response_area):
+    """Render tool calls for ResponsesAgent format."""
+    content_parts = []
+    for call in tool_calls:
+        fn_name = call["function"]["name"]
+        args = call["function"]["arguments"]
+        content_parts.append(f"🛠️ Calling **`{fn_name}`** with:\n```json\n{args}\n```")
+    
+    if content_parts:
+        response_area.markdown("\n\n".join(content_parts))
+
+
 # --- Chat input (must run BEFORE rendering messages) ---
 prompt = st.chat_input("Ask a question")
 if prompt:
+    # Get the task type for this endpoint
+    task_type = _get_endpoint_task_type(SERVING_ENDPOINT)
+    
     # Add user message to chat history
     user_msg = UserMessage(content=prompt)
     st.session_state.history.append(user_msg)
     user_msg.render(len(st.session_state.history) - 1)
 
-    # Placeholder for assistant response
-    placeholder = st.empty()
-    message_buffers = OrderedDict()
-    with placeholder.container():
-        with st.chat_message("assistant"):
-            response_area = st.empty()
-            response_area.markdown("_Thinking..._")
-
-            input_messages = [msg for elem in st.session_state.history for msg in elem.to_input_messages()]
-            request_id_opt = None
-
-            try:
-                for raw_chunk in query_endpoint_stream(
-                        endpoint_name=SERVING_ENDPOINT,
-                        messages=input_messages,
-                        max_tokens=400,
-                        return_traces=ENDPOINT_SUPPORTS_FEEDBACK
-                ):
-                    response_area.empty()  # Clear previous response
-                    chunk = ChatAgentChunk.model_validate(raw_chunk)
-                    delta = chunk.delta
-                    message_id = delta.id
-                    request_id = raw_chunk.get("databricks_output", {}).get("databricks_request_id")
-
-                    if request_id:
-                        request_id_opt = request_id
-
-                    if message_id not in message_buffers:
-                        message_buffers[message_id] = {
-                            "chunks": [],
-                            "render_area": st.empty(),
-                        }
-                    message_buffers[message_id]["chunks"].append(chunk)
-
-                    # Live update - render the current partial message's content
-                    partial_message = reduce_chunks(message_buffers[message_id]["chunks"])
-                    render_area = message_buffers[message_id]["render_area"]
-                    with render_area.container():
-                        render_message(partial_message.model_dump_compat(exclude_none=True))
-
-                # Finalize messages and append to history
-                messages = []
-                for msg_id, msg_info in message_buffers.items():
-                    messages.append(reduce_chunks(msg_info["chunks"]))
-
-                assistant_response = AssistantResponse(messages=[message.model_dump_compat(exclude_none=True) for message in messages], request_id=request_id_opt)
-            except Exception:
-                raise
-                response_area.markdown("_Ran into an error. Retrying..._")  # Italic gray placeholder text
-                logger.exception("Failed to query endpoint with streaming, retrying without streaming")
-                response_messages, request_id_opt = query_endpoint(
-                    endpoint_name=SERVING_ENDPOINT,
-                    messages=input_messages,
-                    max_tokens=400,
-                    return_traces=ENDPOINT_SUPPORTS_FEEDBACK
-                )
-                assistant_response = AssistantResponse(messages=response_messages, request_id=request_id_opt)
-            # Update the placeholder with final assistant response
-            with placeholder.container():
-                assistant_response.render(len(st.session_state.history) - 1)
-            # Add actual assistant response to history
-            st.session_state.history.append(assistant_response)
+    # Convert history to the format expected by this endpoint type
+    input_messages = get_input_messages_for_endpoint(st.session_state.history, task_type)
+    
+    # Handle the response using the appropriate handler
+    try:
+        assistant_response = handle_streaming_response(task_type, input_messages, max_tokens=400)
+    except Exception as e:
+        logger.exception("Failed to handle response")
+        # Create a basic error response
+        assistant_response = AssistantResponse(
+            messages=[{"role": "assistant", "content": "Sorry, I encountered an error processing your request."}],
+            request_id=None
+        )
+    
+    # Add assistant response to history
+    st.session_state.history.append(assistant_response)

@@ -31,50 +31,34 @@ def _throw_unexpected_endpoint_format():
 
 
 
-def query_endpoint_stream(endpoint_name: str, messages: list[dict[str, str]], max_tokens: int, return_traces: bool):
-    """Streams chat-completions style chunks and converts to ChatAgent-style streaming deltas."""
+def query_endpoint_stream(endpoint_name: str, messages: list[dict[str, str]], return_traces: bool):
     task_type = _get_endpoint_task_type(endpoint_name)
     
     if task_type == "agent/v1/responses":
-        return _query_responses_endpoint_stream(endpoint_name, messages, max_tokens, return_traces)
+        return _query_responses_endpoint_stream(endpoint_name, messages, return_traces)
     else:
-        return _query_chat_endpoint_stream(endpoint_name, messages, max_tokens, return_traces)
+        return _query_chat_endpoint_stream(endpoint_name, messages, return_traces)
 
-def _query_chat_endpoint_stream(endpoint_name: str, messages: list[dict[str, str]], max_tokens: int, return_traces: bool):
-    """Streams chat-completions style chunks and converts to ChatAgent-style streaming deltas."""
+def _query_chat_endpoint_stream(endpoint_name: str, messages: list[dict[str, str]], return_traces: bool):
+    """Invoke an endpoint that implements either chat completions or ChatAgent and stream the response"""
     client = get_deploy_client("databricks://dogfood")
 
     # Prepare input payload
     inputs = {
         "messages": messages,
-        "max_tokens": max_tokens,
     }
     if return_traces:
         inputs["databricks_options"] = {"return_trace": True}
 
-    stream_id = str(uuid.uuid4())  # Generate unique ID for the stream
-
     for chunk in client.predict_stream(endpoint=endpoint_name, inputs=inputs):
         if "choices" in chunk:
-            choices = chunk["choices"]
-            if len(choices) > 0:
-                # Convert from chat completions to ChatAgent format
-                content = choices[0]["delta"].get("content", "")
-                if content:
-                    yield {
-                        "delta": {
-                            "role": "assistant",
-                            "content": content,
-                            "id": stream_id
-                        },
-                    }
+            yield chunk
         elif "delta" in chunk:
-            # Yield the ChatAgentChunk directly
             yield chunk
         else:
             _throw_unexpected_endpoint_format()
 
-def _query_responses_endpoint_stream(endpoint_name: str, messages: list[dict[str, str]], max_tokens: int, return_traces: bool):
+def _query_responses_endpoint_stream(endpoint_name: str, messages: list[dict[str, str]], return_traces: bool):
     """Stream responses from agent/v1/responses endpoints using MLflow deployments client."""
     client = get_deploy_client("databricks://dogfood")
     
@@ -177,7 +161,7 @@ def _query_responses_endpoint_stream(endpoint_name: str, messages: list[dict[str
                         },
                     }
 
-def query_endpoint(endpoint_name, messages, max_tokens, return_traces):
+def query_endpoint(endpoint_name, messages, return_traces):
     """
     Query an endpoint, returning the string message content and request
     ID for feedback
@@ -185,13 +169,13 @@ def query_endpoint(endpoint_name, messages, max_tokens, return_traces):
     task_type = _get_endpoint_task_type(endpoint_name)
     
     if task_type == "agent/v1/responses":
-        return _query_responses_endpoint(endpoint_name, messages, max_tokens, return_traces)
+        return _query_responses_endpoint(endpoint_name, messages, return_traces)
     else:
-        return _query_chat_endpoint(endpoint_name, messages, max_tokens, return_traces)
+        return _query_chat_endpoint(endpoint_name, messages, return_traces)
 
-def _query_chat_endpoint(endpoint_name, messages, max_tokens, return_traces):
+def _query_chat_endpoint(endpoint_name, messages, return_traces):
     """Calls a model serving endpoint with chat/completions format."""
-    inputs = {'messages': messages, "max_tokens": max_tokens}
+    inputs = {'messages': messages}
     if return_traces:
         inputs['databricks_options'] = {'return_trace': True}
     

@@ -6,10 +6,9 @@ from model_serving_utils import (
     query_endpoint, 
     query_endpoint_stream, 
     _get_endpoint_task_type,
-    submit_feedback
 )
 from collections import OrderedDict
-from messages import Message, UserMessage, AssistantResponse, render_message
+from messages import UserMessage, AssistantResponse, render_message
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -145,7 +144,7 @@ def handle_streaming_response(task_type, input_messages):
     """Handle streaming response based on task type."""
     if task_type == "agent/v1/responses":
         return handle_responses_streaming(input_messages)
-    elif task_type == "agents/v2/chat":
+    elif task_type == "agent/v2/chat":
         return handle_chat_agent_streaming(input_messages)
     else:  # chat/completions
         return handle_chat_completions_streaming(input_messages)
@@ -214,11 +213,10 @@ def handle_chat_agent_streaming(input_messages):
                 chunk = ChatAgentChunk.model_validate(raw_chunk)
                 delta = chunk.delta
                 message_id = delta.id
-                
+
                 req_id = raw_chunk.get("databricks_output", {}).get("databricks_request_id")
                 if req_id:
                     request_id = req_id
-                
                 if message_id not in message_buffers:
                     message_buffers[message_id] = {
                         "chunks": [],
@@ -228,8 +226,9 @@ def handle_chat_agent_streaming(input_messages):
                 
                 partial_message = reduce_chunks(message_buffers[message_id]["chunks"])
                 render_area = message_buffers[message_id]["render_area"]
+                message_content = partial_message.model_dump_compat(exclude_none=True)
                 with render_area.container():
-                    render_message(partial_message.model_dump_compat(exclude_none=True))
+                    render_message(message_content)
             
             messages = []
             for msg_id, msg_info in message_buffers.items():

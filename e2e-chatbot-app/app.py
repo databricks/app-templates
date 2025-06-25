@@ -8,7 +8,7 @@ from model_serving_utils import (
     _get_endpoint_task_type,
 )
 from collections import OrderedDict
-from messages import UserMessage, AssistantResponse, render_message, get_responses_input_messages
+from messages import UserMessage, AssistantResponse, render_message
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

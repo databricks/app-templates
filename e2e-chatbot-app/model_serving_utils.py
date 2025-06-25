@@ -41,7 +41,7 @@ def query_endpoint_stream(endpoint_name: str, messages: list[dict[str, str]], re
 
 def _query_chat_endpoint_stream(endpoint_name: str, messages: list[dict[str, str]], return_traces: bool):
     """Invoke an endpoint that implements either chat completions or ChatAgent and stream the response"""
-    client = get_deploy_client("databricks://dogfood")
+    client = get_deploy_client("databricks")
 
     # Prepare input payload
     inputs = {
@@ -60,7 +60,7 @@ def _query_chat_endpoint_stream(endpoint_name: str, messages: list[dict[str, str
 
 def _query_responses_endpoint_stream(endpoint_name: str, messages: list[dict[str, str]], return_traces: bool):
     """Stream responses from agent/v1/responses endpoints using MLflow deployments client."""
-    client = get_deploy_client("databricks://dogfood")
+    client = get_deploy_client("databricks")
     
     # Convert messages to the input format expected by ResponsesAgent API
     input_messages = []
@@ -179,7 +179,7 @@ def _query_chat_endpoint(endpoint_name, messages, return_traces):
     if return_traces:
         inputs['databricks_options'] = {'return_trace': True}
     
-    res = get_deploy_client('databricks://dogfood').predict(
+    res = get_deploy_client('databricks').predict(
         endpoint=endpoint_name,
         inputs=inputs,
     )
@@ -192,7 +192,7 @@ def _query_chat_endpoint(endpoint_name, messages, return_traces):
 
 def _query_responses_endpoint(endpoint_name, messages, max_tokens, return_traces):
     """Query agent/v1/responses endpoints using MLflow deployments client."""
-    client = get_deploy_client("databricks://dogfood")
+    client = get_deploy_client("databricks")
     
     # Convert messages to the input format expected by ResponsesAgent API
     input_messages = []

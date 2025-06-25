@@ -8,7 +8,7 @@ from model_serving_utils import (
     _get_endpoint_task_type,
 )
 from collections import OrderedDict
-from messages import UserMessage, AssistantResponse, render_message
+from messages import UserMessage, AssistantResponse, render_message, get_responses_input_messages
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -110,34 +110,15 @@ for i, element in enumerate(st.session_state.history):
 
 def get_input_messages_for_endpoint(history, task_type):
     """Convert message history to the format expected by the endpoint based on task type."""
+    messages = []
     if task_type == "agent/v1/responses":
-        # ResponsesAgent format
-        messages = []
-        for message in history:
-            if isinstance(message, UserMessage):
-                messages.append({"role": "user", "content": message.content})
-            elif isinstance(message, AssistantResponse):
-                for msg in message.messages:
-                    if msg["role"] == "assistant":
-                        if msg.get("tool_calls"):
-                            messages.append({"role": "assistant", "content": msg.get("content", "")})
-                        else:
-                            messages.append({"role": "assistant", "content": msg["content"]})
-                    elif msg["role"] == "tool":
-                        messages.append({
-                            "role": "tool", 
-                            "content": msg["content"],
-                            "tool_call_id": msg.get("tool_call_id")
-                        })
-            else:
-                raise ValueError(f"Unsupported message type: {type(message)}")
-        return messages
+        for elem in history:
+            messages.extend(elem.to_responses_input_messages())
     else:
         # ChatCompletions and ChatAgent format (same input format)
-        messages = []
         for elem in history:
             messages.extend(elem.to_input_messages())
-        return messages
+    return messages
 
 
 def handle_streaming_response(task_type, input_messages):

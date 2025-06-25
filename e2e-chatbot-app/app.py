@@ -141,17 +141,17 @@ def get_input_messages_for_endpoint(history, task_type):
         return messages
 
 
-def handle_streaming_response(task_type, input_messages, max_tokens):
+def handle_streaming_response(task_type, input_messages):
     """Handle streaming response based on task type."""
     if task_type == "agent/v1/responses":
-        return handle_responses_streaming(input_messages, max_tokens)
+        return handle_responses_streaming(input_messages)
     elif task_type == "agents/v2/chat":
-        return handle_chat_agent_streaming(input_messages, max_tokens)
+        return handle_chat_agent_streaming(input_messages)
     else:  # chat/completions
-        return handle_chat_completions_streaming(input_messages, max_tokens)
+        return handle_chat_completions_streaming(input_messages)
 
 
-def handle_chat_completions_streaming(input_messages, max_tokens):
+def handle_chat_completions_streaming(input_messages):
     """Handle ChatCompletions streaming format."""
     with st.chat_message("assistant"):
         response_area = st.empty()
@@ -164,7 +164,6 @@ def handle_chat_completions_streaming(input_messages, max_tokens):
             for chunk in query_endpoint_stream(
                 endpoint_name=SERVING_ENDPOINT,
                 messages=input_messages,
-                max_tokens=max_tokens,
                 return_traces=ENDPOINT_SUPPORTS_FEEDBACK
             ):
                 if "choices" in chunk and chunk["choices"]:
@@ -189,13 +188,12 @@ def handle_chat_completions_streaming(input_messages, max_tokens):
             messages, request_id = query_endpoint(
                 endpoint_name=SERVING_ENDPOINT,
                 messages=input_messages,
-                max_tokens=max_tokens,
                 return_traces=ENDPOINT_SUPPORTS_FEEDBACK
             )
             return AssistantResponse(messages=messages, request_id=request_id)
 
 
-def handle_chat_agent_streaming(input_messages, max_tokens):
+def handle_chat_agent_streaming(input_messages):
     """Handle ChatAgent streaming format."""
     from mlflow.types.agent import ChatAgentChunk
     
@@ -210,7 +208,6 @@ def handle_chat_agent_streaming(input_messages, max_tokens):
             for raw_chunk in query_endpoint_stream(
                 endpoint_name=SERVING_ENDPOINT,
                 messages=input_messages,
-                max_tokens=max_tokens,
                 return_traces=ENDPOINT_SUPPORTS_FEEDBACK
             ):
                 response_area.empty()
@@ -248,13 +245,12 @@ def handle_chat_agent_streaming(input_messages, max_tokens):
             messages, request_id = query_endpoint(
                 endpoint_name=SERVING_ENDPOINT,
                 messages=input_messages,
-                max_tokens=max_tokens,
                 return_traces=ENDPOINT_SUPPORTS_FEEDBACK
             )
             return AssistantResponse(messages=messages, request_id=request_id)
 
 
-def handle_responses_streaming(input_messages, max_tokens):
+def handle_responses_streaming(input_messages):
     """Handle ResponsesAgent streaming format."""
     with st.chat_message("assistant"):
         response_area = st.empty()
@@ -269,7 +265,6 @@ def handle_responses_streaming(input_messages, max_tokens):
             for event in query_endpoint_stream(
                 endpoint_name=SERVING_ENDPOINT,
                 messages=input_messages,
-                max_tokens=max_tokens,
                 return_traces=ENDPOINT_SUPPORTS_FEEDBACK
             ):
                 if "databricks_output" in event:
@@ -355,7 +350,6 @@ def handle_responses_streaming(input_messages, max_tokens):
             messages, request_id = query_endpoint(
                 endpoint_name=SERVING_ENDPOINT,
                 messages=input_messages,
-                max_tokens=max_tokens,
                 return_traces=ENDPOINT_SUPPORTS_FEEDBACK
             )
             return AssistantResponse(messages=messages, request_id=request_id)
@@ -379,7 +373,7 @@ if prompt:
     
     # Handle the response using the appropriate handler
     try:
-        assistant_response = handle_streaming_response(task_type, input_messages, max_tokens=400)
+        assistant_response = handle_streaming_response(task_type, input_messages)
     except Exception as e:
         logger.exception("Failed to handle response")
         # Create a basic error response

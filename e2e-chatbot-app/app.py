@@ -221,6 +221,7 @@ def handle_chat_agent_streaming(input_messages):
             )
         
         except Exception:
+            raise
             response_area.markdown("_Ran into an error. Retrying without streaming..._")
             messages, request_id = query_endpoint(
                 endpoint_name=SERVING_ENDPOINT,

@@ -29,7 +29,6 @@ def reduce_chat_agent_chunks(chunks):
     msg_contents = []
     
     # Accumulate tool calls properly
-    accumulated_tool_calls = []
     tool_call_map = {}  # Map call_id to tool call for accumulation
     
     for delta in deltas:
@@ -40,25 +39,15 @@ def reduce_chat_agent_chunks(chunks):
         # Handle tool calls
         if hasattr(delta, 'tool_calls') and delta.tool_calls:
             for tool_call in delta.tool_calls:
-                # Handle both dict and object formats
-                if hasattr(tool_call, 'get'):
-                    # Dictionary format
-                    call_id = tool_call.get("id")
-                    tool_type = tool_call.get("type", "function")
-                    function_info = tool_call.get("function", {})
-                    func_name = function_info.get("name", "")
-                    func_args = function_info.get("arguments", "")
+                call_id = getattr(tool_call, 'id', None)
+                tool_type = getattr(tool_call, 'type', "function")
+                function_info = getattr(tool_call, 'function', None)
+                if function_info:
+                    func_name = getattr(function_info, 'name', "")
+                    func_args = getattr(function_info, 'arguments', "")
                 else:
-                    # Object format (Pydantic model)
-                    call_id = getattr(tool_call, 'id', None)
-                    tool_type = getattr(tool_call, 'type', "function")
-                    function_info = getattr(tool_call, 'function', None)
-                    if function_info:
-                        func_name = getattr(function_info, 'name', "")
-                        func_args = getattr(function_info, 'arguments', "")
-                    else:
-                        func_name = ""
-                        func_args = ""
+                    func_name = ""
+                    func_args = ""
                 
                 if call_id:
                     if call_id not in tool_call_map:
@@ -263,23 +252,13 @@ def handle_responses_streaming(input_messages):
                         item_type = item.get("type")
                         
                         if item_type == "message":
-                            current_message_id = item.get("id")
                             # Extract text content from message if present
                             content_parts = item.get("content", [])
                             for content_part in content_parts:
                                 if content_part.get("type") == "output_text":
                                     text = content_part.get("text", "")
                                     if text:
-                                        # Look for existing assistant content component to update
-                                        found_content = False
-                                        for component in rendered_components:
-                                            if component["type"] == "assistant_content":
-                                                component["content"] += text
-                                                found_content = True
-                                                break
-                                        
-                                        if not found_content:
-                                            rendered_components.append({"type": "assistant_content", "content": text})
+                                        rendered_components.append({"type": "assistant_content", "content": text})
                             
                         elif item_type == "function_call":
                             # Tool call

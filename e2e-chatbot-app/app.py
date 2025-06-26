@@ -18,7 +18,7 @@ assert SERVING_ENDPOINT is not None, "SERVING_ENDPOINT must be set in app.yaml."
 
 ENDPOINT_SUPPORTS_FEEDBACK = endpoint_supports_feedback(SERVING_ENDPOINT)
 
-def reduce_chunks(chunks):
+def reduce_chat_agent_chunks(chunks):
     """
     Reduce a list of ChatAgentChunk objects corresponding to a particular
     message into a single ChatAgentMessage
@@ -205,7 +205,7 @@ def handle_chat_agent_streaming(input_messages):
                     }
                 message_buffers[message_id]["chunks"].append(chunk)
                 
-                partial_message = reduce_chunks(message_buffers[message_id]["chunks"])
+                partial_message = reduce_chat_agent_chunks(message_buffers[message_id]["chunks"])
                 render_area = message_buffers[message_id]["render_area"]
                 message_content = partial_message.model_dump_compat(exclude_none=True)
                 with render_area.container():
@@ -213,7 +213,7 @@ def handle_chat_agent_streaming(input_messages):
             
             messages = []
             for msg_id, msg_info in message_buffers.items():
-                messages.append(reduce_chunks(msg_info["chunks"]))
+                messages.append(reduce_chat_agent_chunks(msg_info["chunks"]))
             
             return AssistantResponse(
                 messages=[message.model_dump_compat(exclude_none=True) for message in messages],

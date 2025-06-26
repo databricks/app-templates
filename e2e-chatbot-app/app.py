@@ -226,7 +226,7 @@ def handle_responses_streaming(input_messages):
         response_area.markdown("_Thinking..._")
         
         # Track all the components that need to be rendered in order
-        rendered_components = []
+        display_content = []
         all_messages = []
         request_id = None
 
@@ -258,7 +258,11 @@ def handle_responses_streaming(input_messages):
                                 if content_part.get("type") == "output_text":
                                     text = content_part.get("text", "")
                                     if text:
-                                        rendered_components.append({"type": "assistant_content", "content": text})
+                                        display_content.append(text)
+                                        all_messages.append({
+                                            "role": "assistant",
+                                            "content": text
+                                        })
                             
                         elif item_type == "function_call":
                             # Tool call
@@ -267,7 +271,7 @@ def handle_responses_streaming(input_messages):
                             arguments = item.get("arguments", "")
                             
                             tool_call_text = f"🛠️ Calling **`{function_name}`** with:\n```json\n{arguments}\n```"
-                            rendered_components.append({"type": "tool_call", "content": tool_call_text})
+                            display_content.append(tool_call_text)
                             
                             # Add to messages for history
                             all_messages.append({
@@ -289,7 +293,7 @@ def handle_responses_streaming(input_messages):
                             output = item.get("output", "")
                             
                             tool_response_text = f"🧰 Tool Response:\n```json\n{output}\n```"
-                            rendered_components.append({"type": "tool_response", "content": tool_response_text})
+                            display_content.append(tool_response_text)
                             
                             # Add to messages for history
                             all_messages.append({
@@ -299,24 +303,9 @@ def handle_responses_streaming(input_messages):
                             })
                 
                 # Update the display with all components in order
-                display_content = []
-                for component in rendered_components:
-                    display_content.append(component["content"])
-                
                 if display_content:
                     response_area.markdown("\n\n".join(display_content))
-            
-            # Add final assistant content to messages if any
-            final_assistant_content = ""
-            for component in rendered_components:
-                if component["type"] == "assistant_content":
-                    final_assistant_content += component["content"]
-            
-            if final_assistant_content:
-                all_messages.append({
-                    "role": "assistant", 
-                    "content": final_assistant_content
-                })
+
             return AssistantResponse(messages=all_messages, request_id=request_id)
         
         except Exception:

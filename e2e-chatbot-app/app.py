@@ -221,7 +221,6 @@ def handle_chat_agent_streaming(input_messages):
             )
         
         except Exception:
-            raise
             response_area.markdown("_Ran into an error. Retrying without streaming..._")
             messages, request_id = query_endpoint(
                 endpoint_name=SERVING_ENDPOINT,
@@ -241,67 +240,83 @@ def handle_responses_streaming(input_messages):
         rendered_components = []
         all_messages = []
         request_id = None
-        
+
         try:
             for event in query_endpoint_stream(
                 endpoint_name=SERVING_ENDPOINT,
                 messages=input_messages,
                 return_traces=ENDPOINT_SUPPORTS_FEEDBACK
             ):
+                # Extract databricks_output for request_id
                 if "databricks_output" in event:
                     req_id = event["databricks_output"].get("databricks_request_id")
                     if req_id:
                         request_id = req_id
                 
-                if "delta" in event:
-                    delta = event["delta"]
-                    role = delta.get("role")
+                # Parse the raw responses API events
+                if "type" in event:
+                    event_type = event["type"]
                     
-                    if role == "assistant":
-                        content = delta.get("content", "")
-                        tool_calls = delta.get("tool_calls", [])
+                    if event_type == "response.output_item.done":
+                        # Output item completed - extract the item
+                        item = event.get("item", {})
+                        item_type = item.get("type")
                         
-                        # Handle tool calls first
-                        if tool_calls:
-                            for tool_call in tool_calls:
-                                fn_name = tool_call["function"]["name"]
-                                args = tool_call["function"]["arguments"]
-                                tool_call_text = f"🛠️ Calling **`{fn_name}`** with:\n```json\n{args}\n```"
-                                rendered_components.append({"type": "tool_call", "content": tool_call_text})
-                                
-                                # Add to messages for history
-                                all_messages.append({
-                                    "role": "assistant",
-                                    "content": "",
-                                    "tool_calls": [tool_call]
-                                })
-                        
-                        # Handle assistant content (this comes after tool execution)
-                        if content:
-                            # Look for existing assistant content component to update
-                            found_content = False
-                            for component in rendered_components:
-                                if component["type"] == "assistant_content":
-                                    component["content"] += content
-                                    found_content = True
-                                    break
+                        if item_type == "message":
+                            current_message_id = item.get("id")
+                            # Extract text content from message if present
+                            content_parts = item.get("content", [])
+                            for content_part in content_parts:
+                                if content_part.get("type") == "output_text":
+                                    text = content_part.get("text", "")
+                                    if text:
+                                        # Look for existing assistant content component to update
+                                        found_content = False
+                                        for component in rendered_components:
+                                            if component["type"] == "assistant_content":
+                                                component["content"] += text
+                                                found_content = True
+                                                break
+                                        
+                                        if not found_content:
+                                            rendered_components.append({"type": "assistant_content", "content": text})
                             
-                            if not found_content:
-                                rendered_components.append({"type": "assistant_content", "content": content})
-                    
-                    elif role == "tool":
-                        tool_content = delta.get("content", "")
-                        tool_call_id = delta.get("tool_call_id")
-                        
-                        if tool_content and tool_call_id:
-                            tool_response_text = f"🧰 Tool Response:\n```json\n{tool_content}\n```"
+                        elif item_type == "function_call":
+                            # Tool call
+                            call_id = item.get("call_id")
+                            function_name = item.get("name")
+                            arguments = item.get("arguments", "")
+                            
+                            tool_call_text = f"🛠️ Calling **`{function_name}`** with:\n```json\n{arguments}\n```"
+                            rendered_components.append({"type": "tool_call", "content": tool_call_text})
+                            
+                            # Add to messages for history
+                            all_messages.append({
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [{
+                                    "id": call_id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": function_name,
+                                        "arguments": arguments
+                                    }
+                                }]
+                            })
+                            
+                        elif item_type == "function_call_output":
+                            # Tool call output/result
+                            call_id = item.get("call_id")
+                            output = item.get("output", "")
+                            
+                            tool_response_text = f"🧰 Tool Response:\n```json\n{output}\n```"
                             rendered_components.append({"type": "tool_response", "content": tool_response_text})
                             
                             # Add to messages for history
                             all_messages.append({
                                 "role": "tool",
-                                "content": tool_content,
-                                "tool_call_id": tool_call_id
+                                "content": output,
+                                "tool_call_id": call_id
                             })
                 
                 # Update the display with all components in order
@@ -323,7 +338,6 @@ def handle_responses_streaming(input_messages):
                     "role": "assistant", 
                     "content": final_assistant_content
                 })
-            
             return AssistantResponse(messages=all_messages, request_id=request_id)
         
         except Exception:

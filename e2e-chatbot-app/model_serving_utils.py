@@ -111,80 +111,9 @@ def _query_responses_endpoint_stream(endpoint_name: str, messages: list[dict[str
     if return_traces:
         inputs["databricks_options"] = {"return_trace": True}
 
-    current_message_id = None
     for event_data in client.predict_stream(endpoint=endpoint_name, inputs=inputs):
-        if "type" in event_data:
-            event_type = event_data["type"]
-            
-            # Handle text delta events for streaming updates
-            if event_type == "response.output_text.delta":
-                delta_text = event_data.get("delta", "")
-                item_id = event_data.get("item_id", str(uuid.uuid4()))
-                if delta_text:
-                    yield {
-                        "delta": {
-                            "role": "assistant",
-                            "content": delta_text,
-                            "id": item_id
-                        },
-                    }
-            
-            elif event_type == "response.output_item.done":
-                # Output item completed - extract the item
-                item = event_data.get("item", {})
-                item_type = item.get("type")
-                
-                if item_type == "message":
-                    current_message_id = item.get("id", str(uuid.uuid4()))
-                    content_parts = item.get("content", [])
-                    
-                    for content_part in content_parts:
-                        if content_part.get("type") == "output_text":
-                            text = content_part.get("text", "")
-                            if text:
-                                yield {
-                                    "delta": {
-                                        "role": "assistant",
-                                        "content": text,
-                                        "id": current_message_id
-                                    },
-                                }
-                                
-                elif item_type == "function_call":
-                    # Tool call
-                    call_id = item.get("call_id")
-                    function_name = item.get("name")
-                    arguments = item.get("arguments", "")
-                    
-                    yield {
-                        "delta": {
-                            "role": "assistant",
-                            "content": "",
-                            "tool_calls": [{
-                                "id": call_id,
-                                "type": "function",
-                                "function": {
-                                    "name": function_name,
-                                    "arguments": arguments
-                                }
-                            }],
-                            "id": current_message_id or str(uuid.uuid4())
-                        },
-                    }
-                    
-                elif item_type == "function_call_output":
-                    # Tool call output/result
-                    call_id = item.get("call_id")
-                    output = item.get("output", "")
-                    
-                    yield {
-                        "delta": {
-                            "role": "tool",
-                            "content": output,
-                            "tool_call_id": call_id,
-                            "id": str(uuid.uuid4())
-                        },
-                    }
+        # Just yield the raw event data, let app.py handle the parsing
+        yield event_data
 
 def query_endpoint(endpoint_name, messages, return_traces):
     """

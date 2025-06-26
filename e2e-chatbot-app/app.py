@@ -220,7 +220,9 @@ def handle_chat_agent_streaming(input_messages):
 
 
 def handle_responses_streaming(input_messages):
-    """Handle ResponsesAgent streaming format."""
+    """Handle ResponsesAgent streaming format using MLflow types."""
+    from mlflow.types.responses import ResponsesAgentStreamEvent
+    
     with st.chat_message("assistant"):
         response_area = st.empty()
         response_area.markdown("_Thinking..._")
@@ -231,27 +233,25 @@ def handle_responses_streaming(input_messages):
         request_id = None
 
         try:
-            for event in query_endpoint_stream(
+            for raw_event in query_endpoint_stream(
                 endpoint_name=SERVING_ENDPOINT,
                 messages=input_messages,
                 return_traces=ENDPOINT_SUPPORTS_FEEDBACK
             ):
                 # Extract databricks_output for request_id
-                if "databricks_output" in event:
-                    req_id = event["databricks_output"].get("databricks_request_id")
+                if "databricks_output" in raw_event:
+                    req_id = raw_event["databricks_output"].get("databricks_request_id")
                     if req_id:
                         request_id = req_id
                 
-                # Parse the raw responses API events
-                if "type" in event:
-                    event_type = event["type"]
+                # Parse using MLflow streaming event types, similar to ChatAgentChunk
+                if "type" in raw_event:
+                    event = ResponsesAgentStreamEvent.model_validate(raw_event)
                     
-                    if event_type == "response.output_item.done":
-                        # Output item completed - extract the item
-                        item = event.get("item", {})
-                        item_type = item.get("type")
+                    if hasattr(event, 'item') and event.item:
+                        item = event.item  # This is a dict, not a parsed object
                         
-                        if item_type == "message":
+                        if item.get("type") == "message":
                             # Extract text content from message if present
                             content_parts = item.get("content", [])
                             for content_part in content_parts:
@@ -264,7 +264,7 @@ def handle_responses_streaming(input_messages):
                                             "content": text
                                         })
                             
-                        elif item_type == "function_call":
+                        elif item.get("type") == "function_call":
                             # Tool call
                             call_id = item.get("call_id")
                             function_name = item.get("name")
@@ -287,7 +287,7 @@ def handle_responses_streaming(input_messages):
                                 }]
                             })
                             
-                        elif item_type == "function_call_output":
+                        elif item.get("type") == "function_call_output":
                             # Tool call output/result
                             call_id = item.get("call_id")
                             output = item.get("output", "")

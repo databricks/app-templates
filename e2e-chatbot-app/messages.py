@@ -20,7 +20,7 @@ class Message(ABC):
 
     @abstractmethod
     def to_responses_input_messages(self):
-        """Convert this message into a list of dicts suitable for the model API."""
+        """Convert to responses API format."""
         pass
 
     @abstractmethod
@@ -59,12 +59,12 @@ class AssistantResponse(Message):
         return self.messages
     
     def to_responses_input_messages(self):
-        """Convert to responses API format."""
+        """Convert to responses API format (intermediate format for model_serving_utils)."""
         messages = []
         for msg in self.messages:
             if msg["role"] == "assistant":
                 if msg.get("tool_calls"):
-                    messages.append({"role": "assistant", "content": msg.get("content", "")})
+                    messages.append({"role": "assistant", "content": msg.get("content", ""), "tool_calls": msg["tool_calls"]})
                 else:
                     messages.append({"role": "assistant", "content": msg["content"]})
             elif msg["role"] == "tool":

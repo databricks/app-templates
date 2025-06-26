@@ -110,7 +110,12 @@ for i, element in enumerate(st.session_state.history):
 
 def get_input_messages_for_endpoint(history, task_type):
     """Convert message history to the format expected by the endpoint based on task type."""
-    messages = []
+    return [
+        {'role': 'user', 'content': "What's hte 100th fibonacci?"},
+        {'role': 'assistant', 'content': '', 'tool_calls': [{'id': 'toolu_bdrk_01Dyj255Yr58jFisduN5aEVv', 'type': 'function', 'function': {'name': 'system__ai__python_exec', 'arguments': '{"code":"# Calculate the 100th Fibonacci number\\ndef fibonacci(n):\\n    # Using matrix exponentiation for efficiency\\n    def matrix_multiply(A, B):\\n        a = A[0][0] * B[0][0] + A[0][1] * B[1][0]\\n        b = A[0][0] * B[0][1] + A[0][1] * B[1][1]\\n        c = A[1][0] * B[0][0] + A[1][1] * B[1][0]\\n        d = A[1][0] * B[0][1] + A[1][1] * B[1][1]\\n        return [[a, b], [c, d]]\\n    \\n    def matrix_power(A, n):\\n        if n == 1:\\n            return A\\n        if n % 2 == 0:\\n            return matrix_power(matrix_multiply(A, A), n // 2)\\n        else:\\n            return matrix_multiply(A, matrix_power(matrix_multiply(A, A), (n - 1) // 2))\\n    \\n    if n == 0:\\n        return 0\\n    \\n    F = [[1, 1], [1, 0]]\\n    result = matrix_power(F, n)\\n    return result[1][0]\\n\\n# Calculate and print the 100th Fibonacci number\\nfib_100 = fibonacci(100)\\nprint(f\\"The 100th Fibonacci number is: {fib_100}\\")\\nprint(f\\"Number of digits: {len(str(fib_100))}\\")"}'}}]},
+        {'role': 'tool', 'content': 'The 100th Fibonacci number is: 354224848179261915075\nNumber of digits: 21\n', 'tool_call_id': 'toolu_bdrk_01Dyj255Yr58jFisduN5aEVv'}, {'role': 'assistant', 'content': 'The 100th Fibonacci number is 354,224,848,179,261,915,075.\n\nThis is a 21-digit number that follows the Fibonacci sequence where each number is the sum of the two preceding ones. The sequence starts with 0 and 1, and grows quite rapidly, as you can see from the size of the 100th number.\n\nI used an efficient algorithm (matrix exponentiation) to calculate this large number, as the naive recursive approach would be far too slow for the 100th term.'},
+        {'role': 'user', 'content': 'Summarize that'}
+    ]
     if task_type == "agent/v1/responses":
         for elem in history:
             messages.extend(elem.to_responses_input_messages())

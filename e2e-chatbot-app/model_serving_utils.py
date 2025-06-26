@@ -70,11 +70,37 @@ def _query_responses_endpoint_stream(endpoint_name: str, messages: list[dict[str
         elif msg["role"] == "assistant":
             # Handle assistant messages with tool calls
             if msg.get("tool_calls"):
-                input_messages.append({"role": "assistant", "content": msg.get("content", "")})
+                # Add function calls
+                for tool_call in msg["tool_calls"]:
+                    input_messages.append({
+                        "type": "function_call",
+                        "id": tool_call["id"],
+                        "call_id": tool_call["id"],
+                        "name": tool_call["function"]["name"],
+                        "arguments": tool_call["function"]["arguments"]
+                    })
+                # Add assistant message if it has content
+                if msg.get("content"):
+                    input_messages.append({
+                        "type": "message",
+                        "id": msg.get("id", str(uuid.uuid4())),
+                        "content": [{"type": "output_text", "text": msg["content"]}],
+                        "role": "assistant"
+                    })
             else:
-                input_messages.append({"role": "assistant", "content": msg["content"]})
+                # Regular assistant message
+                input_messages.append({
+                    "type": "message",
+                    "id": msg.get("id", str(uuid.uuid4())),
+                    "content": [{"type": "output_text", "text": msg["content"]}],
+                    "role": "assistant"
+                })
         elif msg["role"] == "tool":
-            input_messages.append({"role": "tool", "content": msg["content"], "tool_call_id": msg.get("tool_call_id")})
+            input_messages.append({
+                "type": "function_call_output",
+                "call_id": msg.get("tool_call_id"),
+                "output": msg["content"]
+            })
     
     # Prepare input payload for ResponsesAgent
     inputs = {
@@ -86,7 +112,6 @@ def _query_responses_endpoint_stream(endpoint_name: str, messages: list[dict[str
         inputs["databricks_options"] = {"return_trace": True}
 
     current_message_id = None
-    
     for event_data in client.predict_stream(endpoint=endpoint_name, inputs=inputs):
         if "type" in event_data:
             event_type = event_data["type"]
@@ -202,11 +227,37 @@ def _query_responses_endpoint(endpoint_name, messages, return_traces):
         elif msg["role"] == "assistant":
             # Handle assistant messages with tool calls
             if msg.get("tool_calls"):
-                input_messages.append({"role": "assistant", "content": msg.get("content", "")})
+                # Add function calls
+                for tool_call in msg["tool_calls"]:
+                    input_messages.append({
+                        "type": "function_call",
+                        "id": tool_call["id"],
+                        "call_id": tool_call["id"],
+                        "name": tool_call["function"]["name"],
+                        "arguments": tool_call["function"]["arguments"]
+                    })
+                # Add assistant message if it has content
+                if msg.get("content"):
+                    input_messages.append({
+                        "type": "message",
+                        "id": msg.get("id", str(uuid.uuid4())),
+                        "content": [{"type": "output_text", "text": msg["content"]}],
+                        "role": "assistant"
+                    })
             else:
-                input_messages.append({"role": "assistant", "content": msg["content"]})
+                # Regular assistant message
+                input_messages.append({
+                    "type": "message",
+                    "id": msg.get("id", str(uuid.uuid4())),
+                    "content": [{"type": "output_text", "text": msg["content"]}],
+                    "role": "assistant"
+                })
         elif msg["role"] == "tool":
-            input_messages.append({"role": "tool", "content": msg["content"], "tool_call_id": msg.get("tool_call_id")})
+            input_messages.append({
+                "type": "function_call_output",
+                "call_id": msg.get("tool_call_id"),
+                "output": msg["content"]
+            })
     
     # Prepare input payload for ResponsesAgent
     inputs = {
@@ -311,4 +362,4 @@ def submit_feedback(endpoint, request_id, rating):
 def endpoint_supports_feedback(endpoint_name):
     w = WorkspaceClient()
     endpoint = w.serving_endpoints.get(endpoint_name)
-    return "feedback" in [entity.entity_name for entity in endpoint.config.served_entities]
+    return "feedback" in [entity.name for entity in endpoint.config.served_entities]

@@ -116,8 +116,7 @@ def handle_chat_completions_streaming(input_messages):
         accumulated_content = ""
         request_id = None
         
-        try:
-            for chunk in query_endpoint_stream(
+        for chunk in query_endpoint_stream(
                 endpoint_name=SERVING_ENDPOINT,
                 messages=input_messages,
                 return_traces=ENDPOINT_SUPPORTS_FEEDBACK
@@ -133,20 +132,11 @@ def handle_chat_completions_streaming(input_messages):
                     req_id = chunk["databricks_output"].get("databricks_request_id")
                     if req_id:
                         request_id = req_id
-            
-            return AssistantResponse(
-                messages=[{"role": "assistant", "content": accumulated_content}],
-                request_id=request_id
-            )
         
-        except Exception:
-            response_area.markdown("_Ran into an error. Retrying without streaming..._")
-            messages, request_id = query_endpoint(
-                endpoint_name=SERVING_ENDPOINT,
-                messages=input_messages,
-                return_traces=ENDPOINT_SUPPORTS_FEEDBACK
-            )
-            return AssistantResponse(messages=messages, request_id=request_id)
+        return AssistantResponse(
+            messages=[{"role": "assistant", "content": accumulated_content}],
+            request_id=request_id
+        )
 
 
 def handle_chat_agent_streaming(input_messages):
@@ -160,8 +150,7 @@ def handle_chat_agent_streaming(input_messages):
         message_buffers = OrderedDict()
         request_id = None
         
-        try:
-            for raw_chunk in query_endpoint_stream(
+        for raw_chunk in query_endpoint_stream(
                 endpoint_name=SERVING_ENDPOINT,
                 messages=input_messages,
                 return_traces=ENDPOINT_SUPPORTS_FEEDBACK
@@ -186,27 +175,15 @@ def handle_chat_agent_streaming(input_messages):
                 message_content = partial_message.model_dump_compat(exclude_none=True)
                 with render_area.container():
                     render_message(message_content)
-            
-            messages = []
-            for msg_id, msg_info in message_buffers.items():
-                messages.append(reduce_chat_agent_chunks(msg_info["chunks"]))
-            
-            return AssistantResponse(
-                messages=[message.model_dump_compat(exclude_none=True) for message in messages],
-                request_id=request_id
-            )
         
-        except Exception:
-            response_area.markdown("_Ran into an error. Retrying without streaming..._")
-            messages, request_id = query_endpoint(
-                endpoint_name=SERVING_ENDPOINT,
-                messages=input_messages,
-                return_traces=ENDPOINT_SUPPORTS_FEEDBACK
-            )
-            with render_area.container():
-                for message in messages:
-                    render_message(message)
-            return AssistantResponse(messages=messages, request_id=request_id)
+        messages = []
+        for msg_id, msg_info in message_buffers.items():
+            messages.append(reduce_chat_agent_chunks(msg_info["chunks"]))
+        
+        return AssistantResponse(
+            messages=[message.model_dump_compat(exclude_none=True) for message in messages],
+            request_id=request_id
+        )
 
 
 def handle_responses_streaming(input_messages):
@@ -221,8 +198,7 @@ def handle_responses_streaming(input_messages):
         all_messages = []
         request_id = None
 
-        try:
-            for raw_event in query_endpoint_stream(
+        for raw_event in query_endpoint_stream(
                 endpoint_name=SERVING_ENDPOINT,
                 messages=input_messages,
                 return_traces=ENDPOINT_SUPPORTS_FEEDBACK
@@ -290,16 +266,7 @@ def handle_responses_streaming(input_messages):
                         for msg in all_messages:
                             render_message(msg)
 
-            return AssistantResponse(messages=all_messages, request_id=request_id)
-        
-        except Exception:
-            response_area.markdown("_Ran into an error. Retrying without streaming..._")
-            messages, request_id = query_endpoint(
-                endpoint_name=SERVING_ENDPOINT,
-                messages=input_messages,
-                return_traces=ENDPOINT_SUPPORTS_FEEDBACK
-            )
-            return AssistantResponse(messages=messages, request_id=request_id)
+        return AssistantResponse(messages=all_messages, request_id=request_id)
 
 
 
@@ -322,12 +289,18 @@ if prompt:
     try:
         assistant_response = handle_streaming_response(task_type, input_messages)
     except Exception as e:
-        logger.exception("Failed to handle response")
-        # Create a basic error response
-        assistant_response = AssistantResponse(
-            messages=[{"role": "assistant", "content": "Sorry, I encountered an error processing your request."}],
-            request_id=None
-        )
+        logger.exception("Failed to handle streaming response, falling back to non-streaming")
+        # Fallback to non-streaming endpoint
+        with st.chat_message("assistant"):
+            st.markdown("_Ran into an error. Retrying without streaming..._")
+            messages, request_id = query_endpoint(
+                endpoint_name=SERVING_ENDPOINT,
+                messages=input_messages,
+                return_traces=ENDPOINT_SUPPORTS_FEEDBACK
+            )
+            for message in messages:
+                render_message(message)
+            assistant_response = AssistantResponse(messages=messages, request_id=request_id)
     
     # Add assistant response to history
     st.session_state.history.append(assistant_response)

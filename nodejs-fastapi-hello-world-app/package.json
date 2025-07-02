@@ -1,0 +1,26 @@
+{
+  "name": "nodejs-fastapi-hello-world-app",
+  "version": "1.0.0",
+  "description": "A simple Node.js + FastAPI hello world app for Databricks Apps",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm run build:frontend",
+    "build:frontend": "vite build frontend --emptyOutDir",
+    "dev": "vite frontend",
+    "start": "npm run build && uvicorn backend.main:app --host 0.0.0.0 --port ${DATABRICKS_APP_PORT:-8000}"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "chart.js": "^4.4.0",
+    "react-chartjs-2": "^5.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@vitejs/plugin-react": "^4.2.0",
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0"
+  }
+} 

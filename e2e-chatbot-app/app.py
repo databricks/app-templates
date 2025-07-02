@@ -64,11 +64,11 @@ def reduce_chat_agent_chunks(chunks):
                         # Accumulate arguments for existing tool call
                         existing_args = tool_call_map[call_id]["function"]["arguments"]
                         tool_call_map[call_id]["function"]["arguments"] = existing_args + func_args
-                        
+
                         # Update function name if provided
                         if func_name:
                             tool_call_map[call_id]["function"]["name"] = func_name
-        
+
         # Handle tool call IDs (for tool response messages)
         if hasattr(delta, 'tool_call_id') and delta.tool_call_id:
             result_msg = result_msg.model_copy(update={"tool_call_id": delta.tool_call_id})
@@ -96,19 +96,6 @@ st.write(f"Endpoint name: `{SERVING_ENDPOINT}`")
 # --- Render chat history ---
 for i, element in enumerate(st.session_state.history):
     element.render(i)
-
-def get_input_messages_for_endpoint(history, task_type):
-    """Convert message history to the format expected by the endpoint based on task type."""
-    messages = []
-    if task_type == "agent/v1/responses":
-        for elem in history:
-            messages.extend(elem.to_responses_input_messages())
-    else:
-        # ChatCompletions and ChatAgent format (same input format)
-        for elem in history:
-            messages.extend(elem.to_input_messages())
-    return messages
-
 
 def handle_streaming_response(task_type, input_messages):
     """Handle streaming response based on task type."""
@@ -216,6 +203,9 @@ def handle_chat_agent_streaming(input_messages):
                 messages=input_messages,
                 return_traces=ENDPOINT_SUPPORTS_FEEDBACK
             )
+            with render_area.container():
+                for message in messages:
+                    render_message(message)
             return AssistantResponse(messages=messages, request_id=request_id)
 
 
@@ -227,8 +217,7 @@ def handle_responses_streaming(input_messages):
         response_area = st.empty()
         response_area.markdown("_Thinking..._")
         
-        # Track all the components that need to be rendered in order
-        display_content = []
+        # Track all the messages that need to be rendered in order
         all_messages = []
         request_id = None
 
@@ -258,7 +247,6 @@ def handle_responses_streaming(input_messages):
                                 if content_part.get("type") == "output_text":
                                     text = content_part.get("text", "")
                                     if text:
-                                        display_content.append(text)
                                         all_messages.append({
                                             "role": "assistant",
                                             "content": text
@@ -269,9 +257,6 @@ def handle_responses_streaming(input_messages):
                             call_id = item.get("call_id")
                             function_name = item.get("name")
                             arguments = item.get("arguments", "")
-                            
-                            tool_call_text = f"🛠️ Calling **`{function_name}`** with:\n```json\n{arguments}\n```"
-                            display_content.append(tool_call_text)
                             
                             # Add to messages for history
                             all_messages.append({
@@ -292,9 +277,6 @@ def handle_responses_streaming(input_messages):
                             call_id = item.get("call_id")
                             output = item.get("output", "")
                             
-                            tool_response_text = f"🧰 Tool Response:\n```json\n{output}\n```"
-                            display_content.append(tool_response_text)
-                            
                             # Add to messages for history
                             all_messages.append({
                                 "role": "tool",
@@ -302,9 +284,11 @@ def handle_responses_streaming(input_messages):
                                 "tool_call_id": call_id
                             })
                 
-                # Update the display with all components in order
-                if display_content:
-                    response_area.markdown("\n\n".join(display_content))
+                # Update the display by rendering all accumulated messages
+                if all_messages:
+                    with response_area.container():
+                        for msg in all_messages:
+                            render_message(msg)
 
             return AssistantResponse(messages=all_messages, request_id=request_id)
         
@@ -331,8 +315,8 @@ if prompt:
     st.session_state.history.append(user_msg)
     user_msg.render(len(st.session_state.history) - 1)
 
-    # Convert history to the format expected by this endpoint type
-    input_messages = get_input_messages_for_endpoint(st.session_state.history, task_type)
+    # Convert history to standard chat message format for the query methods
+    input_messages = [msg for elem in st.session_state.history for msg in elem.to_input_messages()]
     
     # Handle the response using the appropriate handler
     try:

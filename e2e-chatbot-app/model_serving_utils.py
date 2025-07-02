@@ -2,10 +2,8 @@ from mlflow.deployments import get_deploy_client
 from databricks.sdk import WorkspaceClient
 import json
 import uuid
-import requests
 
 import logging
-import httpx
 
 logging.basicConfig(
     format="%(levelname)s [%(asctime)s] %(name)s - %(message)s",
@@ -22,47 +20,8 @@ def _get_endpoint_task_type(endpoint_name: str) -> str:
     except Exception:
         return "chat/completions"
 
-def _throw_unexpected_endpoint_format():
-    raise Exception("This app can only run against:"
-                    "1) Databricks foundation model or external model endpoints with the chat task type (described in https://docs.databricks.com/aws/en/machine-learning/model-serving/score-foundation-models#chat-completion-model-query)\n"
-                    "2) Databricks agent serving endpoints that implement the conversational agent schema documented "
-                    "in https://docs.databricks.com/aws/en/generative-ai/agent-framework/author-agent\n"
-                    "3) Databricks agent serving endpoints with agent/v1/responses task type")
-
-
-
-def query_endpoint_stream(endpoint_name: str, messages: list[dict[str, str]], return_traces: bool):
-    task_type = _get_endpoint_task_type(endpoint_name)
-    
-    if task_type == "agent/v1/responses":
-        return _query_responses_endpoint_stream(endpoint_name, messages, return_traces)
-    else:
-        return _query_chat_endpoint_stream(endpoint_name, messages, return_traces)
-
-def _query_chat_endpoint_stream(endpoint_name: str, messages: list[dict[str, str]], return_traces: bool):
-    """Invoke an endpoint that implements either chat completions or ChatAgent and stream the response"""
-    client = get_deploy_client("databricks://dogfood")
-
-    # Prepare input payload
-    inputs = {
-        "messages": messages,
-    }
-    if return_traces:
-        inputs["databricks_options"] = {"return_trace": True}
-
-    for chunk in client.predict_stream(endpoint=endpoint_name, inputs=inputs):
-        if "choices" in chunk:
-            yield chunk
-        elif "delta" in chunk:
-            yield chunk
-        else:
-            _throw_unexpected_endpoint_format()
-
-def _query_responses_endpoint_stream(endpoint_name: str, messages: list[dict[str, str]], return_traces: bool):
-    """Stream responses from agent/v1/responses endpoints using MLflow deployments client."""
-    client = get_deploy_client("databricks://dogfood")
-    
-    # Convert messages to the input format expected by ResponsesAgent API
+def _convert_to_responses_format(messages):
+    """Convert chat messages to ResponsesAgent API format."""
     input_messages = []
     for msg in messages:
         if msg["role"] == "user":
@@ -101,6 +60,43 @@ def _query_responses_endpoint_stream(endpoint_name: str, messages: list[dict[str
                 "call_id": msg.get("tool_call_id"),
                 "output": msg["content"]
             })
+    return input_messages
+
+def _throw_unexpected_endpoint_format():
+    raise Exception("This app can only run against ChatModel, ChatAgent, or ResponsesAgent endpoints")
+
+def query_endpoint_stream(endpoint_name: str, messages: list[dict[str, str]], return_traces: bool):
+    task_type = _get_endpoint_task_type(endpoint_name)
+    
+    if task_type == "agent/v1/responses":
+        return _query_responses_endpoint_stream(endpoint_name, messages, return_traces)
+    else:
+        return _query_chat_endpoint_stream(endpoint_name, messages, return_traces)
+
+def _query_chat_endpoint_stream(endpoint_name: str, messages: list[dict[str, str]], return_traces: bool):
+    """Invoke an endpoint that implements either chat completions or ChatAgent and stream the response"""
+    client = get_deploy_client("databricks://dogfood")
+
+    # Prepare input payload
+    inputs = {
+        "messages": messages,
+    }
+    if return_traces:
+        inputs["databricks_options"] = {"return_trace": True}
+
+    for chunk in client.predict_stream(endpoint=endpoint_name, inputs=inputs):
+        if "choices" in chunk:
+            yield chunk
+        elif "delta" in chunk:
+            yield chunk
+        else:
+            _throw_unexpected_endpoint_format()
+
+def _query_responses_endpoint_stream(endpoint_name: str, messages: list[dict[str, str]], return_traces: bool):
+    """Stream responses from agent/v1/responses endpoints using MLflow deployments client."""
+    client = get_deploy_client("databricks://dogfood")
+    
+    input_messages = _convert_to_responses_format(messages)
     
     # Prepare input payload for ResponsesAgent
     inputs = {
@@ -148,45 +144,7 @@ def _query_responses_endpoint(endpoint_name, messages, return_traces):
     """Query agent/v1/responses endpoints using MLflow deployments client."""
     client = get_deploy_client("databricks://dogfood")
     
-    # Convert messages to the input format expected by ResponsesAgent API
-    input_messages = []
-    for msg in messages:
-        if msg["role"] == "user":
-            input_messages.append({"role": "user", "content": msg["content"]})
-        elif msg["role"] == "assistant":
-            # Handle assistant messages with tool calls
-            if msg.get("tool_calls"):
-                # Add function calls
-                for tool_call in msg["tool_calls"]:
-                    input_messages.append({
-                        "type": "function_call",
-                        "id": tool_call["id"],
-                        "call_id": tool_call["id"],
-                        "name": tool_call["function"]["name"],
-                        "arguments": tool_call["function"]["arguments"]
-                    })
-                # Add assistant message if it has content
-                if msg.get("content"):
-                    input_messages.append({
-                        "type": "message",
-                        "id": msg.get("id", str(uuid.uuid4())),
-                        "content": [{"type": "output_text", "text": msg["content"]}],
-                        "role": "assistant"
-                    })
-            else:
-                # Regular assistant message
-                input_messages.append({
-                    "type": "message",
-                    "id": msg.get("id", str(uuid.uuid4())),
-                    "content": [{"type": "output_text", "text": msg["content"]}],
-                    "role": "assistant"
-                })
-        elif msg["role"] == "tool":
-            input_messages.append({
-                "type": "function_call_output",
-                "call_id": msg.get("tool_call_id"),
-                "output": msg["content"]
-            })
+    input_messages = _convert_to_responses_format(messages)
     
     # Prepare input payload for ResponsesAgent
     inputs = {

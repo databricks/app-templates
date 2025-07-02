@@ -19,11 +19,6 @@ class Message(ABC):
         pass
 
     @abstractmethod
-    def to_responses_input_messages(self):
-        """Convert to responses API format."""
-        pass
-
-    @abstractmethod
     def render(self, idx):
         """Render the message in the Streamlit app."""
         pass
@@ -39,10 +34,6 @@ class UserMessage(Message):
             "role": "user",
             "content": self.content
         }]
-    
-    def to_responses_input_messages(self):
-        """Convert to responses API format."""
-        return [{"role": "user", "content": self.content}]
 
     def render(self, idx):
         with st.chat_message("user"):
@@ -53,27 +44,11 @@ class AssistantResponse(Message):
     def __init__(self, messages, request_id):
         super().__init__()
         self.messages = messages
+        # Request ID tracked to enable submitting feedback on assistant responses via the feedback endpoint
         self.request_id = request_id
 
     def to_input_messages(self):
         return self.messages
-    
-    def to_responses_input_messages(self):
-        """Convert to responses API format (intermediate format for model_serving_utils)."""
-        messages = []
-        for msg in self.messages:
-            if msg["role"] == "assistant":
-                if msg.get("tool_calls"):
-                    messages.append({"role": "assistant", "content": msg.get("content", ""), "tool_calls": msg["tool_calls"]})
-                else:
-                    messages.append({"role": "assistant", "content": msg["content"]})
-            elif msg["role"] == "tool":
-                messages.append({
-                    "role": "tool", 
-                    "content": msg["content"],
-                    "tool_call_id": msg.get("tool_call_id")
-                })
-        return messages
 
     def render(self, idx):
         with st.chat_message("assistant"):

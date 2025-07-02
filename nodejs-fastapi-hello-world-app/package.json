@@ -7,8 +7,7 @@
   "scripts": {
     "build": "npm run build:frontend",
     "build:frontend": "vite build frontend --emptyOutDir",
-    "dev": "vite frontend",
-    "start": "npm run build && uvicorn backend.main:app --host 0.0.0.0 --port ${DATABRICKS_APP_PORT:-8000}"
+    "dev": "vite frontend"
   },
   "dependencies": {
     "react": "^18.2.0",

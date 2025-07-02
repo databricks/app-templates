@@ -35,7 +35,7 @@ class UserMessage(Message):
             "content": self.content
         }]
 
-    def render(self, idx):
+    def render(self, _):
         with st.chat_message("user"):
             st.markdown(self.content)
 

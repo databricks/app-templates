@@ -13,8 +13,6 @@ postgres_password = None
 last_password_refresh = 0
 connection_pool = None
 
-
-
 def refresh_oauth_token():
     """Refresh OAuth token if expired."""
     global postgres_password, last_password_refresh

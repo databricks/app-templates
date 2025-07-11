@@ -1,4 +1,4 @@
 shiny==1.0.0
-databricks-sdk
-tokenizers
-openai
+mlflow>=2.21.2
+tokenizers==0.21.1
+openai==1.70.0

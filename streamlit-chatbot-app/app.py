@@ -1,28 +1,22 @@
 import logging
 import os
-
 import streamlit as st
-from databricks.sdk import WorkspaceClient
-from databricks.sdk.service.serving import ChatMessage, ChatMessageRole
+from model_serving_utils import query_endpoint
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize the Databricks Workspace Client
-w = WorkspaceClient()
-
 # Ensure environment variable is set correctly
 assert os.getenv('SERVING_ENDPOINT'), "SERVING_ENDPOINT must be set in app.yaml."
 
-
 def get_user_info():
     headers = st.context.headers
-    return dict(user_name=headers.get("X-Forwarded-Preferred-Username"),
-                user_email=headers.get("X-Forwarded-Email"),
-                user_id=headers.get("X-Forwarded-User"),
-                )
-
+    return dict(
+        user_name=headers.get("X-Forwarded-Preferred-Username"),
+        user_email=headers.get("X-Forwarded-Email"),
+        user_id=headers.get("X-Forwarded-User"),
+    )
 
 user_info = get_user_info()
 
@@ -32,7 +26,11 @@ if "visibility" not in st.session_state:
     st.session_state.disabled = False
 
 st.title("🧱 Chatbot App")
-st.write(f"A basic chatbot using the your own serving endpoint")
+st.markdown(
+    "ℹ️ This is a simple example. See "
+    "[Databricks docs](https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app) "
+    "for a more comprehensive example with streaming output and more."
+)
 
 # Initialize chat history
 if "messages" not in st.session_state:
@@ -51,23 +49,16 @@ if prompt := st.chat_input("What is up?"):
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    messages = [
-        ChatMessage(role=ChatMessageRole.SYSTEM, content="You are a helpful assistant."),
-        ChatMessage(role=ChatMessageRole.USER, content=prompt)
-    ]
-
     # Display assistant response in chat message container
     with st.chat_message("assistant"):
         # Query the Databricks serving endpoint
-        try:
-            response = w.serving_endpoints.query(name=os.getenv("SERVING_ENDPOINT"),
-                                                 messages=messages,
-                                                 max_tokens=400,
-                                                 )
-            assistant_response = response.choices[0].message.content
-            st.markdown(assistant_response)
-        except Exception as e:
-            st.error(f"Error querying model: {e}")
+        assistant_response = query_endpoint(
+            endpoint_name=os.getenv("SERVING_ENDPOINT"),
+            messages=st.session_state.messages,
+            max_tokens=400,
+        )["content"]
+        st.markdown(assistant_response)
+
 
     # Add assistant response to chat history
     st.session_state.messages.append({"role": "assistant", "content": assistant_response})

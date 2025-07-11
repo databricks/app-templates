@@ -138,3 +138,5 @@ ml-models.iml
 ml-models.ipr
 
 .DS_Store
+.databricks
+.gradio

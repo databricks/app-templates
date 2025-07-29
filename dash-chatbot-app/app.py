@@ -8,7 +8,7 @@ assert serving_endpoint, \
     ("Unable to determine serving endpoint to use for chatbot app. If developing locally, "
      "set the SERVING_ENDPOINT environment variable to the name of your serving endpoint. If "
      "deploying to a Databricks app, include a serving endpoint resource named "
-     "'serving-endpoint' with CAN_QUERY permissions, as described in "
+     "'serving_endpoint' with CAN_QUERY permissions, as described in "
      "https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app#deploy-the-databricks-app")
 
 # Initialize the Dash app with a clean theme

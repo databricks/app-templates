@@ -4,7 +4,12 @@ import dash_bootstrap_components as dbc
 from DatabricksChatbot import DatabricksChatbot
 # Ensure environment variable is set correctly
 serving_endpoint = os.getenv('SERVING_ENDPOINT')
-assert serving_endpoint, 'SERVING_ENDPOINT must be set in app.yaml.'
+assert serving_endpoint, \
+    ("Unable to determine serving endpoint to use for chatbot app. If developing locally, "
+     "set the SERVING_ENDPOINT environment variable to the name of your serving endpoint. If "
+     "deploying to a Databricks app, include a serving endpoint resource named "
+     "'serving-endpoint' with CAN_QUERY permissions, as described in "
+     "https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app#deploy-the-databricks-app")
 
 # Initialize the Dash app with a clean theme
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.FLATLY])

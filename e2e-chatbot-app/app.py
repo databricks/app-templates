@@ -14,7 +14,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 SERVING_ENDPOINT = os.getenv('SERVING_ENDPOINT')
-assert SERVING_ENDPOINT is not None, "SERVING_ENDPOINT must be set in app.yaml."
+assert SERVING_ENDPOINT, \
+    ("Unable to determine serving endpoint to use for chatbot app. If developing locally, "
+     "set the SERVING_ENDPOINT environment variable to the name of your serving endpoint. If "
+     "deploying to a Databricks app, include a serving endpoint resource named "
+     "'serving-endpoint' with CAN_QUERY permissions, as described in "
+     "https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app#deploy-the-databricks-app")
 
 ENDPOINT_SUPPORTS_FEEDBACK = endpoint_supports_feedback(SERVING_ENDPOINT)
 

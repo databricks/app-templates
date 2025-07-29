@@ -8,7 +8,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Ensure environment variable is set correctly
-assert os.getenv('SERVING_ENDPOINT'), "SERVING_ENDPOINT must be set in app.yaml."
+SERVING_ENDPOINT = os.getenv('SERVING_ENDPOINT')
+assert SERVING_ENDPOINT,\
+    ("Unable to determine serving endpoint to use for chatbot app. If developing locally, "
+     "set the SERVING_ENDPOINT environment variable to the name of your serving endpoint. If "
+     "deploying to a Databricks app, include a serving endpoint resource named "
+     "'serving-endpoint' with CAN_QUERY permissions, as described in "
+     "https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app#deploy-the-databricks-app")
 
 def query_llm(message, history):
     """
@@ -29,9 +35,9 @@ def query_llm(message, history):
     message_history.append({"role": "user", "content": message})
 
     try:
-        logger.info(f"Sending request to model endpoint: {os.getenv('SERVING_ENDPOINT')}")
+        logger.info(f"Sending request to model endpoint: {SERVING_ENDPOINT}")
         response = query_endpoint(
-            endpoint_name=os.getenv('SERVING_ENDPOINT'),
+            endpoint_name=SERVING_ENDPOINT,
             messages=message_history,
             max_tokens=400
         )

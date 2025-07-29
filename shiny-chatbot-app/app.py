@@ -3,7 +3,13 @@ import os
 from shiny import App, ui, reactive
 from model_serving_utils import query_endpoint
 # Ensure environment variable is set correctly
-assert os.getenv("SERVING_ENDPOINT"), "SERVING_ENDPOINT must be set in app.yaml."
+SERVING_ENDPOINT = os.getenv("SERVING_ENDPOINT")
+assert SERVING_ENDPOINT, \
+    ("Unable to determine serving endpoint to use for chatbot app. If developing locally, "
+     "set the SERVING_ENDPOINT environment variable to the name of your serving endpoint. If "
+     "deploying to a Databricks app, include a serving endpoint resource named "
+     "'serving-endpoint' with CAN_QUERY permissions, as described in "
+     "https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app#deploy-the-databricks-app")
 
 app_ui = ui.page_fillable(
     ui.markdown(
@@ -36,7 +42,7 @@ def server(input, output, session):
     async def _():
         messages = chat.messages(format="openai")
         response = query_endpoint(
-            endpoint_name=os.getenv("SERVING_ENDPOINT"),
+            endpoint_name=SERVING_ENDPOINT,
             messages=messages,
             max_tokens=400
         )

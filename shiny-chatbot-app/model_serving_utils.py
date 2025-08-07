@@ -10,12 +10,15 @@ def _get_endpoint_task_type(endpoint_name: str) -> str:
     except Exception:
         return "chat/completions"
 
-def _validate_endpoint_task_type(endpoint_name: str) -> None:
-    """Validate that the endpoint has a supported task type."""
+def is_endpoint_supported(endpoint_name: str) -> bool:
+    """Check if the endpoint has a supported task type."""
     task_type = _get_endpoint_task_type(endpoint_name)
     supported_task_types = ["agents/v1/chat", "agents/v2/chat", "chat/completions"]
-    
-    if task_type not in supported_task_types:
+    return task_type in supported_task_types
+
+def _validate_endpoint_task_type(endpoint_name: str) -> None:
+    """Validate that the endpoint has a supported task type."""
+    if not is_endpoint_supported(endpoint_name):
         raise Exception(
             f"Detected unsupported endpoint type for this basic chatbot template. "
             f"This chatbot template only supports chat completions-compatible endpoints. "

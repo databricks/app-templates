@@ -3,17 +3,14 @@ from databricks.sdk import WorkspaceClient
 
 def _get_endpoint_task_type(endpoint_name: str) -> str:
     """Get the task type of a serving endpoint."""
-    try:
-        w = WorkspaceClient()
-        ep = w.serving_endpoints.get(endpoint_name)
-        return ep.task if ep.task else "chat/completions"
-    except Exception:
-        return "chat/completions"
+    w = WorkspaceClient()
+    ep = w.serving_endpoints.get(endpoint_name)
+    return ep.task
 
 def is_endpoint_supported(endpoint_name: str) -> bool:
     """Check if the endpoint has a supported task type."""
     task_type = _get_endpoint_task_type(endpoint_name)
-    supported_task_types = ["agents/v1/chat", "agents/v2/chat", "chat/completions"]
+    supported_task_types = ["agent/v1/chat", "agent/v2/chat", "llm/v1/chat"]
     return task_type in supported_task_types
 
 def _validate_endpoint_task_type(endpoint_name: str) -> None:

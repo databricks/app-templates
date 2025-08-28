@@ -11,10 +11,18 @@ logging.basicConfig(
     level=logging.DEBUG
 )
 
+# For OBO-user authentication, uncomment the 4 lines below (STEP 1 of 4)
+# import streamlit as st
+# user_access_token = st.context.headers.get('X-Forwarded-Access-Token')
+# os.environ["DATABRICKS_AUTH_TYPE"] = "pat"
+# os.environ["DATABRICKS_TOKEN"] = user_access_token
+
 def _get_endpoint_task_type(endpoint_name: str) -> str:
     """Get the task type of a serving endpoint."""
     try:
         w = WorkspaceClient()
+        # For OBO-user authentication, use the line below instead of the line above (STEP 2 of 4)
+        # w = WorkspaceClient(token=user_access_token, auth_type="pat")
         ep = w.serving_endpoints.get(endpoint_name)
         return ep.task if ep.task else "chat/completions"
     except Exception:
@@ -239,6 +247,8 @@ def submit_feedback(endpoint, request_id, rating):
         ]
     }
     w = WorkspaceClient()
+    # For OBO-user authentication, use the line below instead of the line above (STEP 3 of 4)
+    # w = WorkspaceClient(token=user_access_token, auth_type="pat")
     return w.api_client.do(
         method='POST',
         path=f"/serving-endpoints/{endpoint}/served-models/feedback/invocations",
@@ -248,5 +258,7 @@ def submit_feedback(endpoint, request_id, rating):
 
 def endpoint_supports_feedback(endpoint_name):
     w = WorkspaceClient()
+    # For OBO-user authentication, use the line below instead of the line above (STEP 4 of 4)
+    w = WorkspaceClient(token=user_access_token, auth_type="pat")
     endpoint = w.serving_endpoints.get(endpoint_name)
     return "feedback" in [entity.name for entity in endpoint.config.served_entities]

@@ -9,3 +9,4 @@ env:
     value: "false"
   - name: "SERVING_ENDPOINT"
     valueFrom: "serving-endpoint"
+    # value: "<enter your serving endpoint name here>"

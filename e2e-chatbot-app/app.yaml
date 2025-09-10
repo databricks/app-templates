@@ -7,6 +7,8 @@ command: [
 env:
   - name: STREAMLIT_BROWSER_GATHER_USAGE_STATS
     value: "false"
+  - name: "OBO_ENABLED"
+    value: False
   - name: "SERVING_ENDPOINT"
     valueFrom: "serving-endpoint"
-    # value: "<enter your serving endpoint name here>"
+    # value: "<if OBO-user, comment out above line, uncomment this, and enter your serving endpoint name here>"

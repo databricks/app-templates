@@ -34,7 +34,21 @@ def _query_endpoint(endpoint_name: str, messages: list[dict[str, str]], max_toke
     if "messages" in res:
         return res["messages"]
     elif "choices" in res:
-        return [res["choices"][0]["message"]]
+        choice_message = res["choices"][0]["message"]
+        choice_content = choice_message.get("content")
+        
+        # Case 1: The content is a list of structured objects
+        if isinstance(choice_content, list):
+            combined_content = "".join([part.get("text", "") for part in choice_content if part.get("type") == "text"])
+            reformatted_message = {
+                "role": choice_message.get("role"),
+                "content": combined_content
+            }
+            return [reformatted_message]
+        
+        # Case 2: The content is a simple string
+        elif isinstance(choice_content, str):
+            return [choice_message]
     raise Exception("This app can only run against:"
                     "1) Databricks foundation model or external model endpoints with the chat task type (described in https://docs.databricks.com/aws/en/machine-learning/model-serving/score-foundation-models#chat-completion-model-query)"
                     "2) Databricks agent serving endpoints that implement the conversational agent schema documented "

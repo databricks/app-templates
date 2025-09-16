@@ -137,7 +137,22 @@ def _query_chat_endpoint(endpoint_name, messages, return_traces):
     if "messages" in res:
         return res["messages"], request_id
     elif "choices" in res:
-        return [res["choices"][0]["message"]], request_id
+        choice_message = res["choices"][0]["message"]
+        choice_content = choice_message.get("content")
+        
+        # Case 1: The content is a list of structured objects
+        if isinstance(choice_content, list):
+            combined_content = "".join([part.get("text", "") for part in choice_content if part.get("type") == "text"])
+            reformatted_message = {
+                "role": choice_message.get("role"),
+                "content": combined_content
+            }
+            return [reformatted_message], request_id
+        
+        # Case 2: The content is a simple string
+        elif isinstance(choice_content, str):
+            return [choice_message], request_id
+
     _throw_unexpected_endpoint_format()
 
 def _query_responses_endpoint(endpoint_name, messages, return_traces):

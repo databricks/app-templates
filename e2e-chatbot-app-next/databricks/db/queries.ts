@@ -93,7 +93,6 @@ export async function getUserFromHeaders(request: Request): Promise<User> {
 
   let userIdentifier: string;
   let userEmail: string;
-
   if (forwardedUser) {
     // Databricks Apps environment - use forwarded headers
     userIdentifier = forwardedUser;

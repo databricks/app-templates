@@ -1,0 +1,60 @@
+bundle:
+  name: databricks-chatbot
+
+variables:
+  serving_endpoint_name:
+    description: "Name of the model serving endpoint to be used by the app"
+#    default: "..." # TODO: specify a default value here to avoid needing to specify it on each deployment
+
+  database_instance_name:
+    description: "Name of the Lakebase database instance"
+    default: "chatbot-lakebase-${bundle.target}"
+
+resources:
+  database_instances:
+    chatbot_lakebase:
+      name: ${var.database_instance_name}
+      capacity: CU_1
+      enable_pg_native_login: true
+
+  database_catalogs:
+    chatbot_catalog:
+      database_instance_name: ${resources.database_instances.chatbot_lakebase.name}
+      name: chatbot_catalog_${bundle.target}
+      database_name: databricks_postgres
+      create_database_if_not_exists: true
+
+  apps:
+    databricks_chatbot:
+      name: db-chatbot-smurching-${bundle.target}
+      description: "Chatbot UI for Agent Bricks and custom code agents"
+      source_code_path: .
+      resources:
+        - name: serving-endpoint
+          description: "Databricks serving endpoint name for the AI agent"
+          serving_endpoint:
+            name: ${var.serving_endpoint_name}
+            permission: CAN_QUERY
+        - name: database
+          description: "Databricks serving endpoint name for the AI agent"
+          database:
+            database_name: databricks_postgres
+            instance_name: ${resources.database_instances.chatbot_lakebase.name}
+            permission: CAN_CONNECT_AND_CREATE
+
+targets:
+  dev:
+    mode: development
+    default: true
+    variables:
+      database_instance_name: "chatbot-lakebase-dev"
+
+  staging:
+    mode: production
+    variables:
+      database_instance_name: "chatbot-lakebase-staging"
+
+  prod:
+    mode: production
+    variables:
+      database_instance_name: "chatbot-lakebase-prod"

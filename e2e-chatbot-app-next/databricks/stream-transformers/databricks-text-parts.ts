@@ -8,6 +8,9 @@ export const applyDatabricksTextPartTransform: DatabricksStreamPartTransformer<
 
   for (const incoming of parts) {
     if (isRawAssistantMessagePart(incoming)) {
+      if (last?.type === 'text-delta') {
+        out.push({ type: 'text-end', id: last.id });
+      }
       out.push(
         { type: 'text-start', id: incoming.rawValue.item.id },
         rawAssistantMessagePartToTextPart(incoming),

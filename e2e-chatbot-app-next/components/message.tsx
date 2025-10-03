@@ -1,7 +1,7 @@
 'use client';
 import { motion } from 'framer-motion';
 import React, { memo, useState } from 'react';
-import { SparklesIcon } from './icons';
+import { AnimatedAssistantIcon } from './animation-assistant-icon';
 import { Response } from './elements/response';
 import { MessageContent } from './elements/message';
 import {
@@ -77,9 +77,7 @@ const PurePreviewMessage = ({
         })}
       >
         {message.role === 'assistant' && (
-          <div className="-mt-1 flex size-8 shrink-0 items-center justify-center rounded-full bg-background ring-1 ring-border">
-            <SparklesIcon size={14} />
-          </div>
+          <AnimatedAssistantIcon size={14} isLoading={isLoading} />
         )}
 
         <div
@@ -277,9 +275,7 @@ export const ThinkingMessage = () => {
       data-role={role}
     >
       <div className="flex items-start justify-start gap-3">
-        <div className="-mt-1 flex size-8 shrink-0 items-center justify-center rounded-full bg-background ring-1 ring-border">
-          <SparklesIcon size={14} />
-        </div>
+        <AnimatedAssistantIcon size={14} isLoading={true} />
 
         <div className="flex w-full flex-col gap-2 md:gap-4">
           <div className="p-0 text-muted-foreground text-sm">

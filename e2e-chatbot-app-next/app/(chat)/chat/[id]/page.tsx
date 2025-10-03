@@ -3,18 +3,14 @@ import { notFound } from 'next/navigation';
 
 import { getAuthSessionFromHeaders } from '@/databricks/auth/databricks-auth';
 import { Chat } from '@/components/chat';
-import { getChatById, getMessagesByChatId } from '@/databricks/db/queries';
+import { getMessagesByChatId } from '@/databricks/db/queries';
 import { DEFAULT_CHAT_MODEL } from '@/lib/ai/models';
 import { convertToUIMessages } from '@/lib/utils';
+import { checkChatAccess } from '@/lib/chat-acl';
 
 export default async function Page(props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const { id } = params;
-  const chat = await getChatById({ id });
-
-  if (!chat) {
-    notFound();
-  }
 
   const headersList = await headers();
   const session = await getAuthSessionFromHeaders(headersList);
@@ -23,14 +19,10 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
     return notFound(); // No redirect to guest auth in Databricks-only mode
   }
 
-  if (chat.visibility === 'private') {
-    if (!session.user) {
-      return notFound();
-    }
+  const { allowed, chat } = await checkChatAccess(id, session.user.id);
 
-    if (session.user.id !== chat.userId) {
-      return notFound();
-    }
+  if (!allowed || !chat) {
+    return notFound();
   }
 
   const messagesFromDb = await getMessagesByChatId({

@@ -15,7 +15,6 @@ resources:
     chatbot_lakebase:
       name: ${var.database_instance_name}
       capacity: CU_1
-      enable_pg_native_login: true
 
   database_catalogs:
     chatbot_catalog:

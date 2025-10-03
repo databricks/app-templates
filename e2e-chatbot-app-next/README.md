@@ -41,30 +41,28 @@ but has some [known limitations](#known-limitations) for other use cases. Work i
 
 This project includes a [Databricks Asset Bundle (DAB)](https://docs.databricks.com/aws/en/dev-tools/bundles/apps-tutorial) configuration that simplifies deployment by automatically creating and managing all required resources.
 
-Note: you can specify the value of `serving_endpoint_name` (the name of the custom code agent or Agent Bricks endpoint to chat with) 
-in `databricks.yml` to avoid needing to specify it in the commands below.
-
 1. **Databricks authentication**: Ensure auth is configured as described in [Prerequisites](#prerequisites).
-2. **Validate the bundle configuration**:
+2. **Configure the app to use your serving endpoint**: In `databricks.yml`, set the default value of `serving_endpoint_name` to the name of the custom code agent or Agent Bricks endpoint to chat with.
+3. **Validate the bundle configuration**:
    ```bash
-   databricks bundle validate --var serving_endpoint_name="your-serving-endpoint-name"
+   databricks bundle validate
    ```
 
-2. **Deploy the bundle** (creates Lakebase instance, database catalog, and app):
+4. **Deploy the bundle** (creates Lakebase instance, database catalog, and app):
    ```bash
-   databricks bundle deploy --var serving_endpoint_name="your-serving-endpoint-name"
+   databricks bundle deploy
    ```
 
    This creates:
    - **Lakebase database instance** for persisting chat history
    - **App resource** ready to start
 
-3. **Start the app**:
+5. **Start the app**:
    ```bash
    databricks bundle run databricks_chatbot
    ```
 
-4. **View deployment summary** (useful for debugging deployment issues):
+6. **View deployment summary** (useful for debugging deployment issues):
    ```bash
    databricks bundle summary
    ```
@@ -119,8 +117,10 @@ so that both you and your app service principal can connect to the database, wit
   the `ai_chatbot` schema. If you'd like to share a database instance across chatbot apps (using different schemas to isolate the chat apps),
   update references to the `ai_chatbot` schema in the codebase, rerun `npm run db:generate` to regenerate database migrations, and then
   redeploy the app.
-* Limited support for surfacing internal errors during agent execution to users, while generating streaming and non-streaming agent output 
-* No support for custom_inputs/custom_outputs
-* No support for image/multi-modal inputs
-* We assume one database per app (can’t share a database across apps without creating a new schema in the database)
+* Limited support for surfacing internal errors during agent execution to users 
+* No support for image or other multi-modal inputs
 * The most common and officially recommended authentication methods for Databricks are supported: Databricks CLI auth for local development, and Databricks service principal auth for deployed apps. Other authentication mechanisms (PAT, Azure MSI, etc) are not currently supported.
+* We create one database per app, because the app code targets a fixed `ai_chatbot` schema within the database instance. To host multiple apps out of the same instance, you can:
+    * Update references to `ai_chatbot` in the codebase to your new desired schema name
+    * Run `npm run db:generate` to regenerate database migrations
+    * Deploy your app

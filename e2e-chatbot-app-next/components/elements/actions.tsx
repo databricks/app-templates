@@ -21,6 +21,7 @@ export const Actions = ({ className, children, ...props }: ActionsProps) => (
 type ActionProps = ComponentProps<typeof Button> & {
   tooltip?: string;
   label?: string;
+  iconOnly?: boolean;
 };
 
 export const Action = ({
@@ -30,12 +31,14 @@ export const Action = ({
   className,
   variant = 'ghost',
   size = 'sm',
+  iconOnly = true,
   ...props
 }: ActionProps) => {
   const button = (
     <Button
       className={cn(
-        'relative size-9 p-1.5 text-muted-foreground hover:text-foreground',
+        'relative text-muted-foreground hover:text-foreground',
+        iconOnly ? 'size-9 p-1.5' : 'h-9 px-2.5',
         className,
       )}
       size={size}

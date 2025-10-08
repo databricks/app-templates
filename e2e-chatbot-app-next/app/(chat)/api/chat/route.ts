@@ -1,5 +1,7 @@
 import {
   convertToModelMessages,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
   type LanguageModelUsage,
   streamText,
 } from 'ai';
@@ -130,11 +132,44 @@ export async function POST(request: Request) {
       },
     });
 
-    return result.toUIMessageStreamResponse({
-      originalMessages: uiMessages,
-      generateMessageId: generateUUID,
-      sendReasoning: true,
-      sendSources: true,
+    /**
+     * We manually create the stream to have access to the stream writer.
+     * This allows us to inject custom stream parts like data-error.
+     * */
+    const stream = createUIMessageStream({
+      execute: async ({ writer }) => {
+        writer.merge(
+          result.toUIMessageStream({
+            originalMessages: uiMessages,
+            generateMessageId: generateUUID,
+            sendReasoning: true,
+            sendSources: true,
+            onError: (error) => {
+              console.error('Stream error:', error);
+              console.error(
+                'Stack trace:',
+                error instanceof Error ? error.stack : 'No stack',
+              );
+
+              const errorMessage =
+                error instanceof Error
+                  ? error.message
+                  : 'Oops, an error occurred!';
+
+              /**
+               * We write the error to the stream so we can display it to the user
+               * and also persist it as part of the stored message.
+               */
+              writer.write({
+                type: 'data-error',
+                data: errorMessage,
+              });
+
+              return errorMessage;
+            },
+          }),
+        );
+      },
       onFinish: async ({ responseMessage }) => {
         console.log(
           'Finished message stream! Saving message...',
@@ -166,15 +201,10 @@ export async function POST(request: Request) {
 
         streamCache.clearActiveStream(id);
       },
-      onError: (error) => {
-        console.error('Stream error:', error);
-        console.error(
-          'Stack trace:',
-          error instanceof Error ? error.stack : 'No stack',
-        );
+    });
 
-        return 'Oops, an error occurred!';
-      },
+    return createUIMessageStreamResponse({
+      stream,
       consumeSseStream({ stream }) {
         streamCache.storeStream({
           streamId,

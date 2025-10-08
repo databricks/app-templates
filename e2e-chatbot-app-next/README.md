@@ -41,14 +41,19 @@ but has some [known limitations](#known-limitations) for other use cases. Work i
 
 This project includes a [Databricks Asset Bundle (DAB)](https://docs.databricks.com/aws/en/dev-tools/bundles/apps-tutorial) configuration that simplifies deployment by automatically creating and managing all required resources.
 
-1. **Databricks authentication**: Ensure auth is configured as described in [Prerequisites](#prerequisites).
-2. **Configure the app to use your serving endpoint**: In `databricks.yml`, set the default value of `serving_endpoint_name` to the name of the custom code agent or Agent Bricks endpoint to chat with.
+1. **Clone the repo**:
+   ```bash
+   git clone https://github.com/databricks/app-templates
+   cd e2e-chatbot-app-next
+   ```
+2. **Databricks authentication**: Ensure auth is configured as described in [Prerequisites](#prerequisites).
+2. **Specify serving endpoint**: In `databricks.yml`, set the default value of `serving_endpoint_name` to the name of the custom code agent or Agent Bricks endpoint to chat with.
 3. **Validate the bundle configuration**:
    ```bash
    databricks bundle validate
    ```
 
-4. **Deploy the bundle** (creates Lakebase instance, database catalog, and app):
+4. **Deploy the bundle** (creates Lakebase instance, database catalog, and app). The first deployment may take several minutes for provisioning resources, but subsequent deployments are fast:
    ```bash
    databricks bundle deploy
    ```
@@ -111,16 +116,12 @@ so that both you and your app service principal can connect to the database, wit
 
 ## Known limitations
 * This chat app only supports the following Databricks serving endpoint types (Foundation Model API endpoints are not supported):
-  * Custom code agents that implement the ResponsesAgent interface and support streaming output via `predict_stream`. This covers any agent built following the [recommended approach](https://docs.databricks.com/aws/en/generative-ai/agent-framework/author-agent) for authoring agents.
-  * Agent Bricks endpoints
-* When deployed, the chat app assumes it has access to an isolated database instance, and in particular that it is the owner of
-  the `ai_chatbot` schema. If you'd like to share a database instance across chatbot apps (using different schemas to isolate the chat apps),
-  update references to the `ai_chatbot` schema in the codebase, rerun `npm run db:generate` to regenerate database migrations, and then
-  redeploy the app.
-* Limited support for surfacing internal errors during agent execution to users 
+  * [Custom code agents](https://docs.databricks.com/aws/en/generative-ai/agent-framework/author-agent) deployed via Agent Framework, and which implement the ResponsesAgent interface and support streaming output via `predict_stream`. This covers any agent built following the [recommended approach](https://docs.databricks.com/aws/en/generative-ai/agent-framework/author-agent) for authoring agents.
+  * [Agent Bricks endpoints](https://docs.databricks.com/aws/en/generative-ai/agent-bricks/)
 * No support for image or other multi-modal inputs
 * The most common and officially recommended authentication methods for Databricks are supported: Databricks CLI auth for local development, and Databricks service principal auth for deployed apps. Other authentication mechanisms (PAT, Azure MSI, etc) are not currently supported.
 * We create one database per app, because the app code targets a fixed `ai_chatbot` schema within the database instance. To host multiple apps out of the same instance, you can:
-    * Update references to `ai_chatbot` in the codebase to your new desired schema name
+    * Update the database instance name in `databricks.yml`
+    * Update references to `ai_chatbot` in the codebase to your new desired schema name within the existing database instance
     * Run `npm run db:generate` to regenerate database migrations
     * Deploy your app

@@ -4,7 +4,7 @@ bundle:
 variables:
   serving_endpoint_name:
     description: "Name of the model serving endpoint to be used by the app"
-    default: "agents_sidmurching_catalog-default-test_chat_app_agent" # TODO: specify a default value here to avoid needing to specify it on each deployment
+    default: "..." # TODO: specify a default value here to avoid needing to specify it on each deployment
   database_instance_name:
     description: "Base name of the Lakebase database instance"
     default: "chatbot-lakebase"

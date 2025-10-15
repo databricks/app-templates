@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Secure Databricks Query Tool</title>
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <nav class="navbar">
+            <div class="nav-brand">
+                <a href="{{ url_for('index') }}">Secure App</a>
+            </div>
+        </nav>
+    </header>
+    
+    <main class="container">
+        <div class="hero">
+            <h1>Secure Databricks Query Tool</h1>
+            <div class="user-info">
+                <h2>Welcome, {{ user | e }}!</h2>
+                {% if user_token %}
+                <p><strong>User Token:</strong> <span class="token-display">Available</span></p>
+                {% else %}
+                <p><strong>User Token:</strong> <span class="token-missing">Not available</span></p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="query-section">
+            <h2>Execute SQL Query</h2>
+            <p class="query-preview">Query: <code>SELECT * FROM samples.nyctaxi.trips WHERE pickup_zip = <span id="zip-preview">'value'</span> LIMIT 10</code></p>
+            
+            {% if error_message %}
+            <div class="error-message">
+                <h3>Error</h3>
+                <p><strong>{{ error_message | e }}</strong></p>
+            </div>
+            {% endif %}
+
+            {% if query_info %}
+            <div class="query-info">
+                <h3>Query Execution Results</h3>
+                <p><strong>Query:</strong> <code>{{ query_info.query | e }}</code></p>
+                <p><strong>Status:</strong> <span class="status-success">{{ query_info.status | e }}</span></p>
+                <p><strong>Rows Returned:</strong> {{ query_info.result_count | e }}</p>
+                
+                {% if not query_info.has_data %}
+                <div class="no-data-message">
+                    <p><strong>No data found.</strong> This could mean:</p>
+                    <ul>
+                        <li>No trips found with the specified pickup ZIP code</li>
+                        <li>You don't have permission to access this data</li>
+                        <li>The user token doesn't have sufficient privileges</li>
+                    </ul>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+            
+            <form method="POST" class="secure-form" id="query-form">
+                <div class="form-group">
+                    <label for="pickup_zip">Pickup ZIP Code:</label>
+                    <input type="text" 
+                           id="pickup_zip" 
+                           name="pickup_zip" 
+                           placeholder="e.g., 10001" 
+                           value="{{ request.form.get('pickup_zip', '') | e }}" 
+                           maxlength="100"
+                           autocomplete="off"
+                           spellcheck="false"
+                           required>
+                    <small>Query NYC taxi trips by pickup ZIP code (safely parameterized)</small>
+                </div>
+                
+                <button type="submit" class="btn-primary" {% if not user_token %}disabled{% endif %}>
+                    {% if user_token %}Execute Query{% else %}User Token Required{% endif %}
+                </button>
+            </form>
+        </div>
+
+        {% if parsed_data and parsed_data.has_data %}
+        <div class="results-section">
+            <h2>Query Results ({{ parsed_data.row_count | e }} rows)</h2>
+            <div class="results-container">
+                <table class="results-table">
+                    <thead>
+                        <tr>
+                            {% for column in parsed_data.columns %}
+                            <th>{{ column | e }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in parsed_data.rows %}
+                        <tr>
+                            {% for cell in row %}
+                            <td>{{ cell | e }}</td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+    </main>
+    
+    <footer>
+        <p>&copy; 2025 Secure Databricks App</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

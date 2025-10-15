@@ -1,0 +1,8 @@
+display_name: "Secure_Flask_App"
+env:
+  - name: "SERVER_PORT"
+    value: "8000"
+  - name: "DATABRICKS_WAREHOUSE_ID"
+    valueFrom: "sql-warehouse"
+  - name: "SQL_AUTHORIZED_USERS"
+    value: "sql_user1@email.com,sql_user2@email.com"

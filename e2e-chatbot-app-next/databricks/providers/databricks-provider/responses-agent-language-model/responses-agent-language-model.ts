@@ -115,7 +115,6 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
             },
 
             transform(chunk, controller) {
-              console.log('chunk', chunk);
               if (options.includeRawChunks) {
                 controller.enqueue({ type: 'raw', rawValue: chunk.rawValue });
               }

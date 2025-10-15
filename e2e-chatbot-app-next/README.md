@@ -115,9 +115,6 @@ so that both you and your app service principal can connect to the database, wit
    The app starts on [localhost:3000](http://localhost:3000)
 
 ## Known limitations
-* This chat app only supports the following Databricks serving endpoint types (Foundation Model API endpoints are not supported):
-  * [Custom code agents](https://docs.databricks.com/aws/en/generative-ai/agent-framework/author-agent) deployed via Agent Framework, and which implement the ResponsesAgent interface and support streaming output via `predict_stream`. This covers any agent built following the [recommended approach](https://docs.databricks.com/aws/en/generative-ai/agent-framework/author-agent) for authoring agents.
-  * [Agent Bricks endpoints](https://docs.databricks.com/aws/en/generative-ai/agent-bricks/)
 * No support for image or other multi-modal inputs
 * The most common and officially recommended authentication methods for Databricks are supported: Databricks CLI auth for local development, and Databricks service principal auth for deployed apps. Other authentication mechanisms (PAT, Azure MSI, etc) are not currently supported.
 * We create one database per app, because the app code targets a fixed `ai_chatbot` schema within the database instance. To host multiple apps out of the same instance, you can:

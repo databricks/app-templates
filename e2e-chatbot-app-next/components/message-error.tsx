@@ -1,6 +1,6 @@
 'use client';
 import { motion } from 'framer-motion';
-import { WarningIcon } from './icons';
+import { TriangleAlert } from 'lucide-react';
 
 export const MessageError = ({ error }: { error: string }) => {
   // Attempt to parse and format JSON error messages
@@ -31,7 +31,7 @@ export const MessageError = ({ error }: { error: string }) => {
     >
       <div className="flex w-fit items-center gap-1.5 rounded-t-md border border-destructive/20 border-b-0 bg-destructive/5 px-2.5 py-1.5">
         <div className="text-destructive">
-          <WarningIcon size={14} />
+          <TriangleAlert size={14} />
         </div>
         <span className="font-medium text-destructive text-xs">Error</span>
       </div>

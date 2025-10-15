@@ -30,7 +30,7 @@ import type { VisibilityType } from '@/components/visibility-selector';
 import {
   DATABRICKS_TOOL_CALL_ID,
   DATABRICKS_TOOL_DEFINITION,
-} from '@/databricks/stream-transformers/databricks-tool-calling';
+} from '@/databricks/providers/databricks-provider/databricks-tool-calling';
 import { streamCache } from '@/lib/stream-cache';
 
 export const maxDuration = 60;
@@ -126,7 +126,6 @@ export async function POST(request: Request) {
         finalUsage = usage;
       },
       // We use raw chunks to pick the tool results out of the stream
-      includeRawChunks: true,
       tools: {
         [DATABRICKS_TOOL_CALL_ID]: DATABRICKS_TOOL_DEFINITION,
       },

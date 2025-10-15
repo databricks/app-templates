@@ -48,14 +48,6 @@ export class ChatPage {
     await response.finished();
   }
 
-  async isVoteComplete() {
-    const response = await this.page.waitForResponse((response) =>
-      response.url().includes('/api/vote'),
-    );
-
-    await response.finished();
-  }
-
   async hasChatIdInUrl() {
     await expect(this.page).toHaveURL(
       /^http:\/\/localhost:3000\/chat\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
@@ -64,7 +56,7 @@ export class ChatPage {
 
   async sendUserMessageFromSuggestion() {
     await this.page
-      .getByRole('button', { name: 'What are the advantages of' })
+      .getByRole('button', { name: 'How can you help me?' })
       .click();
   }
 

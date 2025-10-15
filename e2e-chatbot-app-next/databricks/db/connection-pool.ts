@@ -43,20 +43,6 @@ async function getConnection(): Promise<postgres.Sql> {
   return sqlConnection;
 }
 
-// Helper function to detect token expiry errors
-function isTokenExpiryError(error: unknown): boolean {
-  if (error instanceof Error) {
-    const message = error.message.toLowerCase();
-    return (
-      message.includes('invalid authorization') ||
-      message.includes('databricks token') ||
-      message.includes('authentication failed') ||
-      message.includes('28p01')
-    ); // PostgreSQL auth error code
-  }
-  return false;
-}
-
 // Export a function to get the Drizzle instance with fresh connection
 export async function getDb() {
   const sql = await getConnection();

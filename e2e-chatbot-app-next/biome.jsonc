@@ -58,6 +58,7 @@
         "noBannedTypes": "off"
       },
       "correctness": {
+        "noUnusedVariables": "warn",
         "noUnusedImports": "warn", // Not in recommended ruleset, turning on manually
         "useArrayLiterals": "warn", // Not in recommended ruleset, turning on manually
         "noNewSymbol": "warn", // Not in recommended ruleset, turning on manually

@@ -3,7 +3,7 @@ import 'server-only';
 import { getChatById } from '@/databricks/db/queries';
 import type { Chat } from '@/databricks/db/schema';
 
-export interface ChatAccessResult {
+interface ChatAccessResult {
   allowed: boolean;
   chat: Chat | null;
   reason?: 'not_found' | 'private_chat' | 'forbidden';
@@ -40,7 +40,9 @@ export async function checkChatAccess(
 
   // Private chats are only accessible to the owner
   if (chat.visibility === 'private') {
-    console.log(`checking chat user ID vs user ID. chat user ID: ${chat.userId}, user ID: ${userId}`);
+    console.log(
+      `checking chat user ID vs user ID. chat user ID: ${chat.userId}, user ID: ${userId}`,
+    );
     if (chat.userId !== userId) {
       return {
         allowed: false,

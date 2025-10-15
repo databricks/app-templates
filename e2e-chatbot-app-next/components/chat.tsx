@@ -26,8 +26,6 @@ export function Chat({
   initialChatModel,
   initialVisibilityType,
   isReadonly,
-  session,
-  autoResume,
   initialLastContext,
 }: {
   id: string;
@@ -36,7 +34,6 @@ export function Chat({
   initialVisibilityType: VisibilityType;
   isReadonly: boolean;
   session: AuthSession;
-  autoResume: boolean;
   initialLastContext?: LanguageModelUsage;
 }) {
   const { visibilityType } = useChatVisibility({
@@ -48,7 +45,7 @@ export function Chat({
   const { setDataStream } = useDataStream();
 
   const [input, setInput] = useState<string>('');
-  const [usage, setUsage] = useState<LanguageModelUsage | undefined>(
+  const [_usage, setUsage] = useState<LanguageModelUsage | undefined>(
     initialLastContext,
   );
 
@@ -190,12 +187,7 @@ export function Chat({
   return (
     <>
       <div className="overscroll-behavior-contain flex h-dvh min-w-0 touch-pan-y flex-col bg-background">
-        <ChatHeader
-          chatId={id}
-          selectedVisibilityType={initialVisibilityType}
-          isReadonly={isReadonly}
-          session={session}
-        />
+        <ChatHeader />
 
         <Messages
           chatId={id}
@@ -221,8 +213,6 @@ export function Chat({
               setMessages={setMessages}
               sendMessage={sendMessage}
               selectedVisibilityType={visibilityType}
-              selectedModelId={initialChatModel}
-              usage={usage}
             />
           )}
         </div>

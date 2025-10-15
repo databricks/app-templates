@@ -13,11 +13,7 @@ interface SuggestedActionsProps {
   selectedVisibilityType: VisibilityType;
 }
 
-function PureSuggestedActions({
-  chatId,
-  sendMessage,
-  selectedVisibilityType,
-}: SuggestedActionsProps) {
+function PureSuggestedActions({ chatId, sendMessage }: SuggestedActionsProps) {
   const suggestedActions = [
     'How can you help me?',
     'Tell me something I might not know',

@@ -4,7 +4,6 @@
 import {
   getDatabricksToken,
   getAuthMethodDescription,
-  isAuthAvailable,
   getDatabaseUsername,
 } from '@/databricks/auth/databricks-auth';
 import {
@@ -23,7 +22,7 @@ export { getSchemaName, isDatabaseAvailable };
  * Build PostgreSQL connection URL, supporting both POSTGRES_URL and PG* variables
  * with either OAuth (service principal) or PAT-based database credentials
  */
-export async function getConnectionUrl(instanceName?: string): Promise<string> {
+export async function getConnectionUrl(): Promise<string> {
   // Option 1: Use POSTGRES_URL if provided
   const postgresUrl = getPostgresUrlFromEnv();
   if (postgresUrl) {

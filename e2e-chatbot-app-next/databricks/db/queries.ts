@@ -158,7 +158,7 @@ export async function deleteChatById({ id }: { id: string }) {
       .where(eq(chat.id, id))
       .returning();
     return chatsDeleted;
-  } catch (error) {
+  } catch (_error) {
     throw new ChatSDKError(
       'bad_request:database',
       'Failed to delete chat by id',
@@ -286,7 +286,7 @@ export async function getChatById({ id }: { id: string }) {
     }
 
     return selectedChat;
-  } catch (error) {
+  } catch (_error) {
     throw new ChatSDKError('bad_request:database', 'Failed to get chat by id');
   }
 }
@@ -298,7 +298,7 @@ export async function saveMessages({
 }) {
   try {
     return await (await ensureDb()).insert(message).values(messages);
-  } catch (error) {
+  } catch (_error) {
     throw new ChatSDKError('bad_request:database', 'Failed to save messages');
   }
 }
@@ -310,7 +310,7 @@ export async function getMessagesByChatId({ id }: { id: string }) {
       .from(message)
       .where(eq(message.chatId, id))
       .orderBy(asc(message.createdAt));
-  } catch (error) {
+  } catch (_error) {
     throw new ChatSDKError(
       'bad_request:database',
       'Failed to get messages by chat id',
@@ -324,7 +324,7 @@ export async function getMessageById({ id }: { id: string }) {
       .select()
       .from(message)
       .where(eq(message.id, id));
-  } catch (error) {
+  } catch (_error) {
     throw new ChatSDKError(
       'bad_request:database',
       'Failed to get message by id',
@@ -356,7 +356,7 @@ export async function deleteMessagesByChatIdAfterTimestamp({
           and(eq(message.chatId, chatId), inArray(message.id, messageIds)),
         );
     }
-  } catch (error) {
+  } catch (_error) {
     throw new ChatSDKError(
       'bad_request:database',
       'Failed to delete messages by chat id after timestamp',
@@ -376,7 +376,7 @@ export async function updateChatVisiblityById({
       .update(chat)
       .set({ visibility })
       .where(eq(chat.id, chatId));
-  } catch (error) {
+  } catch (_error) {
     throw new ChatSDKError(
       'bad_request:database',
       'Failed to update chat visibility by id',
@@ -429,7 +429,7 @@ export async function getMessageCountByUserId({
       .execute();
 
     return stats?.count ?? 0;
-  } catch (error) {
+  } catch (_error) {
     throw new ChatSDKError(
       'bad_request:database',
       'Failed to get message count by user id',

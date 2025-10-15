@@ -21,6 +21,21 @@ export async function convertToResponsesInput({
   const input: ResponsesInput = [];
   const warnings: Array<LanguageModelV2CallWarning> = [];
 
+  // Map tool call results to a map by tool call id so we can insert them into the input in the correct order,
+  // right after the tool call that produced them.
+  const toolCallResultsByToolCallId = prompt
+    .filter((p) => p.role === 'tool')
+    .flatMap((p) => p.content)
+    .reduce(
+      (reduction, toolCallResult) => {
+        if (toolCallResult.type === 'tool-result') {
+          reduction[toolCallResult.toolCallId] = toolCallResult;
+        }
+        return reduction;
+      },
+      {} as Record<string, LanguageModelV2ToolResultPart>,
+    );
+
   for (const { role, content } of prompt) {
     switch (role) {
       case 'system': {
@@ -68,14 +83,18 @@ export async function convertToResponsesInput({
 
       case 'assistant':
         for (const part of content) {
+          const providerOptions = await parseProviderOptions({
+            provider: 'databricks',
+            providerOptions: part.providerOptions,
+            schema: ProviderOptionsSchema,
+          });
+          const itemId = providerOptions?.itemId ?? undefined;
           switch (part.type) {
             case 'text': {
               input.push({
                 role: 'assistant',
                 content: [{ type: 'output_text', text: part.text }],
-                id:
-                  (part.providerOptions?.databricks?.itemId as string) ??
-                  undefined,
+                id: itemId,
               });
               break;
             }
@@ -83,12 +102,21 @@ export async function convertToResponsesInput({
               input.push({
                 type: 'function_call',
                 call_id: part.toolCallId,
-                name: part.toolName,
+                name: providerOptions?.toolName ?? part.toolName,
                 arguments: JSON.stringify(part.input),
-                id:
-                  (part.providerOptions?.databricks?.itemId as string) ??
-                  undefined,
+                id: itemId,
               });
+              const toolCallResult =
+                toolCallResultsByToolCallId[part.toolCallId];
+              if (toolCallResult) {
+                input.push({
+                  type: 'function_call_output',
+                  call_id: part.toolCallId,
+                  output: convertToolResultOutputToString(
+                    toolCallResult.output,
+                  ),
+                });
+              }
               break;
             }
 
@@ -102,17 +130,11 @@ export async function convertToResponsesInput({
             }
 
             case 'reasoning': {
-              const providerOptions = await parseProviderOptions({
-                provider: 'databricks',
-                providerOptions: part.providerOptions,
-                schema: ResponsesReasoningProviderOptionsSchema,
-              });
-              const reasoningId = providerOptions?.itemId;
-              if (!reasoningId) break;
+              if (!itemId) break;
               input.push({
                 type: 'reasoning',
                 summary: [{ type: 'summary_text', text: part.text }],
-                id: reasoningId,
+                id: itemId,
               });
               break;
             }
@@ -121,13 +143,8 @@ export async function convertToResponsesInput({
         break;
 
       case 'tool':
-        for (const part of content) {
-          input.push({
-            type: 'function_call_output',
-            call_id: part.toolCallId,
-            output: convertToolResultOutputToString(part.output),
-          });
-        }
+        // Tool call results are already inserted into the input in the correct order,
+        // right after the tool call that produced them.
         break;
 
       default: {
@@ -140,13 +157,12 @@ export async function convertToResponsesInput({
   return { input, warnings };
 }
 
-const ResponsesReasoningProviderOptionsSchema = z.object({
+const ProviderOptionsSchema = z.object({
   itemId: z.string().nullish(),
+  toolName: z.string().nullish(), // for tool-call
 });
 
-export type ResponsesReasoningProviderOptions = z.infer<
-  typeof ResponsesReasoningProviderOptionsSchema
->;
+export type ProviderOptions = z.infer<typeof ProviderOptionsSchema>;
 
 const convertToolResultOutputToString = (
   output: LanguageModelV2ToolResultPart['output'],
@@ -155,9 +171,6 @@ const convertToolResultOutputToString = (
     case 'text':
     case 'error-text':
       return output.value;
-    case 'content':
-    case 'json':
-    case 'error-json':
     default:
       return JSON.stringify(output.value);
   }

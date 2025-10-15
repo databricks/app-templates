@@ -26,7 +26,7 @@ import type { Chat } from '@/databricks/db/schema';
 import { fetcher } from '@/lib/utils';
 import { ChatItem } from './sidebar-history-item';
 import useSWRInfinite from 'swr/infinite';
-import { LoaderIcon } from './icons';
+import { LoaderIcon } from 'lucide-react';
 
 type GroupedChats = {
   today: Chat[];

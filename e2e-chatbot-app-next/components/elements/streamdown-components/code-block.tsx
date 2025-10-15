@@ -235,7 +235,6 @@ export const CodeBlock = ({
           <div className="min-w-full">
             <div
               className={cn('overflow-x-auto dark:hidden', className)}
-              // biome-ignore lint/security/noDangerouslySetInnerHtml: "this is needed."
               dangerouslySetInnerHTML={{ __html: html }}
               data-code-block
               data-language={language}
@@ -243,7 +242,6 @@ export const CodeBlock = ({
             />
             <div
               className={cn('hidden overflow-x-auto dark:block', className)}
-              // biome-ignore lint/security/noDangerouslySetInnerHtml: "this is needed."
               dangerouslySetInnerHTML={{ __html: darkHtml }}
               data-code-block
               data-language={language}

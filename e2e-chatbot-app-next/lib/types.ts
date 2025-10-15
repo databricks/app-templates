@@ -4,7 +4,7 @@ import type { InferUITool, LanguageModelUsage, UIMessage } from 'ai';
 import type {
   DATABRICKS_TOOL_CALL_ID,
   DATABRICKS_TOOL_DEFINITION,
-} from '../databricks/stream-transformers/databricks-tool-calling';
+} from '@/databricks/providers/databricks-provider/databricks-tool-calling';
 
 const messageMetadataSchema = z.object({
   createdAt: z.string(),

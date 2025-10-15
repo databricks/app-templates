@@ -134,7 +134,7 @@ export class StreamCache {
  */
 export const streamCache = globalThis.streamCache;
 
-export interface CacheableStream<T> {
+interface CacheableStream<T> {
   readonly chunks: readonly T[];
   read({ cursor }: { cursor?: number }): AsyncIterableIterator<T>;
   close(): void;
@@ -247,7 +247,7 @@ function makeCacheableStream<T>({
  * it honours back‑pressure, closes when the cache finishes, and aborts the
  * cache when the consumer cancels.
  */
-export function cacheableToReadable<T>(
+function cacheableToReadable<T>(
   cache: CacheableStream<T>,
   { cursor }: { cursor?: number } = {},
 ): ReadableStream<T> {

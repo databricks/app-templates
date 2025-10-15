@@ -1,11 +1,10 @@
 import { useCopyToClipboard } from 'usehooks-ts';
 
-import { CopyIcon, PencilEditIcon } from './icons';
 import { Actions, Action } from './elements/actions';
 import { memo } from 'react';
 import { toast } from 'sonner';
 import type { ChatMessage } from '@/lib/types';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, CopyIcon, PencilLineIcon } from 'lucide-react';
 
 function PureMessageActions({
   message,
@@ -52,8 +51,9 @@ function PureMessageActions({
               tooltip="Edit"
               onClick={() => setMode('edit')}
               className="-left-10 absolute top-0 opacity-0 transition-opacity group-hover/message:opacity-100"
+              data-testid="message-edit-button"
             >
-              <PencilEditIcon />
+              <PencilLineIcon />
             </Action>
           )}
           <Action tooltip="Copy" onClick={handleCopy}>

@@ -1,19 +1,19 @@
 import { expect as baseExpect, test as baseTest } from '@playwright/test';
 import { createAuthenticatedContext, type UserContext } from './helpers';
-import { getUnixTime } from 'date-fns';
 
-interface Fixtures {
-  adaContext: UserContext;
-  babbageContext: UserContext;
-  curieContext: UserContext;
-}
-
-export const test = baseTest.extend<{}, Fixtures>({
+export const test = baseTest.extend<
+  {},
+  {
+    adaContext: UserContext;
+    babbageContext: UserContext;
+    curieContext: UserContext;
+  }
+>({
   adaContext: [
     async ({ browser }, use, workerInfo) => {
       const ada = await createAuthenticatedContext({
         browser,
-        name: `ada-${workerInfo.workerIndex}-${getUnixTime(new Date())}`,
+        name: `ada-${workerInfo.workerIndex}`,
       });
 
       await use(ada);
@@ -25,7 +25,7 @@ export const test = baseTest.extend<{}, Fixtures>({
     async ({ browser }, use, workerInfo) => {
       const babbage = await createAuthenticatedContext({
         browser,
-        name: `babbage-${workerInfo.workerIndex}-${getUnixTime(new Date())}`,
+        name: `babbage-${workerInfo.workerIndex}`,
       });
 
       await use(babbage);
@@ -37,8 +37,7 @@ export const test = baseTest.extend<{}, Fixtures>({
     async ({ browser }, use, workerInfo) => {
       const curie = await createAuthenticatedContext({
         browser,
-        name: `curie-${workerInfo.workerIndex}-${getUnixTime(new Date())}`,
-        chatModel: 'chat-model-reasoning',
+        name: `curie-${workerInfo.workerIndex}`,
       });
 
       await use(curie);

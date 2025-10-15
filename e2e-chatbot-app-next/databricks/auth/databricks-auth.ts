@@ -7,6 +7,7 @@ import 'server-only';
  */
 
 import { getUserFromHeaders } from '@/databricks/db/queries';
+import { isTestEnvironment } from '@/lib/constants';
 import {
   getHostUrl,
   getHostDomain,
@@ -512,6 +513,35 @@ export async function getAuthSession(
   request?: Request,
 ): Promise<AuthSession | null> {
   try {
+    // In test environments, short-circuit auth using forwarded headers or defaults
+    if (isTestEnvironment) {
+      const fwdUser =
+        request?.headers.get('X-Forwarded-User') ?? 'test-user-id';
+      const fwdEmail =
+        request?.headers.get('X-Forwarded-Email') ?? 'test@example.com';
+      const fwdName =
+        request?.headers.get('X-Forwarded-Preferred-Username') ?? 'test-user';
+
+      const mockReq = {
+        headers: new Headers([
+          ['X-Forwarded-User', fwdUser],
+          ['X-Forwarded-Email', fwdEmail],
+          ['X-Forwarded-Preferred-Username', fwdName],
+        ]),
+      } as Request;
+
+      const user = await getUserFromHeaders(mockReq);
+
+      return {
+        user: {
+          id: user.id,
+          email: user.email || fwdEmail,
+          name: fwdName,
+          preferredUsername: fwdName,
+          type: 'regular',
+        },
+      };
+    }
     // Check for Databricks Apps headers (production)
     if (request?.headers.get('X-Forwarded-User')) {
       console.log('[getAuthSession] Using Databricks Apps headers');

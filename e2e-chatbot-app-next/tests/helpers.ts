@@ -1,81 +1,118 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import {
-  type APIRequestContext,
-  type Browser,
-  type BrowserContext,
-  expect,
-  type Page,
+import type {
+  FmapiChunk,
+  FmapiResponse,
+} from '@/databricks/providers/databricks-provider/fmapi-language-model/fmapi-schema';
+import { generateUUID } from '@/lib/utils';
+import type {
+  APIRequestContext,
+  Browser,
+  BrowserContext,
+  Page,
 } from '@playwright/test';
-import { generateId } from 'ai';
-import { ChatPage } from './pages/chat';
-import { getUnixTime } from 'date-fns';
 
 export type UserContext = {
   context: BrowserContext;
   page: Page;
   request: APIRequestContext;
+  name: string;
 };
 
 export async function createAuthenticatedContext({
   browser,
   name,
-  chatModel = 'chat-model',
 }: {
   browser: Browser;
   name: string;
-  chatModel?: 'chat-model' | 'chat-model-reasoning';
 }): Promise<UserContext> {
-  const directory = path.join(__dirname, '../playwright/.sessions');
+  const headers = {
+    'X-Forwarded-User': `${name}-id`,
+    'X-Forwarded-Email': `${name}@example.com`,
+    'X-Forwarded-Preferred-Username': name,
+  };
 
-  if (!fs.existsSync(directory)) {
-    fs.mkdirSync(directory, { recursive: true });
-  }
-
-  const storageFile = path.join(directory, `${name}.json`);
-
-  const context = await browser.newContext();
+  const context = await browser.newContext({ extraHTTPHeaders: headers });
   const page = await context.newPage();
 
-  const email = `test-${name}@playwright.com`;
-  const password = generateId();
-
-  await page.goto('http://localhost:3000/register');
-  await page.getByPlaceholder('user@acme.com').click();
-  await page.getByPlaceholder('user@acme.com').fill(email);
-  await page.getByLabel('Password').click();
-  await page.getByLabel('Password').fill(password);
-  await page.getByRole('button', { name: 'Sign Up' }).click();
-
-  await expect(page.getByTestId('toast')).toContainText(
-    'Account created successfully!',
-  );
-
-  const chatPage = new ChatPage(page);
-  await chatPage.createNewChat();
-  await chatPage.chooseModelFromSelector('chat-model-reasoning');
-  await expect(chatPage.getSelectedModel()).resolves.toEqual('Reasoning model');
-
-  await page.waitForTimeout(1000);
-  await context.storageState({ path: storageFile });
-  await page.close();
-
-  const newContext = await browser.newContext({ storageState: storageFile });
-  const newPage = await newContext.newPage();
-
   return {
-    context: newContext,
-    page: newPage,
-    request: newContext.request,
+    context,
+    page,
+    request: context.request,
+    name,
   };
 }
 
 export function generateRandomTestUser() {
-  const email = `test-${getUnixTime(new Date())}@playwright.com`;
-  const password = generateId();
+  const email = `${Date.now()}@example.com`;
+  const password = 'password';
 
+  return { email, password };
+}
+
+export const createMockStreamResponse = (SSEs: string[]) => {
+  return new Response(stringsToStream(SSEs), {
+    headers: {
+      'Content-Type': 'text/event-stream',
+    },
+  });
+};
+
+export const stringsToStream = (SSEs: string[]) => {
+  const encoder = new TextEncoder();
+
+  return new ReadableStream({
+    start(controller) {
+      for (const s of SSEs) {
+        controller.enqueue(encoder.encode(`${s}\n\n`));
+      }
+      controller.close();
+    },
+  });
+};
+
+/**
+ * Create a single SSE line from a JSON-serializable payload.
+ *
+ * Usage:
+ *   const sse = mockSSE<FmapiChunk>(payload)
+ *   // → "data: { ... }"
+ */
+export function mockSSE<T>(payload: T): string {
+  return `data: ${JSON.stringify(payload)}`;
+}
+
+/**
+ * Mock a Fmapi chunk SSE response
+ */
+export function mockFmapiSSE(
+  id: FmapiChunk['id'],
+  delta: FmapiChunk['choices'][number]['delta'],
+): string {
+  return mockSSE({
+    id,
+    created: Date.now(),
+    model: 'chat-model',
+    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    object: 'chat.completion.chunk',
+    choices: [
+      {
+        index: 0,
+        delta,
+      },
+    ],
+  });
+}
+
+/**
+ * Mock a Fmapi response object
+ */
+export function mockFmapiResponseObject(
+  content: FmapiResponse['choices'][number]['message']['content'],
+): FmapiResponse {
   return {
-    email,
-    password,
+    id: generateUUID(),
+    created: Date.now(),
+    model: 'chat-model',
+    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    choices: [{ message: { role: 'assistant', content } }],
   };
 }

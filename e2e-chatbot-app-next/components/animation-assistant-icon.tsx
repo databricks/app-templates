@@ -1,5 +1,5 @@
 import { motion, useAnimation } from 'framer-motion';
-import { SparklesIcon } from './icons'; // ← keep your own import
+import { SparklesIcon } from 'lucide-react';
 import { useEffect } from 'react';
 
 type AnimatedAssistantIconProps = {
@@ -140,7 +140,7 @@ export const AnimatedAssistantIcon = ({
  * We also make use of padding-box to create an "inset" effect controlled by the border-width.
  * This is what creates the illusion of a gradient border.
  */
-const getAiGradientStyle = () => {
+export const getAiGradientStyle = () => {
   // Currently these are the same for both light and dark mode, but we may want to change this in the future.
   const branded = {
     ai: {
@@ -186,9 +186,7 @@ const getAiGradientStyle = () => {
   };
 };
 
-export const hexToRGB = (
-  hex: string,
-): { r: number; g: number; b: number } | null => {
+const hexToRGB = (hex: string): { r: number; g: number; b: number } | null => {
   try {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
     if (!result) return null;
@@ -206,7 +204,7 @@ export const hexToRGB = (
  * Converts a hex color to an RGBA string.
  * Useful if you need to add an alpha channel to a hex color.
  */
-export const hexToRGBA = (hex: string, alpha: number): string | null => {
+const hexToRGBA = (hex: string, alpha: number): string | null => {
   const rgb = hexToRGB(hex);
   if (rgb) return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
   return null;

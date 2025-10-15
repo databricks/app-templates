@@ -2,12 +2,12 @@
 
 import React, { useEffect, useRef, useState, type ReactNode } from 'react';
 import { toast as sonnerToast } from 'sonner';
-import { CheckCircleFillIcon, WarningIcon } from './icons';
+import { CircleCheck, TriangleAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const iconsByType: Record<'success' | 'error', ReactNode> = {
-  success: <CheckCircleFillIcon />,
-  error: <WarningIcon />,
+  success: <CircleCheck />,
+  error: <TriangleAlert />,
 };
 
 export function toast(props: Omit<ToastProps, 'id'>) {
@@ -37,7 +37,7 @@ function Toast(props: ToastProps) {
     ro.observe(el);
 
     return () => ro.disconnect();
-  }, [description]);
+  }, []);
 
   return (
     <div className="flex toast-mobile:w-[356px] w-full justify-center">

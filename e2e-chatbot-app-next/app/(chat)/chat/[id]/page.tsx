@@ -44,7 +44,6 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
           initialVisibilityType={chat.visibility}
           isReadonly={session?.user?.id !== chat.userId}
           session={session}
-          autoResume={true}
           initialLastContext={chat.lastContext ?? undefined}
         />
       </>
@@ -60,7 +59,6 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
         initialVisibilityType={chat.visibility}
         isReadonly={session?.user?.id !== chat.userId}
         session={session}
-        autoResume={true}
         initialLastContext={chat.lastContext ?? undefined}
       />
     </>

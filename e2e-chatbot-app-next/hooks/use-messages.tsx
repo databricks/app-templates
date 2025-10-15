@@ -4,10 +4,8 @@ import type { UseChatHelpers } from '@ai-sdk/react';
 import type { ChatMessage } from '@/lib/types';
 
 export function useMessages({
-  chatId,
   status,
 }: {
-  chatId: string;
   status: UseChatHelpers<ChatMessage>['status'];
 }) {
   const {

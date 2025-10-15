@@ -1,18 +1,14 @@
-import type { ComponentProps } from 'react';
-
-import { type SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
+import { useSidebar } from '@/components/ui/sidebar';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
-import { SidebarLeftIcon } from './icons';
 import { Button } from './ui/button';
+import { PanelLeft } from 'lucide-react';
 
-export function SidebarToggle({
-  className,
-}: ComponentProps<typeof SidebarTrigger>) {
+export function SidebarToggle() {
   const { toggleSidebar } = useSidebar();
 
   return (
@@ -24,7 +20,7 @@ export function SidebarToggle({
           variant="outline"
           className="h-8 px-2 md:h-fit md:px-2"
         >
-          <SidebarLeftIcon size={16} />
+          <PanelLeft size={16} />
         </Button>
       </TooltipTrigger>
       <TooltipContent align="start" className="hidden md:block">

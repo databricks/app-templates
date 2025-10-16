@@ -1,0 +1,7 @@
+command: ["uv", "run", "custom-server"]
+
+env:
+  - name: "UC_CONNECTION_NAME"
+    value: "" # TODO: Add the connection name
+  - name: "SPEC_VOLUME_PATH"
+    valueFrom: "spec_volume_path"

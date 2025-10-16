@@ -53,11 +53,12 @@ const DatabricksMessageCitationRenderer = (
     href: string;
   }>,
 ) => {
+  const { href, cleanUrl } = parseUnityCatalogPDFLink(props.href);
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <components.a
-          href={props.href}
+          href={cleanUrl ?? href}
           target="_blank"
           rel="noopener noreferrer"
           className="rounded-md bg-muted-foreground px-2 py-0 text-zinc-200"
@@ -68,8 +69,40 @@ const DatabricksMessageCitationRenderer = (
       <TooltipContent
         style={{ maxWidth: '300px', padding: '8px', wordWrap: 'break-word' }}
       >
-        {props.href}
+        {href}
       </TooltipContent>
     </Tooltip>
   );
+};
+
+function parseUnityCatalogPDFLink(href: string): {
+  href: string;
+  cleanUrl?: string;
+} {
+  try {
+    const urlObject = new URL(href);
+    const pathname = decodeURIComponent(urlObject.pathname);
+
+    const regex =
+      /^\/ajax-api\/2\.0\/fs\/files\/(Volumes\/[^/]+\/[^/]+\/[^/]+)\/(.+\.pdf)$/;
+    const match = pathname.match(regex);
+
+    if (match) {
+      return {
+        href,
+        cleanUrl: cleanUrl(href),
+      };
+    }
+  } catch {
+    return { href };
+  }
+  return { href };
+}
+
+// Removes all query params and hash from the url
+const cleanUrl = (url: string) => {
+  const urlObj = new URL(url);
+  urlObj.search = '';
+  urlObj.hash = '';
+  return urlObj.toString();
 };

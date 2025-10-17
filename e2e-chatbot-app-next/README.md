@@ -35,7 +35,8 @@ but has some [known limitations](#known-limitations) for other use cases. Work i
    - Install the [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/install.html)
    - Run `export DATABRICKS_CONFIG_PROFILE='your_profile_name'`, replacing `your_profile_name` with the name of a CLI profile for configuring authentication
    - Run `databricks auth login --profile "$DATABRICKS_CONFIG_PROFILE"` to configure authentication for your workspace under the named profile
-   
+3. **Latest Databricks CLI**: ensure you have the latest version of the Databricks CLI installed:
+    - On macOS, you can run `brew upgrade databricks && databricks -v`. [See docs](https://docs.databricks.com/aws/en/dev-tools/cli/install#homebrew-update-for-linux-or-macos) for other platforms
 
 ## Deployment
 
@@ -48,6 +49,8 @@ This project includes a [Databricks Asset Bundle (DAB)](https://docs.databricks.
    ```
 2. **Databricks authentication**: Ensure auth is configured as described in [Prerequisites](#prerequisites).
 2. **Specify serving endpoint**: In `databricks.yml`, set the default value of `serving_endpoint_name` to the name of the custom code agent or Agent Bricks endpoint to chat with.
+   - NOTE: if using [Agent Bricks Multi-Agent Supervisor](https://docs.databricks.com/aws/en/generative-ai/agent-bricks/multi-agent-supervisor), you need to additionally grant the app service principal the `CAN_QUERY` permission on the underlying agent(s) that the MAS orchestrates. You can do this by adding those
+   agent serving endpoints as resources in `databricks.yml` (see the NOTE in `databricks.yml` on this)
 3. **Validate the bundle configuration**:
    ```bash
    databricks bundle validate

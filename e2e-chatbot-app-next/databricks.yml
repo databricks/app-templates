@@ -32,6 +32,10 @@ resources:
       resources:
         - name: serving-endpoint
           description: "Databricks serving endpoint name for the AI agent"
+          # NOTE: If chatting with an Agent Bricks Multi-Agent Supervisor (https://docs.databricks.com/aws/en/generative-ai/agent-bricks/multi-agent-supervisor),
+          # you need to additionally grant the app service principal the `CAN_QUERY` permission on the
+          # underlying agent(s) that the MAS orchestrates. You can do this by adding those
+          # agent serving endpoints as additional resources here.
           serving_endpoint:
             name: ${var.serving_endpoint_name}
             permission: CAN_QUERY

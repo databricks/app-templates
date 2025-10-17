@@ -4,7 +4,7 @@ bundle:
 variables:
   serving_endpoint_name:
     description: "Name of the model serving endpoint to be used by the app"
-    default: "agents_sidmurching_catalog-default-test_chat_app_agent" # TODO: specify a default value here to avoid needing to specify it on each deployment
+    default: "..." # TODO: specify a default value here to avoid needing to specify it on each deployment
   database_instance_name:
     description: "Base name of the Lakebase database instance"
     default: "chatbot-lakebase"
@@ -26,7 +26,7 @@ resources:
 
   apps:
     databricks_chatbot:
-      name: ${var.resource_name_suffix}
+      name: db-chatbot-${var.resource_name_suffix}
       description: "Chatbot UI for Agent Bricks and custom code agents"
       source_code_path: .
       resources:
@@ -41,7 +41,6 @@ resources:
             database_name: databricks_postgres
             instance_name: ${resources.database_instances.chatbot_lakebase.name}
             permission: CAN_CONNECT_AND_CREATE
-      user_api_scopes: ["serving.serving-endpoints"]
 
 targets:
   dev:
@@ -49,11 +48,6 @@ targets:
     default: true
     variables:
       resource_name_suffix: dev-${workspace.current_user.domain_friendly_name}
-
-  obo:
-    mode: development
-    variables:
-      resource_name_suffix: dev-${workspace.current_user.domain_friendly_name}-obo
 
   staging:
     mode: production

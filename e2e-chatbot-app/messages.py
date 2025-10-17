@@ -60,26 +60,38 @@ class AssistantResponse(Message):
 
 
 def render_message(msg):
-    """Render a single message."""
+    """Render a single message with healthcare-focused styling."""
     if msg["role"] == "assistant":
         # Render content first if it exists
         if msg.get("content"):
             st.markdown(msg["content"])
         
-        # Then render tool calls if they exist
+        # Then render tool calls if they exist with healthcare-focused icons and messaging
         if "tool_calls" in msg and msg["tool_calls"]:
             for call in msg["tool_calls"]:
                 fn_name = call["function"]["name"]
                 args = call["function"]["arguments"]
-                st.markdown(f"🛠️ Calling **`{fn_name}`** with:\n```json\n{args}\n```")
+                st.markdown(f"""
+                <div style="background: #f0f9ff; border-left: 4px solid #0ea5e9; padding: 1rem; margin: 0.5rem 0; border-radius: 0 8px 8px 0;">
+                    <strong>⚙️ Healthcare Analysis Tool: {fn_name}</strong>
+                    <details>
+                        <summary style="cursor: pointer; color: #0c4a6e;">View parameters</summary>
+                        <pre style="background: #e0f2fe; padding: 0.5rem; border-radius: 4px; margin-top: 0.5rem; font-size: 0.9rem;"><code>{args}</code></pre>
+                    </details>
+                </div>
+                """, unsafe_allow_html=True)
     elif msg["role"] == "tool":
-        st.markdown("🧰 Tool Response:")
+        st.markdown("""
+        <div style="background: #f0fdf4; border-left: 4px solid #22c55e; padding: 1rem; margin: 0.5rem 0; border-radius: 0 8px 8px 0;">
+            <strong>📈 Analysis Results:</strong>
+        </div>
+        """, unsafe_allow_html=True)
         st.code(msg["content"], language="json")
 
 
 @st.fragment
 def render_assistant_message_feedback(i, request_id):
-    """Render feedback UI for assistant messages."""
+    """Render healthcare-focused feedback UI for assistant messages."""
     from model_serving_utils import submit_feedback
     import os
     
@@ -91,5 +103,12 @@ def render_assistant_message_feedback(i, request_id):
                 request_id=request_id,
                 rating=st.session_state[f"feedback_{index}"]
             )
+    
+    # Healthcare-focused feedback prompt
+    st.markdown("""
+    <div style="background: #f8fafc; border-radius: 8px; padding: 1rem; margin-top: 1rem;">
+        <small style="color: #64748b;">Was this healthcare information helpful?</small>
+    </div>
+    """, unsafe_allow_html=True)
     
     st.feedback("thumbs", key=f"feedback_{i}", on_change=save_feedback, args=[i])

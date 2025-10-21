@@ -56,7 +56,7 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
             message = """
             <html>
             <body>
-                <h2>✓ Authorization Successful!</h2>
+                <h2>Authorization Successful!</h2>
                 <p>You can close this window and return to the terminal.</p>
             </body>
             </html>
@@ -65,7 +65,7 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
             message = """
             <html>
             <body>
-                <h2>✗ Authorization Failed</h2>
+                <h2>Authorization Failed</h2>
                 <p>No authorization code received. Please try again.</p>
             </body>
             </html>

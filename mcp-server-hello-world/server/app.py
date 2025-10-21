@@ -14,16 +14,20 @@ AI assistants and other clients. FastMCP makes it easy to expose these tools
 over HTTP using the MCP protocol standard.
 """
 
-import os
+
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastmcp import FastMCP
 
 from .tools import load_tools
 from .utils import header_store
 
 mcp_server = FastMCP(name="custom-mcp-server")
+
+STATIC_DIR = Path(__file__).parent / "../static"
 
 # Load and register all tools with the MCP server
 # Tools are defined in server/tools.py
@@ -65,8 +69,15 @@ app.add_middleware(
     allow_headers=["*"],  # Allow all headers
 )
 
-if os.path.exists("client/build"):
-    app.mount("/", StaticFiles(directory="client/build", html=True), name="static")
+
+@app.get("/", include_in_schema=False)
+async def serve_index():
+    """Serve the index page"""
+    if STATIC_DIR.exists() and (STATIC_DIR / "index.html").exists():
+        return FileResponse(STATIC_DIR / "index.html")
+    else:
+        return {"message": "Custom Open API Spec MCP Server is running", "status": "healthy"}
+
 
 # Create the final application by combining MCP routes with custom API routes
 # This is the application that uvicorn will serve

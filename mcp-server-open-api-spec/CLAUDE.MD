@@ -88,7 +88,7 @@ Key patterns:
 #### `handlers.py`
 - **Pure business logic** for each MCP tool
 - **No FastAPI dependencies** - takes Pydantic schemas, returns Pydantic schemas
-- **Uses `get_workspace_client()`** for Databricks SDK operations
+- **Uses `get_user_workspace_client()`** for Databricks SDK operations
 - **Handles parameter formatting** based on HTTP method
 
 Important details:
@@ -142,19 +142,20 @@ Requirements:
 
 The connection must be configured in Unity Catalog:
 - Type: `http`
-- Authentication: API key, OAuth2, or custom headers
+- Authentication: Bearer, M2M, U2M Shared or U2M
 - Host matches the external API base URL
 
-Example:
 ```sql
-CREATE CONNECTION my_api
-  TYPE http
-  OPTIONS (
-    'host' = 'https://api.example.com',
-    'authentication' = 'API_KEY',
-    'api_key' = secret('scope', 'key-name')
-  );
+-- Example: Create connection with API key authentication
+CREATE CONNECTION <connection-name> TYPE HTTP
+OPTIONS (
+  host '<hostname>',
+  port '<port>',
+  base_path '<base-path>',
+  bearer_token '<bearer-token>'
+);
 ```
+[Learn more about external connections](https://docs.databricks.com/aws/en/query-federation/http).
 
 ## Authentication Flow
 
@@ -243,7 +244,7 @@ method_mapping = {
 - Global cache prevents repeated file reads
 
 ### Changing Authentication Method
-- Modify `get_workspace_client()` in `utils.py`
+- Modify `get_user_workspace_client()` in `utils.py`
 - Update middleware in `server.py` if header name changes
 - Ensure UC external connection type matches
 

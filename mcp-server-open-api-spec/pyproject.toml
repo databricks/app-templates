@@ -1,5 +1,5 @@
 [project]
-name = "custom-server"
+name = "custom-open-api-spec-server"
 version = "0.1.0"
 description = "Databricks apps for testing github MCP server with UC connection"
 readme = "README.md"
@@ -12,7 +12,8 @@ dependencies = [
     "mcp[cli]>=1.14.0",
     "uvicorn>=0.34.2",
     "databricks-sdk>=0.60.0",
-    "pydantic>=2"
+    "pydantic>=2",
+    "fastmcp>=2.12.5"
 ]
 
 [build-system]
@@ -23,13 +24,14 @@ build-backend = "hatchling.build"
 dev = [
     "hatchling>=1.27.0",
     "ruff>=0.8.0",
+    "databricks-mcp>=0.1.0",
 ]
 
-[tool.hatch.build.hooks.custom]
-path = "hooks/apps_build.py"
+[tool.hatch.build.targets.wheel]
+packages = ["src/custom_server"]
 
 [project.scripts]
-custom-server = "custom_server.main:main"
+custom-open-api-spec-server = "custom_server.main:main"
 
 [tool.ruff]
 # Set the maximum line length to 100

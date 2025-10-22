@@ -14,7 +14,7 @@ from .schemas import (
     ListApiEndpointsRequest,
     ListApiEndpointsResponse,
 )
-from .utils import get_workspace_client, load_openapi_spec
+from .utils import get_user_authenticated_workspace_client, load_openapi_spec
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +136,7 @@ def invoke_api_endpoint(args: InvokeApiEndpointRequest) -> InvokeApiEndpointResp
         if not method_enum:
             raise ValueError(f"Unsupported HTTP method: {args.http_method}")
 
-        client = get_workspace_client()
+        client = get_user_authenticated_workspace_client()
 
         # Handle parameters - can be dict, string, or None
         parameters = args.parameters

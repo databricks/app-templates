@@ -1,11 +1,11 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type Request, type Response, type Router as RouterType } from 'express';
 import { authMiddleware, requireAuth } from '../middleware/auth';
 import {
   getMessageById,
   deleteMessagesByChatIdAfterTimestamp,
 } from '../shared/databricks/db/queries';
 
-export const messagesRouter = Router();
+export const messagesRouter: RouterType = Router();
 
 // Apply auth middleware
 messagesRouter.use(authMiddleware);

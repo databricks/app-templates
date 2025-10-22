@@ -1,8 +1,8 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type Request, type Response, type Router as RouterType } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import type { ClientSession } from '../shared/databricks/auth/databricks-auth';
 
-export const sessionRouter = Router();
+export const sessionRouter: RouterType = Router();
 
 // Apply auth middleware
 sessionRouter.use(authMiddleware);

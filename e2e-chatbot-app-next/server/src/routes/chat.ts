@@ -1,4 +1,4 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type Request, type Response, type Router as RouterType } from 'express';
 import {
   convertToModelMessages,
   createUIMessageStream,
@@ -20,7 +20,6 @@ import {
 } from '../shared/databricks/db/queries';
 import { convertToUIMessages, generateUUID } from '../shared/lib/utils';
 import { myProvider } from '../shared/lib/ai/providers';
-import { entitlementsByUserType } from '../shared/lib/ai/entitlements';
 import {
   postRequestBodySchema,
   type PostRequestBody,
@@ -36,7 +35,7 @@ import {
 import { streamCache } from '../shared/lib/stream-cache';
 import type { UserType } from '../shared/databricks/auth/databricks-auth';
 
-export const chatRouter = Router();
+export const chatRouter: RouterType = Router();
 
 // Apply auth middleware to all chat routes
 chatRouter.use(authMiddleware);
@@ -82,12 +81,6 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       id: session.user.id,
       differenceInHours: 24,
     });
-
-    if (messageCount > entitlementsByUserType[userType].maxMessagesPerDay) {
-      const error = new ChatSDKError('rate_limit:chat');
-      const response = error.toResponse();
-      return res.status(response.status).json(response.json);
-    }
 
     const chat = await getChatById({ id });
 

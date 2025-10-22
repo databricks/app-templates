@@ -32,12 +32,19 @@ but has some [known limitations](#known-limitations) for other use cases. Work i
 
 1. **Databricks serving endpoint**: you need access to a Databricks workspace containing the Agent Bricks or custom agent serving endpoint to chat with. 
 2. **Set up Databricks authentication**
-   - Install the [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/install.html)
-   - Run `export DATABRICKS_CONFIG_PROFILE='your_profile_name'`, replacing `your_profile_name` with the name of a CLI profile for configuring authentication
-   - Run `databricks auth login --profile "$DATABRICKS_CONFIG_PROFILE"` to configure authentication for your workspace under the named profile
-3. **Latest Databricks CLI**: ensure you have the latest version of the Databricks CLI installed:
-    - On macOS, you can run `brew upgrade databricks && databricks -v`. [See docs](https://docs.databricks.com/aws/en/dev-tools/cli/install#homebrew-update-for-linux-or-macos) for other platforms
-
+   - Install the latest version of the [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/install.html). On macOS, do this via:
+   ```bash
+   brew install databricks
+   brew upgrade databricks && databricks -v
+   ```
+   - Run the following to configure authentication
+   ```bash
+     # DATABRICKS_CONFIG_PROFILE is the name of the Databricks CLI profile under which we'll configure
+     # authentication. If desired, you can update this to a name of your choice, e.g. "dev_workspace"
+     export DATABRICKS_CONFIG_PROFILE='chatbot_template'
+     databricks auth login --profile "$DATABRICKS_CONFIG_PROFILE"
+   ```
+   
 ## Deployment
 
 This project includes a [Databricks Asset Bundle (DAB)](https://docs.databricks.com/aws/en/dev-tools/bundles/apps-tutorial) configuration that simplifies deployment by automatically creating and managing all required resources.

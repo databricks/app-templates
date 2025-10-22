@@ -4,7 +4,8 @@ bundle:
 variables:
   serving_endpoint_name:
     description: "Name of the model serving endpoint to be used by the app"
-    default: "..." # TODO: specify a default value here to avoid needing to specify it on each deployment
+   # TODO: uncomment the line below and specify a default value to avoid needing to specify it on each deployment
+   # default: "your-serving-endpoint-name-goes-here"
   database_instance_name:
     description: "Base name of the Lakebase database instance"
     default: "chatbot-lakebase"
@@ -14,13 +15,13 @@ variables:
 resources:
   database_instances:
     chatbot_lakebase:
-      # TODO: customize the Lakebase instance name here, if desired
+      # NOTE: customize the Lakebase instance name here, if desired
       name: ${var.database_instance_name}-${var.resource_name_suffix}
       capacity: CU_1
 
   apps:
     databricks_chatbot:
-      # TODO: customize the app name here, if desired
+      # NOTE: customize the app name here, if desired
       name: db-chatbot-${var.resource_name_suffix}
       description: "Chatbot UI for Agent Bricks and custom code agents"
       source_code_path: .

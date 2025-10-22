@@ -48,15 +48,15 @@ This project includes a [Databricks Asset Bundle (DAB)](https://docs.databricks.
    cd e2e-chatbot-app-next
    ```
 2. **Databricks authentication**: Ensure auth is configured as described in [Prerequisites](#prerequisites).
-2. **Specify serving endpoint**: In `databricks.yml`, set the default value of `serving_endpoint_name` to the name of the custom code agent or Agent Bricks endpoint to chat with.
+3. **Specify serving endpoint and address TODOs in databricks.yml**: Address the TODOs in `databricks.yml`, setting the default value of `serving_endpoint_name` to the name of the custom code agent or Agent Bricks endpoint to chat with.
    - NOTE: if using [Agent Bricks Multi-Agent Supervisor](https://docs.databricks.com/aws/en/generative-ai/agent-bricks/multi-agent-supervisor), you need to additionally grant the app service principal the `CAN_QUERY` permission on the underlying agent(s) that the MAS orchestrates. You can do this by adding those
    agent serving endpoints as resources in `databricks.yml` (see the NOTE in `databricks.yml` on this)
-3. **Validate the bundle configuration**:
+4. **Validate the bundle configuration**:
    ```bash
    databricks bundle validate
    ```
 
-4. **Deploy the bundle** (creates Lakebase instance, database catalog, and app). The first deployment may take several minutes for provisioning resources, but subsequent deployments are fast:
+5. **Deploy the bundle** (creates Lakebase instance, database catalog, and app). The first deployment may take several minutes for provisioning resources, but subsequent deployments are fast:
    ```bash
    databricks bundle deploy
    ```
@@ -65,12 +65,12 @@ This project includes a [Databricks Asset Bundle (DAB)](https://docs.databricks.
    - **Lakebase database instance** for persisting chat history
    - **App resource** ready to start
 
-5. **Start the app**:
+6. **Start the app**:
    ```bash
    databricks bundle run databricks_chatbot
    ```
 
-6. **View deployment summary** (useful for debugging deployment issues):
+7. **View deployment summary** (useful for debugging deployment issues):
    ```bash
    databricks bundle summary
    ```

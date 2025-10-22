@@ -106,8 +106,6 @@ Your deployed server provides three tools to LLM agents:
 
 ### Tool Design Best Practices
 
-This MCP server implements best practices for agent tool design based on [Anthropic's engineering guidelines](https://www.anthropic.com/engineering/writing-tools-for-agents) and [Block's layered approach](https://engineering.block.xyz/blog/build-mcp-tools-like-ogres-with-layers):
-
 #### **Layered Architecture**
 The three tools follow a progressive "discovery → planning → execution" pattern:
 
@@ -165,29 +163,6 @@ Your `spec.json` should be a valid OpenAPI 3.x specification. Example structure:
     }
   }
 }
-```
-
-### External Connection Authentication Types
-
-Databricks external connections support multiple authentication methods:
-
-- **API Key**: Store API keys in Databricks secrets
-- **OAuth**: Configure OAuth 2.0 flows
-- **Basic Auth**: Bearer authentication
-- **Custom Headers**: Any custom authentication headers
-
-Example with OAuth:
-
-```sql
-CREATE CONNECTION your_api_connection
-  TYPE http
-  OPTIONS (
-    'host' = 'https://your-api.example.com',
-    'authentication' = 'OAUTH2',
-    'oauth2_client_id' = secret('your-scope', 'client-id'),
-    'oauth2_client_secret' = secret('your-scope', 'client-secret'),
-    'oauth2_token_url' = 'https://your-api.example.com/oauth/token'
-  );
 ```
 
 ## Troubleshooting

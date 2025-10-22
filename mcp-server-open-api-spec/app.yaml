@@ -1,4 +1,4 @@
-command: ["uv", "run", "custom-server"]
+command: ["uv", "run", "custom-open-api-spec-server"]
 
 env:
   - name: "UC_CONNECTION_NAME"

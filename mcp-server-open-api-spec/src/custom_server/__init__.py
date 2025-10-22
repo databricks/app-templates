@@ -2,9 +2,9 @@
 
 import logging
 
-from .server import app
+from .app import combined_app
 
-__all__ = ["app"]
+__all__ = ["combined_app"]
 
 logger = logging.getLogger(__name__)
 

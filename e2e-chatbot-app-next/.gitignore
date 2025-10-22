@@ -5,6 +5,7 @@ cookies.txt
 node_modules
 .pnp
 .pnp.js
+.claude
 
 # testing
 coverage

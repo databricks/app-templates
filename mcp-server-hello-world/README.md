@@ -27,10 +27,11 @@ mcp-server-hello-world/
 │   ├── tools.py                  # MCP tool definitions
 │   └── utils.py                  # Databricks authentication helpers
 ├── scripts/
-│   ├── start_and_test.sh         # Quick start script for local testing
+│   ├── start_server.sh           # Start the MCP server locally
+│   ├── test_local.sh             # Test local MCP server (starts, tests, stops)
+│   ├── test_local.py             # Test MCP client (local development)
 │   ├── test_remote.sh            # Interactive script for testing deployed app with OAuth
 │   ├── test_remote.py            # Test MCP client (deployed app) with health and user auth
-│   ├── test_client_local.py      # Test MCP client (local development)
 │   └── generate_oauth_token.py   # Generate OAuth tokens for Databricks
 ├── pyproject.toml                # Project metadata and dependencies
 ├── requirements.txt              # Python dependencies (for pip)
@@ -70,7 +71,10 @@ pip install -r requirements.txt
 ### Development Mode
 
 ```bash
-# Using uv
+# Quick start with script (syncs dependencies and starts server)
+./scripts/start_server.sh
+
+# Or manually using uv
 uv run custom-mcp-server
 
 # Or using the installed command (after pip install -e .)
@@ -92,32 +96,40 @@ This project includes test scripts to verify your MCP server is working correctl
 
 ### Quick Start with Shell Script
 
-Use the provided shell script to start the server and run tests automatically:
+Use the provided shell script to test your local MCP server:
 
 ```bash
-chmod +x scripts/start_and_test.sh
-./scripts/start_and_test.sh
+chmod +x scripts/test_local.sh
+./scripts/test_local.sh
 ```
 
 This script will:
 1. Sync dependencies
-2. Start the MCP server
+2. Start the MCP server in the background
 3. Run the local client test
-4. Keep the server running for development
+4. Stop the server automatically
 
 ### Manual Testing
 
 #### Test Local Development
 
+**Option 1: Automated test (recommended)**
 ```bash
-# In terminal 1: Start the server
-uv run custom-mcp-server
-
-# In terminal 2: Test the connection
-python scripts/test_client_local.py
+# Starts server, runs test, stops server automatically
+./scripts/test_local.sh
 ```
 
-The `scripts/test_client_local.py` script connects to your local MCP server without authentication and lists available tools.
+**Option 2: Manual testing**
+```bash
+# In terminal 1: Start the server
+./scripts/start_server.sh
+# Or: uv run custom-mcp-server
+
+# In terminal 2: Test the connection
+python scripts/test_local.py
+```
+
+The `scripts/test_local.py` script connects to your local MCP server without authentication and lists available tools.
 
 #### Test Deployed App with User Authorization (OAuth)
 
@@ -281,6 +293,19 @@ This project is configured for Databricks Apps deployment:
 2. The server will be accessible at your Databricks app URL
 
 For more information refer to the documentation [here](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy#deploy-the-app)
+
+### Try Your MCP Server in AI Playground
+
+After deploying your MCP server to Databricks Apps, you can test it interactively in the Databricks AI Playground:
+
+1. Navigate to the **AI Playground** in your Databricks workspace
+2. Select a model with the **Tools enabled** label
+3. Click **Tools > + Add tool** and select your deployed MCP server
+4. Start chatting with the AI agent - it will automatically call your MCP server's tools as needed
+
+The AI Playground provides a visual interface to prototype and test your MCP server with different models and configurations before integrating it into production applications.
+
+For more information, see [Prototype tool-calling agents in AI Playground](https://docs.databricks.com/aws/en/generative-ai/agent-framework/ai-playground-agent).
 
 ## Development
 

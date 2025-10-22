@@ -22,10 +22,11 @@ server/              # Core MCP server code
 └── utils.py        # Databricks auth helpers (workspace client factory)
 
 scripts/            # Developer utilities
-├── start_and_test.sh       # Quick start local server + test
+├── start_server.sh         # Start the MCP server locally
+├── test_local.sh           # Test local server (starts, tests, stops)
+├── test_local.py           # Test local MCP server
 ├── test_remote.sh          # Interactive remote deployment test with OAuth
 ├── test_remote.py          # Test deployed MCP server with health + user auth
-├── test_client_local.py    # Test local MCP server
 └── generate_oauth_token.py # Generate OAuth tokens for Databricks
 
 pyproject.toml      # Dependencies, build config, CLI command definition
@@ -131,18 +132,28 @@ def get_current_user() -> dict:
 
 **Note:** The `get_current_user` tool is already implemented in `server/tools.py` and serves as a real example.
 
-### Testing Workflow
+### Development Workflow
 
-**Local:**
+**Start server for development:**
 ```bash
-# Terminal 1: Start server
-uv run custom-mcp-server
-
-# Terminal 2: Test
-python scripts/test_client_local.py
+./scripts/start_server.sh
+# Server runs in foreground, Ctrl+C to stop
 ```
 
-**Remote (after deployment):**
+**Test local server:**
+```bash
+# Automated (recommended) - starts, tests, stops automatically
+./scripts/test_local.sh
+
+# Manual testing in separate terminals:
+# Terminal 1: Start server
+./scripts/start_server.sh
+
+# Terminal 2: Run test
+python scripts/test_local.py
+```
+
+**Test remote deployment:**
 ```bash
 ./scripts/test_remote.sh
 # Follow interactive prompts
@@ -212,10 +223,26 @@ This template focuses on **tools** as the primary MCP primitive.
 - User authentication requires app to request scopes during creation
 - MCP endpoint: `https://<workspace>/serving-endpoints/<app-name>/mcp`
 
+### Testing in AI Playground
+
+After deployment, the MCP server can be tested interactively in Databricks AI Playground:
+
+1. Navigate to AI Playground in Databricks workspace
+2. Select a model with "Tools enabled" label
+3. Add your deployed MCP server as a tool
+4. Chat with the agent - it will call your MCP tools as needed
+
+This provides a visual way to test tool-calling behavior with different models before production integration. See [AI Playground documentation](https://docs.databricks.com/aws/en/generative-ai/agent-framework/ai-playground-agent) for details.
+
 ## Testing Strategy
 
-1. **Local Development**: `scripts/test_client_local.py` - Tests basic connectivity and health check
-2. **Remote Deployment with OAuth**: `scripts/test_remote.py` + `test_remote.sh` - Tests end-user OAuth flow with both health and user authorization tools
+1. **Local Development**: 
+   - `scripts/start_server.sh` - Start server for development
+   - `scripts/test_local.sh` - Automated test (starts server, tests, stops)
+   - `scripts/test_local.py` - Test client for local server
+2. **Remote Deployment with OAuth**: 
+   - `scripts/test_remote.sh` - Interactive script with OAuth flow
+   - `scripts/test_remote.py` - Tests health and user authorization tools
 3. **Interactive**: Shell scripts provide guided testing experience
 
 ### Remote Testing with User Authorization

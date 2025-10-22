@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Test user authorization with a deployed Databricks App.
+Test remote MCP server deployed as a Databricks App.
 
-This script tests the MCP server with user-level OAuth authentication,
-simulating how end users would interact with the deployed app.
+This script tests the remote MCP server with user-level OAuth authentication,
+calling both the health tool and user authorization tool to verify functionality.
 
 Usage:
-    python test_user_auth.py --host <host> --token <token> --app-url <app-url>
+    python test_remote.py --host <host> --token <token> --app-url <app-url>
 
 Example:
-    python test_user_auth.py \\
+    python test_remote.py \\
         --host https://dbc-a1b2345c-d6e7.cloud.databricks.com \\
         --token eyJr...Dkag \\
         --app-url https://dbc-a1b2345c-d6e7.cloud.databricks.com/serving-endpoints/my-app
@@ -24,7 +24,7 @@ from databricks_mcp import DatabricksMCPClient
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Test user authorization with deployed Databricks App"
+        description="Test remote MCP server deployed as Databricks App"
     )
 
     parser.add_argument("--host", required=True, help="Databricks workspace URL")
@@ -36,7 +36,7 @@ def main():
     args = parser.parse_args()
 
     print("=" * 70)
-    print("Testing User Authorization with Databricks App")
+    print("Testing Remote MCP Server - Databricks App")
     print("=" * 70)
     print(f"\nWorkspace: {args.host}")
     print(f"App URL: {args.app_url}")
@@ -66,8 +66,21 @@ def main():
         print(f"✓ Found {len(tools) if isinstance(tools, list) else 'N/A'} tools")
         print()
 
+        # Test the health tool
+        print("Step 4: Testing 'health' tool...")
+        print("-" * 70)
+        try:
+            health_result = mcp_client.call_tool("health")
+            print(health_result)
+            print("-" * 70)
+            print("✓ Health check passed!")
+        except Exception as e:
+            print(f"✗ Error calling health tool: {e}")
+            print("-" * 70)
+        print()
+
         # Call get_current_user tool
-        print("Step 4: Calling 'get_current_user' tool...")
+        print("Step 5: Calling 'get_current_user' tool...")
         print("-" * 70)
         user_result = mcp_client.call_tool("get_current_user")
         print(user_result)

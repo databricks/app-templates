@@ -19,6 +19,7 @@ Example:
 import argparse
 import base64
 import hashlib
+import json
 import secrets
 import string
 import sys
@@ -238,22 +239,12 @@ Examples:
         help="Redirect URI for OAuth callback (default: http://localhost:8020)",
     )
 
-    parser.add_argument(
-        "--output-format",
-        choices=["json", "env", "token-only"],
-        default="json",
-        help="Output format: json (full response), env (environment variables), token-only (access token only)",
-    )
-
     args = parser.parse_args()
 
-    # For token-only output, send progress to stderr so stdout only has the token
-    def log_output(message, file=None):
-        """Print to stdout or stderr based on output format."""
-        if args.output_format == "token-only" and file is None:
-            print(message, file=sys.stderr)
-        else:
-            print(message, file=file if file else sys.stdout)
+    # Helper function to print progress to stderr
+    def log_output(message):
+        """Print progress messages to stderr."""
+        print(message, file=sys.stderr)
 
     try:
         # Step 1: Generate PKCE pair
@@ -284,37 +275,16 @@ Examples:
             args.scopes,
         )
         log_output("✓ Successfully obtained access token!")
+        log_output("")
 
-        # Output results
-        if args.output_format != "token-only":
-            print("\n" + "=" * 70)
-            print("OAuth Token Response")
-            print("=" * 70 + "\n")
-
-        if args.output_format == "json":
-            import json
-
-            print(json.dumps(token_response, indent=2))
-
-        elif args.output_format == "env":
-            print(f"export DATABRICKS_HOST='{args.host}'")
-            print(f"export DATABRICKS_TOKEN='{token_response['access_token']}'")
-            print(f"# Token expires in {token_response.get('expires_in', 'N/A')} seconds")
-            if "refresh_token" in token_response:
-                print(f"# Refresh token: {token_response['refresh_token']}")
-
-        elif args.output_format == "token-only":
-            # Only output the token to stdout, nothing else
-            print(token_response["access_token"])
-
-        if args.output_format != "token-only":
-            print()
+        # Output results as JSON to stdout
+        print(json.dumps(token_response, indent=2))
 
     except KeyboardInterrupt:
         log_output("\n\n✗ Operation cancelled by user")
         sys.exit(1)
     except Exception as e:
-        print(f"\n\n✗ Error: {e}", file=sys.stderr)
+        log_output(f"\n\n✗ Error: {e}")
         sys.exit(1)
 
 

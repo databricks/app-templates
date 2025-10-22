@@ -23,11 +23,9 @@ server/              # Core MCP server code
 
 scripts/            # Developer utilities
 ├── start_and_test.sh       # Quick start local server + test
-├── test_remote.sh          # Interactive remote deployment test
-├── test_user_auth.sh       # Test user OAuth authorization flow
+├── test_remote.sh          # Interactive remote deployment test with OAuth
+├── test_remote.py          # Test deployed MCP server with health + user auth
 ├── test_client_local.py    # Test local MCP server
-├── test_client_remote.py   # Test deployed MCP server
-├── test_user_auth.py       # Test with user OAuth token
 └── generate_oauth_token.py # Generate OAuth tokens for Databricks
 
 pyproject.toml      # Dependencies, build config, CLI command definition
@@ -217,13 +215,12 @@ This template focuses on **tools** as the primary MCP primitive.
 ## Testing Strategy
 
 1. **Local Development**: `scripts/test_client_local.py` - Tests basic connectivity and health check
-2. **Remote Deployment**: `scripts/test_client_remote.py` - Tests with Databricks auth (profile or host/token)
-3. **User Authorization**: `scripts/test_user_auth.py` + `test_user_auth.sh` - Tests end-user OAuth flow
-4. **Interactive**: Shell scripts provide guided testing experience
+2. **Remote Deployment with OAuth**: `scripts/test_remote.py` + `test_remote.sh` - Tests end-user OAuth flow with both health and user authorization tools
+3. **Interactive**: Shell scripts provide guided testing experience
 
-### User Authorization Testing
+### Remote Testing with User Authorization
 
-The `test_user_auth.sh` script provides end-to-end testing of user-level OAuth authorization:
+The `test_remote.sh` script provides end-to-end testing of user-level OAuth authorization:
 
 **What it does:**
 1. Fetches app configuration using `databricks apps get <app_name>`
@@ -231,14 +228,15 @@ The `test_user_auth.sh` script provides end-to-end testing of user-level OAuth a
 3. Extracts app URL from configuration
 4. Gets workspace host from Databricks profile
 5. Generates OAuth token using `generate_oauth_token.py` with correct scopes
-6. Tests MCP client with user authentication
-7. Calls `get_current_user` tool to verify user identity
+6. Tests MCP client with user authentication via `test_remote.py`
+7. Calls both `health` tool and `get_current_user` tool to verify functionality
 
 **Why this matters:**
 - Simulates real end-user experience
 - Tests user-level authentication (not service principal)
 - Verifies scopes are configured correctly
-- Validates `get_user_authenticated_workspace_client()` works properly
+- Validates both basic health check and user-authenticated operations
+- Confirms `get_user_authenticated_workspace_client()` works properly
 
 ## OAuth Token Generation
 
@@ -250,8 +248,13 @@ The `scripts/generate_oauth_token.py` script implements the [OAuth U2M (User-to-
 - Opens browser for user authorization
 - Runs local HTTP server to capture OAuth callback
 - Exchanges authorization code for access token
-- Supports multiple output formats (json, env, token-only)
+- Outputs token response as JSON
 - Configurable scopes for fine-grained access control
+
+**Output:**
+- Progress messages go to stderr (visible in terminal)
+- Token response (JSON) goes to stdout
+- Extract access token using: `jq -r '.access_token'`
 
 **When to use:**
 - Testing OAuth flows

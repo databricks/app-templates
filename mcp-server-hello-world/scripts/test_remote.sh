@@ -5,89 +5,151 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 echo "=========================================="
-echo "Test MCP Server - Databricks App (Remote)"
+echo "Test Remote MCP Server - Databricks App"
 echo "=========================================="
 echo ""
 
-# Step 1: Choose authentication method
-echo "Step 1: Select Databricks authentication method"
-echo ""
-echo "1) Use Databricks CLI Profile"
-echo "2) Use Host and Token"
-echo ""
-read -p "Enter your choice (1 or 2): " auth_choice
-
-if [ "$auth_choice" == "1" ]; then
-    echo ""
-    echo "You selected: Databricks CLI Profile"
-    echo "Learn more: https://docs.databricks.com/aws/en/dev-tools/cli/profiles#get-information-about-configuration-profiles"
-    echo ""
-    
-    read -p "Enter profile name (or press Enter for DEFAULT): " profile_name
-    if [ -z "$profile_name" ]; then
-        profile_name="DEFAULT"
-    fi
-    
-    AUTH_TYPE="profile"
-    PROFILE_NAME="$profile_name"
-    
-    echo "✓ Using profile: $PROFILE_NAME"
-    
-elif [ "$auth_choice" == "2" ]; then
-    echo ""
-    echo "You selected: Host and Token"
-    echo ""
-    
-    read -p "Enter Databricks workspace host (e.g., https://your-workspace.cloud.databricks.com): " databricks_host
-    read -sp "Enter Databricks personal access token: " databricks_token
-    echo ""
-    
-    if [ -z "$databricks_host" ] || [ -z "$databricks_token" ]; then
-        echo "❌ Error: Both host and token are required"
-        exit 1
-    fi
-    
-    AUTH_TYPE="token"
-    DATABRICKS_HOST="$databricks_host"
-    DATABRICKS_TOKEN="$databricks_token"
-    
-    echo "✓ Using host: $DATABRICKS_HOST"
-    
-else
-    echo "❌ Invalid choice. Please run the script again and select 1 or 2."
+# Step 1: Get Databricks profile name
+read -p "Enter Databricks profile name (e.g., DEFAULT, dogfood): " profile_name
+if [ -z "$profile_name" ]; then
+    echo "❌ Error: Profile name is required"
     exit 1
 fi
 
-# Step 2: Get app URL
+echo "✓ Using profile: $profile_name"
 echo ""
-echo "Step 2: Enter your Databricks App MCP endpoint URL"
+
+# Step 2: Get Databricks App name
+read -p "Enter Databricks App name (e.g., mcp-hello-world): " app_name
+if [ -z "$app_name" ]; then
+    echo "❌ Error: App name is required"
+    exit 1
+fi
+
+echo "✓ Using app: $app_name"
 echo ""
-read -p "Enter App URL: " app_url
+
+# Step 3: Get app information
+echo "Step 1: Getting app information..."
+app_info=$(databricks apps get "$app_name" --profile "$profile_name" 2>&1)
+
+if [ $? -ne 0 ]; then
+    echo "❌ Error: Failed to get app information"
+    echo "$app_info"
+    exit 1
+fi
+
+# Extract scopes from effective_user_api_scopes (JSON format)
+# Try using jq for proper JSON parsing if available
+if command -v jq &> /dev/null; then
+    scopes=$(echo "$app_info" | jq -r '.effective_user_api_scopes | join(" ")' 2>/dev/null)
+    if [ "$scopes" = "null" ] || [ -z "$scopes" ]; then
+        scopes=""
+    fi
+else
+    # Fallback: Use sed/grep to extract scopes from JSON
+    # Extract lines between "effective_user_api_scopes": [ and ]
+    # Then extract quoted strings containing colons (scope format: "service:permission")
+    scopes=$(echo "$app_info" | sed -n '/effective_user_api_scopes/,/\]/p' | grep -oE '"[^"]+:[^"]+"' | sed 's/"//g' | tr '\n' ' ' | sed 's/ $//')
+fi
+
+if [ -z "$scopes" ]; then
+    echo "❌ Error: Could not extract scopes from app info"
+    echo "Please ensure the app has user authorization scopes configured"
+    exit 1
+fi
+
+echo "✓ Extracted scopes: $scopes"
+
+# Extract app URL
+app_url=$(echo "$app_info" | grep -E '^\s*"url":' | sed 's/.*"url":"\([^"]*\)".*/\1/')
 
 if [ -z "$app_url" ]; then
-    echo "❌ Error: App URL is required"
+    echo "❌ Error: Could not extract app URL from app info"
     exit 1
 fi
 
-echo "✓ App URL: $app_url"
+echo "✓ Extracted app URL: $app_url"
 echo ""
 
-# Step 3: Run the test
-echo "=========================================="
-echo "Running MCP Client Test..."
-echo "=========================================="
+# Step 4: Get workspace host
+echo "Step 2: Getting workspace host..."
+auth_info=$(databricks auth describe --profile "$profile_name" 2>&1)
+
+if [ $? -ne 0 ]; then
+    echo "❌ Error: Failed to get auth information"
+    echo "$auth_info"
+    exit 1
+fi
+
+# Extract host from auth info
+host=$(echo "$auth_info" | grep -E '^\s*Host:' | awk '{print $2}')
+
+if [ -z "$host" ]; then
+    echo "❌ Error: Could not extract host from auth info"
+    exit 1
+fi
+
+echo "✓ Extracted host: $host"
+echo ""
+
+# Step 5: Generate OAuth token
+echo "Step 3: Generating OAuth token..."
+echo "This will open your browser for authorization..."
+echo ""
+
+# Run the OAuth token generation and capture JSON output
+token_response=$(python3 "$SCRIPT_DIR/generate_oauth_token.py" \
+    --host "$host" \
+    --scopes "$scopes")
+
+oauth_exit_code=$?
+
+if [ $oauth_exit_code -ne 0 ]; then
+    echo ""
+    echo "❌ Error: Failed to generate OAuth token (exit code: $oauth_exit_code)"
+    exit 1
+fi
+
+# Extract access_token from JSON response
+if command -v jq &> /dev/null; then
+    token=$(echo "$token_response" | jq -r '.access_token')
+else
+    # Fallback: Use grep and sed to extract access_token
+    token=$(echo "$token_response" | grep -o '"access_token"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+fi
+
+if [ -z "$token" ] || [ "$token" = "null" ]; then
+    echo ""
+    echo "❌ Error: Failed to extract access token from response"
+    exit 1
+fi
+
+echo ""
+echo "✓ OAuth token generated successfully"
+echo ""
+
+# Step 6: Run the test
+echo "Step 4: Testing remote MCP server..."
 echo ""
 
 cd "$PROJECT_ROOT"
 
-if [ "$AUTH_TYPE" == "profile" ]; then
-    python "$SCRIPT_DIR/test_client_remote.py" --profile "$PROFILE_NAME" --app-url "$app_url"
-else
-    python "$SCRIPT_DIR/test_client_remote.py" --host "$DATABRICKS_HOST" --token "$DATABRICKS_TOKEN" --app-url "$app_url"
-fi
+python3 "$SCRIPT_DIR/test_remote.py" \
+    --host "$host" \
+    --token "$token" \
+    --app-url "$app_url"
 
-echo ""
-echo "=========================================="
-echo "Test Complete!"
-echo "=========================================="
+if [ $? -eq 0 ]; then
+    echo ""
+    echo "=========================================="
+    echo "✓ Remote MCP Server Test Complete!"
+    echo "=========================================="
+else
+    echo ""
+    echo "=========================================="
+    echo "✗ Remote MCP Server Test Failed"
+    echo "=========================================="
+    exit 1
+fi
 

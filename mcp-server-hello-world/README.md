@@ -28,11 +28,9 @@ mcp-server-hello-world/
 │   └── utils.py                  # Databricks authentication helpers
 ├── scripts/
 │   ├── start_and_test.sh         # Quick start script for local testing
-│   ├── test_remote.sh            # Interactive script for testing deployed app
-│   ├── test_user_auth.sh         # Test user authorization with OAuth
+│   ├── test_remote.sh            # Interactive script for testing deployed app with OAuth
+│   ├── test_remote.py            # Test MCP client (deployed app) with health and user auth
 │   ├── test_client_local.py      # Test MCP client (local development)
-│   ├── test_client_remote.py     # Test MCP client (deployed app)
-│   ├── test_user_auth.py         # Test MCP client with user OAuth token
 │   └── generate_oauth_token.py   # Generate OAuth tokens for Databricks
 ├── pyproject.toml                # Project metadata and dependencies
 ├── requirements.txt              # Python dependencies (for pip)
@@ -121,9 +119,9 @@ python scripts/test_client_local.py
 
 The `scripts/test_client_local.py` script connects to your local MCP server without authentication and lists available tools.
 
-#### Test Deployed App
+#### Test Deployed App with User Authorization (OAuth)
 
-After deploying to Databricks Apps, use the interactive shell script:
+After deploying to Databricks Apps, use the interactive shell script to test with user-level OAuth authentication:
 
 ```bash
 chmod +x scripts/test_remote.sh
@@ -131,38 +129,11 @@ chmod +x scripts/test_remote.sh
 ```
 
 The script will guide you through:
-1. **Authentication method**: Choose between Databricks CLI profile or host/token
-   - **Profile**: Uses your [Databricks CLI configuration](https://docs.databricks.com/aws/en/dev-tools/cli/profiles#get-information-about-configuration-profiles)
-   - **Host/Token**: Manually enter workspace URL and personal access token
-2. **App URL**: Enter your deployed app's MCP endpoint URL
-
-Alternatively, test manually with command-line arguments:
-
-```bash
-# Using Databricks CLI profile
-python scripts/test_client_remote.py --profile DEFAULT --app-url "https://your-workspace.cloud.databricks.com/serving-endpoints/your-app"
-
-# Using host and token
-python scripts/test_client_remote.py --host "https://your-workspace.cloud.databricks.com" --token "dapi..." --app-url "https://your-workspace.cloud.databricks.com/serving-endpoints/your-app"
-```
-
-The `scripts/test_client_remote.py` script connects to your deployed MCP server with Databricks authentication and lists available tools.
-
-#### Test User Authorization (OAuth)
-
-For testing end-user authorization with OAuth tokens (simulating how users authenticate to your app):
-
-```bash
-chmod +x scripts/test_user_auth.sh
-./scripts/test_user_auth.sh
-```
-
-The script will guide you through:
 1. **Profile selection**: Choose your Databricks CLI profile
 2. **App name**: Enter your deployed app name
 3. **Automatic configuration**: Extracts app scopes and URLs automatically
 4. **OAuth flow**: Generates user OAuth token via browser
-5. **End-to-end test**: Tests `list_tools()` and `get_current_user()` tool
+5. **End-to-end test**: Tests `list_tools()`, `health` tool, and `get_current_user` tool
 
 **What it does:**
 - Retrieves app configuration using `databricks apps get`
@@ -170,9 +141,20 @@ The script will guide you through:
 - Gets workspace host from your Databricks profile
 - Generates OAuth token with the correct scopes
 - Tests MCP client with user-level authentication
-- Verifies the `get_current_user` tool returns your user info
+- Verifies both the `health` check and `get_current_user` tool work correctly
 
 This test simulates the real end-user experience when they authorize your app and use it with their credentials.
+
+Alternatively, test manually with command-line arguments:
+
+```bash
+python scripts/test_remote.py \
+    --host "https://your-workspace.cloud.databricks.com" \
+    --token "eyJr...Dkag" \
+    --app-url "https://your-workspace.cloud.databricks.com/serving-endpoints/your-app"
+```
+
+The `scripts/test_remote.py` script connects to your deployed MCP server with OAuth authentication and tests both the health check and user authorization functionality.
 
 ## Adding New Tools
 
@@ -246,7 +228,6 @@ python scripts/generate_oauth_token.py \
 - `--host`: Databricks workspace URL (required)
 - `--scopes`: Space-separated OAuth scopes (default: `all-apis offline_access`)
 - `--redirect-uri`: Callback URI (default: `http://localhost:8020`)
-- `--output-format`: Output format - `json`, `env`, or `token-only` (default: `json`)
 
 **Note:** The script uses the `databricks-cli` OAuth client ID by default.
 
@@ -255,22 +236,7 @@ python scripts/generate_oauth_token.py \
 2. Open your browser for authorization
 3. Capture the authorization code via local HTTP server
 4. Exchange the code for an access token
-5. Display the token (valid for 1 hour)
-
-**Example with environment variable output:**
-```bash
-python scripts/generate_oauth_token.py \
-    --host https://your-workspace.cloud.databricks.com \
-    --output-format env
-```
-
-**Example with token-only output:**
-```bash
-TOKEN=$(python scripts/generate_oauth_token.py \
-    --host https://your-workspace.cloud.databricks.com \
-    --output-format token-only)
-echo "Token: $TOKEN"
-```
+5. Display the token response as JSON (token is valid for 1 hour)
 
 **Example with custom scopes:**
 ```bash

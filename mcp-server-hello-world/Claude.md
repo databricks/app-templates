@@ -16,7 +16,7 @@ This is a **Model Context Protocol (MCP) server** template built with FastMCP an
 
 ```
 server/              # Core MCP server code
-├── app.py          # FastAPI + FastMCP setup, CORS config, middleware
+├── app.py          # FastAPI + FastMCP setup, middleware
 ├── main.py         # Entry point (uvicorn runner)
 ├── tools.py        # MCP tool definitions (add new tools here)
 └── utils.py        # Databricks auth helpers (workspace client factory)
@@ -37,7 +37,6 @@ app.yaml            # Databricks Apps deployment config
 
 ### `server/app.py`
 - Creates FastMCP instance with SSE transport
-- Configures CORS for web clients
 - Middleware to store request headers in context (for user auth token)
 - Mounts MCP at `/mcp` endpoint
 - Imports tools from `tools.py`
@@ -296,7 +295,6 @@ The `scripts/generate_oauth_token.py` script implements the [OAuth U2M (User-to-
 ## Configuration
 
 - **Server host/port**: Edit `server/main.py`
-- **CORS origins**: Edit `server/app.py`
 - **Project name**: Update `pyproject.toml` name field
 - **MCP server name**: Update `FastMCP(name="...")` in `server/app.py`
 

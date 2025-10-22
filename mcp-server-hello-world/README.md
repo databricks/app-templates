@@ -12,7 +12,6 @@ A simple, production-ready template for building Model Context Protocol (MCP) se
 
 - ✅ FastMCP-based server with HTTP streaming support
 - ✅ FastAPI integration for additional REST endpoints
-- ✅ CORS configuration for web clients
 - ✅ Example tools: health check and user information
 - ✅ Production-ready project structure
 - ✅ Ready for Databricks Apps deployment
@@ -272,17 +271,6 @@ uvicorn.run(
 )
 ```
 
-### CORS Settings
-
-Update allowed origins in `server/app.py`:
-
-```python
-allow_origins=[
-    'http://localhost:3000',    # Add your frontend origins
-    'https://your-domain.com',
-]
-```
-
 ## Deployment
 
 ### Databricks Apps
@@ -342,10 +330,6 @@ def custom_endpoint():
 ### Port Already in Use
 
 Change the port in `server/main.py` or set the `PORT` environment variable.
-
-### CORS Errors
-
-Add your client's origin to the `allow_origins` list in `server/app.py`.
 
 ### Import Errors
 

@@ -18,7 +18,6 @@ over HTTP using the MCP protocol standard.
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastmcp import FastMCP
 
@@ -49,26 +48,6 @@ app = FastAPI(
     version="0.1.0",
     lifespan=mcp_app.lifespan,  # Share the lifespan context with MCP app
 )
-
-# ============================================================================
-# CORS Middleware Configuration
-# ============================================================================
-
-# Configure CORS to allow requests from common development origins
-# This is essential for web-based clients to communicate with the server
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # Common React development port
-        "http://127.0.0.1:3000",
-        "http://localhost:5173",  # Common Vite development port
-        "http://127.0.0.1:5173",
-    ],
-    allow_credentials=True,  # Allow cookies and authentication headers
-    allow_methods=["*"],  # Allow all HTTP methods (GET, POST, etc.)
-    allow_headers=["*"],  # Allow all headers
-)
-
 
 @app.get("/", include_in_schema=False)
 async def serve_index():

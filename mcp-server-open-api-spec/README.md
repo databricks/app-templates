@@ -26,16 +26,16 @@ Create a Unity Catalog external connection for authentication to your external s
 
 ```sql
 -- Example: Create connection with API key authentication
-CREATE CONNECTION your_api_connection
-  TYPE http
-  OPTIONS (
-    'host' = 'https://your-api.example.com',
-    'authentication' = 'API_KEY',
-    'api_key' = secret('your-scope', 'your-api-key')
-  );
+CREATE CONNECTION <connection-name> TYPE HTTP
+OPTIONS (
+  host '<hostname>',
+  port '<port>',
+  base_path '<base-path>',
+  bearer_token '<bearer-token>'
+);
 ```
 
-[Learn more about external connections](https://docs.databricks.com/aws/en/query-federation/http)
+[Learn more about external connections](https://docs.databricks.com/aws/en/query-federation/http). You can configure authentication to be either Bearer, OAuth M2M, OAuth U2M Shared and OAuth U2M.
 
 ### 3. Update Connection Name
 

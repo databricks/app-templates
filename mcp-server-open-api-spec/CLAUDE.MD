@@ -62,28 +62,55 @@ LLM Agent Request → FastAPI Middleware → MCP Tool Handler →
 src/custom_server/
 ├── __init__.py           # Package initialization
 ├── main.py               # Entry point for uvicorn
-├── server.py             # FastAPI app + MCP tool definitions
+├── app.py                # FastAPI app configuration and routes
+├── tools.py              # MCP tool definitions and registration
 ├── handlers.py           # Business logic for each tool
 ├── schemas.py            # Pydantic request/response models
 ├── utils.py              # OpenAPI spec loading + auth utilities
-├── spec.json             # (Example/default OpenAPI spec)
 └── static/
     └── index.html        # Landing page for web browser access
+
+scripts/
+├── start_server.sh       # Start the MCP server locally
+├── test_local.sh         # Automated local testing script
+├── test_local.py         # Python test client for local server
+├── test_remote.sh        # Automated remote testing script
+├── test_remote.py        # Python test client for remote server
+├── generate_oauth_token.py  # OAuth token generation utility
+└── README.md             # Scripts documentation
+
+hooks/
+└── apps_build.py         # Custom build hook for Databricks Apps
 ```
 
 ### Key Components
 
-#### `server.py`
+#### `main.py`
+- **Entry point** for `uv run custom-open-api-spec-server` command
+- Configures uvicorn with hot reload for development
+- Runs on `0.0.0.0:8000` for container compatibility
+
+#### `app.py`
 - **Main FastAPI application** with `/health` and `/` endpoints
-- **MCP tool registration** using `@mcp.tool()` decorator
 - **Middleware** for capturing authentication headers
-- **Mounts MCP app** at root path for protocol handling
+- **Mounts MCP app** at `/mcp` path for protocol handling
+- **Combined app** serves both custom routes and MCP protocol endpoints
 
 Key patterns:
 - Uses `FastMCP` for MCP server creation
+- Middleware captures headers in context variable for downstream use
+- Custom routes for health checks and web interface
+- MCP app mounted as sub-application
+
+#### `tools.py`
+- **MCP tool registration** using `@mcp.tool()` decorator
+- **`load_tools(mcp_server)` function** registers all tools with the MCP server
+- **Tool wrappers** that convert between MCP format and internal schemas
+
+Key patterns:
 - Converts tool responses to dictionaries with `.model_dump()`
-- Handles JSON serialization errors gracefully
-- Stores headers in context variable for downstream use
+- Handles JSON serialization errors gracefully in `invoke_api_endpoint`
+- Each tool function directly decorated with `@mcp_server.tool()`
 
 #### `handlers.py`
 - **Pure business logic** for each MCP tool
@@ -109,17 +136,14 @@ Key schemas:
 #### `utils.py`
 - **OpenAPI spec caching** in global variable
 - **Authentication extraction** from request headers
-- **WorkspaceClient creation** with forwarded token
+- **WorkspaceClient creation** with forwarded token or profile
 
 Important patterns:
 - Uses `contextvars.ContextVar` for thread-safe header storage
 - Loads spec from Databricks Volume using `w.files.download()`
+- `get_workspace_client()`: Creates client with profile for local use
+- `get_user_authenticated_workspace_client()`: Creates client with forwarded token for app use
 - Expects `x-forwarded-access-token` header (Databricks convention)
-
-#### `main.py`
-- **Entry point** for `uv run custom-server` command
-- Configures uvicorn with hot reload for development
-- Runs on `0.0.0.0:8000` for container compatibility
 
 ## Configuration
 
@@ -227,7 +251,7 @@ method_mapping = {
 
 ### Error Handling
 - All handlers raise exceptions on error
-- `server.py` catches exceptions and returns structured error responses
+- `tools.py` catches exceptions in tool wrappers and returns structured error responses
 - Includes helpful error messages for debugging
 
 ## Common Tasks
@@ -235,7 +259,7 @@ method_mapping = {
 ### Adding a New MCP Tool
 1. Define Pydantic schemas in `schemas.py`
 2. Implement handler logic in `handlers.py`
-3. Register tool in `server.py` with `@mcp.tool()` decorator
+3. Register tool in `tools.py` within the `load_tools()` function using `@mcp_server.tool()` decorator
 4. Add docstring for auto-generated tool description
 
 ### Modifying OpenAPI Spec Loading
@@ -244,14 +268,14 @@ method_mapping = {
 - Global cache prevents repeated file reads
 
 ### Changing Authentication Method
-- Modify `get_user_workspace_client()` in `utils.py`
-- Update middleware in `server.py` if header name changes
+- Modify `get_user_authenticated_workspace_client()` in `utils.py`
+- Update middleware in `app.py` if header name changes
 - Ensure UC external connection type matches
 
 ### Updating API Response Format
 - Modify `InvokeApiEndpointResponse` schema in `schemas.py`
 - Update response construction in `handlers.py` `invoke_api_endpoint()`
-- Adjust serialization logic in `server.py` if needed
+- Adjust serialization logic in `tools.py` `invoke_api_endpoint()` wrapper if needed
 
 ## Deployment
 
@@ -274,21 +298,72 @@ Access at: `http://localhost:8000`
 
 ## Testing & Debugging
 
-### Local Testing
+### Automated Testing Scripts
+
+The project includes comprehensive test scripts to verify MCP server functionality:
+
+#### Local Testing (`scripts/test_local.sh`)
+Tests the MCP server running on your local machine:
+```bash
+./scripts/test_local.sh
+```
+
+Features:
+- Prompts for Databricks profile, UC connection name, and spec volume path
+- Sets up environment variables automatically
+- Starts the server in the background
+- Connects using `DatabricksMCPClient` at `http://0.0.0.0:8000/mcp`
+- Lists available MCP tools
+- Calls `list_api_endpoints` to verify API discovery
+- Automatically cleans up and stops the server
+
+Python test implementation: `scripts/test_local.py`
+
+#### Remote Testing (`scripts/test_remote.sh`)
+Tests a deployed MCP server on Databricks Apps:
+```bash
+./scripts/test_remote.sh
+```
+
+Features:
+- Prompts for Databricks profile and deployed app URL
+- Generates OAuth token using `scripts/generate_oauth_token.py`
+- Connects to the remote MCP server
+- Verifies all MCP tools are accessible
+- Tests API endpoint discovery on the deployed instance
+
+Python test implementation: `scripts/test_remote.py`
+
+#### Manual Server Start (`scripts/start_server.sh`)
+Starts the server without running tests:
+```bash
+./scripts/start_server.sh
+```
+
+Requires pre-set environment variables:
+- `DATABRICKS_CONFIG_PROFILE`
+- `UC_CONNECTION_NAME`
+- `SPEC_VOLUME_PATH`
+
+### Manual Testing
 - Use MCP inspector or direct HTTP requests
-- Set logging level to `DEBUG` in `server.py` for verbose output
+- Set logging level to `DEBUG` in `app.py` for verbose output
 - Check `/health` endpoint for basic connectivity
+- Access root endpoint `/` for the web interface
 
 ### Debugging Tips
 1. **Auth issues**: Check `x-forwarded-access-token` header presence. If this header is not present, its ideally because the user has queried the app without an Exact Scope OAuth Token.
 2. **Spec loading errors**: Verify `SPEC_VOLUME_PATH` environment variable
 3. **UC connection errors**: Validate connection name and permissions
-4. **JSON serialization**: Check response handling in `server.py` line 105-114
+4. **JSON serialization**: Check response handling in `tools.py` invoke_api_endpoint function
+5. **Local testing fails**: Ensure `DATABRICKS_CONFIG_PROFILE` is set and valid
+6. **Remote testing fails**: Verify app URL and OAuth token generation
 
 ### Logging
 - Uses Python `logging` module
 - Current level: `INFO`
 - Add `logger.debug()` calls for detailed tracing
+- Check server logs for OpenAPI spec loading and UC connection errors
 
 ## Code Quality
 
@@ -332,7 +407,7 @@ Extend `utils.py` to load multiple specs and add spec selection parameter to too
 Add caching layer in `handlers.py` `invoke_api_endpoint()`.
 
 ### Rate Limiting
-Implement middleware in `server.py` to track and limit requests.
+Implement middleware in `app.py` to track and limit requests.
 
 ## Related Documentation
 
@@ -345,11 +420,14 @@ Implement middleware in `server.py` to track and limit requests.
 ## Quick Reference
 
 ### File Locations
-- Main logic: `src/custom_server/server.py`
+- FastAPI app: `src/custom_server/app.py`
+- MCP tools: `src/custom_server/tools.py`
 - Business logic: `src/custom_server/handlers.py`
 - Data models: `src/custom_server/schemas.py`
 - Utilities: `src/custom_server/utils.py`
+- Entry point: `src/custom_server/main.py`
 - Config: `app.yaml`, `pyproject.toml`
+- Test scripts: `scripts/`
 
 ### Key Classes
 - `FastMCP`: MCP server instance

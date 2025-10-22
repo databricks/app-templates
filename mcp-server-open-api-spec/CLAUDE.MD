@@ -4,7 +4,7 @@ This document provides architectural context and implementation details for the 
 
 ## Project Overview
 
-This is a **Model Context Protocol (MCP) server** that bridges LLM agents with external REST APIs defined by OpenAPI specifications. It runs as a **Databricks App** and uses **Unity Catalog external connections** for secure API authentication.
+This is a [**Model Context Protocol (MCP) server**](https://docs.databricks.com/aws/en/generative-ai/mcp/custom-mcp) that bridges LLM agents with external REST APIs defined by OpenAPI specifications. It runs as a [**Databricks App**](https://www.databricks.com/product/databricks-apps) and uses [**Unity Catalog external connections**]((https://docs.databricks.com/aws/en/generative-ai/agent-framework/external-connection-tools)) for secure API authentication.
 
 ### Core Purpose
 
@@ -41,8 +41,6 @@ The server implements a **progressive disclosure pattern** for API interactions:
    - Executes actual API calls with UC external connection auth
    - Handles parameter formatting (query params vs JSON body)
    - Returns normalized responses with status, headers, and body
-
-This design follows [Anthropic's agent tooling best practices](https://www.anthropic.com/engineering/writing-tools-for-agents) and [Block's layered approach](https://engineering.block.xyz/blog/build-mcp-tools-like-ogres-with-layers).
 
 ### Data Flow
 
@@ -281,7 +279,7 @@ Access at: `http://localhost:8000`
 - Check `/health` endpoint for basic connectivity
 
 ### Debugging Tips
-1. **Auth issues**: Check `x-forwarded-access-token` header presence
+1. **Auth issues**: Check `x-forwarded-access-token` header presence. If this header is not present, its ideally because the user has queried the app without an Exact Scope OAuth Token.
 2. **Spec loading errors**: Verify `SPEC_VOLUME_PATH` environment variable
 3. **UC connection errors**: Validate connection name and permissions
 4. **JSON serialization**: Check response handling in `server.py` line 105-114

@@ -67,6 +67,56 @@ uv sync
 uv run custom-server
 ```
 
+## Testing
+
+The repository includes automated test scripts to verify your MCP server functionality both locally and on Databricks Apps.
+
+### Local Testing
+
+Test your MCP server running on your local machine:
+
+```bash
+./scripts/test_local.sh
+```
+
+This script will:
+1. Prompt for your Databricks profile (for authentication)
+2. Prompt for UC Connection Name
+3. Prompt for Spec Volume Path
+4. Set up environment variables
+5. Start the server automatically
+6. Run tests to verify MCP tools work correctly
+7. Display available tools and sample API endpoints
+8. Clean up and stop the server
+
+### Remote Testing
+
+Test your deployed MCP server on Databricks Apps:
+
+```bash
+./scripts/test_remote.sh
+```
+
+This script will:
+1. Prompt for your Databricks profile
+2. Prompt for the deployed app URL
+3. Generate an OAuth token for authentication
+4. Test the remote MCP server
+5. Display available tools and sample API endpoints
+
+### Manual Server Start
+
+If you prefer to start the server manually without testing:
+
+```bash
+./scripts/start_server.sh
+```
+
+Make sure you have set the required environment variables first:
+- `DATABRICKS_CONFIG_PROFILE` - Your Databricks profile name
+- `UC_CONNECTION_NAME` - Your Unity Catalog connection name
+- `SPEC_VOLUME_PATH` - Path to your OpenAPI spec (e.g., `/Volumes/catalog/schema/volume`)
+
 ## Using the MCP Server
 
 ### Connecting to the MCP Server

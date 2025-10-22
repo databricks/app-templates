@@ -37,10 +37,10 @@ but has some [known limitations](#known-limitations) for other use cases. Work i
    brew install databricks
    brew upgrade databricks && databricks -v
    ```
-   - Run the following to configure authentication
+   - Run the following to configure authentication.
+     In the snippet below, `DATABRICKS_CONFIG_PROFILE` is the name of the Databricks CLI profile under which to configure
+     authentication. If desired, you can update this to a name of your choice, e.g. `dev_workspace`.
    ```bash
-     # DATABRICKS_CONFIG_PROFILE is the name of the Databricks CLI profile under which we'll configure
-     # authentication. If desired, you can update this to a name of your choice, e.g. dev_workspace
      export DATABRICKS_CONFIG_PROFILE='chatbot_template'
      databricks auth login --profile "$DATABRICKS_CONFIG_PROFILE"
    ```

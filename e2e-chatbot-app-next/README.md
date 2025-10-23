@@ -138,20 +138,52 @@ so that both you and your app service principal can connect to the database, wit
 
 ## Troubleshooting
 
-
 ### "reference does not exist" errors when running databricks bundle CLI commands
 If you get an error like the following (or other similar "reference does not exist" errors) 
 while running `databricks bundle` commands, your Databricks CLI version may be out of date.
 Make sure to install the latest version of the Databricks CLI (per [Prerequisites](#prerequisites)) and try again.
 
 ```bash
+$ databricks bundle deploy
 Error: reference does not exist: ${workspace.current_user.domain_friendly_name}
 
 Name: databricks-chatbot
 Target: dev
 Workspace:
-  User: your_name@company.com
-  Path: /Workspace/Users/your_name@company.com/.bundle/databricks-chatbot/dev
+  User: user@company.com
+  Path: /Workspace/Users/user@company.com/.bundle/databricks-chatbot/dev
 ```
 
+### "Resource not found" errors during databricks bundle deploy
+
+Errors like the following one can occur when attempting to deploy the app if the state of your bundle does not match the state of resources
+deployed in your workspace:
+
+```bash
+$ databricks bundle deploy
+Uploading bundle files to /Workspace/Users/user@company.com/.bundle/databricks-chatbot/dev/files...
+Deploying resources...
+Error: terraform apply: exit status 1
+
+Error: failed to update database_instance
+
+  with databricks_database_instance.chatbot_lakebase,
+  on bundle.tf.json line 45, in resource.databricks_database_instance.chatbot_lakebase:
+  45:       }
+
+Resource not found
+
+
+Updating deployment state...
+```
+
+This can happen if resources deployed via your bundle were then manually deleted, or resources specified by your bundle
+were manually created without using the `databricks bundle` CLI. To resolve this class of issue, inspect the state of the actual deployed resources
+in your workspace and compare it to the bundle state using `databricks bundle summary`. If there is a mismatch,
+[see docs](https://docs.databricks.com/aws/en/dev-tools/bundles/faqs#can-i-port-existing-jobs-pipelines-dashboards-and-other-databricks-objects-into-my-bundle) on how to
+manually bind (if resources were manually created) or unbind (if resources were manually deleted) resources
+from your current bundle state. In the above example, the `chatbot_lakebase` database instance resource
+was deployed via `databricks bundle deploy`, and then manually deleted. This broke subsequent deployments of the bundle
+(because bundle state indicated the resource should exist, but it did not in the workspace). Running `databricks bundle unbind chatbot_lakebase` updated bundle state to reflect the deletion of the instance, 
+unblocking subsequent deployment of the bundle via `databricks bundle deploy`.
 

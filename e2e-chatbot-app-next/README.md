@@ -63,7 +63,7 @@ This project includes a [Databricks Asset Bundle (DAB)](https://docs.databricks.
    databricks bundle validate
    ```
 
-5. **Deploy the bundle** (creates Lakebase instance, database catalog, and app). The first deployment may take several minutes for provisioning resources, but subsequent deployments are fast:
+5. **Deploy the bundle** (creates Lakebase instance and app). The first deployment may take several minutes for provisioning resources, but subsequent deployments are fast:
    ```bash
    databricks bundle deploy
    ```
@@ -135,3 +135,23 @@ so that both you and your app service principal can connect to the database, wit
     * Update references to `ai_chatbot` in the codebase to your new desired schema name within the existing database instance
     * Run `npm run db:generate` to regenerate database migrations
     * Deploy your app
+
+## Troubleshooting
+
+
+### "reference does not exist" errors when running databricks bundle CLI commands
+If you get an error like the following (or other similar "reference does not exist" errors) 
+while running `databricks bundle` commands, your Databricks CLI version may be out of date.
+Make sure to install the latest version of the Databricks CLI (per [Prerequisites](#prerequisites)) and try again.
+
+```bash
+Error: reference does not exist: ${workspace.current_user.domain_friendly_name}
+
+Name: databricks-chatbot
+Target: dev
+Workspace:
+  User: your_name@company.com
+  Path: /Workspace/Users/your_name@company.com/.bundle/databricks-chatbot/dev
+```
+
+

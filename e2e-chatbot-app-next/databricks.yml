@@ -8,7 +8,7 @@ variables:
    # default: "your-serving-endpoint-name-goes-here"
   database_instance_name:
     description: "Base name of the Lakebase database instance"
-    default: "smurching-dab"
+    default: "chatbot-lakebase"
   resource_name_suffix:
     description: "Suffix for resource names (app/lakebase instance names etc). Helpful for avoiding name collisions if multiple users deploy this app to the same workspace"
 

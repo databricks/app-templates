@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom MCP Server on Databricks Apps</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Highlight.js CSS and JS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            hljs.highlightAll();
+
+            const fullHost = `https://${window.location.hostname}/mcp`;
+            // Update all elements with class "app-host"
+            document.querySelectorAll('.app-host').forEach(el => {
+                el.textContent = fullHost;
+            });
+
+            const pyCode = document.querySelector('pre code.language-python');
+            if (pyCode) {
+                pyCode.innerHTML = pyCode.innerHTML.replace('databricks-app-url', fullHost);
+            }
+        });
+    </script>
+</head>
+
+<body class="bg-gray-900 text-gray-100 font-sans">
+
+    <!-- Hero Section -->
+    <div class="py-12 sm:py-16 h-screen flex items-center justify-center">
+        <div class="max-w-3xl mx-auto px-4 text-center">
+            <!-- Logos Placeholder -->
+            <div class="flex justify-center items-center gap-8 mb-8">
+                <!-- Databricks Logo -->
+                <div class="w-24 h-24 rounded-full flex items-center justify-center">
+                    <img src="https://cdn.bfldr.com/9AYANS2F/at/k8bgnnxhb4bggjk88r4x9snf/databricks-symbol-color.svg?auto=webp&format=png"
+                        alt="Databricks Logo" class="w-20 h-20">
+                </div>
+                <!-- MCP Logo -->
+                <div class="w-24 h-24 rounded-full flex items-center justify-center">
+                    <img src="https://avatars.githubusercontent.com/u/182288589?s=200&v=4" alt="MCP Logo"
+                        class="w-20 h-20 rounded-full">
+                </div>
+
+            </div>
+            <h1 class="text-4xl font-bold text-white sm:text-5xl text-balance">
+                Custom Model Context Protocol Server on Databricks Apps
+            </h1>
+            <p class="mt-6 text-xl text-gray-300">
+                Your custom MCP server is up and running on Databricks Apps.
+            </p>
+            <div class="mt-10">
+                <a href="#connect"
+                    class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+                    Get Started
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Connection Section -->
+    <div id="connect" class="py-12">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            <h2 class="text-2xl font-bold text-center text-white">Connect to the Server</h2>
+            <div class="mt-10 bg-gray-800 shadow overflow-hidden sm:rounded-lg">
+                <div class="px-4 py-5 sm:px-6">
+                    <h3 class="text-lg leading-6 font-medium text-white">Connection Details</h3>
+                </div>
+                <div class="border-t border-gray-700 px-4 py-5 sm:p-6">
+                    <dl class="grid grid-cols-1 gap-x-4 gap-y-8">
+                        <div class="sm:col-span-1">
+                            <dt class="text-sm font-medium text-gray-400">
+                                Server URL
+                            </dt>
+                            <dd class="mt-1 text-sm text-gray-100">
+                                <code class="bg-gray-900 px-2 py-1 rounded app-host">https://your.app.url.databricksapps.com</code>
+                            </dd>
+                        </div>
+                        <div class="sm:col-span-2">
+                            <dt class="text-sm font-medium text-gray-400">
+                                Transport <Table></Table>
+                            </dt>
+                            <dd class="mt-1 text-sm text-gray-100">
+                                <code class="bg-gray-900 px-2 py-1 rounded">
+                                    Streamable HTTP
+                                </code>
+                            </dd>
+                        </div>
+                        <div class="sm:col-span-3">
+                            <dt class="text-sm font-medium text-gray-400">
+                                Example Connection (Python)
+                            </dt>
+                            <dd class="mt-1 text-sm text-gray-100">
+                                <pre class="bg-gray-900 p-3 rounded overflow-x-auto">
+<code class="language-python">
+from databricks.sdk import WorkspaceClient
+from databricks_mcp import DatabricksMCPClient
+
+# Initialize the Databricks Workspace client
+ws_client = WorkspaceClient(
+    host="databricks-host",
+    token="exactly-scoped-OAuth-token",
+)
+
+# Initialize the MCP client with your app’s MCP endpoint
+mcp_client = DatabricksMCPClient(
+    server_url='databricks-app-url',
+    workspace_client=ws_client,
+)
+
+# List available MCP tools
+print(mcp_client.list_tools())
+</code>
+                                </pre>
+                            </dd>
+                        </div>
+                        <div class="sm:col-span-2">
+                            <dt class="text-sm font-medium text-gray-400">
+                                Or use your favourite tool
+                            </dt>
+                            <dd class="mt-1 text-sm text-gray-100">
+                                You can also connect using tools like <strong>Claude</strong>, <strong>MCP
+                                    Inspector</strong>, or any other compatible client.
+                            </dd>
+                        </div>
+                    </dl>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="py-12 bg-gray-800">
+        <div class="max-w-3xl mx-auto px-4 text-center">
+            <h2 class="text-2xl font-bold text-white mb-4">Documentation</h2>
+            <p class="text-lg text-gray-300 mb-6">
+                Learn more about MCP on Databricks Apps and how to deploy your own server.
+            </p>
+            <a href="https://docs.databricks.com/aws/en/generative-ai/mcp/custom-mcp" target="_blank" rel="noopener"
+                class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+                Custom MCP servers on Databricks Apps
+            </a>
+        </div>
+    </div>
+
+
+</body>
+
+</html>

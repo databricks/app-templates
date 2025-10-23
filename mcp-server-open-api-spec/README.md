@@ -117,6 +117,30 @@ Make sure you have set the required environment variables first:
 - `UC_CONNECTION_NAME` - Your Unity Catalog connection name
 - `SPEC_VOLUME_PATH` - Path to your OpenAPI spec (e.g., `/Volumes/catalog/schema/volume`)
 
+## Deployment
+
+### Databricks Apps
+
+This project is configured for Databricks Apps deployment:
+
+1. Deploy using Databricks CLI or UI
+2. The server will be accessible at your Databricks app URL
+
+For more information refer to the documentation [here](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy#deploy-the-app)
+
+### Try Your MCP Server in AI Playground
+
+After deploying your MCP server to Databricks Apps, you can test it interactively in the Databricks AI Playground:
+
+1. Navigate to the **AI Playground** in your Databricks workspace
+2. Select a model with the **Tools enabled** label
+3. Click **Tools > + Add tool** and select your deployed MCP server
+4. Start chatting with the AI agent - it will automatically call your MCP server's tools as needed
+
+The AI Playground provides a visual interface to prototype and test your MCP server with different models and configurations before integrating it into production applications.
+
+For more information, see [Prototype tool-calling agents in AI Playground](https://docs.databricks.com/aws/en/generative-ai/agent-framework/ai-playground-agent).
+
 ## Using the MCP Server
 
 ### Connecting to the MCP Server

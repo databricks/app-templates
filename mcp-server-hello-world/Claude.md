@@ -22,12 +22,13 @@ server/              # Core MCP server code
 └── utils.py        # Databricks auth helpers (workspace client factory)
 
 scripts/            # Developer utilities
-├── start_server.sh         # Start the MCP server locally
-├── test_local.sh           # Test local server (starts, tests, stops)
-├── test_local.py           # Test local MCP server
-├── test_remote.sh          # Interactive remote deployment test with OAuth
-├── test_remote.py          # Test deployed MCP server with health + user auth
-└── generate_oauth_token.py # Generate OAuth tokens for Databricks
+└── dev/
+    ├── start_server.sh         # Start the MCP server locally
+    ├── test_local.sh           # Test local server (starts, tests, stops)
+    ├── test_local.py           # Test local MCP server
+    ├── test_remote.sh          # Interactive remote deployment test with OAuth
+    ├── test_remote.py          # Test deployed MCP server with health + user auth
+    └── generate_oauth_token.py # Generate OAuth tokens for Databricks
 
 pyproject.toml      # Dependencies, build config, CLI command definition
 app.yaml            # Databricks Apps deployment config
@@ -135,26 +136,26 @@ def get_current_user() -> dict:
 
 **Start server for development:**
 ```bash
-./scripts/start_server.sh
+./scripts/dev/start_server.sh
 # Server runs in foreground, Ctrl+C to stop
 ```
 
 **Test local server:**
 ```bash
 # Automated (recommended) - starts, tests, stops automatically
-./scripts/test_local.sh
+./scripts/dev/test_local.sh
 
 # Manual testing in separate terminals:
 # Terminal 1: Start server
-./scripts/start_server.sh
+./scripts/dev/start_server.sh
 
 # Terminal 2: Run test
-python scripts/test_local.py
+python scripts/dev/test_local.py
 ```
 
 **Test remote deployment:**
 ```bash
-./scripts/test_remote.sh
+./scripts/dev/test_remote.sh
 # Follow interactive prompts
 ```
 
@@ -236,17 +237,17 @@ This provides a visual way to test tool-calling behavior with different models b
 ## Testing Strategy
 
 1. **Local Development**: 
-   - `scripts/start_server.sh` - Start server for development
-   - `scripts/test_local.sh` - Automated test (starts server, tests, stops)
-   - `scripts/test_local.py` - Test client for local server
+   - `scripts/dev/start_server.sh` - Start server for development
+   - `scripts/dev/test_local.sh` - Automated test (starts server, tests, stops)
+   - `scripts/dev/test_local.py` - Test client for local server
 2. **Remote Deployment with OAuth**: 
-   - `scripts/test_remote.sh` - Interactive script with OAuth flow
-   - `scripts/test_remote.py` - Tests health and user authorization tools
+   - `scripts/dev/test_remote.sh` - Interactive script with OAuth flow
+   - `scripts/dev/test_remote.py` - Tests health and user authorization tools
 3. **Interactive**: Shell scripts provide guided testing experience
 
 ### Remote Testing with User Authorization
 
-The `test_remote.sh` script provides end-to-end testing of user-level OAuth authorization:
+The `scripts/dev/test_remote.sh` script provides end-to-end testing of user-level OAuth authorization:
 
 **What it does:**
 1. Fetches app configuration using `databricks apps get <app_name>`
@@ -266,7 +267,7 @@ The `test_remote.sh` script provides end-to-end testing of user-level OAuth auth
 
 ## OAuth Token Generation
 
-The `scripts/generate_oauth_token.py` script implements the [OAuth U2M (User-to-Machine) flow](https://docs.databricks.com/aws/en/dev-tools/auth/oauth-u2m?language=CLI) to generate workspace-level access tokens.
+The `scripts/dev/generate_oauth_token.py` script implements the [OAuth U2M (User-to-Machine) flow](https://docs.databricks.com/aws/en/dev-tools/auth/oauth-u2m?language=CLI) to generate workspace-level access tokens.
 
 **Key features:**
 - Uses `databricks-cli` OAuth client ID by default

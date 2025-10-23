@@ -25,5 +25,18 @@ try:
     print(health_result)
     print("=" * 50)
     print("✓ Health check passed!")
+
+
+    # TODO: Add new tool tests here
+    # Example:
+    # try:
+    #     result = mcp_client.call_tool("your_new_tool", param1="value")
+    #     print(result)
+    #     print("-" * 70)
+    #     print("✓ your_new_tool test passed!")
+    # except Exception as e:
+    #     print(f"✗ Error calling your_new_tool: {e}")
+    #     print("-" * 70)
+    # print()
 except Exception as e:
     print(f"❌ Error calling health tool: {e}")

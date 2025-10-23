@@ -88,6 +88,20 @@ def main():
         print("✓ Successfully retrieved current user information")
         print()
 
+        # TODO: Add new tool tests here
+        # Example:
+        # print("Step 6: Testing 'your_new_tool' tool...")
+        # print("-" * 70)
+        # try:
+        #     result = mcp_client.call_tool("your_new_tool", param1="value")
+        #     print(result)
+        #     print("-" * 70)
+        #     print("✓ your_new_tool test passed!")
+        # except Exception as e:
+        #     print(f"✗ Error calling your_new_tool: {e}")
+        #     print("-" * 70)
+        # print()
+
         print("=" * 70)
         print("✓ All Tests Passed!")
         print("=" * 70)

@@ -26,12 +26,13 @@ mcp-server-hello-world/
 │   ├── tools.py                  # MCP tool definitions
 │   └── utils.py                  # Databricks authentication helpers
 ├── scripts/
-│   ├── start_server.sh           # Start the MCP server locally
-│   ├── test_local.sh             # Test local MCP server (starts, tests, stops)
-│   ├── test_local.py             # Test MCP client (local development)
-│   ├── test_remote.sh            # Interactive script for testing deployed app with OAuth
-│   ├── test_remote.py            # Test MCP client (deployed app) with health and user auth
-│   └── generate_oauth_token.py   # Generate OAuth tokens for Databricks
+│   └── dev/
+│       ├── start_server.sh           # Start the MCP server locally
+│       ├── test_local.sh             # Test local MCP server (starts, tests, stops)
+│       ├── test_local.py             # Test MCP client (local development)
+│       ├── test_remote.sh            # Interactive script for testing deployed app with OAuth
+│       ├── test_remote.py            # Test MCP client (deployed app) with health and user auth
+│       └── generate_oauth_token.py   # Generate OAuth tokens for Databricks
 ├── pyproject.toml                # Project metadata and dependencies
 ├── requirements.txt              # Python dependencies (for pip)
 ├── app.yaml                      # Databricks Apps configuration
@@ -71,7 +72,7 @@ pip install -r requirements.txt
 
 ```bash
 # Quick start with script (syncs dependencies and starts server)
-./scripts/start_server.sh
+./scripts/dev/start_server.sh
 
 # Or manually using uv
 uv run custom-mcp-server
@@ -98,8 +99,8 @@ This project includes test scripts to verify your MCP server is working correctl
 Use the provided shell script to test your local MCP server:
 
 ```bash
-chmod +x scripts/test_local.sh
-./scripts/test_local.sh
+chmod +x scripts/dev/test_local.sh
+./scripts/dev/test_local.sh
 ```
 
 This script will:
@@ -115,28 +116,28 @@ This script will:
 **Option 1: Automated test (recommended)**
 ```bash
 # Starts server, runs test, stops server automatically
-./scripts/test_local.sh
+./scripts/dev/test_local.sh
 ```
 
 **Option 2: Manual testing**
 ```bash
 # In terminal 1: Start the server
-./scripts/start_server.sh
+./scripts/dev/start_server.sh
 # Or: uv run custom-mcp-server
 
 # In terminal 2: Test the connection
-python scripts/test_local.py
+python scripts/dev/test_local.py
 ```
 
-The `scripts/test_local.py` script connects to your local MCP server without authentication and lists available tools.
+The `scripts/dev/test_local.py` script connects to your local MCP server without authentication and lists available tools.
 
 #### Test Deployed App with User Authorization (OAuth)
 
 After deploying to Databricks Apps, use the interactive shell script to test with user-level OAuth authentication:
 
 ```bash
-chmod +x scripts/test_remote.sh
-./scripts/test_remote.sh
+chmod +x scripts/dev/test_remote.sh
+./scripts/dev/test_remote.sh
 ```
 
 The script will guide you through:
@@ -159,13 +160,13 @@ This test simulates the real end-user experience when they authorize your app an
 Alternatively, test manually with command-line arguments:
 
 ```bash
-python scripts/test_remote.py \
+python scripts/dev/test_remote.py \
     --host "https://your-workspace.cloud.databricks.com" \
     --token "eyJr...Dkag" \
     --app-url "https://your-workspace.cloud.databricks.com/serving-endpoints/your-app"
 ```
 
-The `scripts/test_remote.py` script connects to your deployed MCP server with OAuth authentication and tests both the health check and user authorization functionality.
+The `scripts/dev/test_remote.py` script connects to your deployed MCP server with OAuth authentication and tests both the health check and user authorization functionality.
 
 ## Adding New Tools
 
@@ -230,7 +231,7 @@ For advanced use cases, you can manually generate OAuth tokens for Databricks wo
 ### Generate Workspace-Level OAuth Token
 
 ```bash
-python scripts/generate_oauth_token.py \
+python scripts/dev/generate_oauth_token.py \
     --host https://your-workspace.cloud.databricks.com \
     --scopes "all-apis offline_access"
 ```
@@ -251,7 +252,7 @@ python scripts/generate_oauth_token.py \
 
 **Example with custom scopes:**
 ```bash
-python scripts/generate_oauth_token.py \
+python scripts/dev/generate_oauth_token.py \
     --host https://your-workspace.cloud.databricks.com \
     --scopes "clusters:read jobs:write sql:read"
 ```

@@ -1,4 +1,4 @@
-import type { Chat } from '../../../server/src/shared/databricks/db/schema';
+import type { Chat } from '@chat-template/db';
 import {
   SidebarMenuAction,
   SidebarMenuButton,

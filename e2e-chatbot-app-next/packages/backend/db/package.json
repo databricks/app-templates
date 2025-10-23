@@ -1,0 +1,42 @@
+{
+  "name": "@chat-template/db",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "import": {
+          "types": "./dist/index.d.ts",
+          "default": "./dist/index.js"
+        },
+        "require": {
+          "types": "./dist/index.d.ts",
+          "default": "./dist/index.cjs"
+        }
+      }
+    }
+  },
+  "files": ["dist", "migrations"],
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "typescript": "catalog:"
+  },
+  "dependencies": {
+    "@chat-template/auth": "workspace:*",
+    "@chat-template/core": "workspace:*",
+    "@chat-template/utils": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "drizzle-kit": "catalog:",
+    "postgres": "catalog:"
+  }
+}

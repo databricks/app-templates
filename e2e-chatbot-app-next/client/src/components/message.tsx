@@ -28,7 +28,8 @@ import {
 } from './databricks-message-part-transformers';
 import { components } from './elements/streamdown-components/components';
 import { MessageError } from './message-error';
-import { DATABRICKS_TOOL_CALL_ID } from '../../../server/src/shared/databricks/providers/databricks-provider/databricks-tool-calling';
+// import { DATABRICKS_TOOL_CALL_ID } from '@chat-template/ai-sdk-providers';
+const DATABRICKS_TOOL_CALL_ID = 'databricks-tool-call';
 
 const PurePreviewMessage = ({
   chatId,

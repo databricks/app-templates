@@ -9,13 +9,23 @@
     "preview": "vite preview",
     "lint": "biome lint --write"
   },
+  "browser": {
+    "child_process": false,
+    "crypto": false,
+    "fs": false,
+    "fs/promises": false,
+    "path": false,
+    "url": false,
+    "vm": false,
+    "ws": false
+  },
   "dependencies": {
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.0",
-    "@ai-sdk/react": "2.0.26",
-    "ai": "5.0.26",
-    "@ai-sdk/provider": "2.0.0",
+    "@ai-sdk/react": "catalog:",
+    "ai": "catalog:",
+    "@ai-sdk/provider": "catalog:",
     "@radix-ui/react-alert-dialog": "^1.1.2",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dialog": "^1.1.2",
@@ -44,7 +54,8 @@
     "tailwind-merge": "^2.5.2",
     "use-stick-to-bottom": "^1.1.1",
     "usehooks-ts": "^3.1.0",
-    "zod": "^3.25.76"
+    "zod": "catalog:",
+    "@chat-template/ai-sdk-integration": "workspace:*"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.1",

@@ -1,5 +1,5 @@
 import { Outlet } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { AppSidebar } from '@/components/app-sidebar';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { useSession } from '@/contexts/SessionContext';
@@ -10,18 +10,6 @@ export default function ChatLayout() {
     const saved = localStorage.getItem('sidebar:state');
     return saved !== 'true';
   });
-
-  useEffect(() => {
-    // Load Pyodide script for any Python execution features
-    const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js';
-    script.async = true;
-    document.head.appendChild(script);
-
-    return () => {
-      document.head.removeChild(script);
-    };
-  }, []);
 
   // Wait for session to load
   if (loading) {

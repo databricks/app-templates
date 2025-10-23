@@ -5,22 +5,23 @@ import express, {
   type Request,
   type Response,
   type NextFunction,
+  type Express,
 } from 'express';
 import cors from 'cors';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
 import { chatRouter } from './routes/chat';
 import { historyRouter } from './routes/history';
 import { sessionRouter } from './routes/session';
 import { messagesRouter } from './routes/messages';
-import { ChatSDKError } from './shared/lib/errors';
+import { ChatSDKError } from '@chat-template/core';
 
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const app = express();
+const app: Express = express();
 const PORT = process.env.PORT || 3001;
 const isDevelopment = process.env.NODE_ENV !== 'production';
 

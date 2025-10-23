@@ -1,4 +1,9 @@
-import { Router, type Request, type Response, type Router as RouterType } from 'express';
+import {
+  Router,
+  type Request,
+  type Response,
+  type Router as RouterType,
+} from 'express';
 import {
   convertToModelMessages,
   createUIMessageStream,
@@ -17,23 +22,22 @@ import {
   saveMessages,
   updateChatLastContextById,
   updateChatVisiblityById,
-} from '../shared/databricks/db/queries';
-import { convertToUIMessages, generateUUID } from '../shared/lib/utils';
-import { myProvider } from '../shared/lib/ai/providers';
+} from '@chat-template/db';
+import { convertToUIMessages, generateUUID } from '@chat-template/core';
+import { myProvider } from '@chat-template/core';
 import {
   postRequestBodySchema,
   type PostRequestBody,
-} from '../shared/lib/schemas/chat';
-import { ChatSDKError } from '../shared/lib/errors';
-import type { ChatMessage } from '../shared/lib/types';
-import type { ChatModel } from '../shared/lib/ai/models';
-import type { VisibilityType } from '../shared/lib/types';
+} from '@chat-template/core';
+import { ChatSDKError } from '@chat-template/core';
+import type { ChatMessage } from '@chat-template/core';
+import type { VisibilityType } from '@chat-template/core';
 import {
   DATABRICKS_TOOL_CALL_ID,
   DATABRICKS_TOOL_DEFINITION,
-} from '../shared/databricks/providers/databricks-provider/databricks-tool-calling';
-import { streamCache } from '../shared/lib/stream-cache';
-import type { UserType } from '../shared/databricks/auth/databricks-auth';
+} from '@chat-template/ai-sdk-providers';
+import { streamCache } from '@chat-template/core';
+import type { UserType } from '@chat-template/auth';
 
 export const chatRouter: RouterType = Router();
 
@@ -65,7 +69,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     }: {
       id: string;
       message: ChatMessage;
-      selectedChatModel: ChatModel['id'];
+      selectedChatModel: string;
       selectedVisibilityType: VisibilityType;
     } = requestBody;
 

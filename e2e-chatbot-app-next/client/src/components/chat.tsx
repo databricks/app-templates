@@ -12,13 +12,13 @@ import type { VisibilityType } from '@/lib/types';
 import { unstable_serialize } from 'swr/infinite';
 import { getChatHistoryPaginationKey } from './sidebar-history';
 import { toast } from './toast';
-import type { ClientSession } from '../../../server/src/shared/databricks/auth/databricks-auth';
 import { useSearchParams } from 'react-router-dom';
 import { useChatVisibility } from '@/hooks/use-chat-visibility';
 import { ChatSDKError } from '@/lib/errors';
 import type { Attachment, ChatMessage } from '@/lib/types';
 import { useDataStream } from './data-stream-provider';
-import { ExtendedDefaultChatTransport } from '../../../server/src/shared/databricks/utils/databricks-chat-transport';
+import { ChatTransport } from '@chat-template/ai-sdk-integration';
+// import type { ClientSession } from '@chat-template/auth';
 
 export function Chat({
   id,
@@ -33,7 +33,8 @@ export function Chat({
   initialChatModel: string;
   initialVisibilityType: VisibilityType;
   isReadonly: boolean;
-  session: ClientSession;
+  // session: ClientSession;
+  session: any;
   initialLastContext?: LanguageModelUsage;
 }) {
   const { visibilityType } = useChatVisibility({
@@ -74,7 +75,7 @@ export function Chat({
     experimental_throttle: 100,
     generateId: generateUUID,
     resume: id !== undefined && initialMessages.length > 0, // Enable automatic stream resumption
-    transport: new ExtendedDefaultChatTransport({
+    transport: new ChatTransport({
       onStreamPart: (part) => {
         // when we receive a stream part, we reset the onErrorResumeCountRef and onFinishResumeCountRef
         onErrorResumeCountRef.current = 0;

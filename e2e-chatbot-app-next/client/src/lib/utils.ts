@@ -1,7 +1,7 @@
 import type { UIMessagePart } from 'ai';
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import type { DBMessage } from '../../../server/src/shared/databricks/db/schema';
+import type { DBMessage } from '@chat-template/db';
 import { ChatSDKError, type ErrorCode } from './errors';
 import type { ChatMessage, ChatTools, CustomUIDataTypes } from './types';
 import { formatISO } from 'date-fns';

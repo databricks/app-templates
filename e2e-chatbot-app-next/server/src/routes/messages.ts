@@ -3,7 +3,7 @@ import { authMiddleware, requireAuth } from '../middleware/auth';
 import {
   getMessageById,
   deleteMessagesByChatIdAfterTimestamp,
-} from '../shared/databricks/db/queries';
+} from '@chat-template/db';
 
 export const messagesRouter: RouterType = Router();
 

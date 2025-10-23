@@ -1,9 +1,9 @@
 import { useParams } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { Chat } from '@/components/chat';
-import { DEFAULT_CHAT_MODEL } from '@/lib/ai/models';
 import { useSession } from '@/contexts/SessionContext';
 import { convertToUIMessages } from '@/lib/utils';
+// import { checkChatAccess } from '@chat-template/core';
 
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>();
@@ -11,7 +11,10 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [chatData, setChatData] = useState<any>(null);
-  const [modelId, setModelId] = useState(DEFAULT_CHAT_MODEL);
+  const [modelId, setModelId] = useState('chat-model');
+
+  // if (id && session?.user?.id) {
+  // checkChatAccess(id, session?.user.id);
 
   useEffect(() => {
     // Load model preference from localStorage
@@ -84,7 +87,7 @@ export default function ChatPage() {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Error</h1>
+          <h1 className="mb-4 font-bold text-2xl">Error</h1>
           <p className="text-muted-foreground">{error || 'Chat not found'}</p>
         </div>
       </div>

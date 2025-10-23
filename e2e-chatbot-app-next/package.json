@@ -2,39 +2,34 @@
   "name": "databricks/e2e-chatbot-app",
   "version": "3.1.0",
   "private": true,
-  "workspaces": [
-    "client",
-    "server"
-  ],
+  "workspaces": ["client", "server"],
   "scripts": {
     "dev": "concurrently \"pnpm run dev:server\" \"pnpm run dev:client\"",
     "dev:server": "pnpm --filter @databricks/chatbot-server dev",
     "dev:client": "pnpm --filter @databricks/chatbot-client dev",
     "build": "pnpm run build:client && pnpm run build:server",
     "build:client": "pnpm --filter @databricks/chatbot-client build",
-    "build:server": "pnpm run db:migrate && pnpm --filter @databricks/chatbot-server build",
+    "build:server": "pnpm --filter @databricks/chatbot-server build",
     "start": "pnpm --filter @databricks/chatbot-server start",
     "lint": "biome lint --write --unsafe",
     "lint:fix": "biome lint --write --unsafe && biome format --write",
     "format": "biome format --write",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "pnpm exec tsx server/src/shared/databricks/db/migrate.ts",
+    "db:migrate": "pnpm exec tsx --env-file=.env.local packages/backend/db/src/migrate.ts",
     "db:reset": "pnpm exec tsx scripts/reset-database.ts",
     "db:studio": "drizzle-kit studio",
     "db:push": "drizzle-kit push",
     "db:pull": "drizzle-kit pull",
     "db:check": "drizzle-kit check",
     "db:up": "drizzle-kit up",
-    "test": "export DATABRICKS_CLIENT_ID=mock-value && export DATABRICKS_CLIENT_SECRET=mock-value && export DATABRICKS_HOST=mock-value && export PLAYWRIGHT=True && playwright test"
+    "test": "export DATABRICKS_CLIENT_ID=mock-value && export DATABRICKS_CLIENT_SECRET=mock-value && export DATABRICKS_HOST=mock-value && export PLAYWRIGHT=True && playwright test",
+    "generate:package": "NODE_OPTIONS='--import tsx' plop --plopfile tools/create-package.ts"
   },
   "dependencies": {
-    "@ai-sdk/provider": "2.0.0",
-    "@ai-sdk/provider-utils": "^3.0.12",
+    "@ai-sdk/provider": "catalog:",
+    "@ai-sdk/provider-utils": "catalog:",
     "@vercel/postgres": "^0.10.0",
     "dotenv": "^16.4.5",
-    "drizzle-kit": "^0.25.0",
-    "drizzle-orm": "^0.34.0",
-    "postgres": "^3.4.4",
     "tsx": "^4.19.1",
     "zod": "^3.25.76"
   },
@@ -44,6 +39,8 @@
     "@types/node": "^22.8.6",
     "concurrently": "^8.2.2",
     "msw": "^2.11.5",
+    "plop": "^4.0.4",
+    "tsdown": "catalog:",
     "typescript": "^5.6.3"
   }
 }

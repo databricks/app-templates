@@ -36,6 +36,7 @@ def load_tools(mcp_server):
         Returns:
             Dictionary containing the list of endpoints
         """
+        print("LIST API ENDPOINTS CALLED")
         args = ListApiEndpointsRequest(search_query=search_query)
         result = list_endpoints_handler(args)
         return result.model_dump()

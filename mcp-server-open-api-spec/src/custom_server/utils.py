@@ -25,16 +25,16 @@ def load_openapi_spec() -> Dict[str, Any]:
 
     # TODO: Change this to automatically load the file path
     spec_volume_path = os.getenv("SPEC_VOLUME_PATH")
-    print("PATH")
-    print(spec_volume_path)
     if spec_volume_path is None:
         raise FileNotFoundError(f"OpenAPI spec file not found")
 
     try:
         w = get_workspace_client()
+        print(w.config.host)
+        print(w.config.token)
+        print(w.config)
         spec_file = w.files.download(f'{spec_volume_path}/spec.json').contents
         file_data = spec_file.read().decode('utf-8')
-        print(file_data)
         _cached_openapi_spec = json.loads(file_data)
         logger.info("Successfully loaded OpenAPI specification")
         return _cached_openapi_spec

@@ -17,6 +17,7 @@ Example:
 
 import argparse
 import sys
+import json
 
 from databricks.sdk import WorkspaceClient
 from databricks_mcp import DatabricksMCPClient
@@ -66,11 +67,10 @@ def main():
         print(f"✓ Found {len(tools) if isinstance(tools, list) else 'N/A'} tools")
         print()
 
-        print_section("API Endpoints from Remote Server")
         print("Step 4: Calling tool: list_api_endpoints\n")
         
         endpoints_result = mcp_client.call_tool("list_api_endpoints")
-        
+        print(endpoints_result)
         # Handle CallToolResult object
         endpoints_data = None
         if hasattr(endpoints_result, 'structuredContent') and endpoints_result.structuredContent:
@@ -91,7 +91,6 @@ def main():
         else:
             print("❌ No results returned from list_api_endpoints tool")
         
-        print("\n✅ Test completed successfully!")
         return 0
 
     except Exception as e:

@@ -29,7 +29,9 @@ export async function fetchWithErrorHandlers(
     const response = await fetch(input, init);
 
     if (!response.ok) {
-      const { code, cause } = await response.json();
+      const parsedResponse = await response.json();
+      console.log('parsedResponse', parsedResponse);
+      const { code, cause } = parsedResponse;
       throw new ChatSDKError(code as ErrorCode, cause);
     }
 

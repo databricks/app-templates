@@ -78,42 +78,30 @@ async function ensureDb() {
   return db;
 }
 
-export async function getUserFromHeaders(request: Request): Promise<User> {
+export async function getUserFromHeaders({
+  getRequestHeader,
+}: {
+  getRequestHeader: (name: string) => string | null;
+}): Promise<User> {
   // Check for Databricks Apps headers first
-  const forwardedUser = request.headers.get("X-Forwarded-User");
-  const forwardedEmail = request.headers.get("X-Forwarded-Email");
-  const forwardedPreferredUsername = request.headers.get(
-    "X-Forwarded-Preferred-Username"
-  );
+  const forwardedUser = getRequestHeader("X-Forwarded-User");
+  const forwardedEmail = getRequestHeader("X-Forwarded-Email");
+  const forwardedPreferredUsername = getRequestHeader("X-Forwarded-Preferred-Username");
 
-  let userIdentifier: string;
-  let userEmail: string;
+  let user: User;
   if (forwardedUser) {
     // Databricks Apps environment - use forwarded headers
-    userIdentifier = forwardedUser;
-    userEmail =
-      forwardedEmail ||
-      `${forwardedPreferredUsername}@databricks.com` ||
-      `${forwardedUser}@databricks.com`;
-    console.log(
-      `[getUserFromHeaders] Using Databricks Apps user: ${userIdentifier} (${userEmail})`
-    );
+    user = {
+      id: forwardedUser,
+      email: forwardedEmail || `${forwardedPreferredUsername ?? forwardedUser}@databricks.com`,
+    };
   } else {
     // Local development - use system username
-    const systemUsername =
-      process.env.USER || process.env.USERNAME || "local-user";
-    userIdentifier = systemUsername;
-    userEmail = `${systemUsername}@localhost`;
-    console.log(
-      `[getUserFromHeaders] Using local development user: ${userIdentifier} (${userEmail})`
-    );
+    user = {
+      id: process.env.USER || process.env.USERNAME || "local-user",
+      email: `${process.env.USER || process.env.USERNAME || "local-user"}@localhost`,
+    }
   }
-
-  // Return user object with Databricks user ID - no database operations needed
-  const user: User = {
-    id: userIdentifier, // Use Databricks user ID directly
-    email: userEmail,
-  };
 
   console.log(`[getUserFromHeaders] Returning user from headers:`, user);
   return user;
@@ -397,41 +385,5 @@ export async function updateChatLastContextById({
   } catch (error) {
     console.warn("Failed to update lastContext for chat", chatId, error);
     return;
-  }
-}
-
-export async function getMessageCountByUserId({
-  id,
-  differenceInHours,
-}: {
-  id: string;
-  differenceInHours: number;
-}) {
-  try {
-    const twentyFourHoursAgo = new Date(
-      Date.now() - differenceInHours * 60 * 60 * 1000
-    );
-
-    const [stats] = await (
-      await ensureDb()
-    )
-      .select({ count: count(message.id) })
-      .from(message)
-      .innerJoin(chat, eq(message.chatId, chat.id))
-      .where(
-        and(
-          eq(chat.userId, id),
-          gte(message.createdAt, twentyFourHoursAgo),
-          eq(message.role, "user")
-        )
-      )
-      .execute();
-
-    return stats?.count ?? 0;
-  } catch (_error) {
-    throw new ChatSDKError(
-      "bad_request:database",
-      "Failed to get message count by user id"
-    );
   }
 }

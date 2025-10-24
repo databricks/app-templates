@@ -33,7 +33,7 @@ export default function ChatPage() {
         setError(null);
 
         // Fetch chat details - server will handle ACL
-        const chatResponse = await fetch(`/api/chat?id=${id}`, {
+        const chatResponse = await fetch(`/api/chat/${id}`, {
           credentials: 'include',
         });
 
@@ -45,7 +45,7 @@ export default function ChatPage() {
         const chat = await chatResponse.json();
 
         // Fetch messages
-        const messagesResponse = await fetch(`/api/history/${id}`, {
+        const messagesResponse = await fetch(`/api/messages/${id}`, {
           credentials: 'include',
         });
 

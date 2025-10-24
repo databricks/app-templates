@@ -5,10 +5,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import type { ChatStatus } from 'ai';
 import { Loader2Icon, SendIcon, SquareIcon, XIcon } from 'lucide-react';
-import type {
-  ComponentProps,
-  HTMLAttributes,
-  KeyboardEventHandler,
+import {
+  forwardRef,
+  type ComponentProps,
+  type HTMLAttributes,
+  type KeyboardEventHandler,
 } from 'react';
 
 type PromptInputProps = HTMLAttributes<HTMLFormElement>;
@@ -30,60 +31,69 @@ type PromptInputTextareaProps = ComponentProps<typeof Textarea> & {
   resizeOnNewLinesOnly?: boolean;
 };
 
-export const PromptInputTextarea = ({
-  onChange,
-  className,
-  placeholder = 'What would you like to know?',
-  minHeight = 48,
-  maxHeight = 164,
-  disableAutoResize = false,
-  resizeOnNewLinesOnly = false,
-  ...props
-}: PromptInputTextareaProps) => {
-  const handleKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
-    if (e.key === 'Enter') {
-      // Don't submit if IME composition is in progress
-      if (e.nativeEvent.isComposing) {
-        return;
-      }
+export const PromptInputTextarea = forwardRef<
+  HTMLTextAreaElement,
+  PromptInputTextareaProps
+>(
+  (
+    {
+      onChange,
+      className,
+      placeholder = 'What would you like to know?',
+      minHeight = 48,
+      maxHeight = 164,
+      disableAutoResize = false,
+      resizeOnNewLinesOnly = false,
+      ...props
+    },
+    ref,
+  ) => {
+    const handleKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
+      if (e.key === 'Enter') {
+        // Don't submit if IME composition is in progress
+        if (e.nativeEvent.isComposing) {
+          return;
+        }
 
-      if (e.shiftKey) {
-        // Allow newline
-        return;
-      }
+        if (e.shiftKey) {
+          // Allow newline
+          return;
+        }
 
-      // Submit on Enter (without Shift)
-      e.preventDefault();
-      const form = e.currentTarget.form;
-      if (form) {
-        form.requestSubmit();
+        // Submit on Enter (without Shift)
+        e.preventDefault();
+        const form = e.currentTarget.form;
+        if (form) {
+          form.requestSubmit();
+        }
       }
-    }
-  };
+    };
 
-  return (
-    <Textarea
-      className={cn(
-        'w-full resize-none rounded-none border-none p-3 shadow-none outline-hidden ring-0',
-        disableAutoResize
-          ? 'field-sizing-fixed'
-          : resizeOnNewLinesOnly
+    return (
+      <Textarea
+        className={cn(
+          'w-full resize-none rounded-none border-none p-3 shadow-none outline-hidden ring-0',
+          disableAutoResize
             ? 'field-sizing-fixed'
-            : 'field-sizing-content max-h-[6lh]',
-        'bg-transparent dark:bg-transparent',
-        'focus-visible:ring-0',
-        className,
-      )}
-      name="message"
-      onChange={(e) => {
-        onChange?.(e);
-      }}
-      onKeyDown={handleKeyDown}
-      placeholder={placeholder}
-      {...props}
-    />
-  );
-};
+            : resizeOnNewLinesOnly
+              ? 'field-sizing-fixed'
+              : 'field-sizing-content max-h-[6lh]',
+          'bg-transparent dark:bg-transparent',
+          'focus-visible:ring-0',
+          className,
+        )}
+        name="message"
+        onChange={(e) => {
+          onChange?.(e);
+        }}
+        onKeyDown={handleKeyDown}
+        placeholder={placeholder}
+        {...props}
+        ref={ref}
+      />
+    );
+  },
+);
 
 type PromptInputToolbarProps = HTMLAttributes<HTMLDivElement>;
 

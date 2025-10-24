@@ -513,28 +513,29 @@ async function getDatabricksCurrentUser(): Promise<any> {
 /**
  * Main authentication function for all environments
  */
-export async function getAuthSession(
-  request?: Request
-): Promise<AuthSession | null> {
+export async function getAuthSession({
+  getRequestHeader
+}: {
+  getRequestHeader: (name: string) => string | null;
+}): Promise<AuthSession | null> {
   try {
     // In test environments, short-circuit auth using forwarded headers or defaults
     if (isTestEnvironment) {
       const fwdUser =
-        request?.headers.get("X-Forwarded-User") ?? "test-user-id";
+        getRequestHeader("X-Forwarded-User") ?? "test-user-id";
       const fwdEmail =
-        request?.headers.get("X-Forwarded-Email") ?? "test@example.com";
+        getRequestHeader("X-Forwarded-Email") ?? "test@example.com";
       const fwdName =
-        request?.headers.get("X-Forwarded-Preferred-Username") ?? "test-user";
+        getRequestHeader("X-Forwarded-Preferred-Username") ?? "test-user";
 
-      const mockReq = {
-        headers: new Headers([
-          ["X-Forwarded-User", fwdUser],
-          ["X-Forwarded-Email", fwdEmail],
-          ["X-Forwarded-Preferred-Username", fwdName],
-        ]),
-      } as Request;
-
-      const user = await getUserFromHeaders(mockReq);
+      const user = await getUserFromHeaders({
+        getRequestHeader: (name: string) => {
+          if (name === "X-Forwarded-User") return fwdUser;
+          if (name === "X-Forwarded-Email") return fwdEmail;
+          if (name === "X-Forwarded-Preferred-Username") return fwdName;
+          return null;
+        }
+      });
 
       return {
         user: {
@@ -546,18 +547,19 @@ export async function getAuthSession(
         },
       };
     }
+
     // Check for Databricks Apps headers (production)
-    if (request?.headers.get("X-Forwarded-User")) {
+    if (getRequestHeader("X-Forwarded-User")) {
       console.log("[getAuthSession] Using Databricks Apps headers");
 
-      const forwardedUser = request.headers.get("X-Forwarded-User");
-      const forwardedEmail = request.headers.get("X-Forwarded-Email");
-      const forwardedPreferredUsername = request.headers.get(
+      const forwardedUser = getRequestHeader("X-Forwarded-User");
+      const forwardedEmail = getRequestHeader("X-Forwarded-Email");
+      const forwardedPreferredUsername = getRequestHeader(
         "X-Forwarded-Preferred-Username"
       );
 
       // Get user from headers
-      const user = await getUserFromHeaders(request);
+      const user = await getUserFromHeaders({ getRequestHeader });
 
       return {
         user: {
@@ -581,28 +583,16 @@ export async function getAuthSession(
       scimUser.emails?.[0]?.value ||
       `${scimUser.userName}@databricks.com`;
 
-    // Create mock request for user creation
-    const mockRequest = {
-      headers: {
-        get: (name: string) => {
-          if (name === "X-Forwarded-User") return scimUser.id;
-          if (name === "X-Forwarded-Email") return primaryEmail;
-          if (name === "X-Forwarded-Preferred-Username")
-            return scimUser.userName;
-          return null;
-        },
-        has: (name: string) => {
-          return [
-            "X-Forwarded-User",
-            "X-Forwarded-Email",
-            "X-Forwarded-Preferred-Username",
-          ].includes(name);
-        },
-      },
-    } as Request;
-
-    // Get or create user in database
-    const user = await getUserFromHeaders(mockRequest);
+    // Map SCIM user to AuthUser object
+    const user = await getUserFromHeaders({
+      getRequestHeader: (name: string) => {
+        if (name === "X-Forwarded-User") return scimUser.id;
+        if (name === "X-Forwarded-Email") return primaryEmail;
+        if (name === "X-Forwarded-Preferred-Username")
+          return scimUser.userName;
+        return null;
+      }
+    });
 
     return {
       user: {
@@ -617,18 +607,4 @@ export async function getAuthSession(
     console.error("[getAuthSession] Failed to get session:", error);
     return null;
   }
-}
-
-/**
- * Get auth session for Next.js page components (using headers from next/headers)
- */
-export async function getAuthSessionFromHeaders(
-  headersList: Headers
-): Promise<AuthSession | null> {
-  // Create a mock request from Next.js headers
-  const mockRequest = {
-    headers: headersList,
-  } as Request;
-
-  return getAuthSession(mockRequest);
 }

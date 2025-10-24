@@ -17,7 +17,7 @@ interface ChatAccessResult {
  */
 export async function checkChatAccess(
   chatId: string,
-  userId: string,
+  userId?: string,
 ): Promise<ChatAccessResult> {
   const chat = await getChatById({ id: chatId });
 

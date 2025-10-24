@@ -10,20 +10,18 @@ import {
   streamText,
   generateText,
   type LanguageModelUsage,
-  createUIMessageStreamResponse,
+  pipeUIMessageStreamToResponse,
 } from 'ai';
-import { authMiddleware, requireAuth } from '../middleware/auth';
+import { authMiddleware, requireAuth, requireChatAccess } from '../middleware/auth';
 import {
   deleteChatById,
-  getChatById,
-  getMessageCountByUserId,
   getMessagesByChatId,
   saveChat,
   saveMessages,
   updateChatLastContextById,
   updateChatVisiblityById,
 } from '@chat-template/db';
-import { convertToUIMessages, generateUUID } from '@chat-template/core';
+import { checkChatAccess, convertToUIMessages, generateUUID } from '@chat-template/core';
 import { myProvider } from '@chat-template/core';
 import {
   postRequestBodySchema,
@@ -37,7 +35,6 @@ import {
   DATABRICKS_TOOL_DEFINITION,
 } from '@chat-template/ai-sdk-providers';
 import { streamCache } from '@chat-template/core';
-import type { UserType } from '@chat-template/auth';
 
 export const chatRouter: RouterType = Router();
 
@@ -79,14 +76,14 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       const response = error.toResponse();
       return res.status(response.status).json(response.json);
     }
-    const userType: UserType = session.user.type;
 
-    const messageCount = await getMessageCountByUserId({
-      id: session.user.id,
-      differenceInHours: 24,
-    });
+    const { chat, allowed } = await checkChatAccess(id, session?.user.id);
 
-    const chat = await getChatById({ id });
+    if (!allowed) {
+      const error = new ChatSDKError('forbidden:chat');
+      const response = error.toResponse();
+      return res.status(response.status).json(response.json);
+    }
 
     if (!chat) {
       const title = await generateTitleFromUserMessage({ message });
@@ -139,11 +136,6 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       },
     });
 
-    // Set headers for SSE
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
     /**
      * We manually create the stream to have access to the stream writer.
      * This allows us to inject custom stream parts like data-error.
@@ -158,20 +150,10 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
             sendSources: true,
             onError: (error) => {
               console.error('Stream error:', error);
-              console.error(
-                'Stack trace:',
-                error instanceof Error ? error.stack : 'No stack',
-              );
 
-              const errorMessage =
-                error instanceof Error
-                  ? error.message
-                  : 'Oops, an error occurred!';
+              const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
 
-              writer.write({
-                type: 'data-error',
-                data: errorMessage,
-              });
+              writer.write({ type: 'data-error', data: errorMessage });
 
               return errorMessage;
             },
@@ -198,10 +180,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
 
         if (finalUsage) {
           try {
-            await updateChatLastContextById({
-              chatId: id,
-              context: finalUsage,
-            });
+            await updateChatLastContextById({ chatId: id, context: finalUsage, });
           } catch (err) {
             console.warn('Unable to persist last usage for chat', id, err);
           }
@@ -211,9 +190,9 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       },
     });
 
-    // Create the Web API Response with the stream
-    const webResponse = createUIMessageStreamResponse({
+    pipeUIMessageStreamToResponse({
       stream,
+      response: res,
       consumeSseStream({ stream }) {
         streamCache.storeStream({
           streamId,
@@ -221,31 +200,8 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           stream,
         });
       },
+
     });
-
-    // Pipe the Web API ReadableStream into Express response
-    if (webResponse.body) {
-      const reader = webResponse.body.getReader();
-
-      // Read and write chunks to Express response
-      const pump = async () => {
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            res.write(value);
-          }
-          res.end();
-        } catch (error) {
-          console.error('Stream pumping error:', error);
-          res.end();
-        }
-      };
-
-      pump();
-    } else {
-      res.end();
-    }
   } catch (error) {
     if (error instanceof ChatSDKError) {
       const response = error.toResponse();
@@ -253,10 +209,6 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     }
 
     console.error('Unhandled error in chat API:', error);
-    console.error(
-      'Stack trace:',
-      error instanceof Error ? error.stack : 'No stack available',
-    );
 
     const chatError = new ChatSDKError('offline:chat');
     const response = chatError.toResponse();
@@ -264,34 +216,27 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+
 /**
  * DELETE /api/chat?id=:id - Delete a chat
  */
-chatRouter.delete('/', requireAuth, async (req: Request, res: Response) => {
+chatRouter.delete('/', [requireAuth, requireChatAccess], async (req: Request, res: Response) => {
   const id = req.query.id as string;
-
-  if (!id) {
-    const error = new ChatSDKError('bad_request:api');
-    const response = error.toResponse();
-    return res.status(response.status).json(response.json);
-  }
-
-  const session = req.session;
-  if (!session) {
-    const error = new ChatSDKError('unauthorized:chat');
-    const response = error.toResponse();
-    return res.status(response.status).json(response.json);
-  }
-  const chat = await getChatById({ id });
-
-  if (chat?.userId !== session.user.id) {
-    const error = new ChatSDKError('forbidden:chat');
-    const response = error.toResponse();
-    return res.status(response.status).json(response.json);
-  }
 
   const deletedChat = await deleteChatById({ id });
   return res.status(200).json(deletedChat);
+});
+
+/**
+ * GET /api/chat/:id
+ */
+
+chatRouter.get('/:id', [requireAuth, requireChatAccess], async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  const { chat } = await checkChatAccess(id, req.session?.user.id);
+
+  return res.status(200).json(chat);
 });
 
 /**
@@ -299,9 +244,10 @@ chatRouter.delete('/', requireAuth, async (req: Request, res: Response) => {
  */
 chatRouter.get(
   '/:id/stream',
-  requireAuth,
+  [requireAuth, requireChatAccess],
   async (req: Request, res: Response) => {
     const { id } = req.params;
+
     const cursor = Number.parseInt(
       (req.headers['x-resume-stream-cursor'] as string) || '0',
     );
@@ -309,7 +255,9 @@ chatRouter.get(
     const cachedStream = streamCache.getStream(id);
 
     if (!cachedStream) {
-      return res.status(404).json({ error: 'Stream not found' });
+      const error = new ChatSDKError('empty:stream');
+      const response = error.toResponse();
+      return res.status(response.status).json(response.json);
     }
 
     // Set headers for SSE
@@ -356,7 +304,7 @@ chatRouter.post('/title', requireAuth, async (req: Request, res: Response) => {
  */
 chatRouter.patch(
   '/:id/visibility',
-  requireAuth,
+  [requireAuth, requireChatAccess],
   async (req: Request, res: Response) => {
     try {
       const { id } = req.params;

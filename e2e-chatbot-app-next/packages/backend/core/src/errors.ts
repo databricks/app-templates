@@ -4,9 +4,10 @@ type ErrorType =
   | 'forbidden'
   | 'not_found'
   | 'rate_limit'
-  | 'offline';
+  | 'offline'
+  | 'empty';
 
-type Surface = 'chat' | 'auth' | 'api' | 'database' | 'history';
+type Surface = 'chat' | 'auth' | 'api' | 'database' | 'history' | 'stream';
 
 export type ErrorCode = `${ErrorType}:${Surface}`;
 
@@ -18,6 +19,7 @@ const visibilityBySurface: Record<Surface, ErrorVisibility> = {
   auth: 'response',
   api: 'response',
   history: 'response',
+  stream: 'response',
 };
 
 export class ChatSDKError extends Error {
@@ -29,7 +31,16 @@ export class ChatSDKError extends Error {
   constructor(errorCode: ErrorCode, cause?: string) {
     super();
 
-    const [type, surface] = errorCode.split(':');
+    let type: ErrorType;
+    let surface: Surface;
+    try {
+      const [_type, _surface] = errorCode.split(':');
+      type = _type as ErrorType;
+      surface = _surface as Surface;
+    } catch (error) {
+      console.error('Error parsing error code:', error);
+      throw new Error('Invalid error code');
+    }
 
     this.type = type as ErrorType;
     this.cause = cause;
@@ -108,6 +119,8 @@ function getStatusCodeByType(type: ErrorType) {
       return 429;
     case 'offline':
       return 503;
+    case 'empty':
+      return 204;
     default:
       return 500;
   }

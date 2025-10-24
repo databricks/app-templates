@@ -18,7 +18,6 @@ import { ChatSDKError } from '@/lib/errors';
 import type { Attachment, ChatMessage } from '@/lib/types';
 import { useDataStream } from './data-stream-provider';
 import { ChatTransport } from '@chat-template/ai-sdk-integration';
-// import type { ClientSession } from '@chat-template/auth';
 
 export function Chat({
   id,
@@ -33,7 +32,6 @@ export function Chat({
   initialChatModel: string;
   initialVisibilityType: VisibilityType;
   isReadonly: boolean;
-  // session: ClientSession;
   session: any;
   initialLastContext?: LanguageModelUsage;
 }) {
@@ -74,7 +72,6 @@ export function Chat({
     messages: initialMessages,
     experimental_throttle: 100,
     generateId: generateUUID,
-    resume: id !== undefined && initialMessages.length > 0, // Enable automatic stream resumption
     transport: new ChatTransport({
       onStreamPart: (part) => {
         // when we receive a stream part, we reset the onErrorResumeCountRef and onFinishResumeCountRef
@@ -120,7 +117,9 @@ export function Chat({
         setUsage(dataPart.data);
       }
     },
-    onFinish: () => {
+    onFinish: (test) => {
+      console.trace();
+      console.log('[Chat onFinish] test', test);
       console.log('[Chat onFinish] lastPart received was', lastPartRef.current);
       if (
         lastPartRef.current?.type !== 'finish' &&
@@ -141,9 +140,6 @@ export function Chat({
     onError: (error) => {
       console.log('[Chat onError] Error occurred:', error);
 
-      // For now, just log network errors but don't try to resume
-      // The resumeStream() API is designed for page reloads, not mid-stream reconnections
-      // Mid-stream reconnections cause duplicate messages because all chunks are replayed
       if (error instanceof ChatSDKError) {
         toast({
           type: 'error',

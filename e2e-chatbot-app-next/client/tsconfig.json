@@ -17,9 +17,7 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": "..",
     "paths": {
-      "@/*": ["./client/src/*"],
-      "@chat-template/ai-sdk-integration": ["./packages/frontend/ai-sdk-integration/src/index.ts"],
-      "@chat-template/ai-sdk-providers": ["./packages/backend/ai-sdk-providers/src/index.ts"]
+      "@/*": ["./client/src/*"]
     }
   },
   "include": ["src"],

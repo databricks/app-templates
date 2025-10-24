@@ -54,8 +54,7 @@
     "tailwind-merge": "^2.5.2",
     "use-stick-to-bottom": "^1.1.1",
     "usehooks-ts": "^3.1.0",
-    "zod": "catalog:",
-    "@chat-template/ai-sdk-integration": "workspace:*"
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.1",
@@ -68,6 +67,7 @@
     "@tailwindcss/postcss": "^4.1.13",
     "@tailwindcss/typography": "^0.5.19",
     "tailwindcss-animate": "^1.0.7",
-    "postcss": "^8"
+    "postcss": "^8",
+    "@chat-template/db": "workspace:*"
   }
 }

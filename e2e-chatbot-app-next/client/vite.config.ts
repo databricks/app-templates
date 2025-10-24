@@ -7,10 +7,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
-      '@chat-template/ai-sdk-integration': path.resolve(__dirname, '../packages/frontend/ai-sdk-integration/src/index.ts'),
-      // '@chat-template/ai-sdk-providers': path.resolve(__dirname, '../packages/backend/ai-sdk-providers/src/index.ts'),
-      // '@chat-template/auth': path.resolve(__dirname, '../packages/backend/auth/src/index.ts'),
+      '@': path.resolve(__dirname, './src')
     },
   },
   server: {

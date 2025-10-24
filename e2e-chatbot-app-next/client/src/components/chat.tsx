@@ -17,7 +17,7 @@ import { useChatVisibility } from '@/hooks/use-chat-visibility';
 import { ChatSDKError } from '@/lib/errors';
 import type { Attachment, ChatMessage } from '@/lib/types';
 import { useDataStream } from './data-stream-provider';
-import { ChatTransport } from '@chat-template/ai-sdk-integration';
+import { ChatTransport } from '../lib/ChatTransport';
 
 export function Chat({
   id,

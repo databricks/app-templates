@@ -1,8 +1,7 @@
 packages:
   - client
   - server
-  - packages/backend/*
-  - packages/frontend/*
+  - packages/*
 
 catalog:
   "@types/node": ^22.8.6

@@ -2,6 +2,7 @@ import 'server-only';
 
 import { getChatById } from '@/databricks/db/queries';
 import type { Chat } from '@/databricks/db/schema';
+import { ChatSDKError } from '@/lib/errors';
 
 interface ChatAccessResult {
   allowed: boolean;
@@ -56,4 +57,29 @@ export async function checkChatAccess(
     allowed: true,
     chat,
   };
+}
+
+/**
+ * Check if a user owns a chat and throw standardized errors if not
+ *
+ * @param chatId - The ID of the chat to check ownership for
+ * @param userId - The ID of the user to verify as owner
+ * @returns The chat if the user is the owner
+ * @throws ChatSDKError if chat not found or user is not the owner
+ */
+export async function checkChatOwnership(
+  chatId: string,
+  userId: string,
+): Promise<Chat> {
+  const chat = await getChatById({ id: chatId });
+
+  if (!chat) {
+    throw new ChatSDKError('not_found:chat');
+  }
+
+  if (chat.userId !== userId) {
+    throw new ChatSDKError('forbidden:chat');
+  }
+
+  return chat;
 }

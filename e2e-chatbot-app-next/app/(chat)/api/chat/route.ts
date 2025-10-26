@@ -32,6 +32,7 @@ import {
   DATABRICKS_TOOL_DEFINITION,
 } from '@/databricks/providers/databricks-provider/databricks-tool-calling';
 import { streamCache } from '@/lib/stream-cache';
+import { checkChatOwnership } from '@/lib/chat-acl';
 
 export const maxDuration = 60;
 
@@ -240,13 +241,17 @@ export async function DELETE(request: Request) {
     return new ChatSDKError('unauthorized:chat').toResponse();
   }
 
-  const chat = await getChatById({ id });
+  try {
+    // Check ownership - throws ChatSDKError if not owner
+    await checkChatOwnership(id, session.user.id);
 
-  if (chat?.userId !== session.user.id) {
-    return new ChatSDKError('forbidden:chat').toResponse();
+    const deletedChat = await deleteChatById({ id });
+
+    return Response.json(deletedChat, { status: 200 });
+  } catch (error) {
+    if (error instanceof ChatSDKError) {
+      return error.toResponse();
+    }
+    throw error;
   }
-
-  const deletedChat = await deleteChatById({ id });
-
-  return Response.json(deletedChat, { status: 200 });
 }

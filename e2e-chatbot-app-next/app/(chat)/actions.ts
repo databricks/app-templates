@@ -4,13 +4,14 @@ import { generateText, type UIMessage } from 'ai';
 import { headers } from 'next/headers';
 import {
   deleteMessagesByChatIdAfterTimestamp,
-  getChatById,
   getMessageById,
   updateChatVisiblityById,
 } from '@/databricks/db/queries';
 import type { VisibilityType } from '@/components/visibility-selector';
 import { myProvider } from '@/lib/ai/providers';
 import { getAuthSessionFromHeaders } from '@/databricks/auth/databricks-auth';
+import { ChatSDKError } from '@/lib/errors';
+import { checkChatOwnership } from '@/lib/chat-acl';
 
 export async function generateTitleFromUserMessage({
   message,
@@ -51,21 +52,11 @@ export async function updateChatVisibility({
   const session = await getAuthSessionFromHeaders(headersList);
 
   if (!session?.user) {
-    throw new Error('You need to sign in to update chat visibility.');
+    throw new ChatSDKError('unauthorized:chat');
   }
 
-  const chat = await getChatById({ id: chatId });
-
-  if (!chat) {
-    throw new Error('The requested chat was not found.');
-  }
-
-  // Only the chat owner can update visibility
-  if (chat.userId !== session.user.id) {
-    throw new Error(
-      'This chat belongs to another user. Only the owner can update visibility.',
-    );
-  }
+  // Check ownership - throws ChatSDKError if not owner
+  await checkChatOwnership(chatId, session.user.id);
 
   await updateChatVisiblityById({ chatId, visibility });
 }

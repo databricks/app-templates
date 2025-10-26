@@ -1,13 +1,16 @@
 'use server';
 
 import { generateText, type UIMessage } from 'ai';
+import { headers } from 'next/headers';
 import {
   deleteMessagesByChatIdAfterTimestamp,
+  getChatById,
   getMessageById,
   updateChatVisiblityById,
 } from '@/databricks/db/queries';
 import type { VisibilityType } from '@/components/visibility-selector';
 import { myProvider } from '@/lib/ai/providers';
+import { getAuthSessionFromHeaders } from '@/databricks/auth/databricks-auth';
 
 export async function generateTitleFromUserMessage({
   message,
@@ -44,5 +47,25 @@ export async function updateChatVisibility({
   chatId: string;
   visibility: VisibilityType;
 }) {
+  const headersList = await headers();
+  const session = await getAuthSessionFromHeaders(headersList);
+
+  if (!session?.user) {
+    throw new Error('You need to sign in to update chat visibility.');
+  }
+
+  const chat = await getChatById({ id: chatId });
+
+  if (!chat) {
+    throw new Error('The requested chat was not found.');
+  }
+
+  // Only the chat owner can update visibility
+  if (chat.userId !== session.user.id) {
+    throw new Error(
+      'This chat belongs to another user. Only the owner can update visibility.',
+    );
+  }
+
   await updateChatVisiblityById({ chatId, visibility });
 }

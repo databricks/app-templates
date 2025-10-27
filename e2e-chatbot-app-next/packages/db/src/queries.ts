@@ -12,9 +12,9 @@ import {
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
-import { chat, type User, message, type DBMessage, type Chat } from './schema';
-import type { VisibilityType } from '@chat-template/core';
-import { ChatSDKError } from '@chat-template/core';
+import { chat, message, type DBMessage, type Chat } from './schema';
+import type { VisibilityType } from '@chat-template/utils';
+import { ChatSDKError } from '@chat-template/utils';
 import type { LanguageModelV2Usage } from '@ai-sdk/provider';
 import { isDatabaseAvailable } from './connection';
 import { getAuthMethod, getAuthMethodDescription } from '@chat-template/auth';
@@ -75,39 +75,6 @@ async function ensureDb() {
     throw new Error('Database connection could not be established');
   }
   return db;
-}
-
-export async function getUserFromHeaders({
-  getRequestHeader,
-}: {
-  getRequestHeader: (name: string) => string | null;
-}): Promise<User> {
-  // Check for Databricks Apps headers first
-  const forwardedUser = getRequestHeader('X-Forwarded-User');
-  const forwardedEmail = getRequestHeader('X-Forwarded-Email');
-  const forwardedPreferredUsername = getRequestHeader(
-    'X-Forwarded-Preferred-Username',
-  );
-
-  let user: User;
-  if (forwardedUser) {
-    // Databricks Apps environment - use forwarded headers
-    user = {
-      id: forwardedUser,
-      email:
-        forwardedEmail ||
-        `${forwardedPreferredUsername ?? forwardedUser}@databricks.com`,
-    };
-  } else {
-    // Local development - use system username
-    user = {
-      id: process.env.USER || process.env.USERNAME || 'local-user',
-      email: `${process.env.USER || process.env.USERNAME || 'local-user'}@localhost`,
-    };
-  }
-
-  console.log(`[getUserFromHeaders] Returning user from headers:`, user);
-  return user;
 }
 
 export async function saveChat({

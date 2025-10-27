@@ -37,6 +37,7 @@
   "dependencies": {
     "@chat-template/ai-sdk-providers": "workspace:*",
     "@chat-template/db": "workspace:*",
+    "@chat-template/utils": "workspace:*",
     "date-fns": "^4.1.0",
     "zod": "catalog:"
   }

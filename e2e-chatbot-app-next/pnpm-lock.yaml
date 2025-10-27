@@ -239,9 +239,6 @@ importers:
 
   packages/auth:
     dependencies:
-      '@chat-template/db':
-        specifier: workspace:*
-        version: link:../db
       '@chat-template/utils':
         specifier: workspace:*
         version: link:../utils
@@ -261,6 +258,9 @@ importers:
       '@chat-template/db':
         specifier: workspace:*
         version: link:../db
+      '@chat-template/utils':
+        specifier: workspace:*
+        version: link:../utils
       date-fns:
         specifier: ^4.1.0
         version: 4.1.0
@@ -280,9 +280,6 @@ importers:
       '@chat-template/auth':
         specifier: workspace:*
         version: link:../auth
-      '@chat-template/core':
-        specifier: workspace:*
-        version: link:../core
       '@chat-template/utils':
         specifier: workspace:*
         version: link:../utils

@@ -9,6 +9,7 @@ import {
   pgSchema,
 } from 'drizzle-orm/pg-core';
 import type { LanguageModelV2Usage } from '@ai-sdk/provider';
+import type { User as SharedUser } from '@chat-template/utils';
 
 const schemaName = 'ai_chatbot';
 console.log(`[Schema] Using database schema: ${schemaName}`);
@@ -24,7 +25,7 @@ export const user = createTable('User', {
   // Password removed - using Databricks SSO authentication
 });
 
-export type User = InferSelectModel<typeof user>;
+export type User = SharedUser;
 
 export const chat = createTable('Chat', {
   id: uuid('id').primaryKey().notNull().defaultRandom(),

@@ -35,4 +35,4 @@ export interface Attachment {
   contentType: string;
 }
 
-export type VisibilityType = 'private' | 'public';
+export type { VisibilityType } from '@chat-template/utils';

@@ -33,7 +33,6 @@
     "@types/node": "catalog:"
   },
   "dependencies": {
-    "@chat-template/db": "workspace:*",
     "@chat-template/utils": "workspace:*"
   }
 }

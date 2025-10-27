@@ -4,7 +4,7 @@
  * Also handles user session management and SCIM API interactions
  */
 
-import { getUserFromHeaders } from '@chat-template/db';
+import type { User } from '@chat-template/utils';
 import { getHostUrl, getHostDomain } from '@chat-template/utils';
 
 // ============================================================================
@@ -608,3 +608,44 @@ export async function getAuthSession({
 }
 
 const isTestEnvironment = Boolean(process.env.PLAYWRIGHT);
+
+// ============================================================================
+// User from Headers Helper
+// ============================================================================
+
+/**
+ * Get user from request headers
+ * Used by getAuthSession to extract user information
+ */
+export async function getUserFromHeaders({
+  getRequestHeader,
+}: {
+  getRequestHeader: (name: string) => string | null;
+}): Promise<User> {
+  // Check for Databricks Apps headers first
+  const forwardedUser = getRequestHeader('X-Forwarded-User');
+  const forwardedEmail = getRequestHeader('X-Forwarded-Email');
+  const forwardedPreferredUsername = getRequestHeader(
+    'X-Forwarded-Preferred-Username',
+  );
+
+  let user: User;
+  if (forwardedUser) {
+    // Databricks Apps environment - use forwarded headers
+    user = {
+      id: forwardedUser,
+      email:
+        forwardedEmail ||
+        `${forwardedPreferredUsername ?? forwardedUser}@databricks.com`,
+    };
+  } else {
+    // Local development - use system username
+    user = {
+      id: process.env.USER || process.env.USERNAME || 'local-user',
+      email: `${process.env.USER || process.env.USERNAME || 'local-user'}@localhost`,
+    };
+  }
+
+  console.log(`[getUserFromHeaders] Returning user from headers:`, user);
+  return user;
+}

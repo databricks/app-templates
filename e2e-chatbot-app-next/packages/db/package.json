@@ -33,7 +33,6 @@
   },
   "dependencies": {
     "@chat-template/auth": "workspace:*",
-    "@chat-template/core": "workspace:*",
     "@chat-template/utils": "workspace:*",
     "drizzle-orm": "catalog:",
     "drizzle-kit": "catalog:",

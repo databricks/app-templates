@@ -1,0 +1,80 @@
+# ============================================================================
+# Project Metadata
+# ============================================================================
+# This section defines the basic information about your MCP server package
+
+[project]
+name = "custom-mcp-server"                            # Change this to your server's name
+version = "0.1.0"                                     
+description = "Custom MCP Server on Databricks Apps" 
+readme = "README.md"                                  
+requires-python = ">=3.11"                            
+
+# Core dependencies required to run the MCP server
+dependencies = [
+    "fastapi>=0.115.12",
+    "mcp[cli]>=1.14.0",
+    "uvicorn>=0.34.2",
+    "databricks-sdk>=0.60.0",
+    "pydantic>=2",
+    "fastmcp>=2.12.5"
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8.0",
+    "databricks-sdk",
+    "databricks-mcp",
+    "pytest",
+    "requests"
+]
+
+# ============================================================================
+# Command Line Scripts
+# ============================================================================
+# This creates the 'custom-mcp-server' command that runs your server
+# Change the command name if you rename your project
+
+[project.scripts]
+custom-mcp-server = "server.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["server"]
+
+[tool.ruff]
+# Set the maximum line length to 100
+line-length = 100
+target-version = "py311"
+
+# Exclude common directories
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
+select = [
+  "I",      # isort - organize imports
+  "B",      # bugbear - find common bugs
+  "F401",   # Remove unused imports
+  "E722",   # Bare except statements
+  "T203",   # TODO comments
+  "TC004",  # Misuse of typing.TYPE_CHECKING
+  "TID251", # Import rules
+  "F403",   # Undefined local with import star
+]
+
+[tool.ruff.format]
+docstring-code-format = true
+docstring-code-line-length = 88
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

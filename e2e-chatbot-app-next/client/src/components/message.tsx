@@ -168,7 +168,7 @@ const PurePreviewMessage = ({
                           : undefined
                       }
                     >
-                      <Response>
+                      <Response isAnimating={isLoading}>
                         {sanitizeText(joinMessagePartSegments(parts))}
                       </Response>
                     </MessageContent>

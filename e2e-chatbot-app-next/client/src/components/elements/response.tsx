@@ -13,6 +13,7 @@ export const Response = memo(
         components={{
           a: DatabricksMessageCitationStreamdownIntegration,
         }}
+        className="flex flex-col gap-4"
         {...props}
       />
     );

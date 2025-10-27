@@ -19,8 +19,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
-const SIDEBAR_COOKIE_NAME = 'sidebar:state';
-const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
+const SIDEBAR_LOCAL_STORAGE_NAME = 'sidebar:state';
 const SIDEBAR_WIDTH = '16rem';
 const SIDEBAR_WIDTH_MOBILE = '18rem';
 const SIDEBAR_WIDTH_ICON = '3rem';
@@ -84,7 +83,7 @@ const SidebarProvider = React.forwardRef<
         }
 
         // This sets the local storage to keep the sidebar state.
-        localStorage.setItem(SIDEBAR_COOKIE_NAME, String(openState));
+        localStorage.setItem(SIDEBAR_LOCAL_STORAGE_NAME, String(openState));
       },
       [setOpenProp, open],
     );

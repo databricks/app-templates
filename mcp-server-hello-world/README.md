@@ -28,8 +28,6 @@ mcp-server-hello-world/
 ├── scripts/
 │   └── dev/
 │       ├── start_server.sh           # Start the MCP server locally
-│       ├── query_local.sh            # Query local MCP server (starts, tests, stops)
-│       ├── query_local.py            # Query MCP client (local development)
 │       ├── query_remote.sh           # Interactive script for testing deployed app with OAuth
 │       ├── query_remote.py           # Query MCP client (deployed app) with health and user auth
 │       └── generate_oauth_token.py   # Generate OAuth tokens for Databricks
@@ -76,14 +74,17 @@ pip install -r requirements.txt
 # Quick start with script (syncs dependencies and starts server)
 ./scripts/dev/start_server.sh
 
-# Or manually using uv
+# Or manually using uv (default port 8000)
 uv run custom-mcp-server
 
+# Or specify a custom port
+uv run custom-mcp-server --port 8080
+
 # Or using the installed command (after pip install -e .)
-custom-mcp-server
+custom-mcp-server --port 3000
 ```
 
-The server will start on `http://localhost:8000` with auto-reload enabled.
+The server will start on `http://localhost:8000` by default (or your specified port).
 
 ### Accessing the Server
 
@@ -108,49 +109,29 @@ uv run pytest tests/
 **What the tests do:**
 - Automatically start the MCP server
 - Test that `list_tools()` works correctly
-- Test that all registered tools can be called without errors
+- Test that all registered tools can be called without errors by invoking the `call_tools()`
 - Automatically clean up the server after tests complete
-
-The integration tests use pytest fixtures to manage the server lifecycle, ensuring a clean test environment every time.
-
-### Quick Start with Shell Script
-
-Use the provided shell script to test your local MCP server:
-
-```bash
-chmod +x scripts/dev/query_local.sh
-./scripts/dev/query_local.sh
-```
-
-This script will:
-1. Sync dependencies
-2. Start the MCP server in the background
-3. Run the local client test
-4. Stop the server automatically
 
 ### Manual Testing
 
-#### Test Local Development
+#### End-to-end test your locally-running MCP server
 
-**Option 1: Automated test (recommended)**
 ```bash
-# Starts server, runs test, stops server automatically
-./scripts/dev/query_local.sh
-```
-
-**Option 2: Manual testing**
-```bash
-# In terminal 1: Start the server
 ./scripts/dev/start_server.sh
-# Or: uv run custom-mcp-server
-
-# In terminal 2: Test the connection
-python scripts/dev/query_local.py
 ```
 
-The `scripts/dev/query_local.py` script connects to your local MCP server without authentication and lists available tools.
+```python
+from databricks_mcp import DatabricksMCPClient
+mcp_client = DatabricksMCPClient(
+    server_url="http://localhost:8000"
+)
+# List available MCP tools
+print(mcp_client.list_tools())
+```
 
-#### Test Deployed App with User Authorization (OAuth)
+The script connects to your local MCP server without authentication and lists available tools.
+
+#### End-to-end test your deployed MCP server
 
 After deploying to Databricks Apps, use the interactive shell script to test with user-level OAuth authentication:
 
@@ -164,7 +145,7 @@ The script will guide you through:
 2. **App name**: Enter your deployed app name
 3. **Automatic configuration**: Extracts app scopes and URLs automatically
 4. **OAuth flow**: Generates user OAuth token via browser
-5. **End-to-end test**: Tests `list_tools()`, `health` tool, and `get_current_user` tool
+5. **End-to-end test**: Tests `list_tools()`, and invokes each tool returned in list_tools
 
 **What it does:**
 - Retrieves app configuration using `databricks apps get`
@@ -280,16 +261,19 @@ python scripts/dev/generate_oauth_token.py \
 
 ### Server Settings
 
-Edit `server/main.py` to change server configuration:
+The server can be configured using command-line arguments:
 
-```python
-uvicorn.run(
-    "server.app:combined_app",
-    host="0.0.0.0",        # Bind address
-    port=8000,             # Port number
-    reload=True,           # Auto-reload (disable in production)
-)
+```bash
+# Change port
+uv run custom-mcp-server --port 8080
+
+# Get help
+uv run custom-mcp-server --help
 ```
+
+The default configuration:
+- **Host**: `0.0.0.0` (listens on all network interfaces)
+- **Port**: `8000` (configurable via `--port` argument)
 
 ## Deployment
 

@@ -99,7 +99,7 @@ echo "This will open your browser for authorization..."
 echo ""
 
 # Run the OAuth token generation and capture JSON output
-token_response=$(python3 "$SCRIPT_DIR/generate_oauth_token.py" \
+token_response=$(uv run python "$SCRIPT_DIR/generate_oauth_token.py" \
     --host "$host" \
     --scopes "$scopes")
 
@@ -135,7 +135,7 @@ echo ""
 
 cd "$PROJECT_ROOT"
 
-python3 "$SCRIPT_DIR/query_remote.py" \
+uv run python "$SCRIPT_DIR/query_remote.py" \
     --host "$host" \
     --token "$token" \
     --app-url "$app_url"

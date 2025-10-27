@@ -6,7 +6,6 @@ Scripts for testing and developing the MCP server.
 
 | Script | Purpose | Environment |
 |--------|---------|-------------|
-| `query_local.sh` | Test all tools locally | `localhost:8000` |
 | `query_remote.sh` | Test deployed app (interactive OAuth) | Databricks App |
 | `start_server.sh` | Start local dev server | `localhost:8000` |
 | `generate_oauth_token.py` | Generate OAuth tokens | Any |
@@ -15,58 +14,29 @@ Scripts for testing and developing the MCP server.
 
 ### Local Testing
 ```bash
-# Automated (starts server, tests, stops)
-./scripts/dev/query_local.sh
-
-# Manual
 ./scripts/dev/start_server.sh  # Terminal 1
-python scripts/dev/query_local.py  # Terminal 2
 ```
 
-Tests: `health`, `get_current_user` (uses Databricks CLI auth)
+```python
+from databricks_mcp import DatabricksMCPClient
+mcp_client = DatabricksMCPClient(
+    server_url="http://localhost:8000"
+)
+# List available MCP tools
+print(mcp_client.list_tools())
+```
 
 ### Remote Testing
 ```bash
 # Interactive (walks you through OAuth)
 ./scripts/dev/query_remote.sh
 
-# Manual
-python scripts/dev/query_remote.py \
-    --host https://your-workspace.cloud.databricks.com \
-    --token your-oauth-token \
-    --app-url https://your-workspace.cloud.databricks.com/serving-endpoints/your-app
-```
-
 Tests: All tools with user-level OAuth authentication
 
 ## Development Workflow
 
 1. Add tool to `server/tools.py`
-2. **Add test call** in `query_local.py` and `query_remote.py` (see TODO comments)
-3. Test locally: `./scripts/dev/query_local.sh`
+3. Test locally: Either follow the local testing above or run the integration tests
 4. Deploy to Databricks Apps
 5. Test deployed: `./scripts/dev/query_remote.sh`
-
-## Adding New Tools
-
-When you add a new tool to `server/tools.py`, update the test files to call it:
-
-1. **`query_local.py`** - Add a test step (look for `TODO: Add new tool tests here`)
-2. **`query_remote.py`** - Add a test step (look for `TODO: Add new tool tests here`)
-
-Example test step:
-```python
-# Test your_new_tool
-print("Step N: Testing 'your_new_tool' tool...")
-print("-" * 70)
-try:
-    result = mcp_client.call_tool("your_new_tool", param1="value")
-    print(result)
-    print("-" * 70)
-    print("✓ your_new_tool test passed!")
-except Exception as e:
-    print(f"✗ Error calling your_new_tool: {e}")
-    print("-" * 70)
-print()
-```
 

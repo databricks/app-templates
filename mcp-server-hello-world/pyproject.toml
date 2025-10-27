@@ -25,7 +25,8 @@ dev = [
     "ruff>=0.8.0",
     "databricks-sdk",
     "databricks-mcp",
-    "pytest"
+    "pytest",
+    "requests"
 ]
 
 # ============================================================================

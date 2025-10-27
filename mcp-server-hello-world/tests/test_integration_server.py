@@ -1,12 +1,20 @@
 import os
 import shlex
 import signal
+import socket
 import subprocess
 import time
+from contextlib import closing
 
 import pytest
 import requests
 from databricks_mcp import DatabricksMCPClient
+
+
+def _find_free_port() -> int:
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
 def _wait_for_server_startup(url: str, timeout: int = 10):
@@ -28,7 +36,10 @@ def _wait_for_server_startup(url: str, timeout: int = 10):
 
 @pytest.fixture(scope="session")
 def run_mcp_server():
-    cmd = shlex.split("uv run custom-mcp-server")
+    host = "127.0.0.1"
+    port = _find_free_port()
+    url = f"http://{host}:{port}"
+    cmd = shlex.split(f"uv run custom-mcp-server --port {port}")
 
     # Start the process
     proc = subprocess.Popen(
@@ -42,16 +53,14 @@ def run_mcp_server():
     )
 
     try:
-        _wait_for_server_startup("http://localhost:8000")
+        _wait_for_server_startup(url)
     except Exception as e:
         proc.terminate()
         raise e
 
-    yield "http://localhost:8000"
+    yield url
 
     try:
-        print("KILLING NOW")
-        print(proc.pid)
         os.killpg(proc.pid, signal.SIGTERM)
         proc.wait(timeout=10)
     except Exception:
@@ -62,13 +71,15 @@ def run_mcp_server():
 
 # Test List Tools runs without errors
 def test_list_tools(run_mcp_server):
-    mcp_client = DatabricksMCPClient(server_url="http://0.0.0.0:8000/mcp")
+    url = run_mcp_server
+    mcp_client = DatabricksMCPClient(server_url=f"{url}/mcp")
     tools = mcp_client.list_tools()
 
 
 # Test Call Tools runs without errors
 def test_call_tools(run_mcp_server):
-    mcp_client = DatabricksMCPClient(server_url="http://0.0.0.0:8000/mcp")
+    url = run_mcp_server
+    mcp_client = DatabricksMCPClient(server_url=f"{url}/mcp")
     tools = mcp_client.list_tools()
     for tool in tools:
         result = mcp_client.call_tool(tool.name)

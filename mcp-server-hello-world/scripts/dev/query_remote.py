@@ -66,41 +66,12 @@ def main():
         print(f"✓ Found {len(tools) if isinstance(tools, list) else 'N/A'} tools")
         print()
 
-        # Test the health tool
-        print("Step 4: Testing 'health' tool...")
-        print("-" * 70)
-        try:
-            health_result = mcp_client.call_tool("health")
+        for tool in tools:
+            print(f"Testing tool: {tool.name}")
+            print("-" * 70)
+            health_result = mcp_client.call_tool(tool.name)
             print(health_result)
             print("-" * 70)
-            print("✓ Health check passed!")
-        except Exception as e:
-            print(f"✗ Error calling health tool: {e}")
-            print("-" * 70)
-        print()
-
-        # Call get_current_user tool
-        print("Step 5: Calling 'get_current_user' tool...")
-        print("-" * 70)
-        user_result = mcp_client.call_tool("get_current_user")
-        print(user_result)
-        print("-" * 70)
-        print("✓ Successfully retrieved current user information")
-        print()
-
-        # TODO: Add new tool tests here
-        # Example:
-        # print("Step 6: Testing 'your_new_tool' tool...")
-        # print("-" * 70)
-        # try:
-        #     result = mcp_client.call_tool("your_new_tool", param1="value")
-        #     print(result)
-        #     print("-" * 70)
-        #     print("✓ your_new_tool test passed!")
-        # except Exception as e:
-        #     print(f"✗ Error calling your_new_tool: {e}")
-        #     print("-" * 70)
-        # print()
 
         print("=" * 70)
         print("✓ All Tests Passed!")

@@ -24,8 +24,6 @@ server/              # Core MCP server code
 scripts/            # Developer utilities
 └── dev/
     ├── start_server.sh         # Start the MCP server locally
-    ├── query_local.sh          # Test local server (starts, tests, stops)
-    ├── query_local.py          # Test local MCP server
     ├── query_remote.sh         # Interactive remote deployment test with OAuth
     ├── query_remote.py         # Test deployed MCP server with health + user auth
     └── generate_oauth_token.py # Generate OAuth tokens for Databricks
@@ -64,6 +62,7 @@ app.yaml            # Databricks Apps deployment config
 ### `server/main.py`
 - Entry point that runs uvicorn server
 - Configured via `[project.scripts]` in `pyproject.toml` as `custom-mcp-server` command
+- Accepts `--port` argument to customize server port (default: 8000)
 
 ## Authentication & Environment Detection
 
@@ -151,21 +150,16 @@ pytest tests/test_integration_server.py::test_call_tools
 
 **Start server for development:**
 ```bash
+# Using convenience script (port 8000)
 ./scripts/dev/start_server.sh
+
+# Or directly with uv (default port 8000)
+uv run custom-mcp-server
+
+# Or with custom port
+uv run custom-mcp-server --port 8080
+
 # Server runs in foreground, Ctrl+C to stop
-```
-
-**Test local server:**
-```bash
-# Automated (recommended) - starts, tests, stops automatically
-./scripts/dev/query_local.sh
-
-# Manual testing in separate terminals:
-# Terminal 1: Start server
-./scripts/dev/start_server.sh
-
-# Terminal 2: Run test
-python scripts/dev/query_local.py
 ```
 
 **Test remote deployment:**
@@ -261,8 +255,6 @@ This provides a visual way to test tool-calling behavior with different models b
 
 2. **Local Development** (Interactive): 
    - `scripts/dev/start_server.sh` - Start server for development
-   - `scripts/dev/query_local.sh` - Automated test (starts server, tests, stops)
-   - `scripts/dev/query_local.py` - Test client for local server
 
 3. **Remote Deployment with OAuth** (Interactive): 
    - `scripts/dev/query_remote.sh` - Interactive script with OAuth flow
@@ -318,7 +310,8 @@ The `scripts/dev/generate_oauth_token.py` script implements the [OAuth U2M (User
 
 ## Configuration
 
-- **Server host/port**: Edit `server/main.py`
+- **Server port**: Use `--port` argument: `uv run custom-mcp-server --port 8080`
+- **Server host**: Edit `server/main.py` to change from `0.0.0.0`
 - **Project name**: Update `pyproject.toml` name field
 - **MCP server name**: Update `FastMCP(name="...")` in `server/app.py`
 

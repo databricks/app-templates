@@ -127,11 +127,9 @@ export const ReasoningTrigger = memo(
         {children ?? (
           <>
             <BrainIcon className="size-4" />
-            {isStreaming || duration === 0 ? (
-              <p>Thinking...</p>
-            ) : (
-              <p>Thought for {duration}s</p>
-            )}
+            {isStreaming && <p>Thinking...</p>}
+            {duration > 0 && <p>Thought for {duration}s</p>}
+            {!isStreaming && duration === 0 && <p>Thoughts</p>}
             <ChevronDownIcon
               className={cn(
                 'size-3 text-muted-foreground transition-transform',
@@ -145,9 +143,7 @@ export const ReasoningTrigger = memo(
   },
 );
 
-type ReasoningContentProps = ComponentProps<
-  typeof CollapsibleContent
-> & {
+type ReasoningContentProps = ComponentProps<typeof CollapsibleContent> & {
   children: string;
 };
 

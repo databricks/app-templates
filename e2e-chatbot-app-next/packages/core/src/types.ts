@@ -3,7 +3,7 @@ import type { InferUITool, LanguageModelUsage, UIMessage } from 'ai';
 
 import type {
   DATABRICKS_TOOL_CALL_ID,
-  // DATABRICKS_TOOL_DEFINITION,
+  DATABRICKS_TOOL_DEFINITION,
 } from '@chat-template/ai-sdk-providers';
 
 const messageMetadataSchema = z.object({
@@ -14,8 +14,7 @@ type MessageMetadata = z.infer<typeof messageMetadataSchema>;
 
 export type ChatTools = {
   [K in typeof DATABRICKS_TOOL_CALL_ID]: InferUITool<
-    // typeof DATABRICKS_TOOL_DEFINITION
-    any
+    typeof DATABRICKS_TOOL_DEFINITION
   >;
 };
 

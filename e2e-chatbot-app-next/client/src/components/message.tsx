@@ -1,4 +1,3 @@
-'use client';
 import { motion } from 'framer-motion';
 import React, { memo, useState } from 'react';
 import { AnimatedAssistantIcon } from './animation-assistant-icon';

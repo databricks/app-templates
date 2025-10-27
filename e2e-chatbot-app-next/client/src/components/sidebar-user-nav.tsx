@@ -1,5 +1,3 @@
-'use client';
-
 import { ChevronUp, LoaderIcon } from 'lucide-react';
 import { useTheme } from 'next-themes';
 

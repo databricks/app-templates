@@ -1,5 +1,3 @@
-'use client';
-
 import { isToday, isYesterday, subMonths, subWeeks } from 'date-fns';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useState } from 'react';

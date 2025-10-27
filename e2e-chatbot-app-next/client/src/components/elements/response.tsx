@@ -1,5 +1,3 @@
-'use client';
-
 import { type ComponentProps, memo } from 'react';
 import { DatabricksMessageCitationStreamdownIntegration } from '../databricks-message-citation';
 import { Streamdown } from 'streamdown';

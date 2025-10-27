@@ -159,20 +159,10 @@ export async function getChatsByUserId({
   startingAfter: string | null;
   endingBefore: string | null;
 }) {
-  try {
-    console.log("[getChatsByUserId] Starting query with params:", {
-      id,
-      limit,
-      startingAfter,
-      endingBefore,
-    });
-
     const extendedLimit = limit + 1;
 
     const query = async (whereCondition?: SQL<any>) => {
-      console.log("[getChatsByUserId] Ensuring DB connection...");
       const database = await ensureDb();
-      console.log("[getChatsByUserId] DB connection established");
 
       return database
         .select()
@@ -189,10 +179,6 @@ export async function getChatsByUserId({
     let filteredChats: Array<Chat> = [];
 
     if (startingAfter) {
-      console.log(
-        "[getChatsByUserId] Fetching chat for startingAfter:",
-        startingAfter
-      );
       const database = await ensureDb();
       const [selectedChat] = await database
         .select()
@@ -209,10 +195,6 @@ export async function getChatsByUserId({
 
       filteredChats = await query(gt(chat.createdAt, selectedChat.createdAt));
     } else if (endingBefore) {
-      console.log(
-        "[getChatsByUserId] Fetching chat for endingBefore:",
-        endingBefore
-      );
       const database = await ensureDb();
       const [selectedChat] = await database
         .select()
@@ -229,16 +211,10 @@ export async function getChatsByUserId({
 
       filteredChats = await query(lt(chat.createdAt, selectedChat.createdAt));
     } else {
-      console.log("[getChatsByUserId] Executing main query without pagination");
       filteredChats = await query();
     }
 
     const hasMore = filteredChats.length > limit;
-    console.log(
-      "[getChatsByUserId] Query successful, found",
-      filteredChats.length,
-      "chats"
-    );
 
     return {
       chats: hasMore ? filteredChats.slice(0, limit) : filteredChats,

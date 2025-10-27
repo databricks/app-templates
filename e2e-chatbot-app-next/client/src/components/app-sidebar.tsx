@@ -1,5 +1,3 @@
-'use client';
-
 import { useNavigate } from 'react-router-dom';
 
 import { SidebarHistory } from '@/components/sidebar-history';

@@ -1,5 +1,3 @@
-'use client';
-
 import type { LanguageModelUsage, UIMessageChunk } from 'ai';
 import { useChat } from '@ai-sdk/react';
 import { useEffect, useRef, useState } from 'react';

@@ -1,5 +1,3 @@
-'use client';
-
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { toast as sonnerToast } from 'sonner';
 import { CircleCheck, TriangleAlert } from 'lucide-react';

@@ -1,2 +1,2 @@
-command: ["pnpm", "run", "start"]
+command: ["npm", "run", "start"]
 runtime: nodejs20

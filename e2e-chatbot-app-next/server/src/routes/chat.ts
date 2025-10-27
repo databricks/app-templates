@@ -77,9 +77,9 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       return res.status(response.status).json(response.json);
     }
 
-    const { chat, allowed } = await checkChatAccess(id, session?.user.id);
+    const { chat, allowed, reason } = await checkChatAccess(id, session?.user.id);
 
-    if (!allowed) {
+    if (reason !== 'not_found' && !allowed) {
       const error = new ChatSDKError('forbidden:chat');
       const response = error.toResponse();
       return res.status(response.status).json(response.json);

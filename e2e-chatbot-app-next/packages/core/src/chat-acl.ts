@@ -19,8 +19,9 @@ export async function checkChatAccess(
   chatId: string,
   userId?: string,
 ): Promise<ChatAccessResult> {
+  console.log(`checking chat access for chat ID: ${chatId} and user ID: ${userId}`);
   const chat = await getChatById({ id: chatId });
-
+  console.log(`chat: ${JSON.stringify(chat)}`);
   if (!chat) {
     return {
       allowed: false,

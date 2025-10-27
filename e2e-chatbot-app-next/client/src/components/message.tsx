@@ -26,8 +26,8 @@ import {
   isNamePart,
   joinMessagePartSegments,
 } from './databricks-message-part-transformers';
-import { components } from './elements/streamdown-components/components';
 import { MessageError } from './message-error';
+import { Streamdown } from 'streamdown';
 // import { DATABRICKS_TOOL_CALL_ID } from '@chat-template/ai-sdk-providers';
 const DATABRICKS_TOOL_CALL_ID = 'databricks-tool-call';
 
@@ -148,9 +148,7 @@ const PurePreviewMessage = ({
             if (type === 'text') {
               if (isNamePart(part)) {
                 return (
-                  <components.h3 key={key} className="-mb-2 mt-0">
-                    {formatNamePart(part)}
-                  </components.h3>
+                  <Streamdown className="-mb-2 mt-0">{`# ${formatNamePart(part)}`}</Streamdown>
                 );
               }
               if (mode === 'view') {

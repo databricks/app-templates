@@ -33,6 +33,7 @@
   },
   "dependencies": {
     "@chat-template/db": "workspace:*",
+    "@chat-template/ai-sdk-providers": "workspace:*",
     "zod": "catalog:"
   }
 }

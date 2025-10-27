@@ -2,8 +2,7 @@
   "extends": "../tsconfig.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "allowImportingTsExtensions": false,
-    "moduleResolution": "node16"
+    "allowImportingTsExtensions": false
   },
   "include": [
     "src/**/*.ts"

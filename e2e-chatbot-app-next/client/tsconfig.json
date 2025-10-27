@@ -15,9 +15,11 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "baseUrl": "..",
+    "baseUrl": ".",
     "paths": {
-      "@/*": ["./client/src/*"]
+      "@/*": ["./src/*"],
+      "@chat-template/db": ["../packages/db/src/index.ts"],
+      "@chat-template/ai-sdk-providers": ["../packages/ai-sdk-providers/src/index.ts"]
     }
   },
   "include": ["src"],

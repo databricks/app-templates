@@ -5,7 +5,7 @@ import type {
   PropsWithChildren,
 } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
-import { components } from './elements/streamdown-components/components';
+import { cn } from '@/lib/utils';
 
 /**
  * ReactMarkdown/Streamdown component that handles Databricks message citations.
@@ -24,8 +24,10 @@ export const DatabricksMessageCitationStreamdownIntegration: ComponentType<
       />
     );
   }
-  return <components.a {...props} />;
+  return <DefaultAnchor {...props} />;
 };
+
+// const isFootnoteLink
 
 type SourcePart = Extract<ChatMessage['parts'][number], { type: 'source-url' }>;
 
@@ -56,14 +58,14 @@ const DatabricksMessageCitationRenderer = (
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <components.a
+        <DefaultAnchor
           href={props.href}
           target="_blank"
           rel="noopener noreferrer"
           className="rounded-md bg-muted-foreground px-2 py-0 text-zinc-200"
         >
           {props.children}
-        </components.a>
+        </DefaultAnchor>
       </TooltipTrigger>
       <TooltipContent
         style={{ maxWidth: '300px', padding: '8px', wordWrap: 'break-word' }}
@@ -71,5 +73,37 @@ const DatabricksMessageCitationRenderer = (
         {props.href}
       </TooltipContent>
     </Tooltip>
+  );
+};
+
+// Copied from streamdown
+// https://github.com/vercel/streamdown/blob/dc5bd12e5709afce09814e47cf80884f8c665b3d/packages/streamdown/lib/components.tsx#L157-L181
+const DefaultAnchor: ComponentType<AnchorHTMLAttributes<HTMLAnchorElement>> = (
+  props,
+) => {
+  const isIncomplete = props.href === 'streamdown:incomplete-link';
+  const isFootnoteLink = props.href?.startsWith('#');
+
+  return (
+    <a
+      className={cn(
+        'wrap-anywhere font-medium text-primary underline',
+        props.className,
+      )}
+      data-incomplete={isIncomplete}
+      data-streamdown="link"
+      href={props.href}
+      {...props}
+      {...(isFootnoteLink
+        ? {
+            target: '_self',
+          }
+        : {
+            target: '_blank',
+            rel: 'noopener noreferrer',
+          })}
+    >
+      {props.children}
+    </a>
   );
 };

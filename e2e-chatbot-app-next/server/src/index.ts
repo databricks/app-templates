@@ -28,7 +28,7 @@ const isDevelopment = process.env.NODE_ENV !== 'production';
 // CORS configuration
 app.use(
   cors({
-    origin: isDevelopment ? 'http://localhost:5173' : true,
+    origin: isDevelopment ? 'http://localhost:3000' : true,
     credentials: true,
   }),
 );

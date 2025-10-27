@@ -90,11 +90,13 @@ cd server && npm install && cd ..
 ### Configuration
 
 1. **Create `.env.local` file:**
+
    ```bash
    cp .env.example .env.local
    ```
 
 2. **Configure environment variables:**
+
    ```env
    # Database
    PGHOST=your-postgres-host
@@ -134,17 +136,17 @@ npm run dev
 
 # Or start individually:
 npm run dev:server  # Express API on :3001
-npm run dev:client  # Vite dev server on :5173
+npm run dev:client  # Vite dev server on :3000
 ```
 
-Open http://localhost:5173 in your browser.
+Open http://localhost:3000 in your browser.
 
 ## 🏗️ Architecture
 
 ### Request Flow
 
 ```
-Browser (localhost:5173)
+Browser (localhost:3000)
     ↓
 Vite Dev Server (dev) / Static Files (prod)
     ↓ [proxy /api/*]
@@ -176,18 +178,18 @@ Agents        Database        Management
 
 All endpoints require authentication except `/ping`.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/ping` | Health check |
-| GET | `/api/session` | Get current user session |
-| GET | `/api/history` | Get chat history (paginated) |
-| POST | `/api/chat` | Send message, get streaming response |
-| DELETE | `/api/chat?id=:id` | Delete a chat |
-| GET | `/api/chat/:id/stream` | Resume a stream |
-| GET | `/api/chat/:id/messages` | Get messages for a chat |
-| POST | `/api/chat/title` | Generate chat title |
-| PATCH | `/api/chat/:id/visibility` | Update chat visibility |
-| DELETE | `/api/messages/:id/trailing` | Delete trailing messages |
+| Method | Endpoint                     | Description                          |
+| ------ | ---------------------------- | ------------------------------------ |
+| GET    | `/ping`                      | Health check                         |
+| GET    | `/api/session`               | Get current user session             |
+| GET    | `/api/history`               | Get chat history (paginated)         |
+| POST   | `/api/chat`                  | Send message, get streaming response |
+| DELETE | `/api/chat?id=:id`           | Delete a chat                        |
+| GET    | `/api/chat/:id/stream`       | Resume a stream                      |
+| GET    | `/api/chat/:id/messages`     | Get messages for a chat              |
+| POST   | `/api/chat/title`            | Generate chat title                  |
+| PATCH  | `/api/chat/:id/visibility`   | Update chat visibility               |
+| DELETE | `/api/messages/:id/trailing` | Delete trailing messages             |
 
 ## 🔧 Development
 
@@ -224,17 +226,20 @@ npm test                 # Run E2E tests
 ### Project Configuration
 
 #### Client (`client/vite.config.ts`)
+
 - Vite with React plugin
 - API proxy to Express server
 - Path aliases: `@/` → `src/`, `@shared/` → `../shared/`
 - Tailwind CSS v4
 
 #### Server (`server/tsconfig.json`)
+
 - TypeScript ES2022
 - Path alias: `@shared/` → `../shared/`
 - Output to `dist/`
 
 #### Shared (`tsconfig.json`)
+
 - Root config for shared code
 - Path alias: `@shared/` → `./shared/`
 
@@ -248,6 +253,7 @@ databricks bundle deploy
 ```
 
 The app will be deployed with:
+
 - Express server serving both API and static files
 - Database connection to Lakebase
 - Authentication via Databricks platform
@@ -265,12 +271,14 @@ docker run -p 3001:3001 --env-file .env chatbot-app
 ### Other Platforms
 
 Deploy as a standard Node.js app to:
+
 - AWS (EC2, ECS, Lambda)
 - Google Cloud (Cloud Run, App Engine)
 - Azure (App Service, Container Apps)
 - Heroku, Railway, Render, etc.
 
 **Requirements:**
+
 - Node.js 18+ runtime
 - PostgreSQL database
 - Environment variables configured
@@ -289,6 +297,7 @@ npx playwright test tests/e2e/chat.test.ts
 ```
 
 Tests use:
+
 - **Playwright** for E2E testing
 - **MSW** (Mock Service Worker) for API mocking
 - Page object model pattern
@@ -296,6 +305,7 @@ Tests use:
 ## 🛠️ Tech Stack
 
 ### Frontend
+
 - **React 18** - UI library
 - **React Router 6** - Client-side routing
 - **Vite 5** - Build tool and dev server
@@ -306,17 +316,20 @@ Tests use:
 - **SWR** - Data fetching/caching
 
 ### Backend
+
 - **Express 4** - Web server
 - **TypeScript 5** - Type safety
 - **Drizzle ORM** - Database ORM
 - **Zod** - Schema validation
 
 ### Shared
+
 - **Databricks SDK** - Agent integration
 - **PostgreSQL** - Database
 - **Server-Sent Events** - Real-time streaming
 
 ### Development
+
 - **Biome** - Linting and formatting
 - **Playwright** - E2E testing
 - **MSW** - API mocking
@@ -332,22 +345,26 @@ Tests use:
 ## 🐛 Troubleshooting
 
 ### Port Already in Use
+
 ```bash
 lsof -ti:3001 | xargs kill -9
-lsof -ti:5173 | xargs kill -9
+lsof -ti:3000 | xargs kill -9
 ```
 
 ### Database Connection Error
+
 - Check PostgreSQL is running
 - Verify environment variables
 - Run migrations: `npm run db:migrate`
 
 ### Authentication Fails
+
 - Verify Databricks credentials
 - Check `DATABRICKS_HOST` URL format
 - For CLI: Run `databricks auth login`
 
 ### Components Not Loading
+
 - Clear `node_modules` and reinstall
 - Check TypeScript errors: `tsc --noEmit`
 - Verify all imports use correct aliases

@@ -14,8 +14,8 @@ export const applyDeltaBoundaryTransform: DatabricksStreamPartTransformer<
   const lastDeltaType = maybeGetDeltaType(last);
   for (const incoming of parts) {
     const incomingDeltaType = maybeGetDeltaType(incoming);
-    const incomingId = (incoming as any)?.id as string | undefined;
-    const lastId = (last as any)?.id as string | undefined;
+    const incomingId = getPartId(incoming);
+    const lastId = getPartId(last);
 
     // When continuous deltas are detected, we don't need to inject start/end deltas
     const incomingMatchesLast =
@@ -80,3 +80,10 @@ const isDeltaPart = (
   part: LanguageModelV2StreamPart | null,
 ): part is Extract<LanguageModelV2StreamPart, { type: `${DeltaType}-delta` }> =>
   part?.type === 'text-delta' || part?.type === 'reasoning-delta';
+
+const getPartId = (
+  part: LanguageModelV2StreamPart | null,
+): string | undefined => {
+  if (part && 'id' in part) return part.id;
+  return undefined;
+};

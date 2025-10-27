@@ -16,18 +16,13 @@ import {
 import { Link } from 'react-router-dom';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { PlusIcon } from 'lucide-react';
-
-type ClientUser = {
-  email: string;
-  name?: string;
-  preferredUsername?: string;
-};
+import type { ClientSession } from '@chat-template/auth';
 
 export function AppSidebar({
   user,
   preferredUsername,
 }: {
-  user: ClientUser | undefined;
+  user: ClientSession['user'] | undefined;
   preferredUsername: string | null;
 }) {
   const navigate = useNavigate();

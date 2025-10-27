@@ -35,7 +35,7 @@ export const convertLanguageModelV2PromptToChatAgentResponse = (
     if (msg.role === 'assistant') {
       const textContent = (msg.content ?? [])
         .filter((part) => part.type === 'text' || part.type === 'reasoning')
-        .map((part: any) => (part.type === 'text' ? part.text : part.text))
+        .map((part) => (part.type === 'text' ? part.text : part.text))
         .join('\n');
 
       const toolCalls = (msg.content ?? [])
@@ -49,9 +49,9 @@ export const convertLanguageModelV2PromptToChatAgentResponse = (
           function: {
             name: call.toolName,
             arguments:
-              typeof (call as any).input === 'string'
-                ? ((call as any).input as string)
-                : JSON.stringify((call as any).input ?? {}),
+              typeof call.input === 'string'
+                ? call.input
+                : JSON.stringify(call.input ?? {}),
           },
         }));
 

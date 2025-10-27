@@ -71,7 +71,8 @@ const getDeltaGroup = (
   return null;
 };
 const getPartId = (part: LanguageModelV2StreamPart): string | undefined => {
-  return (part as any)?.id as string | undefined;
+  if ('id' in part) return part.id;
+  return undefined;
 };
 const makeEndKey = (
   id: string | undefined,

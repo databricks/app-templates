@@ -44,9 +44,9 @@ export function parseTaggedToolCall(text: string): ParsedToolCall | null {
       'name' in parsed
     ) {
       return {
-        id: String((parsed as any).id),
-        name: String((parsed as any).name),
-        arguments: (parsed as any).arguments,
+        id: String(parsed.id),
+        name: String(parsed.name),
+        arguments: parsed.arguments,
       };
     }
   } catch {}
@@ -65,8 +65,8 @@ export function parseTaggedToolResult(text: string): ParsedToolResult | null {
     const parsed = JSON.parse(inner);
     if (parsed && typeof parsed === 'object' && 'id' in parsed) {
       return {
-        id: String((parsed as any).id),
-        content: (parsed as any).content,
+        id: String(parsed.id),
+        content: parsed.content,
       };
     }
   } catch {}

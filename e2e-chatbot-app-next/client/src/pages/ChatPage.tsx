@@ -3,18 +3,19 @@ import { useState, useEffect } from 'react';
 import { Chat } from '@/components/chat';
 import { useSession } from '@/contexts/SessionContext';
 import { convertToUIMessages } from '@/lib/utils';
-// import { checkChatAccess } from '@chat-template/core';
+import type { Chat as ChatType } from '@chat-template/db';
+import type { ChatMessage } from '@/lib/types';
 
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>();
   const { session } = useSession();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [chatData, setChatData] = useState<any>(null);
+  const [chatData, setChatData] = useState<null | {
+    chat: ChatType;
+    messages: ChatMessage[];
+  }>(null);
   const [modelId, setModelId] = useState('chat-model');
-
-  // if (id && session?.user?.id) {
-  // checkChatAccess(id, session?.user.id);
 
   useEffect(() => {
     // Load model preference from localStorage

@@ -18,6 +18,7 @@ import { ChatSDKError } from '@/lib/errors';
 import type { Attachment, ChatMessage } from '@/lib/types';
 import { useDataStream } from './data-stream-provider';
 import { ChatTransport } from '../lib/ChatTransport';
+import type { ClientSession } from '@chat-template/auth';
 
 export function Chat({
   id,
@@ -32,7 +33,7 @@ export function Chat({
   initialChatModel: string;
   initialVisibilityType: VisibilityType;
   isReadonly: boolean;
-  session: any;
+  session: ClientSession;
   initialLastContext?: LanguageModelUsage;
 }) {
   const { visibilityType } = useChatVisibility({

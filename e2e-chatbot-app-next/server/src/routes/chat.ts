@@ -327,7 +327,7 @@ chatRouter.patch(
 async function generateTitleFromUserMessage({
   message,
 }: {
-  message: any;
+  message: ChatMessage;
 }) {
   const model = await myProvider.languageModel('title-model');
   const { text: title } = await generateText({

@@ -17,21 +17,27 @@ import {
 } from '@/components/ui/sidebar';
 import { useSession } from '@/contexts/SessionContext';
 import { getAiGradientStyle } from './animation-assistant-icon';
+import type { ClientSession } from '@chat-template/auth';
 
 export function SidebarUserNav({
   user,
   preferredUsername,
 }: {
-  user: any;
+  user: ClientSession['user'];
   preferredUsername: string | null;
 }) {
   const { session, loading } = useSession();
   const data = session;
-  const status = loading ? 'loading' : (session ? 'authenticated' : 'unauthenticated');
+  const status = loading
+    ? 'loading'
+    : session
+      ? 'authenticated'
+      : 'unauthenticated';
   const { setTheme, resolvedTheme } = useTheme();
 
   // Use preferred username from Databricks Apps if available, otherwise fall back to existing logic
-  const displayName = preferredUsername || data?.user?.name || user?.email;
+  const displayName =
+    preferredUsername || data?.user?.name || user?.email || 'User';
 
   return (
     <SidebarMenu>

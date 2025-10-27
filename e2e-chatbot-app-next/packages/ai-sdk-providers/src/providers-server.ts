@@ -185,11 +185,14 @@ const getEndpointDetails = async (servingEndpoint: string) => {
 
 // Create a smart provider wrapper that handles OAuth initialization
 interface SmartProvider {
-  languageModel(id: string): Promise<any> | any;
+  languageModel(id: string): Promise<LanguageModelV2>;
 }
 
 export class OAuthAwareProvider implements SmartProvider {
-  private modelCache = new Map<string, { model: any; timestamp: number }>();
+  private modelCache = new Map<
+    string,
+    { model: LanguageModelV2; timestamp: number }
+  >();
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
   async languageModel(id: string): Promise<LanguageModelV2> {

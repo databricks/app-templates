@@ -1,9 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-// import type { ClientSession } from '@chat-template/auth';
+import type { ClientSession } from '@chat-template/auth';
 
 interface SessionContextType {
-  // session: ClientSession | null;
-  session: any | null;
+  session: ClientSession | null;
   loading: boolean;
   error: Error | null;
   refetch: () => Promise<void>;
@@ -12,8 +11,7 @@ interface SessionContextType {
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
-  // const [session, setSession] = useState<ClientSession | null>(null);
-  const [session, setSession] = useState<any | null>(null);
+  const [session, setSession] = useState<ClientSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 

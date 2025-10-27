@@ -1,6 +1,6 @@
 {
   "name": "@chat-template/db",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -29,13 +29,13 @@
     "clean": "rm -rf dist"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@chat-template/auth": "workspace:*",
-    "@chat-template/utils": "workspace:*",
-    "drizzle-orm": "catalog:",
-    "drizzle-kit": "catalog:",
-    "postgres": "catalog:"
+    "@chat-template/auth": "*",
+    "@chat-template/utils": "*",
+    "drizzle-orm": "^0.44.6",
+    "drizzle-kit": "^0.31.5",
+    "postgres": "^3.4.4"
   }
 }

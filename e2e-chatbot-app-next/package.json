@@ -1,22 +1,26 @@
 {
   "name": "databricks/e2e-chatbot-app",
-  "version": "3.1.0",
+  "version": "1.0.0",
   "private": true,
-  "workspaces": ["client", "server"],
+  "workspaces": ["client", "server", "packages/*"],
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
   "scripts": {
-    "dev": "concurrently \"pnpm run dev:server\" \"pnpm run dev:client\"",
-    "dev:server": "pnpm --filter @databricks/chatbot-server dev",
-    "dev:client": "pnpm --filter @databricks/chatbot-client dev",
-    "build": "pnpm run build:client && pnpm run build:server",
-    "build:client": "pnpm --filter @databricks/chatbot-client build",
-    "build:server": "pnpm --filter @databricks/chatbot-server build",
-    "start": "pnpm --filter @databricks/chatbot-server start",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "npm run dev --workspace=@databricks/chatbot-server",
+    "dev:client": "npm run dev --workspace=@databricks/chatbot-client",
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "npm run build --workspace=@databricks/chatbot-client",
+    "build:server": "npm run build --workspace=@databricks/chatbot-server",
+    "start": "npm run start --workspace=@databricks/chatbot-server",
     "lint": "biome lint --write --unsafe",
     "lint:fix": "biome lint --write --unsafe && biome format --write",
     "format": "biome format --write",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "pnpm exec tsx --env-file=.env.local packages/backend/db/src/migrate.ts",
-    "db:reset": "pnpm exec tsx scripts/reset-database.ts",
+    "db:migrate": "npx tsx --env-file=.env.local packages/backend/db/src/migrate.ts",
+    "db:reset": "npx tsx scripts/reset-database.ts",
     "db:studio": "drizzle-kit studio",
     "db:push": "drizzle-kit push",
     "db:pull": "drizzle-kit pull",
@@ -26,19 +30,17 @@
     "generate:package": "NODE_OPTIONS='--import tsx' plop --plopfile tools/create-package.ts"
   },
   "dependencies": {
-    "@ai-sdk/provider": "catalog:",
-    "@ai-sdk/provider-utils": "catalog:",
     "dotenv": "^16.4.5",
-    "tsx": "^4.19.1",
-    "zod": "^3.25.76"
+    "tsx": "^4.19.1"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@playwright/test": "^1.50.1",
     "@types/node": "^22.8.6",
     "concurrently": "^8.2.2",
+    "only-allow": "^1.2.1",
     "plop": "^4.0.4",
-    "tsdown": "catalog:",
-    "typescript": "^5.6.3"
+    "tsdown": "0.15.9",
+    "typescript": "^5.9.3"
   }
 }

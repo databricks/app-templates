@@ -1,4 +1,4 @@
-import type { LanguageModelUsage, UIMessageChunk } from 'ai';
+import type { DataUIPart, LanguageModelUsage, UIMessageChunk } from 'ai';
 import { useChat } from '@ai-sdk/react';
 import { useEffect, useRef, useState } from 'react';
 import { useSWRConfig } from 'swr';
@@ -9,6 +9,7 @@ import { Messages } from './messages';
 import type {
   Attachment,
   ChatMessage,
+  CustomUIDataTypes,
   VisibilityType,
 } from '@chat-template/core';
 import { unstable_serialize } from 'swr/infinite';
@@ -87,7 +88,6 @@ export function Chat({
       api: '/api/chat',
       fetch: fetchWithErrorHandlers,
       prepareSendMessagesRequest({ messages, id, body }) {
-        console.log('[Chat prepareSendMessagesRequest] messages', messages);
         return {
           body: {
             id,
@@ -100,10 +100,6 @@ export function Chat({
         };
       },
       prepareReconnectToStreamRequest({ id }) {
-        console.log(
-          '[Chat prepareReconnectToStreamRequest] cursor',
-          streamCursorRef.current,
-        );
         return {
           api: `/api/chat/${id}/stream`,
           credentials: 'include',
@@ -115,9 +111,11 @@ export function Chat({
       },
     }),
     onData: (dataPart) => {
-      setDataStream((ds) => (ds ? [...ds, dataPart] : []));
+      setDataStream((ds) =>
+        ds ? [...ds, dataPart as DataUIPart<CustomUIDataTypes>] : [],
+      );
       if (dataPart.type === 'data-usage') {
-        setUsage(dataPart.data);
+        setUsage(dataPart.data as LanguageModelUsage);
       }
     },
     onFinish: (test) => {
@@ -164,8 +162,6 @@ export function Chat({
       }
     },
   });
-
-  console.log('MESSAGES', messages);
 
   const [searchParams] = useSearchParams();
   const query = searchParams.get('query');

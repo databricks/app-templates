@@ -1,6 +1,6 @@
 {
   "name": "@chat-template/core",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -22,23 +22,21 @@
       }
     }
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
     "clean": "rm -rf dist"
   },
   "devDependencies": {
-    "ai": "catalog:",
-    "typescript": "catalog:"
+    "ai": "5.0.76",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@chat-template/ai-sdk-providers": "workspace:*",
-    "@chat-template/db": "workspace:*",
-    "@chat-template/utils": "workspace:*",
+    "@chat-template/ai-sdk-providers": "*",
+    "@chat-template/db": "*",
+    "@chat-template/utils": "*",
     "date-fns": "^4.1.0",
-    "zod": "catalog:"
+    "zod": "^3.25.76"
   }
 }

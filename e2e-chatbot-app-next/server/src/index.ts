@@ -22,8 +22,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app: Express = express();
-const PORT = process.env.PORT || 3001;
 const isDevelopment = process.env.NODE_ENV !== 'production';
+// Either let PORT be set by env or use 3001 for development and 3000 for production
+const PORT = process.env.PORT || (isDevelopment ? 3001 : 3000);
 
 // CORS configuration
 app.use(
@@ -54,7 +55,7 @@ if (!isDevelopment) {
   app.use(express.static(clientBuildPath));
 
   // SPA fallback - serve index.html for all non-API routes
-  app.get('*', (_req, res) => {
+  app.get(/^\/(?!api).*/, (_req, res) => {
     res.sendFile(path.join(clientBuildPath, 'index.html'));
   });
 }

@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@chat-template/core": "workspace:*",
-    "@chat-template/utils": "workspace:*",
     "@chat-template/auth": "workspace:*",
     "@chat-template/ai-sdk-providers": "workspace:*",
     "@chat-template/db": "workspace:*",
@@ -18,11 +17,6 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "ai": "catalog:",
-    "@ai-sdk/provider": "catalog:",
-    "@ai-sdk/provider-utils": "catalog:",
-    "@vercel/postgres": "^0.10.0",
-    "drizzle-orm": "catalog:",
-    "postgres": "^3.4.4",
     "zod": "catalog:"
   },
   "devDependencies": {

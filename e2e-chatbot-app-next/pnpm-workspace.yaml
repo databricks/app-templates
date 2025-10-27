@@ -4,11 +4,11 @@ packages:
   - packages/*
 
 catalog:
-  "@types/node": ^22.8.6
-  "@ai-sdk/react": ^2.0.76
-  "@ai-sdk/provider": ^2.0.0
-  "@ai-sdk/provider-utils": ^3.0.12
-  ai: ^5.0.76
+  '@ai-sdk/provider': ^2.0.0
+  '@ai-sdk/provider-utils': ^3.0.12
+  '@ai-sdk/react': ^2.0.76
+  '@types/node': ^22.8.6
+  ai: 5.0.76
   drizzle-kit: ^0.31.5
   drizzle-orm: ^0.44.6
   postgres: ^3.4.4

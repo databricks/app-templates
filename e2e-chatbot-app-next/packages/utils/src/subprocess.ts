@@ -1,5 +1,3 @@
-// import { spawn } from 'node:child_process';
-
 export interface SpawnOptions {
   captureOutput?: boolean;
   env?: NodeJS.ProcessEnv;
@@ -10,7 +8,7 @@ export interface SpawnOptions {
 export async function spawnWithOutput(
   command: string,
   args: string[],
-  options: SpawnOptions = {}
+  options: SpawnOptions = {},
 ): Promise<string> {
   const { env, errorMessagePrefix = `${command} failed` } = options;
   const { spawn } = await import('node:child_process');
@@ -18,7 +16,7 @@ export async function spawnWithOutput(
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env
+      env,
     });
 
     let stdout = '';
@@ -34,9 +32,11 @@ export async function spawnWithOutput(
 
     child.on('close', (code) => {
       if (code !== 0) {
-        reject(new Error(
-          `${errorMessagePrefix} (exit code ${code}): ${stderr.trim()}`
-        ));
+        reject(
+          new Error(
+            `${errorMessagePrefix} (exit code ${code}): ${stderr.trim()}`,
+          ),
+        );
         return;
       }
       resolve(stdout.trim());
@@ -47,7 +47,7 @@ export async function spawnWithOutput(
 export async function spawnWithInherit(
   command: string,
   args: string[],
-  options: SpawnOptions = {}
+  options: SpawnOptions = {},
 ): Promise<void> {
   const { spawn } = await import('node:child_process');
   const { env, cwd, errorMessagePrefix = `${command} failed` } = options;
@@ -56,7 +56,7 @@ export async function spawnWithInherit(
     const child = spawn(command, args, {
       stdio: ['ignore', 'inherit', 'inherit'],
       env,
-      cwd
+      cwd,
     });
 
     child.on('close', (code) => {

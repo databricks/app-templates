@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { memo } from 'react';
 import type { UseChatHelpers } from '@ai-sdk/react';
 import type { VisibilityType } from './visibility-selector';
-import type { ChatMessage } from '@/lib/types';
+import type { ChatMessage } from '@chat-template/core';
 import { Suggestion } from './elements/suggestion';
 
 interface SuggestedActionsProps {

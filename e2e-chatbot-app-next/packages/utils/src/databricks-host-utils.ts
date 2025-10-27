@@ -12,8 +12,8 @@ function normalizeHost(host: string | undefined): string {
   if (!host) {
     throw new Error(
       'Databricks host configuration required. Please set either:\n' +
-      '- DATABRICKS_HOST environment variable\n' +
-      '- DATABRICKS_CONFIG_PROFILE environment variable (with "databricks auth login" configured)'
+        '- DATABRICKS_HOST environment variable\n' +
+        '- DATABRICKS_CONFIG_PROFILE environment variable (with "databricks auth login" configured)',
     );
   }
 

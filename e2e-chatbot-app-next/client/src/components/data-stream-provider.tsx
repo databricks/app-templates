@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useMemo, useState } from 'react';
 import type { DataUIPart } from 'ai';
-import type { CustomUIDataTypes } from '@/lib/types';
+import type { CustomUIDataTypes } from '@chat-template/core';
 
 interface DataStreamContextValue {
   dataStream: DataUIPart<CustomUIDataTypes>[];

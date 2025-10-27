@@ -11,7 +11,7 @@ import {
 import { Textarea } from './ui/textarea';
 import { deleteTrailingMessages } from '@/lib/actions';
 import type { UseChatHelpers } from '@ai-sdk/react';
-import type { ChatMessage } from '@/lib/types';
+import type { ChatMessage } from '@chat-template/core';
 import { getTextFromMessage } from '@/lib/utils';
 
 type MessageEditorProps = {

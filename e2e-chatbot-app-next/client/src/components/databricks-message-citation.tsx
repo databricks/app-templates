@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@/lib/types';
+import type { ChatMessage } from '@chat-template/core';
 import type {
   AnchorHTMLAttributes,
   ComponentType,

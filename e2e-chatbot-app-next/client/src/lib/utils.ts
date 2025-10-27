@@ -3,7 +3,11 @@ import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import type { DBMessage } from '@chat-template/db';
 import { ChatSDKError, type ErrorCode } from './errors';
-import type { ChatMessage, ChatTools, CustomUIDataTypes } from './types';
+import type {
+  ChatMessage,
+  ChatTools,
+  CustomUIDataTypes,
+} from '@chat-template/core';
 import { formatISO } from 'date-fns';
 
 export function cn(...inputs: ClassValue[]) {

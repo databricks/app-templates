@@ -3,7 +3,7 @@ import { useCopyToClipboard } from 'usehooks-ts';
 import { Actions, Action } from './elements/actions';
 import { memo } from 'react';
 import { toast } from 'sonner';
-import type { ChatMessage } from '@/lib/types';
+import type { ChatMessage } from '@chat-template/core';
 import { ChevronDown, ChevronUp, CopyIcon, PencilLineIcon } from 'lucide-react';
 
 function PureMessageActions({

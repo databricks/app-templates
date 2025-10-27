@@ -4,7 +4,7 @@ import { Chat } from '@/components/chat';
 import { useSession } from '@/contexts/SessionContext';
 import { convertToUIMessages } from '@/lib/utils';
 import type { Chat as ChatType } from '@chat-template/db';
-import type { ChatMessage } from '@/lib/types';
+import type { ChatMessage } from '@chat-template/core';
 
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>();

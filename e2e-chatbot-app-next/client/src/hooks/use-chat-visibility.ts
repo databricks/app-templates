@@ -8,7 +8,7 @@ import {
   getChatHistoryPaginationKey,
   type ChatHistory,
 } from '@/components/sidebar-history';
-import type { VisibilityType } from '@/lib/types';
+import type { VisibilityType } from '@chat-template/core';
 
 export function useChatVisibility({
   chatId,

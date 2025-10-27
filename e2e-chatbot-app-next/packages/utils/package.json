@@ -28,9 +28,6 @@
     "dev": "tsdown --watch",
     "clean": "rm -rf dist"
   },
-  "dependencies": {
-    "@chat-template/db": "workspace:*"
-  },
   "devDependencies": {
     "typescript": "catalog:"
   }

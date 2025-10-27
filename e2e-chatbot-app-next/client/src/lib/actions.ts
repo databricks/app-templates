@@ -1,5 +1,5 @@
 import { fetchWithErrorHandlers } from './utils';
-import type { VisibilityType } from './types';
+import type { VisibilityType } from '@chat-template/core';
 
 /**
  * Update chat visibility (public/private)
@@ -11,14 +11,17 @@ export async function updateChatVisibility({
   chatId: string;
   visibility: VisibilityType;
 }) {
-  const response = await fetchWithErrorHandlers(`/api/chat/${chatId}/visibility`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
+  const response = await fetchWithErrorHandlers(
+    `/api/chat/${chatId}/visibility`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ visibility }),
     },
-    credentials: 'include',
-    body: JSON.stringify({ visibility }),
-  });
+  );
 
   return response.json();
 }

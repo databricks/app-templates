@@ -1,4 +1,4 @@
-import type { Attachment } from '@/lib/types';
+import type { Attachment } from '@chat-template/core';
 import { Loader } from './elements/loader';
 import { Button } from './ui/button';
 import { X } from 'lucide-react';

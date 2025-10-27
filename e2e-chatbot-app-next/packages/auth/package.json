@@ -22,9 +22,7 @@
       }
     }
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
@@ -35,7 +33,6 @@
     "@types/node": "catalog:"
   },
   "dependencies": {
-    "@chat-template/core": "workspace:*",
     "@chat-template/db": "workspace:*",
     "@chat-template/utils": "workspace:*"
   }

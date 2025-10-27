@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils';
 import { motion, useAnimation } from 'framer-motion';
 import { SparklesIcon } from 'lucide-react';
 import { useEffect } from 'react';
@@ -7,11 +8,14 @@ type AnimatedAssistantIconProps = {
   size?: number;
   /** Run the pulse / rotate animation while true */
   isLoading?: boolean;
+  // If true, the component will appear muted and animate at more slow and subtle
+  muted?: boolean;
 };
 
 export const AnimatedAssistantIcon = ({
   size = 20,
   isLoading = false,
+  muted = false,
 }: AnimatedAssistantIconProps) => {
   /* -----------------------------------------------------------------
    *  Gradient colours – we keep the original helper so the gradients
@@ -29,15 +33,17 @@ export const AnimatedAssistantIcon = ({
   useEffect(() => {
     if (isLoading) {
       // 1️⃣ Scale – grows from 0.9 → 1.1 and back (alternate)
-      scaleControls.start({
-        scale: [0.9, 1.1],
-        transition: {
-          repeat: Number.POSITIVE_INFINITY,
-          repeatType: 'reverse',
-          duration: 1,
-          ease: 'easeInOut',
-        },
-      });
+      if (!muted) {
+        scaleControls.start({
+          scale: [0.9, 1.1],
+          transition: {
+            repeat: Number.POSITIVE_INFINITY,
+            repeatType: 'reverse',
+            duration: 1,
+            ease: 'easeInOut',
+          },
+        });
+      }
 
       // 3️⃣ Rotating gradient – full spin every 2 seconds (continuous)
       rotateControls.start({
@@ -63,7 +69,7 @@ export const AnimatedAssistantIcon = ({
         transition: { duration: 0.5, ease: 'easeOut' },
       });
     }
-  }, [isLoading, scaleControls, rotateControls]);
+  }, [isLoading, muted, scaleControls, rotateControls]);
 
   /* -----------------------------------------------------------------
    *  Component markup – three stacked <motion.div>s:
@@ -74,7 +80,12 @@ export const AnimatedAssistantIcon = ({
    * ----------------------------------------------------------------- */
   return (
     <div
-      className="-mt-1 flex size-8 shrink-0 items-center justify-center rounded-full bg-background"
+      className={cn(
+        '-mt-1 flex size-8 shrink-0 items-center justify-center rounded-full bg-background',
+        {
+          'opacity-50': muted,
+        },
+      )}
       style={{ position: 'relative' }}
     >
       {/* ---------- 1️⃣ OUTER GRADIENT (rotates + pulses) ---------- */}

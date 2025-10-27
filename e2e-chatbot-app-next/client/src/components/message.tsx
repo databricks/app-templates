@@ -83,11 +83,9 @@ const PurePreviewMessage = ({
   }, [message.parts, errorParts.length]);
 
   return (
-    <motion.div
+    <div
       data-testid={`message-${message.role}`}
       className="group/message w-full"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
       data-role={message.role}
     >
       <div
@@ -273,7 +271,7 @@ const PurePreviewMessage = ({
           )}
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 };
 
@@ -290,19 +288,17 @@ export const PreviewMessage = memo(
   },
 );
 
-export const ThinkingMessage = () => {
+export const AwaitingResponseMessage = () => {
   const role = 'assistant';
 
   return (
-    <motion.div
+    <div
       data-testid="message-assistant-loading"
       className="group/message w-full"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
       data-role={role}
     >
       <div className="flex items-start justify-start gap-3">
-        <AnimatedAssistantIcon size={14} isLoading={true} />
+        <AnimatedAssistantIcon size={14} isLoading={false} muted={true} />
 
         <div className="flex w-full flex-col gap-2 md:gap-4">
           <div className="p-0 text-muted-foreground text-sm">
@@ -310,7 +306,7 @@ export const ThinkingMessage = () => {
           </div>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 };
 

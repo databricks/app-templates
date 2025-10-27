@@ -8,19 +8,19 @@ import {
   inArray,
   lt,
   type SQL,
-} from "drizzle-orm";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+} from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
 
-import { chat, type User, message, type DBMessage, type Chat } from "./schema";
-import type { VisibilityType } from "@chat-template/core";
-import { ChatSDKError } from "@chat-template/core";
-import type { LanguageModelV2Usage } from "@ai-sdk/provider";
-import { isDatabaseAvailable } from "./connection";
-import { getAuthMethod, getAuthMethodDescription } from "@chat-template/auth";
+import { chat, type User, message, type DBMessage, type Chat } from './schema';
+import type { VisibilityType } from '@chat-template/core';
+import { ChatSDKError } from '@chat-template/core';
+import type { LanguageModelV2Usage } from '@ai-sdk/provider';
+import { isDatabaseAvailable } from './connection';
+import { getAuthMethod, getAuthMethodDescription } from '@chat-template/auth';
 
 // Re-export User type for external use
-export type { User } from "./schema";
+export type { User } from './schema';
 
 // Optionally, if not using email/pass login, you can
 // use the Drizzle adapter for Auth.js / NextAuth
@@ -29,15 +29,15 @@ let db: ReturnType<typeof drizzle>;
 
 if (!isDatabaseAvailable()) {
   throw new Error(
-    "Database configuration required. Please set PGDATABASE/PGHOST/PGUSER or POSTGRES_URL environment variables."
+    'Database configuration required. Please set PGDATABASE/PGHOST/PGUSER or POSTGRES_URL environment variables.',
   );
 }
 
 const authMethod = getAuthMethod();
-if (authMethod === "oauth" || authMethod === "cli") {
+if (authMethod === 'oauth' || authMethod === 'cli') {
   // Dynamic auth path - db will be initialized asynchronously
   console.log(
-    `Using ${getAuthMethodDescription()} authentication for Postgres connection`
+    `Using ${getAuthMethodDescription()} authentication for Postgres connection`,
   );
 } else if (process.env.POSTGRES_URL) {
   // Traditional connection string
@@ -49,21 +49,21 @@ if (authMethod === "oauth" || authMethod === "cli") {
 async function ensureDb() {
   // Always get a fresh DB instance for dynamic auth connections to handle token expiry
   const authMethod = getAuthMethod();
-  if (authMethod === "oauth" || authMethod === "cli") {
+  if (authMethod === 'oauth' || authMethod === 'cli') {
     const authDescription = getAuthMethodDescription();
     console.log(`[ensureDb] Getting ${authDescription} database connection...`);
     try {
       // Import getDb for database connection
-      const { getDb } = await import("./connection-pool.js");
+      const { getDb } = await import('./connection-pool.js');
       const database = await getDb();
       console.log(
-        `[ensureDb] ${authDescription} db connection obtained successfully`
+        `[ensureDb] ${authDescription} db connection obtained successfully`,
       );
       return database;
     } catch (error) {
       console.error(
         `[ensureDb] Failed to get ${authDescription} connection:`,
-        error
+        error,
       );
       throw error;
     }
@@ -71,8 +71,8 @@ async function ensureDb() {
 
   // For static connections (POSTGRES_URL), use cached instance
   if (!db) {
-    console.error("[ensureDb] DB is still null after initialization attempt!");
-    throw new Error("Database connection could not be established");
+    console.error('[ensureDb] DB is still null after initialization attempt!');
+    throw new Error('Database connection could not be established');
   }
   return db;
 }
@@ -83,23 +83,27 @@ export async function getUserFromHeaders({
   getRequestHeader: (name: string) => string | null;
 }): Promise<User> {
   // Check for Databricks Apps headers first
-  const forwardedUser = getRequestHeader("X-Forwarded-User");
-  const forwardedEmail = getRequestHeader("X-Forwarded-Email");
-  const forwardedPreferredUsername = getRequestHeader("X-Forwarded-Preferred-Username");
+  const forwardedUser = getRequestHeader('X-Forwarded-User');
+  const forwardedEmail = getRequestHeader('X-Forwarded-Email');
+  const forwardedPreferredUsername = getRequestHeader(
+    'X-Forwarded-Preferred-Username',
+  );
 
   let user: User;
   if (forwardedUser) {
     // Databricks Apps environment - use forwarded headers
     user = {
       id: forwardedUser,
-      email: forwardedEmail || `${forwardedPreferredUsername ?? forwardedUser}@databricks.com`,
+      email:
+        forwardedEmail ||
+        `${forwardedPreferredUsername ?? forwardedUser}@databricks.com`,
     };
   } else {
     // Local development - use system username
     user = {
-      id: process.env.USER || process.env.USERNAME || "local-user",
-      email: `${process.env.USER || process.env.USERNAME || "local-user"}@localhost`,
-    }
+      id: process.env.USER || process.env.USERNAME || 'local-user',
+      email: `${process.env.USER || process.env.USERNAME || 'local-user'}@localhost`,
+    };
   }
 
   console.log(`[getUserFromHeaders] Returning user from headers:`, user);
@@ -126,8 +130,8 @@ export async function saveChat({
       visibility,
     });
   } catch (error) {
-    console.error("[saveChat] Error saving chat:", error);
-    throw new ChatSDKError("bad_request:database", "Failed to save chat");
+    console.error('[saveChat] Error saving chat:', error);
+    throw new ChatSDKError('bad_request:database', 'Failed to save chat');
   }
 }
 
@@ -142,8 +146,8 @@ export async function deleteChatById({ id }: { id: string }) {
     return chatsDeleted;
   } catch (_error) {
     throw new ChatSDKError(
-      "bad_request:database",
-      "Failed to delete chat by id"
+      'bad_request:database',
+      'Failed to delete chat by id',
     );
   }
 }
@@ -159,6 +163,7 @@ export async function getChatsByUserId({
   startingAfter: string | null;
   endingBefore: string | null;
 }) {
+  try {
     const extendedLimit = limit + 1;
 
     const query = async (whereCondition?: SQL<any>) => {
@@ -170,7 +175,7 @@ export async function getChatsByUserId({
         .where(
           whereCondition
             ? and(whereCondition, eq(chat.userId, id))
-            : eq(chat.userId, id)
+            : eq(chat.userId, id),
         )
         .orderBy(desc(chat.createdAt))
         .limit(extendedLimit);
@@ -179,6 +184,10 @@ export async function getChatsByUserId({
     let filteredChats: Array<Chat> = [];
 
     if (startingAfter) {
+      console.log(
+        '[getChatsByUserId] Fetching chat for startingAfter:',
+        startingAfter,
+      );
       const database = await ensureDb();
       const [selectedChat] = await database
         .select()
@@ -188,13 +197,17 @@ export async function getChatsByUserId({
 
       if (!selectedChat) {
         throw new ChatSDKError(
-          "not_found:database",
-          `Chat with id ${startingAfter} not found`
+          'not_found:database',
+          `Chat with id ${startingAfter} not found`,
         );
       }
 
       filteredChats = await query(gt(chat.createdAt, selectedChat.createdAt));
     } else if (endingBefore) {
+      console.log(
+        '[getChatsByUserId] Fetching chat for endingBefore:',
+        endingBefore,
+      );
       const database = await ensureDb();
       const [selectedChat] = await database
         .select()
@@ -204,31 +217,37 @@ export async function getChatsByUserId({
 
       if (!selectedChat) {
         throw new ChatSDKError(
-          "not_found:database",
-          `Chat with id ${endingBefore} not found`
+          'not_found:database',
+          `Chat with id ${endingBefore} not found`,
         );
       }
 
       filteredChats = await query(lt(chat.createdAt, selectedChat.createdAt));
     } else {
+      console.log('[getChatsByUserId] Executing main query without pagination');
       filteredChats = await query();
     }
 
     const hasMore = filteredChats.length > limit;
+    console.log(
+      '[getChatsByUserId] Query successful, found',
+      filteredChats.length,
+      'chats',
+    );
 
     return {
       chats: hasMore ? filteredChats.slice(0, limit) : filteredChats,
       hasMore,
     };
   } catch (error) {
-    console.error("[getChatsByUserId] Error details:", error);
+    console.error('[getChatsByUserId] Error details:', error);
     console.error(
-      "[getChatsByUserId] Error stack:",
-      error instanceof Error ? error.stack : "No stack available"
+      '[getChatsByUserId] Error stack:',
+      error instanceof Error ? error.stack : 'No stack available',
     );
     throw new ChatSDKError(
-      "bad_request:database",
-      "Failed to get chats by user id"
+      'bad_request:database',
+      'Failed to get chats by user id',
     );
   }
 }
@@ -245,7 +264,7 @@ export async function getChatById({ id }: { id: string }) {
 
     return selectedChat;
   } catch (_error) {
-    throw new ChatSDKError("bad_request:database", "Failed to get chat by id");
+    throw new ChatSDKError('bad_request:database', 'Failed to get chat by id');
   }
 }
 
@@ -257,7 +276,7 @@ export async function saveMessages({
   try {
     return await (await ensureDb()).insert(message).values(messages);
   } catch (_error) {
-    throw new ChatSDKError("bad_request:database", "Failed to save messages");
+    throw new ChatSDKError('bad_request:database', 'Failed to save messages');
   }
 }
 
@@ -270,8 +289,8 @@ export async function getMessagesByChatId({ id }: { id: string }) {
       .orderBy(asc(message.createdAt));
   } catch (_error) {
     throw new ChatSDKError(
-      "bad_request:database",
-      "Failed to get messages by chat id"
+      'bad_request:database',
+      'Failed to get messages by chat id',
     );
   }
 }
@@ -284,8 +303,8 @@ export async function getMessageById({ id }: { id: string }) {
       .where(eq(message.id, id));
   } catch (_error) {
     throw new ChatSDKError(
-      "bad_request:database",
-      "Failed to get message by id"
+      'bad_request:database',
+      'Failed to get message by id',
     );
   }
 }
@@ -298,13 +317,11 @@ export async function deleteMessagesByChatIdAfterTimestamp({
   timestamp: Date;
 }) {
   try {
-    const messagesToDelete = await (
-      await ensureDb()
-    )
+    const messagesToDelete = await (await ensureDb())
       .select({ id: message.id })
       .from(message)
       .where(
-        and(eq(message.chatId, chatId), gte(message.createdAt, timestamp))
+        and(eq(message.chatId, chatId), gte(message.createdAt, timestamp)),
       );
 
     const messageIds = messagesToDelete.map((message) => message.id);
@@ -313,13 +330,13 @@ export async function deleteMessagesByChatIdAfterTimestamp({
       return await (await ensureDb())
         .delete(message)
         .where(
-          and(eq(message.chatId, chatId), inArray(message.id, messageIds))
+          and(eq(message.chatId, chatId), inArray(message.id, messageIds)),
         );
     }
   } catch (_error) {
     throw new ChatSDKError(
-      "bad_request:database",
-      "Failed to delete messages by chat id after timestamp"
+      'bad_request:database',
+      'Failed to delete messages by chat id after timestamp',
     );
   }
 }
@@ -329,7 +346,7 @@ export async function updateChatVisiblityById({
   visibility,
 }: {
   chatId: string;
-  visibility: "private" | "public";
+  visibility: 'private' | 'public';
 }) {
   try {
     return await (await ensureDb())
@@ -338,8 +355,8 @@ export async function updateChatVisiblityById({
       .where(eq(chat.id, chatId));
   } catch (_error) {
     throw new ChatSDKError(
-      "bad_request:database",
-      "Failed to update chat visibility by id"
+      'bad_request:database',
+      'Failed to update chat visibility by id',
     );
   }
 }
@@ -358,7 +375,7 @@ export async function updateChatLastContextById({
       .set({ lastContext: context })
       .where(eq(chat.id, chatId));
   } catch (error) {
-    console.warn("Failed to update lastContext for chat", chatId, error);
+    console.warn('Failed to update lastContext for chat', chatId, error);
     return;
   }
 }

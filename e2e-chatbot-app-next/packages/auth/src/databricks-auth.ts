@@ -4,16 +4,15 @@
  * Also handles user session management and SCIM API interactions
  */
 
-import { getUserFromHeaders } from "@chat-template/db";
-import { isTestEnvironment } from "@chat-template/core";
-import { getHostUrl, getHostDomain } from "@chat-template/utils";
+import { getUserFromHeaders } from '@chat-template/db';
+import { getHostUrl, getHostDomain } from '@chat-template/utils';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type AuthMethod = "oauth" | "cli" | "none";
-export type UserType = "regular"; // Simplified - no more guest users
+export type AuthMethod = 'oauth' | 'cli' | 'none';
+export type UserType = 'regular'; // Simplified - no more guest users
 
 export interface AuthUser {
   id: string;
@@ -66,15 +65,15 @@ let cacheExpiry = 0;
 export function getAuthMethod(): AuthMethod {
   // Check for OAuth (service principal) credentials
   if (shouldUseOAuth()) {
-    return "oauth";
+    return 'oauth';
   }
 
   // Check for CLI-based authentication
   if (shouldUseCLIAuth()) {
-    return "cli";
+    return 'cli';
   }
 
-  return "none";
+  return 'none';
 }
 
 /**
@@ -107,7 +106,7 @@ export function shouldUseCLIAuth(): boolean {
  * Check if any Databricks authentication is available
  */
 export function isAuthAvailable(): boolean {
-  return getAuthMethod() !== "none";
+  return getAuthMethod() !== 'none';
 }
 
 /**
@@ -117,12 +116,12 @@ export function getAuthMethodDescription(): string {
   const method = getAuthMethod();
 
   switch (method) {
-    case "oauth":
-      return "OAuth (service principal)";
-    case "cli":
-      return "CLI-based OAuth U2M";
-    case "none":
-      return "No authentication configured";
+    case 'oauth':
+      return 'OAuth (service principal)';
+    case 'cli':
+      return 'CLI-based OAuth U2M';
+    case 'none':
+      return 'No authentication configured';
     default:
       return `Unknown method: ${method}`;
   }
@@ -134,7 +133,7 @@ export function getAuthMethodDescription(): string {
  */
 export function getCachedCliHost(): string | null {
   if (cliHostCache && Date.now() < cliHostCacheTime + CLI_HOST_CACHE_DURATION) {
-    return cliHostCache.startsWith("https://")
+    return cliHostCache.startsWith('https://')
       ? cliHostCache
       : `https://${cliHostCache}`;
   }
@@ -160,22 +159,22 @@ export async function getDatabricksOAuthToken(): Promise<string> {
 
   if (!clientId || !clientSecret || !hostUrl) {
     throw new Error(
-      "OAuth service principal authentication requires DATABRICKS_CLIENT_ID, DATABRICKS_CLIENT_SECRET, and DATABRICKS_HOST environment variables"
+      'OAuth service principal authentication requires DATABRICKS_CLIENT_ID, DATABRICKS_CLIENT_SECRET, and DATABRICKS_HOST environment variables',
     );
   }
 
-  const tokenUrl = `${hostUrl.replace(/\/$/, "")}/oidc/v1/token`;
-  const body = "grant_type=client_credentials&scope=all-apis";
+  const tokenUrl = `${hostUrl.replace(/\/$/, '')}/oidc/v1/token`;
+  const body = 'grant_type=client_credentials&scope=all-apis';
 
-  console.log('Buffer', Buffer)
+  console.log('Buffer', Buffer);
 
   const response = await fetch(tokenUrl, {
-    method: "POST",
+    method: 'POST',
     headers: {
       Authorization: `Basic ${Buffer.from(
-        `${clientId}:${clientSecret}`
-      ).toString("base64")}`,
-      "Content-Type": "application/x-www-form-urlencoded",
+        `${clientId}:${clientSecret}`,
+      ).toString('base64')}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
     },
     body,
   });
@@ -183,7 +182,7 @@ export async function getDatabricksOAuthToken(): Promise<string> {
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(
-      `Failed to get OAuth token: ${response.status} ${errorText}`
+      `Failed to get OAuth token: ${response.status} ${errorText}`,
     );
   }
 
@@ -194,7 +193,7 @@ export async function getDatabricksOAuthToken(): Promise<string> {
   const accessToken = data.access_token;
 
   if (!accessToken) {
-    throw new Error("No access token received from OAuth response");
+    throw new Error('No access token received from OAuth response');
   }
 
   oauthToken = accessToken;
@@ -205,8 +204,9 @@ export async function getDatabricksOAuthToken(): Promise<string> {
   oauthTokenExpiresAt = Date.now() + (expiresInSeconds - bufferSeconds) * 1000;
 
   console.log(
-    `[OAuth] Token acquired, expires in ${expiresInSeconds}s, will refresh in ${expiresInSeconds - bufferSeconds
-    }s`
+    `[OAuth] Token acquired, expires in ${expiresInSeconds}s, will refresh in ${
+      expiresInSeconds - bufferSeconds
+    }s`,
   );
 
   return accessToken;
@@ -230,7 +230,7 @@ export async function getDatabricksUserIdentity(): Promise<string> {
     return cliUserIdentity;
   }
 
-  const { spawnWithOutput } = await import("@chat-template/utils");
+  const { spawnWithOutput } = await import('@chat-template/utils');
 
   // Get options from environment
   const configProfile = process.env.DATABRICKS_CONFIG_PROFILE;
@@ -239,30 +239,30 @@ export async function getDatabricksUserIdentity(): Promise<string> {
   // Use cached host if available, otherwise fall back to env var
   if (cliHostCache && Date.now() < cliHostCacheTime + CLI_HOST_CACHE_DURATION) {
     // Remove protocol if present and trailing slash
-    host = cliHostCache.replace(/^https?:\/\//, "").replace(/\/$/, "");
+    host = cliHostCache.replace(/^https?:\/\//, '').replace(/\/$/, '');
   } else if (host) {
-    const { getHostDomain } = await import("@chat-template/utils");
+    const { getHostDomain } = await import('@chat-template/utils');
     host = getHostDomain(host);
   }
 
-  const args = ["auth", "describe", "--output", "json"];
+  const args = ['auth', 'describe', '--output', 'json'];
   if (configProfile) {
-    args.push("--profile", configProfile);
+    args.push('--profile', configProfile);
   }
   if (host) {
-    args.push("--host", host);
+    args.push('--host', host);
   }
 
   try {
-    const stdout = await spawnWithOutput("databricks", args, {
-      errorMessagePrefix: "Databricks CLI auth describe failed",
+    const stdout = await spawnWithOutput('databricks', args, {
+      errorMessagePrefix: 'Databricks CLI auth describe failed',
     });
 
     const authData = JSON.parse(stdout);
     const username = authData.username;
 
     if (!username) {
-      throw new Error("No username found in CLI auth describe output");
+      throw new Error('No username found in CLI auth describe output');
     }
 
     const responseHost = authData.details?.host;
@@ -281,10 +281,10 @@ export async function getDatabricksUserIdentity(): Promise<string> {
     console.log(`[CLI Auth] User identity acquired: ${username}`);
     return username;
   } catch (error) {
-    if (error instanceof Error && error.message.includes("Failed to parse")) {
+    if (error instanceof Error && error.message.includes('Failed to parse')) {
       throw error;
     }
-    if (error instanceof Error && error.message.includes("exit code")) {
+    if (error instanceof Error && error.message.includes('exit code')) {
       throw error;
     }
     throw new Error(`Failed to execute Databricks CLI auth describe: ${error}`);
@@ -300,7 +300,7 @@ export async function getDatabricksCliToken(): Promise<string> {
     return cliToken;
   }
 
-  const { spawnWithOutput } = await import("@chat-template/utils");
+  const { spawnWithOutput } = await import('@chat-template/utils');
 
   // Get options from environment
   const configProfile = process.env.DATABRICKS_CONFIG_PROFILE;
@@ -309,29 +309,29 @@ export async function getDatabricksCliToken(): Promise<string> {
   // Use cached host if available, otherwise fall back to env var
   if (cliHostCache && Date.now() < cliHostCacheTime + CLI_HOST_CACHE_DURATION) {
     // Remove protocol if present and trailing slash
-    host = cliHostCache.replace(/^https?:\/\//, "").replace(/\/$/, "");
+    host = cliHostCache.replace(/^https?:\/\//, '').replace(/\/$/, '');
   } else if (host) {
-    const { getHostDomain } = await import("@chat-template/utils");
+    const { getHostDomain } = await import('@chat-template/utils');
     host = getHostDomain(host);
   }
 
-  const args = ["auth", "token"];
+  const args = ['auth', 'token'];
   if (configProfile) {
-    args.push("--profile", configProfile);
+    args.push('--profile', configProfile);
   }
   if (host) {
-    args.push("--host", host);
+    args.push('--host', host);
   }
 
   try {
-    const stdout = await spawnWithOutput("databricks", args, {
+    const stdout = await spawnWithOutput('databricks', args, {
       errorMessagePrefix:
         'Databricks CLI auth token failed\nMake sure you have run "databricks auth login" first.',
     });
 
     const tokenData = JSON.parse(stdout);
     if (!tokenData.access_token) {
-      throw new Error("No access_token found in CLI output");
+      throw new Error('No access_token found in CLI output');
     }
 
     const expiresIn = tokenData.expires_in || 3600;
@@ -343,18 +343,18 @@ export async function getDatabricksCliToken(): Promise<string> {
 
     console.log(
       `[CLI Auth] Token acquired, expires in ${expiresIn}s, ` +
-      `will refresh in ${expiresIn - bufferSeconds}s`
+        `will refresh in ${expiresIn - bufferSeconds}s`,
     );
     return tokenData.access_token;
   } catch (error) {
-    if (error instanceof Error && error.message.includes("Failed to parse")) {
+    if (error instanceof Error && error.message.includes('Failed to parse')) {
       throw error;
     }
-    if (error instanceof Error && error.message.includes("exit code")) {
+    if (error instanceof Error && error.message.includes('exit code')) {
       throw error;
     }
     throw new Error(
-      `Failed to execute Databricks CLI: ${error}\nMake sure the Databricks CLI is installed and in your PATH.`
+      `Failed to execute Databricks CLI: ${error}\nMake sure the Databricks CLI is installed and in your PATH.`,
     );
   }
 }
@@ -370,15 +370,15 @@ export async function getDatabricksToken(): Promise<string> {
   const method = getAuthMethod();
 
   switch (method) {
-    case "oauth":
+    case 'oauth':
       return getDatabricksOAuthToken();
-    case "cli":
+    case 'cli':
       return getDatabricksCliToken();
-    case "none":
+    case 'none':
       throw new Error(
-        "No Databricks authentication configured. Please set one of:\n" +
-        "- DATABRICKS_CLIENT_ID + DATABRICKS_CLIENT_SECRET + DATABRICKS_HOST (OAuth)\n" +
-        '- DATABRICKS_CONFIG_PROFILE or DATABRICKS_HOST (CLI auth - run "databricks auth login" first)'
+        'No Databricks authentication configured. Please set one of:\n' +
+          '- DATABRICKS_CLIENT_ID + DATABRICKS_CLIENT_SECRET + DATABRICKS_HOST (OAuth)\n' +
+          '- DATABRICKS_CONFIG_PROFILE or DATABRICKS_HOST (CLI auth - run "databricks auth login" first)',
       );
     default:
       throw new Error(`Unknown authentication method: ${method}`);
@@ -394,24 +394,24 @@ export async function getDatabaseUsername(): Promise<string> {
   const method = getAuthMethod();
 
   switch (method) {
-    case "oauth": {
+    case 'oauth': {
       // For OAuth service principal, use the configured PGUSER
       const pgUser = process.env.PGUSER;
       if (!pgUser) {
         throw new Error(
-          "PGUSER environment variable must be set for OAuth authentication"
+          'PGUSER environment variable must be set for OAuth authentication',
         );
       }
       return pgUser;
     }
 
-    case "cli":
+    case 'cli':
       // For CLI auth, use the current user's identity
       console.log(`[CLI Auth] Using user identity for database role`);
       return await getDatabricksUserIdentity();
 
-    case "none":
-      throw new Error("No Databricks authentication configured");
+    case 'none':
+      throw new Error('No Databricks authentication configured');
 
     default:
       throw new Error(`Unknown authentication method: ${method}`);
@@ -429,27 +429,27 @@ async function getDatabricksCurrentUser(): Promise<any> {
   // Check cache first
   if (cachedScimUser && Date.now() < cacheExpiry) {
     console.log(
-      "[getDatabricksCurrentUser] Using cached SCIM user data (expires in",
+      '[getDatabricksCurrentUser] Using cached SCIM user data (expires in',
       Math.floor((cacheExpiry - Date.now()) / 1000),
-      "seconds)"
+      'seconds)',
     );
     return cachedScimUser;
   }
 
-  console.log("[getDatabricksCurrentUser] Cache miss - fetching from SCIM API");
+  console.log('[getDatabricksCurrentUser] Cache miss - fetching from SCIM API');
 
   // Determine auth method and handle CLI auth specially
   const method = getAuthMethod();
   let hostUrl: string;
   let token: string;
 
-  if (method === "cli") {
+  if (method === 'cli') {
     // For CLI auth, we need to get user identity first to cache the host
     await getDatabricksUserIdentity(); // This will cache the host
 
     // Now get the host from cache or fallback to env var
     if (cliHostCache) {
-      hostUrl = cliHostCache.startsWith("https://")
+      hostUrl = cliHostCache.startsWith('https://')
         ? cliHostCache
         : `https://${cliHostCache}`;
     } else {
@@ -469,21 +469,21 @@ async function getDatabricksCurrentUser(): Promise<any> {
   // Call SCIM API to get current user
   const scimUrl = `${hostUrl}/api/2.0/preview/scim/v2/Me`;
   console.log(
-    "[getDatabricksCurrentUser] Fetching user from SCIM API:",
-    scimUrl
+    '[getDatabricksCurrentUser] Fetching user from SCIM API:',
+    scimUrl,
   );
 
   const scimResponse = await fetch(scimUrl, {
     headers: {
       Authorization: authHeader,
-      "Content-Type": "application/json",
+      'Content-Type': 'application/json',
     },
   });
 
   if (!scimResponse.ok) {
     const errorText = await scimResponse.text();
     throw new Error(
-      `Failed to get SCIM user: ${scimResponse.status} ${errorText}`
+      `Failed to get SCIM user: ${scimResponse.status} ${errorText}`,
     );
   }
 
@@ -493,7 +493,7 @@ async function getDatabricksCurrentUser(): Promise<any> {
     displayName: string;
     emails: { value: string; primary: boolean }[];
   };
-  console.log("[getDatabricksCurrentUser] SCIM user retrieved:", {
+  console.log('[getDatabricksCurrentUser] SCIM user retrieved:', {
     id: scimUser.id,
     userName: scimUser.userName,
     displayName: scimUser.displayName,
@@ -504,7 +504,7 @@ async function getDatabricksCurrentUser(): Promise<any> {
   cachedScimUser = scimUser;
   cacheExpiry = Date.now() + 30 * 60 * 1000;
   console.log(
-    "[getDatabricksCurrentUser] Cached SCIM user data for 30 minutes"
+    '[getDatabricksCurrentUser] Cached SCIM user data for 30 minutes',
   );
 
   return scimUser;
@@ -514,27 +514,26 @@ async function getDatabricksCurrentUser(): Promise<any> {
  * Main authentication function for all environments
  */
 export async function getAuthSession({
-  getRequestHeader
+  getRequestHeader,
 }: {
   getRequestHeader: (name: string) => string | null;
 }): Promise<AuthSession | null> {
   try {
     // In test environments, short-circuit auth using forwarded headers or defaults
     if (isTestEnvironment) {
-      const fwdUser =
-        getRequestHeader("X-Forwarded-User") ?? "test-user-id";
+      const fwdUser = getRequestHeader('X-Forwarded-User') ?? 'test-user-id';
       const fwdEmail =
-        getRequestHeader("X-Forwarded-Email") ?? "test@example.com";
+        getRequestHeader('X-Forwarded-Email') ?? 'test@example.com';
       const fwdName =
-        getRequestHeader("X-Forwarded-Preferred-Username") ?? "test-user";
+        getRequestHeader('X-Forwarded-Preferred-Username') ?? 'test-user';
 
       const user = await getUserFromHeaders({
         getRequestHeader: (name: string) => {
-          if (name === "X-Forwarded-User") return fwdUser;
-          if (name === "X-Forwarded-Email") return fwdEmail;
-          if (name === "X-Forwarded-Preferred-Username") return fwdName;
+          if (name === 'X-Forwarded-User') return fwdUser;
+          if (name === 'X-Forwarded-Email') return fwdEmail;
+          if (name === 'X-Forwarded-Preferred-Username') return fwdName;
           return null;
-        }
+        },
       });
 
       return {
@@ -543,19 +542,19 @@ export async function getAuthSession({
           email: user.email || fwdEmail,
           name: fwdName,
           preferredUsername: fwdName,
-          type: "regular",
+          type: 'regular',
         },
       };
     }
 
     // Check for Databricks Apps headers (production)
-    if (getRequestHeader("X-Forwarded-User")) {
-      console.log("[getAuthSession] Using Databricks Apps headers");
+    if (getRequestHeader('X-Forwarded-User')) {
+      console.log('[getAuthSession] Using Databricks Apps headers');
 
-      const forwardedUser = getRequestHeader("X-Forwarded-User");
-      const forwardedEmail = getRequestHeader("X-Forwarded-Email");
+      const forwardedUser = getRequestHeader('X-Forwarded-User');
+      const forwardedEmail = getRequestHeader('X-Forwarded-Email');
       const forwardedPreferredUsername = getRequestHeader(
-        "X-Forwarded-Preferred-Username"
+        'X-Forwarded-Preferred-Username',
       );
 
       // Get user from headers
@@ -564,16 +563,16 @@ export async function getAuthSession({
       return {
         user: {
           id: user.id,
-          email: user.email || forwardedEmail || "",
+          email: user.email || forwardedEmail || '',
           name: forwardedPreferredUsername || forwardedUser || undefined,
           preferredUsername: forwardedPreferredUsername || undefined,
-          type: "regular",
+          type: 'regular',
         },
       };
     }
 
     // Local development - use SCIM API
-    console.log("[getAuthSession] Using SCIM API for local development");
+    console.log('[getAuthSession] Using SCIM API for local development');
 
     const scimUser = await getDatabricksCurrentUser();
 
@@ -586,12 +585,11 @@ export async function getAuthSession({
     // Map SCIM user to AuthUser object
     const user = await getUserFromHeaders({
       getRequestHeader: (name: string) => {
-        if (name === "X-Forwarded-User") return scimUser.id;
-        if (name === "X-Forwarded-Email") return primaryEmail;
-        if (name === "X-Forwarded-Preferred-Username")
-          return scimUser.userName;
+        if (name === 'X-Forwarded-User') return scimUser.id;
+        if (name === 'X-Forwarded-Email') return primaryEmail;
+        if (name === 'X-Forwarded-Preferred-Username') return scimUser.userName;
         return null;
-      }
+      },
     });
 
     return {
@@ -600,11 +598,13 @@ export async function getAuthSession({
         email: user.email || primaryEmail,
         name: scimUser.displayName || scimUser.userName,
         preferredUsername: scimUser.userName,
-        type: "regular",
+        type: 'regular',
       },
     };
   } catch (error) {
-    console.error("[getAuthSession] Failed to get session:", error);
+    console.error('[getAuthSession] Failed to get session:', error);
     return null;
   }
 }
+
+const isTestEnvironment = Boolean(process.env.PLAYWRIGHT);

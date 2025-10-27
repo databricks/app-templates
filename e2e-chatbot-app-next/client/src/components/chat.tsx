@@ -94,6 +94,7 @@ export function Chat({
             message: messages.at(-1),
             selectedChatModel: initialChatModel,
             selectedVisibilityType: visibilityType,
+            nextMessageId: generateUUID(),
             ...body,
           },
         };
@@ -163,6 +164,8 @@ export function Chat({
       }
     },
   });
+
+  console.log('MESSAGES', messages);
 
   const [searchParams] = useSearchParams();
   const query = searchParams.get('query');

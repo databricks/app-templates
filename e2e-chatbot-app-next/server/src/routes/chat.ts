@@ -12,7 +12,11 @@ import {
   type LanguageModelUsage,
   pipeUIMessageStreamToResponse,
 } from 'ai';
-import { authMiddleware, requireAuth, requireChatAccess } from '../middleware/auth';
+import {
+  authMiddleware,
+  requireAuth,
+  requireChatAccess,
+} from '../middleware/auth';
 import {
   deleteChatById,
   getMessagesByChatId,
@@ -21,7 +25,11 @@ import {
   updateChatLastContextById,
   updateChatVisiblityById,
 } from '@chat-template/db';
-import { checkChatAccess, convertToUIMessages, generateUUID } from '@chat-template/core';
+import {
+  checkChatAccess,
+  convertToUIMessages,
+  generateUUID,
+} from '@chat-template/core';
 import { myProvider } from '@chat-template/core';
 import {
   postRequestBodySchema,
@@ -77,7 +85,10 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       return res.status(response.status).json(response.json);
     }
 
-    const { chat, allowed, reason } = await checkChatAccess(id, session?.user.id);
+    const { chat, allowed, reason } = await checkChatAccess(
+      id,
+      session?.user.id,
+    );
 
     if (reason !== 'not_found' && !allowed) {
       const error = new ChatSDKError('forbidden:chat');
@@ -151,7 +162,8 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
             onError: (error) => {
               console.error('Stream error:', error);
 
-              const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+              const errorMessage =
+                error instanceof Error ? error.message : JSON.stringify(error);
 
               writer.write({ type: 'data-error', data: errorMessage });
 
@@ -180,7 +192,10 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
 
         if (finalUsage) {
           try {
-            await updateChatLastContextById({ chatId: id, context: finalUsage, });
+            await updateChatLastContextById({
+              chatId: id,
+              context: finalUsage,
+            });
           } catch (err) {
             console.warn('Unable to persist last usage for chat', id, err);
           }
@@ -200,7 +215,6 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           stream,
         });
       },
-
     });
   } catch (error) {
     if (error instanceof ChatSDKError) {
@@ -216,28 +230,35 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-
 /**
  * DELETE /api/chat?id=:id - Delete a chat
  */
-chatRouter.delete('/', [requireAuth, requireChatAccess], async (req: Request, res: Response) => {
-  const id = req.query.id as string;
+chatRouter.delete(
+  '/',
+  [requireAuth, requireChatAccess],
+  async (req: Request, res: Response) => {
+    const id = req.query.id as string;
 
-  const deletedChat = await deleteChatById({ id });
-  return res.status(200).json(deletedChat);
-});
+    const deletedChat = await deleteChatById({ id });
+    return res.status(200).json(deletedChat);
+  },
+);
 
 /**
  * GET /api/chat/:id
  */
 
-chatRouter.get('/:id', [requireAuth, requireChatAccess], async (req: Request, res: Response) => {
-  const { id } = req.params;
+chatRouter.get(
+  '/:id',
+  [requireAuth, requireChatAccess],
+  async (req: Request, res: Response) => {
+    const { id } = req.params;
 
-  const { chat } = await checkChatAccess(id, req.session?.user.id);
+    const { chat } = await checkChatAccess(id, req.session?.user.id);
 
-  return res.status(200).json(chat);
-});
+    return res.status(200).json(chat);
+  },
+);
 
 /**
  * GET /api/chat/:id/stream - Resume a stream

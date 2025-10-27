@@ -28,11 +28,13 @@ mcp-server-hello-world/
 ├── scripts/
 │   └── dev/
 │       ├── start_server.sh           # Start the MCP server locally
-│       ├── test_local.sh             # Test local MCP server (starts, tests, stops)
-│       ├── test_local.py             # Test MCP client (local development)
-│       ├── test_remote.sh            # Interactive script for testing deployed app with OAuth
-│       ├── test_remote.py            # Test MCP client (deployed app) with health and user auth
+│       ├── query_local.sh            # Query local MCP server (starts, tests, stops)
+│       ├── query_local.py            # Query MCP client (local development)
+│       ├── query_remote.sh           # Interactive script for testing deployed app with OAuth
+│       ├── query_remote.py           # Query MCP client (deployed app) with health and user auth
 │       └── generate_oauth_token.py   # Generate OAuth tokens for Databricks
+├── tests/
+│   └── test_integration_server.py   # Integration tests for MCP server
 ├── pyproject.toml                # Project metadata and dependencies
 ├── requirements.txt              # Python dependencies (for pip)
 ├── app.yaml                      # Databricks Apps configuration
@@ -94,13 +96,30 @@ The server will start on `http://localhost:8000` with auto-reload enabled.
 
 This project includes test scripts to verify your MCP server is working correctly in both local and deployed environments.
 
+### Integration Tests
+
+The project includes automated integration tests that validate the MCP server functionality:
+
+```bash
+# Run integration tests
+uv run pytest tests/
+```
+
+**What the tests do:**
+- Automatically start the MCP server
+- Test that `list_tools()` works correctly
+- Test that all registered tools can be called without errors
+- Automatically clean up the server after tests complete
+
+The integration tests use pytest fixtures to manage the server lifecycle, ensuring a clean test environment every time.
+
 ### Quick Start with Shell Script
 
 Use the provided shell script to test your local MCP server:
 
 ```bash
-chmod +x scripts/dev/test_local.sh
-./scripts/dev/test_local.sh
+chmod +x scripts/dev/query_local.sh
+./scripts/dev/query_local.sh
 ```
 
 This script will:
@@ -116,7 +135,7 @@ This script will:
 **Option 1: Automated test (recommended)**
 ```bash
 # Starts server, runs test, stops server automatically
-./scripts/dev/test_local.sh
+./scripts/dev/query_local.sh
 ```
 
 **Option 2: Manual testing**
@@ -126,18 +145,18 @@ This script will:
 # Or: uv run custom-mcp-server
 
 # In terminal 2: Test the connection
-python scripts/dev/test_local.py
+python scripts/dev/query_local.py
 ```
 
-The `scripts/dev/test_local.py` script connects to your local MCP server without authentication and lists available tools.
+The `scripts/dev/query_local.py` script connects to your local MCP server without authentication and lists available tools.
 
 #### Test Deployed App with User Authorization (OAuth)
 
 After deploying to Databricks Apps, use the interactive shell script to test with user-level OAuth authentication:
 
 ```bash
-chmod +x scripts/dev/test_remote.sh
-./scripts/dev/test_remote.sh
+chmod +x scripts/dev/query_remote.sh
+./scripts/dev/query_remote.sh
 ```
 
 The script will guide you through:
@@ -160,13 +179,13 @@ This test simulates the real end-user experience when they authorize your app an
 Alternatively, test manually with command-line arguments:
 
 ```bash
-python scripts/dev/test_remote.py \
+python scripts/dev/query_remote.py \
     --host "https://your-workspace.cloud.databricks.com" \
     --token "eyJr...Dkag" \
     --app-url "https://your-workspace.cloud.databricks.com/serving-endpoints/your-app"
 ```
 
-The `scripts/dev/test_remote.py` script connects to your deployed MCP server with OAuth authentication and tests both the health check and user authorization functionality.
+The `scripts/dev/query_remote.py` script connects to your deployed MCP server with OAuth authentication and tests both the health check and user authorization functionality.
 
 ## Adding New Tools
 

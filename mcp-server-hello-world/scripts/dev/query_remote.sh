@@ -135,7 +135,7 @@ echo ""
 
 cd "$PROJECT_ROOT"
 
-python3 "$SCRIPT_DIR/test_remote.py" \
+python3 "$SCRIPT_DIR/query_remote.py" \
     --host "$host" \
     --token "$token" \
     --app-url "$app_url"

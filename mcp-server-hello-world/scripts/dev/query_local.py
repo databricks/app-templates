@@ -26,7 +26,6 @@ try:
     print("=" * 50)
     print("✓ Health check passed!")
 
-
     # TODO: Add new tool tests here
     # Example:
     # try:

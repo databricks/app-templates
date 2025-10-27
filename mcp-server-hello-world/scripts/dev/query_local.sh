@@ -37,7 +37,7 @@ sleep 3
 
 echo ""
 echo "Step 3: Testing MCP client connection..."
-python "$SCRIPT_DIR/test_local.py"
+python "$SCRIPT_DIR/query_local.py"
 
 TEST_EXIT_CODE=$?
 

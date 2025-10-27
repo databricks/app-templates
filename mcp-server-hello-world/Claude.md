@@ -24,11 +24,14 @@ server/              # Core MCP server code
 scripts/            # Developer utilities
 └── dev/
     ├── start_server.sh         # Start the MCP server locally
-    ├── test_local.sh           # Test local server (starts, tests, stops)
-    ├── test_local.py           # Test local MCP server
-    ├── test_remote.sh          # Interactive remote deployment test with OAuth
-    ├── test_remote.py          # Test deployed MCP server with health + user auth
+    ├── query_local.sh          # Test local server (starts, tests, stops)
+    ├── query_local.py          # Test local MCP server
+    ├── query_remote.sh         # Interactive remote deployment test with OAuth
+    ├── query_remote.py         # Test deployed MCP server with health + user auth
     └── generate_oauth_token.py # Generate OAuth tokens for Databricks
+
+tests/              # Integration tests
+└── test_integration_server.py # Server integration tests with pytest
 
 pyproject.toml      # Dependencies, build config, CLI command definition
 app.yaml            # Databricks Apps deployment config
@@ -134,6 +137,18 @@ def get_current_user() -> dict:
 
 ### Development Workflow
 
+**Run integration tests:**
+```bash
+# Run all tests
+pytest tests/
+
+# Run with verbose output
+pytest tests/ -v
+
+# Run specific test
+pytest tests/test_integration_server.py::test_call_tools
+```
+
 **Start server for development:**
 ```bash
 ./scripts/dev/start_server.sh
@@ -143,19 +158,19 @@ def get_current_user() -> dict:
 **Test local server:**
 ```bash
 # Automated (recommended) - starts, tests, stops automatically
-./scripts/dev/test_local.sh
+./scripts/dev/query_local.sh
 
 # Manual testing in separate terminals:
 # Terminal 1: Start server
 ./scripts/dev/start_server.sh
 
 # Terminal 2: Run test
-python scripts/dev/test_local.py
+python scripts/dev/query_local.py
 ```
 
 **Test remote deployment:**
 ```bash
-./scripts/dev/test_remote.sh
+./scripts/dev/query_remote.sh
 # Follow interactive prompts
 ```
 
@@ -167,6 +182,7 @@ python scripts/dev/test_local.py
 - **databricks-sdk**: Databricks API client
 - **databricks-mcp**: Databricks MCP client (dev only, for testing)
 - **pydantic**: Data validation
+- **pytest**: Testing framework (dev only, for integration tests)
 
 ## Important Notes for AI Assistants
 
@@ -178,6 +194,8 @@ python scripts/dev/test_local.py
 6. **Handle errors gracefully** - Wrap Databricks SDK calls in try-except
 7. **Don't commit `.databrickscfg`** - It contains secrets
 8. **The `/mcp` endpoint is fixed** - MCP protocol requires this path
+9. **Run integration tests** - Always run `pytest tests/` after adding/modifying tools
+10. **Integration tests call all tools** - The `test_call_tools` test automatically discovers and calls every registered tool
 
 ## Common Patterns
 
@@ -236,18 +254,23 @@ This provides a visual way to test tool-calling behavior with different models b
 
 ## Testing Strategy
 
-1. **Local Development**: 
+1. **Integration Tests** (Automated):
+   - `tests/test_integration_server.py` - Pytest-based integration tests
+   - Automatically starts/stops server, tests all tools
+   - Run with: `pytest tests/`
+
+2. **Local Development** (Interactive): 
    - `scripts/dev/start_server.sh` - Start server for development
-   - `scripts/dev/test_local.sh` - Automated test (starts server, tests, stops)
-   - `scripts/dev/test_local.py` - Test client for local server
-2. **Remote Deployment with OAuth**: 
-   - `scripts/dev/test_remote.sh` - Interactive script with OAuth flow
-   - `scripts/dev/test_remote.py` - Tests health and user authorization tools
-3. **Interactive**: Shell scripts provide guided testing experience
+   - `scripts/dev/query_local.sh` - Automated test (starts server, tests, stops)
+   - `scripts/dev/query_local.py` - Test client for local server
+
+3. **Remote Deployment with OAuth** (Interactive): 
+   - `scripts/dev/query_remote.sh` - Interactive script with OAuth flow
+   - `scripts/dev/query_remote.py` - Tests health and user authorization tools
 
 ### Remote Testing with User Authorization
 
-The `scripts/dev/test_remote.sh` script provides end-to-end testing of user-level OAuth authorization:
+The `scripts/dev/query_remote.sh` script provides end-to-end testing of user-level OAuth authorization:
 
 **What it does:**
 1. Fetches app configuration using `databricks apps get <app_name>`
@@ -255,7 +278,7 @@ The `scripts/dev/test_remote.sh` script provides end-to-end testing of user-leve
 3. Extracts app URL from configuration
 4. Gets workspace host from Databricks profile
 5. Generates OAuth token using `generate_oauth_token.py` with correct scopes
-6. Tests MCP client with user authentication via `test_remote.py`
+6. Tests MCP client with user authentication via `query_remote.py`
 7. Calls both `health` tool and `get_current_user` tool to verify functionality
 
 **Why this matters:**

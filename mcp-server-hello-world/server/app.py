@@ -14,7 +14,6 @@ AI assistants and other clients. FastMCP makes it easy to expose these tools
 over HTTP using the MCP protocol standard.
 """
 
-
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -48,6 +47,7 @@ app = FastAPI(
     version="0.1.0",
     lifespan=mcp_app.lifespan,  # Share the lifespan context with MCP app
 )
+
 
 @app.get("/", include_in_schema=False)
 async def serve_index():

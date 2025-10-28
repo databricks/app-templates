@@ -136,15 +136,6 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
   return provider;
 }
 
-// Server-side environment validation
-if (!process.env.DATABRICKS_SERVING_ENDPOINT) {
-  throw new Error(
-    'Please set the DATABRICKS_SERVING_ENDPOINT environment variable to the name of an agent serving endpoint',
-  );
-}
-
-const servingEndpoint = process.env.DATABRICKS_SERVING_ENDPOINT;
-
 const endpointDetailsCache = new Map<
   string,
   { task: string | undefined; timestamp: number }
@@ -196,6 +187,14 @@ export class OAuthAwareProvider implements SmartProvider {
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
   async languageModel(id: string): Promise<LanguageModelV2> {
+    // Server-side environment validation
+    if (!process.env.DATABRICKS_SERVING_ENDPOINT) {
+      throw new Error(
+        'Please set the DATABRICKS_SERVING_ENDPOINT environment variable to the name of an agent serving endpoint',
+      );
+    }
+
+    const servingEndpoint = process.env.DATABRICKS_SERVING_ENDPOINT;
     const endpointDetails = await getEndpointDetails(servingEndpoint);
     // Check cache first
     const cached = this.modelCache.get(id);

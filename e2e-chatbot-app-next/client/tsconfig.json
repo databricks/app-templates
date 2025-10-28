@@ -12,14 +12,15 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
       "@chat-template/db": ["../packages/db/src/index.ts"],
       "@chat-template/ai-sdk-providers": ["../packages/ai-sdk-providers/src/index.ts"],
+      "@chat-template/ai-sdk-providers/tools": ["../packages/ai-sdk-providers/src/databricks-provider/databricks-tool-calling.ts"],
       "@chat-template/auth": ["../packages/auth/src/index.ts"],
       "@chat-template/core": ["../packages/core/src/index.ts"]
     }

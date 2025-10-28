@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type {
   LanguageModelV2Content,
   LanguageModelV2StreamPart,
@@ -115,7 +114,7 @@ export const convertResponsesAgentChunkToMessagePart = (
         type: 'source',
         url: chunk.annotation.url,
         title: chunk.annotation.title,
-        id: randomUUID(),
+        id: crypto.randomUUID(),
         sourceType: 'url',
       });
       break;

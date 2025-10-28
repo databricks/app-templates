@@ -4,7 +4,7 @@ import type { InferUITool, LanguageModelUsage, UIMessage } from 'ai';
 import type {
   DATABRICKS_TOOL_CALL_ID,
   DATABRICKS_TOOL_DEFINITION,
-} from '@chat-template/ai-sdk-providers';
+} from '@chat-template/ai-sdk-providers/tools';
 
 const messageMetadataSchema = z.object({
   createdAt: z.string(),

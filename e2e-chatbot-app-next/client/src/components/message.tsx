@@ -27,7 +27,7 @@ import {
 } from './databricks-message-part-transformers';
 import { MessageError } from './message-error';
 import { Streamdown } from 'streamdown';
-import { DATABRICKS_TOOL_CALL_ID } from '@chat-template/ai-sdk-providers';
+import { DATABRICKS_TOOL_CALL_ID } from '@chat-template/ai-sdk-providers/tools';
 
 const PurePreviewMessage = ({
   chatId,

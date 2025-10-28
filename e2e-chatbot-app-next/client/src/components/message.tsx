@@ -27,8 +27,7 @@ import {
 } from './databricks-message-part-transformers';
 import { MessageError } from './message-error';
 import { Streamdown } from 'streamdown';
-// import { DATABRICKS_TOOL_CALL_ID } from '@chat-template/ai-sdk-providers';
-const DATABRICKS_TOOL_CALL_ID = 'databricks-tool-call';
+import { DATABRICKS_TOOL_CALL_ID } from '@chat-template/ai-sdk-providers';
 
 const PurePreviewMessage = ({
   chatId,
@@ -145,7 +144,10 @@ const PurePreviewMessage = ({
             if (type === 'text') {
               if (isNamePart(part)) {
                 return (
-                  <Streamdown className="-mb-2 mt-0">{`# ${formatNamePart(part)}`}</Streamdown>
+                  <Streamdown
+                    key={key}
+                    className="-mb-2 mt-0 border-l-4 pl-2 text-muted-foreground"
+                  >{`# ${formatNamePart(part)}`}</Streamdown>
                 );
               }
               if (mode === 'view') {

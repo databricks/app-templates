@@ -14,7 +14,7 @@ import postgres from 'postgres';
 
 import { chat, message, type DBMessage, type Chat } from './schema';
 import type { VisibilityType } from '@chat-template/utils';
-import { ChatSDKError } from '@chat-template/utils';
+import { ChatSDKError } from '@chat-template/core/errors';
 import type { LanguageModelV2Usage } from '@ai-sdk/provider';
 import { isDatabaseAvailable } from './connection';
 import { getAuthMethod, getAuthMethodDescription } from '@chat-template/auth';

@@ -2,7 +2,7 @@ import type { UIMessagePart } from 'ai';
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import type { DBMessage } from '@chat-template/db';
-import { ChatSDKError, type ErrorCode } from './errors';
+import { ChatSDKError, type ErrorCode } from '@chat-template/core/errors';
 import type {
   ChatMessage,
   ChatTools,

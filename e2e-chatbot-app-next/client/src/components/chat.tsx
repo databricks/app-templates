@@ -17,7 +17,7 @@ import { getChatHistoryPaginationKey } from './sidebar-history';
 import { toast } from './toast';
 import { useSearchParams } from 'react-router-dom';
 import { useChatVisibility } from '@/hooks/use-chat-visibility';
-import { ChatSDKError } from '@/lib/errors';
+import { ChatSDKError } from '@chat-template/core/errors';
 import { useDataStream } from './data-stream-provider';
 import { ChatTransport } from '../lib/ChatTransport';
 import type { ClientSession } from '@chat-template/auth';

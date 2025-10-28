@@ -27,7 +27,6 @@ import {
 } from '@chat-template/db';
 import {
   type ChatMessage,
-  ChatSDKError,
   checkChatAccess,
   convertToUIMessages,
   generateUUID,
@@ -41,6 +40,7 @@ import {
   DATABRICKS_TOOL_CALL_ID,
   DATABRICKS_TOOL_DEFINITION,
 } from '@chat-template/ai-sdk-providers/tools';
+import { ChatSDKError } from '@chat-template/core/errors';
 
 export const chatRouter: RouterType = Router();
 
@@ -59,6 +59,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
   try {
     requestBody = postRequestBodySchema.parse(req.body);
   } catch (_) {
+    console.error('Error parsing request body:', _);
     const error = new ChatSDKError('bad_request:api');
     const response = error.toResponse();
     return res.status(response.status).json(response.json);

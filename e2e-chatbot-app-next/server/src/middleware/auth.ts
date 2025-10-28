@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { getAuthSession, type AuthSession } from '@chat-template/auth';
-import { ChatSDKError, checkChatAccess } from '@chat-template/core';
+import { checkChatAccess } from '@chat-template/core';
+import { ChatSDKError } from '@chat-template/core/errors';
 
 // Extend Express Request type to include session
 declare global {

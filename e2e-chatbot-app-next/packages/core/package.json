@@ -6,7 +6,8 @@
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./errors": "./src/errors.ts"
   },
   "publishConfig": {
     "exports": {
@@ -18,6 +19,16 @@
         "require": {
           "types": "./dist/index.d.ts",
           "default": "./dist/index.cjs"
+        }
+      },
+      "./errors": {
+        "import": {
+          "types": "./dist/errors.d.ts",
+          "default": "./dist/errors.js"
+        },
+        "require": {
+          "types": "./dist/errors.d.ts",
+          "default": "./dist/errors.cjs"
         }
       }
     }

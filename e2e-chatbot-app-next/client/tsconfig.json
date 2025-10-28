@@ -22,7 +22,8 @@
       "@chat-template/ai-sdk-providers": ["../packages/ai-sdk-providers/src/index.ts"],
       "@chat-template/ai-sdk-providers/tools": ["../packages/ai-sdk-providers/src/databricks-provider/databricks-tool-calling.ts"],
       "@chat-template/auth": ["../packages/auth/src/index.ts"],
-      "@chat-template/core": ["../packages/core/src/index.ts"]
+      "@chat-template/core": ["../packages/core/src/index.ts"],
+      "@chat-template/core/errors": ["../packages/core/src/errors.ts"]
     }
   },
   "include": ["src"],

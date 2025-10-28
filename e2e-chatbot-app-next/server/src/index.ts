@@ -15,7 +15,7 @@ import { chatRouter } from './routes/chat';
 import { historyRouter } from './routes/history';
 import { sessionRouter } from './routes/session';
 import { messagesRouter } from './routes/messages';
-import { ChatSDKError } from '@chat-template/core';
+import { ChatSDKError } from '@chat-template/core/errors';
 
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);

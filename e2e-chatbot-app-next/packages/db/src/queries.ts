@@ -25,28 +25,35 @@ export type { User } from './schema';
 // Optionally, if not using email/pass login, you can
 // use the Drizzle adapter for Auth.js / NextAuth
 // https://authjs.dev/reference/adapter/drizzle
-let db: ReturnType<typeof drizzle>;
+let _db: ReturnType<typeof drizzle>;
 
-if (!isDatabaseAvailable()) {
-  throw new Error(
-    'Database configuration required. Please set PGDATABASE/PGHOST/PGUSER or POSTGRES_URL environment variables.',
-  );
-}
+const getOrInitializeDb = async () => {
+  if (!isDatabaseAvailable()) {
+    throw new Error(
+      'Database configuration required. Please set PGDATABASE/PGHOST/PGUSER or POSTGRES_URL environment variables.',
+    );
+  }
 
-const authMethod = getAuthMethod();
-if (authMethod === 'oauth' || authMethod === 'cli') {
-  // Dynamic auth path - db will be initialized asynchronously
-  console.log(
-    `Using ${getAuthMethodDescription()} authentication for Postgres connection`,
-  );
-} else if (process.env.POSTGRES_URL) {
-  // Traditional connection string
-  const client = postgres(process.env.POSTGRES_URL);
-  db = drizzle(client);
-}
+  if (_db) return _db;
+
+  const authMethod = getAuthMethod();
+  if (authMethod === 'oauth' || authMethod === 'cli') {
+    // Dynamic auth path - db will be initialized asynchronously
+    console.log(
+      `Using ${getAuthMethodDescription()} authentication for Postgres connection`,
+    );
+  } else if (process.env.POSTGRES_URL) {
+    // Traditional connection string
+    const client = postgres(process.env.POSTGRES_URL);
+    _db = drizzle(client);
+  }
+
+  return _db;
+};
 
 // Helper to ensure db is initialized for dynamic auth connections
 async function ensureDb() {
+  const db = await getOrInitializeDb();
   // Always get a fresh DB instance for dynamic auth connections to handle token expiry
   const authMethod = getAuthMethod();
   if (authMethod === 'oauth' || authMethod === 'cli') {

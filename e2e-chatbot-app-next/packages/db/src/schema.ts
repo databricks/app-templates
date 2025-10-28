@@ -12,7 +12,6 @@ import type { LanguageModelV2Usage } from '@ai-sdk/provider';
 import type { User as SharedUser } from '@chat-template/utils';
 
 const schemaName = 'ai_chatbot';
-console.log(`[Schema] Using database schema: ${schemaName}`);
 const customSchema = pgSchema(schemaName);
 
 // // Helper function to create table with proper schema handling

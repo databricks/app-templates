@@ -2,11 +2,7 @@
   "name": "databricks/e2e-chatbot-app",
   "version": "1.0.0",
   "private": true,
-  "workspaces": [
-    "client",
-    "server",
-    "packages/*"
-  ],
+  "workspaces": ["client", "server", "packages/*"],
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=8.0.0"
@@ -30,8 +26,7 @@
     "db:pull": "drizzle-kit pull",
     "db:check": "drizzle-kit check",
     "db:up": "drizzle-kit up",
-    "test": "export DATABRICKS_CLIENT_ID=mock-value && export DATABRICKS_CLIENT_SECRET=mock-value && export DATABRICKS_HOST=mock-value && export PLAYWRIGHT=True && playwright test",
-    "generate:package": "NODE_OPTIONS='--import tsx' plop --plopfile tools/create-package.ts"
+    "test": "export PLAYWRIGHT=True && playwright test"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

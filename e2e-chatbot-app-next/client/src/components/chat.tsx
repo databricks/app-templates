@@ -151,8 +151,8 @@ export function Chat({
         });
       } else {
         setStreamCursor(0);
+        mutate(unstable_serialize(getChatHistoryPaginationKey));
       }
-      mutate(unstable_serialize(getChatHistoryPaginationKey));
     },
     onError: (error) => {
       console.log('[Chat onError] Error occurred:', error);

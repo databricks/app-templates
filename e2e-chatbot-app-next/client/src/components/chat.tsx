@@ -75,6 +75,7 @@ export function Chat({
     messages: initialMessages,
     experimental_throttle: 100,
     generateId: generateUUID,
+    resume: id !== undefined && initialMessages.length > 0, // Enable automatic stream resumption
     transport: new ChatTransport({
       onStreamPart: (part) => {
         // when we receive a stream part, we reset the onErrorResumeCountRef and onFinishResumeCountRef
@@ -132,7 +133,9 @@ export function Chat({
         );
         // If the message is empty attempt to resume the stream.
         onFinishResumeCountRef.current++;
-        resumeStream();
+        setTimeout(() => {
+          resumeStream();
+        });
       } else {
         setStreamCursor(0);
       }
@@ -158,7 +161,9 @@ export function Chat({
           onErrorResumeCountRef.current,
         );
         onErrorResumeCountRef.current++;
-        resumeStream();
+        setTimeout(() => {
+          resumeStream();
+        });
       }
     },
   });

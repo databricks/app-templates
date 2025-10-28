@@ -26,26 +26,25 @@ import {
   updateChatVisiblityById,
 } from '@chat-template/db';
 import {
+  type ChatMessage,
+  ChatSDKError,
   checkChatAccess,
   convertToUIMessages,
   generateUUID,
-} from '@chat-template/core';
-import { myProvider } from '@chat-template/core';
-import {
+  myProvider,
   postRequestBodySchema,
   type PostRequestBody,
+  StreamCache,
+  type VisibilityType,
 } from '@chat-template/core';
-import { ChatSDKError } from '@chat-template/core';
-import type { ChatMessage } from '@chat-template/core';
-import type { VisibilityType } from '@chat-template/core';
 import {
   DATABRICKS_TOOL_CALL_ID,
   DATABRICKS_TOOL_DEFINITION,
 } from '@chat-template/ai-sdk-providers';
-import { streamCache } from '@chat-template/core';
 
 export const chatRouter: RouterType = Router();
 
+const streamCache = new StreamCache();
 // Apply auth middleware to all chat routes
 chatRouter.use(authMiddleware);
 
@@ -265,44 +264,73 @@ chatRouter.get(
  */
 chatRouter.get(
   '/:id/stream',
-  [requireAuth, requireChatAccess],
+  [requireAuth],
   async (req: Request, res: Response) => {
-    const { id } = req.params;
+    const { id: chatId } = req.params;
+    const cursor = req.headers['x-resume-stream-cursor'] as string;
 
-    const cursor = Number.parseInt(
-      (req.headers['x-resume-stream-cursor'] as string) || '0',
-    );
+    console.log(`[Stream Resume] Cursor: ${cursor}`);
 
-    const cachedStream = streamCache.getStream(id);
+    console.log(`[Stream Resume] GET request for chat ${chatId}`);
 
-    if (!cachedStream) {
-      const error = new ChatSDKError('empty:stream');
-      const response = error.toResponse();
+    // Check if there's an active stream for this chat first
+    const streamId = streamCache.getActiveStreamId(chatId);
+
+    if (!streamId) {
+      console.log(`[Stream Resume] No active stream for chat ${chatId}`);
+      const streamError = new ChatSDKError('empty:stream');
+      const response = streamError.toResponse();
       return res.status(response.status).json(response.json);
     }
+
+    const { allowed, reason } = await checkChatAccess(
+      chatId,
+      req.session?.user.id,
+    );
+
+    // If chat doesn't exist in DB, it's a temporary chat from the homepage - allow it
+    if (reason === 'not_found') {
+      console.log(
+        `[Stream Resume] Resuming stream for temporary chat ${chatId} (not yet in DB)`,
+      );
+    } else if (!allowed) {
+      console.log(
+        `[Stream Resume] User ${req.session?.user.id} does not have access to chat ${chatId} (reason: ${reason})`,
+      );
+      const streamError = new ChatSDKError('forbidden:chat', reason);
+      const response = streamError.toResponse();
+      return res.status(response.status).json(response.json);
+    }
+
+    // Get all cached chunks for this stream
+    const stream = streamCache.getStream(streamId, {
+      cursor: cursor ? Number.parseInt(cursor) : undefined,
+    });
+
+    if (!stream) {
+      console.log(`[Stream Resume] No stream found for ${streamId}`);
+      const streamError = new ChatSDKError('empty:stream');
+      const response = streamError.toResponse();
+      return res.status(response.status).json(response.json);
+    }
+
+    console.log(`[Stream Resume] Resuming stream ${streamId}`);
 
     // Set headers for SSE
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    try {
-      const reader = cachedStream.getReader();
-      let currentCursor = 0;
+    // Pipe the cached stream directly to the response
+    stream.pipe(res);
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        // Only send chunks after the cursor position
-        if (currentCursor >= cursor) {
-          res.write(`data: ${JSON.stringify(value)}\n\n`);
-        }
-        currentCursor++;
+    // Handle stream errors
+    stream.on('error', (error) => {
+      console.error('[Stream Resume] Stream error:', error);
+      if (!res.headersSent) {
+        res.status(500).end();
       }
-    } finally {
-      res.end();
-    }
+    });
   },
 );
 

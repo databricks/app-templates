@@ -8,6 +8,8 @@
  * with multiple instances, use Redis or another distributed cache.
  */
 
+import { Readable } from 'node:stream';
+
 interface CachedStream {
   chatId: string;
   streamId: string;
@@ -89,12 +91,12 @@ export class StreamCache {
   }
 
   /**
-   * Get a stream
+   * Get a stream (returns a Node.js Readable stream for direct use with Express)
    */
   getStream(
     streamId: string,
     { cursor }: { cursor?: number } = {},
-  ): ReadableStream<string> | null {
+  ): Readable | null {
     const cache = this.cache.get(streamId)?.cache;
     if (!cache) return null;
     return cacheableToReadable(cache, { cursor });
@@ -127,12 +129,6 @@ export class StreamCache {
     }
   }
 }
-
-/**
- * Using globalThis instantiated in instrumentation.ts to make sure
- * we have a single instance of the stream cache.
- */
-export const streamCache = new StreamCache();
 
 interface CacheableStream<T> {
   readonly chunks: readonly T[];
@@ -210,11 +206,15 @@ function makeCacheableStream<T>({
     // The core async generator – see the comments inside for details.
     async *read({ cursor }: { cursor?: number } = {}) {
       let idx = cursor ?? 0; // where we are in the cache for this particular call
-      console.log('[StreamCache] read', { cursor, idx });
+      console.log('[StreamCache] read', { cursor, idx, chunks: chunks.length });
 
       while (true) {
         // 1️⃣ Yield everything that is already cached and we haven't emitted yet.
         while (idx < chunks.length) {
+          console.log('[StreamCache] yielding chunk', {
+            idx,
+            chunk: chunks[idx],
+          });
           yield chunks[idx++];
         }
 
@@ -241,62 +241,46 @@ function makeCacheableStream<T>({
 }
 
 /**
- * Turns a `CacheableStream<T>` into a `ReadableStream<T>`
+ * Turns a `CacheableStream<T>` into a Node.js `Readable` stream
  *
- * The stream *pulls* data from the cached async‑generator (`cache.read()`);
- * it honours back‑pressure, closes when the cache finishes, and aborts the
- * cache when the consumer cancels.
+ * The stream pulls data from the cached async generator (`cache.read()`),
+ * honors backpressure, and is directly compatible with Express responses.
  */
 function cacheableToReadable<T>(
   cache: CacheableStream<T>,
   { cursor }: { cursor?: number } = {},
-): ReadableStream<T> {
-  // The async iterator returned by `cache.read()`.  We create it lazily on
-  // the first `pull()` call so that the cache isn’t “started” until the
-  // consumer actually asks for data.
+): Readable {
   let iterator: AsyncIterableIterator<T> | undefined;
 
-  // Helper that resolves the next value of the iterator, handling the
-  // “iterator not created yet” case.
-  async function getNext(): Promise<{ value?: T; done?: boolean }> {
-    if (!iterator) {
-      iterator = cache.read({ cursor });
-    }
-    const result = await iterator.next();
-    return result;
-  }
-
-  return new ReadableStream<T>({
-    /**
-     * Called by the consumer when it wants more data.
-     * We ask the cache for the next chunk, encode it and enqueue it.
-     */
-    async pull(controller) {
+  return new Readable({
+    async read() {
       try {
-        const { value, done } = await getNext();
+        // Initialize iterator on first read
+        if (!iterator) {
+          iterator = cache.read({ cursor });
+        }
+
+        const { value, done } = await iterator.next();
 
         if (done) {
-          // No more data – cleanly close the stream.
-          controller.close();
+          // No more data - signal end of stream
+          this.push(null);
           return;
         }
 
-        // Encode the string as UTF‑8 and push it downstream.
-        controller.enqueue(value);
+        // Push chunk to the stream
+        this.push(value);
       } catch (err) {
-        // Propagate any unexpected error to the consumer.
-        controller.error(err);
+        // Propagate any unexpected error to the consumer
+        this.destroy(err as Error);
       }
     },
 
-    /**
-     * Called if the consumer aborts (e.g. `reader.cancel()` or the
-     * underlying fetch is aborted).  We forward the cancelation to the
-     * cache so it can stop its background reader.
-     */
-    cancel(reason) {
-      console.log('[StreamCache] cancel', reason);
-      // We don't close the underlying cache when this cancels since new consumers may be started
+    destroy(error, callback) {
+      console.log('[StreamCache] Stream destroyed', error);
+      // We don't close the underlying cache when this is destroyed
+      // since new consumers may be started
+      callback(error);
     },
   });
 }

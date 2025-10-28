@@ -8,8 +8,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Load environment variables from project root
-// When running with tsx, __dirname is packages/backend/db/src
-// When running compiled, __dirname is packages/backend/db/dist
+// When running with tsx, __dirname is packages/db/src
+// When running compiled, __dirname is packages/db/dist
 const projectRoot = join(__dirname, '..', '..', '..', '..');
 const envPath = join(projectRoot, '.env.local');
 console.log('Loading .env from:', envPath);
@@ -23,10 +23,7 @@ import {
   getSchemaName,
   getConnectionUrl,
 } from './connection';
-import {
-  getDatabricksToken,
-  getDatabaseUsername,
-} from '@chat-template/auth';
+import { getDatabricksToken, getDatabaseUsername } from '@chat-template/auth';
 import { spawnWithInherit } from '@chat-template/utils';
 
 async function main() {
@@ -94,10 +91,15 @@ async function main() {
 
     // Find drizzle-kit entry point
     const dbPackageDir = join(__dirname, '..');
-    const projectRoot = join(__dirname, '..', '..', '..', '..');
+    const projectRoot = join(__dirname, '..', '..', '..');
 
     // Use the actual drizzle-kit bin.cjs file (not the shell wrapper)
-    const drizzleKitBin = join(dbPackageDir, 'node_modules', 'drizzle-kit', 'bin.cjs');
+    const drizzleKitBin = join(
+      projectRoot,
+      'node_modules',
+      'drizzle-kit',
+      'bin.cjs',
+    );
 
     console.log('projectRoot', projectRoot);
     console.log('dbPackageDir', dbPackageDir);
@@ -105,16 +107,23 @@ async function main() {
 
     // Run drizzle-kit from the db package directory so it finds drizzle.config.cjs
     const configPath = join(dbPackageDir, 'drizzle.config.ts');
-    console.log('🚀 Running: node', [drizzleKitBin, 'push', '--config', configPath, '--force'].join(' '));
+    console.log(
+      '🚀 Running: node',
+      [drizzleKitBin, 'push', '--config', configPath, '--force'].join(' '),
+    );
     console.log('📋 Environment check:');
     console.log('  - POSTGRES_URL:', env.POSTGRES_URL ? 'SET' : 'NOT SET');
     console.log('  - PGHOST:', env.PGHOST || 'NOT SET');
     console.log('  - PGDATABASE:', env.PGDATABASE || 'NOT SET');
-    await spawnWithInherit('node', [drizzleKitBin, 'push', '--config', configPath, '--force'], {
-      env: env,
-      cwd: dbPackageDir,
-      errorMessagePrefix: 'drizzle-kit push failed',
-    });
+    await spawnWithInherit(
+      'node',
+      [drizzleKitBin, 'push', '--config', configPath, '--force'],
+      {
+        env: env,
+        cwd: dbPackageDir,
+        errorMessagePrefix: 'drizzle-kit push failed',
+      },
+    );
     console.log('✅ drizzle-kit push completed successfully');
     console.log('✅ Database migration completed successfully');
   } catch (error) {

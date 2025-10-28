@@ -11,7 +11,7 @@
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "npm run dev --workspace=@databricks/chatbot-server",
     "dev:client": "npm run dev --workspace=@databricks/chatbot-client",
-    "build": "npm run build:client && npm run build:server",
+    "build": "npm run db:migrate && npm run build:client && npm run build:server",
     "build:client": "npm run build --workspace=@databricks/chatbot-client",
     "build:server": "npm run build --workspace=@databricks/chatbot-server",
     "start": "npm run start --workspace=@databricks/chatbot-server",
@@ -19,8 +19,8 @@
     "lint:fix": "biome lint --write --unsafe && biome format --write",
     "format": "biome format --write",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "npx tsx --env-file=.env.local packages/backend/db/src/migrate.ts",
-    "db:reset": "npx tsx scripts/reset-database.ts",
+    "db:migrate": "tsx packages/db/src/migrate.ts",
+    "db:reset": "tsx scripts/reset-database.ts",
     "db:studio": "drizzle-kit studio",
     "db:push": "drizzle-kit push",
     "db:pull": "drizzle-kit pull",
@@ -31,15 +31,15 @@
   },
   "dependencies": {
     "dotenv": "^16.4.5",
-    "tsx": "^4.19.1"
+    "tsx": "^4.19.1",
+    "drizzle-kit": "^0.31.5",
+    "drizzle-orm": "^0.44.6"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@playwright/test": "^1.50.1",
     "@types/node": "^22.8.6",
     "concurrently": "^8.2.2",
-    "only-allow": "^1.2.1",
-    "plop": "^4.0.4",
     "tsdown": "0.15.9",
     "typescript": "^5.9.3"
   }

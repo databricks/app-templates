@@ -1,8 +1,8 @@
-import { defineConfig } from "drizzle-kit";
+import { defineConfig } from 'drizzle-kit';
 
 // Use fixed schema name for out-of-the-box functionality
 function getSchemaName() {
-  return "ai_chatbot";
+  return 'ai_chatbot';
 }
 
 // Environment variables are already loaded by tsx --env-file in migrate.ts
@@ -12,17 +12,17 @@ const schemaName = getSchemaName();
 // For compatibility with drizzle-kit CLI, use PG* environment variables
 // The password will be provided via PGPASSWORD environment variable from migrate.ts
 module.exports = defineConfig({
-  schema: "./src/schema.ts",
-  out: "./src/migrations",
-  dialect: "postgresql",
-  casing: "snake_case",
+  schema: './src/schema.ts',
+  out: './src/migrations',
+  dialect: 'postgresql',
+  casing: 'snake_case',
   dbCredentials: {
-    host: process.env.PGHOST || "placeholder",
-    port: Number.parseInt(process.env.PGPORT || "5432"),
+    host: process.env.PGHOST || 'placeholder',
+    port: Number.parseInt(process.env.PGPORT || '5432'),
     user: process.env.PGUSER,
     password: process.env.PGPASSWORD, // Will be set by migrate.ts script
-    database: process.env.PGDATABASE || "placeholder",
-    ssl: process.env.PGSSLMODE !== "disable",
+    database: process.env.PGDATABASE || 'placeholder',
+    ssl: process.env.PGSSLMODE !== 'disable',
   },
   schemaFilter: [schemaName],
   verbose: true,

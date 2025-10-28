@@ -1,4 +1,5 @@
 """Utility functions for OpenAPI spec loading and authentication"""
+
 import contextvars
 import json
 import logging
@@ -26,21 +27,26 @@ def load_openapi_spec() -> Dict[str, Any]:
     spec_volume_path = os.getenv("SPEC_VOLUME_PATH")
     spec_file_name = os.getenv("SPEC_FILE_NAME")
     if spec_volume_path is None:
-        raise ValueError("SPEC_VOLUME_PATH environment variable is not set. Please update the environment variable in app.yaml")
-    
+        raise ValueError(
+            "SPEC_VOLUME_PATH environment variable is not set. Please update the environment variable in app.yaml"
+        )
+
     if spec_file_name is None:
-        raise ValueError("SPEC_FILE_NAME environment variable is not set. Please update the environment variable in app.yaml")
+        raise ValueError(
+            "SPEC_FILE_NAME environment variable is not set. Please update the environment variable in app.yaml"
+        )
 
     try:
         w = get_workspace_client()
-        spec_file = w.files.download(f'{spec_volume_path}/{spec_file_name}').contents
-        file_data = spec_file.read().decode('utf-8')
+        spec_file = w.files.download(f"{spec_volume_path}/{spec_file_name}").contents
+        file_data = spec_file.read().decode("utf-8")
         _cached_openapi_spec = json.loads(file_data)
         logger.info("Successfully loaded OpenAPI specification")
         return _cached_openapi_spec
     except Exception as e:
         logger.error(f"Failed to load OpenAPI specification: {e}")
         raise
+
 
 def get_workspace_client() -> WorkspaceClient:
     """Get WorkspaceClient using profile from environment variables"""
@@ -49,6 +55,7 @@ def get_workspace_client() -> WorkspaceClient:
         return WorkspaceClient(profile=profile)
     else:
         return WorkspaceClient()
+
 
 def get_user_authenticated_workspace_client() -> WorkspaceClient:
     """Get WorkspaceClient using token from headers"""

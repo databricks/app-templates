@@ -1,7 +1,8 @@
 """MCP tool definitions for API interactions"""
-import os
+
 import json
 import logging
+import os
 from typing import Any, Dict, Optional, Union
 
 from .handlers import (
@@ -22,14 +23,18 @@ from .utils import load_openapi_spec
 
 logger = logging.getLogger(__name__)
 
+
 def validate_mcp_server():
     connection_name = os.getenv("UC_CONNECTION_NAME")
 
     if connection_name is None:
-        raise ValueError("UC_CONNECTION_NAME environment variable is not set. Please update the environment variable in app.yaml")
+        raise ValueError(
+            "UC_CONNECTION_NAME environment variable is not set. Please update the environment variable in app.yaml"
+        )
 
     load_openapi_spec()
-    
+
+
 def load_tools(mcp_server):
     """Register all MCP tools with the server"""
     validate_mcp_server()
@@ -128,4 +133,3 @@ def load_tools(mcp_server):
                 "json": None,
                 "error": str(e),
             }
-

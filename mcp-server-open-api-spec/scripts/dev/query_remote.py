@@ -16,8 +16,8 @@ Example:
 """
 
 import argparse
-import sys
 import json
+import sys
 
 from databricks.sdk import WorkspaceClient
 from databricks_mcp import DatabricksMCPClient
@@ -68,28 +68,28 @@ def main():
         print()
 
         print("Step 4: Calling tool: list_api_endpoints\n")
-        
+
         endpoints_result = mcp_client.call_tool("list_api_endpoints")
         # Handle CallToolResult object
         endpoints_data = None
-        if hasattr(endpoints_result, 'structuredContent') and endpoints_result.structuredContent:
+        if hasattr(endpoints_result, "structuredContent") and endpoints_result.structuredContent:
             # Use structured content if available
             endpoints_data = endpoints_result.structuredContent
-        elif hasattr(endpoints_result, 'content') and endpoints_result.content:
+        elif hasattr(endpoints_result, "content") and endpoints_result.content:
             # Fall back to parsing text from content
             for content_item in endpoints_result.content:
-                if hasattr(content_item, 'text'):
+                if hasattr(content_item, "text"):
                     try:
                         endpoints_data = json.loads(content_item.text)
                         break
                     except json.JSONDecodeError:
                         print(f"Failed to parse JSON from content: {content_item.text}")
-        
+
         if endpoints_data:
             print(json.dumps(endpoints_data, indent=4, sort_keys=True))
         else:
             print("❌ No results returned from list_api_endpoints tool")
-        
+
         return 0
 
     except Exception as e:

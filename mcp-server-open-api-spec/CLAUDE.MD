@@ -73,12 +73,13 @@ src/custom_server/
 scripts/
 └── dev/
     ├── start_server.sh       # Start the MCP server locally
-    ├── query_local.sh        # Automated local testing script
-    ├── query_local.py        # Python test client for local server
     ├── query_remote.sh       # Automated remote testing script
     ├── query_remote.py       # Python test client for remote server
     ├── generate_oauth_token.py  # OAuth token generation utility
     └── README.md             # Scripts documentation
+
+tests/
+└── test_integration_server.py  # Integration tests for MCP server
 
 hooks/
 └── apps_build.py         # Custom build hook for Databricks Apps
@@ -300,35 +301,39 @@ Access at: `http://localhost:8000`
 
 ## Testing & Debugging
 
-### Automated Testing Scripts
+### Integration Testing
 
-The project includes comprehensive test scripts to verify MCP server functionality:
+The project includes integration tests and scripts to verify MCP server functionality:
 
-#### Local Testing (`scripts/dev/query_local.sh`)
-Tests the MCP server running on your local machine:
+#### Local Testing (`tests/test_integration_server.py`)
+Tests the MCP server running on your local machine using pytest:
+
 ```bash
-./scripts/dev/query_local.sh
+DATABRICKS_CONFIG_PROFILE=<your-profile> \
+UC_CONNECTION_NAME=<your-connection> \
+SPEC_VOLUME_PATH=<your-volume-path> \
+SPEC_FILE_NAME=<your-spec-file> \
+uv run pytest tests/test_integration_server.py
 ```
 
 Features:
-- Prompts for Databricks profile, UC connection name, spec volume path, and spec file name
-- Sets up environment variables automatically
-- Starts the server in the background
-- Connects using `DatabricksMCPClient` at `http://0.0.0.0:8000/mcp`
-- Lists available MCP tools
-- Calls `list_api_endpoints` to verify API discovery
-- Automatically cleans up and stops the server
-
-Python test implementation: `scripts/dev/query_local.py`
+- Automatically starts the MCP server in the background
+- Tests server health endpoint
+- Verifies all MCP tools (list_api_endpoints, get_api_endpoint_schema, invoke_api_endpoint)
+- Uses `DatabricksMCPClient` to connect at `http://0.0.0.0:8000/mcp`
+- Validates tool responses and data structures
+- Automatically cleans up and stops the server after tests
 
 #### Remote Testing (`scripts/dev/query_remote.sh`)
 Tests a deployed MCP server on Databricks Apps:
+
 ```bash
 ./scripts/dev/query_remote.sh
 ```
 
 Features:
-- Prompts for Databricks profile and deployed app URL
+- Prompts for Databricks profile and app name
+- Gets app information and extracts scopes
 - Generates OAuth token using `scripts/dev/generate_oauth_token.py`
 - Connects to the remote MCP server
 - Verifies all MCP tools are accessible

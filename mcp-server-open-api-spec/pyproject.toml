@@ -25,6 +25,7 @@ dev = [
     "hatchling>=1.27.0",
     "ruff>=0.8.0",
     "databricks-mcp>=0.1.0",
+    "pytest"
 ]
 
 [tool.hatch.build.targets.wheel]

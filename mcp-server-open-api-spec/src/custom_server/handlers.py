@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+
 from databricks.sdk.service.serving import ExternalFunctionRequestHttpMethod
 
 from .schemas import (
@@ -216,4 +217,3 @@ def invoke_api_endpoint(args: InvokeApiEndpointRequest) -> InvokeApiEndpointResp
     except Exception as e:
         logger.error(f"Error invoking API endpoint: {e}")
         raise
-

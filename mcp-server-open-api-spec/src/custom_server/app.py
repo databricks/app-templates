@@ -8,7 +8,6 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastmcp import FastMCP
-from fastapi.middleware.cors import CORSMiddleware
 
 from .tools import load_tools
 from .utils import header_store
@@ -33,7 +32,7 @@ mcp_app = mcp_server.streamable_http_app()
 app = FastAPI(
     title="Open API Spec MCP Server",
     description="MCP server for interacting with APIs using OpenAPI specifications",
-    lifespan=mcp_app.lifespan
+    lifespan=mcp_app.lifespan,
 )
 
 
@@ -51,6 +50,7 @@ async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "Custom Open API Spec MCP Server"}
 
+
 # Create the final application by combining MCP routes with custom API routes
 # This is the application that uvicorn will serve
 combined_app = FastAPI(
@@ -61,6 +61,7 @@ combined_app = FastAPI(
     ],
     lifespan=mcp_app.lifespan,  # Use MCP's lifespan for proper startup/shutdown
 )
+
 
 @combined_app.middleware("http")
 async def capture_headers(request: Request, call_next):

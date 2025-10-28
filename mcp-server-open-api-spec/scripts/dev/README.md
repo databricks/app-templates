@@ -31,44 +31,22 @@ The server will run on:
 
 ## Local Testing
 
-### `query_local.sh`
-
-A bash script to test the MCP server locally. It will:
-
-1. Prompt for Databricks Profile (for authentication)
-2. Prompt for UC Connection Name
-3. Prompt for Spec Volume Path (format: `/Volumes/<catalog>/<schema>/<volume>`)
-4. Prompt for Spec File Name (e.g., `spec.json`)
-5. Set up environment variables (`DATABRICKS_CONFIG_PROFILE`, `UC_CONNECTION_NAME`, `SPEC_VOLUME_PATH`, `SPEC_FILE_NAME`)
-6. Run `uv sync` to install dependencies
-7. Start the MCP server in the background
-8. Wait for the server to be ready
-9. Run the Python test script
-10. Automatically clean up and stop the server
-
-**Usage:**
+For local testing, use the integration test suite located in `tests/test_integration_server.py`:
 
 ```bash
-./scripts/dev/query_local.sh
+DATABRICKS_CONFIG_PROFILE=<your-profile> \
+UC_CONNECTION_NAME=<your-connection> \
+SPEC_VOLUME_PATH=<your-volume-path> \
+SPEC_FILE_NAME=<your-spec-file> \
+uv run pytest tests/test_integration_server.py
 ```
 
-### `query_local.py`
-
-A Python test script that:
-
-1. Connects to the local MCP server at `http://0.0.0.0:8000/mcp`
-2. Lists all available MCP tools
-3. Calls the `list_api_endpoints` tool to fetch endpoints from the remote API
-4. Pretty prints the results
-
-This script is automatically called by `query_local.sh`.
-
-**Manual Usage:**
-
-```bash
-# Make sure the server is running first
-uv run python scripts/dev/query_local.py
-```
+The integration test will:
+1. Automatically start the MCP server in the background
+2. Test server health endpoint
+3. Verify all MCP tools (list_api_endpoints, get_api_endpoint_schema, invoke_api_endpoint)
+4. Validate tool responses and data structures
+5. Automatically clean up and stop the server after tests
 
 ## Remote Testing
 

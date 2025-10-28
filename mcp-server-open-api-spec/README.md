@@ -2,6 +2,8 @@
 
 This repository provides a framework for creating [Custom Model Context Protocol (MCP) servers](https://docs.databricks.com/aws/en/generative-ai/mcp/custom-mcp) using [Databricks Apps](https://www.databricks.com/product/databricks-apps). It enables customers to create MCP servers that connect to external REST APIs defined by [OpenAPI specifications](https://github.com/OAI/OpenAPI-Specification), with secure authentication through [Databricks external connections](https://docs.databricks.com/aws/en/generative-ai/agent-framework/external-connection-tools).
 
+This Databricks App is useful to convert your existing APIs to an MCP Server. If you instead want to connect to an already hosted External MCP Server, refer to the External MCP Server documentation [here](https://docs.databricks.com/aws/en/generative-ai/mcp/external-mcp).
+
 ## Overview
 
 This MCP server acts as a bridge between LLM agents and external REST APIs. It:
@@ -69,30 +71,29 @@ uv run custom-server
 
 ## Testing
 
-The repository includes automated test scripts to verify your MCP server functionality both locally and on Databricks Apps.
+The repository includes an integration test to verify your MCP server functionality.
 
 ### Local Testing
 
-Test your MCP server running on your local machine:
+Test your MCP server with the integration test:
 
 ```bash
-./scripts/dev/query_local.sh
+DATABRICKS_CONFIG_PROFILE=<your-profile> \
+UC_CONNECTION_NAME=<your-connection> \
+SPEC_VOLUME_PATH=<your-volume-path> \
+SPEC_FILE_NAME=<your-spec-file> \
+uv run pytest tests/test_integration_server.py
 ```
 
-This script will:
-1. Prompt for your Databricks profile (for authentication)
-2. Prompt for UC Connection Name
-3. Prompt for Spec Volume Path
-4. Prompt for Spec File Name
-5. Set up environment variables
-6. Start the server automatically
-7. Run tests to verify MCP tools work correctly
-8. Display available tools and sample API endpoints
-9. Clean up and stop the server
+This integration test will:
+- Start the MCP server automatically
+- Test all MCP tools (list_api_endpoints, get_api_endpoint_schema, invoke_api_endpoint)
+- Verify server health
+- Clean up after completion
 
 ### Remote Testing
 
-Test your deployed MCP server on Databricks Apps:
+For testing deployed MCP servers on Databricks Apps, use the remote query script:
 
 ```bash
 ./scripts/dev/query_remote.sh
@@ -183,37 +184,6 @@ Your deployed server provides three tools to LLM agents:
    - Executes API calls to your external service
    - Handles authentication via UC external connections
    - Supports all HTTP methods (GET, POST, PUT, DELETE, PATCH)
-
-### Tool Design Best Practices
-
-#### **Layered Architecture**
-The three tools follow a progressive "discovery → planning → execution" pattern:
-
-1. **Discovery Layer** (`list_api_endpoints`)
-   - Helps agents understand what APIs are available
-   - Provides search/filtering to avoid overwhelming responses
-   - Returns human-readable summaries and descriptions
-
-2. **Planning Layer** (`get_api_endpoint_schema`)
-   - Gives detailed schema information for proper request formation
-   - Shows required parameters, data types, and expected responses
-   - Enables agents to understand how to structure API calls correctly
-
-3. **Execution Layer** (`invoke_api_endpoint`)
-   - Performs the actual API requests with proper authentication
-   - Handles different HTTP methods and parameter formats
-   - Returns structured, meaningful responses
-
-#### **Key Design Principles**
-
-- **Token Efficiency**: Built-in pagination (50 endpoint limit) and search filtering
-- **Clear Naming**: Tool names clearly indicate their purpose and scope
-- **Meaningful Context**: Returns natural language descriptions alongside technical data
-- **Error Handling**: Provides helpful error messages that guide agents toward successful requests
-- **Flexible Responses**: Supports various parameter formats (JSON objects, strings, query params)
-- **Authentication Abstraction**: Handles complex UC external connection authentication transparently
-
-This layered approach prevents agents from being overwhelmed while providing the structured guidance needed for reliable API interactions.
 
 ## Configuration Details
 

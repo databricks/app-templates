@@ -4,12 +4,9 @@
     "ignoreUnknown": false,
     "ignore": [
       "**/package-lock.json",
-      "lib/db/migrations",
-      "lib/editor/react-renderer.tsx",
       "node_modules",
-      ".next",
-      "public",
-      ".vercel"
+      "dist",
+      "public"
     ]
   },
   "vcs": {

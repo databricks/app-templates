@@ -51,7 +51,6 @@ export function AppSidebar({
                   onClick={() => {
                     setOpenMobile(false);
                     navigate('/');
-                    window.location.reload();
                   }}
                 >
                   <PlusIcon />

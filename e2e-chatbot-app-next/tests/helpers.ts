@@ -1,8 +1,4 @@
-import type {
-  FmapiChunk,
-  FmapiResponse,
-} from '@/databricks/providers/databricks-provider/fmapi-language-model/fmapi-schema';
-import { generateUUID } from '@/lib/utils';
+import { generateUUID } from '@chat-template/core';
 import type {
   APIRequestContext,
   Browser,
@@ -60,9 +56,11 @@ export const stringsToStream = (SSEs: string[]) => {
   const encoder = new TextEncoder();
 
   return new ReadableStream({
-    start(controller) {
+    async start(controller) {
       for (const s of SSEs) {
         controller.enqueue(encoder.encode(`${s}\n\n`));
+        // Add delay between chunks to simulate a delay
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
       controller.close();
     },
@@ -84,8 +82,15 @@ export function mockSSE<T>(payload: T): string {
  * Mock a Fmapi chunk SSE response
  */
 export function mockFmapiSSE(
-  id: FmapiChunk['id'],
-  delta: FmapiChunk['choices'][number]['delta'],
+  id: string,
+  delta: {
+    content?: string;
+    role?: string;
+    tool_calls?: {
+      id: string;
+      function: { name: string; arguments: string };
+    }[];
+  },
 ): string {
   return mockSSE({
     id,
@@ -105,9 +110,7 @@ export function mockFmapiSSE(
 /**
  * Mock a Fmapi response object
  */
-export function mockFmapiResponseObject(
-  content: FmapiResponse['choices'][number]['message']['content'],
-): FmapiResponse {
+export function mockFmapiResponseObject(content: string) {
   return {
     id: generateUUID(),
     created: Date.now(),

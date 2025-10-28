@@ -64,6 +64,7 @@ test.describe('Chat activity', () => {
     ]);
 
     const updatedAssistantMessage = await chatPage.getRecentAssistantMessage();
+
     expect(
       updatedAssistantMessage.content || updatedAssistantMessage.reasoning,
     ).toBeTruthy();

@@ -75,9 +75,37 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
-  console.log(`Environment: ${isDevelopment ? 'development' : 'production'}`);
-});
+// Start MSW mock server in test mode
+async function startServer() {
+  if (process.env.PLAYWRIGHT === 'True') {
+    console.log('[Test Mode] Starting MSW mock server for API mocking...');
+    try {
+      // Dynamically import MSW setup from tests directory (using relative path from server root)
+      const modulePath = path.join(dirname(dirname(__dirname)), 'tests', 'api-mocking', 'api-mock-server.ts');
+      console.log('[Test Mode] Attempting to load MSW from:', modulePath);
+
+      const { mockServer } = await import(modulePath);
+
+      mockServer.listen({
+        onUnhandledRequest: (request: Request) => {
+          console.warn(`[MSW] Unhandled ${request.method} request to ${request.url}`);
+        },
+      });
+
+      console.log('[Test Mode] MSW mock server started successfully');
+      console.log('[Test Mode] Registered handlers:', mockServer.listHandlers().length);
+    } catch (error) {
+      console.error('[Test Mode] Failed to start MSW:', error);
+      console.error('[Test Mode] Error details:', error instanceof Error ? error.stack : error);
+    }
+  }
+
+  app.listen(PORT, () => {
+    console.log(`Server is running on http://localhost:${PORT}`);
+    console.log(`Environment: ${isDevelopment ? 'development' : 'production'}`);
+  });
+}
+
+startServer();
 
 export default app;

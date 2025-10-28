@@ -1,7 +1,6 @@
-import { generateUUID } from '@/lib/utils';
+import { generateUUID, getMessageByErrorCode } from '@chat-template/core';
 import { expect, test } from '../fixtures';
 import { TEST_PROMPTS } from '../prompts/routes';
-import { getMessageByErrorCode } from '@/lib/errors';
 
 const chatIdsCreatedByAda: Array<string> = [];
 
@@ -86,7 +85,7 @@ test.describe
       const [chatId] = chatIdsCreatedByAda;
 
       const response = await babbageContext.request.delete(
-        `/api/chat?id=${chatId}`,
+        `/api/chat/${chatId}`,
       );
       expect(response.status()).toBe(403);
 
@@ -98,9 +97,7 @@ test.describe
     test('Ada can delete her own chat', async ({ adaContext }) => {
       const [chatId] = chatIdsCreatedByAda;
 
-      const response = await adaContext.request.delete(
-        `/api/chat?id=${chatId}`,
-      );
+      const response = await adaContext.request.delete(`/api/chat/${chatId}`);
       expect(response.status()).toBe(200);
 
       const deletedChat = await response.json();

@@ -30,7 +30,6 @@ import { Streamdown } from 'streamdown';
 import { DATABRICKS_TOOL_CALL_ID } from '@chat-template/ai-sdk-providers/tools';
 
 const PurePreviewMessage = ({
-  chatId,
   message,
   isLoading,
   setMessages,
@@ -185,7 +184,6 @@ const PurePreviewMessage = ({
                     <div className="min-w-0 flex-1">
                       <MessageEditor
                         key={message.id}
-                        chatId={chatId}
                         message={message}
                         setMode={setMode}
                         setMessages={setMessages}

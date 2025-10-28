@@ -234,10 +234,10 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
  * DELETE /api/chat?id=:id - Delete a chat
  */
 chatRouter.delete(
-  '/',
+  '/:id',
   [requireAuth, requireChatAccess],
   async (req: Request, res: Response) => {
-    const id = req.query.id as string;
+    const { id } = req.params;
 
     const deletedChat = await deleteChatById({ id });
     return res.status(200).json(deletedChat);

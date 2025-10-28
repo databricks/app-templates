@@ -30,20 +30,17 @@ export async function updateChatVisibility({
  * Delete messages after a certain timestamp
  */
 export async function deleteTrailingMessages({
-  chatId,
   messageId,
 }: {
-  chatId: string;
   messageId: string;
 }) {
-  const response = await fetchWithErrorHandlers(`/api/messages`, {
-    method: 'DELETE',
-    headers: {
-      'Content-Type': 'application/json',
+  const response = await fetchWithErrorHandlers(
+    `/api/messages/${messageId}/trailing`,
+    {
+      method: 'DELETE',
+      credentials: 'include',
     },
-    credentials: 'include',
-    body: JSON.stringify({ chatId, messageId }),
-  });
+  );
 
   return response.json();
 }

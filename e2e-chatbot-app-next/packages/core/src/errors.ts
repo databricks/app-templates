@@ -7,7 +7,14 @@ type ErrorType =
   | 'offline'
   | 'empty';
 
-type Surface = 'chat' | 'auth' | 'api' | 'database' | 'history' | 'stream';
+type Surface =
+  | 'chat'
+  | 'auth'
+  | 'api'
+  | 'database'
+  | 'history'
+  | 'stream'
+  | 'message';
 
 export type ErrorCode = `${ErrorType}:${Surface}`;
 
@@ -20,6 +27,7 @@ const visibilityBySurface: Record<Surface, ErrorVisibility> = {
   api: 'response',
   history: 'response',
   stream: 'response',
+  message: 'response',
 };
 
 export class ChatSDKError extends Error {
@@ -64,7 +72,10 @@ export class ChatSDKError extends Error {
 
       return {
         status: statusCode,
-        json: { code: '', message: 'Something went wrong. Please try again later.' },
+        json: {
+          code: '',
+          message: 'Something went wrong. Please try again later.',
+        },
       };
     }
 

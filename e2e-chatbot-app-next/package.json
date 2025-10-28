@@ -2,7 +2,11 @@
   "name": "databricks/e2e-chatbot-app",
   "version": "1.0.0",
   "private": true,
-  "workspaces": ["client", "server", "packages/*"],
+  "workspaces": [
+    "client",
+    "server",
+    "packages/*"
+  ],
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=8.0.0"
@@ -31,15 +35,16 @@
   },
   "dependencies": {
     "dotenv": "^16.4.5",
-    "tsx": "^4.19.1",
     "drizzle-kit": "^0.31.5",
-    "drizzle-orm": "^0.44.6"
+    "drizzle-orm": "^0.44.6",
+    "tsx": "^4.19.1"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@playwright/test": "^1.50.1",
     "@types/node": "^22.8.6",
     "concurrently": "^8.2.2",
+    "msw": "^2.11.6",
     "tsdown": "0.15.9",
     "typescript": "^5.9.3"
   }

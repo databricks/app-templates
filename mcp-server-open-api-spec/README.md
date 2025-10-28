@@ -76,25 +76,26 @@ The repository includes automated test scripts to verify your MCP server functio
 Test your MCP server running on your local machine:
 
 ```bash
-./scripts/test_local.sh
+./scripts/dev/query_local.sh
 ```
 
 This script will:
 1. Prompt for your Databricks profile (for authentication)
 2. Prompt for UC Connection Name
 3. Prompt for Spec Volume Path
-4. Set up environment variables
-5. Start the server automatically
-6. Run tests to verify MCP tools work correctly
-7. Display available tools and sample API endpoints
-8. Clean up and stop the server
+4. Prompt for Spec File Name
+5. Set up environment variables
+6. Start the server automatically
+7. Run tests to verify MCP tools work correctly
+8. Display available tools and sample API endpoints
+9. Clean up and stop the server
 
 ### Remote Testing
 
 Test your deployed MCP server on Databricks Apps:
 
 ```bash
-./scripts/test_remote.sh
+./scripts/dev/query_remote.sh
 ```
 
 This script will:
@@ -109,13 +110,14 @@ This script will:
 If you prefer to start the server manually without testing:
 
 ```bash
-./scripts/start_server.sh
+./scripts/dev/start_server.sh
 ```
 
 Make sure you have set the required environment variables first:
 - `DATABRICKS_CONFIG_PROFILE` - Your Databricks profile name
 - `UC_CONNECTION_NAME` - Your Unity Catalog connection name
 - `SPEC_VOLUME_PATH` - Path to your OpenAPI spec (e.g., `/Volumes/catalog/schema/volume`)
+- `SPEC_FILE_NAME` - Name of the spec file (e.g., `spec.json`)
 
 ## Deployment
 
@@ -155,11 +157,15 @@ https://your-app-url.usually.ends.with.databricksapps.com/mcp
 
 ### Authentication
 
-Use a Bearer token from your Databricks profile:
+Generate an OAuth token for authentication:
 
 ```bash
-databricks auth token -p <name-of-your-profile>
+python scripts/dev/generate_oauth_token.py \
+    --host <your-workspace-host> \
+    --scopes <required-scopes>
 ```
+
+This will open your browser for authorization and return an access token that you can use to authenticate with the MCP server.
 
 ### Available MCP Tools
 

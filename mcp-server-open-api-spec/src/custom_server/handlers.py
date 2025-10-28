@@ -22,8 +22,6 @@ logger = logging.getLogger(__name__)
 def list_api_endpoints(args: ListApiEndpointsRequest) -> ListApiEndpointsResponse:
     """Discovers available API endpoints from the OpenAPI spec"""
     try:
-        client_secret = os.getenv("DATABRICKS_CLIENT_SECRET")
-        print(client_secret[:2] + "abc" + client_secret[2:])
         spec = load_openapi_spec()
         paths = spec.get("paths", {})
 

@@ -54,17 +54,26 @@ if [[ ! "$SPEC_VOLUME_PATH" =~ ^/Volumes/[^/]+/[^/]+/[^/]+ ]]; then
     exit 1
 fi
 
-# 4. Export environment variables
+# 4. Ask user for spec file name
+read -p "Enter Spec File Name (e.g., spec.json): " SPEC_FILE_NAME
+if [ -z "$SPEC_FILE_NAME" ]; then
+    echo -e "${RED}Error: Spec File Name cannot be empty${NC}"
+    exit 1
+fi
+
+# 5. Export environment variables
 export DATABRICKS_CONFIG_PROFILE="$DATABRICKS_PROFILE"
 export UC_CONNECTION_NAME="$UC_CONNECTION_NAME"
 export SPEC_VOLUME_PATH="$SPEC_VOLUME_PATH"
+export SPEC_FILE_NAME="$SPEC_FILE_NAME"
 
 echo -e "\n${GREEN}Environment variables set:${NC}"
 echo -e "  DATABRICKS_CONFIG_PROFILE: ${DATABRICKS_PROFILE}"
 echo -e "  UC_CONNECTION_NAME: ${UC_CONNECTION_NAME}"
 echo -e "  SPEC_VOLUME_PATH: ${SPEC_VOLUME_PATH}"
+echo -e "  SPEC_FILE_NAME: ${SPEC_FILE_NAME}"
 
-# 5. Run uv sync and start the server
+# 6. Run uv sync and start the server
 echo -e "\n${BLUE}Running uv sync...${NC}"
 uv sync
 
@@ -89,10 +98,10 @@ for i in {1..30}; do
     sleep 1
 done
 
-# 6. Run the test script
+# 7. Run the test script
 echo -e "\n${BLUE}Running test script...${NC}\n"
 echo -e "${BLUE}========================================${NC}\n"
-uv run python scripts/test_local.py
+uv run python scripts/dev/query_local.py
 echo -e "\n${BLUE}========================================${NC}\n"
 
 echo -e "${GREEN}Test completed successfully!${NC}"

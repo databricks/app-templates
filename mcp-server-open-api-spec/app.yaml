@@ -2,6 +2,8 @@ command: ["uv", "run", "custom-open-api-spec-server"]
 
 env:
   - name: "UC_CONNECTION_NAME"
-    value: "petstore-connection" # TODO: Add the connection name
+    value: "" # TODO: Add the connection name
+  - name: "SPEC_FILE_NAME"
+    value: "spec.json"            # TODO: Update the spec file name if different from spec.json
   - name: "SPEC_VOLUME_PATH"
     valueFrom: "spec_volume_path"

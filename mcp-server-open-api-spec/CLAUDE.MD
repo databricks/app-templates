@@ -71,13 +71,14 @@ src/custom_server/
     └── index.html        # Landing page for web browser access
 
 scripts/
-├── start_server.sh       # Start the MCP server locally
-├── test_local.sh         # Automated local testing script
-├── test_local.py         # Python test client for local server
-├── test_remote.sh        # Automated remote testing script
-├── test_remote.py        # Python test client for remote server
-├── generate_oauth_token.py  # OAuth token generation utility
-└── README.md             # Scripts documentation
+└── dev/
+    ├── start_server.sh       # Start the MCP server locally
+    ├── query_local.sh        # Automated local testing script
+    ├── query_local.py        # Python test client for local server
+    ├── query_remote.sh       # Automated remote testing script
+    ├── query_remote.py       # Python test client for remote server
+    ├── generate_oauth_token.py  # OAuth token generation utility
+    └── README.md             # Scripts documentation
 
 hooks/
 └── apps_build.py         # Custom build hook for Databricks Apps
@@ -150,11 +151,12 @@ Important patterns:
 ### Environment Variables (app.yaml)
 
 - `UC_CONNECTION_NAME`: Unity Catalog external connection name (required)
-- `SPEC_VOLUME_PATH`: Path to Volume containing `spec.json` (required)
+- `SPEC_VOLUME_PATH`: Path to Volume containing the OpenAPI spec (required)
+- `SPEC_FILE_NAME`: Name of the spec file (required, e.g., `spec.json`)
 
 ### OpenAPI Spec Format
 
-Expected file: `{SPEC_VOLUME_PATH}/spec.json`
+Expected file: `{SPEC_VOLUME_PATH}/{SPEC_FILE_NAME}`
 
 Requirements:
 - Valid OpenAPI 3.x specification
@@ -264,7 +266,7 @@ method_mapping = {
 
 ### Modifying OpenAPI Spec Loading
 - Edit `utils.py` `load_openapi_spec()` function
-- Currently loads from `{SPEC_VOLUME_PATH}/spec.json`
+- Currently loads from `{SPEC_VOLUME_PATH}/{SPEC_FILE_NAME}`
 - Global cache prevents repeated file reads
 
 ### Changing Authentication Method
@@ -288,7 +290,7 @@ uv run custom-server       # Start with hot reload
 Access at: `http://localhost:8000`
 
 ### Databricks Apps Deployment
-1. Update `UC_CONNECTION_NAME` and `SPEC_VOLUME_PATH` in `app.yaml`
+1. Update `UC_CONNECTION_NAME`, `SPEC_VOLUME_PATH`, and `SPEC_FILE_NAME` in `app.yaml`
 2. Deploy using Databricks CLI or UI
 3. App runs command: `uv run custom-server`
 4. Access at: `https://your-app-url.databricksapps.com/mcp`
@@ -302,14 +304,14 @@ Access at: `http://localhost:8000`
 
 The project includes comprehensive test scripts to verify MCP server functionality:
 
-#### Local Testing (`scripts/test_local.sh`)
+#### Local Testing (`scripts/dev/query_local.sh`)
 Tests the MCP server running on your local machine:
 ```bash
-./scripts/test_local.sh
+./scripts/dev/query_local.sh
 ```
 
 Features:
-- Prompts for Databricks profile, UC connection name, and spec volume path
+- Prompts for Databricks profile, UC connection name, spec volume path, and spec file name
 - Sets up environment variables automatically
 - Starts the server in the background
 - Connects using `DatabricksMCPClient` at `http://0.0.0.0:8000/mcp`
@@ -317,33 +319,34 @@ Features:
 - Calls `list_api_endpoints` to verify API discovery
 - Automatically cleans up and stops the server
 
-Python test implementation: `scripts/test_local.py`
+Python test implementation: `scripts/dev/query_local.py`
 
-#### Remote Testing (`scripts/test_remote.sh`)
+#### Remote Testing (`scripts/dev/query_remote.sh`)
 Tests a deployed MCP server on Databricks Apps:
 ```bash
-./scripts/test_remote.sh
+./scripts/dev/query_remote.sh
 ```
 
 Features:
 - Prompts for Databricks profile and deployed app URL
-- Generates OAuth token using `scripts/generate_oauth_token.py`
+- Generates OAuth token using `scripts/dev/generate_oauth_token.py`
 - Connects to the remote MCP server
 - Verifies all MCP tools are accessible
 - Tests API endpoint discovery on the deployed instance
 
-Python test implementation: `scripts/test_remote.py`
+Python test implementation: `scripts/dev/query_remote.py`
 
-#### Manual Server Start (`scripts/start_server.sh`)
+#### Manual Server Start (`scripts/dev/start_server.sh`)
 Starts the server without running tests:
 ```bash
-./scripts/start_server.sh
+./scripts/dev/start_server.sh
 ```
 
 Requires pre-set environment variables:
 - `DATABRICKS_CONFIG_PROFILE`
 - `UC_CONNECTION_NAME`
 - `SPEC_VOLUME_PATH`
+- `SPEC_FILE_NAME`
 
 ### Manual Testing
 - Use MCP inspector or direct HTTP requests
@@ -353,7 +356,7 @@ Requires pre-set environment variables:
 
 ### Debugging Tips
 1. **Auth issues**: Check `x-forwarded-access-token` header presence. If this header is not present, its ideally because the user has queried the app without an Exact Scope OAuth Token.
-2. **Spec loading errors**: Verify `SPEC_VOLUME_PATH` environment variable
+2. **Spec loading errors**: Verify `SPEC_VOLUME_PATH` and `SPEC_FILE_NAME` environment variables
 3. **UC connection errors**: Validate connection name and permissions
 4. **JSON serialization**: Check response handling in `tools.py` invoke_api_endpoint function
 5. **Local testing fails**: Ensure `DATABRICKS_CONFIG_PROFILE` is set and valid
@@ -427,7 +430,7 @@ Implement middleware in `app.py` to track and limit requests.
 - Utilities: `src/custom_server/utils.py`
 - Entry point: `src/custom_server/main.py`
 - Config: `app.yaml`, `pyproject.toml`
-- Test scripts: `scripts/`
+- Test scripts: `scripts/dev/`
 
 ### Key Classes
 - `FastMCP`: MCP server instance

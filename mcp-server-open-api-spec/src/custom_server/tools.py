@@ -1,5 +1,5 @@
 """MCP tool definitions for API interactions"""
-
+import os
 import json
 import logging
 from typing import Any, Dict, Optional, Union
@@ -18,12 +18,21 @@ from .schemas import (
     InvokeApiEndpointRequest,
     ListApiEndpointsRequest,
 )
+from .utils import load_openapi_spec
 
 logger = logging.getLogger(__name__)
 
+def validate_mcp_server():
+    connection_name = os.getenv("UC_CONNECTION_NAME")
 
+    if connection_name is None:
+        raise ValueError("UC_CONNECTION_NAME environment variable is not set. Please update the environment variable in app.yaml")
+
+    load_openapi_spec()
+    
 def load_tools(mcp_server):
     """Register all MCP tools with the server"""
+    validate_mcp_server()
 
     @mcp_server.tool()
     def list_api_endpoints(search_query: Optional[str] = None) -> Dict[str, Any]:
@@ -36,7 +45,6 @@ def load_tools(mcp_server):
         Returns:
             Dictionary containing the list of endpoints
         """
-        print("LIST API ENDPOINTS CALLED")
         args = ListApiEndpointsRequest(search_query=search_query)
         result = list_endpoints_handler(args)
         return result.model_dump()

@@ -23,17 +23,17 @@ def load_openapi_spec() -> Dict[str, Any]:
     if _cached_openapi_spec is not None:
         return _cached_openapi_spec
 
-    # TODO: Change this to automatically load the file path
     spec_volume_path = os.getenv("SPEC_VOLUME_PATH")
+    spec_file_name = os.getenv("SPEC_FILE_NAME")
     if spec_volume_path is None:
-        raise FileNotFoundError(f"OpenAPI spec file not found")
+        raise ValueError("SPEC_VOLUME_PATH environment variable is not set. Please update the environment variable in app.yaml")
+    
+    if spec_file_name is None:
+        raise ValueError("SPEC_FILE_NAME environment variable is not set. Please update the environment variable in app.yaml")
 
     try:
         w = get_workspace_client()
-        print(w.config.host)
-        print(w.config.token)
-        print(w.config)
-        spec_file = w.files.download(f'{spec_volume_path}/spec.json').contents
+        spec_file = w.files.download(f'{spec_volume_path}/{spec_file_name}').contents
         file_data = spec_file.read().decode('utf-8')
         _cached_openapi_spec = json.loads(file_data)
         logger.info("Successfully loaded OpenAPI specification")

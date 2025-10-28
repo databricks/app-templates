@@ -6,10 +6,10 @@ This script tests the remote MCP server with user-level OAuth authentication,
 calling both the health tool and user authorization tool to verify functionality.
 
 Usage:
-    python test_remote.py --host <host> --token <token> --app-url <app-url>
+    python query_remote.py --host <host> --token <token> --app-url <app-url>
 
 Example:
-    python test_remote.py \\
+    python query_remote.py \\
         --host https://dbc-a1b2345c-d6e7.cloud.databricks.com \\
         --token eyJr...Dkag \\
         --app-url https://dbc-a1b2345c-d6e7.cloud.databricks.com/serving-endpoints/my-app
@@ -70,7 +70,6 @@ def main():
         print("Step 4: Calling tool: list_api_endpoints\n")
         
         endpoints_result = mcp_client.call_tool("list_api_endpoints")
-        print(endpoints_result)
         # Handle CallToolResult object
         endpoints_data = None
         if hasattr(endpoints_result, 'structuredContent') and endpoints_result.structuredContent:
@@ -87,7 +86,7 @@ def main():
                         print(f"Failed to parse JSON from content: {content_item.text}")
         
         if endpoints_data:
-            pretty_print_json(endpoints_data)
+            print(json.dumps(endpoints_data, indent=4, sort_keys=True))
         else:
             print("❌ No results returned from list_api_endpoints tool")
         

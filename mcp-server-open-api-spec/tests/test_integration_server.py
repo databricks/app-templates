@@ -41,24 +41,14 @@ def run_mcp_server():
     spec_file_name = os.getenv("SPEC_FILE_NAME")
     databricks_profile = os.getenv("DATABRICKS_CONFIG_PROFILE")
 
-    if databricks_profile is None:
+    if (
+        databricks_profile is None
+        or connection_name is None
+        or spec_volume_path is None
+        or spec_file_name is None
+    ):
         raise ValueError(
-            "DATABRICKS_CONFIG_PROFILE environment variable is not set. Please run this test as follows `DATABRICKS_CONFIG_PROFILE=<databricks_profile> UC_CONNECTION_NAME=<connection_name> SPEC_VOLUME_PATH=<spec_volume_path> SPEC_FILE_NAME=<spec_file_name> pytest tests/test_integration_server.py`"
-        )
-
-    if connection_name is None:
-        raise ValueError(
-            "UC_CONNECTION_NAME environment variable is not set. Please run this test as follows `DATABRICKS_CONFIG_PROFILE=<databricks_profile> UC_CONNECTION_NAME=<connection_name> SPEC_VOLUME_PATH=<spec_volume_path> SPEC_FILE_NAME=<spec_file_name> pytest tests/test_integration_server.py`"
-        )
-
-    if spec_volume_path is None:
-        raise ValueError(
-            "SPEC_VOLUME_PATH environment variable is not set. Please run this test as follows `DATABRICKS_CONFIG_PROFILE=<databricks_profile> UC_CONNECTION_NAME=<connection_name> SPEC_VOLUME_PATH=<spec_volume_path> SPEC_FILE_NAME=<spec_file_name> pytest tests/test_integration_server.py`"
-        )
-
-    if spec_file_name is None:
-        raise ValueError(
-            "SPEC_FILE_NAME environment variable is not set. Please run this test as follows `DATABRICKS_CONFIG_PROFILE=<databricks_profile> UC_CONNECTION_NAME=<connection_name> SPEC_VOLUME_PATH=<spec_volume_path> SPEC_FILE_NAME=<spec_file_name> pytest tests/test_integration_server.py`"
+            "Environment variables are not set correctly. Please run this test as follows `DATABRICKS_CONFIG_PROFILE=<databricks_profile> UC_CONNECTION_NAME=<connection_name> SPEC_VOLUME_PATH=<spec_volume_path> SPEC_FILE_NAME=<spec_file_name> pytest tests/test_integration_server.py`"
         )
 
     host = "127.0.0.1"

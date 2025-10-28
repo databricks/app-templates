@@ -195,24 +195,6 @@ OPTIONS (
 
 The server **never sees external API credentials** - all auth handled by UC.
 
-## Dependencies Explained
-
-### Core Dependencies
-- `fastapi>=0.115.12`: Web framework for HTTP endpoints
-- `mcp[cli]>=1.14.0`: MCP protocol implementation (includes `fastmcp`)
-- `uvicorn>=0.34.2`: ASGI server for running FastAPI
-- `databricks-sdk>=0.60.0`: SDK for UC connections and workspace operations
-- `pydantic>=2`: Schema validation and serialization
-
-### Dev Dependencies
-- `hatchling>=1.27.0`: Build backend for Python packages
-- `ruff>=0.8.0`: Fast Python linter and formatter
-
-### Package Management
-- Uses `uv` for fast, reproducible dependency management
-- `pyproject.toml` defines project metadata and dependencies
-- `uv.lock` ensures consistent installs across environments
-
 ## Important Patterns & Conventions
 
 ### Pydantic Schema Validation

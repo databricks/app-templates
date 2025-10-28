@@ -1,6 +1,6 @@
 import type { DataUIPart, LanguageModelUsage, UIMessageChunk } from 'ai';
 import { useChat } from '@ai-sdk/react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSWRConfig } from 'swr';
 import { ChatHeader } from '@/components/chat-header';
 import { fetchWithErrorHandlers, generateUUID } from '@/lib/utils';
@@ -62,6 +62,21 @@ export function Chat({
   const onFinishResumeCountRef = useRef(0);
   const maxResumeAttempts = 3;
 
+  const abortController = useRef<AbortController | null>(new AbortController());
+  useEffect(() => {
+    return () => {
+      abortController.current?.abort('ABORT_SIGNAL');
+    };
+  }, []);
+
+  const fetchWithAbort = useMemo(() => {
+    return async (input: RequestInfo | URL, init?: RequestInit) => {
+      // useChat does not cancel /stream requests when the component is unmounted
+      const signal = abortController.current?.signal;
+      return fetchWithErrorHandlers(input, { ...init, signal });
+    };
+  }, []);
+
   const {
     messages,
     setMessages,
@@ -87,7 +102,7 @@ export function Chat({
         setLastPart(part);
       },
       api: '/api/chat',
-      fetch: fetchWithErrorHandlers,
+      fetch: fetchWithAbort,
       prepareSendMessagesRequest({ messages, id, body }) {
         return {
           body: {
@@ -119,9 +134,7 @@ export function Chat({
         setUsage(dataPart.data as LanguageModelUsage);
       }
     },
-    onFinish: (test) => {
-      console.trace();
-      console.log('[Chat onFinish] test', test);
+    onFinish: () => {
       console.log('[Chat onFinish] lastPart received was', lastPartRef.current);
       if (
         lastPartRef.current?.type !== 'finish' &&

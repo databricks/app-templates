@@ -26,6 +26,8 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => {
+    const abortSignalMessage = 'ABORT_SIGNAL';
+    const controller = new AbortController();
     async function loadChat() {
       if (!id || !session?.user) return;
 
@@ -36,6 +38,7 @@ export default function ChatPage() {
         // Fetch chat details - server will handle ACL
         const chatResponse = await fetch(`/api/chat/${id}`, {
           credentials: 'include',
+          signal: controller.signal,
         });
 
         if (!chatResponse.ok) {
@@ -48,6 +51,7 @@ export default function ChatPage() {
         // Fetch messages
         const messagesResponse = await fetch(`/api/messages/${id}`, {
           credentials: 'include',
+          signal: controller.signal,
         });
 
         if (!messagesResponse.ok) {
@@ -62,6 +66,7 @@ export default function ChatPage() {
           messages: uiMessages,
         });
       } catch (err) {
+        if (err === abortSignalMessage) return;
         console.error('Error loading chat:', err);
         setError('Failed to load chat');
       } finally {
@@ -70,6 +75,9 @@ export default function ChatPage() {
     }
 
     loadChat();
+    return () => {
+      controller.abort(abortSignalMessage);
+    };
   }, [id, session]);
 
   if (!session?.user) {

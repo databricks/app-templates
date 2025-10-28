@@ -206,15 +206,10 @@ function makeCacheableStream<T>({
     // The core async generator – see the comments inside for details.
     async *read({ cursor }: { cursor?: number } = {}) {
       let idx = cursor ?? 0; // where we are in the cache for this particular call
-      console.log('[StreamCache] read', { cursor, idx, chunks: chunks.length });
 
       while (true) {
         // 1️⃣ Yield everything that is already cached and we haven't emitted yet.
         while (idx < chunks.length) {
-          console.log('[StreamCache] yielding chunk', {
-            idx,
-            chunk: chunks[idx],
-          });
           yield chunks[idx++];
         }
 
@@ -245,39 +240,88 @@ function makeCacheableStream<T>({
  *
  * The stream pulls data from the cached async generator (`cache.read()`),
  * honors backpressure, and is directly compatible with Express responses.
+ *
+ * Optimized for concurrent streams by:
+ * - Using non-blocking iteration
+ * - Batching multiple chunks when available
+ * - Avoiding blocking async/await in read()
  */
 function cacheableToReadable<T>(
   cache: CacheableStream<T>,
   { cursor }: { cursor?: number } = {},
 ): Readable {
   let iterator: AsyncIterableIterator<T> | undefined;
+  let pendingRead: Promise<IteratorResult<T>> | null = null;
+  let isReading = false;
 
   return new Readable({
-    async read() {
-      try {
-        // Initialize iterator on first read
-        if (!iterator) {
-          iterator = cache.read({ cursor });
-        }
+    // Set highWaterMark to control internal buffer size
+    // This prevents excessive memory usage with many concurrent streams
+    highWaterMark: 16 * 1024, // 16KB buffer per stream
 
-        const { value, done } = await iterator.next();
+    read() {
+      // Prevent overlapping reads
+      if (isReading) return;
+      isReading = true;
 
-        if (done) {
-          // No more data - signal end of stream
-          this.push(null);
-          return;
-        }
-
-        // Push chunk to the stream
-        this.push(value);
-      } catch (err) {
-        // Propagate any unexpected error to the consumer
-        this.destroy(err as Error);
+      // Initialize iterator on first read
+      if (!iterator) {
+        iterator = cache.read({ cursor });
       }
+
+      // Start async read and process when ready
+      const processNext = async () => {
+        try {
+          while (true) {
+            // Start fetching next chunk if not already pending
+            if (!pendingRead) {
+              pendingRead = iterator?.next() ?? null;
+            }
+            if (!pendingRead) {
+              break;
+            }
+
+            const { value, done } = await pendingRead;
+            pendingRead = null;
+
+            if (done) {
+              // No more data - signal end of stream
+              this.push(null);
+              break;
+            }
+
+            // Try to push chunk - if push returns false, backpressure is applied
+            // and we'll wait for the next read() call
+            const canContinue = this.push(value);
+
+            if (!canContinue) {
+              // Backpressure - stop pushing and wait for next read() call
+              break;
+            }
+
+            // If we can continue, start fetching the next chunk immediately
+            // This optimizes throughput by overlapping I/O
+            pendingRead = iterator?.next() ?? null;
+          }
+        } catch (err) {
+          // Propagate any unexpected error to the consumer
+          this.destroy(err as Error);
+        } finally {
+          isReading = false;
+        }
+      };
+
+      // Don't await - let it run asynchronously
+      processNext();
     },
 
     destroy(error, callback) {
-      console.log('[StreamCache] Stream destroyed', error);
+      if (error) {
+        console.log(
+          '[StreamCache] Stream destroyed with error:',
+          error.message,
+        );
+      }
       // We don't close the underlying cache when this is destroyed
       // since new consumers may be started
       callback(error);

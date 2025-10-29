@@ -24,15 +24,6 @@ export default function ChatPage() {
     return null;
   }
 
-  // Show loading if no data or if data doesn't match current ID (stale data)
-  if (!chatData || chatData.chat.id !== id) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-muted-foreground">Loading chat...</div>
-      </div>
-    );
-  }
-
   if (error) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -40,6 +31,15 @@ export default function ChatPage() {
           <h1 className="mb-4 font-bold text-2xl">Error</h1>
           <p className="text-muted-foreground">{error}</p>
         </div>
+      </div>
+    );
+  }
+
+  // Show loading if no data or if data doesn't match current ID (stale data)
+  if (!chatData || chatData.chat.id !== id) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="text-muted-foreground">Loading chat...</div>
       </div>
     );
   }

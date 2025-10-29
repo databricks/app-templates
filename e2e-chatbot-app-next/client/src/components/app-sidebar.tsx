@@ -35,6 +35,7 @@ export function AppSidebar({
               to="/"
               onClick={() => {
                 setOpenMobile(false);
+                window.location.reload();
               }}
               className="flex flex-row items-center gap-3"
             >
@@ -51,6 +52,7 @@ export function AppSidebar({
                   onClick={() => {
                     setOpenMobile(false);
                     navigate('/');
+                    window.location.reload();
                   }}
                 >
                   <PlusIcon />

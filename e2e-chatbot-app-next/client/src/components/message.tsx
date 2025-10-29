@@ -88,7 +88,7 @@ const PurePreviewMessage = ({
     >
       <div
         className={cn('flex w-full items-start gap-2 md:gap-3', {
-          'justify-end': message.role === 'user' && mode !== 'edit',
+          'justify-end': message.role === 'user',
           'justify-start': message.role === 'assistant',
         })}
       >
@@ -101,9 +101,9 @@ const PurePreviewMessage = ({
             'gap-2 md:gap-4': message.parts?.some(
               (p) => p.type === 'text' && p.text?.trim(),
             ),
-            'w-full': message.role === 'assistant',
+            'w-full': message.role === 'assistant' || mode === 'edit',
             'min-h-96': message.role === 'assistant' && requiresScrollPadding,
-            'max-w-[calc(100%-2.5rem)] sm:max-w-[min(fit-content,80%)]':
+            'max-w-[70%] sm:max-w-[min(fit-content,80%)]':
               message.role === 'user' && mode !== 'edit',
           })}
         >

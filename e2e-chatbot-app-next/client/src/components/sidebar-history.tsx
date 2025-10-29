@@ -127,6 +127,11 @@ export function SidebarHistory({ user }: { user?: ClientUser | null }) {
       method: 'DELETE',
     });
 
+    // // Emit event immediately to disable the chat UI
+    // window.dispatchEvent(
+    //   new CustomEvent('chat-deleted', { detail: { chatId: deleteId } })
+    // );
+
     toast.promise(deletePromise, {
       loading: 'Deleting chat...',
       success: () => {
@@ -145,6 +150,12 @@ export function SidebarHistory({ user }: { user?: ClientUser | null }) {
     });
 
     setShowDeleteDialog(false);
+
+    // Test if window.location.pathname is /chat/${id}
+    // This will be true for new chats that were just created
+    if (window.location.pathname === `/chat/${deleteId}`) {
+      navigate('/');
+    }
 
     if (deleteId === id) {
       navigate('/');

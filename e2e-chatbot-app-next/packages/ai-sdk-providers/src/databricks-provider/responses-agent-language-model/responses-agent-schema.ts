@@ -116,11 +116,27 @@ const responseReasoningSummaryTextDeltaSchema = z.object({
   delta: z.string(),
 });
 
+const responseFunctionCallArgumentsDeltaSchema = z.object({
+  type: z.literal('response.function_call_arguments.delta'),
+  item_id: z.string(),
+  delta: z.string(),
+  output_index: z.number(),
+  sequence_number: z.number(),
+});
+
+const functionCallOutputChunkSchema = z.object({
+  type: z.literal('function_call_output'),
+  call_id: z.string(),
+  output: z.any(),
+});
+
 export const responsesAgentChunkSchema = z.union([
   textDeltaChunkSchema,
   responseOutputItemDoneSchema,
   responseAnnotationAddedSchema,
   responseReasoningSummaryTextDeltaSchema,
+  responseFunctionCallArgumentsDeltaSchema,
+  functionCallOutputChunkSchema,
   errorChunkSchema,
 ]);
 

@@ -41,6 +41,15 @@ export const convertResponsesAgentChunkToMessagePart = (
       });
       break;
 
+    case 'function_call_output':
+      parts.push({
+        type: 'tool-result',
+        toolCallId: chunk.call_id,
+        result: chunk.output,
+        toolName: DATABRICKS_TOOL_CALL_ID,
+      });
+      break;
+
     case 'response.output_item.done':
       if (chunk.item.type === 'message') {
         parts.push(
@@ -105,7 +114,7 @@ export const convertResponsesAgentChunkToMessagePart = (
           },
         );
       } else {
-        void(chunk.item as never);
+        void (chunk.item as never);
       }
       break;
 
@@ -127,7 +136,7 @@ export const convertResponsesAgentChunkToMessagePart = (
       break;
 
     default: {
-      void(chunk as never);
+      void (chunk as never);
       break;
     }
   }
@@ -199,7 +208,7 @@ export const convertResponsesAgentResponseToMessagePart = (
         break;
 
       default: {
-        void(output as never);
+        void (output as never);
         break;
       }
     }

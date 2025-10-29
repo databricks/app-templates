@@ -52,6 +52,13 @@ export default defineConfig({
   /* Configure projects */
   projects: [
     {
+      name: 'unit',
+      testMatch: /ai-sdk-provider\/.*.test.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+      },
+    },
+    {
       name: 'e2e',
       testMatch: /e2e\/.*.test.ts/,
       use: {

@@ -607,7 +607,7 @@ export async function getAuthSession({
   }
 }
 
-const isTestEnvironment = Boolean(process.env.PLAYWRIGHT);
+const isTestEnvironment = process.env.PLAYWRIGHT === 'True';
 
 // ============================================================================
 // User from Headers Helper

@@ -1,6 +1,6 @@
 import type { DataUIPart, LanguageModelUsage, UIMessageChunk } from 'ai';
 import { useChat } from '@ai-sdk/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSWRConfig } from 'swr';
 import { ChatHeader } from '@/components/chat-header';
 import { fetchWithErrorHandlers, generateUUID } from '@/lib/utils';
@@ -77,6 +77,12 @@ export function Chat({
     };
   }, []);
 
+  const isNewChat = initialMessages.length === 0;
+  const didFetchHistoryOnNewChat = useRef(false);
+  const fetchChatHistory = useCallback(() => {
+    mutate(unstable_serialize(getChatHistoryPaginationKey));
+  }, [mutate]);
+
   const {
     messages,
     setMessages,
@@ -93,6 +99,11 @@ export function Chat({
     resume: id !== undefined && initialMessages.length > 0, // Enable automatic stream resumption
     transport: new ChatTransport({
       onStreamPart: (part) => {
+        // As soon as we recive a stream part, we fetch the chat history again for new chats
+        if (isNewChat && !didFetchHistoryOnNewChat.current) {
+          fetchChatHistory();
+          didFetchHistoryOnNewChat.current = true;
+        }
         // when we receive a stream part, we reset the onErrorResumeCountRef and onFinishResumeCountRef
         onErrorResumeCountRef.current = 0;
         onFinishResumeCountRef.current = 0;
@@ -151,7 +162,8 @@ export function Chat({
         });
       } else {
         setStreamCursor(0);
-        mutate(unstable_serialize(getChatHistoryPaginationKey));
+        didFetchHistoryOnNewChat.current = false;
+        fetchChatHistory();
       }
     },
     onError: (error) => {
@@ -178,6 +190,7 @@ export function Chat({
           resumeStream();
         });
       }
+      didFetchHistoryOnNewChat.current = false;
     },
   });
 

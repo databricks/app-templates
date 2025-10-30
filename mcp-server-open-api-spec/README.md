@@ -105,7 +105,7 @@ Then, [deploy](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/depl
 APP_NAME="mcp-server-rest-api"
 DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
 databricks sync . "/Users/$DATABRICKS_USERNAME/mcp-server-rest-api"
-databricks apps deploy my-agent-chatbot --source-code-path "/Workspace/Users/$DATABRICKS_USERNAME/mcp-server-rest-api"
+databricks apps deploy "$APP_NAME" --source-code-path "/Workspace/Users/$DATABRICKS_USERNAME/mcp-server-rest-api"
 ```
 
 ### Connect to the MCP server

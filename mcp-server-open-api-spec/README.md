@@ -1,88 +1,102 @@
 # Deploy an MCP server for any REST API with Databricks Apps
 
-This app template contains an MCP server that exposes tools for invoking external REST APIs, enabling agents to fetch data or take actions in remote services. To use this template, you need:
+This app template contains an MCP server that exposes tools for invoking external REST APIs, enabling agents to fetch data or take actions in remote services. 
 
-1. A JSON [OpenAPI specification](https://learn.openapis.org/specification/) file for the external REST API
-2. A [Databricks Unity Catalog connection](https://docs.databricks.com/aws/en/generative-ai/agent-framework/external-connection-tools) for securely managing authentication to the external REST API
+If your external service already provides an MCP server, we recommend [creating a connection to the external MCP server](https://docs.databricks.com/aws/en/generative-ai/mcp/external-mcp) instead; Databricks provides a proxy to the external MCP server automatically, saving you the step of deploying a Databricks app.
 
-If your external service already provides an MCP server, Databricks recommends [creating a connection to the external MCP server](https://docs.databricks.com/aws/en/generative-ai/mcp/external-mcp) instead; Databricks provides a proxy to the external MCP server automatically, saving you the step of deploying a Databricks app.
-
-You can deploy this app as-is, with some changes to app.yaml - see [Quickstart](#Quickstart) for details
+See [Quickstart](#Quickstart) for details on how to deploy an MCP server with this template.
 
 ## Overview
 
 This MCP server acts as a bridge between LLM agents and external REST APIs. It:
 
-1. **Loads OpenAPI specifications** from the specified UC Volume Path
+1. **Loads OpenAPI specifications** from a JSON spec file
 2. **Provides three main tools** to LLM agents:
    - `list_api_endpoints` - Discover available API endpoints
    - `get_api_endpoint_schema` - Get detailed schema for specific endpoints
    - `invoke_api_endpoint` - Execute API calls with proper authentication
-3. **Uses Databricks UC external connections** for secure authentication to external services
-4. **Runs on Databricks Apps** for scalable hosting
+3. **Uses Databricks [Unity Catalog connections](https://docs.databricks.com/aws/en/query-federation/http)** for secure authentication to external services
+4. **Runs on [Databricks Apps](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/)** for secure and scalable hosting
 
 ## Quickstart
 
-### 1. Configure Your External API
+### Prerequisites
+To use this template, you need:
 
-[Upload](https://docs.databricks.com/aws/en/ingestion/file-upload/upload-to-volume) your OpenAPI Spec (`spec.json`) to your desired Volume. [Configure](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources) this volume path as a dependent resource in your Databricks App. 
+1. A JSON [OpenAPI specification](https://learn.openapis.org/specification/) file for the external REST API
+2. Credentials for your REST API; the full set of supported authentication types (OAuth Machine to Machine, OAuth User to Machine, Bearer token, etc is described [here](https://docs.databricks.com/aws/en/query-federation/http#authentication-methods-for-external-services)
+3. An installation of the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/install)
 
-**Note**: If the file name of your open api spec is different from `spec.json`, update it in the `app.yaml`
+### Clone the app code
+Check out the current repository and enter the app template:
+
+```
+git clone https://github.com/databricks/app-templates
+cd mcp-server-open-api-spec
+```
+
+### Upload your OpenAPI spec
+
+[Upload](https://docs.databricks.com/aws/en/ingestion/file-upload/upload-to-volume) your OpenAPI Spec (`spec.json`) to a Unity Catalog (UC) Volume on Databricks, so that the app can download it once deployed.
+
+### Configure the app to load your OpenAPI spec
+By default, the app will attempt to load your OpenAPI spec from a `spec.json` file at the root of the Volume. If you uploaded the OpenAPI spec to a different path, update the app configuration in `app.yaml` to reference
+your OpenAPI spec:
+
 ```yaml
-# Line 6 in app.yaml
   - name: "SPEC_FILE_NAME"
-    value: "spec.json" # Update file name if needed
+    # Specify the path of your JSON OpenAPI spec file relative to its parent UC volume.
+    # For example, for a spec file at /Volumes/<catalog_identifier>/<schema_identifier>/<volume_identifier>/relative/path/to/spec.json,
+    # use the following value:
+    value: "relative/path/to/spec.json"
 ```
 
-### 2. Create UC External Connection
+### Find or create a UC connection for authentication
 
-Create a Unity Catalog external connection for authentication to your external service:
+Find or create a [Unity Catalog HTTP connection](https://docs.databricks.com/aws/en/query-federation/http) for authentication to your external service.
+Supported authentication types include Bearer, OAuth Machine to Machine, and Oauth User to Machine (per user) authentication.
 
-```sql
--- Example: Create connection with API key authentication
-CREATE CONNECTION <connection-name> TYPE HTTP
-OPTIONS (
-  host '<hostname>',
-  port '<port>',
-  base_path '<base-path>',
-  bearer_token '<bearer-token>'
-);
-```
+NOTE: this requires the `CREATE CONNECTION` privilege. If you do not have this privilege, reach out to a Databricks admin for help creating the connection.
 
-[Learn more about external connections](https://docs.databricks.com/aws/en/query-federation/http). You can configure authentication to be either Bearer, OAuth M2M, OAuth U2M Shared and OAuth U2M.
 
-### 3. Update Connection Name
-
+### Configure the app to use your UC connection for authentication
 Update the connection name environment variable in `app.yaml`.
 
 ```yaml
 # Line 4 in app.yaml
   - name: "UC_CONNECTION_NAME"
-    value: "" # TODO: Add the connection name
+    value: "" # TODO: Specify your connection name here
 ```
 
-### 4. Deploy to Databricks Apps
-Now you can [deploy](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy) this to Databricks Apps.
+### Deploy to Databricks Apps
+Double-check that all TODOs in `app.yaml` have been addressed. 
+Then, [deploy](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy) your server to Databricks Apps via the following:
 
 ```bash
-databricks sync --watch . /Workspace/Users/my-email@org.com/<app-name>
-
-databricks apps deploy <app-name> --source-code-path /Workspace/Users/my-email@org.com/<app-name>
+DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
+databricks sync . "/Users/$DATABRICKS_USERNAME/e2e-chatbot-app"
+databricks apps deploy my-agent-chatbot --source-code-path "/Workspace/Users/$DATABRICKS_USERNAME/e2e-chatbot-app"
 ```
 
-### 5. Try it out in AI Playground
-After deploying your MCP server to Databricks Apps, you can test it interactively in the Databricks AI Playground:
+### Connect to the MCP server
+
+#### Use AI Playground
+After deploying your MCP server to Databricks Apps, you can test it interactively in the [Databricks AI Playground](https://docs.databricks.com/aws/en/generative-ai/agent-framework/ai-playground-agent).
+The AI Playground provides a visual interface to prototype and test your MCP server with different models and configurations before integrating it into production applications:
 
 1. Navigate to the **AI Playground** in your Databricks workspace
 2. Select a model with the **Tools enabled** label
 3. Click **Tools > + Add tool** and select your deployed MCP server
 4. Start chatting with the AI agent - it will automatically call your MCP server's tools as needed
 
-The AI Playground provides a visual interface to prototype and test your MCP server with different models and configurations before integrating it into production applications.
+#### Build an agent on Databricks
+To build and deploy agents on Databricks that connect to your MCP server to discover and execute tools, [see here](https://docs.databricks.com/aws/en/generative-ai/mcp/custom-mcp#example-notebooks-build-an-agent-with-databricks-mcp-servers).
 
-For more information, see [Prototype tool-calling agents in AI Playground](https://docs.databricks.com/aws/en/generative-ai/agent-framework/ai-playground-agent).
+#### Connect from external MCP clients
+You can also connect to the MCP server using standard clients like the MCP inspector, following [this documentation](https://docs.databricks.com/aws/en/generative-ai/mcp/connect-external-services)
 
 ## Running the MCP Server Locally
+You can also run the MCP server in this app template locally, for ease of debugging.
 
 ### Prerequisites
 
@@ -154,29 +168,6 @@ Make sure you have set the required environment variables first:
 - `SPEC_VOLUME_PATH` - Path to your OpenAPI spec (e.g., `/Volumes/catalog/schema/volume`)
 - `SPEC_FILE_NAME` - Name of the spec file (e.g., `spec.json`)
 
-## Deployment
-
-### Databricks Apps
-
-This project is configured for Databricks Apps deployment:
-
-1. Deploy using Databricks CLI or UI
-2. The server will be accessible at your Databricks app URL
-
-For more information refer to the documentation [here](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy#deploy-the-app)
-
-### Try Your MCP Server in AI Playground
-
-After deploying your MCP server to Databricks Apps, you can test it interactively in the Databricks AI Playground:
-
-1. Navigate to the **AI Playground** in your Databricks workspace
-2. Select a model with the **Tools enabled** label
-3. Click **Tools > + Add tool** and select your deployed MCP server
-4. Start chatting with the AI agent - it will automatically call your MCP server's tools as needed
-
-The AI Playground provides a visual interface to prototype and test your MCP server with different models and configurations before integrating it into production applications.
-
-For more information, see [Prototype tool-calling agents in AI Playground](https://docs.databricks.com/aws/en/generative-ai/agent-framework/ai-playground-agent).
 
 ## Using the MCP Server
 

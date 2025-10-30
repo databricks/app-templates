@@ -1,6 +1,11 @@
 # Custom Open API Spec MCP Server on Databricks Apps
 
-This app template enables deploying MCP servers that exposes tools for invoking external REST APIs defined by [OpenAPI specifications](https://github.com/OAI/OpenAPI-Specification), with secure authentication through [Databricks Unity Catalog connections](https://docs.databricks.com/aws/en/generative-ai/agent-framework/external-connection-tools). This enables agents to easily invoke REST APIs in the external service as tools. If your external service already provides an MCP server, Databricks recommends [creating a connection to the external MCP server](https://docs.databricks.com/aws/en/generative-ai/mcp/external-mcp) instead; this saves you the step of deploying a Databricks app.
+This app template contains an MCP server that exposes tools for invoking external REST APIs, enabling agents to fetch data or take actions in remote services. To use this template, you need:
+
+1. A JSON [OpenAPI specification](https://www.openapis.org) file for the external REST API
+2. A [Databricks Unity Catalog connection](https://docs.databricks.com/aws/en/generative-ai/agent-framework/external-connection-tools) for securely managing authentication to the external REST API
+
+If your external service already provides an MCP server, Databricks recommends [creating a connection to the external MCP server](https://docs.databricks.com/aws/en/generative-ai/mcp/external-mcp) instead; Databricks provides a proxy to the external MCP server automatically, saving you the step of deploying a Databricks app.
 
 You can deploy this app as-is, with some changes to app.yaml - see [Quickstart](#Quickstart) for details
 

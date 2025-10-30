@@ -1,0 +1,73 @@
+[project]
+name = "custom-open-api-spec-server"
+version = "0.1.0"
+description = "Databricks apps for testing Open API Spec MCP Server"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.12",
+    "mcp[cli]>=1.14.0",
+    "uvicorn>=0.34.2",
+    "databricks-sdk==0.68.0",
+    "pydantic>=2",
+    "fastmcp>=2.12.5"
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "hatchling>=1.27.0",
+    "ruff>=0.8.0",
+    "databricks-mcp>=0.1.0",
+    "pytest"
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/custom_server"]
+
+[project.scripts]
+custom-open-api-spec-server = "custom_server.main:main"
+
+[tool.ruff]
+# Set the maximum line length to 100
+line-length = 100
+target-version = "py311"
+
+# Exclude common directories
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
+select = [
+  # isort
+  "I",
+  # bugbear rules
+  "B",
+  # remove unused imports
+  "F401",
+  # bare except statements
+  "E722",
+  "T203",
+  # misuse of typing.TYPE_CHECKING
+  "TC004",
+  # import rules
+  "TID251",
+  # undefined-local-with-import-star
+  "F403",
+]
+
+[tool.ruff.format]
+docstring-code-format = true
+docstring-code-line-length = 88
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

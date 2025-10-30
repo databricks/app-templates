@@ -5,7 +5,7 @@ variables:
   serving_endpoint_name:
     description: "Name of the model serving endpoint to be used by the app"
    # TODO: uncomment the line below and specify a default value to avoid needing to specify it on each deployment
-   # default: "your-serving-endpoint-name-goes-here"
+    default: "ka-606c377e-endpoint"
   database_instance_name:
     description: "Base name of the Lakebase database instance"
     default: "chatbot-lakebase"
@@ -46,6 +46,8 @@ targets:
   dev:
     mode: development
     default: true
+    presets:
+      source_linked_deployment: false
     variables:
       resource_name_suffix: dev-${workspace.current_user.domain_friendly_name}
 

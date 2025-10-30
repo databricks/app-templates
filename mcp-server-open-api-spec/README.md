@@ -1,8 +1,8 @@
 # Custom Open API Spec MCP Server on Databricks Apps
 
-This repository provides a framework for creating [Custom Model Context Protocol (MCP) servers](https://docs.databricks.com/aws/en/generative-ai/mcp/custom-mcp) using [Databricks Apps](https://www.databricks.com/product/databricks-apps). It enables customers to create MCP servers that connect to external REST APIs defined by [OpenAPI specifications](https://github.com/OAI/OpenAPI-Specification), with secure authentication through [Databricks external connections](https://docs.databricks.com/aws/en/generative-ai/agent-framework/external-connection-tools).
+This app template enables deploying MCP servers that exposes tools for invoking external REST APIs defined by [OpenAPI specifications](https://github.com/OAI/OpenAPI-Specification), with secure authentication through [Databricks Unity Catalog connections](https://docs.databricks.com/aws/en/generative-ai/agent-framework/external-connection-tools). This enables agents to easily invoke REST APIs in the external service as tools. If your external service already provides an MCP server, Databricks recommends [creating a connection to the external MCP server](https://docs.databricks.com/aws/en/generative-ai/mcp/external-mcp) instead; this saves you the step of deploying a Databricks app.
 
-This Databricks App is useful to convert your existing APIs to an MCP Server. If you instead want to connect to an already hosted External MCP Server, refer to the External MCP Server documentation [here](https://docs.databricks.com/aws/en/generative-ai/mcp/external-mcp).
+You can deploy this app as-is, with some changes to app.yaml - see [Quickstart](#Quickstart) for details
 
 ## Overview
 
@@ -16,11 +16,18 @@ This MCP server acts as a bridge between LLM agents and external REST APIs. It:
 3. **Uses Databricks UC external connections** for secure authentication to external services
 4. **Runs on Databricks Apps** for scalable hosting
 
-## Quick Start
+## Quickstart
 
 ### 1. Configure Your External API
 
-Upload your OpenAPI Spec (`spec.json`) to your desired Volume. Configure this volume path as a dependent resource in your Databricks App
+[Upload](https://docs.databricks.com/aws/en/ingestion/file-upload/upload-to-volume) your OpenAPI Spec (`spec.json`) to your desired Volume. [Configure](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources) this volume path as a dependent resource in your Databricks App. 
+
+**Note**: If the file name of your open api spec is different from `spec.json`, update it in the `app.yaml`
+```yaml
+# Line 6 in app.yaml
+  - name: "SPEC_FILE_NAME"
+    value: "spec.json" # Update file name if needed
+```
 
 ### 2. Create UC External Connection
 
@@ -44,26 +51,48 @@ OPTIONS (
 Update the connection name environment variable in `app.yaml`.
 
 ```yaml
-# Line 5 in app.yaml
+# Line 4 in app.yaml
   - name: "UC_CONNECTION_NAME"
     value: "" # TODO: Add the connection name
 ```
 
-## Prerequisites
+### 4. Deploy to Databricks Apps
+Now you can [deploy](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy) this to Databricks Apps.
+
+```bash
+databricks sync --watch . /Workspace/Users/my-email@org.com/<app-name>
+
+databricks apps deploy <app-name> --source-code-path /Workspace/Users/my-email@org.com/<app-name>
+```
+
+### 5. Try it out in AI Playground
+After deploying your MCP server to Databricks Apps, you can test it interactively in the Databricks AI Playground:
+
+1. Navigate to the **AI Playground** in your Databricks workspace
+2. Select a model with the **Tools enabled** label
+3. Click **Tools > + Add tool** and select your deployed MCP server
+4. Start chatting with the AI agent - it will automatically call your MCP server's tools as needed
+
+The AI Playground provides a visual interface to prototype and test your MCP server with different models and configurations before integrating it into production applications.
+
+For more information, see [Prototype tool-calling agents in AI Playground](https://docs.databricks.com/aws/en/generative-ai/agent-framework/ai-playground-agent).
+
+## Running the MCP Server Locally
+
+### Prerequisites
 
 - Databricks CLI installed and configured
 - `uv` (Python package manager)
 - Unity Catalog external connection configured for your target API
 
-## Local development
-
-- run `uv` sync:
+### Get Started
+- Run `uv` sync:
 
 ```bash
 uv sync
 ```
 
-- start the server locally. Changes will trigger a reload:
+- Start the server locally. Changes will trigger a reload:
 
 ```bash
 uv run custom-server

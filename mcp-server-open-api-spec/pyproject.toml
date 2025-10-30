@@ -1,11 +1,8 @@
 [project]
 name = "custom-open-api-spec-server"
 version = "0.1.0"
-description = "Databricks apps for testing github MCP server with UC connection"
+description = "Databricks apps for testing Open API Spec MCP Server"
 readme = "README.md"
-authors = [
-    { name = "sunishsheth", email = "sunish.sheth@databricks.com" }
-]
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.12",

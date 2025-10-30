@@ -1,4 +1,4 @@
-# Custom Open API Spec MCP Server on Databricks Apps
+# Deploy an MCP server for any REST API with Databricks Apps
 
 This app template contains an MCP server that exposes tools for invoking external REST APIs, enabling agents to fetch data or take actions in remote services. To use this template, you need:
 

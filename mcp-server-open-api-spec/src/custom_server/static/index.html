@@ -62,42 +62,149 @@
         </div>
     </div>
 
-    <!-- Connection Section -->
+    <!-- Getting Started Section -->
     <div id="connect" class="py-12">
-        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-            <h2 class="text-2xl font-bold text-center text-white">Connect to the Server</h2>
-            <div class="mt-10 bg-gray-800 shadow overflow-hidden sm:rounded-lg">
-                <div class="px-4 py-5 sm:px-6">
-                    <h3 class="text-lg leading-6 font-medium text-white">Connection Details</h3>
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+            <h2 class="text-3xl font-bold text-center text-white mb-12">Getting Started</h2>
+            
+            <!-- Steps Grid -->
+            <div class="space-y-8">
+                <!-- Step 1 -->
+                <div class="bg-gray-800 shadow overflow-hidden sm:rounded-lg">
+                    <div class="px-4 py-5 sm:px-6 border-l-4 border-blue-500">
+                        <h3 class="text-lg leading-6 font-medium text-white">1. Configure Your External API</h3>
+                    </div>
+                    <div class="border-t border-gray-700 px-4 py-5 sm:p-6">
+                        <p class="text-sm text-gray-300 mb-3">
+                            <a href="https://docs.databricks.com/aws/en/ingestion/file-upload/upload-to-volume" 
+                               target="_blank" rel="noopener"
+                               class="text-blue-400 hover:text-blue-300">Upload</a> 
+                            your OpenAPI Spec (<code class="bg-gray-900 px-2 py-1 rounded">spec.json</code>) to your desired Volume. 
+                            <a href="https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources" 
+                               target="_blank" rel="noopener"
+                               class="text-blue-400 hover:text-blue-300">Configure</a> 
+                            this volume path as a dependent resource in your Databricks App.
+                        </p>
+                        <p class="text-sm text-gray-400 mt-2">
+                            <strong>Note:</strong> If your OpenAPI spec file name is different from <code class="bg-gray-900 px-1 py-0.5 rounded">spec.json</code>, update it in <code class="bg-gray-900 px-1 py-0.5 rounded">app.yaml</code>
+                        </p>
+                    </div>
                 </div>
-                <div class="border-t border-gray-700 px-4 py-5 sm:p-6">
-                    <dl class="grid grid-cols-1 gap-x-4 gap-y-8">
-                        <div class="sm:col-span-1">
-                            <dt class="text-sm font-medium text-gray-400">
-                                Server URL
-                            </dt>
-                            <dd class="mt-1 text-sm text-gray-100">
-                                <code class="bg-gray-900 px-2 py-1 rounded app-host">https://your.app.url.databricksapps.com</code>
-                            </dd>
-                        </div>
-                        <div class="sm:col-span-2">
-                            <dt class="text-sm font-medium text-gray-400">
-                                Transport <Table></Table>
-                            </dt>
-                            <dd class="mt-1 text-sm text-gray-100">
-                                <code class="bg-gray-900 px-2 py-1 rounded">
-                                    Streamable HTTP
-                                </code>
-                            </dd>
-                        </div>
-                        <div class="sm:col-span-3">
-                            <dt class="text-sm font-medium text-gray-400">
-                                Example Connection (Python)
-                            </dt>
-                            <dd class="mt-1 text-sm text-gray-100">
-                                <pre class="bg-gray-900 p-3 rounded overflow-x-auto">
-<code class="language-python">
-from databricks.sdk import WorkspaceClient
+
+                <!-- Step 2 -->
+                <div class="bg-gray-800 shadow overflow-hidden sm:rounded-lg">
+                    <div class="px-4 py-5 sm:px-6 border-l-4 border-blue-500">
+                        <h3 class="text-lg leading-6 font-medium text-white">2. Create UC External Connection</h3>
+                    </div>
+                    <div class="border-t border-gray-700 px-4 py-5 sm:p-6">
+                        <p class="text-sm text-gray-300 mb-3">
+                            Create a Unity Catalog external connection for authentication to your external service:
+                        </p>
+                        <pre class="bg-gray-900 p-3 rounded overflow-x-auto text-sm">
+<code class="language-sql">-- Example: Create connection with API key authentication
+CREATE CONNECTION &lt;connection-name&gt; TYPE HTTP
+OPTIONS (
+  host '&lt;hostname&gt;',
+  port '&lt;port&gt;',
+  base_path '&lt;base-path&gt;',
+  bearer_token '&lt;bearer-token&gt;'
+);</code>
+                        </pre>
+                        <p class="text-sm text-gray-400 mt-3">
+                            <a href="https://docs.databricks.com/aws/en/query-federation/http" 
+                               target="_blank" rel="noopener"
+                               class="text-blue-400 hover:text-blue-300">Learn more</a> 
+                            about external connections. You can configure authentication to be Bearer, OAuth M2M, OAuth U2M Shared, or OAuth U2M.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Step 3 -->
+                <div class="bg-gray-800 shadow overflow-hidden sm:rounded-lg">
+                    <div class="px-4 py-5 sm:px-6 border-l-4 border-blue-500">
+                        <h3 class="text-lg leading-6 font-medium text-white">3. Update Connection Name</h3>
+                    </div>
+                    <div class="border-t border-gray-700 px-4 py-5 sm:p-6">
+                        <p class="text-sm text-gray-300 mb-3">
+                            Update the connection name environment variable in <code class="bg-gray-900 px-2 py-1 rounded">app.yaml</code>:
+                        </p>
+                        <pre class="bg-gray-900 p-3 rounded overflow-x-auto text-sm">
+<code class="language-yaml"># Line 4 in app.yaml
+- name: "UC_CONNECTION_NAME"
+  value: "" # TODO: Add the connection name</code>
+                        </pre>
+                    </div>
+                </div>
+
+                <!-- Step 4 -->
+                <div class="bg-gray-800 shadow overflow-hidden sm:rounded-lg">
+                    <div class="px-4 py-5 sm:px-6 border-l-4 border-blue-500">
+                        <h3 class="text-lg leading-6 font-medium text-white">4. Deploy to Databricks Apps</h3>
+                    </div>
+                    <div class="border-t border-gray-700 px-4 py-5 sm:p-6">
+                        <p class="text-sm text-gray-300 mb-3">
+                            Now you can <a href="https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy" 
+                               target="_blank" rel="noopener"
+                               class="text-blue-400 hover:text-blue-300">deploy</a> this to Databricks Apps:
+                        </p>
+                        <pre class="bg-gray-900 p-3 rounded overflow-x-auto text-sm">
+<code class="language-bash">databricks sync --watch . /Workspace/Users/my-email@org.com/&lt;app-name&gt;
+
+databricks apps deploy &lt;app-name&gt; --source-code-path /Workspace/Users/my-email@org.com/&lt;app-name&gt;</code>
+                        </pre>
+                    </div>
+                </div>
+
+                <!-- Step 5 -->
+                <div class="bg-gray-800 shadow overflow-hidden sm:rounded-lg">
+                    <div class="px-4 py-5 sm:px-6 border-l-4 border-blue-500">
+                        <h3 class="text-lg leading-6 font-medium text-white">5. Try it out in AI Playground</h3>
+                    </div>
+                    <div class="border-t border-gray-700 px-4 py-5 sm:p-6">
+                        <p class="text-sm text-gray-300 mb-3">
+                            After deploying your MCP server, test it interactively in the Databricks AI Playground:
+                        </p>
+                        <ol class="list-decimal list-inside space-y-2 text-sm text-gray-300 ml-2">
+                            <li>Navigate to the <strong>AI Playground</strong> in your Databricks workspace</li>
+                            <li>Select a model with the <strong>Tools enabled</strong> label</li>
+                            <li>Click <strong>Tools &gt; + Add tool</strong> and select your deployed MCP server</li>
+                            <li>Start chatting with the AI agent - it will automatically call your MCP server's tools as needed</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Step 6 -->
+                <div class="bg-gray-800 shadow overflow-hidden sm:rounded-lg">
+                    <div class="px-4 py-5 sm:px-6 border-l-4 border-blue-500">
+                        <h3 class="text-lg leading-6 font-medium text-white">6. Connect to the Server Programmatically</h3>
+                    </div>
+                    <div class="border-t border-gray-700 px-4 py-5 sm:p-6">
+                        <dl class="grid grid-cols-1 gap-x-4 gap-y-8">
+                            <div class="sm:col-span-1">
+                                <dt class="text-sm font-medium text-gray-400">
+                                    Server URL
+                                </dt>
+                                <dd class="mt-1 text-sm text-gray-100">
+                                    <code class="bg-gray-900 px-2 py-1 rounded app-host">https://your.app.url.databricksapps.com</code>
+                                </dd>
+                            </div>
+                            <div class="sm:col-span-2">
+                                <dt class="text-sm font-medium text-gray-400">
+                                    Transport
+                                </dt>
+                                <dd class="mt-1 text-sm text-gray-100">
+                                    <code class="bg-gray-900 px-2 py-1 rounded">
+                                        Streamable HTTP
+                                    </code>
+                                </dd>
+                            </div>
+                            <div class="sm:col-span-3">
+                                <dt class="text-sm font-medium text-gray-400">
+                                    Example Connection (Python)
+                                </dt>
+                                <dd class="mt-1 text-sm text-gray-100">
+                                    <pre class="bg-gray-900 p-3 rounded overflow-x-auto">
+<code class="language-python">from databricks.sdk import WorkspaceClient
 from databricks_mcp import DatabricksMCPClient
 
 # Initialize the Databricks Workspace client
@@ -106,28 +213,28 @@ ws_client = WorkspaceClient(
     token="exactly-scoped-OAuth-token",
 )
 
-# Initialize the MCP client with your app’s MCP endpoint
+# Initialize the MCP client with your app's MCP endpoint
 mcp_client = DatabricksMCPClient(
     server_url='databricks-app-url',
     workspace_client=ws_client,
 )
 
 # List available MCP tools
-print(mcp_client.list_tools())
-</code>
-                                </pre>
-                            </dd>
-                        </div>
-                        <div class="sm:col-span-2">
-                            <dt class="text-sm font-medium text-gray-400">
-                                Or use your favourite tool
-                            </dt>
-                            <dd class="mt-1 text-sm text-gray-100">
-                                You can also connect using tools like <strong>Claude</strong>, <strong>MCP
-                                    Inspector</strong>, or any other compatible client.
-                            </dd>
-                        </div>
-                    </dl>
+print(mcp_client.list_tools())</code>
+                                    </pre>
+                                </dd>
+                            </div>
+                            <div class="sm:col-span-2">
+                                <dt class="text-sm font-medium text-gray-400">
+                                    Or use your favourite tool
+                                </dt>
+                                <dd class="mt-1 text-sm text-gray-100">
+                                    You can also connect using tools like <strong>Claude</strong>, <strong>MCP
+                                        Inspector</strong>, or any other compatible client.
+                                </dd>
+                            </div>
+                        </dl>
+                    </div>
                 </div>
             </div>
         </div>

@@ -1,11 +1,11 @@
 import { config } from 'dotenv';
 import postgres from 'postgres';
-import { getDatabricksToken } from '../databricks/auth/databricks-auth-node';
+import { getDatabricksToken } from '@chat-template/auth';
 import {
   getPostgresUrlFromEnv,
   getDatabaseConfigFromEnv,
   buildConnectionUrl,
-} from '../databricks/db/connection-core';
+} from '@chat-template/db';
 
 config({ path: '.env.local' });
 
@@ -50,4 +50,5 @@ async function resetDatabase() {
   }
 }
 
+console.log('CALLING RESET DATABASE');
 resetDatabase();

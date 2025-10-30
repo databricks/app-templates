@@ -14,8 +14,8 @@ import type { User as SharedUser } from '@chat-template/utils';
 const schemaName = 'ai_chatbot';
 const customSchema = pgSchema(schemaName);
 
-// // Helper function to create table with proper schema handling
-//   // Use the schema object for proper drizzle-kit migration generation
+// Helper function to create table with proper schema handling
+// Use the schema object for proper drizzle-kit migration generation
 const createTable = customSchema.table;
 
 export const user = createTable('User', {
@@ -39,21 +39,7 @@ export const chat = createTable('Chat', {
 
 export type Chat = InferSelectModel<typeof chat>;
 
-// DEPRECATED: The following schema is deprecated and will be removed in the future.
-// Read the migration guide at https://chat-sdk.dev/docs/migration-guides/message-parts
-export const messageDeprecated = createTable('Message', {
-  id: uuid('id').primaryKey().notNull().defaultRandom(),
-  chatId: uuid('chatId')
-    .notNull()
-    .references(() => chat.id),
-  role: varchar('role').notNull(),
-  content: json('content').notNull(),
-  createdAt: timestamp('createdAt').notNull(),
-});
-
-export type MessageDeprecated = InferSelectModel<typeof messageDeprecated>;
-
-export const message = createTable('Message_v2', {
+export const message = createTable('Message', {
   id: uuid('id').primaryKey().notNull().defaultRandom(),
   chatId: uuid('chatId')
     .notNull()

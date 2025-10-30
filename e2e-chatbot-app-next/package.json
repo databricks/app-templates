@@ -2,11 +2,7 @@
   "name": "databricks/e2e-chatbot-app",
   "version": "1.0.0",
   "private": true,
-  "workspaces": [
-    "client",
-    "server",
-    "packages/*"
-  ],
+  "workspaces": ["client", "server", "packages/*"],
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=8.0.0"
@@ -23,7 +19,7 @@
     "lint:fix": "biome lint --write --unsafe && biome format --write",
     "format": "biome format --write",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx packages/db/src/migrate.ts",
+    "db:migrate": "tsx scripts/migrate.ts",
     "db:reset": "tsx scripts/reset-database.ts",
     "db:studio": "drizzle-kit studio",
     "db:push": "drizzle-kit push",

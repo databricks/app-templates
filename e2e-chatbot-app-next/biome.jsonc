@@ -3,13 +3,10 @@
   "files": {
     "ignoreUnknown": false,
     "ignore": [
-      "**/pnpm-lock.yaml",
-      "lib/db/migrations",
-      "lib/editor/react-renderer.tsx",
+      "**/package-lock.json",
       "node_modules",
-      ".next",
-      "public",
-      ".vercel"
+      "dist",
+      "public"
     ]
   },
   "vcs": {

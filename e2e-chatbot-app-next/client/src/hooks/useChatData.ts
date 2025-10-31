@@ -35,6 +35,13 @@ async function fetchChatData(url: string): Promise<ChatData | null> {
   });
 
   if (!messagesResponse.ok) {
+    // If messages endpoint returns 404 (e.g., database disabled), return empty messages
+    if (messagesResponse.status === 404) {
+      return {
+        chat,
+        messages: [],
+      };
+    }
     throw new Error('Failed to load messages');
   }
 

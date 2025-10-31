@@ -21,8 +21,10 @@ export async function authMiddleware(
   next: NextFunction,
 ) {
   try {
+    console.log('HEADERS', req.headers);
     const session = await getAuthSession({
-      getRequestHeader: (name: string) => req.headers[name.toLowerCase()] as string | null,
+      getRequestHeader: (name: string) =>
+        req.headers[name.toLowerCase()] as string | null,
     });
     req.session = session || undefined;
     next();
@@ -43,17 +45,27 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-export async function requireChatAccess(req: Request, res: Response, next: NextFunction) {
+export async function requireChatAccess(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
   const { id } = req.params;
   if (!id) {
-    console.error('Chat access middleware error: no chat ID provided', req.params);
+    console.error(
+      'Chat access middleware error: no chat ID provided',
+      req.params,
+    );
     const error = new ChatSDKError('bad_request:api');
     const response = error.toResponse();
     return res.status(response.status).json(response.json);
   }
   const { allowed, reason } = await checkChatAccess(id, req.session?.user.id);
   if (!allowed) {
-    console.error('Chat access middleware error: user does not have access to chat', reason);
+    console.error(
+      'Chat access middleware error: user does not have access to chat',
+      reason,
+    );
     const error = new ChatSDKError('forbidden:chat', reason);
     const response = error.toResponse();
     return res.status(response.status).json(response.json);

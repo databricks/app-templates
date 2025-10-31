@@ -5,7 +5,7 @@ import {
   type Router as RouterType,
 } from 'express';
 import { authMiddleware, requireAuth } from '../middleware/auth';
-import { getChatsByUserId } from '@chat-template/db';
+import { getChatsByUserId, isDatabaseAvailable } from '@chat-template/db';
 import { ChatSDKError } from '@chat-template/core/errors';
 
 export const historyRouter: RouterType = Router();
@@ -17,6 +17,11 @@ historyRouter.use(authMiddleware);
  * GET /api/history - Get chat history for authenticated user
  */
 historyRouter.get('/', requireAuth, async (req: Request, res: Response) => {
+  // Return 204 No Content if database is not available
+  if (!isDatabaseAvailable()) {
+    return res.status(204).end();
+  }
+
   const session = req.session;
   if (!session) {
     const error = new ChatSDKError('unauthorized:chat');

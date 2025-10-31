@@ -22,6 +22,11 @@ export const fetcher = async (url: string) => {
     throw new ChatSDKError(code as ErrorCode, cause);
   }
 
+  // Handle 204 No Content - return empty chat history response
+  if (response.status === 204) {
+    return { chats: [], hasMore: false };
+  }
+
   return response.json();
 };
 

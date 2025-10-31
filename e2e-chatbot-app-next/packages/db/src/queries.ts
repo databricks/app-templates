@@ -95,6 +95,11 @@ export async function saveChat({
   title: string;
   visibility: VisibilityType;
 }) {
+  if (!isDatabaseAvailable()) {
+    console.log('[saveChat] Database not available, skipping persistence');
+    return;
+  }
+
   try {
     return await (await ensureDb()).insert(chat).values({
       id,
@@ -110,6 +115,11 @@ export async function saveChat({
 }
 
 export async function deleteChatById({ id }: { id: string }) {
+  if (!isDatabaseAvailable()) {
+    console.log('[deleteChatById] Database not available, skipping deletion');
+    return null;
+  }
+
   try {
     await (await ensureDb()).delete(message).where(eq(message.chatId, id));
 
@@ -137,6 +147,11 @@ export async function getChatsByUserId({
   startingAfter: string | null;
   endingBefore: string | null;
 }) {
+  if (!isDatabaseAvailable()) {
+    console.log('[getChatsByUserId] Database not available, returning empty');
+    return { chats: [], hasMore: false };
+  }
+
   try {
     const extendedLimit = limit + 1;
 
@@ -227,6 +242,11 @@ export async function getChatsByUserId({
 }
 
 export async function getChatById({ id }: { id: string }) {
+  if (!isDatabaseAvailable()) {
+    console.log('[getChatById] Database not available, returning null');
+    return null;
+  }
+
   try {
     const [selectedChat] = await (await ensureDb())
       .select()
@@ -247,6 +267,11 @@ export async function saveMessages({
 }: {
   messages: Array<DBMessage>;
 }) {
+  if (!isDatabaseAvailable()) {
+    console.log('[saveMessages] Database not available, skipping persistence');
+    return;
+  }
+
   try {
     return await (await ensureDb()).insert(message).values(messages);
   } catch (_error) {
@@ -255,6 +280,11 @@ export async function saveMessages({
 }
 
 export async function getMessagesByChatId({ id }: { id: string }) {
+  if (!isDatabaseAvailable()) {
+    console.log('[getMessagesByChatId] Database not available, returning empty');
+    return [];
+  }
+
   try {
     return await (await ensureDb())
       .select()
@@ -270,6 +300,11 @@ export async function getMessagesByChatId({ id }: { id: string }) {
 }
 
 export async function getMessageById({ id }: { id: string }) {
+  if (!isDatabaseAvailable()) {
+    console.log('[getMessageById] Database not available, returning empty');
+    return [];
+  }
+
   try {
     return await (await ensureDb())
       .select()
@@ -290,6 +325,11 @@ export async function deleteMessagesByChatIdAfterTimestamp({
   chatId: string;
   timestamp: Date;
 }) {
+  if (!isDatabaseAvailable()) {
+    console.log('[deleteMessagesByChatIdAfterTimestamp] Database not available, skipping deletion');
+    return;
+  }
+
   try {
     const messagesToDelete = await (await ensureDb())
       .select({ id: message.id })
@@ -322,6 +362,11 @@ export async function updateChatVisiblityById({
   chatId: string;
   visibility: 'private' | 'public';
 }) {
+  if (!isDatabaseAvailable()) {
+    console.log('[updateChatVisiblityById] Database not available, skipping update');
+    return;
+  }
+
   try {
     return await (await ensureDb())
       .update(chat)
@@ -343,6 +388,11 @@ export async function updateChatLastContextById({
   // Store raw LanguageModelUsage to keep it simple
   context: LanguageModelV2Usage;
 }) {
+  if (!isDatabaseAvailable()) {
+    console.log('[updateChatLastContextById] Database not available, skipping update');
+    return;
+  }
+
   try {
     return await (await ensureDb())
       .update(chat)

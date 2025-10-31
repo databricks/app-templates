@@ -4,6 +4,8 @@ import type { UseChatHelpers } from '@ai-sdk/react';
 import type { VisibilityType } from './visibility-selector';
 import type { ChatMessage } from '@chat-template/core';
 import { Suggestion } from './elements/suggestion';
+import { softNavigateToChatId } from '@/lib/navigation';
+import { useAppConfig } from '@/contexts/AppConfigContext';
 
 interface SuggestedActionsProps {
   chatId: string;
@@ -12,6 +14,7 @@ interface SuggestedActionsProps {
 }
 
 function PureSuggestedActions({ chatId, sendMessage }: SuggestedActionsProps) {
+  const { chatHistoryEnabled } = useAppConfig();
   const suggestedActions = [
     'How can you help me?',
     'Tell me something I might not know',
@@ -33,7 +36,7 @@ function PureSuggestedActions({ chatId, sendMessage }: SuggestedActionsProps) {
           <Suggestion
             suggestion={suggestedAction}
             onClick={(suggestion) => {
-              window.history.replaceState({}, '', `/chat/${chatId}`);
+              softNavigateToChatId(chatId, chatHistoryEnabled);
               sendMessage({
                 role: 'user',
                 parts: [{ type: 'text', text: suggestion }],

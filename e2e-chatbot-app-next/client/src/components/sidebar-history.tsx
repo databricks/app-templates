@@ -9,6 +9,7 @@ type ClientUser = {
 };
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
+import { useConfig } from '@/hooks/use-config';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -99,6 +100,7 @@ export function getChatHistoryPaginationKey(
 export function SidebarHistory({ user }: { user?: ClientUser | null }) {
   const { setOpenMobile } = useSidebar();
   const { id } = useParams();
+  const { chatHistoryEnabled } = useConfig();
 
   const {
     data: paginatedChatHistories,
@@ -208,7 +210,9 @@ export function SidebarHistory({ user }: { user?: ClientUser | null }) {
       <SidebarGroup>
         <SidebarGroupContent>
           <div className="flex w-full flex-row items-center justify-center gap-2 px-2 text-sm text-zinc-500">
-            Your conversations will appear here once you start chatting!
+            {chatHistoryEnabled
+              ? 'Your conversations will appear here once you start chatting!'
+              : 'Chat history is disabled - conversations are not saved'}
           </div>
         </SidebarGroupContent>
       </SidebarGroup>

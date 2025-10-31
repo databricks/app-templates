@@ -15,6 +15,7 @@ import { chatRouter } from './routes/chat';
 import { historyRouter } from './routes/history';
 import { sessionRouter } from './routes/session';
 import { messagesRouter } from './routes/messages';
+import { configRouter } from './routes/config';
 import { ChatSDKError } from '@chat-template/core/errors';
 
 // ESM-compatible __dirname
@@ -48,6 +49,7 @@ app.use('/api/chat', chatRouter);
 app.use('/api/history', historyRouter);
 app.use('/api/session', sessionRouter);
 app.use('/api/messages', messagesRouter);
+app.use('/api/config', configRouter);
 
 // Serve static files in production
 if (!isDevelopment) {

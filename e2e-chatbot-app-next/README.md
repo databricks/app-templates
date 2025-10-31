@@ -20,7 +20,7 @@ but has some [known limitations](#known-limitations) for other use cases. Work i
 
 - **Databricks Agent and Foundation Model Integration**: Direct connection to Databricks Agent serving endpoints and Agent Bricks
 - **Databricks Authentication**: Uses Databricks authentication to identify end users of the chat app and securely manage their conversations.
-- **Persistent Chat History**: Leverages Databricks Lakebase (Postgres) for storing conversations, with governance and tight lakehouse integration.
+- **Persistent Chat History (Optional)**: Leverages Databricks Lakebase (Postgres) for storing conversations, with governance and tight lakehouse integration. Can also run in ephemeral mode without database for development or testing.
 
 ## Prerequisites
 
@@ -125,6 +125,56 @@ so that both you and your app service principal can connect to the database, wit
    ```
 
    The app starts on [localhost:3000](http://localhost:3000)
+
+### Database Modes
+
+The application supports two operating modes:
+
+#### Persistent Mode (with Database)
+
+This is the default mode when database environment variables are configured. In this mode:
+
+- Chat conversations are saved to Postgres/Lakebase
+- Users can access their chat history via the sidebar
+- Conversations persist across sessions
+- The `/api/history` endpoint returns saved chats
+- A database connection is required (POSTGRES_URL or PGDATABASE env vars)
+
+To run in persistent mode, ensure your `.env.local` contains database connection details as described in the setup steps above.
+
+#### Ephemeral Mode (without Database)
+
+The application can also run without a database for development or testing purposes. In this mode:
+
+- Chat conversations work normally but are **not saved**
+- The sidebar shows "No chat history available"
+- A small "Ephemeral" indicator appears in the header
+- The `/api/history` endpoint returns 204 No Content
+- All database operations are no-ops (no errors thrown)
+- Users can still have conversations with the AI, but history is lost on page refresh
+
+To run in ephemeral mode, simply remove or comment out all database-related environment variables from `.env.local`:
+
+```bash
+# Comment out these variables in .env.local to run in ephemeral mode:
+# POSTGRES_URL=
+# PGUSER=
+# PGPASSWORD=
+# PGDATABASE=
+# PGHOST=
+```
+
+Then start the app normally:
+
+```bash
+npm run dev
+```
+
+The app will detect the absence of database configuration and automatically run in ephemeral mode. This is useful for:
+
+- Quick local development without setting up a database
+- Testing the chat interface and AI responses
+- Demos or temporary deployments
 
 ## Known limitations
 

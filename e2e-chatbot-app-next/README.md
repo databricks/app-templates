@@ -3,7 +3,7 @@
 </a>
 
 <p align="center">
-    A chat application template for interacting with Databricks Agent Serving endpoints, built with ExpressJS, React, Vercel AI SDK, and Databricks authentication.
+    A chat application template for interacting with Databricks Agent Serving endpoints, built with ExpressJS, React, Vercel AI SDK, Databricks authentication, and optional Lakebase (database) integration.
 </p>
 
 <p align="center">
@@ -20,7 +20,7 @@ but has some [known limitations](#known-limitations) for other use cases. Work i
 
 - **Databricks Agent and Foundation Model Integration**: Direct connection to Databricks Agent serving endpoints and Agent Bricks
 - **Databricks Authentication**: Uses Databricks authentication to identify end users of the chat app and securely manage their conversations.
-- **Persistent Chat History (Optional)**: Leverages Databricks Lakebase (Postgres) for storing conversations, with governance and tight lakehouse integration. Can also run in ephemeral mode without database for development or testing.
+- **Persistent Chat History (Optional)**: Leverages Databricks Lakebase (Postgres) for storing conversations, with governance and tight lakehouse integration. Can also run in ephemeral mode without database.
 
 ## Prerequisites
 
@@ -140,11 +140,9 @@ This is the default mode when database environment variables are configured. In 
 - The `/api/history` endpoint returns saved chats
 - A database connection is required (POSTGRES_URL or PGDATABASE env vars)
 
-To run in persistent mode, ensure your `.env.local` contains database connection details as described in the setup steps above.
-
 #### Ephemeral Mode (without Database)
 
-The application can also run without a database for development or testing purposes. In this mode:
+The application can also run without a database. In this mode:
 
 - Chat conversations work normally but are **not saved**
 - The sidebar shows "No chat history available"
@@ -153,28 +151,97 @@ The application can also run without a database for development or testing purpo
 - All database operations are no-ops (no errors thrown)
 - Users can still have conversations with the AI, but history is lost on page refresh
 
-To run in ephemeral mode, simply remove or comment out all database-related environment variables from `.env.local`:
+#### Selecting a Database Mode
+
+The application will default to "Ephemeral mode" when no database environment variables are set.
+To run in persistent mode, ensure your environment contains the following database variables:
 
 ```bash
-# Comment out these variables in .env.local to run in ephemeral mode:
-# POSTGRES_URL=
-# PGUSER=
-# PGPASSWORD=
-# PGDATABASE=
-# PGHOST=
+# Useful for local development
+POSTGRES_URL=...
+
+# OR
+
+# Handled for you when using Databricks Apps
+PGUSER=...
+PGPASSWORD=...
+PGDATABASE=...
+PGHOST=...
 ```
 
-Then start the app normally:
+The app will detect the absence or precense of database configuration and automatically run in the correct mode.
+
+## Testing
+
+The project uses Playwright for end-to-end testing and supports dual-mode testing to verify behavior in both persistent and ephemeral modes.
+
+### Test Modes
+
+Tests run in two separate modes to ensure both database and non-database functionality work correctly:
+
+#### With Database Mode
+
+- Uses `.env.test.with-db` configuration
+- Includes full Postgres database
+- Tests chat history persistence, pagination, and deletion
+- Verifies `/api/history` returns chat data
+
+#### Ephemeral Mode
+
+- Uses `.env.test.ephemeral` configuration
+- No database connection (all POSTGRES_URL and PG\* variables omitted)
+- Tests chat streaming without persistence
+- Verifies `/api/history` returns 204 No Content
+- Ensures UI gracefully handles missing database
+
+### Running Tests
+
+**Run all tests (both modes sequentially)**:
 
 ```bash
-npm run dev
+npm test
 ```
 
-The app will detect the absence of database configuration and automatically run in ephemeral mode. This is useful for:
+This runs with-db tests first, then ephemeral tests. The server automatically restarts between modes with different configurations.
 
-- Quick local development without setting up a database
-- Testing the chat interface and AI responses
-- Demos or temporary deployments
+**Run specific mode**:
+
+```bash
+# Test with database only
+npm run test:with-db
+
+# Test ephemeral mode only
+npm run test:ephemeral
+```
+
+### Test Environment Files
+
+The project includes two test environment files that work with `.env.local`:
+
+- **`.env.test.with-db`**: Inherits database configuration from `.env.local`
+
+  - Does NOT define its own PG\* variables
+  - Expects database to already be configured in `.env.local`
+  - Verifies database is available before running tests
+  - Uses your local database for testing
+
+- **`.env.test.ephemeral`**: Explicitly clears all database variables
+  - Sets all PG\* variables to empty strings
+  - Overrides any database config from `.env.local`
+  - Ensures app runs in ephemeral mode without database
+
+Both files include mocked Databricks credentials and the `PLAYWRIGHT=True` flag which enables MSW (Mock Service Worker) for API mocking.
+
+**Setup for with-db tests**: Ensure your `.env.local` contains valid database configuration. The with-db tests will use your local database.
+
+### Continuous Integration
+
+The GitHub Actions workflow runs both test modes in separate jobs:
+
+- **test-with-db**: Includes Postgres service, runs migrations, executes with-db tests
+- **test-ephemeral**: No Postgres, no migrations, executes ephemeral tests
+
+Both jobs run in parallel for faster CI feedback.
 
 ## Known limitations
 

@@ -13,6 +13,7 @@ import {
   getMessageById,
   deleteMessagesByChatIdAfterTimestamp,
   getMessagesByChatId,
+  isDatabaseAvailable,
 } from '@chat-template/db';
 import { ChatSDKError, checkChatAccess } from '@chat-template/core';
 
@@ -49,6 +50,18 @@ messagesRouter.delete(
   [requireAuth],
   async (req: Request, res: Response) => {
     try {
+      // Return 204 No Content if database is not available
+      const dbAvailable = isDatabaseAvailable();
+      console.log(
+        '[/api/messages/:id/trailing] Database available:',
+        dbAvailable,
+      );
+
+      if (!dbAvailable) {
+        console.log('[/api/messages/:id/trailing] Returning 204 No Content');
+        return res.status(204).end();
+      }
+
       const { id } = req.params;
       const [message] = await getMessageById({ id });
 

@@ -1,8 +1,12 @@
 import { expect, test } from '../fixtures';
 import { generateUUID } from '@chat-template/core';
 import { TEST_PROMPTS } from '../prompts/routes';
+import { skipInEphemeralMode, skipInWithDatabaseMode } from '../helpers';
 
-test.describe('/api/history', () => {
+test.describe('/api/history (with database)', () => {
+  // Skip these tests in ephemeral mode - they require database
+  skipInEphemeralMode(test);
+
   test('GET /api/history returns chat history for authenticated user', async ({
     adaContext,
   }) => {
@@ -73,17 +77,13 @@ test.describe('/api/history', () => {
 });
 
 test.describe('/api/history (ephemeral mode)', () => {
-  test.skip('GET /api/history returns 204 when database is disabled', async ({
+  // Only run this test in ephemeral mode
+  skipInWithDatabaseMode(test);
+
+  test('GET /api/history returns 204 when database is disabled', async ({
     adaContext,
   }) => {
-    // This test is skipped because it requires running the server without database env vars
-    // To test ephemeral mode:
-    // 1. Unset POSTGRES_URL and other database env vars
-    // 2. Start the server
-    // 3. Run this test
-    //
-    // Expected behavior: GET /api/history should return 204 No Content
-
+    // In ephemeral mode, /api/history should return 204 No Content
     const response = await adaContext.request.get('/api/history');
     expect(response.status()).toBe(204);
   });

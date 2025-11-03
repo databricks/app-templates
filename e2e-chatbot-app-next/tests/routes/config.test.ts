@@ -1,7 +1,7 @@
 import { expect, test } from '../fixtures';
 
 test.describe('/api/config', () => {
-  test('GET /api/config returns feature flags with chatHistory enabled', async ({
+  test('GET /api/config returns correct feature flags', async ({
     adaContext,
   }) => {
     const response = await adaContext.request.get('/api/config');
@@ -12,8 +12,13 @@ test.describe('/api/config', () => {
     expect(data.features).toHaveProperty('chatHistory');
     expect(typeof data.features.chatHistory).toBe('boolean');
 
-    // In the test environment with database configured, chatHistory should be true
-    expect(data.features.chatHistory).toBe(true);
+    if (process.env.TEST_MODE === 'with-db') {
+      // In the test environment with database configured, chatHistory should be true
+      expect(data.features.chatHistory).toBe(true);
+    } else {
+      // In the test environment without database configured, chatHistory should be false
+      expect(data.features.chatHistory).toBe(false);
+    }
   });
 
   test('GET /api/config does not require authentication', async ({

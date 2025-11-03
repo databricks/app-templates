@@ -1,6 +1,7 @@
 import { generateUUID, getMessageByErrorCode } from '@chat-template/core';
 import { expect, test } from '../fixtures';
 import { TEST_PROMPTS } from '../prompts/routes';
+import { skipInEphemeralMode } from 'tests/helpers';
 
 const chatIdsCreatedByAda: Array<string> = [];
 
@@ -64,6 +65,7 @@ test.describe
     test("Babbage cannot append message to Ada's chat", async ({
       babbageContext,
     }) => {
+      skipInEphemeralMode(test);
       const [chatId] = chatIdsCreatedByAda;
 
       const response = await babbageContext.request.post('/api/chat', {
@@ -82,6 +84,7 @@ test.describe
     });
 
     test("Babbage cannot delete Ada's chat", async ({ babbageContext }) => {
+      skipInEphemeralMode(test);
       const [chatId] = chatIdsCreatedByAda;
 
       const response = await babbageContext.request.delete(
@@ -95,6 +98,7 @@ test.describe
     });
 
     test('Ada can delete her own chat', async ({ adaContext }) => {
+      skipInEphemeralMode(test);
       const [chatId] = chatIdsCreatedByAda;
 
       const response = await adaContext.request.delete(`/api/chat/${chatId}`);
@@ -107,6 +111,7 @@ test.describe
     test('Ada cannot resume stream of chat that does not exist', async ({
       adaContext,
     }) => {
+      skipInEphemeralMode(test);
       const response = await adaContext.request.get(
         `/api/chat/${generateUUID()}/stream`,
       );

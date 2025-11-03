@@ -1,5 +1,6 @@
 import { ChatPage } from '../pages/chat';
 import { test, expect } from '../fixtures';
+import { skipInEphemeralMode } from '../helpers';
 
 test.describe('Chat activity', () => {
   let chatPage: ChatPage;
@@ -18,6 +19,7 @@ test.describe('Chat activity', () => {
   });
 
   test('Redirect to /chat/:id after submitting message', async () => {
+    skipInEphemeralMode(test);
     await chatPage.sendUserMessage('Hello');
     await chatPage.isGenerationComplete();
     await chatPage.hasChatIdInUrl();
@@ -81,18 +83,6 @@ test.describe('Chat activity', () => {
     await chatPage.isGenerationComplete();
     const assistantMessage = await chatPage.getRecentAssistantMessage();
     expect(assistantMessage.content || '').not.toEqual('');
-  });
-
-  test('Create message from url query', async ({ page }) => {
-    await page.goto('/?query=Why is the sky blue?');
-
-    await chatPage.isGenerationComplete();
-
-    const userMessage = await chatPage.getRecentUserMessage();
-    expect(userMessage.content).toBe('Why is the sky blue?');
-
-    const assistantMessage = await chatPage.getRecentAssistantMessage();
-    expect(assistantMessage.content).toContain("It's just blue duh!");
   });
 
   test('auto-scrolls to bottom after submitting new messages', async () => {

@@ -50,7 +50,9 @@ export function getDatabaseConfigFromEnv(): DatabaseConfig | null {
  * Check if database storage is available
  */
 export function isDatabaseAvailable(): boolean {
-  return !!(process.env.PGDATABASE || process.env.POSTGRES_URL);
+  const isAvailable = !!(process.env.PGDATABASE || process.env.POSTGRES_URL);
+  console.log(`[isDatabaseAvailable] Database available: ${isAvailable}`);
+  return isAvailable;
 }
 
 /**

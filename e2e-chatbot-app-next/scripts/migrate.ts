@@ -28,11 +28,12 @@ async function main() {
 
   // Require database configuration
   if (!isDatabaseAvailable()) {
-    console.error('❌ Database configuration required!');
-    console.error(
-      '❌ Please set PGDATABASE/PGHOST/PGUSER or POSTGRES_URL environment variables.',
+    console.warn('⚠️ Database configuration not found!');
+    console.warn(
+      'ℹ️ Please set PGDATABASE/PGHOST/PGUSER or POSTGRES_URL environment variables to run migrations.',
     );
-    process.exit(1);
+    console.warn('💡 Skipping migrations in ephemeral mode...');
+    process.exit(0);
   }
 
   console.log('📊 Database configuration detected, running migrations...');

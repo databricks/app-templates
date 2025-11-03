@@ -1,6 +1,11 @@
-name: Lint
+name: Lint (e2e-chatbot-app-next)
 on:
   push:
+    paths:
+      - 'e2e-chatbot-app-next/**'
+  pull_request:
+    paths:
+      - 'e2e-chatbot-app-next/**'
 
 jobs:
   build:
@@ -15,7 +20,10 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
+          cache-dependency-path: e2e-chatbot-app-next/package-lock.json
       - name: Install dependencies
+        working-directory: e2e-chatbot-app-next
         run: npm ci
       - name: Run lint
+        working-directory: e2e-chatbot-app-next
         run: npm run lint

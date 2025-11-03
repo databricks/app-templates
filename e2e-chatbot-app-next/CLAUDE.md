@@ -131,6 +131,11 @@ npx playwright test --headed --project=e2e  # Run E2E tests with browser visible
 
 ### Deployment (Databricks Asset Bundle)
 
+**IMPORTANT Pre-Deployment Checklist:**
+1. **Check `databricks.yml` for TODOs** - When a user requests deployment, ALWAYS check `databricks.yml` for any TODO comments
+2. **Prompt for missing values** - If TODOs exist (especially for `serving_endpoint_name`), ask the user to provide the required values before proceeding
+3. **Update the file** - Set the default value in `databricks.yml` and remove the TODO comment
+
 ```bash
 databricks bundle validate             # Validate bundle config
 databricks bundle deploy               # Deploy to dev (default)

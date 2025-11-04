@@ -61,15 +61,15 @@ const responsesAgentOutputItem = z.discriminatedUnion('type', [
 ]);
 
 export const responsesAgentResponseSchema = z.object({
-  id: z.string(),
-  created_at: z.number(),
+  id: z.string().optional(),
+  created_at: z.number().optional(),
   error: z
     .object({
       code: z.string(),
       message: z.string(),
     })
     .nullish(),
-  model: z.string(),
+  model: z.string().optional(),
   output: z.array(responsesAgentOutputItem),
 });
 

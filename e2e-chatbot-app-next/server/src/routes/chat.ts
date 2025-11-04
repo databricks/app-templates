@@ -106,14 +106,16 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     }
 
     if (!chat) {
-      const title = await generateTitleFromUserMessage({ message });
+      if (isDatabaseAvailable()) {
+        const title = await generateTitleFromUserMessage({ message });
 
-      await saveChat({
-        id,
-        userId: session.user.id,
-        title,
-        visibility: selectedVisibilityType,
-      });
+        await saveChat({
+          id,
+          userId: session.user.id,
+          title,
+          visibility: selectedVisibilityType,
+        });
+      }
     } else {
       if (chat.userId !== session.user.id) {
         const error = new ChatSDKError('forbidden:chat');
@@ -388,17 +390,17 @@ async function generateTitleFromUserMessage({
 }: {
   message: ChatMessage;
 }) {
-  return 'PLACEHOLDER TITLE';
-  // const model = await myProvider.languageModel('title-model');
-  // const { text: title } = await generateText({
-  //   model,
-  //   system: `\n
-  //   - you will generate a short title based on the first message a user begins a conversation with
-  //   - ensure it is not more than 80 characters long
-  //   - the title should be a summary of the user's message
-  //   - do not use quotes or colons. do not include other expository content ("I'll help...")`,
-  //   prompt: JSON.stringify(message),
-  // });
+  // return 'PLACEHOLDER TITLE';
+  const model = await myProvider.languageModel('title-model');
+  const { text: title } = await generateText({
+    model,
+    system: `\n
+    - you will generate a short title based on the first message a user begins a conversation with
+    - ensure it is not more than 80 characters long
+    - the title should be a summary of the user's message
+    - do not use quotes or colons. do not include other expository content ("I'll help...")`,
+    prompt: JSON.stringify(message),
+  });
 
-  // return title;
+  return title;
 }

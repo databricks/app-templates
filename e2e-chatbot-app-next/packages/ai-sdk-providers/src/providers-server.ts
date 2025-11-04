@@ -32,8 +32,6 @@ async function getWorkspaceHostname(): Promise<string> {
     return cachedWorkspaceHostname;
   }
 
-  return process.env.DATABRICKS_HOST || '';
-
   try {
     // Use the same approach as getDatabricksCurrentUser to get hostname
     const authMethod = getAuthMethod();
@@ -67,7 +65,6 @@ async function getWorkspaceHostname(): Promise<string> {
 
 // Custom fetch function to transform Databricks responses to OpenAI format
 export const databricksFetch: typeof fetch = async (input, init) => {
-  console.log('databricksFetch', input, init);
   const url = input.toString();
 
   // Log the request being sent to Databricks
@@ -92,21 +89,17 @@ export const databricksFetch: typeof fetch = async (input, init) => {
     }
   }
 
-  try {
-    const response = await fetch(url, init);
-    console.log('Databricks response:', response);
+  const response = await fetch(url, init);
 
-    return response;
-  } catch (error) {
-    console.error('Error in databricksFetch:', error);
-    throw error;
-  }
+  return response;
 };
 
 type CachedProvider = ReturnType<typeof createDatabricksProvider>;
 let oauthProviderCache: CachedProvider | null = null;
 let oauthProviderCacheTime = 0;
 const PROVIDER_CACHE_DURATION = 5 * 60 * 1000; // Cache provider for 5 minutes
+
+const API_PROXY = process.env.API_PROXY;
 
 // Helper function to get or create the Databricks provider with OAuth
 async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
@@ -126,8 +119,8 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
 
   // Create provider with fetch that always uses fresh token
   const provider = createDatabricksProvider({
-    // baseURL: `${hostname}/serving-endpoints`,
-    baseURL: `${hostname}/invocations`,
+    baseURL: `${hostname}/serving-endpoints`,
+    formatUrl: ({ baseUrl, path }) => API_PROXY ?? `${baseUrl}${path}`,
     fetch: async (...[input, init]: Parameters<typeof fetch>) => {
       // Always get fresh token for each request (will use cache if valid)
       const currentToken = await getProviderToken();
@@ -154,7 +147,9 @@ const ENDPOINT_DETAILS_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 // Get the task type of the serving endpoint
 const getEndpointDetails = async (servingEndpoint: string) => {
-  return { task: 'agent/v2/responses' };
+  if (API_PROXY) {
+    return { task: 'agent/v2/responses' };
+  }
   const cached = endpointDetailsCache.get(servingEndpoint);
   if (
     cached &&
@@ -220,12 +215,11 @@ export class OAuthAwareProvider implements SmartProvider {
     const provider = await getOrCreateDatabricksProvider();
 
     const model = (() => {
+      if (API_PROXY) {
+        return provider.responsesAgent(id);
+      }
       if (id === 'title-model' || id === 'artifact-model') {
-        console.log('TITLE MODEL');
-        // return provider.fmapi('databricks-meta-llama-3-3-70b-instruct');
-        return provider.responsesAgent(
-          'databricks-meta-llama-3-3-70b-instruct',
-        );
+        return provider.fmapi('databricks-meta-llama-3-3-70b-instruct');
       }
       switch (endpointDetails.task) {
         case 'agent/v2/chat':

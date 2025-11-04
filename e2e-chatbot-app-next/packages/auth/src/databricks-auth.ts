@@ -369,8 +369,6 @@ export async function getDatabricksCliToken(): Promise<string> {
 export async function getDatabricksToken(): Promise<string> {
   const method = getAuthMethod();
 
-  return 'PLACEHOLDER';
-
   switch (method) {
     case 'oauth':
       return getDatabricksOAuthToken();
@@ -444,13 +442,6 @@ async function getDatabricksCurrentUser(): Promise<any> {
   const method = getAuthMethod();
   let hostUrl: string;
   let token: string;
-
-  return {
-    id: 'PLACEHOLDER',
-    userName: 'PLACEHOLDER',
-    displayName: 'PLACEHOLDER',
-    emails: [{ value: 'PLACEHOLDER@PLACEHOLDER.com', primary: true }],
-  };
 
   if (method === 'cli') {
     // For CLI auth, we need to get user identity first to cache the host

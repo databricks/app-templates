@@ -14,7 +14,7 @@ variables:
 
 resources:
   database_instances:
-    # DATABASE RESOURCE (1): Uncomment the database resource below to deploy the app with a database
+    # TODO (optional): Uncomment the database resource below to deploy the app with a database
     # chatbot_lakebase:
     #   # NOTE: customize the Lakebase instance name here, if desired
     #   name: ${var.database_instance_name}-${var.resource_name_suffix}
@@ -36,7 +36,7 @@ resources:
           serving_endpoint:
             name: ${var.serving_endpoint_name}
             permission: CAN_QUERY
-        # DATABASE RESOURCE (2): uncomment the database resource below to deploy the app with a database
+        # TODO (optional): Uncomment the database resource below to bind the app to the deployed database instance
         # and to enable persistent chat history
         # - name: database
         #   description: "Lakebase database instance for the chat app"

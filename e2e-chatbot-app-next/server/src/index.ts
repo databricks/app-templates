@@ -25,7 +25,11 @@ const __dirname = dirname(__filename);
 const app: Express = express();
 const isDevelopment = process.env.NODE_ENV !== 'production';
 // Either let PORT be set by env or use 3001 for development and 3000 for production
-const PORT = process.env.PORT || (isDevelopment ? 3001 : 3000);
+// The CHAT_APP_PORT can be used to override the port for the chat app.
+const PORT =
+  process.env.CHAT_APP_PORT ||
+  process.env.PORT ||
+  (isDevelopment ? 3001 : 3000);
 
 // CORS configuration
 app.use(
@@ -83,22 +87,35 @@ async function startServer() {
     console.log('[Test Mode] Starting MSW mock server for API mocking...');
     try {
       // Dynamically import MSW setup from tests directory (using relative path from server root)
-      const modulePath = path.join(dirname(dirname(__dirname)), 'tests', 'api-mocking', 'api-mock-server.ts');
+      const modulePath = path.join(
+        dirname(dirname(__dirname)),
+        'tests',
+        'api-mocking',
+        'api-mock-server.ts',
+      );
       console.log('[Test Mode] Attempting to load MSW from:', modulePath);
 
       const { mockServer } = await import(modulePath);
 
       mockServer.listen({
         onUnhandledRequest: (request: Request) => {
-          console.warn(`[MSW] Unhandled ${request.method} request to ${request.url}`);
+          console.warn(
+            `[MSW] Unhandled ${request.method} request to ${request.url}`,
+          );
         },
       });
 
       console.log('[Test Mode] MSW mock server started successfully');
-      console.log('[Test Mode] Registered handlers:', mockServer.listHandlers().length);
+      console.log(
+        '[Test Mode] Registered handlers:',
+        mockServer.listHandlers().length,
+      );
     } catch (error) {
       console.error('[Test Mode] Failed to start MSW:', error);
-      console.error('[Test Mode] Error details:', error instanceof Error ? error.stack : error);
+      console.error(
+        '[Test Mode] Error details:',
+        error instanceof Error ? error.stack : error,
+      );
     }
   }
 

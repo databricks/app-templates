@@ -52,13 +52,65 @@ This project includes a [Databricks Asset Bundle (DAB)](https://docs.databricks.
 3. **Specify serving endpoint and address TODOs in databricks.yml**: Address the TODOs in `databricks.yml`, setting the default value of `serving_endpoint_name` to the name of the custom code agent or Agent Bricks endpoint to chat with.
    - NOTE: if using [Agent Bricks Multi-Agent Supervisor](https://docs.databricks.com/aws/en/generative-ai/agent-bricks/multi-agent-supervisor), you need to additionally grant the app service principal the `CAN_QUERY` permission on the underlying agent(s) that the MAS orchestrates. You can do this by adding those
      agent serving endpoints as resources in `databricks.yml` (see the NOTE in `databricks.yml` on this)
-4. **Validate the bundle configuration**:
+4. **(Optional) Enable database integration**: By default, the app deploys in **ephemeral mode** without a database. To enable persistent chat history, you need to uncomment **TWO sections** in `databricks.yml`:
+
+   **Step 1: Uncomment the database instance resource**
+
+   Find this section (around lines 17-21):
+
+   ```yaml
+   resources:
+     database_instances:
+     # DATABASE RESOURCE (1): Uncomment the database resource below...
+     #   chatbot_lakebase:
+     #     name: ${var.database_instance_name}-${var.resource_name_suffix}
+     #     capacity: CU_1
+   ```
+
+   After uncommenting:
+
+   ```yaml
+   resources:
+     database_instances:
+       chatbot_lakebase:
+         name: ${var.database_instance_name}-${var.resource_name_suffix}
+         capacity: CU_1
+   ```
+
+   **Step 2: Uncomment the database resource binding**
+
+   Find this section (around lines 39-44):
+
+   ```yaml
+   # DATABASE RESOURCE (2): uncomment the database resource below...
+   # - name: database
+   #   description: "Lakebase database instance for the chat app"
+   #   database:
+   #     database_name: databricks_postgres
+   #     instance_name: ${resources.database_instances.chatbot_lakebase.name}
+   #     permission: CAN_CONNECT_AND_CREATE
+   ```
+
+   After uncommenting:
+
+   ```yaml
+   - name: database
+     description: "Lakebase database instance for the chat app"
+     database:
+       database_name: databricks_postgres
+       instance_name: ${resources.database_instances.chatbot_lakebase.name}
+       permission: CAN_CONNECT_AND_CREATE
+   ```
+
+   **Important:** Both sections must be uncommented for the database integration to work.
+
+5. **Validate the bundle configuration**:
 
    ```bash
    databricks bundle validate
    ```
 
-5. **Deploy the bundle** (creates Lakebase instance and app). The first deployment may take several minutes for provisioning resources, but subsequent deployments are fast:
+6. **Deploy the bundle**. The first deployment may take several minutes for provisioning resources (especially if database is enabled), but subsequent deployments are fast:
 
    ```bash
    databricks bundle deploy
@@ -66,16 +118,16 @@ This project includes a [Databricks Asset Bundle (DAB)](https://docs.databricks.
 
    This creates:
 
-   - **Lakebase database instance** for persisting chat history
    - **App resource** ready to start
+   - **Lakebase database instance** (only if database resource is uncommented)
 
-6. **Start the app**:
+7. **Start the app**:
 
    ```bash
    databricks bundle run databricks_chatbot
    ```
 
-7. **View deployment summary** (useful for debugging deployment issues):
+8. **View deployment summary** (useful for debugging deployment issues):
    ```bash
    databricks bundle summary
    ```

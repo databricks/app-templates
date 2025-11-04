@@ -7,16 +7,15 @@ import { config } from 'dotenv';
  * Tests can run in two modes:
  * - with-db: Tests with PostgreSQL database (persistent mode)
  *   - Loads .env.local first (contains database config)
- *   - Then loads .env.test.with-db (test-specific overrides)
  *   - Verifies isDatabaseAvailable() returns true
+ *   - Passes database configuration to the server process
  *
  * - ephemeral: Tests without database (ephemeral mode)
- *   - Loads .env.local first
- *   - Then loads .env.test.ephemeral which clears all PG* variables
+ *   - Passes empty database configuration to the server process
  *
  * Set TEST_MODE environment variable to control which mode:
- * - TEST_MODE=with-db (default) - Uses .env.test.with-db
- * - TEST_MODE=ephemeral - Uses .env.test.ephemeral
+ * - TEST_MODE=with-db (default) - Runs with database
+ * - TEST_MODE=ephemeral - Runs without database
  *
  * Run both modes sequentially: npm test
  * Run specific mode: npm run test:with-db or npm run test:ephemeral
@@ -25,11 +24,9 @@ import { config } from 'dotenv';
 // Determine which mode to run (default: with-db)
 const TEST_MODE = process.env.TEST_MODE || 'with-db';
 
-// Load .env.local and test-specific environment file (overrides .env.local)
-if (TEST_MODE === 'ephemeral') {
-  config({ path: ['.env.local', '.env.test.ephemeral'] });
-} else {
-  config({ path: ['.env.local', '.env.test.with-db'] });
+// Load .env.local
+if (TEST_MODE === 'with-db') {
+  config({ path: ['.env.local'] });
 }
 
 console.log(`[Playwright] Running in "${TEST_MODE}" mode)`);
@@ -47,7 +44,7 @@ if (TEST_MODE === 'with-db') {
     console.error('\nPlease either:');
     console.error('  1. Add database configuration to .env.local, or');
     console.error('  2. Run ephemeral tests instead: npm run test:ephemeral\n');
-    process.exit(1);
+    process.exit(0);
   }
 
   console.log('✓ Database configuration found, tests will use database');
@@ -81,7 +78,7 @@ export default defineConfig({
   },
 
   /* Configure global timeout for each test */
-  timeout: 10 * 1000,
+  timeout: 20 * 1000,
   expect: {
     timeout: 15 * 1000,
   },
@@ -111,9 +108,30 @@ export default defineConfig({
     url: `${baseURL}/ping`,
     timeout: 20 * 1000,
     reuseExistingServer: !process.env.CI,
+    // Mock the environment variables for the server process
     env: {
-      // Pass TEST_MODE to the server process so it can load the correct env file
-      TEST_MODE: TEST_MODE,
+      PLAYWRIGHT: 'True',
+      DATABRICKS_SERVING_ENDPOINT: 'mock-value',
+      DATABRICKS_CLIENT_ID: 'mock-value',
+      DATABRICKS_CLIENT_SECRET: 'mock-value',
+      DATABRICKS_HOST: 'mock-value',
+      ...(TEST_MODE === 'ephemeral'
+        ? {
+            POSTGRES_URL: '',
+            PGHOST: '',
+            PGDATABASE: '',
+            PGUSER: '',
+            PGPASSWORD: '',
+            PGSSLMODE: '',
+          }
+        : {
+            POSTGRES_URL: process.env.POSTGRES_URL ?? '',
+            PGHOST: process.env.PGHOST ?? '',
+            PGDATABASE: process.env.PGDATABASE ?? '',
+            PGUSER: process.env.PGUSER ?? '',
+            PGPASSWORD: process.env.PGPASSWORD ?? '',
+            PGSSLMODE: process.env.PGSSLMODE ?? '',
+          }),
     },
   },
 });

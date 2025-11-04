@@ -233,14 +233,14 @@ Tests run in two separate modes to ensure both database and non-database functio
 
 #### With Database Mode
 
-- Uses `.env.test.with-db` configuration
+- Uses database environment variables (either set in .env.local or declared elsewhere)
 - Includes full Postgres database
 - Tests chat history persistence, pagination, and deletion
 - Verifies `/api/history` returns chat data
+- Will throw a warning and stop if no database exists
 
 #### Ephemeral Mode
 
-- Uses `.env.test.ephemeral` configuration
 - No database connection (all POSTGRES_URL and PG\* variables omitted)
 - Tests chat streaming without persistence
 - Verifies `/api/history` returns 204 No Content
@@ -265,26 +265,6 @@ npm run test:with-db
 # Test ephemeral mode only
 npm run test:ephemeral
 ```
-
-### Test Environment Files
-
-The project includes two test environment files that work with `.env.local`:
-
-- **`.env.test.with-db`**: Inherits database configuration from `.env.local`
-
-  - Does NOT define its own PG\* variables
-  - Expects database to already be configured in `.env.local`
-  - Verifies database is available before running tests
-  - Uses your local database for testing
-
-- **`.env.test.ephemeral`**: Explicitly clears all database variables
-  - Sets all PG\* variables to empty strings
-  - Overrides any database config from `.env.local`
-  - Ensures app runs in ephemeral mode without database
-
-Both files include mocked Databricks credentials and the `PLAYWRIGHT=True` flag which enables MSW (Mock Service Worker) for API mocking.
-
-**Setup for with-db tests**: Ensure your `.env.local` contains valid database configuration. The with-db tests will use your local database.
 
 ### Continuous Integration
 

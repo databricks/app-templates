@@ -390,7 +390,6 @@ async function generateTitleFromUserMessage({
 }: {
   message: ChatMessage;
 }) {
-  // return 'PLACEHOLDER TITLE';
   const model = await myProvider.languageModel('title-model');
   const { text: title } = await generateText({
     model,

@@ -148,7 +148,7 @@ const ENDPOINT_DETAILS_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 // Get the task type of the serving endpoint
 const getEndpointDetails = async (servingEndpoint: string) => {
   if (API_PROXY) {
-    return { task: 'agent/v2/responses' };
+    return { task: 'agent/v1/responses' };
   }
   const cached = endpointDetailsCache.get(servingEndpoint);
   if (
@@ -224,6 +224,7 @@ export class OAuthAwareProvider implements SmartProvider {
       switch (endpointDetails.task) {
         case 'agent/v2/chat':
           return provider.chatAgent(servingEndpoint);
+        case 'agent/v1/responses':
         case 'agent/v2/responses':
           return provider.responsesAgent(servingEndpoint);
         case 'llm/v1/chat':

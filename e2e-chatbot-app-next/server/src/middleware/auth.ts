@@ -21,7 +21,6 @@ export async function authMiddleware(
   next: NextFunction,
 ) {
   try {
-    console.log('HEADERS', req.headers);
     const session = await getAuthSession({
       getRequestHeader: (name: string) =>
         req.headers[name.toLowerCase()] as string | null,

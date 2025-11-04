@@ -55,7 +55,8 @@ export const createDatabricksProvider = (
 
   const createResponsesAgent = (modelId: string): LanguageModelV2 =>
     new DatabricksResponsesAgentLanguageModel(modelId, {
-      url: ({ path }) => `${baseUrl}${path}`,
+      // url: ({ path }) => `${baseUrl}${path}`,
+      url: () => baseUrl,
       headers: getHeaders,
       fetch,
       provider,

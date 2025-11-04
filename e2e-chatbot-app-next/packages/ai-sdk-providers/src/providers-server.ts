@@ -32,6 +32,8 @@ async function getWorkspaceHostname(): Promise<string> {
     return cachedWorkspaceHostname;
   }
 
+  return process.env.DATABRICKS_HOST || '';
+
   try {
     // Use the same approach as getDatabricksCurrentUser to get hostname
     const authMethod = getAuthMethod();
@@ -65,6 +67,7 @@ async function getWorkspaceHostname(): Promise<string> {
 
 // Custom fetch function to transform Databricks responses to OpenAI format
 export const databricksFetch: typeof fetch = async (input, init) => {
+  console.log('databricksFetch', input, init);
   const url = input.toString();
 
   // Log the request being sent to Databricks
@@ -89,9 +92,15 @@ export const databricksFetch: typeof fetch = async (input, init) => {
     }
   }
 
-  const response = await fetch(url, init);
+  try {
+    const response = await fetch(url, init);
+    console.log('Databricks response:', response);
 
-  return response;
+    return response;
+  } catch (error) {
+    console.error('Error in databricksFetch:', error);
+    throw error;
+  }
 };
 
 type CachedProvider = ReturnType<typeof createDatabricksProvider>;
@@ -117,7 +126,8 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
 
   // Create provider with fetch that always uses fresh token
   const provider = createDatabricksProvider({
-    baseURL: `${hostname}/serving-endpoints`,
+    // baseURL: `${hostname}/serving-endpoints`,
+    baseURL: `${hostname}/invocations`,
     fetch: async (...[input, init]: Parameters<typeof fetch>) => {
       // Always get fresh token for each request (will use cache if valid)
       const currentToken = await getProviderToken();
@@ -144,6 +154,7 @@ const ENDPOINT_DETAILS_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 // Get the task type of the serving endpoint
 const getEndpointDetails = async (servingEndpoint: string) => {
+  return { task: 'agent/v2/responses' };
   const cached = endpointDetailsCache.get(servingEndpoint);
   if (
     cached &&
@@ -211,7 +222,10 @@ export class OAuthAwareProvider implements SmartProvider {
     const model = (() => {
       if (id === 'title-model' || id === 'artifact-model') {
         console.log('TITLE MODEL');
-        return provider.fmapi('databricks-meta-llama-3-3-70b-instruct');
+        // return provider.fmapi('databricks-meta-llama-3-3-70b-instruct');
+        return provider.responsesAgent(
+          'databricks-meta-llama-3-3-70b-instruct',
+        );
       }
       switch (endpointDetails.task) {
         case 'agent/v2/chat':

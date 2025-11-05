@@ -52,18 +52,17 @@
   },
   "devDependencies": {
     "@chat-template/auth": "*",
-    "@chat-template/db": "*",
     "@chat-template/core": "*",
+    "@chat-template/db": "*",
     "@tailwindcss/postcss": "^4.1.13",
     "@tailwindcss/typography": "^0.5.19",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "@types/react-syntax-highlighter": "^15.5.13",
     "@vitejs/plugin-react": "^4.2.1",
     "postcss": "^8",
     "tailwindcss": "^4.1.13",
     "tailwindcss-animate": "^1.0.7",
-    "typescript": "^5.6.3",
-    "vite": "^5.1.4"
+    "typescript": "^5.9.3",
+    "vite": "npm:rolldown-vite@latest"
   }
 }

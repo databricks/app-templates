@@ -147,9 +147,6 @@ const ENDPOINT_DETAILS_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 // Get the task type of the serving endpoint
 const getEndpointDetails = async (servingEndpoint: string) => {
-  if (API_PROXY) {
-    return { task: 'agent/v1/responses' };
-  }
   const cached = endpointDetailsCache.get(servingEndpoint);
   if (
     cached &&
@@ -193,15 +190,6 @@ export class OAuthAwareProvider implements SmartProvider {
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
   async languageModel(id: string): Promise<LanguageModelV2> {
-    // Server-side environment validation
-    if (!process.env.DATABRICKS_SERVING_ENDPOINT) {
-      throw new Error(
-        'Please set the DATABRICKS_SERVING_ENDPOINT environment variable to the name of an agent serving endpoint',
-      );
-    }
-
-    const servingEndpoint = process.env.DATABRICKS_SERVING_ENDPOINT;
-    const endpointDetails = await getEndpointDetails(servingEndpoint);
     // Check cache first
     const cached = this.modelCache.get(id);
     if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
@@ -209,18 +197,28 @@ export class OAuthAwareProvider implements SmartProvider {
       return cached.model;
     }
 
-    console.log(`Creating fresh model for ${id}`);
-
     // Get the OAuth provider
     const provider = await getOrCreateDatabricksProvider();
 
-    const model = (() => {
+    const model = await (async () => {
       if (API_PROXY) {
+        // For API proxy we always use the responses agent
         return provider.responsesAgent(id);
       }
       if (id === 'title-model' || id === 'artifact-model') {
         return provider.fmapi('databricks-meta-llama-3-3-70b-instruct');
       }
+      // Server-side environment validation
+      if (!process.env.DATABRICKS_SERVING_ENDPOINT) {
+        throw new Error(
+          'Please set the DATABRICKS_SERVING_ENDPOINT environment variable to the name of an agent serving endpoint',
+        );
+      }
+
+      const servingEndpoint = process.env.DATABRICKS_SERVING_ENDPOINT;
+      const endpointDetails = await getEndpointDetails(servingEndpoint);
+
+      console.log(`Creating fresh model for ${id}`);
       switch (endpointDetails.task) {
         case 'agent/v2/chat':
           return provider.chatAgent(servingEndpoint);

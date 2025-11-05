@@ -1,0 +1,14 @@
+artifact_uri: file:///Users/bryan.qiu/agent-on-app-proto/openai-agents-sdk/mlruns/0/cc1ffab75bfa4a8c9eb0f5ee7222f0a5/artifacts
+end_time: 1762210048405
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: cc1ffab75bfa4a8c9eb0f5ee7222f0a5
+run_name: brawny-pug-379
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1762210045759
+status: 4
+tags: []
+user_id: bryan.qiu

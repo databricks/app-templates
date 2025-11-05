@@ -1,0 +1,11 @@
+digest: 23096c50
+name: dataset
+profile: '{"num_rows": 1, "num_elements": 2}'
+schema: '{"mlflow_colspec": [{"type": "object", "properties": {"request": {"type":
+  "object", "properties": {"input": {"type": "array", "items": {"type": "object",
+  "properties": {"content": {"type": "string", "required": true}, "role": {"type":
+  "string", "required": true}}}, "required": true}}, "required": true}}, "name": "inputs",
+  "required": true}, {"type": "string", "name": "expected_response", "required": true}]}'
+source: '{"tags": {"mlflow.user": "bryan.qiu", "mlflow.source.name": "/Users/bryan.qiu/agent-on-app-proto/openai-agents-sdk/.venv/bin/agent-evaluate",
+  "mlflow.source.type": "LOCAL"}}'
+source_type: code

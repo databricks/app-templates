@@ -1,0 +1,12 @@
+command: ["uv", "run", "start-server"]
+# databricks apps listen by default on port 8000
+
+env:
+  - name: MLFLOW_TRACKING_URI
+    value: "databricks"
+  - name: MLFLOW_REGISTRY_URI
+    value: "databricks-uc"
+  - name: MLFLOW_AGENT_SERVER_UI_PATH
+    value: "./ui/static"
+  - name: MLFLOW_EXPERIMENT_ID
+    value: "263015846113338" # fill in with your experiment ID

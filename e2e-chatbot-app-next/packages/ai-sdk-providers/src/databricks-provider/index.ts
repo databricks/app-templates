@@ -35,6 +35,11 @@ export interface DatabricksProviderSettings {
    * or to provide a custom fetch implementation for e.g. testing.
    * */
   fetch?: FetchFunction;
+
+  /**
+   * Optional function to format the URL
+   */
+  formatUrl?: (options: { baseUrl?: string; path: string }) => string;
 }
 
 export const createDatabricksProvider = (
@@ -45,9 +50,12 @@ export const createDatabricksProvider = (
   const fetch = settings.fetch;
   const provider = settings.provider ?? 'databricks';
 
+  const formatUrl = ({ path }: { path: string }) =>
+    settings.formatUrl?.({ baseUrl, path }) ?? `${baseUrl}${path}`;
+
   const createChatAgent = (modelId: string): LanguageModelV2 =>
     new DatabricksChatAgentLanguageModel(modelId, {
-      url: ({ path }) => `${baseUrl}${path}`,
+      url: formatUrl,
       headers: getHeaders,
       fetch,
       provider,
@@ -55,7 +63,7 @@ export const createDatabricksProvider = (
 
   const createResponsesAgent = (modelId: string): LanguageModelV2 =>
     new DatabricksResponsesAgentLanguageModel(modelId, {
-      url: ({ path }) => `${baseUrl}${path}`,
+      url: formatUrl,
       headers: getHeaders,
       fetch,
       provider,
@@ -63,7 +71,7 @@ export const createDatabricksProvider = (
 
   const createFmapi = (modelId: string): LanguageModelV2 =>
     new DatabricksFmapiLanguageModel(modelId, {
-      url: ({ path }) => `${baseUrl}${path}`,
+      url: formatUrl,
       headers: getHeaders,
       fetch,
       provider,

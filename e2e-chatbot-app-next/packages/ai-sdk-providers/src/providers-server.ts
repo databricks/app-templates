@@ -99,6 +99,8 @@ let oauthProviderCache: CachedProvider | null = null;
 let oauthProviderCacheTime = 0;
 const PROVIDER_CACHE_DURATION = 5 * 60 * 1000; // Cache provider for 5 minutes
 
+const API_PROXY = process.env.API_PROXY;
+
 // Helper function to get or create the Databricks provider with OAuth
 async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
   // Check if we have a cached provider that's still fresh
@@ -118,6 +120,7 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
   // Create provider with fetch that always uses fresh token
   const provider = createDatabricksProvider({
     baseURL: `${hostname}/serving-endpoints`,
+    formatUrl: ({ baseUrl, path }) => API_PROXY ?? `${baseUrl}${path}`,
     fetch: async (...[input, init]: Parameters<typeof fetch>) => {
       // Always get fresh token for each request (will use cache if valid)
       const currentToken = await getProviderToken();
@@ -187,15 +190,6 @@ export class OAuthAwareProvider implements SmartProvider {
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
   async languageModel(id: string): Promise<LanguageModelV2> {
-    // Server-side environment validation
-    if (!process.env.DATABRICKS_SERVING_ENDPOINT) {
-      throw new Error(
-        'Please set the DATABRICKS_SERVING_ENDPOINT environment variable to the name of an agent serving endpoint',
-      );
-    }
-
-    const servingEndpoint = process.env.DATABRICKS_SERVING_ENDPOINT;
-    const endpointDetails = await getEndpointDetails(servingEndpoint);
     // Check cache first
     const cached = this.modelCache.get(id);
     if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
@@ -203,19 +197,32 @@ export class OAuthAwareProvider implements SmartProvider {
       return cached.model;
     }
 
-    console.log(`Creating fresh model for ${id}`);
-
     // Get the OAuth provider
     const provider = await getOrCreateDatabricksProvider();
 
-    const model = (() => {
+    const model = await (async () => {
+      if (API_PROXY) {
+        // For API proxy we always use the responses agent
+        return provider.responsesAgent(id);
+      }
       if (id === 'title-model' || id === 'artifact-model') {
-        console.log('TITLE MODEL');
         return provider.fmapi('databricks-meta-llama-3-3-70b-instruct');
       }
+      // Server-side environment validation
+      if (!process.env.DATABRICKS_SERVING_ENDPOINT) {
+        throw new Error(
+          'Please set the DATABRICKS_SERVING_ENDPOINT environment variable to the name of an agent serving endpoint',
+        );
+      }
+
+      const servingEndpoint = process.env.DATABRICKS_SERVING_ENDPOINT;
+      const endpointDetails = await getEndpointDetails(servingEndpoint);
+
+      console.log(`Creating fresh model for ${id}`);
       switch (endpointDetails.task) {
         case 'agent/v2/chat':
           return provider.chatAgent(servingEndpoint);
+        case 'agent/v1/responses':
         case 'agent/v2/responses':
           return provider.responsesAgent(servingEndpoint);
         case 'llm/v1/chat':

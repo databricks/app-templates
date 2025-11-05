@@ -106,14 +106,16 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     }
 
     if (!chat) {
-      const title = await generateTitleFromUserMessage({ message });
+      if (isDatabaseAvailable()) {
+        const title = await generateTitleFromUserMessage({ message });
 
-      await saveChat({
-        id,
-        userId: session.user.id,
-        title,
-        visibility: selectedVisibilityType,
-      });
+        await saveChat({
+          id,
+          userId: session.user.id,
+          title,
+          visibility: selectedVisibilityType,
+        });
+      }
     } else {
       if (chat.userId !== session.user.id) {
         const error = new ChatSDKError('forbidden:chat');

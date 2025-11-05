@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from '@/components/theme-provider';
 import { SessionProvider } from '@/contexts/SessionContext';
+import { AppConfigProvider } from '@/contexts/AppConfigContext';
 import { DataStreamProvider } from '@/components/data-stream-provider';
 import { Toaster } from 'sonner';
 import RootLayout from '@/layouts/RootLayout';
@@ -17,17 +18,19 @@ function App() {
       disableTransitionOnChange
     >
       <SessionProvider>
-        <DataStreamProvider>
-          <Toaster position="top-center" />
-          <Routes>
-            <Route path="/" element={<RootLayout />}>
-              <Route element={<ChatLayout />}>
-                <Route index element={<NewChatPage />} />
-                <Route path="chat/:id" element={<ChatPage />} />
+        <AppConfigProvider>
+          <DataStreamProvider>
+            <Toaster position="top-center" />
+            <Routes>
+              <Route path="/" element={<RootLayout />}>
+                <Route element={<ChatLayout />}>
+                  <Route index element={<NewChatPage />} />
+                  <Route path="chat/:id" element={<ChatPage />} />
+                </Route>
               </Route>
-            </Route>
-          </Routes>
-        </DataStreamProvider>
+            </Routes>
+          </DataStreamProvider>
+        </AppConfigProvider>
       </SessionProvider>
     </ThemeProvider>
   );

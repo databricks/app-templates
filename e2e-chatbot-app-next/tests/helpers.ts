@@ -4,6 +4,7 @@ import type {
   Browser,
   BrowserContext,
   Page,
+  TestType,
 } from '@playwright/test';
 
 export type UserContext = {
@@ -118,4 +119,19 @@ export function mockFmapiResponseObject(content: string) {
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
     choices: [{ message: { role: 'assistant', content } }],
   };
+}
+
+// Skips
+export function skipInEphemeralMode(test: TestType<any, any>) {
+  test.skip(
+    process.env.TEST_MODE === 'ephemeral',
+    'Skipping test in ephemeral mode',
+  );
+}
+
+export function skipInWithDatabaseMode(test: TestType<any, any>) {
+  test.skip(
+    process.env.TEST_MODE === 'with-db',
+    'Skipping test in with database mode',
+  );
 }

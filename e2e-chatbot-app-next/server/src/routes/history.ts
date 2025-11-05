@@ -5,7 +5,7 @@ import {
   type Router as RouterType,
 } from 'express';
 import { authMiddleware, requireAuth } from '../middleware/auth';
-import { getChatsByUserId } from '@chat-template/db';
+import { getChatsByUserId, isDatabaseAvailable } from '@chat-template/db';
 import { ChatSDKError } from '@chat-template/core/errors';
 
 export const historyRouter: RouterType = Router();
@@ -17,6 +17,17 @@ historyRouter.use(authMiddleware);
  * GET /api/history - Get chat history for authenticated user
  */
 historyRouter.get('/', requireAuth, async (req: Request, res: Response) => {
+  console.log('[/api/history] Handler called');
+
+  // Return 204 No Content if database is not available
+  const dbAvailable = isDatabaseAvailable();
+  console.log('[/api/history] Database available:', dbAvailable);
+
+  if (!dbAvailable) {
+    console.log('[/api/history] Returning 204 No Content');
+    return res.status(204).end();
+  }
+
   const session = req.session;
   if (!session) {
     const error = new ChatSDKError('unauthorized:chat');
@@ -47,7 +58,7 @@ historyRouter.get('/', requireAuth, async (req: Request, res: Response) => {
 
     res.json(chats);
   } catch (error) {
-    console.error('Error fetching chat history:', error);
+    console.error('[/api/history] Error in handler:', error);
     res.status(500).json({ error: 'Failed to fetch chat history' });
   }
 });

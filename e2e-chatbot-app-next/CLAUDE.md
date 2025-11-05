@@ -131,6 +131,46 @@ npx playwright test --headed --project=e2e  # Run E2E tests with browser visible
 
 ### Deployment (Databricks Asset Bundle)
 
+**IMPORTANT Pre-Deployment Checklist:**
+1. **Check `databricks.yml` for TODOs** - When a user requests deployment, ALWAYS check `databricks.yml` for any TODO comments
+2. **Prompt for missing values** - If TODOs exist (especially for `serving_endpoint_name`), ask the user to provide the required values before proceeding
+3. **Update the file** - Set the default value in `databricks.yml` and remove the TODO comment
+
+#### Enabling Database Integration (Optional)
+
+By default, the app deploys in **ephemeral mode** - chats are stored in memory and lost on restart.
+
+To enable **persistent chat history** with a managed Lakebase database, you need to uncomment **TWO sections** in `databricks.yml`:
+
+1. Open `databricks.yml`
+
+2. **Uncomment DATABASE RESOURCE (1)** - Find the database instance definition (around lines 17-21):
+   ```yaml
+   resources:
+     database_instances:
+     # DATABASE RESOURCE (1): Uncomment the database resource below...
+     #   chatbot_lakebase:
+     #     name: ${var.database_instance_name}-${var.resource_name_suffix}
+     #     capacity: CU_1
+   ```
+   Remove the `#` symbols to uncomment it.
+
+3. **Uncomment DATABASE RESOURCE (2)** - Find the database resource binding (around lines 39-44):
+   ```yaml
+   # DATABASE RESOURCE (2): uncomment the database resource below...
+   # - name: database
+   #   description: "Lakebase database instance for the chat app"
+   #   database:
+   #     database_name: databricks_postgres
+   #     instance_name: ${resources.database_instances.chatbot_lakebase.name}
+   #     permission: CAN_CONNECT_AND_CREATE
+   ```
+   Remove the `#` symbols to uncomment it.
+
+4. Deploy as normal
+
+**Important:** Both sections must be uncommented for database integration to work. The first creates the database instance, the second connects it to your app.
+
 ```bash
 databricks bundle validate             # Validate bundle config
 databricks bundle deploy               # Deploy to dev (default)

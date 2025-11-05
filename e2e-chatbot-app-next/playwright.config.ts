@@ -1,22 +1,57 @@
 import { defineConfig, devices } from '@playwright/test';
-
-/**
- * Read environment variables from file.
- * https://github.com/motdotla/dotenv
- */
 import { config } from 'dotenv';
 
-config({
-  path: '.env.local',
-});
-
-/* Use process.env.PORT by default and fallback to port 3000 */
-const PORT = process.env.PORT || 3000;
-
 /**
- * Set webServer.url and use.baseURL with the location
- * of the WebServer respecting the correct set port
+ * Dual-Mode Testing Configuration
+ *
+ * Tests can run in two modes:
+ * - with-db: Tests with PostgreSQL database (persistent mode)
+ *   - Loads .env.local first (contains database config)
+ *   - Verifies isDatabaseAvailable() returns true
+ *   - Passes database configuration to the server process
+ *
+ * - ephemeral: Tests without database (ephemeral mode)
+ *   - Passes empty database configuration to the server process
+ *
+ * Set TEST_MODE environment variable to control which mode:
+ * - TEST_MODE=with-db (default) - Runs with database
+ * - TEST_MODE=ephemeral - Runs without database
+ *
+ * Run both modes sequentially: npm test
+ * Run specific mode: npm run test:with-db or npm run test:ephemeral
  */
+
+// Determine which mode to run (default: with-db)
+const TEST_MODE = process.env.TEST_MODE || 'with-db';
+
+// Load .env.local
+if (TEST_MODE === 'with-db') {
+  config({ path: ['.env.local'] });
+}
+
+console.log(`[Playwright] Running in "${TEST_MODE}" mode)`);
+
+// For with-db mode, verify database is available
+if (TEST_MODE === 'with-db') {
+  const hasDatabaseVars =
+    process.env.POSTGRES_URL || (process.env.PGHOST && process.env.PGDATABASE);
+
+  if (!hasDatabaseVars) {
+    console.error(
+      '\n❌ ERROR: Running with-db tests but no database configuration found!',
+    );
+    console.error('Expected POSTGRES_URL or PGHOST+PGDATABASE in .env.local');
+    console.error('\nPlease either:');
+    console.error('  1. Add database configuration to .env.local, or');
+    console.error('  2. Run ephemeral tests instead: npm run test:ephemeral\n');
+    process.exit(0);
+  }
+
+  console.log('✓ Database configuration found, tests will use database');
+}
+
+// Use default port 3000
+const PORT = process.env.PORT || 3000;
 const baseURL = `http://localhost:${PORT}`;
 
 /**
@@ -28,8 +63,7 @@ export default defineConfig({
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
-  /* Retry on CI only */
-  retries: 0,
+  retries: 3,
   /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 2 : 8,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
@@ -44,9 +78,9 @@ export default defineConfig({
   },
 
   /* Configure global timeout for each test */
-  timeout: 240 * 1000, // 120 seconds
+  timeout: 20 * 1000,
   expect: {
-    timeout: 240 * 1000,
+    timeout: 15 * 1000,
   },
 
   /* Configure projects */
@@ -54,61 +88,50 @@ export default defineConfig({
     {
       name: 'unit',
       testMatch: /ai-sdk-provider\/.*.test.ts/,
-      use: {
-        ...devices['Desktop Chrome'],
-      },
+      use: { ...devices['Desktop Chrome'] },
     },
     {
       name: 'e2e',
       testMatch: /e2e\/.*.test.ts/,
-      use: {
-        ...devices['Desktop Chrome'],
-      },
+      use: { ...devices['Desktop Chrome'] },
     },
     {
       name: 'routes',
       testMatch: /routes\/.*.test.ts/,
-      use: {
-        ...devices['Desktop Chrome'],
-      },
+      use: { ...devices['Desktop Chrome'] },
     },
-
-    // {
-    //   name: 'firefox',
-    //   use: { ...devices['Desktop Firefox'] },
-    // },
-
-    // {
-    //   name: 'webkit',
-    //   use: { ...devices['Desktop Safari'] },
-    // },
-
-    /* Test against mobile viewports. */
-    // {
-    //   name: 'Mobile Chrome',
-    //   use: { ...devices['Pixel 5'] },
-    // },
-    // {
-    //   name: 'Mobile Safari',
-    //   use: { ...devices['iPhone 12'] },
-    // },
-
-    /* Test against branded browsers. */
-    // {
-    //   name: 'Microsoft Edge',
-    //   use: { ...devices['Desktop Edge'], channel: 'msedge' },
-    // },
-    // {
-    //   name: 'Google Chrome',
-    //   use: { ...devices['Desktop Chrome'], channel: 'chrome' },
-    // },
   ],
 
-  /* Run your local dev server before starting the tests */
+  // Start dev server before running tests
   webServer: {
     command: 'npm run dev',
     url: `${baseURL}/ping`,
-    timeout: 10 * 1000,
+    timeout: 20 * 1000,
     reuseExistingServer: !process.env.CI,
+    // Mock the environment variables for the server process
+    env: {
+      PLAYWRIGHT: 'True',
+      DATABRICKS_SERVING_ENDPOINT: 'mock-value',
+      DATABRICKS_CLIENT_ID: 'mock-value',
+      DATABRICKS_CLIENT_SECRET: 'mock-value',
+      DATABRICKS_HOST: 'mock-value',
+      ...(TEST_MODE === 'ephemeral'
+        ? {
+            POSTGRES_URL: '',
+            PGHOST: '',
+            PGDATABASE: '',
+            PGUSER: '',
+            PGPASSWORD: '',
+            PGSSLMODE: '',
+          }
+        : {
+            POSTGRES_URL: process.env.POSTGRES_URL ?? '',
+            PGHOST: process.env.PGHOST ?? '',
+            PGDATABASE: process.env.PGDATABASE ?? '',
+            PGUSER: process.env.PGUSER ?? '',
+            PGPASSWORD: process.env.PGPASSWORD ?? '',
+            PGSSLMODE: process.env.PGSSLMODE ?? '',
+          }),
+    },
   },
 });

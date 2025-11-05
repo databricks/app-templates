@@ -29,6 +29,8 @@ import { ArrowDown, ArrowUpIcon, StopCircleIcon } from 'lucide-react';
 import { useScrollToBottom } from '@/hooks/use-scroll-to-bottom';
 import type { VisibilityType } from './visibility-selector';
 import type { Attachment, ChatMessage } from '@chat-template/core';
+import { softNavigateToChatId } from '@/lib/navigation';
+import { useAppConfig } from '@/contexts/AppConfigContext';
 
 function PureMultimodalInput({
   chatId,
@@ -57,6 +59,7 @@ function PureMultimodalInput({
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
+  const { chatHistoryEnabled } = useAppConfig();
 
   const adjustHeight = useCallback(() => {
     if (textareaRef.current) {
@@ -104,7 +107,7 @@ function PureMultimodalInput({
   const [uploadQueue, setUploadQueue] = useState<Array<string>>([]);
 
   const submitForm = useCallback(() => {
-    window.history.replaceState({}, '', `/chat/${chatId}`);
+    softNavigateToChatId(chatId, chatHistoryEnabled);
 
     sendMessage({
       role: 'user',
@@ -139,6 +142,7 @@ function PureMultimodalInput({
     setLocalStorageInput,
     width,
     chatId,
+    chatHistoryEnabled,
     resetHeight,
   ]);
 

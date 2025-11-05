@@ -3,7 +3,7 @@
 </a>
 
 <p align="center">
-    A chat application template for interacting with Databricks Agent Serving endpoints, built with ExpressJS, React, Vercel AI SDK, and Databricks authentication.
+    A chat application template for interacting with Databricks Agent Serving endpoints, built with ExpressJS, React, Vercel AI SDK, Databricks authentication, and optional Lakebase (database) integration.
 </p>
 
 <p align="center">
@@ -20,7 +20,7 @@ but has some [known limitations](#known-limitations) for other use cases. Work i
 
 - **Databricks Agent and Foundation Model Integration**: Direct connection to Databricks Agent serving endpoints and Agent Bricks
 - **Databricks Authentication**: Uses Databricks authentication to identify end users of the chat app and securely manage their conversations.
-- **Persistent Chat History**: Leverages Databricks Lakebase (Postgres) for storing conversations, with governance and tight lakehouse integration.
+- **Persistent Chat History (Optional)**: Leverages Databricks Lakebase (Postgres) for storing conversations, with governance and tight lakehouse integration. Can also run in ephemeral mode without database.
 
 ## Prerequisites
 
@@ -49,7 +49,7 @@ This project includes a [Databricks Asset Bundle (DAB)](https://docs.databricks.
    cd e2e-chatbot-app-next
    ```
 2. **Databricks authentication**: Ensure auth is configured as described in [Prerequisites](#prerequisites).
-3. **Specify serving endpoint and address TODOs in databricks.yml**: Address the TODOs in `databricks.yml`, setting the default value of `serving_endpoint_name` to the name of the custom code agent or Agent Bricks endpoint to chat with.
+3. **Specify serving endpoint and address TODOs in databricks.yml**: Address the TODOs in `databricks.yml`, setting the default value of `serving_endpoint_name` to the name of the custom code agent or Agent Bricks endpoint to chat with. The optional TODOs wil allow you to deploy a Lakebase database bound to your application, which will allow for chat history to be persisted.
    - NOTE: if using [Agent Bricks Multi-Agent Supervisor](https://docs.databricks.com/aws/en/generative-ai/agent-bricks/multi-agent-supervisor), you need to additionally grant the app service principal the `CAN_QUERY` permission on the underlying agent(s) that the MAS orchestrates. You can do this by adding those
      agent serving endpoints as resources in `databricks.yml` (see the NOTE in `databricks.yml` on this)
 4. **Validate the bundle configuration**:
@@ -58,7 +58,7 @@ This project includes a [Databricks Asset Bundle (DAB)](https://docs.databricks.
    databricks bundle validate
    ```
 
-5. **Deploy the bundle** (creates Lakebase instance and app). The first deployment may take several minutes for provisioning resources, but subsequent deployments are fast:
+5. **Deploy the bundle**. The first deployment may take several minutes for provisioning resources (especially if database is enabled), but subsequent deployments are fast:
 
    ```bash
    databricks bundle deploy
@@ -66,8 +66,8 @@ This project includes a [Databricks Asset Bundle (DAB)](https://docs.databricks.
 
    This creates:
 
-   - **Lakebase database instance** for persisting chat history
    - **App resource** ready to start
+   - **Lakebase database instance** (only if database resource is uncommented)
 
 6. **Start the app**:
 
@@ -125,6 +125,98 @@ so that both you and your app service principal can connect to the database, wit
    ```
 
    The app starts on [localhost:3000](http://localhost:3000)
+
+### Database Modes
+
+The application supports two operating modes:
+
+#### Persistent Mode (with Database)
+
+This is the default mode when database environment variables are configured. In this mode:
+
+- Chat conversations are saved to Postgres/Lakebase
+- Users can access their chat history via the sidebar
+- Conversations persist across sessions
+- A database connection is required (POSTGRES_URL or PGDATABASE env vars)
+
+#### Ephemeral Mode (without Database)
+
+The application can also run without a database. In this mode:
+
+- Chat conversations work normally but are **not saved**
+- The sidebar shows "No chat history available"
+- A small "Ephemeral" indicator appears in the header
+- Users can still have conversations with the AI, but history is lost on page refresh
+
+#### Selecting a Database Mode
+
+The application will default to "Ephemeral mode" when no database environment variables are set.
+To run in persistent mode, ensure your environment contains the following database variables:
+
+```bash
+# Useful for local development
+POSTGRES_URL=...
+
+# OR
+
+# Handled for you when using Databricks Apps
+PGUSER=...
+PGPASSWORD=...
+PGDATABASE=...
+PGHOST=...
+```
+
+The app will detect the absence or precense of database configuration and automatically run in the correct mode.
+
+## Testing
+
+The project uses Playwright for end-to-end testing and supports dual-mode testing to verify behavior in both persistent and ephemeral modes.
+
+### Test Modes
+
+Tests run in two separate modes to ensure both database and non-database functionality work correctly:
+
+#### With Database Mode
+
+- Uses database environment variables (either set in .env.local or declared elsewhere)
+- Includes full Postgres database
+- Tests chat history persistence, pagination, and deletion
+- Will throw a warning and stop if no database exists
+
+#### Ephemeral Mode
+
+- No database connection (all POSTGRES_URL and PG\* variables omitted)
+- Tests chat streaming without persistence
+- Ensures UI gracefully handles missing database
+
+### Running Tests
+
+**Run all tests (both modes sequentially)**:
+
+```bash
+npm test
+```
+
+This runs with-db tests first, then ephemeral tests. The server automatically restarts between modes with different configurations.
+
+**Run specific mode**:
+
+```bash
+# Test with database only
+npm run test:with-db
+
+# Test ephemeral mode only
+npm run test:ephemeral
+```
+
+### Continuous Integration
+
+The GitHub Actions workflow runs both test modes in separate jobs:
+
+- **test-with-db**: Includes Postgres service, runs migrations, executes with-db tests
+- **test-ephemeral**: No Postgres, no migrations, executes ephemeral tests
+
+Both jobs run in parallel for faster CI feedback.
 
 ## Known limitations
 

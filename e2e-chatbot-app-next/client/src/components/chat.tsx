@@ -21,6 +21,8 @@ import { ChatSDKError } from '@chat-template/core/errors';
 import { useDataStream } from './data-stream-provider';
 import { ChatTransport } from '../lib/ChatTransport';
 import type { ClientSession } from '@chat-template/auth';
+import { softNavigateToChatId } from '@/lib/navigation';
+import { useAppConfig } from '@/contexts/AppConfigContext';
 
 export function Chat({
   id,
@@ -45,6 +47,7 @@ export function Chat({
 
   const { mutate } = useSWRConfig();
   const { setDataStream } = useDataStream();
+  const { chatHistoryEnabled } = useAppConfig();
 
   const [input, setInput] = useState<string>('');
   const [_usage, setUsage] = useState<LanguageModelUsage | undefined>(
@@ -207,9 +210,9 @@ export function Chat({
       });
 
       setHasAppendedQuery(true);
-      window.history.replaceState({}, '', `/chat/${id}`);
+      softNavigateToChatId(id, chatHistoryEnabled);
     }
-  }, [query, sendMessage, hasAppendedQuery, id]);
+  }, [query, sendMessage, hasAppendedQuery, id, chatHistoryEnabled]);
 
   const [attachments, setAttachments] = useState<Array<Attachment>>([]);
 

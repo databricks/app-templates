@@ -24,6 +24,7 @@ import {
   saveMessages,
   updateChatLastContextById,
   updateChatVisiblityById,
+  isDatabaseAvailable,
 } from '@chat-template/db';
 import {
   type ChatMessage,
@@ -50,8 +51,16 @@ chatRouter.use(authMiddleware);
 
 /**
  * POST /api/chat - Send a message and get streaming response
+ *
+ * Note: Works in ephemeral mode when database is disabled.
+ * Streaming continues normally, but no chat/message persistence occurs.
  */
 chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
+  const dbAvailable = isDatabaseAvailable();
+  if (!dbAvailable) {
+    console.log('[Chat] Running in ephemeral mode - no persistence');
+  }
+
   console.log(`CHAT POST REQUEST ${Date.now()}`);
 
   let requestBody: PostRequestBody;

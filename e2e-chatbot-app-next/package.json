@@ -26,10 +26,12 @@
     "db:pull": "drizzle-kit pull",
     "db:check": "drizzle-kit check",
     "db:up": "drizzle-kit up",
-    "test": "export PLAYWRIGHT=True && playwright test"
+    "test": "npm run test:with-db && npm run test:ephemeral",
+    "test:with-db": "PLAYWRIGHT=True TEST_MODE=with-db npx playwright test",
+    "test:ephemeral": "PLAYWRIGHT=True TEST_MODE=ephemeral npx playwright test"
   },
   "dependencies": {
-    "dotenv": "^16.4.5",
+    "dotenv": "^17.2.3",
     "drizzle-kit": "^0.31.5",
     "drizzle-orm": "^0.44.6",
     "tsx": "^4.19.1"

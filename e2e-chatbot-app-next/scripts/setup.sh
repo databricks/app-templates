@@ -52,14 +52,18 @@ CONFIG_PROFILE="DEFAULT"
 # Read a single keypress (including arrow keys)
 read_key() {
   local key
-  IFS= read -rsn1 key 2>/dev/null
+  # Read one character at a time
+  IFS= read -rsn1 key
 
   # Check for escape sequence (arrow keys)
   if [[ $key == $'\x1b' ]]; then
-    read -rsn2 -t 0.1 key 2>/dev/null || true
+    # Read the next two characters to get the full escape sequence
+    read -rsn2 -t 0.1 rest 2>/dev/null || rest=""
+    key="$key$rest"
+
     case $key in
-      '[A') echo "UP" ;;
-      '[B') echo "DOWN" ;;
+      $'\x1b[A') echo "UP" ;;
+      $'\x1b[B') echo "DOWN" ;;
       *) echo "ESC" ;;
     esac
   elif [[ $key == "" ]]; then
@@ -86,14 +90,14 @@ render_menu() {
 
   for i in "${!items[@]}"; do
     if [[ $i -eq $selected ]]; then
-      echo -e "${GREEN}${BOLD}  ▶ ${items[$i]}${NC}"
+      echo -e "${GREEN}${BOLD}  ▶ [$i] ${items[$i]}${NC}"
     else
-      echo -e "    ${items[$i]}"
+      echo -e "    [$i] ${items[$i]}"
     fi
   done
 
   echo ""
-  echo -e "${CYAN}Use ↑/↓ arrows to navigate, Enter to select, Q to quit${NC}"
+  echo -e "${CYAN}Use ↑/↓ arrows or numbers [0-$((${#items[@]} - 1))], Enter to select, Q to quit${NC}"
 }
 
 # Show menu and get selection
@@ -130,6 +134,13 @@ show_menu() {
       QUIT)
         echo "quit"
         return 1
+        ;;
+      [0-9])
+        # Allow direct number selection
+        if [[ $key -lt $num_items ]]; then
+          echo "$key"
+          return 0
+        fi
         ;;
     esac
   done

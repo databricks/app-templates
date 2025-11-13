@@ -100,7 +100,42 @@ databricks bundle deploy -t staging --var serving_endpoint_name="your-endpoint"
 in [Deployment](#deployment)**. This is the simplest way to get the required database instance set up with the correct permissions,
 so that both you and your app service principal can connect to the database, with database migrations already applied.
 
-### Setup Steps
+### Quick Start (Recommended)
+
+Use our setup wizard to automatically configure your local development environment:
+
+1. **Clone and install**:
+
+   ```bash
+   git clone https://github.com/databricks/app-templates
+   cd e2e-chatbot-app-next
+   npm install
+   ```
+
+2. **Run the setup script**:
+
+   ```bash
+   ./scripts/setup-local-dev-env.sh
+   ```
+
+   The wizard will:
+   - Verify prerequisites (Databricks CLI, jq, authentication)
+   - Guide you through configuring required environment variables
+   - Auto-detect your Databricks workspace and profile
+   - Automatically configure database settings if enabled in `databricks.yml`
+   - Create a `.env.local` file with all necessary configuration
+
+3. **Run the application**:
+
+   ```bash
+   npm run dev
+   ```
+
+   The app starts on [localhost:3000](http://localhost:3000)
+
+### Manual Setup (Alternative)
+
+If you prefer to configure the environment manually:
 
 1. **Clone and install**:
 

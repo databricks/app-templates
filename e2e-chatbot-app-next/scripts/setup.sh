@@ -1371,6 +1371,13 @@ main_menu() {
 # Entry Point
 # ============================================
 
+# Check if running in an interactive terminal
+if [[ ! -t 0 ]]; then
+  echo "Error: This script requires an interactive terminal."
+  echo "Please run it directly from your terminal, not through pipes or redirects."
+  exit 1
+fi
+
 # Change to project root
 cd "$PROJECT_ROOT"
 
@@ -1383,9 +1390,10 @@ echo -e "${BLUE}║${BOLD}                                                      
 echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 echo "This wizard will help you set up your chatbot application."
-echo "Use arrow keys to navigate menus and Enter to select."
+echo "Use arrow keys or numbers to navigate menus and Enter to select."
 echo ""
-read -p "Press Enter to begin..."
+echo "Press Enter to begin..."
+read -r _dummy
 
 # Start main menu
 main_menu

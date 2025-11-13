@@ -50,6 +50,9 @@ This project includes a [Databricks Asset Bundle (DAB)](https://docs.databricks.
    ```
 2. **Databricks authentication**: Ensure auth is configured as described in [Prerequisites](#prerequisites).
 3. **Specify serving endpoint and address TODOs in databricks.yml**: Address the TODOs in `databricks.yml`, setting the default value of `serving_endpoint_name` to the name of the custom code agent or Agent Bricks endpoint to chat with. The optional TODOs wil allow you to deploy a Lakebase database bound to your application, which will allow for chat history to be persisted.
+
+   **Tip:** To automatically configure and deploy with database support, use the interactive setup wizard: `./scripts/setup.sh`. See [Enabling Database After Installation](#enabling-database-after-installation) for details.
+
    - NOTE: if using [Agent Bricks Multi-Agent Supervisor](https://docs.databricks.com/aws/en/generative-ai/agent-bricks/multi-agent-supervisor), you need to additionally grant the app service principal the `CAN_QUERY` permission on the underlying agent(s) that the MAS orchestrates. You can do this by adding those
      agent serving endpoints as resources in `databricks.yml` (see the NOTE in `databricks.yml` on this)
 4. **Validate the bundle configuration**:
@@ -102,28 +105,30 @@ so that both you and your app service principal can connect to the database, wit
 
 ### Quick Start (Recommended)
 
-Use our setup wizard to automatically configure your local development environment:
+Use our interactive setup wizard for a guided setup experience:
 
-1. **Clone and install**:
+1. **Clone the repository**:
 
    ```bash
    git clone https://github.com/databricks/app-templates
    cd e2e-chatbot-app-next
-   npm install
    ```
 
-2. **Run the setup script**:
+2. **Run the interactive setup wizard**:
 
    ```bash
-   ./scripts/setup-local-dev-env.sh
+   ./scripts/setup.sh
    ```
 
-   The wizard will:
-   - Verify prerequisites (Databricks CLI, jq, authentication)
-   - Guide you through configuring required environment variables
-   - Auto-detect your Databricks workspace and profile
-   - Automatically configure database settings if enabled in `databricks.yml`
-   - Create a `.env.local` file with all necessary configuration
+   The wizard provides:
+   - **Arrow-key navigation** for easy menu selection
+   - **Complete first-time setup** - Guided walkthrough of entire setup process
+   - **Prerequisites verification** - Checks all required tools
+   - **Authentication setup** - Configures Databricks CLI
+   - **Deployment configuration** - Sets up databricks.yml and deploys
+   - **Database setup** - Optional persistent chat history
+   - **Local environment** - Creates .env.local automatically
+   - **Diagnostics** - Troubleshooting and status checks
 
 3. **Run the application**:
 
@@ -202,6 +207,54 @@ PGHOST=...
 ```
 
 The app will detect the absence or precense of database configuration and automatically run in the correct mode.
+
+#### Enabling Database After Installation
+
+If you initially installed the template without database support (ephemeral mode) and want to add persistent chat history later, use the interactive setup wizard:
+
+```bash
+./scripts/setup.sh
+```
+
+Select "💾 Enable Database" from the main menu. The wizard will:
+- Uncomment the required database sections in `databricks.yml`
+- Deploy the Lakebase database instance (optional)
+- Configure your `.env.local` file with database connection details
+- Run database migrations (optional)
+- Start the app with database support (optional)
+
+The wizard handles all configuration automatically, including:
+- Detecting your Databricks workspace and authentication
+- Calculating the correct database instance name for your target environment
+- Retrieving the database host (PGHOST) after provisioning
+- Updating environment variables with the correct values
+
+**Manual Steps (Alternative):**
+
+If you prefer to enable the database manually:
+
+1. **Edit `databricks.yml`** - Uncomment both database sections:
+   - Database instance resource (`chatbot_lakebase`) around line 18
+   - Database resource binding (`- name: database`) around line 41
+
+2. **Deploy the database**:
+   ```bash
+   databricks bundle deploy
+   ```
+   (First deployment takes several minutes for provisioning)
+
+3. **Configure `.env.local`** with database variables:
+   ```bash
+   PGUSER=your-databricks-username
+   PGHOST=your-postgres-host  # Get with: ./scripts/get-pghost.sh
+   PGDATABASE=databricks_postgres
+   PGPORT=5432
+   ```
+
+4. **Run database migrations**:
+   ```bash
+   npm run db:migrate
+   ```
 
 ## Testing
 

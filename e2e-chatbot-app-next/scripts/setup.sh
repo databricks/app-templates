@@ -1392,8 +1392,8 @@ echo ""
 echo "This wizard will help you set up your chatbot application."
 echo "Use arrow keys or numbers to navigate menus and Enter to select."
 echo ""
-echo "Press Enter to begin..."
-read -r _dummy
+echo "Press any key to begin..."
+read -n1 -s
 
 # Start main menu
 main_menu

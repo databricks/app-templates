@@ -52,21 +52,26 @@ CONFIG_PROFILE="DEFAULT"
 # Read a single keypress (including arrow keys)
 read_key() {
   local key
+  echo "DEBUG: read_key starting..." >&2
   # Read one character at a time
   IFS= read -rsn1 key
+  echo "DEBUG: read -rsn1 got: '$(printf '%q' "$key")'" >&2
 
   # Check for escape sequence (arrow keys)
   if [[ $key == $'\x1b' ]]; then
+    echo "DEBUG: Escape detected, reading rest..." >&2
     # Read the next two characters to get the full escape sequence
     read -rsn2 -t 0.1 rest 2>/dev/null || rest=""
     key="$key$rest"
+    echo "DEBUG: Full escape sequence: '$(printf '%q' "$key")'" >&2
 
     case $key in
       $'\x1b[A') echo "UP" ;;
       $'\x1b[B') echo "DOWN" ;;
       *) echo "ESC" ;;
     esac
-  elif [[ $key == "" ]]; then
+  elif [[ $key == "" ]] || [[ $key == $'\n' ]] || [[ $key == $'\r' ]]; then
+    echo "DEBUG: Enter/newline detected" >&2
     echo "ENTER"
   elif [[ $key == "q" ]] || [[ $key == "Q" ]]; then
     echo "QUIT"
@@ -108,11 +113,16 @@ show_menu() {
   local selected=0
   local num_items=${#items[@]}
 
+  echo "DEBUG: show_menu called with $num_items items" >&2
+
   while true; do
     MENU_SELECTED=$selected
+    echo "DEBUG: About to render menu" >&2
     render_menu "$title" "${items[@]}"
 
+    echo "DEBUG: About to call read_key" >&2
     local key=$(read_key)
+    echo "DEBUG: read_key returned: '$key'" >&2
 
     case $key in
       UP)
@@ -1313,11 +1323,15 @@ configure_deployment_workflow() {
 # ============================================
 
 main_menu() {
+  echo "DEBUG: main_menu starting" >&2
   # Load saved state if exists
   load_state 2>/dev/null || true
+  echo "DEBUG: State loaded (or not found)" >&2
 
   while true; do
+    echo "DEBUG: main menu loop iteration" >&2
     local choice
+    echo "DEBUG: About to call show_menu" >&2
     choice=$(show_menu "Databricks E2E Chatbot Setup Wizard" \
       "🚀 Complete First-Time Setup" \
       "📋 Check Prerequisites" \
@@ -1378,11 +1392,15 @@ if [[ ! -t 0 ]]; then
   exit 1
 fi
 
+echo "DEBUG: Terminal check passed" >&2
+
 # Change to project root
 cd "$PROJECT_ROOT"
+echo "DEBUG: Changed to project root: $PROJECT_ROOT" >&2
 
 # Show welcome message
 clear
+echo "DEBUG: About to show welcome message" >&2
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║${BOLD}                                                            ${NC}${BLUE}║${NC}"
 echo -e "${BLUE}║${BOLD}     Databricks E2E Chatbot - Interactive Setup Wizard     ${NC}${BLUE}║${NC}"
@@ -1392,8 +1410,10 @@ echo ""
 echo "This wizard will help you set up your chatbot application."
 echo "Use arrow keys or numbers to navigate menus and Enter to select."
 echo ""
+echo "DEBUG: About to read input" >&2
 echo "Press any key to begin..."
 read -n1 -s
+echo "DEBUG: Read completed, starting main menu" >&2
 
 # Start main menu
 main_menu

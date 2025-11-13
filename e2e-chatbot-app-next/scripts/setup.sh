@@ -52,36 +52,36 @@ CONFIG_PROFILE="DEFAULT"
 # Read a single keypress (including arrow keys)
 read_key() {
   local key
-  echo "DEBUG: read_key starting..." >&2
+  debug "read_key starting..."
   # Read one character at a time
   IFS= read -rsn1 key
-  echo "DEBUG: read -rsn1 got: '$(printf '%q' "$key")'" >&2
+  debug "read -rsn1 got: '$(printf '%q' "$key")'"
 
   # Check for escape sequence (arrow keys)
   if [[ $key == $'\x1b' ]]; then
-    echo "DEBUG: Escape detected, reading rest..." >&2
+    debug "Escape detected, reading rest..."
     # Read the next two characters to get the full escape sequence
     # Increased timeout to 0.5 seconds for slower terminals
     read -rsn2 -t 0.5 rest 2>/dev/null || rest=""
     key="$key$rest"
-    echo "DEBUG: Full escape sequence: '$(printf '%q' "$key")' (length: ${#key})" >&2
+    debug "Full escape sequence: '$(printf '%q' "$key")' (length: ${#key})"
 
     case $key in
       $'\x1b[A')
-        echo "DEBUG: Detected UP arrow" >&2
+        debug "Detected UP arrow"
         echo "UP"
         ;;
       $'\x1b[B')
-        echo "DEBUG: Detected DOWN arrow" >&2
+        debug "Detected DOWN arrow"
         echo "DOWN"
         ;;
       *)
-        echo "DEBUG: Escape but not arrow, returning ESC" >&2
+        debug "Escape but not arrow, returning ESC"
         echo "ESC"
         ;;
     esac
   elif [[ $key == "" ]] || [[ $key == $'\n' ]] || [[ $key == $'\r' ]]; then
-    echo "DEBUG: Enter/newline detected" >&2
+    debug "Enter/newline detected"
     echo "ENTER"
   elif [[ $key == "q" ]] || [[ $key == "Q" ]]; then
     echo "QUIT"
@@ -97,7 +97,7 @@ render_menu() {
   local items=("$@")
   local selected="${MENU_SELECTED:-0}"
 
-  echo "DEBUG: render_menu called" >&2
+  debug "render_menu called"
   clear
   echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
   echo -e "${BLUE}║${BOLD}  $title${NC}${BLUE}$(printf '%*s' $((57 - ${#title})) '')║${NC}"
@@ -114,7 +114,7 @@ render_menu() {
 
   echo ""
   echo -e "${CYAN}Use ↑/↓ arrows or numbers [0-$((${#items[@]} - 1))], Enter to select, Q to quit${NC}"
-  echo "DEBUG: render_menu completed" >&2
+  debug "render_menu completed"
 }
 
 # Show menu and get selection (simplified - number input only)
@@ -124,7 +124,7 @@ show_menu() {
   local items=("$@")
   local num_items=${#items[@]}
 
-  echo "DEBUG: show_menu called with $num_items items" >&2
+  debug "show_menu called with $num_items items"
 
   # Render menu once
   clear
@@ -142,7 +142,7 @@ show_menu() {
 
   while true; do
     read -r -p "> " choice
-    echo "DEBUG: User entered: '$choice'" >&2
+    debug "User entered: '$choice'"
 
     # Check for quit
     if [[ "$choice" == "q" ]] || [[ "$choice" == "Q" ]]; then
@@ -1327,15 +1327,15 @@ configure_deployment_workflow() {
 # ============================================
 
 main_menu() {
-  echo "DEBUG: main_menu starting" >&2
+  debug "main_menu starting"
   # Load saved state if exists
   load_state 2>/dev/null || true
-  echo "DEBUG: State loaded (or not found)" >&2
+  debug "State loaded (or not found)"
 
   while true; do
-    echo "DEBUG: main menu loop iteration" >&2
+    debug "main menu loop iteration"
     local choice
-    echo "DEBUG: About to call show_menu" >&2
+    debug "About to call show_menu"
     choice=$(show_menu "Databricks E2E Chatbot Setup Wizard" \
       "🚀 Complete First-Time Setup" \
       "📋 Check Prerequisites" \
@@ -1389,6 +1389,15 @@ main_menu() {
 # Entry Point
 # ============================================
 
+# Redirect all debug output to a log file
+DEBUG_LOG="/tmp/setup-wizard-debug.log"
+exec 3>"$DEBUG_LOG"
+
+# Helper for debug output
+debug() {
+  echo "[$(date '+%H:%M:%S')] $*" >&3
+}
+
 # Check if running in an interactive terminal
 if [[ ! -t 0 ]]; then
   echo "Error: This script requires an interactive terminal."
@@ -1396,15 +1405,15 @@ if [[ ! -t 0 ]]; then
   exit 1
 fi
 
-echo "DEBUG: Terminal check passed" >&2
+debug "Terminal check passed"
 
 # Change to project root
 cd "$PROJECT_ROOT"
-echo "DEBUG: Changed to project root: $PROJECT_ROOT" >&2
+debug "Changed to project root: $PROJECT_ROOT"
 
 # Show welcome message
 clear
-echo "DEBUG: About to show welcome message" >&2
+debug "About to show welcome message"
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║${BOLD}                                                            ${NC}${BLUE}║${NC}"
 echo -e "${BLUE}║${BOLD}     Databricks E2E Chatbot - Interactive Setup Wizard     ${NC}${BLUE}║${NC}"
@@ -1414,10 +1423,10 @@ echo ""
 echo "This wizard will help you set up your chatbot application."
 echo "Select menu options by typing the number and pressing Enter."
 echo ""
-echo "DEBUG: About to read input" >&2
+debug "About to read input"
 echo "Press any key to begin..."
 read -n1 -s
-echo "DEBUG: Read completed, starting main menu" >&2
+debug "Read completed, starting main menu"
 
 # Start main menu
 main_menu

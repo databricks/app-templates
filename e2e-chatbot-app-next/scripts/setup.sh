@@ -61,14 +61,24 @@ read_key() {
   if [[ $key == $'\x1b' ]]; then
     echo "DEBUG: Escape detected, reading rest..." >&2
     # Read the next two characters to get the full escape sequence
-    read -rsn2 -t 0.1 rest 2>/dev/null || rest=""
+    # Increased timeout to 0.5 seconds for slower terminals
+    read -rsn2 -t 0.5 rest 2>/dev/null || rest=""
     key="$key$rest"
-    echo "DEBUG: Full escape sequence: '$(printf '%q' "$key")'" >&2
+    echo "DEBUG: Full escape sequence: '$(printf '%q' "$key")' (length: ${#key})" >&2
 
     case $key in
-      $'\x1b[A') echo "UP" ;;
-      $'\x1b[B') echo "DOWN" ;;
-      *) echo "ESC" ;;
+      $'\x1b[A')
+        echo "DEBUG: Detected UP arrow" >&2
+        echo "UP"
+        ;;
+      $'\x1b[B')
+        echo "DEBUG: Detected DOWN arrow" >&2
+        echo "DOWN"
+        ;;
+      *)
+        echo "DEBUG: Escape but not arrow, returning ESC" >&2
+        echo "ESC"
+        ;;
     esac
   elif [[ $key == "" ]] || [[ $key == $'\n' ]] || [[ $key == $'\r' ]]; then
     echo "DEBUG: Enter/newline detected" >&2
@@ -87,6 +97,7 @@ render_menu() {
   local items=("$@")
   local selected="${MENU_SELECTED:-0}"
 
+  echo "DEBUG: render_menu called" >&2
   clear
   echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
   echo -e "${BLUE}║${BOLD}  $title${NC}${BLUE}$(printf '%*s' $((57 - ${#title})) '')║${NC}"
@@ -103,56 +114,49 @@ render_menu() {
 
   echo ""
   echo -e "${CYAN}Use ↑/↓ arrows or numbers [0-$((${#items[@]} - 1))], Enter to select, Q to quit${NC}"
+  echo "DEBUG: render_menu completed" >&2
 }
 
-# Show menu and get selection
+# Show menu and get selection (simplified - number input only)
 show_menu() {
   local title="$1"
   shift
   local items=("$@")
-  local selected=0
   local num_items=${#items[@]}
 
   echo "DEBUG: show_menu called with $num_items items" >&2
 
+  # Render menu once
+  clear
+  echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
+  echo -e "${BLUE}║${BOLD}  $title${NC}${BLUE}$(printf '%*s' $((57 - ${#title})) '')║${NC}"
+  echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
+  echo ""
+
+  for i in "${!items[@]}"; do
+    echo -e "  ${GREEN}[$i]${NC} ${items[$i]}"
+  done
+
+  echo ""
+  echo -e "${CYAN}Enter choice [0-$((num_items - 1))], or Q to quit:${NC}"
+
   while true; do
-    MENU_SELECTED=$selected
-    echo "DEBUG: About to render menu" >&2
-    render_menu "$title" "${items[@]}"
+    read -r -p "> " choice
+    echo "DEBUG: User entered: '$choice'" >&2
 
-    echo "DEBUG: About to call read_key" >&2
-    local key=$(read_key)
-    echo "DEBUG: read_key returned: '$key'" >&2
+    # Check for quit
+    if [[ "$choice" == "q" ]] || [[ "$choice" == "Q" ]]; then
+      echo "quit"
+      return 1
+    fi
 
-    case $key in
-      UP)
-        ((selected--))
-        if [[ $selected -lt 0 ]]; then
-          selected=$((num_items - 1))
-        fi
-        ;;
-      DOWN)
-        ((selected++))
-        if [[ $selected -ge $num_items ]]; then
-          selected=0
-        fi
-        ;;
-      ENTER)
-        echo "$selected"
-        return 0
-        ;;
-      QUIT)
-        echo "quit"
-        return 1
-        ;;
-      [0-9])
-        # Allow direct number selection
-        if [[ $key -lt $num_items ]]; then
-          echo "$key"
-          return 0
-        fi
-        ;;
-    esac
+    # Check if it's a valid number
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [[ $choice -ge 0 ]] && [[ $choice -lt $num_items ]]; then
+      echo "$choice"
+      return 0
+    else
+      echo -e "${RED}Invalid choice. Please enter a number between 0 and $((num_items - 1)), or Q to quit.${NC}"
+    fi
   done
 }
 
@@ -1408,7 +1412,7 @@ echo -e "${BLUE}║${BOLD}                                                      
 echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 echo "This wizard will help you set up your chatbot application."
-echo "Use arrow keys or numbers to navigate menus and Enter to select."
+echo "Select menu options by typing the number and pressing Enter."
 echo ""
 echo "DEBUG: About to read input" >&2
 echo "Press any key to begin..."

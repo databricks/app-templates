@@ -162,7 +162,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
    Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/tutorial) installed and configured.
 
    ```bash
-   databricks apps create agent-proto
+   databricks apps create agent-proto-non-conversational
    ```
 
 1. **Set up authentication to Databricks resources**
@@ -193,7 +193,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
    ```bash
    DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
-   databricks sync . "/Users/$DATABRICKS_USERNAME/agent-proto"
+   databricks sync . "/Users/$DATABRICKS_USERNAME/agent-proto-non-conversational"
    ```
 
 4. **Deploy your Databricks App**
@@ -201,7 +201,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
    Refer to the [Databricks Apps deploy documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy?language=Databricks+CLI#deploy-the-app) for more info.
 
    ```bash
-   databricks apps deploy agent-proto --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/agent-proto
+   databricks apps deploy agent-proto-non-conversational --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/agent-proto-non-conversational
    ```
 
 5. **Query your agent hosted on Databricks Apps**

@@ -123,11 +123,11 @@ This will start the agent server and the chat app at http://localhost:8000.
 
 5. **Modifying your agent**
 
-   You can check out the [LangGraph documentation](https://docs.langchain.com/oss/python/langgraph/quickstart) for more information on how to edit your own agent.
+   You can check out the [OpenAI Agents SDK documentation](https://platform.openai.com/docs/guides/agents-sdk) for more information on how to edit your own agent.
 
    The following files are required to host your own agent with the MLflow `AgentServer`:
 
-   - `agent.py`: This file contains your agent logic. It currently contains a Responses API agent. Please modify this file to create your custom agent.
+   - `agent.py`: This file contains your agent logic. It currently contains an agent built with the OpenAI Agents SDK. Please modify this file to create your custom agent.
    - `start_server.py`: This file initializes and runs the MLflow `AgentServer` with agent_type="ResponsesAgent".
 
    Common changes to make:
@@ -179,7 +179,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
    ```bash
    DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
-   databricks sync . "/Users/$DATABRICKS_USERNAME/agent-prototype
+   databricks sync . "/Users/$DATABRICKS_USERNAME/agent-prototype"
    ```
 
 4. **Deploy your Databricks App**

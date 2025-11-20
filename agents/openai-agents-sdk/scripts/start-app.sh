@@ -6,9 +6,9 @@ if [ -f ".env.local" ]; then
     export $(cat .env.local | grep -v '^#' | xargs)
 fi
 
-# Start backend in background
+# Start backend in background with output redirection
 echo "Starting backend..."
-uv run start-server &
+uv run start-server 2>&1 | tee backend.log &
 BACKEND_PID=$!
 
 # Check if e2e-chatbot-app-next exists, if not clone it
@@ -35,23 +35,62 @@ if [ ! -d "e2e-chatbot-app-next" ]; then
     rm -rf temp-app-templates
 fi
 
-# Start frontend in background
+# Start frontend in background with output redirection
 echo "Starting frontend..."
 cd e2e-chatbot-app-next
 npm install
 npm run build
-npm run start &
+npm run start 2>&1 | tee ../frontend.log &
 FRONTEND_PID=$!
+cd ..
 
 # Function to cleanup processes on script exit
 cleanup() {
-    echo "Shutting down..."
+    echo ""
+    echo "=========================================="
+    echo "Shutting down both processes..."
+    echo "=========================================="
     kill $BACKEND_PID $FRONTEND_PID 2>/dev/null
-    exit
+    wait $BACKEND_PID $FRONTEND_PID 2>/dev/null
 }
 
 # Trap cleanup function on script termination
 trap cleanup SIGINT SIGTERM
 
-# Wait for both processes
-wait
+# Monitor both processes
+echo ""
+echo "Both processes started. Monitoring for failures..."
+echo "Backend PID: $BACKEND_PID"
+echo "Frontend PID: $FRONTEND_PID"
+echo ""
+
+# Wait for either process to exit (whichever exits first)
+wait -n $BACKEND_PID $FRONTEND_PID
+EXIT_CODE=$?
+
+# Check which process failed
+if ! kill -0 $BACKEND_PID 2>/dev/null; then
+    echo ""
+    echo "=========================================="
+    echo "ERROR: Backend process failed with exit code $EXIT_CODE"
+    echo "=========================================="
+    echo ""
+    echo "Last 50 lines of backend log:"
+    echo "----------------------------------------"
+    tail -50 backend.log
+    echo "----------------------------------------"
+    cleanup
+    exit $EXIT_CODE
+elif ! kill -0 $FRONTEND_PID 2>/dev/null; then
+    echo ""
+    echo "=========================================="
+    echo "ERROR: Frontend process failed with exit code $EXIT_CODE"
+    echo "=========================================="
+    echo ""
+    echo "Last 50 lines of frontend log:"
+    echo "----------------------------------------"
+    tail -50 frontend.log
+    echo "----------------------------------------"
+    cleanup
+    exit $EXIT_CODE
+fi

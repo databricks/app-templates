@@ -8,3 +8,5 @@ env:
     value: "databricks-uc"
   - name: API_PROXY
     value: "http://localhost:8000/invocations"
+  - name: CHAT_APP_PORT
+    value: "3000"

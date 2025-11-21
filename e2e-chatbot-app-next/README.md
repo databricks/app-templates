@@ -51,7 +51,7 @@ This project includes a [Databricks Asset Bundle (DAB)](https://docs.databricks.
 2. **Databricks authentication**: Ensure auth is configured as described in [Prerequisites](#prerequisites).
 3. **Specify serving endpoint and address TODOs in databricks.yml**: Address the TODOs in `databricks.yml`, setting the default value of `serving_endpoint_name` to the name of the custom code agent or Agent Bricks endpoint to chat with. The optional TODOs wil allow you to deploy a Lakebase database bound to your application, which will allow for chat history to be persisted.
 
-   **Tip:** To automatically configure and deploy with database support, use the interactive setup wizard: `./scripts/setup.sh`. See [Enabling Database After Installation](#enabling-database-after-installation) for details.
+   **Tip:** To automatically configure and deploy with database support, run `./scripts/quickstart.sh` and select "Yes" when prompted about enabling persistent chat history. See [Database Configuration](#database-modes) for details.
 
    - NOTE: if using [Agent Bricks Multi-Agent Supervisor](https://docs.databricks.com/aws/en/generative-ai/agent-bricks/multi-agent-supervisor), you need to additionally grant the app service principal the `CAN_QUERY` permission on the underlying agent(s) that the MAS orchestrates. You can do this by adding those
      agent serving endpoints as resources in `databricks.yml` (see the NOTE in `databricks.yml` on this)
@@ -99,13 +99,9 @@ databricks bundle deploy -t staging --var serving_endpoint_name="your-endpoint"
 
 ## Running Locally
 
-**Before running the app locally, you should first deploy the app to Databricks following the steps
-in [Deployment](#deployment)**. This is the simplest way to get the required database instance set up with the correct permissions,
-so that both you and your app service principal can connect to the database, with database migrations already applied.
-
 ### Quick Start (Recommended)
 
-Use our interactive setup wizard for a guided setup experience:
+Use our automated quickstart script for the fastest setup experience:
 
 1. **Clone the repository**:
 
@@ -114,29 +110,39 @@ Use our interactive setup wizard for a guided setup experience:
    cd e2e-chatbot-app-next
    ```
 
-2. **Run the interactive setup wizard**:
+2. **Run the quickstart script**:
 
    ```bash
-   ./scripts/setup.sh
+   ./scripts/quickstart.sh
    ```
 
-   The wizard provides:
-   - **Arrow-key navigation** for easy menu selection
-   - **Complete first-time setup** - Guided walkthrough of entire setup process
-   - **Prerequisites verification** - Checks all required tools
-   - **Authentication setup** - Configures Databricks CLI
-   - **Deployment configuration** - Sets up databricks.yml and deploys
-   - **Database setup** - Optional persistent chat history
-   - **Local environment** - Creates .env.local automatically
-   - **Diagnostics** - Troubleshooting and status checks
+   The quickstart script will:
+   - **Install prerequisites** - Automatically installs jq, nvm, Node.js 20, and Databricks CLI
+   - **Configure authentication** - Helps you select or create a Databricks CLI profile
+   - **Set up serving endpoint** - Prompts for your endpoint name and validates it exists
+   - **Database setup (optional)** - Choose persistent chat history or ephemeral mode
+   - **Deploy to Databricks (optional)** - Optionally deploys resources and provisions database
+   - **Configure local environment** - Automatically creates and populates .env.local
+   - **Run migrations** - Sets up database schema if database is enabled
 
-3. **Run the application**:
+   The script handles the entire setup process automatically, including waiting for database provisioning and configuring connection details.
 
+3. **Start the application**:
+
+   Use the convenience script:
    ```bash
-   npm run dev
+   ./scripts/start-app.sh
    ```
 
-   The app starts on [localhost:3000](http://localhost:3000)
+   Or manually:
+   ```bash
+   npm install  # Install/update dependencies
+   npm run dev  # Start development server
+   ```
+
+   The app starts on [localhost:3000](http://localhost:3000) (frontend) and [localhost:3001](http://localhost:3001) (backend)
+
+   **Tip:** The `start-app.sh` script is useful for quickly starting the app after initial setup, as it ensures dependencies are up-to-date before starting the dev server.
 
 ### Manual Setup (Alternative)
 
@@ -210,20 +216,20 @@ The app will detect the absence or precense of database configuration and automa
 
 #### Enabling Database After Installation
 
-If you initially installed the template without database support (ephemeral mode) and want to add persistent chat history later, use the interactive setup wizard:
+If you initially installed the template without database support (ephemeral mode) and want to add persistent chat history later, you can re-run the quickstart script:
 
 ```bash
-./scripts/setup.sh
+./scripts/quickstart.sh
 ```
 
-Select "💾 Enable Database" from the main menu. The wizard will:
+When prompted about enabling persistent chat history, select "Yes". The script will:
 - Uncomment the required database sections in `databricks.yml`
-- Deploy the Lakebase database instance (optional)
+- Optionally deploy the Lakebase database instance
 - Configure your `.env.local` file with database connection details
-- Run database migrations (optional)
-- Start the app with database support (optional)
+- Run database migrations if the database is provisioned
+- Set up your local environment with the correct database settings
 
-The wizard handles all configuration automatically, including:
+The script handles all configuration automatically, including:
 - Detecting your Databricks workspace and authentication
 - Calculating the correct database instance name for your target environment
 - Retrieving the database host (PGHOST) after provisioning

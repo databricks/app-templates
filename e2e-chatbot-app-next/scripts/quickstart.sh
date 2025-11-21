@@ -203,6 +203,10 @@ if [ $PROFILES_EXIT_CODE -eq 0 ] && [ -n "$EXISTING_PROFILES" ]; then
             exit 1
         fi
     fi
+
+    # Make this profile the active one for the rest of the script
+    export DATABRICKS_CONFIG_PROFILE="$PROFILE_NAME"
+    echo "Using Databricks profile: $DATABRICKS_CONFIG_PROFILE"
 else
     # No profiles exist - create default one
     echo "No existing profiles found. Setting up Databricks authentication..."
@@ -225,6 +229,10 @@ else
         # Try to find what profile was created, assume DEFAULT if unknown
         PROFILE_NAME="DEFAULT"
         echo "Using profile 'DEFAULT'"
+
+        # Make this profile the active one for the rest of the script
+        export DATABRICKS_CONFIG_PROFILE="$PROFILE_NAME"
+        echo "Using Databricks profile: $DATABRICKS_CONFIG_PROFILE"
     else
         echo "Databricks authentication failed."
         exit 1

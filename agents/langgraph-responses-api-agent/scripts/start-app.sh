@@ -55,7 +55,7 @@ cleanup() {
 }
 
 # Trap cleanup function on script termination
-trap cleanup SIGINT SIGTERM
+trap cleanup SIGINT
 
 # Monitor both processes
 echo ""

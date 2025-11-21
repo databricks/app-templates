@@ -14,6 +14,14 @@ const filePartSchema = z.object({
 
 const partSchema = z.union([textPartSchema, filePartSchema]);
 
+// Schema for previous messages in ephemeral mode
+// More permissive to handle various message types (user, assistant, tool calls, etc.)
+const previousMessageSchema = z.object({
+  id: z.string(),
+  role: z.enum(['user', 'assistant', 'system']),
+  parts: z.array(z.any()), // Permissive to handle text, tool calls, tool results
+});
+
 export const postRequestBodySchema = z.object({
   id: z.string().uuid(),
   message: z.object({
@@ -23,6 +31,8 @@ export const postRequestBodySchema = z.object({
   }),
   selectedChatModel: z.enum(['chat-model', 'chat-model-reasoning']),
   selectedVisibilityType: z.enum(['public', 'private']),
+  // Optional field for ephemeral mode: frontend sends previous conversation history
+  previousMessages: z.array(previousMessageSchema).optional(),
 });
 
 export type PostRequestBody = z.infer<typeof postRequestBodySchema>;

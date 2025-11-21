@@ -8,7 +8,7 @@ if (!rootElement) {
   throw new Error('Failed to find the root element with ID "root"');
 }
 
-const test = 'test';
+const _test = 'test';
 
 ReactDOM.createRoot(rootElement).render(
   <BrowserRouter>

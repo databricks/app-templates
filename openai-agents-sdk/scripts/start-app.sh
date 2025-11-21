@@ -64,8 +64,8 @@ echo "Backend PID: $BACKEND_PID"
 echo "Frontend PID: $FRONTEND_PID"
 echo ""
 
-# Wait for either process to exit (whichever exits first)
-wait -n $BACKEND_PID $FRONTEND_PID
+# Wait for both processes to complete
+wait $BACKEND_PID $FRONTEND_PID
 EXIT_CODE=$?
 
 # Check which process failed

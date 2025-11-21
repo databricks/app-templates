@@ -294,6 +294,8 @@ echo
 # Section 4: MLflow Experiment Setup
 # ===================================================================
 
+
+TODO: export the DATABRICKS_CONFIG_PROIFLE
 # Get current Databricks username
 echo "Getting Databricks username..."
 DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)

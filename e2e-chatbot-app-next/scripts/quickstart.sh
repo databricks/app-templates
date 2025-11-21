@@ -268,36 +268,7 @@ fi
 echo "✓ Databricks profile '$PROFILE_NAME' saved to .env.local"
 echo
 
-# ===================================================================
-# Section 3.5: Validation
-# ===================================================================
-echo "Validating environment..."
-
-# Calculate derived App Name to ensure it meets length constraints (max 30 chars)
-# Logic mirrors how databricks.yml constructs the name: db-chatbot-dev-${workspace.current_user.domain_friendly_name}
-USERNAME=$(databricks auth describe --profile "$PROFILE_NAME" --output json 2>/dev/null | jq -r '.username')
-if [ -z "$USERNAME" ] || [ "$USERNAME" == "null" ]; then
-    echo "Warning: Could not retrieve username from Databricks CLI. Skipping name validation."
-else
-    # Approximate domain_friendly_name: local part of email, dots/symbols to dashes
-    DOMAIN_FRIENDLY=$(echo "$USERNAME" | cut -d'@' -f1 | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g')
-    APP_NAME="db-chatbot-dev-$DOMAIN_FRIENDLY"
-    APP_NAME_LEN=${#APP_NAME}
-    MAX_LEN=30
-
-    if [ $APP_NAME_LEN -gt $MAX_LEN ]; then
-        echo "❌ Error: Generated App Name is too long."
-        echo "   Calculated Name: '$APP_NAME' ($APP_NAME_LEN chars)"
-        echo "   Maximum Length:  $MAX_LEN chars"
-        echo
-        echo "   Databricks Apps requires names to be 30 characters or less."
-        echo "   Please modify 'databricks.yml' to use a shorter name."
-        echo "   (Look for 'name: db-chatbot-\${var.resource_name_suffix}' in resources/apps)"
-        exit 1
-    else
-        echo "✓ App name '$APP_NAME' is valid ($APP_NAME_LEN/$MAX_LEN chars)"
-    fi
-fi
+# Validation will happen after name customization section
 echo
 
 # ===================================================================
@@ -306,13 +277,14 @@ echo
 echo "Setting up Application Configuration..."
 
 # 1. Serving Endpoint
+DEFAULT_ENDPOINT="databricks-claude-sonnet-4"
 echo "Enter the name of your Databricks Serving Endpoint (Agent Bricks or custom agent)"
-echo "Example: databricks-gpt-5-1"
+echo "Press Enter to use default: $DEFAULT_ENDPOINT"
 read -r SERVING_ENDPOINT
 
 if [ -z "$SERVING_ENDPOINT" ]; then
-    echo "Error: Serving Endpoint name is required"
-    exit 1
+    SERVING_ENDPOINT="$DEFAULT_ENDPOINT"
+    echo "Using default endpoint: $SERVING_ENDPOINT"
 fi
 
 # Soft-check if endpoint exists
@@ -380,51 +352,132 @@ echo "✓ Serving endpoint configured"
 echo
 echo "App and Bundle Name Configuration"
 echo "-----------------------------------"
-echo "The default app name pattern is: db-chatbot-dev-{username}"
-echo "The default bundle name is: databricks_chatbot"
+
+# Calculate default app name
+USERNAME=$(databricks auth describe --profile "$PROFILE_NAME" --output json 2>/dev/null | jq -r '.username')
+if [ -z "$USERNAME" ] || [ "$USERNAME" == "null" ]; then
+    DOMAIN_FRIENDLY="user"
+    echo "Warning: Could not retrieve username, using 'user' as suffix"
+else
+    # Approximate domain_friendly_name: local part of email, dots/symbols to dashes
+    DOMAIN_FRIENDLY=$(echo "$USERNAME" | cut -d'@' -f1 | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g')
+fi
+
+DEFAULT_APP_NAME="db-chatbot-dev-$DOMAIN_FRIENDLY"
+DEFAULT_APP_NAME_LEN=${#DEFAULT_APP_NAME}
+MAX_LEN=30
+
+# Auto-truncate if default name is too long
+if [ $DEFAULT_APP_NAME_LEN -gt $MAX_LEN ]; then
+    DEFAULT_APP_NAME="${DEFAULT_APP_NAME:0:$MAX_LEN}"
+    echo "⚠️  Default app name was truncated to $MAX_LEN characters: '$DEFAULT_APP_NAME'"
+fi
+
+echo "Default app name: $DEFAULT_APP_NAME (${#DEFAULT_APP_NAME} chars)"
+echo "Default bundle name: databricks_chatbot"
 echo
 echo "Do you want to customize these names?"
 read -p "(y/N): " -n 1 -r
 echo
 
 BUNDLE_NAME="databricks_chatbot"  # Default
+FINAL_APP_NAME="$DEFAULT_APP_NAME"  # Will be updated if customized
 
 if [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo "Enter custom app name (this will appear in Databricks UI):"
-    echo "Press Enter to keep default"
-    read -r CUSTOM_APP_NAME
+    # App name validation loop
+    while true; do
+        echo "Enter custom app name (max $MAX_LEN chars, press Enter to keep default):"
+        echo "Current default: $DEFAULT_APP_NAME"
+        read -r CUSTOM_APP_NAME
 
-    if [ -n "$CUSTOM_APP_NAME" ]; then
-        echo "Enter bundle name (used for 'databricks bundle run <name>'):"
-        echo "Press Enter to use the same as app name: $CUSTOM_APP_NAME"
-        read -r BUNDLE_NAME_INPUT
-
-        if [ -n "$BUNDLE_NAME_INPUT" ]; then
-            BUNDLE_NAME="$BUNDLE_NAME_INPUT"
-        else
-            BUNDLE_NAME="$CUSTOM_APP_NAME"
+        if [ -z "$CUSTOM_APP_NAME" ]; then
+            # User pressed Enter, keep default
+            break
         fi
+
+        # Validate length
+        CUSTOM_APP_NAME_LEN=${#CUSTOM_APP_NAME}
+        if [ $CUSTOM_APP_NAME_LEN -gt $MAX_LEN ]; then
+            echo "❌ Error: App name must be $MAX_LEN characters or less (current: $CUSTOM_APP_NAME_LEN chars)"
+            echo "Please try again."
+            echo
+        else
+            FINAL_APP_NAME="$CUSTOM_APP_NAME"
+            echo "✓ App name is valid ($CUSTOM_APP_NAME_LEN/$MAX_LEN chars)"
+            break
+        fi
+    done
+
+    # Bundle name validation loop
+    if [ "$FINAL_APP_NAME" != "$DEFAULT_APP_NAME" ]; then
+        while true; do
+            echo
+            echo "Enter bundle name for 'databricks bundle run <name>' (max $MAX_LEN chars):"
+            echo "Press Enter to use the same as app name: $FINAL_APP_NAME"
+            read -r BUNDLE_NAME_INPUT
+
+            if [ -z "$BUNDLE_NAME_INPUT" ]; then
+                # Use app name as bundle name
+                BUNDLE_NAME="$FINAL_APP_NAME"
+                break
+            fi
+
+            # Validate length
+            BUNDLE_NAME_LEN=${#BUNDLE_NAME_INPUT}
+            if [ $BUNDLE_NAME_LEN -gt $MAX_LEN ]; then
+                echo "❌ Error: Bundle name must be $MAX_LEN characters or less (current: $BUNDLE_NAME_LEN chars)"
+                echo "Please try again."
+            else
+                BUNDLE_NAME="$BUNDLE_NAME_INPUT"
+                echo "✓ Bundle name is valid ($BUNDLE_NAME_LEN/$MAX_LEN chars)"
+                break
+            fi
+        done
 
         # Update databricks.yml
-        # 1. Change the bundle key (e.g., databricks_chatbot -> new_name)
+        echo "Updating databricks.yml with custom names..."
+
+        # 1. Update the top-level bundle name (this is what determines the workspace path!)
         if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' 's/^    databricks_chatbot:$/    '"$BUNDLE_NAME"':/' databricks.yml
+            sed -i '' 's|^  name: .*|  name: '"$BUNDLE_NAME"'|' databricks.yml
         else
-            sed -i 's/^    databricks_chatbot:$/    '"$BUNDLE_NAME"':/' databricks.yml
+            sed -i 's|^  name: .*|  name: '"$BUNDLE_NAME"'|' databricks.yml
         fi
 
-        # 2. Change the app name field
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' 's|name: db-chatbot-\${var.resource_name_suffix}|name: '"$CUSTOM_APP_NAME"'|' databricks.yml
+        # 2. Get the current bundle key under apps: to replace it accurately
+        CURRENT_BUNDLE_KEY=$(awk '/^  apps:$/ {getline; if ($0 ~ /^    [a-zA-Z0-9_-]+:$/) {sub(/:$/, "", $1); print $1}}' databricks.yml)
+
+        if [ -n "$CURRENT_BUNDLE_KEY" ]; then
+            # 3. Change the app resource key (should match bundle name for consistency)
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                sed -i '' "s/^    ${CURRENT_BUNDLE_KEY}:$/    ${BUNDLE_NAME}:/" databricks.yml
+            else
+                sed -i "s/^    ${CURRENT_BUNDLE_KEY}:$/    ${BUNDLE_NAME}:/" databricks.yml
+            fi
+
+            # 4. Change the app name field
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                # Replace any name: line that appears in the apps section (6 spaces indent)
+                sed -i '' 's|^      name: .*|      name: '"$FINAL_APP_NAME"'|' databricks.yml
+            else
+                sed -i 's|^      name: .*|      name: '"$FINAL_APP_NAME"'|' databricks.yml
+            fi
         else
-            sed -i 's|name: db-chatbot-\${var.resource_name_suffix}|name: '"$CUSTOM_APP_NAME"'|' databricks.yml
+            echo "Warning: Could not find apps section in databricks.yml"
+            echo "Please manually update the bundle and app names in databricks.yml"
         fi
 
-        echo "✓ App name set to: $CUSTOM_APP_NAME"
+        echo "✓ App name set to: $FINAL_APP_NAME"
         echo "✓ Bundle name set to: $BUNDLE_NAME"
+    else
+        echo "Keeping default names"
     fi
 else
     echo "Using default names"
+    # Still need to ensure the default name is valid
+    if [ "$DEFAULT_APP_NAME" != "db-chatbot-dev-$DOMAIN_FRIENDLY" ]; then
+        echo "Note: Default app name was truncated to meet $MAX_LEN character limit"
+    fi
 fi
 
 # 3. Database Setup (within Section 4)
@@ -515,12 +568,18 @@ echo "Do you want to deploy the app to Databricks now?"
 read -p "(Y/n): " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+    # Clear bundle cache to ensure fresh deployment with new names
+    if [ -d ".databricks" ]; then
+        echo "Clearing bundle cache to ensure fresh deployment..."
+        rm -rf .databricks
+    fi
+
     echo "Deploying bundle (target: dev)..."
-    
+
     if [ "$USE_DATABASE" = true ]; then
         echo "Note: Deployment with database may take 5-10 minutes..."
     fi
-    
+
     databricks bundle deploy -t dev --profile "$PROFILE_NAME"
     DID_DEPLOY=true
 else

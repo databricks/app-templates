@@ -18,6 +18,22 @@ echo "==================================================================="
 echo
 
 # ===================================================================
+# Section 0: Directory Verification
+# ===================================================================
+echo "Verifying directory..."
+
+if [ ! -f "databricks.yml" ] || [ ! -f "package.json" ] || [ ! -d "client" ] || [ ! -d "server" ]; then
+    echo "❌ Error: This script must be run from the e2e-chatbot-app-next/ directory"
+    echo "   Current directory: $(pwd)"
+    echo "   Expected files: databricks.yml, package.json"
+    echo "   Expected directories: client/, server/"
+    exit 1
+fi
+
+echo "✓ Running from correct directory"
+echo
+
+# ===================================================================
 # Section 1: Prerequisites Installation
 # ===================================================================
 echo "Checking and installing prerequisites..."
@@ -360,7 +376,58 @@ else
 fi
 echo "✓ Serving endpoint configured"
 
-# 2. Database Setup
+# 2. App and Bundle Name Configuration (within Section 4)
+echo
+echo "App and Bundle Name Configuration"
+echo "-----------------------------------"
+echo "The default app name pattern is: db-chatbot-dev-{username}"
+echo "The default bundle name is: databricks_chatbot"
+echo
+echo "Do you want to customize these names?"
+read -p "(y/N): " -n 1 -r
+echo
+
+BUNDLE_NAME="databricks_chatbot"  # Default
+
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo "Enter custom app name (this will appear in Databricks UI):"
+    echo "Press Enter to keep default"
+    read -r CUSTOM_APP_NAME
+
+    if [ -n "$CUSTOM_APP_NAME" ]; then
+        echo "Enter bundle name (used for 'databricks bundle run <name>'):"
+        echo "Press Enter to use the same as app name: $CUSTOM_APP_NAME"
+        read -r BUNDLE_NAME_INPUT
+
+        if [ -n "$BUNDLE_NAME_INPUT" ]; then
+            BUNDLE_NAME="$BUNDLE_NAME_INPUT"
+        else
+            BUNDLE_NAME="$CUSTOM_APP_NAME"
+        fi
+
+        # Update databricks.yml
+        # 1. Change the bundle key (e.g., databricks_chatbot -> new_name)
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' 's/^    databricks_chatbot:$/    '"$BUNDLE_NAME"':/' databricks.yml
+        else
+            sed -i 's/^    databricks_chatbot:$/    '"$BUNDLE_NAME"':/' databricks.yml
+        fi
+
+        # 2. Change the app name field
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' 's|name: db-chatbot-\${var.resource_name_suffix}|name: '"$CUSTOM_APP_NAME"'|' databricks.yml
+        else
+            sed -i 's|name: db-chatbot-\${var.resource_name_suffix}|name: '"$CUSTOM_APP_NAME"'|' databricks.yml
+        fi
+
+        echo "✓ App name set to: $CUSTOM_APP_NAME"
+        echo "✓ Bundle name set to: $BUNDLE_NAME"
+    fi
+else
+    echo "Using default names"
+fi
+
+# 3. Database Setup (within Section 4)
 echo
 echo "Do you want to enable persistent chat history (Postgres/Lakebase)?"
 echo "This will deploy a database instance to your workspace (~5-10 mins first time)."
@@ -537,6 +604,29 @@ EOF
     fi
 fi
 
+# ===================================================================
+# Section 6: Start the App
+# ===================================================================
+if [ "$DID_DEPLOY" = true ]; then
+    echo
+    echo "Starting the application..."
+    echo "Running: databricks bundle run $BUNDLE_NAME --profile \"$PROFILE_NAME\""
+    echo
+
+    set +e
+    databricks bundle run "$BUNDLE_NAME" --profile "$PROFILE_NAME"
+    RUN_EXIT_CODE=$?
+    set -e
+
+    if [ $RUN_EXIT_CODE -eq 0 ]; then
+        echo "✓ Application started successfully"
+    else
+        echo "⚠️  Warning: Failed to start application (exit code: $RUN_EXIT_CODE)"
+        echo "   You can try starting it manually with:"
+        echo "   databricks bundle run $BUNDLE_NAME --profile \"$PROFILE_NAME\""
+    fi
+fi
+
 echo
 echo "==================================================================="
 echo "Setup Complete!"
@@ -545,7 +635,7 @@ echo "To start the local development server:"
 echo "  npm run dev"
 echo
 echo "To deploy to Databricks:"
-echo "  databricks bundle deploy"
-echo "  databricks bundle run databricks_chatbot"
+echo "  databricks bundle deploy --profile \"$PROFILE_NAME\""
+echo "  databricks bundle run $BUNDLE_NAME --profile \"$PROFILE_NAME\""
 echo "==================================================================="
 

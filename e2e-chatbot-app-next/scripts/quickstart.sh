@@ -231,8 +231,8 @@ else
         echo "Using profile 'DEFAULT'"
 
         # Make this profile the active one for the rest of the script
-        export DATABRICKS_CONFIG_PROFILE="$PROFILE_NAME"
-        echo "Using Databricks profile: $DATABRICKS_CONFIG_PROFILE"
+        # export DATABRICKS_CONFIG_PROFILE="$PROFILE_NAME"
+        echo "Using Databricks profile: $PROFILE_NAME"
     else
         echo "Databricks authentication failed."
         exit 1
@@ -259,7 +259,7 @@ echo "Validating environment..."
 
 # Calculate derived App Name to ensure it meets length constraints (max 30 chars)
 # Logic mirrors how databricks.yml constructs the name: db-chatbot-dev-${workspace.current_user.domain_friendly_name}
-USERNAME=$(databricks auth describe --output json 2>/dev/null | jq -r '.username')
+USERNAME=$(databricks auth describe --profile "$PROFILE_NAME" --output json 2>/dev/null | jq -r '.username')
 if [ -z "$USERNAME" ] || [ "$USERNAME" == "null" ]; then
     echo "Warning: Could not retrieve username from Databricks CLI. Skipping name validation."
 else
@@ -302,7 +302,7 @@ fi
 # Soft-check if endpoint exists
 echo "Checking if endpoint '$SERVING_ENDPOINT' exists..."
 set +e
-ENDPOINT_CHECK=$(databricks serving-endpoints get "$SERVING_ENDPOINT" 2>/dev/null)
+ENDPOINT_CHECK=$(databricks serving-endpoints get "$SERVING_ENDPOINT" --profile "$PROFILE_NAME" 2>/dev/null)
 ENDPOINT_EXISTS=$?
 set -e
 
@@ -314,7 +314,7 @@ if [ $ENDPOINT_EXISTS -ne 0 ]; then
     echo "Attempting to list available endpoints..."
     set +e
     # List endpoints, parse JSON to get names, limit to top 5
-    AVAILABLE_ENDPOINTS=$(databricks serving-endpoints list --output json 2>/dev/null | jq -r '.[].name' | head -n 5)
+    AVAILABLE_ENDPOINTS=$(databricks serving-endpoints list --profile "$PROFILE_NAME" --output json 2>/dev/null | jq -r '.[].name' | head -n 5)
     LIST_EXIT_CODE=$?
     set -e
 
@@ -454,7 +454,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
         echo "Note: Deployment with database may take 5-10 minutes..."
     fi
     
-    databricks bundle deploy -t dev
+    databricks bundle deploy -t dev --profile "$PROFILE_NAME"
     DID_DEPLOY=true
 else
     echo "Skipping deployment."
@@ -465,7 +465,7 @@ if [ "$USE_DATABASE" = true ]; then
     echo "Configuring database connection..."
     
     # Calculate instance name (logic mirrored from setup.sh)
-    USERNAME=$(databricks auth describe --output json 2>/dev/null | jq -r '.username')
+    USERNAME=$(databricks auth describe --profile "$PROFILE_NAME" --output json 2>/dev/null | jq -r '.username')
     DOMAIN_FRIENDLY=$(echo "$USERNAME" | cut -d'@' -f1 | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g')
     DB_INSTANCE_NAME="chatbot-lakebase-dev-$DOMAIN_FRIENDLY"
     
@@ -485,7 +485,7 @@ if [ "$USE_DATABASE" = true ]; then
     
     RETRIES=0
     while [ $RETRIES -lt $MAX_RETRIES ]; do
-        PGHOST=$(databricks database get-database-instance "$DB_INSTANCE_NAME" 2>/dev/null | jq -r '.read_write_dns' || echo "")
+        PGHOST=$(databricks database get-database-instance "$DB_INSTANCE_NAME" --profile "$PROFILE_NAME" 2>/dev/null | jq -r '.read_write_dns' || echo "")
         
         if [[ -n "$PGHOST" && "$PGHOST" != "null" ]]; then
             break

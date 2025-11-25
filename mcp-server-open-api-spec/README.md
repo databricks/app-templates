@@ -27,7 +27,13 @@ To use this template, you need:
 2. Credentials for your REST API; the full set of supported authentication types (OAuth Machine to Machine, OAuth User to Machine, Bearer token, etc is described [here](https://docs.databricks.com/aws/en/query-federation/http#authentication-methods-for-external-services)
 3. An installation of the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/install)
 
-### Clone the app code
+### 1. Fetch app code
+
+#### Copy deployed app code
+If you deployed this app via the template UI on Databricks, visit the app detail page in the UI and follow instructions to
+copy the app code locally via `databricks workspace export-dir`.
+
+#### Clone from Git
 Check out the current repository and enter the app template:
 
 ```
@@ -35,13 +41,12 @@ git clone https://github.com/databricks/app-templates
 cd mcp-server-open-api-spec
 ```
 
-### Upload your OpenAPI spec
+### 2. Upload your OpenAPI spec
 
 [Upload](https://docs.databricks.com/aws/en/ingestion/file-upload/upload-to-volume) your OpenAPI Spec (`spec.json`) to a Unity Catalog (UC) Volume on Databricks, so that the app can download it once deployed.
 
-### Configure the app to load your OpenAPI spec
-By default, the app will attempt to load your OpenAPI spec from a `spec.json` file at the root of the Volume. If you uploaded the OpenAPI spec to a different path, update the app configuration in `app.yaml` to reference
-your OpenAPI spec:
+### 3. Configure the app to load your OpenAPI spec
+By default, the app will attempt to load your OpenAPI spec from a `spec.json` file at the root of the Volume. If you uploaded the OpenAPI spec to a different path, update the app configuration in `app.yaml` to reference your OpenAPI spec:
 
 ```yaml
   - name: "SPEC_FILE_NAME"
@@ -51,7 +56,7 @@ your OpenAPI spec:
     value: "relative/path/to/spec.json"
 ```
 
-### Find or create a UC connection for authentication
+### 4. Find or create a UC connection for authentication
 
 Find or create a [Unity Catalog HTTP connection](https://docs.databricks.com/aws/en/query-federation/http) for authentication to your external service.
 Supported authentication types include Bearer, OAuth Machine to Machine, and Oauth User to Machine (per user) authentication.
@@ -59,7 +64,7 @@ Supported authentication types include Bearer, OAuth Machine to Machine, and Oau
 NOTE: this requires the `CREATE CONNECTION` privilege. If you do not have this privilege, reach out to a Databricks admin for help creating the connection.
 
 
-### Configure the app to use your UC connection for authentication
+### 5. Configure the app to use your UC connection for authentication
 Update the connection name environment variable in `app.yaml`.
 
 ```yaml
@@ -68,17 +73,27 @@ Update the connection name environment variable in `app.yaml`.
     value: "" # TODO: Specify your connection name here
 ```
 
-### Deploy to Databricks Apps
+### 6. Create the Databricks App
+**Note: You can skip this step if you deployed this MCP Server via the app template UI on Databricks**
+
+Otherwise you can create the app from the UI following the documentation [here](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/get-started#step-2-create-the-app).
+
+When Creating the Databricks Apps ensure that:
+- The app name starts with the `mcp-` prefix in order to test it with playground
+- Add the Volume Path configured in Step 2 as a [resource](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/permissions#assign-permissions-in-the-databricks-apps-ui) to the app with the `Resource Key` as `spec_volume_path`
+
+### 7. Deploy to Databricks Apps
 Double-check that all TODOs in `app.yaml` have been addressed. 
 Then, [deploy](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy) your server to Databricks Apps via the following:
 
 ```bash
+APP_NAME="mcp-server-rest-api"
 DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
-databricks sync . "/Users/$DATABRICKS_USERNAME/e2e-chatbot-app"
-databricks apps deploy my-agent-chatbot --source-code-path "/Workspace/Users/$DATABRICKS_USERNAME/e2e-chatbot-app"
+databricks sync . "/Users/$DATABRICKS_USERNAME/$APP_NAME"
+databricks apps deploy $APP_NAME --source-code-path "/Workspace/Users/$DATABRICKS_USERNAME/$APP_NAME"
 ```
 
-### Connect to the MCP server
+### 8. Connect to the MCP server
 
 #### Use AI Playground
 After deploying your MCP server to Databricks Apps, you can test it interactively in the [Databricks AI Playground](https://docs.databricks.com/aws/en/generative-ai/agent-framework/ai-playground-agent).

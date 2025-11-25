@@ -38,6 +38,44 @@ is_database_enabled() {
     return 1  # Database is not enabled
 }
 
+# Helper function to prompt for y/n with validation
+# Usage: prompt_yes_no "Question text?" "Y" (for default Yes) or "N" (for default No)
+# Returns: 0 for Yes, 1 for No
+prompt_yes_no() {
+    local question="$1"
+    local default="$2"
+    local prompt_text
+
+    if [ "$default" = "Y" ]; then
+        prompt_text="(Y/n): "
+    else
+        prompt_text="(y/N): "
+    fi
+
+    while true; do
+        read -p "$question $prompt_text" -n 1 -r
+        echo
+
+        # Empty input - use default
+        if [ -z "$REPLY" ]; then
+            if [ "$default" = "Y" ]; then
+                return 0  # Yes
+            else
+                return 1  # No
+            fi
+        fi
+
+        # Check for valid Y/y/N/n
+        if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+            return 0  # Yes
+        elif [[ "$REPLY" =~ ^[Nn]$ ]]; then
+            return 1  # No
+        else
+            echo "Invalid input. Please enter Y, y, N, or n (or press Enter for default)."
+        fi
+    done
+}
+
 echo "==================================================================="
 echo "Databricks Chatbot App - Quickstart Setup"
 echo "==================================================================="
@@ -343,14 +381,12 @@ if [ $ENDPOINT_EXISTS -ne 0 ]; then
     fi
     
     echo
-    echo "Do you want to proceed with '$SERVING_ENDPOINT' anyway?"
-    read -p "(y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    if prompt_yes_no "Do you want to proceed with '$SERVING_ENDPOINT' anyway?" "N"; then
+        echo "Proceeding with '$SERVING_ENDPOINT'..."
+    else
         echo "Please re-run the script with the correct endpoint name."
         exit 1
     fi
-    echo "Proceeding with '$SERVING_ENDPOINT'..."
 else
     echo "✓ Endpoint found and validated"
 fi
@@ -419,14 +455,11 @@ elif [ -n "$EXISTING_BUNDLE_NAME" ]; then
     echo "Detected default configuration (bundle name: databricks_chatbot)"
     echo "Default app name: $DEFAULT_APP_NAME (${#DEFAULT_APP_NAME} chars)"
     echo
-    echo "Do you want to customize these names?"
-    read -p "(y/N): " -n 1 -r
-    echo
 
     BUNDLE_NAME="databricks_chatbot"  # Default
     FINAL_APP_NAME="$DEFAULT_APP_NAME"  # Will be updated if customized
 
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
+    if prompt_yes_no "Do you want to customize these names?" "N"; then
     # App name validation loop
     while true; do
         echo "Enter custom app name (max $MAX_LEN chars, press Enter to keep default):"
@@ -548,12 +581,10 @@ if is_database_enabled; then
     echo "Continuing with existing database configuration..."
     USE_DATABASE=true
 else
-    echo "Do you want to enable persistent chat history (Postgres/Lakebase)?"
+    echo "Persistent chat history requires a Postgres/Lakebase database instance."
     echo "This will deploy a database instance to your workspace (~5-10 mins first time)."
-    read -p "(y/N): " -n 1 -r
-    echo
     USE_DATABASE=false
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
+    if prompt_yes_no "Do you want to enable persistent chat history?" "N"; then
         USE_DATABASE=true
         echo "Enabling persistent chat history..."
     
@@ -631,10 +662,7 @@ echo "✓ Dependencies installed"
 # Section 5: Deployment
 # ===================================================================
 echo
-echo "Do you want to deploy the app to Databricks now?"
-read -p "(Y/n): " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+if prompt_yes_no "Do you want to deploy the app to Databricks now?" "Y"; then
     # Clear bundle cache to ensure fresh deployment with new names
     if [ -d ".databricks" ]; then
         echo "Clearing bundle cache to ensure fresh deployment..."

@@ -56,7 +56,7 @@ By default, the app will attempt to load your OpenAPI spec from a `spec.json` fi
     value: "relative/path/to/spec.json"
 ```
 
-### 4. Find or create a UC connection for authentication
+### Find or create a UC connection for authentication
 
 Find or create a [Unity Catalog HTTP connection](https://docs.databricks.com/aws/en/query-federation/http) for authentication to your external service.
 Supported authentication types include Bearer, OAuth Machine to Machine, and Oauth User to Machine (per user) authentication.

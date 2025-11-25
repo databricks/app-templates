@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup Required - Custom MCP Server on Databricks Apps</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-gray-900 text-gray-100 font-sans">
+
+    <!-- Hero Section -->
+    <div class="py-12 sm:py-16 min-h-screen flex items-center justify-center">
+        <div class="max-w-3xl mx-auto px-4 text-center">
+            <!-- Logos Placeholder -->
+            <div class="flex justify-center items-center gap-8 mb-8">
+                <!-- Databricks Logo -->
+                <div class="w-24 h-24 rounded-full flex items-center justify-center">
+                    <img src="https://cdn.bfldr.com/9AYANS2F/at/k8bgnnxhb4bggjk88r4x9snf/databricks-symbol-color.svg?auto=webp&format=png"
+                        alt="Databricks Logo" class="w-20 h-20">
+                </div>
+                <!-- MCP Logo -->
+                <div class="w-24 h-24 rounded-full flex items-center justify-center">
+                    <img src="https://avatars.githubusercontent.com/u/182288589?s=200&v=4" alt="MCP Logo"
+                        class="w-20 h-20 rounded-full">
+                </div>
+            </div>
+
+            <h1 class="text-4xl font-bold text-white sm:text-5xl text-balance">
+                Custom Model Context Protocol Server on Databricks Apps
+            </h1>
+
+            <!-- Warning Section -->
+            <div class="mt-10 bg-yellow-900/30 border-2 border-yellow-600/50 rounded-lg p-8">
+                <div class="flex items-center justify-center mb-4">
+                    <svg class="w-16 h-16 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
+                        </path>
+                    </svg>
+                </div>
+                
+                <h2 class="text-2xl font-bold text-yellow-300 mb-4">
+                    Additional Configuration Required
+                </h2>
+                
+                <p class="text-lg text-gray-200 mb-6">
+                    This MCP server requires additional configuration before it can be used.
+                </p>
+                
+                <p class="text-base text-gray-300 mb-8">
+                    Please configure the required environment variables and resources as described in the documentation.
+                </p>
+
+                <a href="https://github.com/databricks/app-templates/blob/main/mcp-server-open-api-spec/README.md" 
+                   target="_blank" 
+                   rel="noopener"
+                   class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-gray-900 bg-yellow-500 hover:bg-yellow-400 transition-colors">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                        </path>
+                    </svg>
+                    View README
+                </a>
+            </div>
+
+            <!-- Quick Setup Checklist -->
+            <div class="mt-12 bg-gray-800 rounded-lg p-6 text-left">
+                <h3 class="text-xl font-semibold text-white mb-4 text-center">Setup Checklist</h3>
+                <ul class="space-y-3 text-gray-300">
+                    <li class="flex items-start">
+                        <svg class="w-6 h-6 text-blue-400 mr-3 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <span>Upload your OpenAPI specification to a Unity Catalog Volume</span>
+                    </li>
+                    <li class="flex items-start">
+                        <svg class="w-6 h-6 text-blue-400 mr-3 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <span>Create a Unity Catalog external connection for API authentication</span>
+                    </li>
+                    <li class="flex items-start">
+                        <svg class="w-6 h-6 text-blue-400 mr-3 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <span>Configure environment variables in <code class="bg-gray-700 px-2 py-1 rounded text-sm">app.yaml</code></span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="py-8 bg-gray-800">
+        <div class="max-w-3xl mx-auto px-4 text-center">
+            <p class="text-sm text-gray-400">
+                Need help? Check out the 
+                <a href="https://docs.databricks.com/aws/en/generative-ai/mcp/custom-mcp" 
+                   target="_blank" 
+                   rel="noopener"
+                   class="text-blue-400 hover:text-blue-300">
+                    Databricks MCP Documentation
+                </a>
+            </p>
+        </div>
+    </div>
+
+</body>
+
+</html>
+

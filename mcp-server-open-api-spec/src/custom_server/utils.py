@@ -78,3 +78,14 @@ def get_user_authenticated_workspace_client() -> WorkspaceClient:
         )
 
     return WorkspaceClient(token=token, auth_type="pat")
+
+
+def app_setup_complete() -> bool:
+    spec_volume_path = os.getenv("SPEC_VOLUME_PATH")
+    spec_file_name = os.getenv("SPEC_FILE_NAME")
+    uc_connection_name = os.getenv("UC_CONNECTION_NAME")
+
+    if spec_volume_path and spec_file_name and uc_connection_name:
+        return True
+
+    return False

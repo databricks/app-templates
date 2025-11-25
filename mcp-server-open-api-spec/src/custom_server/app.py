@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastmcp import FastMCP
 
 from .tools import load_tools
-from .utils import header_store
+from .utils import app_setup_complete, header_store
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -39,10 +39,19 @@ app = FastAPI(
 @app.get("/", include_in_schema=False)
 async def serve_index():
     """Serve the index page"""
-    if STATIC_DIR.exists() and (STATIC_DIR / "index.html").exists():
-        return FileResponse(STATIC_DIR / "index.html")
+    if app_setup_complete():
+        if STATIC_DIR.exists() and (STATIC_DIR / "index.html").exists():
+            return FileResponse(STATIC_DIR / "index.html")
+        else:
+            return {"message": "Custom Open API Spec MCP Server is running", "status": "healthy"}
     else:
-        return {"message": "Custom Open API Spec MCP Server is running", "status": "healthy"}
+        if STATIC_DIR.exists() and (STATIC_DIR / "setup_required.html").exists():
+            return FileResponse(STATIC_DIR / "setup_required.html")
+        else:
+            return {
+                "message": "Custom Open API Spec MCP Server is setup incorrectly. Please follow the readme at https://github.com/databricks/app-templates/blob/main/mcp-server-open-api-spec/README.md to setup your MCP Server correctly.",
+                "status": "Not Healthy",
+            }
 
 
 @app.get("/health")

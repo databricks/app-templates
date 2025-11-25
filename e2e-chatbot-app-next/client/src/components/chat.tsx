@@ -125,6 +125,10 @@ export function Chat({
             selectedChatModel: initialChatModel,
             selectedVisibilityType: visibilityType,
             nextMessageId: generateUUID(),
+            // In ephemeral mode, send previous messages from frontend since DB is unavailable
+            ...(chatHistoryEnabled
+              ? {}
+              : { previousMessages: messages.slice(0, -1) }),
             ...body,
           },
         };

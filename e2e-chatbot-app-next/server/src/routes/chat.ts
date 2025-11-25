@@ -125,7 +125,14 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     }
 
     const messagesFromDb = await getMessagesByChatId({ id });
-    const uiMessages = [...convertToUIMessages(messagesFromDb), message];
+
+    // In ephemeral mode, use previous messages from frontend if provided
+    const previousMessages =
+      !dbAvailable && requestBody.previousMessages
+        ? requestBody.previousMessages
+        : convertToUIMessages(messagesFromDb);
+
+    const uiMessages = [...previousMessages, message];
 
     await saveMessages({
       messages: [

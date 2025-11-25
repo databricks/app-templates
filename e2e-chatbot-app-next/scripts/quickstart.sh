@@ -12,6 +12,32 @@ has_brew() {
     command_exists brew
 }
 
+# Helper function to extract bundle name from databricks.yml
+get_current_bundle_name() {
+    if [ -f "databricks.yml" ]; then
+        awk '/^  apps:$/ {getline; if ($0 ~ /^    [a-zA-Z0-9_-]+:$/) {sub(/:$/, "", $1); print $1}}' databricks.yml
+    fi
+}
+
+# Helper function to extract app name from databricks.yml
+get_current_app_name() {
+    if [ -f "databricks.yml" ]; then
+        # Look for the name field under apps section (6 spaces indent)
+        awk '/^  apps:$/ {found=1} found && /^      name:/ {gsub(/^      name: /, ""); gsub(/\$\{var\.resource_name_suffix\}/, ""); gsub(/db-chatbot-/, ""); print; exit}' databricks.yml
+    fi
+}
+
+# Helper function to check if database is enabled in databricks.yml
+is_database_enabled() {
+    if [ -f "databricks.yml" ]; then
+        # Check if database_instances.chatbot_lakebase is uncommented (line starts with spaces, not # )
+        if grep -q "^    chatbot_lakebase:" databricks.yml; then
+            return 0  # Database is enabled
+        fi
+    fi
+    return 1  # Database is not enabled
+}
+
 echo "==================================================================="
 echo "Databricks Chatbot App - Quickstart Setup"
 echo "==================================================================="
@@ -373,17 +399,34 @@ if [ $DEFAULT_APP_NAME_LEN -gt $MAX_LEN ]; then
     echo "⚠️  Default app name was truncated to $MAX_LEN characters: '$DEFAULT_APP_NAME'"
 fi
 
-echo "Default app name: $DEFAULT_APP_NAME (${#DEFAULT_APP_NAME} chars)"
-echo "Default bundle name: databricks_chatbot"
-echo
-echo "Do you want to customize these names?"
-read -p "(y/N): " -n 1 -r
-echo
+# Detect existing configuration
+EXISTING_BUNDLE_NAME=$(get_current_bundle_name)
+EXISTING_APP_NAME_RAW=$(get_current_app_name)
 
-BUNDLE_NAME="databricks_chatbot"  # Default
-FINAL_APP_NAME="$DEFAULT_APP_NAME"  # Will be updated if customized
+# Check if custom names are already configured
+if [ -n "$EXISTING_BUNDLE_NAME" ] && [ "$EXISTING_BUNDLE_NAME" != "databricks_chatbot" ]; then
+    # Custom configuration detected
+    echo "✓ Detected existing custom configuration:"
+    echo "  Bundle name: $EXISTING_BUNDLE_NAME"
+    echo "  App name pattern: db-chatbot-\${var.resource_name_suffix}"
+    echo
+    echo "Note: App/bundle names cannot be changed after first deployment."
+    echo "Continuing with existing configuration..."
+    BUNDLE_NAME="$EXISTING_BUNDLE_NAME"
+    FINAL_APP_NAME="$DEFAULT_APP_NAME"  # Will use default since we can't easily extract the resolved name
+elif [ -n "$EXISTING_BUNDLE_NAME" ]; then
+    # Default configuration detected
+    echo "Detected default configuration (bundle name: databricks_chatbot)"
+    echo "Default app name: $DEFAULT_APP_NAME (${#DEFAULT_APP_NAME} chars)"
+    echo
+    echo "Do you want to customize these names?"
+    read -p "(y/N): " -n 1 -r
+    echo
 
-if [[ $REPLY =~ ^[Yy]$ ]]; then
+    BUNDLE_NAME="databricks_chatbot"  # Default
+    FINAL_APP_NAME="$DEFAULT_APP_NAME"  # Will be updated if customized
+
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
     # App name validation loop
     while true; do
         echo "Enter custom app name (max $MAX_LEN chars, press Enter to keep default):"
@@ -472,24 +515,47 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     else
         echo "Keeping default names"
     fi
-else
-    echo "Using default names"
-    # Still need to ensure the default name is valid
-    if [ "$DEFAULT_APP_NAME" != "db-chatbot-dev-$DOMAIN_FRIENDLY" ]; then
-        echo "Note: Default app name was truncated to meet $MAX_LEN character limit"
+    else
+        echo "Using default names"
+        # Still need to ensure the default name is valid
+        if [ "$DEFAULT_APP_NAME" != "db-chatbot-dev-$DOMAIN_FRIENDLY" ]; then
+            echo "Note: Default app name was truncated to meet $MAX_LEN character limit"
+        fi
     fi
+else
+    # If no existing bundle name found (shouldn't happen, but handle gracefully)
+    echo "Warning: Could not detect existing bundle configuration"
+    echo "Using default names"
+    BUNDLE_NAME="databricks_chatbot"
+    FINAL_APP_NAME="$DEFAULT_APP_NAME"
 fi
 
 # 3. Database Setup (within Section 4)
 echo
-echo "Do you want to enable persistent chat history (Postgres/Lakebase)?"
-echo "This will deploy a database instance to your workspace (~5-10 mins first time)."
-read -p "(y/N): " -n 1 -r
-echo
-USE_DATABASE=false
-if [[ $REPLY =~ ^[Yy]$ ]]; then
+echo "Database Configuration"
+echo "----------------------"
+
+# Check if database is already enabled
+if is_database_enabled; then
+    echo "✓ Detected existing database configuration (persistent chat history enabled)"
+    echo
+    echo "Note: Database configuration cannot be easily disabled after deployment."
+    echo "If you need to remove the database, you must:"
+    echo "  1. Manually delete the database instance in your Databricks workspace"
+    echo "  2. Comment out the database sections in databricks.yml"
+    echo "  3. Redeploy the bundle"
+    echo
+    echo "Continuing with existing database configuration..."
     USE_DATABASE=true
-    echo "Enabling persistent chat history..."
+else
+    echo "Do you want to enable persistent chat history (Postgres/Lakebase)?"
+    echo "This will deploy a database instance to your workspace (~5-10 mins first time)."
+    read -p "(y/N): " -n 1 -r
+    echo
+    USE_DATABASE=false
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        USE_DATABASE=true
+        echo "Enabling persistent chat history..."
     
     # Uncomment database sections in databricks.yml
     if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -553,6 +619,7 @@ else
 
     echo "⚠️  Note: If you previously deployed this app with a database, the database instance in Databricks is NOT deleted by this script."
     echo "   To avoid costs, please manually delete the 'chatbot-lakebase' instance in your Databricks workspace if it's no longer needed."
+    fi
 fi
 
 echo
@@ -626,18 +693,27 @@ if [ "$USE_DATABASE" = true ]; then
     
     if [[ -n "$PGHOST" && "$PGHOST" != "null" ]]; then
         echo "✓ Database found: $PGHOST"
-        
+
         # Update .env.local with DB config
-        if grep -q "PGHOST=" .env.local; then
-            if [[ "$OSTYPE" == "darwin"* ]]; then
-                sed -i '' "s|PGHOST=.*|PGHOST=$PGHOST|" .env.local
-                sed -i '' "s|PGUSER=.*|PGUSER=$USERNAME|" .env.local
-            else
-                sed -i "s|PGHOST=.*|PGHOST=$PGHOST|" .env.local
-                sed -i "s|PGUSER=.*|PGUSER=$USERNAME|" .env.local
-            fi
+        # Always ensure all database variables are set
+
+        # Remove existing database section if it exists to avoid duplicates
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' '/^# Database Configuration$/,/^PGPORT=.*$/d' .env.local 2>/dev/null || true
+            sed -i '' '/^PGUSER=.*$/d' .env.local 2>/dev/null || true
+            sed -i '' '/^PGHOST=.*$/d' .env.local 2>/dev/null || true
+            sed -i '' '/^PGDATABASE=.*$/d' .env.local 2>/dev/null || true
+            sed -i '' '/^PGPORT=.*$/d' .env.local 2>/dev/null || true
         else
-            cat >> .env.local << EOF
+            sed -i '/^# Database Configuration$/,/^PGPORT=.*$/d' .env.local 2>/dev/null || true
+            sed -i '/^PGUSER=.*$/d' .env.local 2>/dev/null || true
+            sed -i '/^PGHOST=.*$/d' .env.local 2>/dev/null || true
+            sed -i '/^PGDATABASE=.*$/d' .env.local 2>/dev/null || true
+            sed -i '/^PGPORT=.*$/d' .env.local 2>/dev/null || true
+        fi
+
+        # Add all database variables
+        cat >> .env.local << EOF
 
 # Database Configuration
 PGUSER=$USERNAME
@@ -645,12 +721,11 @@ PGHOST=$PGHOST
 PGDATABASE=databricks_postgres
 PGPORT=5432
 EOF
-        fi
-        
+
         echo "Running database migrations..."
         npm run db:migrate
         echo "✓ Database migrations completed"
-        
+
     else
         if [ "$DID_DEPLOY" = true ]; then
              echo "Warning: Timed out waiting for database DNS. You may need to check the status manually."

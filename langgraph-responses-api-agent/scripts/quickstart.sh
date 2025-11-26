@@ -294,9 +294,10 @@ echo
 # Section 4: MLflow Experiment Setup
 # ===================================================================
 
+
 # Get current Databricks username
 echo "Getting Databricks username..."
-DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
+DATABRICKS_USERNAME=$(databricks -p $DATABRICKS_CONFIG_PROFILE current-user me | jq -r .userName)
 echo "Username: $DATABRICKS_USERNAME"
 echo
 
@@ -305,14 +306,14 @@ echo "Creating MLflow experiment..."
 EXPERIMENT_NAME="/Users/$DATABRICKS_USERNAME/agents-on-apps"
 
 # Try to create the experiment with the default name first
-if EXPERIMENT_RESPONSE=$(databricks experiments create-experiment $EXPERIMENT_NAME 2>/dev/null); then
+if EXPERIMENT_RESPONSE=$(databricks -p $DATABRICKS_CONFIG_PROFILE experiments create-experiment $EXPERIMENT_NAME 2>/dev/null); then
     EXPERIMENT_ID=$(echo $EXPERIMENT_RESPONSE | jq -r .experiment_id)
     echo "Created experiment '$EXPERIMENT_NAME' with ID: $EXPERIMENT_ID"
 else
     echo "Experiment name already exists, creating with random suffix..."
     RANDOM_SUFFIX=$(openssl rand -hex 4)
     EXPERIMENT_NAME="/Users/$DATABRICKS_USERNAME/agents-on-apps-$RANDOM_SUFFIX"
-    EXPERIMENT_RESPONSE=$(databricks experiments create-experiment $EXPERIMENT_NAME)
+    EXPERIMENT_RESPONSE=$(databricks -p $DATABRICKS_CONFIG_PROFILE experiments create-experiment $EXPERIMENT_NAME)
     EXPERIMENT_ID=$(echo $EXPERIMENT_RESPONSE | jq -r .experiment_id)
     echo "Created experiment '$EXPERIMENT_NAME' with ID: $EXPERIMENT_ID"
 fi
@@ -323,20 +324,6 @@ echo "Updating .env.local with experiment ID..."
 sed -i '' "s/MLFLOW_EXPERIMENT_ID=.*/MLFLOW_EXPERIMENT_ID=$EXPERIMENT_ID/" .env.local
 echo
 
-# Update app.yaml with the experiment ID only if MLFLOW_EXPERIMENT_ID doesn't exist
-if grep -q "name: MLFLOW_EXPERIMENT_ID" app.yaml; then
-    echo "MLFLOW_EXPERIMENT_ID already exists in app.yaml, skipping update..."
-else
-    echo "Adding MLFLOW_EXPERIMENT_ID to app.yaml..."
-    # Add the two lines to the env section
-    sed -i '' "/^env:/a\\
-  - name: MLFLOW_EXPERIMENT_ID\\
-    value: \"$EXPERIMENT_ID\"
-" app.yaml
-    echo "✓ Added MLFLOW_EXPERIMENT_ID to app.yaml"
-fi
-echo
-
 echo "==================================================================="
 echo "Setup Complete!"
 echo "==================================================================="
@@ -345,6 +332,6 @@ echo "✓ Databricks authenticated with profile: $PROFILE_NAME"
 echo "✓ Configuration files created (.env.local)"
 echo "✓ MLflow experiment created: $EXPERIMENT_NAME"
 echo "✓ Experiment ID: $EXPERIMENT_ID"
-echo "✓ Configuration updated in .env.local and app.yaml"
+echo "✓ Configuration updated in .env.local"
 echo "==================================================================="
 echo

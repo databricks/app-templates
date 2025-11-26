@@ -2,9 +2,9 @@ from typing import AsyncGenerator
 
 import mlflow
 from agents import Agent, Runner, set_default_openai_api, set_default_openai_client
-from agents.mcp import MCPServerStdio, MCPServerStreamableHttp, MCPServerStreamableHttpParams
 from agents.tracing import set_trace_processors
-from databricks.sdk import WorkspaceClient
+from databricks_openai import AsyncDatabricksOpenAI
+from databricks_openai.agents import McpServer
 from mlflow.genai.agent_server import invoke, stream
 from mlflow.types.responses import (
     ResponsesAgentRequest,
@@ -13,33 +13,26 @@ from mlflow.types.responses import (
 )
 
 from agent_server.utils import (
-    get_async_openai_client,
     get_databricks_host_from_env,
     get_user_workspace_client,
     process_agent_stream_events,
 )
 
-sp_workspace_client = WorkspaceClient()
 # NOTE: this will work for all databricks models OTHER than GPT-OSS, which uses a slightly different API
-databricks_openai_client = get_async_openai_client(sp_workspace_client)
-set_default_openai_client(databricks_openai_client)
+set_default_openai_client(AsyncDatabricksOpenAI())
 set_default_openai_api("chat_completions")
-set_trace_processors([])  # use mlflow for trace processing
+set_trace_processors([])  # only use mlflow for trace processing
 mlflow.openai.autolog()
 
 
 async def init_mcp_server():
-    return MCPServerStreamableHttp(
-        params=MCPServerStreamableHttpParams(
-            url=f"{get_databricks_host_from_env()}/api/2.0/mcp/functions/system/ai",
-            headers=sp_workspace_client.config.authenticate(),
-        ),
-        client_session_timeout_seconds=20,
+    return McpServer(
+        url=f"{get_databricks_host_from_env()}/api/2.0/mcp/functions/system/ai",
         name="system.ai uc function mcp server",
     )
 
 
-def create_coding_agent(mcp_server: MCPServerStdio) -> Agent:
+def create_coding_agent(mcp_server: McpServer) -> Agent:
     return Agent(
         name="code execution agent",
         instructions="You are a code execution agent. You can execute code and return the results.",
@@ -50,6 +43,7 @@ def create_coding_agent(mcp_server: MCPServerStdio) -> Agent:
 
 @invoke()
 async def invoke(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
+    # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
     async with await init_mcp_server() as mcp_server:
         agent = create_coding_agent(mcp_server)
@@ -60,6 +54,7 @@ async def invoke(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
 
 @stream()
 async def stream(request: dict) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
+    # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
     async with await init_mcp_server() as mcp_server:
         agent = create_coding_agent(mcp_server)

@@ -10,7 +10,7 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.12",
     "uvicorn>=0.34.2",
-    "databricks-openai>=0.6.1",
+    "databricks-openai>=0.7.0",
     "mlflow>=3.6.0",
     "openai-agents>=0.4.1",
     "python-dotenv",

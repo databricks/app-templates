@@ -1,7 +1,7 @@
+import logging
 from typing import Any, AsyncGenerator, AsyncIterator, Optional
 
 from databricks.sdk import WorkspaceClient
-from httpx import AsyncClient, Auth, Request
 from langchain.messages import AIMessageChunk
 from mlflow.genai.agent_server import get_request_headers
 from mlflow.types.responses import (
@@ -9,7 +9,6 @@ from mlflow.types.responses import (
     create_text_delta,
     output_to_responses_items_stream,
 )
-from openai import AsyncOpenAI
 
 
 def get_user_workspace_client() -> WorkspaceClient:
@@ -22,30 +21,8 @@ def get_databricks_host_from_env() -> Optional[str]:
         w = WorkspaceClient()
         return w.config.host
     except Exception as e:
-        print(e)
+        logging.exception(f"Error getting databricks host from env: {e}")
         return None
-
-
-def _get_async_http_client(workspace_client: WorkspaceClient) -> AsyncClient:
-    class BearerAuth(Auth):
-        def __init__(self, get_headers_func):
-            self.get_headers_func = get_headers_func
-
-        def auth_flow(self, request: Request) -> Request:
-            auth_headers = self.get_headers_func()
-            request.headers["Authorization"] = auth_headers["Authorization"]
-            yield request
-
-    databricks_token_auth = BearerAuth(workspace_client.config.authenticate)
-    return AsyncClient(auth=databricks_token_auth)
-
-
-def get_async_openai_client(workspace_client: WorkspaceClient) -> AsyncOpenAI:
-    return AsyncOpenAI(
-        base_url=f"{get_databricks_host_from_env()}/serving-endpoints",
-        api_key="no-token",  # Passing in a placeholder to pass validations, this will not be used
-        http_client=_get_async_http_client(workspace_client),
-    )
 
 
 async def process_agent_astream_events(

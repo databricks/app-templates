@@ -13,7 +13,7 @@ dependencies = [
     "databricks-openai>=0.6.1",
     "mlflow>=3.6.0",
     "openai-agents>=0.4.1",
-    "dotenv",
+    "python-dotenv",
 ]
 
 [build-system]

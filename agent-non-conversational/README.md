@@ -162,49 +162,37 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
    Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/tutorial) installed and configured.
 
    ```bash
-   databricks apps create agent-proto-non-conversational
+   databricks apps create agent-non-conversational
    ```
 
 1. **Set up authentication to Databricks resources**
 
-   **App Authentication via Service Principal (SP)**: To access resources like serving endpoints, genie spaces, SQL warehouses, and lakebase instances, you can click `edit` on your app home page to grant the App's SP permission. Refer to the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources) for more info.
+   For this example, you need to add an MLflow Experiment as a resource to your app. You can do this [manually in the MLflow experiments UI](https://docs.databricks.com/aws/en/mlflow/experiments#change-permissions-for-an-experiment) by granting the App's Service Principal (SP) permission to edit the experiment. See the [Apps authorization docs](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#app-authorization) on where to find the SP's ID in the App Details page.
 
-   For resources that are not supported yet, refer to the [Agent Framework authentication documentation](https://docs.databricks.com/aws/en/generative-ai/agent-framework/deploy-agent#automatic-authentication-passthrough) for the correct permission level to grant to your app SP. MLflow experiments, UC connections, UC functions, and vector search indexes will be added to the UI soon.
+   **App Authentication via Service Principal (SP)**: To access resources like serving endpoints, genie spaces, MLflow experiments, UC Functions, and Vector Search Indexes, you can click `edit` on your app home page to grant the App's SP permission. Refer to the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources) for more info.
 
-   **On-behalf-of (OBO) User Authentication**: Use `get_obo_workspace_client()` from `agent_server.server` to authenticate as the requesting user instead of the app service principal. Refer to the [OBO authentication documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#retrieve-user-authorization-credentials) for more info.
+   For resources that are not supported yet, refer to the [Agent Framework authentication documentation](https://docs.databricks.com/aws/en/generative-ai/agent-framework/deploy-agent#automatic-authentication-passthrough) for the correct permission level to grant to your app SP.
 
-2. **Set the value of `MLFLOW_EXPERIMENT_ID` in `app.yaml`**
+   **On-behalf-of (OBO) User Authentication**: Use `get_user_workspace_client()` from `agent_server.utils` to authenticate as the requesting user instead of the app service principal. Refer to the [OBO authentication documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#retrieve-user-authorization-credentials) for more info.
 
-   Refer to the [Databricks Apps environment variable documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/environment-variables) for more info.
-
-   ```yml
-   env:
-     - name: MLFLOW_TRACKING_URI
-       value: "databricks"
-     - name: MLFLOW_REGISTRY_URI
-       value: "databricks-uc"
-     - name: MLFLOW_EXPERIMENT_ID
-       value: "" # fill in with your experiment ID
-   ```
-
-3. **Sync local files to your workspace**
+2. **Sync local files to your workspace**
 
    Refer to the [Databricks Apps deploy documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy?language=Databricks+CLI#deploy-the-app) for more info.
 
    ```bash
    DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
-   databricks sync . "/Users/$DATABRICKS_USERNAME/agent-proto-non-conversational"
+   databricks sync . "/Users/$DATABRICKS_USERNAME/agent-non-conversational"
    ```
 
-4. **Deploy your Databricks App**
+3. **Deploy your Databricks App**
 
    Refer to the [Databricks Apps deploy documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy?language=Databricks+CLI#deploy-the-app) for more info.
 
    ```bash
-   databricks apps deploy agent-proto-non-conversational --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/agent-proto-non-conversational
+   databricks apps deploy agent-non-conversational --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/agent-non-conversational
    ```
 
-5. **Query your agent hosted on Databricks Apps**
+4. **Query your agent hosted on Databricks Apps**
 
    You can now test your deployed agent using the test script with authentication:
 

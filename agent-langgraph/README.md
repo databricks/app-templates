@@ -135,7 +135,6 @@ This will start the agent server and the chat app at http://localhost:8000.
    - Feel free to add as many files or folders as you want to your agent, just make sure that the script within `pyproject.toml` runs the right script that will start the server and set up MLflow tracing.
    - To add dependencies to your agent, run `uv add <package_name>` (ex. `uv add "mlflow-skinny[databricks]"`). Refer to the [python pyproject.toml guide](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements) for more info.
    - While we have built-in MLflow tracing when calling the methods annotated with `@invoke()` and `@stream()`, you can also further instrument your own agent. Refer to the [MLflow tracing documentation](https://docs.databricks.com/aws/en/mlflow3/genai/tracing/app-instrumentation/) for more info.
-     - Search for `"start_span"` within `src/agent_server/server.py` for the built-in implementation.
    - Refer to the Agent Framework ["Author AI Agents in Code" documentation](https://docs.databricks.com/aws/en/generative-ai/agent-framework/author-agent) for more information.
 
 ## Evaluating your agent
@@ -158,10 +157,12 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
    Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/tutorial) installed and configured.
 
    ```bash
-   databricks apps create agent-prototype
+   databricks apps create agent-langgraph
    ```
 
 1. **Set up authentication to Databricks resources**
+
+   For this example, you need to add an MLflow Experiment as a resource to your app. You can do this [manually in the MLflow experiments UI](https://docs.databricks.com/aws/en/mlflow/experiments#change-permissions-for-an-experiment) by granting the App's Service Principal (SP) permission to edit the experiment. See the [Apps authorization docs](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#app-authorization) on where to find the SP's ID in the App Details page.
 
    **App Authentication via Service Principal (SP)**: To access resources like serving endpoints, genie spaces, MLflow experiments, UC Functions, and Vector Search Indexes, you can click `edit` on your app home page to grant the App's SP permission. Refer to the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources) for more info.
 
@@ -169,28 +170,24 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
    **On-behalf-of (OBO) User Authentication**: Use `get_user_workspace_client()` from `agent_server.utils` to authenticate as the requesting user instead of the app service principal. Refer to the [OBO authentication documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#retrieve-user-authorization-credentials) for more info.
 
-2. **Make sure the value of `MLFLOW_EXPERIMENT_ID` is set in `app.yaml`**
-
-   The `MLFLOW_EXPERIMENT_ID` in `app.yaml` should have been filled in by the `./scripts/quickstart.sh` script. If it is not set, you can manually fill in the value in `app.yaml`. Refer to the [Databricks Apps environment variable documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/environment-variables) for more info.
-
-3. **Sync local files to your workspace**
+2. **Sync local files to your workspace**
 
    Refer to the [Databricks Apps deploy documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy?language=Databricks+CLI#deploy-the-app) for more info.
 
    ```bash
    DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
-   databricks sync . "/Users/$DATABRICKS_USERNAME/agent-prototype"
+   databricks sync . "/Users/$DATABRICKS_USERNAME/agent-langgraph"
    ```
 
-4. **Deploy your Databricks App**
+3. **Deploy your Databricks App**
 
    Refer to the [Databricks Apps deploy documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy?language=Databricks+CLI#deploy-the-app) for more info.
 
    ```bash
-   databricks apps deploy agent-prototype --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/agent-prototype
+   databricks apps deploy agent-langgraph --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/agent-langgraph
    ```
 
-5. **Query your agent hosted on Databricks Apps**
+4. **Query your agent hosted on Databricks Apps**
 
    Databricks Apps are _only_ queryable via OAuth token. You cannot use a PAT to query your agent. Generate an [OAuth token with your credentials using the Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/authentication#u2m-auth):
 

@@ -14,7 +14,7 @@ dependencies = [
     "mlflow>=3.6.0",
     "langgraph>=1.0.1",
     "langchain-mcp-adapters>=0.1.11",
-    "dotenv",
+    "python-dotenv",
 ]
 
 [build-system]

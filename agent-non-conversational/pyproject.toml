@@ -16,7 +16,7 @@ dependencies = [
     "databricks-vectorsearch>=0.57.0",
     "databricks-agents>=1.4.0",
     "pydantic>=2.11",
-    "dotenv",
+    "python-dotenv",
 ]
 
 [tool.uv]

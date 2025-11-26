@@ -6,9 +6,13 @@ if [ -f ".env.local" ]; then
     export $(cat .env.local | grep -v '^#' | xargs)
 fi
 
-# Start backend in background with output redirection
+# Create FIFO early for process exit detection
+FIFO=$(mktemp -u)
+mkfifo "$FIFO"
+
+# Start backend in background - writes to FIFO on exit
 echo "Starting backend..."
-uv run start-server 2>&1 | tee backend.log &
+{ uv run start-server 2>&1 | tee backend.log; echo "backend ${PIPESTATUS[0]}" > "$FIFO"; } &
 BACKEND_PID=$!
 
 # Check if e2e-chatbot-app-next exists, if not clone it
@@ -35,12 +39,12 @@ if [ ! -d "e2e-chatbot-app-next" ]; then
     rm -rf temp-app-templates
 fi
 
-# Start frontend in background with output redirection
+# Start frontend in background - writes to FIFO on exit
 echo "Starting frontend..."
 cd e2e-chatbot-app-next
 npm install
 npm run build
-npm run start 2>&1 | tee ../frontend.log &
+{ npm run start 2>&1 | tee ../frontend.log; echo "frontend ${PIPESTATUS[0]}" > "$FIFO"; } &
 FRONTEND_PID=$!
 cd ..
 
@@ -50,8 +54,26 @@ cleanup() {
     echo "=========================================="
     echo "Shutting down both processes..."
     echo "=========================================="
+    # Kill child processes first, then the wrapper subshells
+    pkill -P $BACKEND_PID 2>/dev/null
+    pkill -P $FRONTEND_PID 2>/dev/null
     kill $BACKEND_PID $FRONTEND_PID 2>/dev/null
     wait $BACKEND_PID $FRONTEND_PID 2>/dev/null
+    rm -f "$FIFO" 2>/dev/null
+}
+
+# Function to print error logs
+print_error_logs() {
+    echo ""
+    echo "Last 50 lines of backend.log:"
+    echo "----------------------------------------"
+    tail -50 backend.log 2>/dev/null || echo "(no backend.log found)"
+    echo "----------------------------------------"
+    echo ""
+    echo "Last 50 lines of frontend.log:"
+    echo "----------------------------------------"
+    tail -50 frontend.log 2>/dev/null || echo "(no frontend.log found)"
+    echo "----------------------------------------"
 }
 
 # Trap cleanup function on script termination
@@ -64,33 +86,17 @@ echo "Backend PID: $BACKEND_PID"
 echo "Frontend PID: $FRONTEND_PID"
 echo ""
 
-# Wait for both processes to complete
-wait $BACKEND_PID $FRONTEND_PID
-EXIT_CODE=$?
+# Block until first process exits (reads from FIFO)
+read RESULT < "$FIFO"
+rm -f "$FIFO"
 
-# Check which process failed
-if ! kill -0 $BACKEND_PID 2>/dev/null; then
-    echo ""
-    echo "=========================================="
-    echo "ERROR: Backend process failed with exit code $EXIT_CODE"
-    echo "=========================================="
-    echo ""
-    echo "Last 50 lines of backend log:"
-    echo "----------------------------------------"
-    tail -50 backend.log
-    echo "----------------------------------------"
-    cleanup
-    exit $EXIT_CODE
-elif ! kill -0 $FRONTEND_PID 2>/dev/null; then
-    echo ""
-    echo "=========================================="
-    echo "ERROR: Frontend process failed with exit code $EXIT_CODE"
-    echo "=========================================="
-    echo ""
-    echo "Last 50 lines of frontend log:"
-    echo "----------------------------------------"
-    tail -50 frontend.log
-    echo "----------------------------------------"
-    cleanup
-    exit $EXIT_CODE
-fi
+FAILED=$(echo "$RESULT" | cut -d' ' -f1)
+EXIT_CODE=$(echo "$RESULT" | cut -d' ' -f2)
+
+echo ""
+echo "=========================================="
+echo "ERROR: $FAILED process exited with code $EXIT_CODE"
+echo "=========================================="
+print_error_logs
+cleanup
+exit $EXIT_CODE

@@ -297,7 +297,7 @@ echo
 
 # Get current Databricks username
 echo "Getting Databricks username..."
-DATABRICKS_USERNAME=$(databricks -p $DATABRICKS_CONFIG_PROFILE current-user me | jq -r .userName)
+DATABRICKS_USERNAME=$(databricks -p $PROFILE_NAME current-user me | jq -r .userName)
 echo "Username: $DATABRICKS_USERNAME"
 echo
 
@@ -306,14 +306,14 @@ echo "Creating MLflow experiment..."
 EXPERIMENT_NAME="/Users/$DATABRICKS_USERNAME/agents-on-apps"
 
 # Try to create the experiment with the default name first
-if EXPERIMENT_RESPONSE=$(databricks -p $DATABRICKS_CONFIG_PROFILE experiments create-experiment $EXPERIMENT_NAME 2>/dev/null); then
+if EXPERIMENT_RESPONSE=$(databricks -p $PROFILE_NAME experiments create-experiment $EXPERIMENT_NAME 2>/dev/null); then
     EXPERIMENT_ID=$(echo $EXPERIMENT_RESPONSE | jq -r .experiment_id)
     echo "Created experiment '$EXPERIMENT_NAME' with ID: $EXPERIMENT_ID"
 else
     echo "Experiment name already exists, creating with random suffix..."
     RANDOM_SUFFIX=$(openssl rand -hex 4)
     EXPERIMENT_NAME="/Users/$DATABRICKS_USERNAME/agents-on-apps-$RANDOM_SUFFIX"
-    EXPERIMENT_RESPONSE=$(databricks -p $DATABRICKS_CONFIG_PROFILE experiments create-experiment $EXPERIMENT_NAME)
+    EXPERIMENT_RESPONSE=$(databricks -p $PROFILE_NAME experiments create-experiment $EXPERIMENT_NAME)
     EXPERIMENT_ID=$(echo $EXPERIMENT_RESPONSE | jq -r .experiment_id)
     echo "Created experiment '$EXPERIMENT_NAME' with ID: $EXPERIMENT_ID"
 fi

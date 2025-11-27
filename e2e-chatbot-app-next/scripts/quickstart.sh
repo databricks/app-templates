@@ -568,25 +568,131 @@ echo
 echo "Database Configuration"
 echo "----------------------"
 
+# Calculate the database instance name that will be used
+USERNAME=$(databricks auth describe --profile "$PROFILE_NAME" --output json 2>/dev/null | jq -r '.username')
+DOMAIN_FRIENDLY=$(echo "$USERNAME" | cut -d'@' -f1 | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g')
+CALCULATED_DB_INSTANCE_NAME="chatbot-lakebase-dev-$DOMAIN_FRIENDLY"
+
 # Check if database is already enabled
 if is_database_enabled; then
     echo "✓ Detected existing database configuration (persistent chat history enabled)"
     echo
-    echo "Note: Database configuration cannot be easily disabled after deployment."
-    echo "If you need to remove the database, you must:"
-    echo "  1. Manually delete the database instance in your Databricks workspace"
-    echo "  2. Comment out the database sections in databricks.yml"
-    echo "  3. Redeploy the bundle"
-    echo
-    echo "Continuing with existing database configuration..."
-    USE_DATABASE=true
+
+    # Check if a database instance with this name already exists in the workspace
+    echo "Checking for existing database instance in workspace..."
+    set +e
+    EXISTING_DB_CHECK=$(databricks database get-database-instance "$CALCULATED_DB_INSTANCE_NAME" --profile "$PROFILE_NAME" 2>/dev/null)
+    EXISTING_DB_EXIT_CODE=$?
+    set -e
+
+    if [ $EXISTING_DB_EXIT_CODE -eq 0 ]; then
+        echo
+        echo "⚠️  CONFLICT DETECTED"
+        echo "-------------------------------------------------------------------"
+        echo "Found existing database instance: $CALCULATED_DB_INSTANCE_NAME"
+        echo
+        echo "This database instance already exists in your workspace, likely from"
+        echo "a previous deployment. Terraform cannot create a new instance with"
+        echo "the same name."
+        echo
+        echo "Options:"
+        echo "  1. Delete the existing instance and create fresh (loses all data)"
+        echo "  2. Skip database setup (deploy without persistent chat history)"
+        echo "  3. Exit and manually resolve the conflict"
+        echo
+        echo "To delete the existing instance, run:"
+        echo "  ./scripts/cleanup-database.sh"
+        echo "  (or manually: databricks database delete-database-instance $CALCULATED_DB_INSTANCE_NAME --profile \"$PROFILE_NAME\")"
+        echo "-------------------------------------------------------------------"
+        echo
+
+        if prompt_yes_no "Do you want to skip database setup and deploy without persistent chat history?" "Y"; then
+            echo "Disabling database in databricks.yml..."
+            USE_DATABASE=false
+
+            # Comment out database sections
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                sed -i '' '/^ *chatbot_lakebase:/s/^    /    # /' databricks.yml
+                sed -i '' '/^ *name: \${var.database_instance_name}/s/^    /    # /' databricks.yml
+                sed -i '' '/^ *capacity: CU_1/s/^    /    # /' databricks.yml
+                sed -i '' '/^ *- name: database/s/^        /        # /' databricks.yml
+                sed -i '' '/^ *description: "Lakebase database instance/s/^        /        # /' databricks.yml
+                sed -i '' '/^ *database:/s/^        /        # /' databricks.yml
+                sed -i '' '/^ *database_name: databricks_postgres/s/^        /        # /' databricks.yml
+                sed -i '' '/^ *instance_name: \${resources/s/^        /        # /' databricks.yml
+                sed -i '' '/^ *permission: CAN_CONNECT/s/^        /        # /' databricks.yml
+            else
+                sed -i '/^ *chatbot_lakebase:/s/^    /    # /' databricks.yml
+                sed -i '/^ *name: \${var.database_instance_name}/s/^    /    # /' databricks.yml
+                sed -i '/^ *capacity: CU_1/s/^    /    # /' databricks.yml
+                sed -i '/^ *- name: database/s/^        /        # /' databricks.yml
+                sed -i '/^ *description: "Lakebase database instance/s/^        /        # /' databricks.yml
+                sed -i '/^ *database:/s/^        /        # /' databricks.yml
+                sed -i '/^ *database_name: databricks_postgres/s/^        /        # /' databricks.yml
+                sed -i '/^ *instance_name: \${resources/s/^        /        # /' databricks.yml
+                sed -i '/^ *permission: CAN_CONNECT/s/^        /        # /' databricks.yml
+            fi
+            echo "✓ Database sections commented out in databricks.yml"
+        else
+            echo
+            echo "Please resolve the conflict and re-run this script."
+            echo "Options:"
+            echo "  1. Run: ./scripts/cleanup-database.sh"
+            echo "  2. Or manually delete: databricks database delete-database-instance $CALCULATED_DB_INSTANCE_NAME --profile \"$PROFILE_NAME\""
+            exit 1
+        fi
+    else
+        echo
+        echo "⚠️  Database is configured in databricks.yml, but no database instance exists yet."
+        echo "   Expected instance name: $CALCULATED_DB_INSTANCE_NAME"
+        echo
+        echo "This is normal for a first-time deployment."
+        echo
+        USE_DATABASE=true
+    fi
 else
     echo "Persistent chat history requires a Postgres/Lakebase database instance."
     echo "This will deploy a database instance to your workspace (~5-10 mins first time)."
-    USE_DATABASE=false
-    if prompt_yes_no "Do you want to enable persistent chat history?" "N"; then
-        USE_DATABASE=true
-        echo "Enabling persistent chat history..."
+    echo
+    echo "Checking for existing database instances..."
+
+    # Check if a database instance with the calculated name already exists
+    set +e
+    EXISTING_DB_CHECK=$(databricks database get-database-instance "$CALCULATED_DB_INSTANCE_NAME" --profile "$PROFILE_NAME" 2>/dev/null)
+    EXISTING_DB_EXIT_CODE=$?
+    set -e
+
+    if [ $EXISTING_DB_EXIT_CODE -eq 0 ]; then
+        echo
+        echo "⚠️  Found existing database instance: $CALCULATED_DB_INSTANCE_NAME"
+        echo
+        echo "This database instance name is already in use (likely from a previous deployment)."
+        echo
+        echo "Options:"
+        echo "  1. Skip database setup (use ephemeral mode - no persistent chat history)"
+        echo "  2. Continue anyway (may cause deployment errors if bundle config conflicts)"
+        echo "  3. Exit and manually delete the old database instance first"
+        echo
+        echo "To manually delete the database instance, run:"
+        echo "  databricks database delete-database-instance $CALCULATED_DB_INSTANCE_NAME --profile \"$PROFILE_NAME\""
+        echo
+        if prompt_yes_no "Do you want to skip database setup and use ephemeral mode?" "Y"; then
+            USE_DATABASE=false
+            echo "Skipping database setup. App will use ephemeral mode (no persistent chat history)."
+        else
+            USE_DATABASE=true
+            echo "⚠️  Continuing with database setup. If deployment fails, you'll need to manually delete"
+            echo "   the existing database instance and try again."
+        fi
+    else
+        USE_DATABASE=false
+        if prompt_yes_no "Do you want to enable persistent chat history?" "N"; then
+            USE_DATABASE=true
+            echo "Enabling persistent chat history..."
+        fi
+    fi
+
+    if [ "$USE_DATABASE" = true ]; then
     
     # Uncomment database sections in databricks.yml
     if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -799,5 +905,23 @@ echo
 echo "To deploy to Databricks:"
 echo "  databricks bundle deploy --profile \"$PROFILE_NAME\""
 echo "  databricks bundle run $BUNDLE_NAME --profile \"$PROFILE_NAME\""
+echo "==================================================================="
+echo
+echo "Troubleshooting:"
+echo "-----------------------------------------------------------------"
+echo "If deployment failed with 'Instance name is not unique' error:"
+echo
+echo "1. List existing database instances:"
+echo "   databricks database list-database-instances --profile \"$PROFILE_NAME\""
+echo
+echo "2. Delete the conflicting instance (WARNING: deletes all data):"
+echo "   databricks database delete-database-instance $CALCULATED_DB_INSTANCE_NAME --profile \"$PROFILE_NAME\""
+echo
+echo "3. Re-run this script:"
+echo "   ./scripts/quickstart.sh"
+echo
+echo "Or, to continue without persistent chat history:"
+echo "   - Edit databricks.yml and comment out the database sections"
+echo "   - Run: databricks bundle deploy --profile \"$PROFILE_NAME\""
 echo "==================================================================="
 

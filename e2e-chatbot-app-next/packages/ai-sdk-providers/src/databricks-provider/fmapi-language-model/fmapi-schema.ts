@@ -33,11 +33,14 @@ export const fmapiChunkSchema = z.object({
   id: z.string(),
   created: z.number(),
   model: z.string(),
-  usage: z.object({
-    prompt_tokens: z.number(),
-    completion_tokens: z.number(),
-    total_tokens: z.number(),
-  }),
+  usage: z
+    .object({
+      prompt_tokens: z.number(),
+      completion_tokens: z.number(),
+      total_tokens: z.number(),
+    })
+    .nullable()
+    .optional(),
   object: z.literal('chat.completion.chunk'),
   choices: z.array(
     z.object({
@@ -57,11 +60,14 @@ export const fmapiResponseSchema = z.object({
   id: z.string(),
   created: z.number(),
   model: z.string(),
-  usage: z.object({
-    prompt_tokens: z.number(),
-    completion_tokens: z.number(),
-    total_tokens: z.number(),
-  }),
+  usage: z
+    .object({
+      prompt_tokens: z.number(),
+      completion_tokens: z.number(),
+      total_tokens: z.number(),
+    })
+    .nullable()
+    .optional(),
   choices: z.array(
     z.object({
       message: z.object({

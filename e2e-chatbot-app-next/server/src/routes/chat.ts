@@ -107,7 +107,14 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
 
     if (!chat) {
       if (isDatabaseAvailable()) {
-        const title = await generateTitleFromUserMessage({ message });
+        // Extract OBO token for title generation (same token used for streaming below)
+        const oboTokenForTitle = req.headers[
+          'x-forwarded-access-token'
+        ] as string | undefined;
+        const title = await generateTitleFromUserMessage({
+          message,
+          oboToken: oboTokenForTitle,
+        });
 
         await saveChat({
           id,
@@ -147,9 +154,25 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     const streamId = generateUUID();
 
     const model = await myProvider.languageModel(selectedChatModel);
+
+    // Extract OBO (On-Behalf-Of) token if present.
+    // Databricks Apps injects x-forwarded-access-token header for user authorization.
+    // When present, use it for downstream API calls to execute with user's identity/permissions.
+    const oboToken = req.headers['x-forwarded-access-token'] as string | undefined;
+
+    // Build auth headers: send both Authorization and x-forwarded-access-token
+    // for maximum compatibility with Databricks APIs and custom API_PROXY backends.
+    const oboHeaders = oboToken
+      ? {
+          Authorization: `Bearer ${oboToken}`,
+          'x-forwarded-access-token': oboToken,
+        }
+      : undefined;
+
     const result = streamText({
       model,
       messages: convertToModelMessages(uiMessages),
+      headers: oboHeaders,
       onFinish: ({ usage }) => {
         finalUsage = usage;
       },
@@ -352,7 +375,8 @@ chatRouter.get(
 chatRouter.post('/title', requireAuth, async (req: Request, res: Response) => {
   try {
     const { message } = req.body;
-    const title = await generateTitleFromUserMessage({ message });
+    const oboToken = req.headers['x-forwarded-access-token'] as string | undefined;
+    const title = await generateTitleFromUserMessage({ message, oboToken });
     res.json({ title });
   } catch (error) {
     console.error('Error generating title:', error);
@@ -387,12 +411,24 @@ chatRouter.patch(
 // Helper function to generate title from user message
 async function generateTitleFromUserMessage({
   message,
+  oboToken,
 }: {
   message: ChatMessage;
+  oboToken?: string;
 }) {
   const model = await myProvider.languageModel('title-model');
+
+  // Build OBO headers if token is present (same pattern as streaming endpoint)
+  const oboHeaders = oboToken
+    ? {
+        Authorization: `Bearer ${oboToken}`,
+        'x-forwarded-access-token': oboToken,
+      }
+    : undefined;
+
   const { text: title } = await generateText({
     model,
+    headers: oboHeaders,
     system: `\n
     - you will generate a short title based on the first message a user begins a conversation with
     - ensure it is not more than 80 characters long

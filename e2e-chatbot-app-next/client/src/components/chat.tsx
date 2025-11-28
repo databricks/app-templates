@@ -80,6 +80,10 @@ export function Chat({
     };
   }, []);
 
+  const stop = useCallback(() => {
+    abortController.current?.abort('USER_ABORT_SIGNAL');
+  }, []);
+
   const isNewChat = initialMessages.length === 0;
   const didFetchHistoryOnNewChat = useRef(false);
   const fetchChatHistory = useCallback(() => {
@@ -91,7 +95,6 @@ export function Chat({
     setMessages,
     sendMessage,
     status,
-    stop,
     regenerate,
     resumeStream,
   } = useChat<ChatMessage>({

@@ -105,7 +105,6 @@ export function Chat({
     resume: id !== undefined && initialMessages.length > 0, // Enable automatic stream resumption
     transport: new ChatTransport({
       onStreamPart: (part) => {
-        console.log('[Chat onStreamPart] part received:', part);
         // As soon as we recive a stream part, we fetch the chat history again for new chats
         if (isNewChat && !didFetchHistoryOnNewChat.current) {
           fetchChatHistory();
@@ -156,13 +155,6 @@ export function Chat({
       }
     },
     onFinish: ({ isAbort, isDisconnect, isError }) => {
-      console.log('[Chat onFinish]', {
-        lastPart: lastPartRef.current?.type,
-        isAbort,
-        isDisconnect,
-        isError,
-      });
-
       // Reset state for next message
       didFetchHistoryOnNewChat.current = false;
 

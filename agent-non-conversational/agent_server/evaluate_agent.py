@@ -1,8 +1,12 @@
 import asyncio
 
 import mlflow
+from dotenv import load_dotenv
 from mlflow.genai.agent_server import get_invoke_function
 from mlflow.genai.scorers import Safety
+
+# Load environment variables from .env.local if it exists
+load_dotenv(dotenv_path=".env.local", override=True)
 
 # need to import agent for our @invoke-registered function to be found
 from agent_server import agent  # noqa: F401

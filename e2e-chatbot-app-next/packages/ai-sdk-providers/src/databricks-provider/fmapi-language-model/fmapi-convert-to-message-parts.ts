@@ -23,6 +23,7 @@ export const convertFmapiChunkToMessagePart = (
   chunk: FmapiChunk,
 ): LanguageModelV2StreamPart[] => {
   const parts: LanguageModelV2StreamPart[] = [];
+  if (chunk.choices.length === 0) return parts;
   const choice = chunk.choices[0];
 
   if (typeof choice.delta.content === 'string') {

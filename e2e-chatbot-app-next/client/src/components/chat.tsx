@@ -61,8 +61,8 @@ export function Chat({
   const lastPartRef = useRef<UIMessageChunk | undefined>(lastPart);
   lastPartRef.current = lastPart;
 
-  const onErrorResumeCountRef = useRef(0);
-  const onFinishResumeCountRef = useRef(0);
+  // Single counter for resume attempts - reset when stream parts are received
+  const resumeAttemptCountRef = useRef(0);
   const maxResumeAttempts = 3;
 
   const abortController = useRef<AbortController | null>(new AbortController());
@@ -80,6 +80,10 @@ export function Chat({
     };
   }, []);
 
+  const stop = useCallback(() => {
+    abortController.current?.abort('USER_ABORT_SIGNAL');
+  }, []);
+
   const isNewChat = initialMessages.length === 0;
   const didFetchHistoryOnNewChat = useRef(false);
   const fetchChatHistory = useCallback(() => {
@@ -91,7 +95,6 @@ export function Chat({
     setMessages,
     sendMessage,
     status,
-    stop,
     regenerate,
     resumeStream,
   } = useChat<ChatMessage>({
@@ -107,9 +110,8 @@ export function Chat({
           fetchChatHistory();
           didFetchHistoryOnNewChat.current = true;
         }
-        // when we receive a stream part, we reset the onErrorResumeCountRef and onFinishResumeCountRef
-        onErrorResumeCountRef.current = 0;
-        onFinishResumeCountRef.current = 0;
+        // Reset resume attempts when we successfully receive stream parts
+        resumeAttemptCountRef.current = 0;
 
         // Keep track of the number of stream parts received
         setStreamCursor((cursor) => cursor + 1);
@@ -152,52 +154,61 @@ export function Chat({
         setUsage(dataPart.data as LanguageModelUsage);
       }
     },
-    onFinish: () => {
-      console.log('[Chat onFinish] lastPart received was', lastPartRef.current);
-      if (
-        lastPartRef.current?.type !== 'finish' &&
-        onFinishResumeCountRef.current < maxResumeAttempts
-      ) {
-        console.log(
-          '[Chat onFinish] resuming stream. Attempt:',
-          onFinishResumeCountRef.current,
-        );
-        // If the message is empty attempt to resume the stream.
-        onFinishResumeCountRef.current++;
-        setTimeout(() => {
-          resumeStream();
-        });
-      } else {
+    onFinish: ({ isAbort, isDisconnect, isError }) => {
+      // Reset state for next message
+      didFetchHistoryOnNewChat.current = false;
+
+      // If user aborted, don't try to resume
+      if (isAbort) {
+        console.log('[Chat onFinish] Stream was aborted by user, not resuming');
         setStreamCursor(0);
-        didFetchHistoryOnNewChat.current = false;
+        fetchChatHistory();
+        return;
+      }
+
+      // Determine if we should attempt to resume:
+      // 1. Stream didn't end with a 'finish' part (incomplete)
+      // 2. It was a disconnect/error that terminated the stream
+      // 3. We haven't exceeded max resume attempts
+      const streamIncomplete = lastPartRef.current?.type !== 'finish';
+      const shouldResume =
+        streamIncomplete &&
+        (isDisconnect || isError || lastPartRef.current === undefined);
+
+      if (shouldResume && resumeAttemptCountRef.current < maxResumeAttempts) {
+        console.log(
+          '[Chat onFinish] Resuming stream. Attempt:',
+          resumeAttemptCountRef.current + 1,
+        );
+        resumeAttemptCountRef.current++;
+        resumeStream();
+      } else {
+        // Stream completed normally or we've exhausted resume attempts
+        if (resumeAttemptCountRef.current >= maxResumeAttempts) {
+          console.warn('[Chat onFinish] Max resume attempts reached');
+        }
+        setStreamCursor(0);
         fetchChatHistory();
       }
     },
     onError: (error) => {
       console.log('[Chat onError] Error occurred:', error);
 
+      // Only show toast for explicit ChatSDKError (backend validation errors)
+      // Other errors (network, schema validation) are handled silently or in message parts
       if (error instanceof ChatSDKError) {
         toast({
           type: 'error',
           description: error.message,
         });
       } else {
-        // Network error - the backend will continue streaming and save the full response
-        console.warn(
-          '[Chat onError] Network error during streaming. Backend will complete the response.',
-        );
+        // Non-ChatSDKError: Could be network error or in-stream error
+        // Log but don't toast - errors during streaming may be informational
+        console.warn('[Chat onError] Error during streaming:', error.message);
       }
-      if (onErrorResumeCountRef.current < maxResumeAttempts) {
-        console.log(
-          '[Chat onError] resuming stream. Attempt:',
-          onErrorResumeCountRef.current,
-        );
-        onErrorResumeCountRef.current++;
-        setTimeout(() => {
-          resumeStream();
-        });
-      }
-      didFetchHistoryOnNewChat.current = false;
+      // Note: We don't call resumeStream here because onError can be called
+      // while the stream is still active (e.g., for data-error parts).
+      // Resume logic is handled exclusively in onFinish.
     },
   });
 

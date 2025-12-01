@@ -115,8 +115,8 @@ uv run start-server
      -d '{
        "document_text": "Total assets: $2,300,000. Total liabilities: $1,200,000. Shareholder equity: $1,100,000. Net income: $450,000. Revenues: $1,700,000. Expenses: $1,250,000.",
        "questions": [
-         {"text": "Do the documents contain a balance sheet?"},
-         {"text": "Do the documents contain an income statement?"}
+         "Do the documents contain a balance sheet?",
+         "Do the documents contain an income statement?"
        ]
      }'
    ```
@@ -223,8 +223,8 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
       -d '{
         "document_text": "Total assets: $2,300,000. Total liabilities: $1,200,000. Shareholder equity: $1,100,000. Net income: $450,000.",
         "questions": [
-          {"text": "Do the documents contain a balance sheet?"},
-          {"text": "Do the documents contain an income statement?"}
+          "Do the documents contain a balance sheet?",
+          "Do the documents contain an income statement?"
         ]
       }'
    ```

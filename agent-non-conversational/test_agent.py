@@ -44,8 +44,8 @@ def test_agent(base_url: str = "http://localhost:8000", profile: Optional[str] =
     data = {
         "document_text": "Total assets: $2,300,000. Total liabilities: $1,200,000. Shareholder's equity: $1,100,000. Net income: $450,000. Revenues: $1,700,000. Expenses: $1,250,000.",
         "questions": [
-            {"text": "Do the documents contain a balance sheet?"},
-            {"text": "Do the documents contain an income statement?"}
+            "Do the documents contain a balance sheet?",
+            "Do the documents contain an income statement?"
         ]
     }
     

@@ -195,7 +195,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
 4. **Query your agent hosted on Databricks Apps**
 
-   Databricks Apps are _only_ queryable via OAuth token. You cannot use a PAT to query your agent. If you haven't already authenticated via OAuth (see step 2), run:
+   Databricks Apps are _only_ queryable via OAuth token. You cannot use a PAT to query your agent. Generate an [OAuth token with your credentials using the Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/authentication#u2m-auth):
 
    ```bash
    databricks auth login --host <https://host.databricks.com>

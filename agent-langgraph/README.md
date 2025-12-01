@@ -1,8 +1,8 @@
 # Responses API Agent
 
-This example is a simple agent that follows the [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses) with one tool, `system.ai.python_exec`, roughly following the example in the ["Author AI agents in code" documentation](https://docs.databricks.com/aws/en/generative-ai/agent-framework/author-agent).
+This agent follows the [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses) with one tool, `system.ai.python_exec`, added through a Databricks [managed MCP server](https://docs.databricks.com/aws/en/generative-ai/mcp/managed-mcp).
 
-Refer to [the ResponsesAgent MLflow docs](https://mlflow.org/docs/latest/genai/flavors/responses-agent-intro/) for more about input and output formats for streaming and non-streaming requests, tracing requirements, and other agent authoring details.
+See [the ResponsesAgent MLflow docs](https://mlflow.org/docs/latest/genai/flavors/responses-agent-intro/) for input and output formats for streaming and non-streaming requests, tracing requirements, and other agent authoring details.
 
 ## Quick start
 
@@ -10,10 +10,10 @@ Run the `./scripts/quickstart.sh` script to quickly set up your local environmen
 
 This script will:
 
-1. Check your UV (python package manager), nvm (node version manager), and databricks CLI installations
-2. Set up databricks auth if you don't already have it setup
-3. Create an MLflow experiment and link it to your app
-4. Start the agent server and the chat app at http://localhost:8000
+1. Verify UV, nvm, and Databricks CLI installations
+2. Configure Databricks authentication
+3. Create and link an MLflow experiment
+4. Start the agent server and chat app
 
 ```bash
 ./scripts/quickstart.sh
@@ -30,83 +30,83 @@ This will start the agent server and the chat app at http://localhost:8000.
 ## Manual local development loop setup
 
 1. **Set up your local environment**
-   Install the latest versions of `uv` (python package manager), `nvm` (node version manager), and the databricks CLI:
+   Install `uv` (python package manager), `nvm` (node version manager), and the Databricks CLI:
 
    - [`uv` installation docs](https://docs.astral.sh/uv/getting-started/installation/)
    - [`nvm` installation](https://github.com/nvm-sh/nvm?tab=readme-ov-file#installing-and-updating)
+     - Run the following to use Node 20 LTS:
+       ```bash
+       nvm use 20
+       ```
    - [`databricks CLI` installation](https://docs.databricks.com/aws/en/dev-tools/cli/install)
-   - Run the following to use Node 20 LTS:
-     ```bash
-     nvm use 20
-     ```
 
 2. **Set up local authentication to Databricks**
 
-   In order to access Databricks resources from your local machine while developing your agent, you need to authenticate with Databricks. Modify `.env.local` with one of the following options:
+   In order to access Databricks resources from your local machine while developing your agent, you need to authenticate with Databricks. Choose one of the following options:
 
-   - **Use OAuth via the Databricks CLI (Recommended)**
+   **Option 1: OAuth via Databricks CLI (Recommended)**
 
-     Authenticate with Databricks using the CLI. Refer to the [CLI OAuth documentation](https://docs.databricks.com/aws/en/dev-tools/cli/authentication#oauth-user-to-machine-u2m-authentication) for more info.
+   Authenticate with Databricks using the CLI. See the [CLI OAuth documentation](https://docs.databricks.com/aws/en/dev-tools/cli/authentication#oauth-user-to-machine-u2m-authentication).
 
-     ```bash
-     databricks auth login
-     ```
+   ```bash
+   databricks auth login
+   ```
 
-   After logging in, set the `DATABRICKS_CONFIG_PROFILE` environment variable in your .env.local file to the profile you used to authenticate.
+   Set the `DATABRICKS_CONFIG_PROFILE` environment variable in your .env.local file to the profile you used to authenticate:
 
    ```bash
    DATABRICKS_CONFIG_PROFILE="DEFAULT" # change to the profile name you chose
    ```
 
-   - **Use a personal access token (PAT)**
+   **Option 2: Personal Access Token (PAT)**
 
-     Refer to the [PAT documentation](https://docs.databricks.com/aws/en/dev-tools/auth/pat#databricks-personal-access-tokens-for-workspace-users) for more info.
+   See the [PAT documentation](https://docs.databricks.com/aws/en/dev-tools/auth/pat#databricks-personal-access-tokens-for-workspace-users).
 
-     ```bash
-     # Add these to your .env.local file
-     # DATABRICKS_HOST="https://host.databricks.com"
-     # DATABRICKS_TOKEN="dapi_token"
-     ```
+   ```bash
+   # Add these to your .env.local file
+   # DATABRICKS_HOST="https://host.databricks.com"
+   # DATABRICKS_TOKEN="dapi_token"
+   ```
 
-   See the [Databricks SDK authentication docs](https://docs.databricks.com/aws/en/dev-tools/sdk-python#authenticate-the-databricks-sdk-for-python-with-your-databricks-account-or-workspace) for more info.
+   See the [Databricks SDK authentication docs](https://docs.databricks.com/aws/en/dev-tools/sdk-python#authenticate-the-databricks-sdk-for-python-with-your-databricks-account-or-workspace).
 
 3. **Create and link an MLflow experiment to your app**
 
-   To enable MLflow tracing and version tracking, create an MLflow experiment in Databricks. This is automatically done by the `./scripts/quickstart.sh` script.
+   Create an MLflow experiment to enable tracing and version tracking. This is automatically done by the `./scripts/quickstart.sh` script.
 
-   - **Manual setup**
-     Create the MLflow experiment manually via the CLI.
+   Create the MLflow experiment via the CLI:
 
-     ```bash
-     DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
-     databricks experiments create-experiment /Users/$DATABRICKS_USERNAME/agents-on-apps
-     ```
+   ```bash
+   DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
+   databricks experiments create-experiment /Users/$DATABRICKS_USERNAME/agents-on-apps
+   ```
 
-     Make a copy of `.env.example` to `.env.local` and update the `MLFLOW_EXPERIMENT_ID` in your `.env.local` file with the experiment ID you created. The `.env.local` file will be automatically loaded when starting the server.
+   Make a copy of `.env.example` to `.env.local` and update the `MLFLOW_EXPERIMENT_ID` in your `.env.local` file with the experiment ID you created. The `.env.local` file will be automatically loaded when starting the server.
 
-     ```bash
-     cp .env.example .env.local
-     # Edit .env.local and fill in your experiment ID
-     ```
+   ```bash
+   cp .env.example .env.local
+   # Edit .env.local and fill in your experiment ID
+   ```
 
-   Refer to the [MLflow experiments documentation](https://docs.databricks.com/aws/en/mlflow/experiments#create-experiment-from-the-workspace) for more info.
+   See the [MLflow experiments documentation](https://docs.databricks.com/aws/en/mlflow/experiments#create-experiment-from-the-workspace).
 
-4. **Testing out your local agent**
+4. **Test your agent locally**
 
    Start up the agent server and chat UI locally:
 
    ```bash
    ./scripts/start-app.sh
+   ```
 
-   # You can also manually start the agent server with additional options:
-   uv run start-server --reload # hot-reload the server on code changes
+   Query your agent via the UI (http://localhost:8000) or REST API:
 
-   # Other options for the start-server script:
+   **Advanced server options:**
+
+   ```bash
+   uv run start-server --reload   # hot-reload the server on code changes
    uv run start-server --port 8001 # change the port the server listens on
    uv run start-server --workers 4 # run the server with multiple workers
    ```
-
-   Now you can either query your agent via the built in UI (served by default at http://localhost:8000) or via REST API request:
 
    - Example streaming request:
      ```bash
@@ -123,19 +123,25 @@ This will start the agent server and the chat app at http://localhost:8000.
 
 5. **Modifying your agent**
 
-   You can check out the [LangGraph documentation](https://docs.langchain.com/oss/python/langgraph/quickstart) for more information on how to edit your own agent.
+   See the [LangGraph documentation](https://docs.langchain.com/oss/python/langgraph/quickstart) for more information on how to edit your own agent.
 
-   The following files are required to host your own agent with the MLflow `AgentServer`:
+   Required files for hosting with MLflow `AgentServer`:
 
-   - `agent.py`: This file contains your agent logic. It currently contains a Responses API agent. Please modify this file to create your custom agent.
-   - `start_server.py`: This file initializes and runs the MLflow `AgentServer` with agent_type="ResponsesAgent".
+   - `agent.py`: Contains your agent logic. Modify this file to create your custom agent.
+   - `start_server.py`: Initializes and runs the MLflow `AgentServer` with agent_type="ResponsesAgent".
 
-   Common changes to make:
+   **Common customization questions:**
 
-   - Feel free to add as many files or folders as you want to your agent, just make sure that the script within `pyproject.toml` runs the right script that will start the server and set up MLflow tracing.
-   - To add dependencies to your agent, run `uv add <package_name>` (ex. `uv add "mlflow-skinny[databricks]"`). Refer to the [python pyproject.toml guide](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements) for more info.
-   - While we have built-in MLflow tracing when calling the methods annotated with `@invoke()` and `@stream()`, you can also further instrument your own agent. Refer to the [MLflow tracing documentation](https://docs.databricks.com/aws/en/mlflow3/genai/tracing/app-instrumentation/) for more info.
-   - Refer to the Agent Framework ["Author AI Agents in Code" documentation](https://docs.databricks.com/aws/en/generative-ai/agent-framework/author-agent) for more information.
+   **Q: Can I add additional files or folders to my agent?**
+   Yes. Add additional files or folders as needed. Ensure the script within `pyproject.toml` runs the correct script that starts the server and sets up MLflow tracing.
+
+   **Q: How do I add dependencies to my agent?**
+   Run `uv add <package_name>` (e.g., `uv add "mlflow-skinny[databricks]"`). See the [python pyproject.toml guide](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements).
+
+   **Q: Can I add custom tracing beyond the built-in tracing?**
+   Yes. While built-in MLflow tracing covers methods annotated with `@invoke()` and `@stream()`, you can further instrument your agent. See the [MLflow tracing documentation](https://docs.databricks.com/aws/en/mlflow3/genai/tracing/app-instrumentation/).
+
+   See the Agent Framework ["Author AI Agents in Code" documentation](https://docs.databricks.com/aws/en/generative-ai/agent-framework/author-agent).
 
 ## Evaluating your agent
 
@@ -162,17 +168,17 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
 1. **Set up authentication to Databricks resources**
 
-   For this example, you need to add an MLflow Experiment as a resource to your app. You can do this [manually in the MLflow experiments UI](https://docs.databricks.com/aws/en/mlflow/experiments#change-permissions-for-an-experiment) by granting the App's Service Principal (SP) permission to edit the experiment. See the [Apps authorization docs](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#app-authorization) on where to find the SP's ID in the App Details page.
+   For this example, you need to add an MLflow Experiment as a resource to your app. Grant the App's Service Principal (SP) permission to edit the experiment [manually in the MLflow experiments UI](https://docs.databricks.com/aws/en/mlflow/experiments#change-permissions-for-an-experiment). See the [Apps authorization docs](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#app-authorization) to find the SP's ID in the App Details page.
 
-   **App Authentication via Service Principal (SP)**: To access resources like serving endpoints, genie spaces, MLflow experiments, UC Functions, and Vector Search Indexes, you can click `edit` on your app home page to grant the App's SP permission. Refer to the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources) for more info.
+   To access resources like serving endpoints, genie spaces, MLflow experiments, UC Functions, and Vector Search Indexes, click `edit` on your app home page to grant the App's SP permission. See the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources).
 
-   For resources that are not supported yet, refer to the [Agent Framework authentication documentation](https://docs.databricks.com/aws/en/generative-ai/agent-framework/deploy-agent#automatic-authentication-passthrough) for the correct permission level to grant to your app SP.
+   For resources that are not supported yet, see the [Agent Framework authentication documentation](https://docs.databricks.com/aws/en/generative-ai/agent-framework/deploy-agent#automatic-authentication-passthrough) for the correct permission level to grant to your app SP.
 
-   **On-behalf-of (OBO) User Authentication**: Use `get_user_workspace_client()` from `agent_server.utils` to authenticate as the requesting user instead of the app service principal. Refer to the [OBO authentication documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#retrieve-user-authorization-credentials) for more info.
+   **On-behalf-of (OBO) User Authentication**: Use `get_user_workspace_client()` from `agent_server.utils` to authenticate as the requesting user instead of the app service principal. See the [OBO authentication documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#retrieve-user-authorization-credentials).
 
 2. **Sync local files to your workspace**
 
-   Refer to the [Databricks Apps deploy documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy?language=Databricks+CLI#deploy-the-app) for more info.
+   See the [Databricks Apps deploy documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy?language=Databricks+CLI#deploy-the-app).
 
    ```bash
    DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
@@ -181,7 +187,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
 3. **Deploy your Databricks App**
 
-   Refer to the [Databricks Apps deploy documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy?language=Databricks+CLI#deploy-the-app) for more info.
+   See the [Databricks Apps deploy documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy?language=Databricks+CLI#deploy-the-app).
 
    ```bash
    databricks apps deploy agent-langgraph --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/agent-langgraph
@@ -196,7 +202,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
    databricks auth token
    ```
 
-   You can now send a request to the `/invocations` endpoint, where your agent is hosted:
+   Send a request to the `/invocations` endpoint:
 
    - Example streaming request:
 
@@ -216,11 +222,11 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
         -d '{ "input": [{ "role": "user", "content": "hi" }] }'
      ```
 
-For future updates to the agent, you only need to sync and redeploy your agent. If making changes to the UI, you'll also have to rebuild the UI.
+For future updates to the agent, sync and redeploy your agent.
 
 ### FAQ
 
 - For a streaming response, I see a 200 OK in the logs, but an error in the actual stream. What's going on?
-  - This is expected. The server will return a 200 OK if the stream is set up without error, but any errors during the stream will not change the initial status code.
+  - This is expected behavior. The initial 200 OK confirms stream setup; streaming errors don't affect this status.
 - When querying my agent, I get a 302 error. What's going on?
-  - Please make sure you are using an OAuth token to query your agent. You cannot use a PAT to query your agent.
+  - Use an OAuth token. PATs are not supported for querying agents.

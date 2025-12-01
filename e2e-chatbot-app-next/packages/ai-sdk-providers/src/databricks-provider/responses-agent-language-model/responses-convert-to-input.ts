@@ -99,10 +99,45 @@ export async function convertToResponsesInput({
               break;
             }
             case 'tool-call': {
+              const toolName = providerOptions?.toolName ?? part.toolName;
+              if (providerOptions?.type === 'mcp_approval_request') {
+                // Special case for MCP approval request
+                const serverLabel = providerOptions?.serverLabel ?? '';
+                const argumentsString = JSON.stringify(part.input);
+                const id = part.toolCallId;
+                input.push({
+                  type: 'mcp_approval_request',
+                  id: id,
+                  name: toolName,
+                  arguments: argumentsString,
+                  server_label: serverLabel,
+                });
+                const approvalResponse =
+                  toolCallResultsByToolCallId[part.toolCallId];
+                if (approvalResponse) {
+                  console.log('approvalResponse', approvalResponse);
+                  const approvalStatus =
+                    approvalResponse.output.type === 'json' &&
+                    approvalResponse.output.value &&
+                    typeof approvalResponse.output.value === 'object' &&
+                    'approvalStatus' in approvalResponse.output.value
+                      ? approvalResponse.output.value?.approvalStatus === true
+                      : undefined;
+                  if (approvalStatus !== undefined) {
+                    input.push({
+                      type: 'mcp_approval_response',
+                      id: approvalResponse.toolCallId,
+                      approval_request_id: approvalResponse.toolCallId,
+                      approve: approvalStatus,
+                    });
+                  }
+                }
+                break;
+              }
               input.push({
                 type: 'function_call',
                 call_id: part.toolCallId,
-                name: providerOptions?.toolName ?? part.toolName,
+                name: toolName,
                 arguments: JSON.stringify(part.input),
                 id: itemId,
               });
@@ -121,6 +156,24 @@ export async function convertToResponsesInput({
             }
 
             case 'tool-result': {
+              if (providerOptions?.type === 'mcp_approval_response') {
+                // if (part.output.type === 'json') {
+                //   const foo = part.output.value;
+                // }
+                // Special case for MCP approval response
+                const approvalRequestId =
+                  providerOptions?.approvalRequestId ?? part.toolCallId;
+                const approve = providerOptions?.approve ?? false;
+                const reason = providerOptions?.reason ?? '';
+                input.push({
+                  type: 'mcp_approval_response',
+                  id: approvalRequestId,
+                  approval_request_id: approvalRequestId,
+                  approve: approve,
+                  reason: reason,
+                });
+                break;
+              }
               input.push({
                 type: 'function_call_output',
                 call_id: part.toolCallId,
@@ -160,6 +213,11 @@ export async function convertToResponsesInput({
 const ProviderOptionsSchema = z.object({
   itemId: z.string().nullish(),
   toolName: z.string().nullish(), // for tool-call
+  type: z.enum(['mcp_approval_request', 'mcp_approval_response']).nullish(), // for mcp approval request and response
+  serverLabel: z.string().nullish(), // for mcp approval request
+  approvalRequestId: z.string().nullish(), // for mcp approval response
+  approve: z.boolean().nullish(), // for mcp approval response
+  reason: z.string().nullish(), // for mcp approval response
 });
 
 export type ProviderOptions = z.infer<typeof ProviderOptionsSchema>;

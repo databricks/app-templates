@@ -9,6 +9,8 @@ import {
   ToolContent,
   ToolInput,
   ToolOutput,
+  ToolApprovalActions,
+  type ToolState,
 } from './elements/tool';
 import { MessageActions } from './message-actions';
 import { PreviewAttachment } from './preview-attachment';
@@ -28,12 +30,15 @@ import {
 import { MessageError } from './message-error';
 import { Streamdown } from 'streamdown';
 import { DATABRICKS_TOOL_CALL_ID } from '@chat-template/ai-sdk-providers/tools';
+import { useApproval } from '@/hooks/use-approval';
 
 const PurePreviewMessage = ({
   message,
   isLoading,
   setMessages,
+  sendMessage,
   regenerate,
+  addToolResult,
   isReadonly,
   requiresScrollPadding,
 }: {
@@ -41,12 +46,22 @@ const PurePreviewMessage = ({
   message: ChatMessage;
   isLoading: boolean;
   setMessages: UseChatHelpers<ChatMessage>['setMessages'];
+  sendMessage: UseChatHelpers<ChatMessage>['sendMessage'];
   regenerate: UseChatHelpers<ChatMessage>['regenerate'];
+  addToolResult: UseChatHelpers<ChatMessage>['addToolResult'];
   isReadonly: boolean;
   requiresScrollPadding: boolean;
 }) => {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [showErrors, setShowErrors] = useState(false);
+
+  // Hook for handling MCP approval requests
+  const { submitApproval, isSubmitting, pendingApprovalId } = useApproval({
+    setMessages,
+    sendMessage,
+    addToolResult,
+    regenerate,
+  });
 
   const attachmentsFromMessage = message.parts.filter(
     (part) => part.type === 'file',
@@ -203,12 +218,60 @@ const PurePreviewMessage = ({
                   ? part.callProviderMetadata?.databricks?.toolName?.toString()
                   : undefined;
 
+              // Check if this is an MCP approval request
+              const isMcpApproval =
+                'callProviderMetadata' in part &&
+                part.callProviderMetadata?.databricks?.type?.toString() ===
+                  'mcp_approval_request';
+
+              const approvalStatus =
+                part.output && 'approvalStatus' in part.output
+                  ? (part.output.approvalStatus as boolean | undefined)
+                  : undefined;
+
+              // Determine effective state for display
+              const effectiveState: ToolState =
+                isMcpApproval && !approvalStatus ? 'awaiting-approval' : state;
+
               return (
                 <Tool key={toolCallId} defaultOpen={true}>
-                  <ToolHeader type={toolName || 'tool-call'} state={state} />
+                  <ToolHeader
+                    type={toolName || 'tool-call'}
+                    state={effectiveState}
+                  />
                   <ToolContent>
                     <ToolInput input={input} />
-                    {state === 'output-available' && (
+                    {effectiveState === 'awaiting-approval' && (
+                      <ToolApprovalActions
+                        onApprove={() =>
+                          submitApproval({
+                            messageId: message.id,
+                            approvalRequestId: toolCallId,
+                            approve: true,
+                          })
+                        }
+                        onDeny={() =>
+                          submitApproval({
+                            messageId: message.id,
+                            approvalRequestId: toolCallId,
+                            approve: false,
+                          })
+                        }
+                        isSubmitting={
+                          isSubmitting && pendingApprovalId === toolCallId
+                        }
+                      />
+                    )}
+                    {isMcpApproval && effectiveState === 'output-available' && (
+                      <div>
+                        <div>
+                          Approval Status:{' '}
+                          {approvalStatus ? 'Approved' : 'Denied'}
+                        </div>
+                        {/* <div>Reason: {reason}</div> */}
+                      </div>
+                    )}
+                    {!isMcpApproval && state === 'output-available' && (
                       <ToolOutput
                         output={
                           errorText ? (

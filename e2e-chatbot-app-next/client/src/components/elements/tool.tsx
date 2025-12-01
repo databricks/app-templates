@@ -1,4 +1,5 @@
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   Collapsible,
   CollapsibleContent,
@@ -7,6 +8,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { ToolUIPart } from 'ai';
 import {
+  AlertCircleIcon,
   CheckCircleIcon,
   ChevronDownIcon,
   CircleIcon,
@@ -28,24 +30,28 @@ export const Tool = ({ className, ...props }: ToolProps) => (
 
 type ToolHeaderProps = {
   type: ToolUIPart['type'] | string;
-  state: ToolUIPart['state'];
+  state: ToolState;
   className?: string;
 };
 
-const getStatusBadge = (status: ToolUIPart['state']) => {
-  const labels = {
+export type ToolState = ToolUIPart['state'] | 'awaiting-approval';
+
+const getStatusBadge = (status: ToolState) => {
+  const labels: Record<ToolState, string> = {
     'input-streaming': 'Pending',
     'input-available': 'Running',
     'output-available': 'Completed',
     'output-error': 'Error',
-  } as const;
+    'awaiting-approval': 'Awaiting Approval',
+  };
 
-  const icons = {
+  const icons: Record<ToolState, ReactNode> = {
     'input-streaming': <CircleIcon className="size-4" />,
     'input-available': <ClockIcon className="size-4 animate-pulse" />,
     'output-available': <CheckCircleIcon className="size-4 text-green-600" />,
     'output-error': <XCircleIcon className="size-4 text-red-600" />,
-  } as const;
+    'awaiting-approval': <AlertCircleIcon className="size-4 text-amber-500" />,
+  };
 
   return (
     <Badge
@@ -143,3 +149,29 @@ export const ToolOutput = ({
     </div>
   );
 };
+
+type ToolApprovalActionsProps = {
+  onApprove: () => void;
+  onDeny: () => void;
+  isSubmitting: boolean;
+};
+
+export const ToolApprovalActions = ({
+  onApprove,
+  onDeny,
+  isSubmitting,
+}: ToolApprovalActionsProps) => (
+  <div className="flex gap-2 border-t p-4">
+    <Button
+      variant="default"
+      size="sm"
+      onClick={onApprove}
+      disabled={isSubmitting}
+    >
+      {isSubmitting ? 'Submitting...' : 'Approve'}
+    </Button>
+    <Button variant="outline" size="sm" onClick={onDeny} disabled={isSubmitting}>
+      Deny
+    </Button>
+  </div>
+);

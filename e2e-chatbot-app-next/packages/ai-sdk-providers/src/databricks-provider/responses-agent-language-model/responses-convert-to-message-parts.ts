@@ -113,6 +113,36 @@ export const convertResponsesAgentChunkToMessagePart = (
             id: chunk.item.id,
           },
         );
+      } else if (chunk.item.type === 'mcp_approval_request') {
+        parts.push({
+          type: 'tool-call',
+          toolCallId: chunk.item.id,
+          toolName: DATABRICKS_TOOL_CALL_ID,
+          input: chunk.item.arguments,
+          providerMetadata: {
+            databricks: {
+              type: 'mcp_approval_request',
+              toolName: chunk.item.name,
+              itemId: chunk.item.id,
+              serverLabel: chunk.item.server_label,
+            },
+          },
+        });
+      } else if (chunk.item.type === 'mcp_approval_response') {
+        parts.push({
+          type: 'tool-result',
+          toolCallId: chunk.item.approval_request_id,
+          toolName: DATABRICKS_TOOL_CALL_ID,
+          result: {
+            approvalStatus: chunk.item.approve,
+          },
+          providerMetadata: {
+            databricks: {
+              type: 'mcp_approval_response',
+              itemId: chunk.item.id,
+            },
+          },
+        });
       } else {
         void (chunk.item as never);
       }
@@ -207,6 +237,37 @@ export const convertResponsesAgentResponseToMessagePart = (
         });
         break;
 
+      case 'mcp_approval_request':
+        parts.push({
+          type: 'tool-call',
+          toolCallId: output.id,
+          toolName: DATABRICKS_TOOL_CALL_ID,
+          input: output.arguments,
+          providerMetadata: {
+            databricks: {
+              type: 'mcp_approval_request',
+              toolName: output.name,
+              itemId: output.id,
+              serverLabel: output.server_label,
+            },
+          },
+        });
+        break;
+
+      case 'mcp_approval_response':
+        parts.push({
+          type: 'tool-result',
+          toolCallId: output.approval_request_id,
+          toolName: DATABRICKS_TOOL_CALL_ID,
+          result: output.approve,
+          providerMetadata: {
+            databricks: {
+              type: 'mcp_approval_response',
+              itemId: output.id,
+            },
+          },
+        });
+        break;
       default: {
         void (output as never);
         break;

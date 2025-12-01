@@ -8,7 +8,9 @@ export type ResponsesInputItem =
   | ResponsesAssistantMessage
   | ResponsesFunctionCall
   | ResponsesFunctionCallOutput
-  | ResponsesReasoning;
+  | ResponsesReasoning
+  | ResponsesMcpApprovalRequest
+  | ResponsesMcpApprovalResponse;
 
 export type ResponsesSystemMessage = {
   role: 'system' | 'developer';
@@ -63,4 +65,20 @@ export type ResponsesReasoning = {
     type: 'summary_text';
     text: string;
   }>;
+};
+
+export type ResponsesMcpApprovalRequest = {
+  type: 'mcp_approval_request';
+  id: string;
+  name: string;
+  arguments: string;
+  server_label: string;
+};
+
+export type ResponsesMcpApprovalResponse = {
+  type: 'mcp_approval_response';
+  id: string;
+  approval_request_id: string;
+  approve: boolean;
+  reason?: string;
 };

@@ -53,11 +53,29 @@ const responsesAgentFunctionCallOutputSchema = z.object({
   output: z.any(),
 });
 
+const responsesAgentMcpApprovalRequestSchema = z.object({
+  type: z.literal('mcp_approval_request'),
+  id: z.string(),
+  name: z.string(),
+  arguments: z.string(),
+  server_label: z.string(),
+});
+
+const responsesAgentMcpApprovalResponseSchema = z.object({
+  type: z.literal('mcp_approval_response'),
+  id: z.string(),
+  approval_request_id: z.string(),
+  approve: z.boolean(),
+  reason: z.string().nullish(),
+});
+
 const responsesAgentOutputItem = z.discriminatedUnion('type', [
   responsesAgentMessageSchema,
   responsesAgentFunctionCallSchema,
   responsesAgentReasoningSchema,
   responsesAgentFunctionCallOutputSchema,
+  responsesAgentMcpApprovalRequestSchema,
+  responsesAgentMcpApprovalResponseSchema,
 ]);
 
 export const responsesAgentResponseSchema = z.object({
@@ -160,6 +178,12 @@ export type ResponsesAgentReasoning = z.infer<
 >;
 export type ResponsesAgentFunctionCallOutput = z.infer<
   typeof responsesAgentFunctionCallOutputSchema
+>;
+export type ResponsesAgentMcpApprovalRequest = z.infer<
+  typeof responsesAgentMcpApprovalRequestSchema
+>;
+export type ResponsesAgentMcpApprovalResponse = z.infer<
+  typeof responsesAgentMcpApprovalResponseSchema
 >;
 export type ResponsesAgentOutputItem = z.infer<typeof responsesAgentOutputItem>;
 export type ResponsesAgentResponse = z.infer<

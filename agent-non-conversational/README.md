@@ -151,7 +151,7 @@ This simplified example can be easily extended by integrating additional capabil
 - **Databricks Agents**: Combine with other Databricks agents like Genie for structured data access
 - **Custom Tools**: Add domain-specific tools for specialized analysis
 
-See the Agent Framework ["Author AI Agents in Code" documentation](https://docs.databricks.com/aws/en/generative-ai/agent-framework/author-agent).
+See the ["Agent Framework Tools Documentation"](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool).
 
 ## Evaluating your agent
 

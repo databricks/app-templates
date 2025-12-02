@@ -141,7 +141,7 @@ Run `uv add <package_name>` (e.g., `uv add "mlflow-skinny[databricks]"`). See th
 **Q: Can I add custom tracing beyond the built-in tracing?**
 Yes. This template uses MLflow's agent server, which comes with automatic tracing for agent logic decorated with `@invoke()` and `@stream()`. It also uses [MLflow autologging APIs](https://mlflow.org/docs/latest/genai/tracing/#one-line-auto-tracing-integrations) to capture traces from LLM invocations. However, you can add additional instrumentation to capture more granular trace information when your agent runs. See the [MLflow tracing documentation](https://docs.databricks.com/aws/en/mlflow3/genai/tracing/app-instrumentation/).
 
-See the Agent Framework ["Tools Documentation"](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool).
+See the ["Agent Framework Tools Documentation"](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool).
 
 ## Evaluating your agent
 

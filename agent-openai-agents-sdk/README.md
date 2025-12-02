@@ -1,8 +1,10 @@
 # Responses API Agent
 
-This agent follows the [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses) with one tool, `system.ai.python_exec`, added through a Databricks [managed MCP server](https://docs.databricks.com/aws/en/generative-ai/mcp/managed-mcp).
+This template defines a conversational agent app. The app comes with a built-in chat UI, but also exposes an API endpoint for invoking the agent so that you can serve your UI elsewhere (e.g. on your website or in a mobile app).
 
-See [the ResponsesAgent MLflow docs](https://mlflow.org/docs/latest/genai/flavors/responses-agent-intro/) for input and output formats for streaming and non-streaming requests, tracing requirements, and other agent authoring details.
+The agent in this template implements the [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses) interface. It has access to a single tool; the [built-in code interpreter tool](https://docs.databricks.com/aws/en/generative-ai/agent-framework/code-interpreter-tools#built-in-python-executor-tool) (`system.ai.python_exec`) on Databricks. You can customize agent code and test it via the API or UI.
+
+The agent input and output format are defined by MLflow's ResponsesAgent interface, which closely follows the [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses) interface. See [the MLflow docs](https://mlflow.org/docs/latest/genai/flavors/responses-agent-intro/) for input and output formats for streaming and non-streaming requests, tracing requirements, and other agent authoring details.
 
 ## Quick start
 
@@ -25,7 +27,9 @@ After the setup is complete, you can start the agent server and the chat app loc
 ./scripts/start-app.sh
 ```
 
-This will start the agent server and the chat app at http://localhost:8000. See [modifying your agent](#modifying-your-agent) to customize the agent.
+This will start the agent server and the chat app at http://localhost:8000.
+
+**Next steps**: see [modifying your agent](#modifying-your-agent) to customize and iterate on the agent code.
 
 ## Manual local development loop setup
 
@@ -64,8 +68,8 @@ This will start the agent server and the chat app at http://localhost:8000. See 
 
    ```bash
    # Add these to your .env.local file
-   # DATABRICKS_HOST="https://host.databricks.com"
-   # DATABRICKS_TOKEN="dapi_token"
+   DATABRICKS_HOST="https://host.databricks.com"
+   DATABRICKS_TOKEN="dapi_token"
    ```
 
    See the [Databricks SDK authentication docs](https://docs.databricks.com/aws/en/dev-tools/sdk-python#authenticate-the-databricks-sdk-for-python-with-your-databricks-account-or-workspace).
@@ -127,8 +131,8 @@ See the [OpenAI Agents SDK documentation](https://platform.openai.com/docs/guide
 
 Required files for hosting with MLflow `AgentServer`:
 
-- `agent.py`: Contains your agent logic. Modify this file to create your custom agent.
-- `start_server.py`: Initializes and runs the MLflow `AgentServer` with agent_type="ResponsesAgent".
+- `agent.py`: Contains your agent logic. Modify this file to create your custom agent. For example, you can [add agent tools](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool) to give your agent additional capabilities
+- `start_server.py`: Initializes and runs the MLflow `AgentServer` with agent_type="ResponsesAgent". You don't have to modify this file for most common use cases, but can add additional server routes (e.g. a `/metrics` endpoint) here
 
 **Common customization questions:**
 
@@ -141,7 +145,8 @@ Run `uv add <package_name>` (e.g., `uv add "mlflow-skinny[databricks]"`). See th
 **Q: Can I add custom tracing beyond the built-in tracing?**
 Yes. This template uses MLflow's agent server, which comes with automatic tracing for agent logic decorated with `@invoke()` and `@stream()`. It also uses [MLflow autologging APIs](https://mlflow.org/docs/latest/genai/tracing/#one-line-auto-tracing-integrations) to capture traces from LLM invocations. However, you can add additional instrumentation to capture more granular trace information when your agent runs. See the [MLflow tracing documentation](https://docs.databricks.com/aws/en/mlflow3/genai/tracing/app-instrumentation/).
 
-See the ["Agent Framework Tools Documentation"](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool).
+**Q: How can I extend this example with additional tools and capabilities?**
+This template can be extended by integrating additional MCP servers, Vector Search Indexes, UC Functions, and other Databricks tools. See the ["Agent Framework Tools Documentation"](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool).
 
 ## Evaluating your agent
 

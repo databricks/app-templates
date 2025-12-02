@@ -22,7 +22,7 @@ After the setup is complete, you can start the agent server at port 8000 locally
 uv run start-server
 ```
 
-See [modifying your agent](#modifying-your-agent) to customize the agent.
+**Next steps**: see [modifying your agent](#modifying-your-agent) to customize and iterate on the agent code.
 
 ## Manual local development loop setup
 
@@ -56,8 +56,8 @@ See [modifying your agent](#modifying-your-agent) to customize the agent.
 
    ```bash
    # Add these to your .env.local file
-   # DATABRICKS_HOST="https://host.databricks.com"
-   # DATABRICKS_TOKEN="dapi_token"
+   DATABRICKS_HOST="https://host.databricks.com"
+   DATABRICKS_TOKEN="dapi_token"
    ```
 
    See the [Databricks SDK authentication docs](https://docs.databricks.com/aws/en/dev-tools/sdk-python#authenticate-the-databricks-sdk-for-python-with-your-databricks-account-or-workspace).
@@ -129,8 +129,8 @@ See [modifying your agent](#modifying-your-agent) to customize the agent.
 
 Required files for hosting with MLflow `AgentServer`:
 
-- `agent.py`: Contains your agent logic. Modify this file to create your custom agent.
-- `start_server.py`: Initializes and runs the MLflow `AgentServer` with agent_type=None.
+- `agent.py`: Contains your agent logic. Modify this file to create your custom agent. For example, you can [add agent tools](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool) to give your agent additional capabilities
+- `start_server.py`: Initializes and runs the MLflow `AgentServer` with agent_type="None". You don't have to modify this file for most common use cases, but can add additional server routes (e.g. a `/metrics` endpoint) here
 
 **Common customization questions:**
 
@@ -147,7 +147,7 @@ Yes. This template uses MLflow's agent server, which comes with automatic tracin
 This simplified example can be easily extended by integrating additional capabilities:
 
 - **Vector Search**: Integrate Databricks Vector Search for document retrieval instead of direct text input
-- **MCP Tools**: Add Model Context Protocol tools for external system integrations
+- **MCP Servers**: Add Model Context Protocol servers for external system integrations
 - **Databricks Agents**: Combine with other Databricks agents like Genie for structured data access
 - **Custom Tools**: Add domain-specific tools for specialized analysis
 

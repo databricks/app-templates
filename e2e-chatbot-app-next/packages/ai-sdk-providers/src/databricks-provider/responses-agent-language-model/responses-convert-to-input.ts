@@ -7,6 +7,11 @@ import {
 import { parseProviderOptions } from '@ai-sdk/provider-utils';
 import { z } from 'zod/v4';
 import type { ResponsesInput } from './responses-api-types';
+import {
+  MCP_APPROVAL_REQUEST_TYPE,
+  MCP_APPROVAL_RESPONSE_TYPE,
+  extractApprovalStatusFromToolResult,
+} from '../../mcp-approval-utils';
 
 export async function convertToResponsesInput({
   prompt,
@@ -100,13 +105,13 @@ export async function convertToResponsesInput({
             }
             case 'tool-call': {
               const toolName = providerOptions?.toolName ?? part.toolName;
-              if (providerOptions?.type === 'mcp_approval_request') {
+              if (providerOptions?.type === MCP_APPROVAL_REQUEST_TYPE) {
                 // Special case for MCP approval request
                 const serverLabel = providerOptions?.serverLabel ?? '';
                 const argumentsString = JSON.stringify(part.input);
                 const id = part.toolCallId;
                 input.push({
-                  type: 'mcp_approval_request',
+                  type: MCP_APPROVAL_REQUEST_TYPE,
                   id: id,
                   name: toolName,
                   arguments: argumentsString,
@@ -115,21 +120,38 @@ export async function convertToResponsesInput({
                 const approvalResponse =
                   toolCallResultsByToolCallId[part.toolCallId];
                 if (approvalResponse) {
-                  console.log('approvalResponse', approvalResponse);
-                  const approvalStatus =
-                    approvalResponse.output.type === 'json' &&
-                    approvalResponse.output.value &&
-                    typeof approvalResponse.output.value === 'object' &&
-                    '__approvalStatus__' in approvalResponse.output.value
-                      ? approvalResponse.output.value?.__approvalStatus__ ===
-                        true
-                      : undefined;
+                  /**
+                   * The tool call result is either the approval status or the actual output.
+                   * If it's the approval status, we need to add an approval response part.
+                   * If it's the actual output, we need to add both the approval response part and the actual output part.
+                   */
+                  const approvalStatus = extractApprovalStatusFromToolResult(
+                    approvalResponse.output,
+                  );
                   if (approvalStatus !== undefined) {
+                    // Output is just the approval status (approve or deny)
                     input.push({
-                      type: 'mcp_approval_response',
+                      type: MCP_APPROVAL_RESPONSE_TYPE,
                       id: approvalResponse.toolCallId,
                       approval_request_id: approvalResponse.toolCallId,
                       approve: approvalStatus,
+                    });
+                  } else {
+                    // Output is the actual tool result (tool was approved and executed)
+                    // First add the approval response (implicitly approved since we have output)
+                    input.push({
+                      type: MCP_APPROVAL_RESPONSE_TYPE,
+                      id: approvalResponse.toolCallId,
+                      approval_request_id: approvalResponse.toolCallId,
+                      approve: true,
+                    });
+                    // Then add the actual tool output
+                    input.push({
+                      type: 'function_call_output',
+                      call_id: approvalResponse.toolCallId,
+                      output: convertToolResultOutputToString(
+                        approvalResponse.output,
+                      ),
                     });
                   }
                 }
@@ -157,14 +179,14 @@ export async function convertToResponsesInput({
             }
 
             case 'tool-result': {
-              if (providerOptions?.type === 'mcp_approval_response') {
+              if (providerOptions?.type === MCP_APPROVAL_RESPONSE_TYPE) {
                 // Special case for MCP approval response
                 const approvalRequestId =
                   providerOptions?.approvalRequestId ?? part.toolCallId;
                 const approve = providerOptions?.approve ?? false;
                 const reason = providerOptions?.reason ?? '';
                 input.push({
-                  type: 'mcp_approval_response',
+                  type: MCP_APPROVAL_RESPONSE_TYPE,
                   id: approvalRequestId,
                   approval_request_id: approvalRequestId,
                   approve: approve,

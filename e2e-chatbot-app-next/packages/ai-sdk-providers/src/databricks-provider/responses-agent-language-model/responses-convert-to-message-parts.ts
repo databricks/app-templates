@@ -8,6 +8,11 @@ import type {
   responsesAgentResponseSchema,
 } from './responses-agent-schema';
 import { DATABRICKS_TOOL_CALL_ID } from '../databricks-tool-calling';
+import {
+  MCP_APPROVAL_REQUEST_TYPE,
+  MCP_APPROVAL_RESPONSE_TYPE,
+  createApprovalStatusOutput,
+} from '../../mcp-approval-utils';
 
 export const convertResponsesAgentChunkToMessagePart = (
   chunk: z.infer<typeof responsesAgentChunkSchema>,
@@ -121,7 +126,7 @@ export const convertResponsesAgentChunkToMessagePart = (
           input: chunk.item.arguments,
           providerMetadata: {
             databricks: {
-              type: 'mcp_approval_request',
+              type: MCP_APPROVAL_REQUEST_TYPE,
               toolName: chunk.item.name,
               itemId: chunk.item.id,
               serverLabel: chunk.item.server_label,
@@ -133,12 +138,10 @@ export const convertResponsesAgentChunkToMessagePart = (
           type: 'tool-result',
           toolCallId: chunk.item.approval_request_id,
           toolName: DATABRICKS_TOOL_CALL_ID,
-          result: {
-            __approvalStatus__: chunk.item.approve,
-          },
+          result: createApprovalStatusOutput(chunk.item.approve),
           providerMetadata: {
             databricks: {
-              type: 'mcp_approval_response',
+              type: MCP_APPROVAL_RESPONSE_TYPE,
               itemId: chunk.item.id,
             },
           },
@@ -245,7 +248,7 @@ export const convertResponsesAgentResponseToMessagePart = (
           input: output.arguments,
           providerMetadata: {
             databricks: {
-              type: 'mcp_approval_request',
+              type: MCP_APPROVAL_REQUEST_TYPE,
               toolName: output.name,
               itemId: output.id,
               serverLabel: output.server_label,
@@ -259,10 +262,10 @@ export const convertResponsesAgentResponseToMessagePart = (
           type: 'tool-result',
           toolCallId: output.approval_request_id,
           toolName: DATABRICKS_TOOL_CALL_ID,
-          result: output.approve,
+          result: createApprovalStatusOutput(output.approve),
           providerMetadata: {
             databricks: {
-              type: 'mcp_approval_response',
+              type: MCP_APPROVAL_RESPONSE_TYPE,
               itemId: output.id,
             },
           },

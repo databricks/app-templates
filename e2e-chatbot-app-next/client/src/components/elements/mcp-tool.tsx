@@ -16,6 +16,7 @@ import {
   ToolStatusBadge,
   type ToolState,
 } from './tool';
+import type { McpApprovalState } from '@chat-template/ai-sdk-providers/mcp';
 
 // MCP-specific container with distinct styling
 type McpToolProps = Parameters<typeof ToolContainer>[0];
@@ -33,9 +34,6 @@ export {
   ToolInput as McpToolInput,
   ToolOutput as McpToolOutput,
 };
-
-// Approval status type for MCP tools
-export type McpApprovalState = 'awaiting-approval' | 'approved' | 'denied';
 
 // MCP-specific header with banner
 type McpToolHeaderProps = {

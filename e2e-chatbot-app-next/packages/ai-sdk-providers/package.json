@@ -7,7 +7,8 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./tools": "./src/databricks-provider/databricks-tool-calling.ts"
+    "./tools": "./src/databricks-provider/databricks-tool-calling.ts",
+    "./mcp": "./src/mcp-approval-utils.ts"
   },
   "publishConfig": {
     "exports": {
@@ -29,6 +30,16 @@
         "require": {
           "types": "./dist/tools.d.ts",
           "default": "./dist/tools.cjs"
+        }
+      },
+      "./mcp": {
+        "import": {
+          "types": "./dist/mcp.d.ts",
+          "default": "./dist/mcp.js"
+        },
+        "require": {
+          "types": "./dist/mcp.d.ts",
+          "default": "./dist/mcp.cjs"
         }
       }
     }

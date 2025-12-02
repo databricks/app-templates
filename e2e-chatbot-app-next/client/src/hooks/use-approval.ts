@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import type { UseChatHelpers } from '@ai-sdk/react';
 import type { ChatMessage } from '@chat-template/core';
 import { DATABRICKS_TOOL_CALL_ID } from '@chat-template/ai-sdk-providers/tools';
+import { createApprovalStatusOutput } from '@chat-template/ai-sdk-providers/mcp';
 
 interface ApprovalSubmission {
   approvalRequestId: string;
@@ -40,9 +41,7 @@ export function useApproval({
           tool: DATABRICKS_TOOL_CALL_ID,
           toolCallId: approvalRequestId,
           state: 'output-available',
-          output: {
-            __approvalStatus__: approve,
-          },
+          output: createApprovalStatusOutput(approve),
         });
 
         // Trigger continuation by calling sendMessage without arguments

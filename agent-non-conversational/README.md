@@ -1,6 +1,6 @@
 # Non-Conversational Agent
 
-This example is a non-conversational agent that processes structured financial document questions and provides yes/no answers with detailed reasoning. Users provide both the document text and questions directly in the input, eliminating the need for vector search infrastructure in this simplified example. This demonstrates how non-conversational agents can handle specific, well-defined tasks without conversation context, while maintaining full traceability through MLflow 3.
+This template contains a non-conversational GenAI agent server implementation that processes structured financial document questions and provides yes/no answers with detailed reasoning. Users provide both the document text and questions directly in the input, eliminating the need for vector search infrastructure in this simplified example. This demonstrates how non-conversational agents can handle specific, well-defined tasks without conversation context, while maintaining full traceability through MLflow 3.
 
 ## Quick start
 
@@ -8,9 +8,9 @@ Run the `./scripts/quickstart.sh` script to quickly set up your local environmen
 
 This script will:
 
-1. Verify UV and Databricks CLI installations
+1. Verify uv and Databricks CLI installations
 2. Configure Databricks authentication
-3. Create and link an MLflow experiment
+3. Configure agent tracing, by creating and linking an MLflow experiment to your app
 
 ```bash
 ./scripts/quickstart.sh
@@ -21,6 +21,8 @@ After the setup is complete, you can start the agent server at port 8000 locally
 ```bash
 uv run start-server
 ```
+
+See [modifying your agent](#modifying-your-agent) to customize the agent.
 
 ## Manual local development loop setup
 
@@ -123,34 +125,35 @@ uv run start-server
      }'
    ```
 
-5. **Modifying your agent**
+## Modifying your agent
 
-   Required files for hosting with MLflow `AgentServer`:
+Required files for hosting with MLflow `AgentServer`:
 
-   - `agent.py`: Contains your agent logic. Modify this file to create your custom agent.
-   - `start_server.py`: Initializes and runs the MLflow `AgentServer` with agent_type=None.
+- `agent.py`: Contains your agent logic. Modify this file to create your custom agent.
+- `start_server.py`: Initializes and runs the MLflow `AgentServer` with agent_type=None.
 
-   **Common customization questions:**
+**Common customization questions:**
 
-   **Q: Can I add additional files or folders to my agent?**
-   Yes. Add additional files or folders as needed. Ensure the script within `pyproject.toml` runs the correct script that starts the server and sets up MLflow tracing.
+**Q: Can I add additional files or folders to my agent?**
+Yes. Add additional files or folders as needed. Ensure the script within `pyproject.toml` runs the correct script that starts the server and sets up MLflow tracing.
 
-   **Q: How do I add dependencies to my agent?**
-   Run `uv add <package_name>` (e.g., `uv add "databricks-vectorsearch"`). See the [python pyproject.toml guide](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements).
+**Q: How do I add dependencies to my agent?**
+Run `uv add <package_name>` (e.g., `uv add "databricks-vectorsearch"`). See the [python pyproject.toml guide](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements).
 
-   **Q: Can I add custom tracing beyond the built-in tracing?**
-   Yes. While built-in MLflow tracing covers methods annotated with `@invoke()` and `@stream()`, you can further instrument your agent. See the [MLflow tracing documentation](https://docs.databricks.com/aws/en/mlflow3/genai/tracing/app-instrumentation/). Search for `"start_span"` within `src/agent_server/server.py` for the built-in implementation.
+**Q: Can I add custom tracing beyond the built-in tracing?**
+Yes. This template uses MLflow's agent server, which comes with automatic tracing for agent logic decorated with `@invoke()` and `@stream()`. It also uses [MLflow autologging APIs](https://mlflow.org/docs/latest/genai/tracing/#one-line-auto-tracing-integrations) to capture traces from LLM invocations. However, you can add additional instrumentation to capture more granular trace information when your agent runs. See the [MLflow tracing documentation](https://docs.databricks.com/aws/en/mlflow3/genai/tracing/app-instrumentation/).
 
-   **Q: How can I extend this example for production use?**
-   This simplified example can be easily extended by integrating additional capabilities:
-   - **Vector Search**: Integrate Databricks Vector Search for document retrieval instead of direct text input
-   - **MCP Tools**: Add Model Context Protocol tools for external system integrations
-   - **Databricks Agents**: Combine with other Databricks agents like Genie for structured data access
-   - **Custom Tools**: Add domain-specific tools for specialized analysis
+**Q: How can I extend this example with additional tools and capabilities?**
+This simplified example can be easily extended by integrating additional capabilities:
 
-   See the Agent Framework ["Author AI Agents in Code" documentation](https://docs.databricks.com/aws/en/generative-ai/agent-framework/author-agent).
+- **Vector Search**: Integrate Databricks Vector Search for document retrieval instead of direct text input
+- **MCP Tools**: Add Model Context Protocol tools for external system integrations
+- **Databricks Agents**: Combine with other Databricks agents like Genie for structured data access
+- **Custom Tools**: Add domain-specific tools for specialized analysis
 
-### Evaluating your agent
+See the Agent Framework ["Author AI Agents in Code" documentation](https://docs.databricks.com/aws/en/generative-ai/agent-framework/author-agent).
+
+## Evaluating your agent
 
 Evaluate your agent by calling the invoke function you defined for the agent locally.
 

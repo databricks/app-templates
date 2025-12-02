@@ -10,9 +10,9 @@ Run the `./scripts/quickstart.sh` script to quickly set up your local environmen
 
 This script will:
 
-1. Verify UV, nvm, and Databricks CLI installations
+1. Verify uv, nvm, and Databricks CLI installations
 2. Configure Databricks authentication
-3. Create and link an MLflow experiment
+3. Configure agent tracing, by creating and linking an MLflow experiment to your app
 4. Start the agent server and chat app
 
 ```bash
@@ -25,7 +25,7 @@ After the setup is complete, you can start the agent server and the chat app loc
 ./scripts/start-app.sh
 ```
 
-This will start the agent server and the chat app at http://localhost:8000.
+This will start the agent server and the chat app at http://localhost:8000. See [modifying your agent](#modifying-your-agent) to customize the agent.
 
 ## Manual local development loop setup
 
@@ -121,27 +121,27 @@ This will start the agent server and the chat app at http://localhost:8000.
      -d '{ "input": [{ "role": "user", "content": "hi" }] }'
      ```
 
-5. **Modifying your agent**
+## Modifying your agent
 
-   See the [OpenAI Agents SDK documentation](https://platform.openai.com/docs/guides/agents-sdk) for more information on how to edit your own agent.
+See the [OpenAI Agents SDK documentation](https://platform.openai.com/docs/guides/agents-sdk) for more information on how to edit your own agent.
 
-   Required files for hosting with MLflow `AgentServer`:
+Required files for hosting with MLflow `AgentServer`:
 
-   - `agent.py`: Contains your agent logic. Modify this file to create your custom agent.
-   - `start_server.py`: Initializes and runs the MLflow `AgentServer` with agent_type="ResponsesAgent".
+- `agent.py`: Contains your agent logic. Modify this file to create your custom agent.
+- `start_server.py`: Initializes and runs the MLflow `AgentServer` with agent_type="ResponsesAgent".
 
-   **Common customization questions:**
+**Common customization questions:**
 
-   **Q: Can I add additional files or folders to my agent?**
-   Yes. Add additional files or folders as needed. Ensure the script within `pyproject.toml` runs the correct script that starts the server and sets up MLflow tracing.
+**Q: Can I add additional files or folders to my agent?**
+Yes. Add additional files or folders as needed. Ensure the script within `pyproject.toml` runs the correct script that starts the server and sets up MLflow tracing.
 
-   **Q: How do I add dependencies to my agent?**
-   Run `uv add <package_name>` (e.g., `uv add "mlflow-skinny[databricks]"`). See the [python pyproject.toml guide](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements).
+**Q: How do I add dependencies to my agent?**
+Run `uv add <package_name>` (e.g., `uv add "mlflow-skinny[databricks]"`). See the [python pyproject.toml guide](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements).
 
-   **Q: Can I add custom tracing beyond the built-in tracing?**
-   Yes. While built-in MLflow tracing covers methods annotated with `@invoke()` and `@stream()`, you can further instrument your agent. See the [MLflow tracing documentation](https://docs.databricks.com/aws/en/mlflow3/genai/tracing/app-instrumentation/).
+**Q: Can I add custom tracing beyond the built-in tracing?**
+Yes. This template uses MLflow's agent server, which comes with automatic tracing for agent logic decorated with `@invoke()` and `@stream()`. It also uses [MLflow autologging APIs](https://mlflow.org/docs/latest/genai/tracing/#one-line-auto-tracing-integrations) to capture traces from LLM invocations. However, you can add additional instrumentation to capture more granular trace information when your agent runs. See the [MLflow tracing documentation](https://docs.databricks.com/aws/en/mlflow3/genai/tracing/app-instrumentation/).
 
-   See the Agent Framework ["Author AI Agents in Code" documentation](https://docs.databricks.com/aws/en/generative-ai/agent-framework/author-agent).
+See the Agent Framework ["Tools Documentation"](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool).
 
 ## Evaluating your agent
 

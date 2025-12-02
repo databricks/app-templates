@@ -9,9 +9,17 @@ import {
   ToolContent,
   ToolInput,
   ToolOutput,
-  ToolApprovalActions,
   type ToolState,
 } from './elements/tool';
+import {
+  McpTool,
+  McpToolHeader,
+  McpToolContent,
+  McpToolInput,
+  McpToolOutput,
+  McpApprovalActions,
+  McpApprovalStatus,
+} from './elements/mcp-tool';
 import { MessageActions } from './message-actions';
 import { PreviewAttachment } from './preview-attachment';
 import equal from 'fast-deep-equal';
@@ -112,10 +120,7 @@ const PurePreviewMessage = ({
         )}
 
         <div
-          className={cn('flex min-w-0 flex-col', {
-            'gap-2 md:gap-4': message.parts?.some(
-              (p) => p.type === 'text' && p.text?.trim(),
-            ),
+          className={cn('flex min-w-0 flex-col gap-3', {
             'w-full': message.role === 'assistant' || mode === 'edit',
             'min-h-96': message.role === 'assistant' && requiresScrollPadding,
             'max-w-[70%] sm:max-w-[min(fit-content,80%)]':
@@ -213,16 +218,16 @@ const PurePreviewMessage = ({
             // Render Databricks tool calls and results
             if (part.type === `tool-${DATABRICKS_TOOL_CALL_ID}`) {
               const { toolCallId, input, state, errorText, output } = part;
-              const toolName =
+              const metadata =
                 'callProviderMetadata' in part
-                  ? part.callProviderMetadata?.databricks?.toolName?.toString()
+                  ? part.callProviderMetadata?.databricks
                   : undefined;
+              const toolName = metadata?.toolName?.toString();
 
-              // Check if this is an MCP approval request
+              // Check if this is an MCP tool call
               const isMcpApproval =
-                'callProviderMetadata' in part &&
-                part.callProviderMetadata?.databricks?.type?.toString() ===
-                  'mcp_approval_request';
+                metadata?.type?.toString() === 'mcp_approval_request';
+              const mcpServerName = metadata?.mcpServerName?.toString();
 
               const approvalStatus =
                 part.output && 'approvalStatus' in part.output
@@ -231,8 +236,54 @@ const PurePreviewMessage = ({
 
               // Determine effective state for display
               const effectiveState: ToolState =
-                isMcpApproval && !approvalStatus ? 'awaiting-approval' : state;
+                isMcpApproval && approvalStatus === undefined
+                  ? 'awaiting-approval'
+                  : state;
 
+              // Render MCP tool calls with special styling
+              if (isMcpApproval) {
+                return (
+                  <McpTool key={toolCallId} defaultOpen={true}>
+                    <McpToolHeader
+                      serverName={mcpServerName}
+                      toolName={toolName || 'mcp-tool'}
+                      state={effectiveState}
+                    />
+                    <McpToolContent>
+                      <McpToolInput input={input} />
+                      {effectiveState === 'awaiting-approval' && (
+                        <McpApprovalActions
+                          onApprove={() =>
+                            submitApproval({
+                              messageId: message.id,
+                              approvalRequestId: toolCallId,
+                              approve: true,
+                            })
+                          }
+                          onDeny={() =>
+                            submitApproval({
+                              messageId: message.id,
+                              approvalRequestId: toolCallId,
+                              approve: false,
+                            })
+                          }
+                          isSubmitting={
+                            isSubmitting && pendingApprovalId === toolCallId
+                          }
+                        />
+                      )}
+                      {isMcpApproval &&
+                        effectiveState === 'output-available' && (
+                          <McpApprovalStatus
+                            approved={approvalStatus === true}
+                          />
+                        )}
+                    </McpToolContent>
+                  </McpTool>
+                );
+              }
+
+              // Render regular tool calls
               return (
                 <Tool key={toolCallId} defaultOpen={true}>
                   <ToolHeader
@@ -241,37 +292,7 @@ const PurePreviewMessage = ({
                   />
                   <ToolContent>
                     <ToolInput input={input} />
-                    {effectiveState === 'awaiting-approval' && (
-                      <ToolApprovalActions
-                        onApprove={() =>
-                          submitApproval({
-                            messageId: message.id,
-                            approvalRequestId: toolCallId,
-                            approve: true,
-                          })
-                        }
-                        onDeny={() =>
-                          submitApproval({
-                            messageId: message.id,
-                            approvalRequestId: toolCallId,
-                            approve: false,
-                          })
-                        }
-                        isSubmitting={
-                          isSubmitting && pendingApprovalId === toolCallId
-                        }
-                      />
-                    )}
-                    {isMcpApproval && effectiveState === 'output-available' && (
-                      <div>
-                        <div>
-                          Approval Status:{' '}
-                          {approvalStatus ? 'Approved' : 'Denied'}
-                        </div>
-                        {/* <div>Reason: {reason}</div> */}
-                      </div>
-                    )}
-                    {!isMcpApproval && state === 'output-available' && (
+                    {state === 'output-available' && (
                       <ToolOutput
                         output={
                           errorText ? (

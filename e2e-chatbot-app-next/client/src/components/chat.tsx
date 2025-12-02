@@ -97,6 +97,7 @@ export function Chat({
     status,
     resumeStream,
     addToolResult,
+    regenerate,
   } = useChat<ChatMessage>({
     id,
     messages: initialMessages,
@@ -252,6 +253,7 @@ export function Chat({
           setMessages={setMessages}
           addToolResult={addToolResult}
           sendMessage={sendMessage}
+          regenerate={regenerate}
           isReadonly={isReadonly}
           selectedModelId={initialChatModel}
         />

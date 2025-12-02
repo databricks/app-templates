@@ -34,12 +34,42 @@ export {
   ToolOutput as McpToolOutput,
 };
 
+// Approval status type for MCP tools
+export type McpApprovalState = 'awaiting-approval' | 'approved' | 'denied';
+
 // MCP-specific header with banner
 type McpToolHeaderProps = {
   serverName?: string;
   toolName: string;
   state: ToolState;
+  approvalStatus?: McpApprovalState;
   className?: string;
+};
+
+// Badge component for approval status in the banner
+const ApprovalStatusBadge = ({ status }: { status: McpApprovalState }) => {
+  if (status === 'awaiting-approval') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+        <ShieldAlertIcon className="size-3" />
+        <span>Pending</span>
+      </span>
+    );
+  }
+  if (status === 'approved') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-green-700 dark:bg-green-900/50 dark:text-green-300">
+        <ShieldCheckIcon className="size-3" />
+        <span>Allowed</span>
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-red-700 dark:bg-red-900/50 dark:text-red-300">
+      <ShieldXIcon className="size-3" />
+      <span>Denied</span>
+    </span>
+  );
 };
 
 export const McpToolHeader = ({
@@ -47,6 +77,7 @@ export const McpToolHeader = ({
   serverName,
   toolName,
   state,
+  approvalStatus = 'awaiting-approval',
 }: McpToolHeaderProps) => (
   <div className="border-border border-b bg-muted/50">
     {/* MCP Banner */}
@@ -61,6 +92,8 @@ export const McpToolHeader = ({
           <span className="truncate text-muted-foreground">{serverName}</span>
         </>
       )}
+      <span className="text-muted-foreground/50">•</span>
+      <ApprovalStatusBadge status={approvalStatus} />
     </div>
     {/* Tool header */}
     <CollapsibleTrigger
@@ -73,7 +106,8 @@ export const McpToolHeader = ({
         <span className="truncate font-mono text-sm">{toolName}</span>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <ToolStatusBadge state={state} />
+        {/* Only show tool status badge when approved (tool is actually running/completed) */}
+        {approvalStatus === 'approved' && <ToolStatusBadge state={state} />}
         <ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
       </div>
     </CollapsibleTrigger>

@@ -16,9 +16,8 @@ import {
   McpToolHeader,
   McpToolContent,
   McpToolInput,
-  McpToolOutput,
   McpApprovalActions,
-  McpApprovalStatus,
+  type McpApprovalState,
 } from './elements/mcp-tool';
 import { MessageActions } from './message-actions';
 import { PreviewAttachment } from './preview-attachment';
@@ -46,6 +45,7 @@ const PurePreviewMessage = ({
   setMessages,
   addToolResult,
   sendMessage,
+  regenerate,
   isReadonly,
   requiresScrollPadding,
 }: {
@@ -55,6 +55,7 @@ const PurePreviewMessage = ({
   setMessages: UseChatHelpers<ChatMessage>['setMessages'];
   addToolResult: UseChatHelpers<ChatMessage>['addToolResult'];
   sendMessage: UseChatHelpers<ChatMessage>['sendMessage'];
+  regenerate: UseChatHelpers<ChatMessage>['regenerate'];
   isReadonly: boolean;
   requiresScrollPadding: boolean;
 }) => {
@@ -225,30 +226,35 @@ const PurePreviewMessage = ({
                 metadata?.type?.toString() === 'mcp_approval_request';
               const mcpServerName = metadata?.mcpServerName?.toString();
 
-              console.log('part', part);
-
-              const approvalStatus: ToolState = (() => {
-                console.log('output', output);
+              // Determine approval status for MCP tools
+              const approvalStatus: McpApprovalState = (() => {
                 /**
                  * The output is either
-                 * 1. {__approvalStatus__: boolean}
+                 * 1. {__approvalStatus__: boolean} - approval response only
                  * Or
-                 * 2. The output of the tool call that was approved
+                 * 2. The actual output of the tool call that was approved and executed
                  */
                 // Waiting for approval/denial
                 if (!output) return 'awaiting-approval';
-                // Approved or denied
-                if (typeof output === 'object' && 'approvalStatus' in output) {
+                // Check for explicit approval status marker
+                if (
+                  typeof output === 'object' &&
+                  '__approvalStatus__' in output
+                ) {
                   return output.__approvalStatus__ ? 'approved' : 'denied';
                 }
-                // Tool call returned output so it's approved
+                // Tool call returned output, so it was approved and executed
                 return 'approved';
               })();
 
-              // Determine effective state for display
-              const effectiveState: ToolState = isMcpApproval
-                ? approvalStatus
-                : state;
+              console.log('state', state);
+              const effectiveState: ToolState =
+                isMcpApproval &&
+                approvalStatus === 'approved' &&
+                typeof output === 'object' &&
+                '__approvalStatus__' in output
+                  ? 'input-available'
+                  : state;
 
               // Render MCP tool calls with special styling
               if (isMcpApproval) {
@@ -258,10 +264,11 @@ const PurePreviewMessage = ({
                       serverName={mcpServerName}
                       toolName={toolName || 'mcp-tool'}
                       state={effectiveState}
+                      approvalStatus={approvalStatus}
                     />
                     <McpToolContent>
                       <McpToolInput input={input} />
-                      {effectiveState === 'awaiting-approval' && (
+                      {approvalStatus === 'awaiting-approval' && (
                         <McpApprovalActions
                           onApprove={() =>
                             submitApproval({

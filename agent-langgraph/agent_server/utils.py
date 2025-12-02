@@ -48,4 +48,4 @@ async def process_agent_astream_events(
                         **create_text_delta(delta=content, item_id=chunk.id)
                     )
             except Exception as e:
-                print(e)
+                logging.exception(f"Error processing agent stream event: {e}")

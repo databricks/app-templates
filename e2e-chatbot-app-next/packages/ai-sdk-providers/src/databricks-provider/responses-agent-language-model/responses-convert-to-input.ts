@@ -117,40 +117,31 @@ export async function convertToResponsesInput({
                   arguments: argumentsString,
                   server_label: serverLabel,
                 });
-                const approvalResponse =
-                  toolCallResultsByToolCallId[part.toolCallId];
-                if (approvalResponse) {
+                const toolResult = toolCallResultsByToolCallId[part.toolCallId];
+                if (toolResult) {
                   /**
                    * The tool call result is either the approval status or the actual output.
                    * If it's the approval status, we need to add an approval response part.
                    * If it's the actual output, we need to add both the approval response part and the actual output part.
                    */
                   const approvalStatus = extractApprovalStatusFromToolResult(
-                    approvalResponse.output,
+                    toolResult.output,
                   );
                   if (approvalStatus !== undefined) {
                     // Output is just the approval status (approve or deny)
                     input.push({
                       type: MCP_APPROVAL_RESPONSE_TYPE,
-                      id: approvalResponse.toolCallId,
-                      approval_request_id: approvalResponse.toolCallId,
+                      id: toolResult.toolCallId,
+                      approval_request_id: toolResult.toolCallId,
                       approve: approvalStatus,
                     });
                   } else {
                     // Output is the actual tool result (tool was approved and executed)
-                    // First add the approval response (implicitly approved since we have output)
-                    input.push({
-                      type: MCP_APPROVAL_RESPONSE_TYPE,
-                      id: approvalResponse.toolCallId,
-                      approval_request_id: approvalResponse.toolCallId,
-                      approve: true,
-                    });
-                    // Then add the actual tool output
                     input.push({
                       type: 'function_call_output',
-                      call_id: approvalResponse.toolCallId,
+                      call_id: toolResult.toolCallId,
                       output: convertToolResultOutputToString(
-                        approvalResponse.output,
+                        toolResult.output,
                       ),
                     });
                   }

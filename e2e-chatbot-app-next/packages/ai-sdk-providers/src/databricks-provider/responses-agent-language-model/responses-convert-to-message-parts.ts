@@ -134,7 +134,7 @@ export const convertResponsesAgentChunkToMessagePart = (
           toolCallId: chunk.item.approval_request_id,
           toolName: DATABRICKS_TOOL_CALL_ID,
           result: {
-            approvalStatus: chunk.item.approve,
+            __approvalStatus__: chunk.item.approve,
           },
           providerMetadata: {
             databricks: {

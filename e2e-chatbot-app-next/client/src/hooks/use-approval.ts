@@ -4,32 +4,25 @@ import type { ChatMessage } from '@chat-template/core';
 import { DATABRICKS_TOOL_CALL_ID } from '@chat-template/ai-sdk-providers/tools';
 
 interface ApprovalSubmission {
-  messageId: string;
   approvalRequestId: string;
   approve: boolean;
-  reason?: string;
 }
 
 interface UseApprovalOptions {
-  setMessages: UseChatHelpers<ChatMessage>['setMessages'];
-  sendMessage: UseChatHelpers<ChatMessage>['sendMessage'];
   addToolResult: UseChatHelpers<ChatMessage>['addToolResult'];
-  regenerate: UseChatHelpers<ChatMessage>['regenerate'];
+  sendMessage: UseChatHelpers<ChatMessage>['sendMessage'];
 }
 
 /**
  * Hook for handling MCP approval requests.
  *
  * When user approves/denies, this hook:
- * 1. Updates the tool call part with approval status
- * 2. Appends an mcp-approval-response part to the message
- * 3. Sends an empty user message to trigger continuation
+ * 1. Adds the tool result with approval status via addToolResult()
+ * 2. Calls sendMessage() without arguments to trigger continuation
  */
 export function useApproval({
-  setMessages,
-  sendMessage,
   addToolResult,
-  regenerate,
+  sendMessage,
 }: UseApprovalOptions) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingApprovalId, setPendingApprovalId] = useState<string | null>(
@@ -37,29 +30,24 @@ export function useApproval({
   );
 
   const submitApproval = useCallback(
-    async ({
-      messageId,
-      approvalRequestId,
-      approve,
-      reason,
-    }: ApprovalSubmission) => {
+    async ({ approvalRequestId, approve }: ApprovalSubmission) => {
       setIsSubmitting(true);
       setPendingApprovalId(approvalRequestId);
 
       try {
+        // Add tool result with approval status
         await addToolResult({
           tool: DATABRICKS_TOOL_CALL_ID,
           toolCallId: approvalRequestId,
           state: 'output-available',
           output: {
-            approvalStatus: approve,
+            __approvalStatus__: approve,
           },
         });
-        // Send empty message to trigger continuation with updated messages
-        await sendMessage({
-          role: 'user',
-          parts: [],
-        });
+
+        // Trigger continuation by calling sendMessage without arguments
+        // This will submit the current messages (including tool result) without adding a new user message
+        await sendMessage();
       } catch (error) {
         console.error('Approval submission failed:', error);
       } finally {
@@ -67,7 +55,7 @@ export function useApproval({
         setPendingApprovalId(null);
       }
     },
-    [setMessages, sendMessage],
+    [addToolResult, sendMessage],
   );
 
   return { submitApproval, isSubmitting, pendingApprovalId };

@@ -82,7 +82,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       selectedVisibilityType,
     }: {
       id: string;
-      message: ChatMessage;
+      message?: ChatMessage;
       selectedChatModel: string;
       selectedVisibilityType: VisibilityType;
     } = requestBody;
@@ -106,7 +106,8 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     }
 
     if (!chat) {
-      if (isDatabaseAvailable()) {
+      // Only create new chat if we have a message (not a continuation)
+      if (isDatabaseAvailable() && message) {
         const title = await generateTitleFromUserMessage({ message });
 
         await saveChat({
@@ -132,20 +133,27 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
         ? requestBody.previousMessages
         : convertToUIMessages(messagesFromDb);
 
-    const uiMessages = [...previousMessages, message];
-
-    await saveMessages({
-      messages: [
-        {
-          chatId: id,
-          id: message.id,
-          role: 'user',
-          parts: message.parts,
-          attachments: [],
-          createdAt: new Date(),
-        },
-      ],
-    });
+    // If message is provided, add it to the list and save it
+    // If not (continuation/regeneration), just use previous messages
+    let uiMessages: ChatMessage[];
+    if (message) {
+      uiMessages = [...previousMessages, message];
+      await saveMessages({
+        messages: [
+          {
+            chatId: id,
+            id: message.id,
+            role: 'user',
+            parts: message.parts,
+            attachments: [],
+            createdAt: new Date(),
+          },
+        ],
+      });
+    } else {
+      // Continuation: use existing messages without adding new user message
+      uiMessages = previousMessages as ChatMessage[];
+    }
 
     // Clear any previous active stream for this chat
     streamCache.clearActiveStream(id);

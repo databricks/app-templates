@@ -103,6 +103,8 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
 
     let finishReason: LanguageModelV2FinishReason = 'unknown';
 
+    const allParts: LanguageModelV2StreamPart[] = [];
+
     return {
       stream: response
         .pipeThrough(
@@ -129,6 +131,44 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
               const parts = convertResponsesAgentChunkToMessagePart(
                 chunk.value,
               );
+
+              allParts.push(...parts);
+              /**
+               * Check if the last chunk was a tool result without a tool call
+               * This is a special case for MCP approval requests where the tool result
+               * is sent in a separate call after the tool call was approved/denied.
+               */
+              const part = parts[0];
+              if (part.type === 'tool-result') {
+                const matchingToolCall = parts.find(
+                  (c) =>
+                    c.type === 'tool-call' && c.toolCallId === part.toolCallId,
+                );
+                if (!matchingToolCall) {
+                  // Find the tool call in the prompt
+                  const toolCallFromPreviousMessages = options.prompt
+                    .flatMap((message) => {
+                      if (typeof message.content === 'string') return [];
+                      return message.content;
+                    })
+                    .find(
+                      (p) =>
+                        p.type === 'tool-call' &&
+                        p.toolCallId === part.toolCallId,
+                    );
+                  if (!toolCallFromPreviousMessages) {
+                    throw new Error(
+                      'No matching tool call found in previous message',
+                    );
+                  }
+                  if (toolCallFromPreviousMessages.type === 'tool-call') {
+                    controller.enqueue({
+                      ...toolCallFromPreviousMessages,
+                      input: JSON.stringify(toolCallFromPreviousMessages.input),
+                    });
+                  }
+                }
+              }
               for (const part of parts) {
                 controller.enqueue(part);
               }

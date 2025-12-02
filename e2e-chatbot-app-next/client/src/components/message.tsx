@@ -44,9 +44,8 @@ const PurePreviewMessage = ({
   message,
   isLoading,
   setMessages,
-  sendMessage,
-  regenerate,
   addToolResult,
+  sendMessage,
   isReadonly,
   requiresScrollPadding,
 }: {
@@ -54,9 +53,8 @@ const PurePreviewMessage = ({
   message: ChatMessage;
   isLoading: boolean;
   setMessages: UseChatHelpers<ChatMessage>['setMessages'];
-  sendMessage: UseChatHelpers<ChatMessage>['sendMessage'];
-  regenerate: UseChatHelpers<ChatMessage>['regenerate'];
   addToolResult: UseChatHelpers<ChatMessage>['addToolResult'];
+  sendMessage: UseChatHelpers<ChatMessage>['sendMessage'];
   isReadonly: boolean;
   requiresScrollPadding: boolean;
 }) => {
@@ -65,10 +63,8 @@ const PurePreviewMessage = ({
 
   // Hook for handling MCP approval requests
   const { submitApproval, isSubmitting, pendingApprovalId } = useApproval({
-    setMessages,
-    sendMessage,
     addToolResult,
-    regenerate,
+    sendMessage,
   });
 
   const attachmentsFromMessage = message.parts.filter(
@@ -229,16 +225,30 @@ const PurePreviewMessage = ({
                 metadata?.type?.toString() === 'mcp_approval_request';
               const mcpServerName = metadata?.mcpServerName?.toString();
 
-              const approvalStatus =
-                part.output && 'approvalStatus' in part.output
-                  ? (part.output.approvalStatus as boolean | undefined)
-                  : undefined;
+              console.log('part', part);
+
+              const approvalStatus: ToolState = (() => {
+                console.log('output', output);
+                /**
+                 * The output is either
+                 * 1. {__approvalStatus__: boolean}
+                 * Or
+                 * 2. The output of the tool call that was approved
+                 */
+                // Waiting for approval/denial
+                if (!output) return 'awaiting-approval';
+                // Approved or denied
+                if (typeof output === 'object' && 'approvalStatus' in output) {
+                  return output.__approvalStatus__ ? 'approved' : 'denied';
+                }
+                // Tool call returned output so it's approved
+                return 'approved';
+              })();
 
               // Determine effective state for display
-              const effectiveState: ToolState =
-                isMcpApproval && approvalStatus === undefined
-                  ? 'awaiting-approval'
-                  : state;
+              const effectiveState: ToolState = isMcpApproval
+                ? approvalStatus
+                : state;
 
               // Render MCP tool calls with special styling
               if (isMcpApproval) {
@@ -255,14 +265,12 @@ const PurePreviewMessage = ({
                         <McpApprovalActions
                           onApprove={() =>
                             submitApproval({
-                              messageId: message.id,
                               approvalRequestId: toolCallId,
                               approve: true,
                             })
                           }
                           onDeny={() =>
                             submitApproval({
-                              messageId: message.id,
                               approvalRequestId: toolCallId,
                               approve: false,
                             })
@@ -272,10 +280,26 @@ const PurePreviewMessage = ({
                           }
                         />
                       )}
-                      {isMcpApproval &&
-                        effectiveState === 'output-available' && (
-                          <McpApprovalStatus
-                            approved={approvalStatus === true}
+                      {state === 'output-available' &&
+                        !(
+                          typeof output === 'object' &&
+                          '__approvalStatus__' in output
+                        ) && (
+                          <ToolOutput
+                            output={
+                              errorText ? (
+                                <div className="rounded border p-2 text-red-500">
+                                  Error: {errorText}
+                                </div>
+                              ) : (
+                                <div className="whitespace-pre-wrap font-mono text-sm">
+                                  {typeof output === 'string'
+                                    ? output
+                                    : JSON.stringify(output, null, 2)}
+                                </div>
+                              )
+                            }
+                            errorText={undefined}
                           />
                         )}
                     </McpToolContent>

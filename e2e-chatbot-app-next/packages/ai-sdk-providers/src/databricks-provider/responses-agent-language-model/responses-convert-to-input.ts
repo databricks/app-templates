@@ -120,8 +120,9 @@ export async function convertToResponsesInput({
                     approvalResponse.output.type === 'json' &&
                     approvalResponse.output.value &&
                     typeof approvalResponse.output.value === 'object' &&
-                    'approvalStatus' in approvalResponse.output.value
-                      ? approvalResponse.output.value?.approvalStatus === true
+                    '__approvalStatus__' in approvalResponse.output.value
+                      ? approvalResponse.output.value?.__approvalStatus__ ===
+                        true
                       : undefined;
                   if (approvalStatus !== undefined) {
                     input.push({
@@ -157,9 +158,6 @@ export async function convertToResponsesInput({
 
             case 'tool-result': {
               if (providerOptions?.type === 'mcp_approval_response') {
-                // if (part.output.type === 'json') {
-                //   const foo = part.output.value;
-                // }
                 // Special case for MCP approval response
                 const approvalRequestId =
                   providerOptions?.approvalRequestId ?? part.toolCallId;

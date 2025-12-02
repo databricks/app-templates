@@ -63,6 +63,9 @@ async function getWorkspaceHostname(): Promise<string> {
   }
 }
 
+// Environment variable to enable SSE logging
+const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true' || true;
+
 // Custom fetch function to transform Databricks responses to OpenAI format
 export const databricksFetch: typeof fetch = async (input, init) => {
   const url = input.toString();
@@ -90,6 +93,65 @@ export const databricksFetch: typeof fetch = async (input, init) => {
   }
 
   const response = await fetch(url, init);
+
+  // If SSE logging is enabled and this is a streaming response, wrap the body to log events
+  if (LOG_SSE_EVENTS && response.body) {
+    const contentType = response.headers.get('content-type') || '';
+    const isSSE =
+      contentType.includes('text/event-stream') ||
+      contentType.includes('application/x-ndjson');
+
+    if (isSSE) {
+      const originalBody = response.body;
+      const reader = originalBody.getReader();
+      const decoder = new TextDecoder();
+      let eventCounter = 0;
+
+      const loggingStream = new ReadableStream({
+        async pull(controller) {
+          const { done, value } = await reader.read();
+
+          if (done) {
+            console.log('[SSE] Stream ended');
+            controller.close();
+            return;
+          }
+
+          // Decode and log the chunk
+          const text = decoder.decode(value, { stream: true });
+          const lines = text.split('\n').filter((line) => line.trim());
+
+          for (const line of lines) {
+            eventCounter++;
+            if (line.startsWith('data:')) {
+              const data = line.slice(5).trim();
+              try {
+                const parsed = JSON.parse(data);
+                console.log(`[SSE #${eventCounter}]`, JSON.stringify(parsed));
+              } catch {
+                console.log(`[SSE #${eventCounter}] (raw)`, data);
+              }
+            } else if (line.trim()) {
+              console.log(`[SSE #${eventCounter}] (line)`, line);
+            }
+          }
+
+          // Pass the original data through
+          controller.enqueue(value);
+        },
+        cancel() {
+          reader.cancel();
+        },
+      });
+
+      // Create a new response with the logging stream
+      return new Response(loggingStream, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+    }
+  }
 
   return response;
 };

@@ -95,7 +95,6 @@ export function Chat({
     setMessages,
     sendMessage,
     status,
-    regenerate,
     resumeStream,
     addToolResult,
   } = useChat<ChatMessage>({
@@ -121,17 +120,26 @@ export function Chat({
       api: '/api/chat',
       fetch: fetchWithAbort,
       prepareSendMessagesRequest({ messages, id, body }) {
+        const lastMessage = messages.at(-1);
+        const isUserMessage = lastMessage?.role === 'user';
+
         return {
           body: {
             id,
-            message: messages.at(-1),
+            // Only include message field for user messages (new messages)
+            // For continuation (assistant messages with tool results), omit message field
+            ...(isUserMessage ? { message: lastMessage } : {}),
             selectedChatModel: initialChatModel,
             selectedVisibilityType: visibilityType,
             nextMessageId: generateUUID(),
             // In ephemeral mode, send previous messages from frontend since DB is unavailable
             ...(chatHistoryEnabled
               ? {}
-              : { previousMessages: messages.slice(0, -1) }),
+              : {
+                  previousMessages: isUserMessage
+                    ? messages.slice(0, -1)
+                    : messages,
+                }),
             ...body,
           },
         };
@@ -242,9 +250,8 @@ export function Chat({
           status={status}
           messages={messages}
           setMessages={setMessages}
-          sendMessage={sendMessage}
           addToolResult={addToolResult}
-          regenerate={regenerate}
+          sendMessage={sendMessage}
           isReadonly={isReadonly}
           selectedModelId={initialChatModel}
         />

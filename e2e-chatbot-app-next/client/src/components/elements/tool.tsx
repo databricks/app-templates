@@ -12,6 +12,8 @@ import {
   CircleIcon,
   ClockIcon,
   ShieldAlertIcon,
+  ShieldCheckIcon,
+  ShieldXIcon,
   WrenchIcon,
   XCircleIcon,
 } from 'lucide-react';
@@ -19,7 +21,11 @@ import type { ComponentProps, ReactNode } from 'react';
 import { CodeBlock } from './code-block';
 
 // Shared types
-export type ToolState = ToolUIPart['state'] | 'awaiting-approval';
+export type ToolState =
+  | ToolUIPart['state']
+  | 'awaiting-approval'
+  | 'approved'
+  | 'denied';
 
 // Shared status badge component
 type ToolStatusBadgeProps = {
@@ -34,6 +40,8 @@ export const ToolStatusBadge = ({ state, className }: ToolStatusBadgeProps) => {
     'output-available': 'Completed',
     'output-error': 'Error',
     'awaiting-approval': 'Approval Required',
+    approved: 'Approved',
+    denied: 'Denied',
   };
 
   const icons: Record<ToolState, ReactNode> = {
@@ -42,6 +50,8 @@ export const ToolStatusBadge = ({ state, className }: ToolStatusBadgeProps) => {
     'output-available': <CheckCircleIcon className="size-3" />,
     'output-error': <XCircleIcon className="size-3" />,
     'awaiting-approval': <ShieldAlertIcon className="size-3" />,
+    approved: <ShieldCheckIcon className="size-3" />,
+    denied: <ShieldXIcon className="size-3" />,
   };
 
   const variants: Record<ToolState, string> = {
@@ -54,6 +64,9 @@ export const ToolStatusBadge = ({ state, className }: ToolStatusBadgeProps) => {
     'output-error': 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
     'awaiting-approval':
       'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300',
+    approved:
+      'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300',
+    denied: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
   };
 
   return (

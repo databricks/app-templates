@@ -12,7 +12,16 @@ const filePartSchema = z.object({
   url: z.string().url(),
 });
 
-const partSchema = z.union([textPartSchema, filePartSchema]);
+// Tool call part for OAuth retry flow - allows retrying failed tool calls
+// after user authenticates via OAuth
+const toolCallPartSchema = z.object({
+  type: z.enum(['tool-call']),
+  toolCallId: z.string(),
+  toolName: z.string(),
+  args: z.record(z.any()),
+});
+
+const partSchema = z.union([textPartSchema, filePartSchema, toolCallPartSchema]);
 
 // Schema for previous messages in ephemeral mode
 // More permissive to handle various message types (user, assistant, tool calls, etc.)

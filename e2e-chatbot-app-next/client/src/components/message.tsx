@@ -282,14 +282,38 @@ const PurePreviewMessage = ({
 
                   if (!lastUserMessage) return;
 
-                  // Get the original user message text parts only
-                  // We resend the user message and let the agent make the tool call again
-                  // (now that the user is authenticated, it should succeed)
+                  // Find tool call parts from this assistant message that failed
+                  const toolCallParts = message.parts.filter(
+                    (p) => p.type === `tool-${DATABRICKS_TOOL_CALL_ID}`,
+                  );
+
+                  // Build the retry message parts
+                  const retryParts: ChatMessage['parts'] = [];
+
+                  // Add the original user message text
                   const textParts = lastUserMessage.parts.filter(
                     (p) => p.type === 'text',
                   );
+                  retryParts.push(...textParts);
 
-                  if (textParts.length === 0) return;
+                  // Add the tool calls that need to be retried
+                  // This tells the backend to retry these specific tool calls
+                  for (const toolPart of toolCallParts) {
+                    if (toolPart.type === `tool-${DATABRICKS_TOOL_CALL_ID}`) {
+                      retryParts.push({
+                        type: 'tool-call',
+                        toolCallId: toolPart.toolCallId,
+                        toolName:
+                          'callProviderMetadata' in toolPart
+                            ? (toolPart.callProviderMetadata?.databricks
+                                ?.toolName as string) ?? DATABRICKS_TOOL_CALL_ID
+                            : DATABRICKS_TOOL_CALL_ID,
+                        args: toolPart.input,
+                      });
+                    }
+                  }
+
+                  if (retryParts.length === 0) return;
 
                   // Delete trailing messages from DB (the failed assistant message)
                   // We delete from the user message so both user + assistant messages are removed
@@ -305,10 +329,10 @@ const PurePreviewMessage = ({
                     setMessages(allMessages.slice(0, userMessageIndex));
                   }
 
-                  // Resend the original user message - the agent will make the tool call again
+                  // Send the retry message with both user text and tool calls
                   sendMessage({
                     role: 'user',
-                    parts: textParts,
+                    parts: retryParts,
                   });
                 };
 

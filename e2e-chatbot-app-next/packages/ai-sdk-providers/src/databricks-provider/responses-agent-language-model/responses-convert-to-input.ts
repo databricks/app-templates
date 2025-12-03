@@ -65,21 +65,50 @@ export async function convertToResponsesInput({
         break;
       }
 
-      case 'user':
-        input.push({
-          role: 'user',
-          content: content.map((part) => {
-            switch (part.type) {
-              case 'text':
+      case 'user': {
+        // Separate text parts and tool-call parts
+        // Tool-call parts in user messages are used for OAuth retry flow
+        const textParts = content.filter((part) => part.type === 'text');
+        const toolCallParts = content.filter((part) => part.type === 'tool-call');
+
+        // Add the user message with text content
+        if (textParts.length > 0) {
+          input.push({
+            role: 'user',
+            content: textParts.map((part) => {
+              if (part.type === 'text') {
                 return { type: 'input_text', text: part.text };
-              default:
-                throw new UnsupportedFunctionalityError({
-                  functionality: `part ${JSON.stringify(part)}`,
-                });
-            }
-          }),
-        });
+              }
+              throw new UnsupportedFunctionalityError({
+                functionality: `part ${JSON.stringify(part)}`,
+              });
+            }),
+          });
+        }
+
+        // Add tool calls as separate function_call items (for OAuth retry)
+        // This allows retrying failed tool calls after OAuth authentication
+        for (const part of toolCallParts) {
+          if (part.type === 'tool-call') {
+            const providerOptions = await parseProviderOptions({
+              provider: 'databricks',
+              providerOptions: part.providerOptions,
+              schema: ProviderOptionsSchema,
+            });
+            input.push({
+              type: 'function_call',
+              call_id: part.toolCallId,
+              name: providerOptions?.toolName ?? part.toolName,
+              arguments:
+                typeof part.args === 'string'
+                  ? part.args
+                  : JSON.stringify(part.args),
+              id: providerOptions?.itemId ?? undefined,
+            });
+          }
+        }
         break;
+      }
 
       case 'assistant':
         for (const part of content) {

@@ -6,5 +6,3 @@ env:
     value: "databricks"
   - name: MLFLOW_REGISTRY_URI
     value: "databricks-uc"
-  - name: MLFLOW_EXPERIMENT_ID
-    value: ""

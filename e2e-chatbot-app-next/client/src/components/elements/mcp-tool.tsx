@@ -48,7 +48,10 @@ type McpToolHeaderProps = {
 const ApprovalStatusBadge = ({ status }: { status: McpApprovalState }) => {
   if (status === 'awaiting-approval') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+      <span
+        className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
+        data-testid="mcp-approval-status-pending"
+      >
         <ShieldAlertIcon className="size-3" />
         <span>Pending</span>
       </span>
@@ -56,14 +59,20 @@ const ApprovalStatusBadge = ({ status }: { status: McpApprovalState }) => {
   }
   if (status === 'approved') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-green-700 dark:bg-green-900/50 dark:text-green-300">
+      <span
+        className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-green-700 dark:bg-green-900/50 dark:text-green-300"
+        data-testid="mcp-approval-status-allowed"
+      >
         <ShieldCheckIcon className="size-3" />
         <span>Allowed</span>
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-red-700 dark:bg-red-900/50 dark:text-red-300">
+    <span
+      className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-red-700 dark:bg-red-900/50 dark:text-red-300"
+      data-testid="mcp-approval-status-denied"
+    >
       <ShieldXIcon className="size-3" />
       <span>Denied</span>
     </span>
@@ -124,7 +133,10 @@ export const McpApprovalActions = ({
   onDeny,
   isSubmitting,
 }: McpApprovalActionsProps) => (
-  <div className="flex flex-col gap-3 border-amber-300 border-t bg-amber-50/50 p-3 dark:border-amber-700 dark:bg-amber-950/20">
+  <div
+    className="flex flex-col gap-3 border-amber-300 border-t bg-amber-50/50 p-3 dark:border-amber-700 dark:bg-amber-950/20"
+    data-testid="mcp-approval-actions"
+  >
     <div className="flex items-start gap-2">
       <ShieldAlertIcon className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
       <p className="text-amber-800 text-sm dark:text-amber-200">
@@ -138,6 +150,7 @@ export const McpApprovalActions = ({
         onClick={onApprove}
         disabled={isSubmitting}
         className="bg-green-600 hover:bg-green-700"
+        data-testid="mcp-approval-allow"
       >
         <ShieldCheckIcon className="mr-1.5 size-4" />
         {isSubmitting ? 'Submitting...' : 'Allow'}
@@ -147,6 +160,7 @@ export const McpApprovalActions = ({
         size="sm"
         onClick={onDeny}
         disabled={isSubmitting}
+        data-testid="mcp-approval-deny"
       >
         <ShieldXIcon className="mr-1.5 size-4" />
         Deny

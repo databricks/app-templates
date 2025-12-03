@@ -138,14 +138,23 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
                * This is a special case for MCP approval requests where the tool result
                * is sent in a separate call after the tool call was approved/denied.
                */
+              if (parts.length === 0) {
+                return;
+              }
               const part = parts[0];
               if (part.type === 'tool-result') {
-                const matchingToolCall = parts.find(
+                // First check if the tool call is in the current stream parts
+                const matchingToolCallInParts = parts.find(
                   (c) =>
                     c.type === 'tool-call' && c.toolCallId === part.toolCallId,
                 );
-                if (!matchingToolCall) {
-                  // Find the tool call in the prompt
+                // Also check if the tool call was emitted earlier in this stream
+                const matchingToolCallInStream = allParts.find(
+                  (c) =>
+                    c.type === 'tool-call' && c.toolCallId === part.toolCallId,
+                );
+                if (!matchingToolCallInParts && !matchingToolCallInStream) {
+                  // Find the tool call in the prompt (previous messages)
                   const toolCallFromPreviousMessages = options.prompt
                     .flatMap((message) => {
                       if (typeof message.content === 'string') return [];

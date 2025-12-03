@@ -127,11 +127,14 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
 
     const messagesFromDb = await getMessagesByChatId({ id });
 
-    // In ephemeral mode, use previous messages from frontend if provided
-    const previousMessages =
-      !dbAvailable && requestBody.previousMessages
-        ? requestBody.previousMessages
-        : convertToUIMessages(messagesFromDb);
+    // Use previousMessages from request body when:
+    // 1. Ephemeral mode (DB not available) - always use client-side messages
+    // 2. Continuation request (no message) - tool results only exist client-side
+    const useClientMessages =
+      !dbAvailable || (!message && requestBody.previousMessages);
+    const previousMessages = useClientMessages
+      ? (requestBody.previousMessages ?? [])
+      : convertToUIMessages(messagesFromDb);
 
     // If message is provided, add it to the list and save it
     // If not (continuation/regeneration), just use previous messages

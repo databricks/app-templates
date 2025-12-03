@@ -124,6 +124,11 @@ export function Chat({
         const lastMessage = messages.at(-1);
         const isUserMessage = lastMessage?.role === 'user';
 
+        // For continuations (non-user messages like tool results), we must always
+        // send previousMessages because the tool result only exists client-side
+        // and hasn't been saved to the database yet.
+        const needsPreviousMessages = !chatHistoryEnabled || !isUserMessage;
+
         return {
           body: {
             id,
@@ -133,14 +138,16 @@ export function Chat({
             selectedChatModel: initialChatModel,
             selectedVisibilityType: visibilityType,
             nextMessageId: generateUUID(),
-            // In ephemeral mode, send previous messages from frontend since DB is unavailable
-            ...(chatHistoryEnabled
-              ? {}
-              : {
+            // Send previous messages when:
+            // 1. Database is disabled (ephemeral mode) - always need client-side messages
+            // 2. Continuation request (tool results) - tool result only exists client-side
+            ...(needsPreviousMessages
+              ? {
                   previousMessages: isUserMessage
                     ? messages.slice(0, -1)
                     : messages,
-                }),
+                }
+              : {}),
             ...body,
           },
         };

@@ -324,6 +324,20 @@ echo "Updating .env.local with experiment ID..."
 sed -i '' "s/MLFLOW_EXPERIMENT_ID=.*/MLFLOW_EXPERIMENT_ID=$EXPERIMENT_ID/" .env.local
 echo
 
+# Update app.yaml with the experiment ID only if MLFLOW_EXPERIMENT_ID doesn't exist
+if grep -q "name: MLFLOW_EXPERIMENT_ID" app.yaml; then
+    echo "MLFLOW_EXPERIMENT_ID already exists in app.yaml, skipping update..."
+else
+    echo "Adding MLFLOW_EXPERIMENT_ID to app.yaml..."
+    # Add the two lines to the env section
+    sed -i '' "/^env:/a\\
+  - name: MLFLOW_EXPERIMENT_ID\\
+    value: \"$EXPERIMENT_ID\"
+" app.yaml
+    echo "✓ Added MLFLOW_EXPERIMENT_ID to app.yaml"
+fi
+echo
+
 echo "==================================================================="
 echo "Setup Complete!"
 echo "==================================================================="
@@ -332,6 +346,6 @@ echo "✓ Databricks authenticated with profile: $PROFILE_NAME"
 echo "✓ Configuration files created (.env.local)"
 echo "✓ MLflow experiment created: $EXPERIMENT_NAME"
 echo "✓ Experiment ID: $EXPERIMENT_ID"
-echo "✓ Configuration updated in .env.local"
+echo "✓ Configuration updated in .env.local and app.yaml"
 echo "==================================================================="
 echo

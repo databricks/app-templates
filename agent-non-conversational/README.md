@@ -102,13 +102,13 @@ uv run start-server
 
    ```bash
    # Test locally
-   python test_agent.py
+   uv run python3 test_agent.py
 
    # Test with specific URL
-   python test_agent.py --url http://localhost:8000
+   uv run python3 test_agent.py --url http://localhost:8000
 
    # Test with health check only
-   python test_agent.py --url http://localhost:8000 --check-health
+   uv run python3 test_agent.py --url http://localhost:8000 --check-health
    ```
 
    Or query your agent via REST API request:
@@ -189,7 +189,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
 2. **Make sure the value of `MLFLOW_EXPERIMENT_ID` is set in `app.yaml`**
 
-   Fill in the value of `MLFLOW_EXPERIMENT_ID` in `app.yaml`, matching the experiment you granted permissions to. Refer to the [Databricks Apps environment variable documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/environment-variables) for more info.
+   The `MLFLOW_EXPERIMENT_ID` in `app.yaml` should have been filled in by the `./scripts/quickstart.sh` script. If it is not set, you can manually fill in the value in `app.yaml`. Refer to the [Databricks Apps environment variable documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/environment-variables) for more info.
 
 3. **Sync local files to your workspace**
 
@@ -214,13 +214,13 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
    ```bash
    # Test with automatic OAuth token
-   python test_agent.py --url <app-url.databricksapps.com>
+   uv run python3 test_agent.py --url <app-url.databricksapps.com>
 
    # Test with specific profile
-   python test_agent.py --url <app-url.databricksapps.com> --profile your-profile
+   uv run python3 test_agent.py --url <app-url.databricksapps.com> --profile your-profile
 
    # Test with manual token
-   python test_agent.py --url <app-url.databricksapps.com> --token <oauth-token>
+   uv run python3 test_agent.py --url <app-url.databricksapps.com> --token <oauth-token>
    ```
 
    Databricks Apps are _only_ queryable via OAuth token. You cannot use a PAT to query your agent. Generate an [OAuth token with your credentials using the Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/authentication#u2m-auth):

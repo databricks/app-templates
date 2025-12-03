@@ -15,6 +15,7 @@ interface MessagesProps {
   messages: ChatMessage[];
   setMessages: UseChatHelpers<ChatMessage>['setMessages'];
   regenerate: UseChatHelpers<ChatMessage>['regenerate'];
+  sendMessage: UseChatHelpers<ChatMessage>['sendMessage'];
   isReadonly: boolean;
   selectedModelId: string;
 }
@@ -25,6 +26,7 @@ function PureMessages({
   messages,
   setMessages,
   regenerate,
+  sendMessage,
   isReadonly,
   selectedModelId,
 }: MessagesProps) {
@@ -69,11 +71,13 @@ function PureMessages({
               key={message.id}
               chatId={chatId}
               message={message}
+              allMessages={messages}
               isLoading={
                 status === 'streaming' && messages.length - 1 === index
               }
               setMessages={setMessages}
               regenerate={regenerate}
+              sendMessage={sendMessage}
               isReadonly={isReadonly}
               requiresScrollPadding={
                 hasSentMessage && index === messages.length - 1

@@ -26,22 +26,33 @@ import {
   joinMessagePartSegments,
 } from './databricks-message-part-transformers';
 import { MessageError } from './message-error';
+import { MessageOAuthError } from './message-oauth-error';
+import {
+  isCredentialErrorMessage,
+  findLoginURLFromCredentialErrorMessage,
+  findConnectionNameFromCredentialErrorMessage,
+} from '@/lib/oauth-error-utils';
 import { Streamdown } from 'streamdown';
 import { DATABRICKS_TOOL_CALL_ID } from '@chat-template/ai-sdk-providers/tools';
+import { deleteTrailingMessages } from '@/lib/actions';
 
 const PurePreviewMessage = ({
   message,
+  allMessages,
   isLoading,
   setMessages,
   regenerate,
+  sendMessage,
   isReadonly,
   requiresScrollPadding,
 }: {
   chatId: string;
   message: ChatMessage;
+  allMessages: ChatMessage[];
   isLoading: boolean;
   setMessages: UseChatHelpers<ChatMessage>['setMessages'];
   regenerate: UseChatHelpers<ChatMessage>['regenerate'];
+  sendMessage: UseChatHelpers<ChatMessage>['sendMessage'];
   isReadonly: boolean;
   requiresScrollPadding: boolean;
 }) => {
@@ -52,9 +63,14 @@ const PurePreviewMessage = ({
     (part) => part.type === 'file',
   );
 
-  // Extract error parts separately
+  // Extract non-OAuth error parts separately (OAuth errors are rendered inline)
   const errorParts = React.useMemo(
-    () => message.parts.filter((part) => part.type === 'data-error'),
+    () =>
+      message.parts.filter((part) => {
+        if (part.type !== 'data-error') return false;
+        // OAuth errors are rendered inline, not in the error section
+        return !isCredentialErrorMessage(part.data);
+      }),
     [message.parts],
   );
 
@@ -64,19 +80,24 @@ const PurePreviewMessage = ({
     /**
      * We segment message parts into segments that can be rendered as a single component.
      * Used to render citations as part of the associated text.
+     * Note: OAuth errors are included here for inline rendering, non-OAuth errors are filtered out.
      */
     () =>
       createMessagePartSegments(
-        message.parts.filter((part) => part.type !== 'data-error'),
+        message.parts.filter(
+          (part) =>
+            part.type !== 'data-error' || isCredentialErrorMessage(part.data),
+        ),
       ),
     [message.parts],
   );
 
-  // Check if message only contains errors (no other content)
+  // Check if message only contains non-OAuth errors (no other content)
   const hasOnlyErrors = React.useMemo(() => {
     const nonErrorParts = message.parts.filter(
       (part) => part.type !== 'data-error',
     );
+    // Only consider non-OAuth errors for this check
     return errorParts.length > 0 && nonErrorParts.length === 0;
   }, [message.parts, errorParts.length]);
 
@@ -244,6 +265,82 @@ const PurePreviewMessage = ({
                   <sup className="text-xs">[{part.title || part.url}]</sup>
                 </a>
               );
+            }
+
+            // Render OAuth errors inline
+            if (type === 'data-error' && isCredentialErrorMessage(part.data)) {
+              const loginUrl = findLoginURLFromCredentialErrorMessage(part.data);
+              const connectionName =
+                findConnectionNameFromCredentialErrorMessage(part.data);
+
+              if (loginUrl && connectionName) {
+                const handleOAuthRetry = async () => {
+                  // Find the last user message from all messages
+                  const lastUserMessage = [...allMessages]
+                    .reverse()
+                    .find((m) => m.role === 'user');
+
+                  if (!lastUserMessage) return;
+
+                  // Find tool call parts from this assistant message that may have failed
+                  const toolCallParts = message.parts.filter(
+                    (p) => p.type === `tool-${DATABRICKS_TOOL_CALL_ID}`,
+                  );
+
+                  // Build the retry message parts
+                  const retryParts: ChatMessage['parts'] = [];
+
+                  // Add the original user message text
+                  const textParts = lastUserMessage.parts.filter(
+                    (p) => p.type === 'text',
+                  );
+                  retryParts.push(...textParts);
+
+                  // Add the tool calls that need to be retried
+                  for (const toolPart of toolCallParts) {
+                    if (toolPart.type === `tool-${DATABRICKS_TOOL_CALL_ID}`) {
+                      retryParts.push({
+                        type: 'tool-call',
+                        toolCallId: toolPart.toolCallId,
+                        toolName: DATABRICKS_TOOL_CALL_ID,
+                        args: toolPart.input,
+                      });
+                    }
+                  }
+
+                  if (retryParts.length === 0) return;
+
+                  // Delete trailing messages from DB (the failed assistant message)
+                  // We delete from the user message so both user + assistant messages are removed
+                  await deleteTrailingMessages({
+                    messageId: lastUserMessage.id,
+                  });
+
+                  // Update local state to remove messages from the user message onwards
+                  const userMessageIndex = allMessages.findIndex(
+                    (m) => m.id === lastUserMessage.id,
+                  );
+                  if (userMessageIndex !== -1) {
+                    setMessages(allMessages.slice(0, userMessageIndex));
+                  }
+
+                  // Send the retry message with tool calls
+                  sendMessage({
+                    role: 'user',
+                    parts: retryParts,
+                  });
+                };
+
+                return (
+                  <MessageOAuthError
+                    key={key}
+                    error={part.data}
+                    connectionName={connectionName}
+                    loginUrl={loginUrl}
+                    onRetry={handleOAuthRetry}
+                  />
+                );
+              }
             }
           })}
 

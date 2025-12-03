@@ -91,6 +91,28 @@ This automated script handles:
 - Database migration (if enabled)
 - Application startup
 
+**IMPORTANT - For Claude Code**: Before running `quickstart.sh`, ask the user:
+
+1. **"Do you have a Databricks serving endpoint ready?"**
+   - If yes: Get the endpoint name
+   - If no: Suggest they create one first or use the default `databricks-claude-sonnet-4`
+
+2. **"Do you want to customize the app/bundle name?"**
+   - Default will be `db-chatbot-dev-<username>`
+   - Custom names must be ≤30 characters
+   - Explain that names cannot be changed after first deployment
+
+3. **"Do you want persistent chat history (requires a Lakebase database)?"**
+   - Explain this takes 5-10 minutes on first deployment
+   - Database costs apply (~$0.70/hour for CU_1)
+   - Without database, chats are stored in memory (ephemeral mode)
+
+4. **"Do you want to deploy to Databricks now, or just configure locally?"**
+   - Deploy now: Script will run `databricks bundle deploy`
+   - Configure only: User can deploy manually later
+
+These questions help ensure the script runs smoothly and matches user expectations.
+
 **For starting the local development server:**
 
 ```bash

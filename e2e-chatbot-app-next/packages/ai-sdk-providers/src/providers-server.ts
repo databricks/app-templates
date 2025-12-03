@@ -122,10 +122,17 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
     baseURL: `${hostname}/serving-endpoints`,
     formatUrl: ({ baseUrl, path }) => API_PROXY ?? `${baseUrl}${path}`,
     fetch: async (...[input, init]: Parameters<typeof fetch>) => {
-      // Always get fresh token for each request (will use cache if valid)
-      const currentToken = await getProviderToken();
       const headers = new Headers(init?.headers);
-      headers.set('Authorization', `Bearer ${currentToken}`);
+
+      // Check if OBO (On-Behalf-Of) token was passed via headers from route handler.
+      // When running in Databricks Apps, the x-forwarded-access-token header contains
+      // the user's token for OBO authentication. If Authorization is already set,
+      // it means OBO headers were passed - use them instead of service principal.
+      if (!headers.has('Authorization')) {
+        // No OBO token provided, use service principal/PAT/CLI fallback
+        const currentToken = await getProviderToken();
+        headers.set('Authorization', `Bearer ${currentToken}`);
+      }
 
       return databricksFetch(input, {
         ...init,

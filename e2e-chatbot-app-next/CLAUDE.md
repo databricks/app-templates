@@ -306,6 +306,28 @@ req.session = {
 };
 ```
 
+### On-Behalf-Of (OBO) Authentication
+
+When deployed in **Databricks Apps**, the platform injects an `x-forwarded-access-token` header containing the user's OAuth token. This enables On-Behalf-Of authentication where API calls execute with the user's identity and permissions.
+
+**How it works:**
+1. Databricks Apps injects `x-forwarded-access-token` header with user's token
+2. Chat routes extract this token from request headers
+3. Token is passed to AI SDK via `streamText({ headers: {...} })`
+4. Provider fetch wrapper uses OBO token instead of service principal
+
+**Authentication priority** (highest to lowest):
+1. OBO token (`x-forwarded-access-token` header) - when in Databricks Apps
+2. PAT token (`DATABRICKS_TOKEN` env var)
+3. OAuth service principal (`DATABRICKS_CLIENT_ID` + `DATABRICKS_CLIENT_SECRET`)
+4. CLI auth (`databricks auth token`)
+
+**Benefits of OBO:**
+- API calls use user's Unity Catalog permissions
+- MLflow traces show actual user identity
+- Custom API_PROXY backends receive user context
+- Row-level security and column masks are enforced
+
 ### Auth Middleware Usage
 
 - `authMiddleware` - Extracts session (doesn't reject)

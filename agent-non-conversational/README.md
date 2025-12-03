@@ -179,7 +179,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
 1. **Set up authentication to Databricks resources**
 
-   For this example, you need to add an MLflow Experiment as a resource to your app. Grant the App's Service Principal (SP) permission to edit the experiment [manually in the MLflow experiments UI](https://docs.databricks.com/aws/en/mlflow/experiments#change-permissions-for-an-experiment). See the [Apps authorization docs](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#app-authorization) to find the SP's ID in the App Details page.
+   For this example, you need to add an MLflow Experiment as a resource to your app. Navigate to the [MLFlow Experiments UI](https://docs.databricks.com/aws/en/mlflow/experiments#change-permissions-for-an-experiment) and grant the App's Service Principal (SP) permission to edit the experiment. See the [Apps authorization docs](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#app-authorization) to find the SP's ID in the App Details page.
 
    To access resources like serving endpoints, genie spaces, MLflow experiments, UC Functions, and Vector Search Indexes, click `edit` on your app home page to grant the App's SP permission. See the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources).
 
@@ -187,7 +187,11 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
    **On-behalf-of (OBO) User Authentication**: Use `get_user_workspace_client()` from `agent_server.utils` to authenticate as the requesting user instead of the app service principal. See the [OBO authentication documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#retrieve-user-authorization-credentials).
 
-2. **Sync local files to your workspace**
+2. **Make sure the value of `MLFLOW_EXPERIMENT_ID` is set in `app.yaml`**
+
+   Fill in the value of `MLFLOW_EXPERIMENT_ID` in `app.yaml`, matching the experiment you granted permissions to. Refer to the [Databricks Apps environment variable documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/environment-variables) for more info.
+
+3. **Sync local files to your workspace**
 
    See the [Databricks Apps deploy documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy?language=Databricks+CLI#deploy-the-app).
 
@@ -196,7 +200,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
    databricks sync . "/Users/$DATABRICKS_USERNAME/agent-non-conversational"
    ```
 
-3. **Deploy your Databricks App**
+4. **Deploy your Databricks App**
 
    See the [Databricks Apps deploy documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy?language=Databricks+CLI#deploy-the-app).
 
@@ -204,7 +208,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
    databricks apps deploy agent-non-conversational --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/agent-non-conversational
    ```
 
-4. **Query your agent hosted on Databricks Apps**
+5. **Query your agent hosted on Databricks Apps**
 
    You can now test your deployed agent using the test script with authentication:
 

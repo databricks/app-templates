@@ -11,4 +11,4 @@ env:
   - name: CHAT_APP_PORT
     value: "3000"
   - name: MLFLOW_EXPERIMENT_ID
-    valueFrom: "experiment"
+    value: ""

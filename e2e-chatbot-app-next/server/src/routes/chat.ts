@@ -41,6 +41,7 @@ import {
   DATABRICKS_TOOL_CALL_ID,
   DATABRICKS_TOOL_DEFINITION,
 } from '@chat-template/ai-sdk-providers/tools';
+import { extractApprovalStatus } from '@chat-template/ai-sdk-providers/mcp';
 import { ChatSDKError } from '@chat-template/core/errors';
 
 export const chatRouter: RouterType = Router();
@@ -156,6 +157,46 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     } else {
       // Continuation: use existing messages without adding new user message
       uiMessages = previousMessages as ChatMessage[];
+
+      // For continuations with database enabled, save any updated assistant messages
+      // This ensures tool-result parts (like MCP approval responses) are persisted
+      if (dbAvailable && requestBody.previousMessages) {
+        const assistantMessages = requestBody.previousMessages.filter(
+          (m: ChatMessage) => m.role === 'assistant',
+        );
+        if (assistantMessages.length > 0) {
+          await saveMessages({
+            messages: assistantMessages.map((m: ChatMessage) => ({
+              chatId: id,
+              id: m.id,
+              role: m.role,
+              parts: m.parts,
+              attachments: [],
+              createdAt: m.metadata?.createdAt
+                ? new Date(m.metadata.createdAt)
+                : new Date(),
+            })),
+          });
+
+          // Check if this is an MCP denial - if so, we're done (no need to call LLM)
+          // Only check the last assistant message's last part for a fresh denial
+          const lastAssistantMessage = assistantMessages.at(-1);
+          const lastPart = lastAssistantMessage?.parts?.at(-1);
+
+          const approvalStatus =
+            lastPart?.type === 'tool-databricks-tool-call' && lastPart.output
+              ? extractApprovalStatus(lastPart.output)
+              : undefined;
+
+          const hasMcpDenial = approvalStatus === false;
+
+          if (hasMcpDenial) {
+            // We don't need to call the LLM because the user has denied the tool call
+            res.end();
+            return;
+          }
+        }
+      }
     }
 
     // Clear any previous active stream for this chat

@@ -71,6 +71,45 @@ e2e-chatbot-app-next/
 
 ## Essential Commands
 
+### Quick Start Scripts
+
+**For first-time setup and deployment:**
+
+```bash
+./scripts/quickstart.sh  # Interactive setup wizard (recommended for new users)
+```
+
+This automated script handles:
+- Prerequisites installation (jq, nvm, Node 20, Databricks CLI)
+- Configuration file setup (.env.local)
+- Databricks authentication
+- Serving endpoint configuration
+- App/bundle name customization
+- Database setup (optional, with conflict detection)
+- Dependency installation
+- Bundle deployment to Databricks
+- Database migration (if enabled)
+- Application startup
+
+**For starting the local development server:**
+
+```bash
+./scripts/start-app.sh   # Simple script to install deps and run npm run dev
+```
+
+**For cleaning up database instances:**
+
+```bash
+./scripts/cleanup-database.sh  # Interactive database instance deletion
+```
+
+Use this when:
+- You encounter "Instance name is not unique" deployment errors
+- You want to start fresh with a new database
+- You need to remove orphaned database instances
+
+**Warning**: Database deletion is permanent and cannot be undone!
+
 ### Development
 
 ```bash
@@ -523,6 +562,22 @@ resources:
 - `packages/core/src/errors.ts` - Error definitions
 - `packages/ai-sdk-providers/` - Databricks AI provider implementations
 - `scripts/migrate.ts` - Database migration runner (applies SQL migrations from packages/db/migrations/)
+
+### Convenience Scripts
+
+- `scripts/quickstart.sh` - Interactive setup wizard for first-time deployment
+  - Installs all prerequisites (jq, nvm, Node 20, Databricks CLI)
+  - Configures authentication and environment variables
+  - Handles app/bundle name customization with validation
+  - Manages database setup with conflict detection
+  - Deploys bundle and runs migrations
+- `scripts/start-app.sh` - Simple local development server starter
+  - Installs dependencies
+  - Starts both frontend and backend with `npm run dev`
+- `scripts/cleanup-database.sh` - Interactive database instance deletion tool
+  - Lists all database instances in workspace
+  - Provides safe deletion workflow with confirmations
+  - Useful for resolving deployment conflicts
 
 ## Additional Resources
 

@@ -282,33 +282,14 @@ const PurePreviewMessage = ({
 
                   if (!lastUserMessage) return;
 
-                  // Find tool call parts from this assistant message that may have failed
-                  const toolCallParts = message.parts.filter(
-                    (p) => p.type === `tool-${DATABRICKS_TOOL_CALL_ID}`,
-                  );
-
-                  // Build the retry message parts
-                  const retryParts: ChatMessage['parts'] = [];
-
-                  // Add the original user message text
+                  // Get the original user message text parts only
+                  // We resend the user message and let the agent make the tool call again
+                  // (now that the user is authenticated, it should succeed)
                   const textParts = lastUserMessage.parts.filter(
                     (p) => p.type === 'text',
                   );
-                  retryParts.push(...textParts);
 
-                  // Add the tool calls that need to be retried
-                  for (const toolPart of toolCallParts) {
-                    if (toolPart.type === `tool-${DATABRICKS_TOOL_CALL_ID}`) {
-                      retryParts.push({
-                        type: 'tool-call',
-                        toolCallId: toolPart.toolCallId,
-                        toolName: DATABRICKS_TOOL_CALL_ID,
-                        args: toolPart.input,
-                      });
-                    }
-                  }
-
-                  if (retryParts.length === 0) return;
+                  if (textParts.length === 0) return;
 
                   // Delete trailing messages from DB (the failed assistant message)
                   // We delete from the user message so both user + assistant messages are removed
@@ -324,10 +305,10 @@ const PurePreviewMessage = ({
                     setMessages(allMessages.slice(0, userMessageIndex));
                   }
 
-                  // Send the retry message with tool calls
+                  // Resend the original user message - the agent will make the tool call again
                   sendMessage({
                     role: 'user',
-                    parts: retryParts,
+                    parts: textParts,
                   });
                 };
 

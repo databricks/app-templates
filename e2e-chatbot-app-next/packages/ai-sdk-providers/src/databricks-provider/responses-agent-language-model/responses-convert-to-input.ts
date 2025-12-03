@@ -120,15 +120,15 @@ export async function convertToResponsesInput({
                 const toolResult = toolCallResultsByToolCallId[part.toolCallId];
                 if (toolResult) {
                   /**
-                   * The tool call result is either the approval status or the actual output.
+                   * The tool call result is either the approval status or the actual output from the tool call.
                    * If it's the approval status, we need to add an approval response part.
-                   * If it's the actual output, we need to add both the approval response part and the actual output part.
+                   * If it's the tool call output, we don't include the approval response part but we do include the tool call output part.
                    */
                   const approvalStatus = extractApprovalStatusFromToolResult(
                     toolResult.output,
                   );
                   if (approvalStatus !== undefined) {
-                    // Output is just the approval status (approve or deny)
+                    // Tool call result is just the approval status (approve or deny)
                     input.push({
                       type: MCP_APPROVAL_RESPONSE_TYPE,
                       id: toolResult.toolCallId,
@@ -136,7 +136,7 @@ export async function convertToResponsesInput({
                       approve: approvalStatus,
                     });
                   } else {
-                    // Output is the actual tool result (tool was approved and executed)
+                    // Tool call result is the actual tool result (tool was approved and executed)
                     input.push({
                       type: 'function_call_output',
                       call_id: toolResult.toolCallId,

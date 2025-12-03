@@ -64,7 +64,7 @@ async function getWorkspaceHostname(): Promise<string> {
 }
 
 // Environment variable to enable SSE logging
-const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true' || true;
+const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true';
 
 // Custom fetch function to transform Databricks responses to OpenAI format
 export const databricksFetch: typeof fetch = async (input, init) => {

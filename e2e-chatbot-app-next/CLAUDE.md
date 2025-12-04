@@ -71,6 +71,67 @@ e2e-chatbot-app-next/
 
 ## Essential Commands
 
+### Quick Start Scripts
+
+**For first-time setup and deployment:**
+
+```bash
+./scripts/quickstart.sh  # Interactive setup wizard (recommended for new users)
+```
+
+This automated script handles:
+- Prerequisites installation (jq, nvm, Node 20, Databricks CLI)
+- Configuration file setup (.env.local)
+- Databricks authentication
+- Serving endpoint configuration
+- App/bundle name customization
+- Database setup (optional, with conflict detection)
+- Dependency installation
+- Bundle deployment to Databricks
+- Database migration (if enabled)
+- Application startup
+
+**IMPORTANT - For Claude Code**: Before running `quickstart.sh`, ask the user:
+
+1. **"Do you have a Databricks serving endpoint ready?"**
+   - If yes: Get the endpoint name
+   - If no: Suggest they create one first or use the default `databricks-claude-sonnet-4`
+
+2. **"Do you want to customize the app/bundle name?"**
+   - Default will be `db-chatbot-dev-<username>`
+   - Custom names must be ≤30 characters
+   - Explain that names cannot be changed after first deployment
+
+3. **"Do you want persistent chat history (requires a Lakebase database)?"**
+   - Explain this takes 5-10 minutes on first deployment
+   - Database costs apply (~$0.70/hour for CU_1)
+   - Without database, chats are stored in memory (ephemeral mode)
+
+4. **"Do you want to deploy to Databricks now, or just configure locally?"**
+   - Deploy now: Script will run `databricks bundle deploy`
+   - Configure only: User can deploy manually later
+
+These questions help ensure the script runs smoothly and matches user expectations.
+
+**For starting the local development server:**
+
+```bash
+./scripts/start-app.sh   # Simple script to install deps and run npm run dev
+```
+
+**For cleaning up database instances:**
+
+```bash
+./scripts/cleanup-database.sh  # Interactive database instance deletion
+```
+
+Use this when:
+- You encounter "Instance name is not unique" deployment errors
+- You want to start fresh with a new database
+- You need to remove orphaned database instances
+
+**Warning**: Database deletion is permanent and cannot be undone!
+
 ### Development
 
 ```bash
@@ -523,6 +584,22 @@ resources:
 - `packages/core/src/errors.ts` - Error definitions
 - `packages/ai-sdk-providers/` - Databricks AI provider implementations
 - `scripts/migrate.ts` - Database migration runner (applies SQL migrations from packages/db/migrations/)
+
+### Convenience Scripts
+
+- `scripts/quickstart.sh` - Interactive setup wizard for first-time deployment
+  - Installs all prerequisites (jq, nvm, Node 20, Databricks CLI)
+  - Configures authentication and environment variables
+  - Handles app/bundle name customization with validation
+  - Manages database setup with conflict detection
+  - Deploys bundle and runs migrations
+- `scripts/start-app.sh` - Simple local development server starter
+  - Installs dependencies
+  - Starts both frontend and backend with `npm run dev`
+- `scripts/cleanup-database.sh` - Interactive database instance deletion tool
+  - Lists all database instances in workspace
+  - Provides safe deletion workflow with confirmations
+  - Useful for resolving deployment conflicts
 
 ## Additional Resources
 

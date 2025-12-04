@@ -63,7 +63,7 @@ const responsesAgentMcpApprovalRequestSchema = z.object({
 
 const responsesAgentMcpApprovalResponseSchema = z.object({
   type: z.literal('mcp_approval_response'),
-  id: z.string(),
+  id: z.string().optional(),
   approval_request_id: z.string(),
   approve: z.boolean(),
   reason: z.string().nullish(),

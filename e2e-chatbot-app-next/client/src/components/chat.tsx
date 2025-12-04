@@ -95,8 +95,9 @@ export function Chat({
     setMessages,
     sendMessage,
     status,
-    regenerate,
     resumeStream,
+    addToolResult,
+    regenerate,
   } = useChat<ChatMessage>({
     id,
     messages: initialMessages,
@@ -120,17 +121,33 @@ export function Chat({
       api: '/api/chat',
       fetch: fetchWithAbort,
       prepareSendMessagesRequest({ messages, id, body }) {
+        const lastMessage = messages.at(-1);
+        const isUserMessage = lastMessage?.role === 'user';
+
+        // For continuations (non-user messages like tool results), we must always
+        // send previousMessages because the tool result only exists client-side
+        // and hasn't been saved to the database yet.
+        const needsPreviousMessages = !chatHistoryEnabled || !isUserMessage;
+
         return {
           body: {
             id,
-            message: messages.at(-1),
+            // Only include message field for user messages (new messages)
+            // For continuation (assistant messages with tool results), omit message field
+            ...(isUserMessage ? { message: lastMessage } : {}),
             selectedChatModel: initialChatModel,
             selectedVisibilityType: visibilityType,
             nextMessageId: generateUUID(),
-            // In ephemeral mode, send previous messages from frontend since DB is unavailable
-            ...(chatHistoryEnabled
-              ? {}
-              : { previousMessages: messages.slice(0, -1) }),
+            // Send previous messages when:
+            // 1. Database is disabled (ephemeral mode) - always need client-side messages
+            // 2. Continuation request (tool results) - tool result only exists client-side
+            ...(needsPreviousMessages
+              ? {
+                  previousMessages: isUserMessage
+                    ? messages.slice(0, -1)
+                    : messages,
+                }
+              : {}),
             ...body,
           },
         };
@@ -241,6 +258,8 @@ export function Chat({
           status={status}
           messages={messages}
           setMessages={setMessages}
+          addToolResult={addToolResult}
+          sendMessage={sendMessage}
           regenerate={regenerate}
           isReadonly={isReadonly}
           selectedModelId={initialChatModel}

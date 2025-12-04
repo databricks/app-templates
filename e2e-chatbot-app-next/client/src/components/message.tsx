@@ -9,7 +9,15 @@ import {
   ToolContent,
   ToolInput,
   ToolOutput,
+  type ToolState,
 } from './elements/tool';
+import {
+  McpTool,
+  McpToolHeader,
+  McpToolContent,
+  McpToolInput,
+  McpApprovalActions,
+} from './elements/mcp-tool';
 import { MessageActions } from './message-actions';
 import { PreviewAttachment } from './preview-attachment';
 import equal from 'fast-deep-equal';
@@ -28,11 +36,20 @@ import {
 import { MessageError } from './message-error';
 import { Streamdown } from 'streamdown';
 import { DATABRICKS_TOOL_CALL_ID } from '@chat-template/ai-sdk-providers/tools';
+import {
+  extractDatabricksMetadata,
+  isMcpApprovalRequest,
+  getMcpApprovalState,
+  isApprovalStatusOutput,
+} from '@chat-template/ai-sdk-providers/mcp';
+import { useApproval } from '@/hooks/use-approval';
 
 const PurePreviewMessage = ({
   message,
   isLoading,
   setMessages,
+  addToolResult,
+  sendMessage,
   regenerate,
   isReadonly,
   requiresScrollPadding,
@@ -41,12 +58,20 @@ const PurePreviewMessage = ({
   message: ChatMessage;
   isLoading: boolean;
   setMessages: UseChatHelpers<ChatMessage>['setMessages'];
+  addToolResult: UseChatHelpers<ChatMessage>['addToolResult'];
+  sendMessage: UseChatHelpers<ChatMessage>['sendMessage'];
   regenerate: UseChatHelpers<ChatMessage>['regenerate'];
   isReadonly: boolean;
   requiresScrollPadding: boolean;
 }) => {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [showErrors, setShowErrors] = useState(false);
+
+  // Hook for handling MCP approval requests
+  const { submitApproval, isSubmitting, pendingApprovalId } = useApproval({
+    addToolResult,
+    sendMessage,
+  });
 
   const attachmentsFromMessage = message.parts.filter(
     (part) => part.type === 'file',
@@ -97,10 +122,7 @@ const PurePreviewMessage = ({
         )}
 
         <div
-          className={cn('flex min-w-0 flex-col', {
-            'gap-2 md:gap-4': message.parts?.some(
-              (p) => p.type === 'text' && p.text?.trim(),
-            ),
+          className={cn('flex min-w-0 flex-col gap-3', {
             'w-full': message.role === 'assistant' || mode === 'edit',
             'min-h-96': message.role === 'assistant' && requiresScrollPadding,
             'max-w-[70%] sm:max-w-[min(fit-content,80%)]':
@@ -198,14 +220,89 @@ const PurePreviewMessage = ({
             // Render Databricks tool calls and results
             if (part.type === `tool-${DATABRICKS_TOOL_CALL_ID}`) {
               const { toolCallId, input, state, errorText, output } = part;
-              const toolName =
+              const metadata =
                 'callProviderMetadata' in part
-                  ? part.callProviderMetadata?.databricks?.toolName?.toString()
+                  ? extractDatabricksMetadata(part)
                   : undefined;
+              const toolName = metadata?.toolName?.toString();
 
+              // Check if this is an MCP tool call
+              const isMcpApproval = isMcpApprovalRequest(metadata);
+              const mcpServerName = metadata?.mcpServerName?.toString();
+
+              // Determine approval status for MCP tools
+              const approvalStatus = getMcpApprovalState(output);
+
+              // When approved but only have approval status (not actual output), show as input-available
+              const effectiveState: ToolState =
+                isMcpApproval &&
+                approvalStatus === 'approved' &&
+                isApprovalStatusOutput(output)
+                  ? 'input-available'
+                  : state;
+
+              // Render MCP tool calls with special styling
+              if (isMcpApproval) {
+                return (
+                  <McpTool key={toolCallId} defaultOpen={true}>
+                    <McpToolHeader
+                      serverName={mcpServerName}
+                      toolName={toolName || 'mcp-tool'}
+                      state={effectiveState}
+                      approvalStatus={approvalStatus}
+                    />
+                    <McpToolContent>
+                      <McpToolInput input={input} />
+                      {approvalStatus === 'awaiting-approval' && (
+                        <McpApprovalActions
+                          onApprove={() =>
+                            submitApproval({
+                              approvalRequestId: toolCallId,
+                              approve: true,
+                            })
+                          }
+                          onDeny={() =>
+                            submitApproval({
+                              approvalRequestId: toolCallId,
+                              approve: false,
+                            })
+                          }
+                          isSubmitting={
+                            isSubmitting && pendingApprovalId === toolCallId
+                          }
+                        />
+                      )}
+                      {state === 'output-available' &&
+                        !isApprovalStatusOutput(output) && (
+                          <ToolOutput
+                            output={
+                              errorText ? (
+                                <div className="rounded border p-2 text-red-500">
+                                  Error: {errorText}
+                                </div>
+                              ) : (
+                                <div className="whitespace-pre-wrap font-mono text-sm">
+                                  {typeof output === 'string'
+                                    ? output
+                                    : JSON.stringify(output, null, 2)}
+                                </div>
+                              )
+                            }
+                            errorText={undefined}
+                          />
+                        )}
+                    </McpToolContent>
+                  </McpTool>
+                );
+              }
+
+              // Render regular tool calls
               return (
                 <Tool key={toolCallId} defaultOpen={true}>
-                  <ToolHeader type={toolName || 'tool-call'} state={state} />
+                  <ToolHeader
+                    type={toolName || 'tool-call'}
+                    state={effectiveState}
+                  />
                   <ToolContent>
                     <ToolInput input={input} />
                     {state === 'output-available' && (

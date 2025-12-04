@@ -41,6 +41,7 @@ import {
   DATABRICKS_TOOL_CALL_ID,
   DATABRICKS_TOOL_DEFINITION,
 } from '@chat-template/ai-sdk-providers/tools';
+import { extractApprovalStatus } from '@chat-template/ai-sdk-providers/mcp';
 import { ChatSDKError } from '@chat-template/core/errors';
 
 export const chatRouter: RouterType = Router();
@@ -82,7 +83,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       selectedVisibilityType,
     }: {
       id: string;
-      message: ChatMessage;
+      message?: ChatMessage;
       selectedChatModel: string;
       selectedVisibilityType: VisibilityType;
     } = requestBody;
@@ -106,7 +107,8 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     }
 
     if (!chat) {
-      if (isDatabaseAvailable()) {
+      // Only create new chat if we have a message (not a continuation)
+      if (isDatabaseAvailable() && message) {
         const title = await generateTitleFromUserMessage({ message });
 
         await saveChat({
@@ -126,26 +128,76 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
 
     const messagesFromDb = await getMessagesByChatId({ id });
 
-    // In ephemeral mode, use previous messages from frontend if provided
-    const previousMessages =
-      !dbAvailable && requestBody.previousMessages
-        ? requestBody.previousMessages
-        : convertToUIMessages(messagesFromDb);
+    // Use previousMessages from request body when:
+    // 1. Ephemeral mode (DB not available) - always use client-side messages
+    // 2. Continuation request (no message) - tool results only exist client-side
+    const useClientMessages =
+      !dbAvailable || (!message && requestBody.previousMessages);
+    const previousMessages = useClientMessages
+      ? (requestBody.previousMessages ?? [])
+      : convertToUIMessages(messagesFromDb);
 
-    const uiMessages = [...previousMessages, message];
+    // If message is provided, add it to the list and save it
+    // If not (continuation/regeneration), just use previous messages
+    let uiMessages: ChatMessage[];
+    if (message) {
+      uiMessages = [...previousMessages, message];
+      await saveMessages({
+        messages: [
+          {
+            chatId: id,
+            id: message.id,
+            role: 'user',
+            parts: message.parts,
+            attachments: [],
+            createdAt: new Date(),
+          },
+        ],
+      });
+    } else {
+      // Continuation: use existing messages without adding new user message
+      uiMessages = previousMessages as ChatMessage[];
 
-    await saveMessages({
-      messages: [
-        {
-          chatId: id,
-          id: message.id,
-          role: 'user',
-          parts: message.parts,
-          attachments: [],
-          createdAt: new Date(),
-        },
-      ],
-    });
+      // For continuations with database enabled, save any updated assistant messages
+      // This ensures tool-result parts (like MCP approval responses) are persisted
+      if (dbAvailable && requestBody.previousMessages) {
+        const assistantMessages = requestBody.previousMessages.filter(
+          (m: ChatMessage) => m.role === 'assistant',
+        );
+        if (assistantMessages.length > 0) {
+          await saveMessages({
+            messages: assistantMessages.map((m: ChatMessage) => ({
+              chatId: id,
+              id: m.id,
+              role: m.role,
+              parts: m.parts,
+              attachments: [],
+              createdAt: m.metadata?.createdAt
+                ? new Date(m.metadata.createdAt)
+                : new Date(),
+            })),
+          });
+
+          // Check if this is an MCP denial - if so, we're done (no need to call LLM)
+          // Only check the last assistant message's last part for a fresh denial
+          const lastAssistantMessage = assistantMessages.at(-1);
+          const lastPart = lastAssistantMessage?.parts?.at(-1);
+
+          const approvalStatus =
+            lastPart?.type === 'tool-databricks-tool-call' && lastPart.output
+              ? extractApprovalStatus(lastPart.output)
+              : undefined;
+
+          const hasMcpDenial = approvalStatus === false;
+
+          if (hasMcpDenial) {
+            // We don't need to call the LLM because the user has denied the tool call
+            res.end();
+            return;
+          }
+        }
+      }
+    }
 
     // Clear any previous active stream for this chat
     streamCache.clearActiveStream(id);

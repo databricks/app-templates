@@ -6,6 +6,8 @@ import type {
 } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { cn } from '@/lib/utils';
+import { parseUnityCatalogPDFLink } from '@/lib/pdf-utils';
+import { PDFCitationLink } from './pdf-preview';
 
 /**
  * ReactMarkdown/Streamdown component that handles Databricks message citations.
@@ -50,11 +52,24 @@ const isDatabricksMessageCitationLink = (
   link?.endsWith('::databricks_citation') ?? false;
 
 // Renders the Databricks message citation.
+// UC PDF links open in a preview drawer, other links open in a new tab.
 const DatabricksMessageCitationRenderer = (
   props: PropsWithChildren<{
     href: string;
   }>,
 ) => {
+  // Check if this is a Unity Catalog PDF link
+  const pdfMetadata = parseUnityCatalogPDFLink(props.href);
+
+  if (pdfMetadata) {
+    return (
+      <PDFCitationLink pdfMetadata={pdfMetadata}>
+        {props.children}
+      </PDFCitationLink>
+    );
+  }
+
+  // Default behavior: open in new tab with tooltip
   return (
     <Tooltip>
       <TooltipTrigger asChild>

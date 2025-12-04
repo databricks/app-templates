@@ -16,6 +16,7 @@ import { historyRouter } from './routes/history';
 import { sessionRouter } from './routes/session';
 import { messagesRouter } from './routes/messages';
 import { configRouter } from './routes/config';
+import { filesRouter } from './routes/files';
 import { ChatSDKError } from '@chat-template/core/errors';
 
 // ESM-compatible __dirname
@@ -24,17 +25,17 @@ const __dirname = dirname(__filename);
 
 const app: Express = express();
 const isDevelopment = process.env.NODE_ENV !== 'production';
-// Either let PORT be set by env or use 3001 for development and 3000 for production
+// Either let PORT be set by env or use 4001 for development and 4000 for production
 // The CHAT_APP_PORT can be used to override the port for the chat app.
 const PORT =
   process.env.CHAT_APP_PORT ||
   process.env.PORT ||
-  (isDevelopment ? 3001 : 3000);
+  (isDevelopment ? 4001 : 4000);
 
 // CORS configuration
 app.use(
   cors({
-    origin: isDevelopment ? 'http://localhost:3000' : true,
+    origin: isDevelopment ? 'http://localhost:4000' : true,
     credentials: true,
   }),
 );
@@ -54,6 +55,7 @@ app.use('/api/history', historyRouter);
 app.use('/api/session', sessionRouter);
 app.use('/api/messages', messagesRouter);
 app.use('/api/config', configRouter);
+app.use('/api/files', filesRouter);
 
 // Serve static files in production
 if (!isDevelopment) {

@@ -142,7 +142,7 @@ export const convertResponsesAgentChunkToMessagePart = (
           providerMetadata: {
             databricks: {
               type: MCP_APPROVAL_RESPONSE_TYPE,
-              itemId: chunk.item.id,
+              ...(chunk.item.id != null && { itemId: chunk.item.id }),
             },
           },
         });
@@ -266,7 +266,7 @@ export const convertResponsesAgentResponseToMessagePart = (
           providerMetadata: {
             databricks: {
               type: MCP_APPROVAL_RESPONSE_TYPE,
-              itemId: output.id,
+              ...(output.id != null && { itemId: output.id }),
             },
           },
         });

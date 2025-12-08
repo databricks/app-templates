@@ -40,7 +40,7 @@ export function PDFCitationLink({ children, pdfMetadata }: PDFCitationLinkProps)
               </div>
             )}
             {pdfMetadata.textFragment && (
-              <div className="border-l-2 border-muted-foreground/50 pl-2 text-xs italic">
+              <div className='border-muted-foreground/50 border-l-2 pl-2 text-xs italic'>
                 "{pdfMetadata.textFragment}"
               </div>
             )}
@@ -53,8 +53,9 @@ export function PDFCitationLink({ children, pdfMetadata }: PDFCitationLinkProps)
         onOpenChange={setIsOpen}
         filename={pdfMetadata.filename}
         volumePath={pdfMetadata.volumePath}
-        downloadUrl={pdfMetadata.downloadUrl}
+        filePath={pdfMetadata.filePath}
         initialPage={pdfMetadata.page}
+        highlightText={pdfMetadata.textFragment}
       />
     </>
   );

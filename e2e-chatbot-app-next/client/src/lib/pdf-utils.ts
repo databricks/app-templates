@@ -5,10 +5,10 @@
 export interface UCPDFMetadata {
   filename: string;
   volumePath: string;
+  /** Full path for the UC file (Volumes/catalog/schema/volume/filename.pdf) */
+  filePath: string;
   page?: number;
   textFragment?: string;
-  /** URL to fetch/download the PDF through our backend proxy */
-  downloadUrl: string;
   /** Original Databricks URL (for reference/debugging) */
   originalUrl: string;
 }
@@ -61,10 +61,8 @@ export function parseUnityCatalogPDFLink(href: string): UCPDFMetadata | null {
         }
       }
 
-      // Create the proxy URL that goes through our backend
-      // The backend will authenticate with Databricks and fetch the file
-      const volumePathWithFilename = `${match[1]}/${match[2]}`;
-      const proxyUrl = `/api/files/volumes/${volumePathWithFilename}`;
+      // Full path for the UC file
+      const filePath = `${match[1]}/${match[2]}`;
 
       // Keep the original URL for reference (e.g., for "Open in Catalog" link)
       const originalUrl = new URL(href, window.location.origin);
@@ -73,9 +71,9 @@ export function parseUnityCatalogPDFLink(href: string): UCPDFMetadata | null {
       return {
         volumePath: match[1],
         filename: match[2],
+        filePath,
         page,
         textFragment,
-        downloadUrl: proxyUrl,
         originalUrl: originalUrl.toString(),
       };
     }
@@ -104,4 +102,27 @@ export function getUnityCatalogExplorerUrl(
   }
   // UC expects the filePreviewPath to be encoded
   return `/explore/data/${volumePath}?filePreviewPath=${encodeURIComponent(filename)}`;
+}
+
+/**
+ * Fetch a Databricks file through our backend proxy.
+ * Returns a blob URL that can be used as a src for PDF viewers.
+ */
+export async function fetchDatabricksFile(filePath: string): Promise<string> {
+  const response = await fetch('/api/files/databricks-file', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ path: filePath }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const message = errorData.error || response.statusText;
+    throw new Error(`${response.status}: ${message}`);
+  }
+
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
 }

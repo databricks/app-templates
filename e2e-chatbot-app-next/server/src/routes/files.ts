@@ -15,28 +15,27 @@ export const filesRouter: RouterType = Router();
 filesRouter.use(authMiddleware);
 
 /**
- * GET /api/files/volumes/* - Proxy Unity Catalog volume files through the backend
+ * POST /api/files/databricks-file - Proxy Databricks files through the backend
  *
  * This endpoint proxies requests to Databricks Files API with proper authentication.
  * The frontend can request files without needing direct Databricks credentials.
  *
- * Example: GET /api/files/volumes/catalog/schema/volume/path/to/file.pdf
- * Proxies to: https://{databricks-host}/ajax-api/2.0/fs/files/Volumes/catalog/schema/volume/path/to/file.pdf
+ * Request body: { "path": "/Volumes/catalog/schema/volume/path/to/file.pdf" }
+ * Proxies to: https://{databricks-host}/api/2.0/fs/files/Volumes/catalog/schema/volume/path/to/file.pdf
+ *
+ * @see https://docs.databricks.com/api/workspace/files/download
  */
-filesRouter.get(
-  '/volumes/{*path}',
+filesRouter.post(
+  '/databricks-file',
   requireAuth,
   async (req: Request, res: Response) => {
     try {
-      // Extract the full path after /volumes/
-      // In Express 5 with path-to-regexp v8, {*path} captures all segments as an array
-      const pathParam = req.params.path;
-      const volumePath = Array.isArray(pathParam)
-        ? pathParam.join('/')
-        : pathParam;
+      const { path: filePath } = req.body as { path?: string };
 
-      if (!volumePath) {
-        return res.status(400).json({ error: 'Volume path is required' });
+      if (!filePath || typeof filePath !== 'string') {
+        return res
+          .status(400)
+          .json({ error: 'File path is required in request body' });
       }
 
       // Get Databricks host - prefer cached CLI host, fall back to env
@@ -46,8 +45,12 @@ filesRouter.get(
       }
 
       // Construct the Databricks Files API URL
-      // Note: volumePath already includes "Volumes/catalog/schema/volume/filename"
-      const databricksUrl = `${hostUrl}/ajax-api/2.0/fs/files/${volumePath}`;
+      // Path should start with /Volumes/ for Unity Catalog volumes
+      // See: https://docs.databricks.com/api/workspace/files/download
+      const normalizedPath = filePath.startsWith('/')
+        ? filePath
+        : `/${filePath}`;
+      const databricksUrl = `${hostUrl}/api/2.0/fs/files${normalizedPath}`;
 
       console.log(`[Files Proxy] Fetching: ${databricksUrl}`);
 
@@ -83,7 +86,7 @@ filesRouter.get(
 
       // Get content type from response or infer from file extension
       const contentType =
-        response.headers.get('content-type') || inferContentType(volumePath);
+        response.headers.get('content-type') || inferContentType(filePath);
 
       // Set response headers
       res.setHeader('Content-Type', contentType);
@@ -102,23 +105,31 @@ filesRouter.get(
 
       // Stream the response body to the client
       if (response.body) {
-        const reader = response.body.getReader();
+        const nodeReadable = readableStreamToNodeReadable(response.body);
 
-        const stream = new ReadableStream({
-          async start(controller) {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) {
-                controller.close();
-                break;
-              }
-              controller.enqueue(value);
-            }
-          },
+        // Handle stream errors to prevent server crash
+        nodeReadable.on('error', (err) => {
+          console.error('[Files Proxy] Stream read error:', err);
+          // Only try to send error if response hasn't started
+          if (!res.headersSent) {
+            res.status(500).json({ error: 'Stream error while fetching file' });
+          } else {
+            // Response already started, just end it
+            res.end();
+          }
         });
 
-        // Convert ReadableStream to Node.js readable and pipe to response
-        const nodeReadable = readableStreamToNodeReadable(stream);
+        // Handle response errors
+        res.on('error', (err) => {
+          console.error('[Files Proxy] Response write error:', err);
+          nodeReadable.destroy();
+        });
+
+        // Handle client disconnect
+        res.on('close', () => {
+          nodeReadable.destroy();
+        });
+
         nodeReadable.pipe(res);
       } else {
         // Fallback: read entire body as buffer
@@ -127,6 +138,11 @@ filesRouter.get(
       }
     } catch (error) {
       console.error('[Files Proxy] Error:', error);
+
+      // Don't try to send response if headers already sent
+      if (res.headersSent) {
+        return res.end();
+      }
 
       if (error instanceof Error) {
         return res.status(500).json({
@@ -168,17 +184,24 @@ function inferContentType(path: string): string {
  */
 function readableStreamToNodeReadable(
   webStream: ReadableStream<Uint8Array>,
-): NodeJS.ReadableStream {
+): Readable {
   const reader = webStream.getReader();
 
   return new Readable({
     async read() {
-      const { done, value } = await reader.read();
-      if (done) {
-        this.push(null);
-      } else {
-        this.push(Buffer.from(value));
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          this.push(null);
+        } else {
+          this.push(Buffer.from(value));
+        }
+      } catch (err) {
+        this.destroy(err instanceof Error ? err : new Error(String(err)));
       }
+    },
+    destroy(err, callback) {
+      reader.cancel(err?.message).finally(() => callback(err));
     },
   });
 }

@@ -1,0 +1,6 @@
+/* PDF text highlight styles */
+.pdf-text-highlight {
+  background-color: rgba(255, 235, 59, 0.4) !important;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(255, 235, 59, 0.6);
+}

@@ -1,5 +1,11 @@
-import { useState, useCallback } from 'react';
-import { Download, ExternalLink, FileWarning, Lock, AlertCircle } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
+import {
+  Download,
+  ExternalLink,
+  FileWarning,
+  Lock,
+  AlertCircle,
+} from 'lucide-react';
 
 import {
   Sheet,
@@ -8,16 +14,19 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
+import { Loader } from '@/components/elements/loader';
 import { PDFViewer, type PDFError } from './PDFViewer';
-import { getUnityCatalogExplorerUrl } from '@/lib/pdf-utils';
+import { getUnityCatalogExplorerUrl, fetchDatabricksFile } from '@/lib/pdf-utils';
 
 export interface PDFPreviewSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   filename: string;
   volumePath: string;
-  downloadUrl: string;
+  /** Full path for the UC file (Volumes/catalog/schema/volume/filename.pdf) */
+  filePath: string;
   initialPage?: number;
+  highlightText?: string;
 }
 
 function PDFErrorState({
@@ -77,13 +86,76 @@ export function PDFPreviewSheet({
   onOpenChange,
   filename,
   volumePath,
-  downloadUrl,
+  filePath,
   initialPage,
+  highlightText,
 }: PDFPreviewSheetProps) {
   const [error, setError] = useState<PDFError | null>(null);
   const [retryKey, setRetryKey] = useState(0);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   const ucExplorerUrl = getUnityCatalogExplorerUrl(volumePath, filename);
+
+  // Fetch the PDF when the sheet opens
+  useEffect(() => {
+    if (!open || !filePath) return;
+
+    let cancelled = false;
+    const currentBlobUrl = blobUrl;
+
+    const loadPdf = async () => {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const url = await fetchDatabricksFile(filePath);
+        if (!cancelled) {
+          setBlobUrl(url);
+        } else {
+          // Clean up if cancelled
+          URL.revokeObjectURL(url);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          const message =
+            err instanceof Error ? err.message.toLowerCase() : '';
+          if (message.includes('404')) {
+            setError({ type: 'NotFoundError' });
+          } else if (message.includes('403')) {
+            setError({ type: 'PermissionError' });
+          } else {
+            setError({
+              type: 'LoadError',
+              message: err instanceof Error ? err.message : 'Unknown error',
+            });
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadPdf();
+
+    return () => {
+      cancelled = true;
+      // Revoke old blob URL on cleanup
+      if (currentBlobUrl) {
+        URL.revokeObjectURL(currentBlobUrl);
+      }
+    };
+  }, [open, filePath, retryKey]);
+
+  // Cleanup blob URL when component unmounts or sheet closes
+  useEffect(() => {
+    if (!open && blobUrl) {
+      URL.revokeObjectURL(blobUrl);
+      setBlobUrl(null);
+    }
+  }, [open, blobUrl]);
 
   const handleLoadError = useCallback((err: PDFError) => {
     setError(err);
@@ -91,10 +163,11 @@ export function PDFPreviewSheet({
 
   const handleRetry = useCallback(() => {
     setError(null);
+    setBlobUrl(null);
     setRetryKey((prev) => prev + 1);
   }, []);
 
-  // Reset error state when sheet closes
+  // Reset state when sheet closes
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
       if (!isOpen) {
@@ -104,6 +177,24 @@ export function PDFPreviewSheet({
     },
     [onOpenChange],
   );
+
+  // Handle download via POST request
+  const handleDownload = useCallback(async () => {
+    try {
+      const url = blobUrl || (await fetchDatabricksFile(filePath));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      if (!blobUrl) {
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      console.error('Download failed:', err);
+    }
+  }, [blobUrl, filePath, filename]);
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
@@ -126,30 +217,33 @@ export function PDFPreviewSheet({
                 </a>
               </Button>
             )}
-            <Button variant="outline" size="sm" asChild>
-              <a href={downloadUrl} download={filename}>
-                <Download className="mr-2 h-4 w-4" />
-                Download
-              </a>
+            <Button variant="outline" size="sm" onClick={handleDownload}>
+              <Download className="mr-2 h-4 w-4" />
+              Download
             </Button>
           </div>
         </SheetHeader>
 
         <div className="flex-1 overflow-hidden">
-          {error ? (
+          {isLoading ? (
+            <div className="flex h-full items-center justify-center">
+              <Loader size={24} />
+            </div>
+          ) : error ? (
             <PDFErrorState
               error={error}
               filename={filename}
               onRetry={handleRetry}
             />
-          ) : (
+          ) : blobUrl ? (
             <PDFViewer
               key={retryKey}
-              url={downloadUrl}
+              url={blobUrl}
               initialPage={initialPage}
+              highlightText={highlightText}
               onLoadError={handleLoadError}
             />
-          )}
+          ) : null}
         </div>
       </SheetContent>
     </Sheet>

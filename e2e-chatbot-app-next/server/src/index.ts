@@ -25,17 +25,17 @@ const __dirname = dirname(__filename);
 
 const app: Express = express();
 const isDevelopment = process.env.NODE_ENV !== 'production';
-// Either let PORT be set by env or use 4001 for development and 4000 for production
+// Either let PORT be set by env or use 3001 for development and 3000 for production
 // The CHAT_APP_PORT can be used to override the port for the chat app.
 const PORT =
   process.env.CHAT_APP_PORT ||
   process.env.PORT ||
-  (isDevelopment ? 4001 : 4000);
+  (isDevelopment ? 3001 : 3000);
 
 // CORS configuration
 app.use(
   cors({
-    origin: isDevelopment ? 'http://localhost:4000' : true,
+    origin: isDevelopment ? 'http://localhost:3000' : true,
     credentials: true,
   }),
 );

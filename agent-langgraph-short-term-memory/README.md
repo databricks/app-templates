@@ -15,7 +15,8 @@ This script will:
 1. Verify uv, nvm, and Databricks CLI installations
 2. Configure Databricks authentication
 3. Configure agent tracing, by creating and linking an MLflow experiment to your app
-4. Start the agent server and chat app
+4. Configure short-term memory by linking a Lakebase instance for conversation store and checkpointing
+5. Start the agent server and chat app
 
 ```bash
 ./scripts/quickstart.sh
@@ -94,7 +95,22 @@ This will start the agent server and the chat app at http://localhost:8000.
 
    See the [MLflow experiments documentation](https://docs.databricks.com/aws/en/mlflow/experiments#create-experiment-from-the-workspace).
 
-4. **Test your agent locally**
+4. **Create and link a Lakebase instance for short-term memory**
+
+   This agent uses Lakebase for conversation checkpointing, enabling short-term memory across conversation turns. You need to create a Lakebase instance and configure it for your agent.
+
+   Create a Lakebase instance in your Databricks workspace. You can do this via the Databricks UI or CLI. See the [Lakebase documentation](https://docs.databricks.com/aws/en/oltp/instances/create/) for setup instructions.
+
+   Once created, update the `LAKEBASE_INSTANCE_NAME` in your `.env.local` file with your instance name:
+
+   ```bash
+   # Edit .env.local and fill in your Lakebase instance name
+   LAKEBASE_INSTANCE_NAME=your-lakebase-instance-name
+   ```
+
+   The agent will automatically create the necessary checkpoint tables in your Lakebase instance on first run.
+
+5. **Test your agent locally**
 
    Start up the agent server and chat UI locally:
 
@@ -173,17 +189,30 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
 1. **Set up authentication to Databricks resources**
 
-   For this example, you need to add an MLflow Experiment as a resource to your app. Navigate to the [MLFlow Experiments UI](https://docs.databricks.com/aws/en/mlflow/experiments#change-permissions-for-an-experiment) and grant the App's Service Principal (SP) permission to edit the experiment. See the [Apps authorization docs](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#app-authorization) to find the SP's ID in the App Details page.
+   For this example, you need to add an MLflow Experiment and a Lakebase instance as resources to your app.
 
-   To access resources like serving endpoints, genie spaces, MLflow experiments, UC Functions, and Vector Search Indexes, click `edit` on your app home page to grant the App's SP permission. See the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources).
+   - **MLflow Experiment**: Navigate to the [MLFlow Experiments UI](https://docs.databricks.com/aws/en/mlflow/experiments#change-permissions-for-an-experiment) and grant the App's Service Principal (SP) permission to edit the experiment.
+   - **Lakebase Instance**: Grant the App's SP permission to access your Lakebase instance for conversation checkpointing.
+
+   To access resources like serving endpoints, genie spaces, MLflow experiments, Lakebase instances, UC Functions, and Vector Search Indexes, click `edit` on your app home page to grant the App's SP permission. See the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources).
 
    For resources that are not supported yet, see the [Agent Framework authentication documentation](https://docs.databricks.com/aws/en/generative-ai/agent-framework/deploy-agent#automatic-authentication-passthrough) for the correct permission level to grant to your app SP.
 
    **On-behalf-of (OBO) User Authentication**: Use `get_user_workspace_client()` from `agent_server.utils` to authenticate as the requesting user instead of the app service principal. See the [OBO authentication documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#retrieve-user-authorization-credentials).
 
-2. **Make sure the value of `MLFLOW_EXPERIMENT_ID` is set in `app.yaml`**
+2. **Make sure the values of `MLFLOW_EXPERIMENT_ID` and `LAKEBASE_INSTANCE_NAME` are set in `app.yaml`**
 
-   The `MLFLOW_EXPERIMENT_ID` in `app.yaml` should have been filled in by the `./scripts/quickstart.sh` script. If it is not set, you can manually fill in the value in `app.yaml`. Refer to the [Databricks Apps environment variable documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/environment-variables) for more info.
+   The `MLFLOW_EXPERIMENT_ID` and `LAKEBASE_INSTANCE_NAME` in `app.yaml` should have been filled in by the `./scripts/quickstart.sh` script. If they are not set, you can manually fill in the values in `app.yaml`:
+
+   ```yaml
+   env:
+     - name: MLFLOW_EXPERIMENT_ID
+       value: "your-experiment-id"
+     - name: LAKEBASE_INSTANCE_NAME
+       value: "your-lakebase-instance-name"
+   ```
+
+   The `MLFLOW_EXPERIMENT_ID` and `LAKEBASE_INSTANCE_NAME` in `app.yaml` should have been filled in by the `./scripts/quickstart.sh` script. If it is not set, you can manually fill in the value in `app.yaml`. Refer to the [Databricks Apps environment variable documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/environment-variables) for more info.
 
 3. **Sync local files to your workspace**
 

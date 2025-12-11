@@ -96,12 +96,17 @@ export function isUnityCatalogPDFLink(href: string): boolean {
 export function getUnityCatalogExplorerUrl(
   volumePath: string,
   filename: string,
+  workspaceUrl?: string,
 ): string {
   if (!filename || !volumePath) {
     return '';
   }
   // UC expects the filePreviewPath to be encoded
-  return `/explore/data/${volumePath}?filePreviewPath=${encodeURIComponent(filename)}`;
+  const path = `/explore/data/${volumePath}?filePreviewPath=${encodeURIComponent(filename)}`;
+  if (workspaceUrl) {
+    return `${workspaceUrl}${path}`;
+  }
+  return path;
 }
 
 /**

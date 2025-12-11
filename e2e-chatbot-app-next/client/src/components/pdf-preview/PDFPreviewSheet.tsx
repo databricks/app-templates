@@ -23,6 +23,7 @@ import {
   getUnityCatalogExplorerUrl,
   fetchDatabricksFile,
 } from '@/lib/pdf-utils';
+import { useAppConfig } from '@/contexts/AppConfigContext';
 
 export interface PDFPreviewSheetProps {
   open: boolean;
@@ -101,8 +102,13 @@ export function PDFPreviewSheet({
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showCitedText, setShowCitedText] = useState(true);
+  const { workspaceUrl } = useAppConfig();
 
-  const ucExplorerUrl = getUnityCatalogExplorerUrl(volumePath, filename);
+  const ucExplorerUrl = getUnityCatalogExplorerUrl(
+    volumePath,
+    filename,
+    workspaceUrl,
+  );
 
   // Fetch the PDF when the sheet opens
   useEffect(() => {
@@ -211,7 +217,7 @@ export function PDFPreviewSheet({
         <SheetHeader className="space-y-0 border-b px-4 py-3">
           <div className="flex items-center justify-between gap-4">
             <SheetTitle className="truncate">{filename}</SheetTitle>
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2 pr-8">
               {ucExplorerUrl && (
                 <Button variant="outline" size="sm" asChild>
                   <a

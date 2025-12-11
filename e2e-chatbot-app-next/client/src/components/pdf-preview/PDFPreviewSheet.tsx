@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect } from 'react';
 import {
   Download,
   ExternalLink,
@@ -8,21 +8,21 @@ import {
   ChevronDown,
   ChevronUp,
   Quote,
-} from "lucide-react";
+} from 'lucide-react';
 
 import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
-} from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
-import { Loader } from "@/components/elements/loader";
-import { PDFViewer, type PDFError } from "./PDFViewer";
+} from '@/components/ui/sheet';
+import { Button } from '@/components/ui/button';
+import { Loader } from '@/components/elements/loader';
+import { PDFViewer, type PDFError } from './PDFViewer';
 import {
   getUnityCatalogExplorerUrl,
   fetchDatabricksFile,
-} from "@/lib/pdf-utils";
+} from '@/lib/pdf-utils';
 
 export interface PDFPreviewSheetProps {
   open: boolean;
@@ -46,27 +46,27 @@ function PDFErrorState({
 }) {
   const getErrorContent = () => {
     switch (error.type) {
-      case "NotFoundError":
+      case 'NotFoundError':
         return {
           icon: <FileWarning className="h-12 w-12 text-muted-foreground" />,
-          title: "File not found",
+          title: 'File not found',
           description: `We could not find the file "${filename}". Please check if the file was moved, renamed, or deleted.`,
         };
-      case "PermissionError":
+      case 'PermissionError':
         return {
           icon: <Lock className="h-12 w-12 text-muted-foreground" />,
           title: "You can't access this file",
           description: `You do not have permission to access "${filename}". Please contact an administrator.`,
         };
-      case "LoadError":
+      case 'LoadError':
       default:
         return {
           icon: <AlertCircle className="h-12 w-12 text-destructive" />,
-          title: "Failed to load PDF",
+          title: 'Failed to load PDF',
           description:
-            error.type === "LoadError" && error.message
+            error.type === 'LoadError' && error.message
               ? error.message
-              : "An unexpected error occurred while loading the PDF file.",
+              : 'An unexpected error occurred while loading the PDF file.',
         };
     }
   };
@@ -125,15 +125,15 @@ export function PDFPreviewSheet({
         }
       } catch (err) {
         if (!cancelled) {
-          const message = err instanceof Error ? err.message.toLowerCase() : "";
-          if (message.includes("404")) {
-            setError({ type: "NotFoundError" });
-          } else if (message.includes("403")) {
-            setError({ type: "PermissionError" });
+          const message = err instanceof Error ? err.message.toLowerCase() : '';
+          if (message.includes('404')) {
+            setError({ type: 'NotFoundError' });
+          } else if (message.includes('403')) {
+            setError({ type: 'PermissionError' });
           } else {
             setError({
-              type: "LoadError",
-              message: err instanceof Error ? err.message : "Unknown error",
+              type: 'LoadError',
+              message: err instanceof Error ? err.message : 'Unknown error',
             });
           }
         }
@@ -181,14 +181,14 @@ export function PDFPreviewSheet({
       }
       onOpenChange(isOpen);
     },
-    [onOpenChange]
+    [onOpenChange],
   );
 
   // Handle download via POST request
   const handleDownload = useCallback(async () => {
     try {
       const url = blobUrl || (await fetchDatabricksFile(filePath));
-      const a = document.createElement("a");
+      const a = document.createElement('a');
       a.href = url;
       a.download = filename;
       document.body.appendChild(a);
@@ -198,7 +198,7 @@ export function PDFPreviewSheet({
         URL.revokeObjectURL(url);
       }
     } catch (err) {
-      console.error("Download failed:", err);
+      console.error('Download failed:', err);
     }
   }, [blobUrl, filePath, filename]);
 
@@ -274,7 +274,6 @@ export function PDFPreviewSheet({
               key={retryKey}
               url={blobUrl}
               initialPage={initialPage}
-              highlightText={highlightText}
               onLoadError={handleLoadError}
             />
           ) : null}

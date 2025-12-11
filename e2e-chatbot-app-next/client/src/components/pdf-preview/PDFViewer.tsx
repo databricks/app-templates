@@ -4,13 +4,12 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
-import './pdf-highlight.css';
 
 import { Button } from '@/components/ui/button';
 import { Loader } from '@/components/elements/loader';
 
-// Configure PDF.js worker - use CDN to avoid bundling issues
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// Configure PDF.js worker - bundled with the application
+pdfjs.GlobalWorkerOptions.workerSrc = '/assets/pdf.worker.min.mjs';
 
 export type PDFError =
   | { type: 'NotFoundError' }

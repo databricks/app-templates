@@ -339,11 +339,10 @@ fi
 echo
 
 # ===================================================================
-# Section 5: Lakebase Instance Setup (Long-Term Memory)
+# Section 5: Lakebase Instance Setup
 # ===================================================================
 
-echo "Setting up Lakebase instance for long-term memory..."
-echo "This will be used to store user memories across conversations."
+echo "Setting up Lakebase instance..."
 echo "Please enter your Lakebase instance name:"
 read -r LAKEBASE_INSTANCE_NAME
 
@@ -382,7 +381,7 @@ echo "✓ Databricks authenticated with profile: $PROFILE_NAME"
 echo "✓ Configuration files created (.env.local)"
 echo "✓ MLflow experiment created: $EXPERIMENT_NAME"
 echo "✓ Experiment ID: $EXPERIMENT_ID"
-echo "✓ Lakebase instance configured for long-term memory: $LAKEBASE_INSTANCE_NAME"
+echo "✓ Lakebase instance configured: $LAKEBASE_INSTANCE_NAME"
 echo "✓ Configuration updated in .env.local and app.yaml"
 echo "==================================================================="
 echo

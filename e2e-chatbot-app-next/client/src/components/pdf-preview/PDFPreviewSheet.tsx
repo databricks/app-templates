@@ -246,7 +246,9 @@ export function PDFPreviewSheet({
                 className="flex w-full items-center gap-2 text-left text-muted-foreground text-sm hover:text-foreground"
               >
                 <Quote className="h-4 w-4 shrink-0" />
-                <span className="font-medium">Cited text</span>
+                <span className="font-medium">
+                  Cited text{initialPage ? ` (page ${initialPage})` : ''}
+                </span>
                 {showCitedText ? (
                   <ChevronUp className="ml-auto h-4 w-4 shrink-0" />
                 ) : (

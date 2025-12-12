@@ -80,7 +80,7 @@ Otherwise you can create the app from the UI following the documentation [here](
 
 When creating the app, ensure that:
 - The app name starts with `mcp-`. This enables discovery of your MCP server and using it from within Databricks product UIs like the [AI Playground](https://docs.databricks.com/aws/en/large-language-models/ai-playground)
-- The Unity Catalog volume containing your OpenAPI spec.json file is included as an [app resource](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/permissions#assign-permissions-in-the-databricks-apps-ui), with resource key `spec_volume_path`.
+- The Unity Catalog volume containing your OpenAPI spec.json file is included as an [app resource](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/permissions#assign-permissions-in-the-databricks-apps-ui), with resource key `uc-volume`.
 
 ### Deploy to Databricks Apps
 Double-check that all TODOs in `app.yaml` have been addressed. 

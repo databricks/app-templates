@@ -1,0 +1,38 @@
+[project]
+name = "agent-server"
+version = "0.1.0"
+description = "MLflow-compatible agent server with long-term memory via Lakebase"
+readme = "README.md"
+authors = [
+    { name = "Agent Developer", email = "developer@example.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.12",
+    "uvicorn>=0.34.2",
+    "databricks-langchain[memory] @ git+https://github.com/databricks/databricks-ai-bridge@main#subdirectory=integrations/langchain",
+    "mlflow>=3.6.0",
+    "langgraph>=1.0.1",
+    "python-dotenv",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+#####
+[tool.hatch.metadata] # Note: this is for direct git references, delete when langchain release for long term sdk is ready
+allow-direct-references = true
+#####
+
+[dependency-groups]
+dev = [
+    "hatchling>=1.27.0",
+    "pytest>=7.0.0",
+]
+
+
+[project.scripts]
+start-server = "agent_server.start_server:main"
+agent-evaluate = "agent_server.evaluate_agent:evaluate"
+

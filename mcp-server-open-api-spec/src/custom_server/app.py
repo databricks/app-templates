@@ -26,7 +26,7 @@ mcp_server = FastMCP("Custom Open API Spec MCP Server")
 load_tools(mcp_server)
 
 # Create the MCP app
-mcp_app = mcp_server.streamable_http_app()
+mcp_app = mcp_server.http_app()
 
 # Create FastAPI app
 app = FastAPI(

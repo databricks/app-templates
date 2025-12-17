@@ -2,7 +2,8 @@ import logging
 from typing import Any, AsyncGenerator, AsyncIterator, Optional
 
 from databricks.sdk import WorkspaceClient
-from langchain.messages import AIMessageChunk
+from databricks_langchain.chat_models import json
+from langchain.messages import AIMessageChunk, ToolMessage
 from mlflow.genai.agent_server import get_request_headers
 from mlflow.types.responses import (
     ResponsesAgentStreamEvent,
@@ -38,6 +39,9 @@ async def process_agent_astream_events(
         if event[0] == "updates":
             for node_data in event[1].values():
                 if len(node_data.get("messages", [])) > 0:
+                    for msg in node_data["messages"]:
+                        if isinstance(msg, ToolMessage) and not isinstance(msg.content, str):
+                            msg.content = json.dumps(msg.content)
                     for item in output_to_responses_items_stream(node_data["messages"]):
                         yield item
         elif event[0] == "messages":

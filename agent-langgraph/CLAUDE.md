@@ -33,14 +33,17 @@ curl -X POST http://localhost:8000/invocations \
 
 Anytime the user wants to modify the agent, look through each of the following resources to help them accomplish their goal:
 
+If the user wants to convert something into Responses API, refer to https://mlflow.org/docs/latest/genai/serving/responses-agent/ for more information.
+
 1. Look through existing databricks-langchain APIs to see if they can use one of these to accomplish their goal.
 2. Look through the folders in https://github.com/bbqiu/agent-on-app-prototype to see if there's an existing example similar to what they're looking to do.
 3. Reference the documentation available under https://docs.databricks.com/aws/en/generative-ai/agent-framework/ and its subpages.
-4. For stuff like LangGraph routing, configuration, and customization, refer to the langgraph documentation: https://docs.langchain.com/oss/python/langgraph/overview.
+4. For adding tools and capabilities, refer to: https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool
+5. For stuff like LangGraph routing, configuration, and customization, refer to the langgraph documentation: https://docs.langchain.com/oss/python/langgraph/overview.
 
 ## databricks-langchain SDK overview
 
-**SDK Location:** `https://github.com/databricks/databricks-ai-bridge`
+**SDK Location:** `https://github.com/databricks/databricks-ai-bridge/tree/main/integrations/langchain`
 
 **Development Workflow:**
 

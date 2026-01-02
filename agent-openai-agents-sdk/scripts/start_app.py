@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 
 # Readiness patterns
 BACKEND_READY = [r"Uvicorn running on", r"Application startup complete", r"Started server process"]
-FRONTEND_READY = [r"Server is running on http://localhost:3000"]
+FRONTEND_READY = [r"Server is running on http://localhost"]
 
 
 class ProcessManager:
@@ -29,8 +29,8 @@ class ProcessManager:
         self.backend_ready = False
         self.frontend_ready = False
         self.failed = threading.Event()
-        self.backend_log = open("backend.log", "w", buffering=1)
-        self.frontend_log = open("frontend.log", "w", buffering=1)
+        self.backend_log = None
+        self.frontend_log = None
 
     def monitor_process(self, process, name, log_file, patterns):
         is_ready = False
@@ -135,8 +135,10 @@ class ProcessManager:
                 except (subprocess.TimeoutExpired, Exception):
                     proc.kill()
 
-        self.backend_log.close()
-        self.frontend_log.close()
+        if self.backend_log:
+            self.backend_log.close()
+        if self.frontend_log:
+            self.frontend_log.close()
 
     def run(self):
         load_dotenv(dotenv_path=".env.local", override=True)
@@ -144,54 +146,59 @@ class ProcessManager:
         if not self.clone_frontend_if_needed():
             return 1
 
-        # Start backend
-        self.backend_process = self.start_process(
-            ["uv", "run", "start-server"], "backend", self.backend_log, BACKEND_READY
-        )
+        # Open log files
+        self.backend_log = open("backend.log", "w", buffering=1)
+        self.frontend_log = open("frontend.log", "w", buffering=1)
 
-        # Setup and start frontend
-        frontend_dir = Path("e2e-chatbot-app-next")
-        for cmd, desc in [("npm install", "install"), ("npm run build", "build")]:
-            print(f"Running npm {desc}...")
-            result = subprocess.run(cmd.split(), cwd=frontend_dir, capture_output=True, text=True)
-            if result.returncode != 0:
-                print(f"npm {desc} failed: {result.stderr}")
-                self.cleanup()
-                return 1
-
-        self.frontend_process = self.start_process(
-            ["npm", "run", "start"], "frontend", self.frontend_log, FRONTEND_READY, cwd=frontend_dir
-        )
-
-        print(
-            f"\nMonitoring processes (Backend PID: {self.backend_process.pid}, Frontend PID: {self.frontend_process.pid})\n"
-        )
-
-        # Wait for failure
         try:
+            # Start backend
+            self.backend_process = self.start_process(
+                ["uv", "run", "start-server"], "backend", self.backend_log, BACKEND_READY
+            )
+
+            # Setup and start frontend
+            frontend_dir = Path("e2e-chatbot-app-next")
+            for cmd, desc in [("npm install", "install"), ("npm run build", "build")]:
+                print(f"Running npm {desc}...")
+                result = subprocess.run(cmd.split(), cwd=frontend_dir, capture_output=True, text=True)
+                if result.returncode != 0:
+                    print(f"npm {desc} failed: {result.stderr}")
+                    return 1
+
+            self.frontend_process = self.start_process(
+                ["npm", "run", "start"], "frontend", self.frontend_log, FRONTEND_READY, cwd=frontend_dir
+            )
+
+            print(
+                f"\nMonitoring processes (Backend PID: {self.backend_process.pid}, Frontend PID: {self.frontend_process.pid})\n"
+            )
+
+            # Wait for failure
             while not self.failed.is_set():
                 time.sleep(0.1)
                 for proc in [self.backend_process, self.frontend_process]:
                     if proc.poll() is not None:
                         self.failed.set()
                         break
+
+            # Determine which failed
+            failed_name = "backend" if self.backend_process.poll() is not None else "frontend"
+            failed_proc = self.backend_process if failed_name == "backend" else self.frontend_process
+            exit_code = failed_proc.returncode if failed_proc else 1
+
+            print(
+                f"\n{'=' * 42}\nERROR: {failed_name} process exited with code {exit_code}\n{'=' * 42}"
+            )
+            self.print_logs("backend.log")
+            self.print_logs("frontend.log")
+            return exit_code
+
         except KeyboardInterrupt:
             print("\nInterrupted")
-            self.cleanup()
             return 0
 
-        # Determine which failed
-        failed_name = "backend" if self.backend_process.poll() is not None else "frontend"
-        failed_proc = self.backend_process if failed_name == "backend" else self.frontend_process
-        exit_code = failed_proc.returncode if failed_proc else 1
-
-        print(
-            f"\n{'=' * 42}\nERROR: {failed_name} process exited with code {exit_code}\n{'=' * 42}"
-        )
-        self.print_logs("backend.log")
-        self.print_logs("frontend.log")
-        self.cleanup()
-        return exit_code
+        finally:
+            self.cleanup()
 
 
 def main():

@@ -7,7 +7,7 @@
 **Quick Start:**
 ```bash
 ./scripts/quickstart.sh   # First-time setup (auth, MLflow experiment, env)
-./scripts/start-app.sh    # Start app at http://localhost:8000
+uv run start-app          # Start app at http://localhost:8000
 ```
 
 **Advanced Server Options:**

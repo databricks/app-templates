@@ -5,19 +5,22 @@
 **Prerequisites:** uv, nvm (Node 20), Databricks CLI
 
 **Quick Start:**
+
 ```bash
 ./scripts/quickstart.sh   # First-time setup (auth, MLflow experiment, env)
 uv run start-app          # Start app at http://localhost:8000
 ```
 
 **Advanced Server Options:**
+
 ```bash
-uv run start-server --reload   # Hot-reload on code changes
+uv run start-server --reload   # Hot-reload on code changes during development
 uv run start-server --port 8001
 uv run start-server --workers 4
 ```
 
 **Test API:**
+
 ```bash
 curl -X POST http://localhost:8000/invocations \
   -H "Content-Type: application/json" \
@@ -28,21 +31,24 @@ curl -X POST http://localhost:8000/invocations \
 
 ## Modifying with databricks-langchain SDK
 
-**SDK Location:** `~/databricks-ai-bridge/integrations/langchain`
+**SDK Location:** `https://github.com/databricks/databricks-ai-bridge`
 
 **Development Workflow:**
+
 ```bash
-pip install -e ~/databricks-ai-bridge/integrations/langchain  # Editable install
-pytest ~/databricks-ai-bridge/integrations/langchain/tests    # Run tests
-ruff format .                                                  # Format code
+uv add databricks-langchain
 ```
+
+Before making any changes, ensure that the APIs actually exist in the SDK. If something is missing from the documentation here, feel free to look in the venv's `site-packages` directory for the `databricks_langchain` package. If it's not installed, run `uv sync` in this folder to create the .venv and install the package.
 
 **Main file to modify:** `agent_server/agent.py`
 
 ---
 
 ### ChatDatabricks - LLM Chat Interface
+
 Connects to Databricks Model Serving endpoints for LLM inference.
+
 ```python
 from databricks_langchain import ChatDatabricks
 
@@ -59,7 +65,9 @@ llm = ChatDatabricks(endpoint="my-agent-endpoint", use_responses_api=True)
 ---
 
 ### DatabricksEmbeddings - Generate Embeddings
+
 Query Databricks embedding model endpoints.
+
 ```python
 from databricks_langchain import DatabricksEmbeddings
 
@@ -71,7 +79,9 @@ vectors = embeddings.embed_documents(["doc1", "doc2"])
 ---
 
 ### DatabricksVectorSearch - Vector Store
+
 Connect to Databricks Vector Search indexes for similarity search.
+
 ```python
 from databricks_langchain import DatabricksVectorSearch
 
@@ -90,29 +100,12 @@ docs = vs.similarity_search("query", k=5)
 
 ---
 
-### GenieAgent - Query Genie Spaces
-Use a Genie space as a LangChain agent for natural language queries over data.
-```python
-from databricks_langchain.genie import GenieAgent
-
-genie = GenieAgent(
-    genie_space_id="your-space-id",
-    genie_agent_name="SalesGenie",
-    description="Sales data assistant for Europe region",
-    include_context=True,  # Include SQL and reasoning in response
-    return_pandas=True,    # Return DataFrames instead of markdown
-)
-
-# Use in LangGraph
-result = await genie.ainvoke({"messages": [{"role": "user", "content": "What were Q4 sales?"}]})
-```
-
----
-
 ### MCP Client - Tool Integration
+
 Connect to MCP (Model Context Protocol) servers to get tools for your agent.
 
 **Basic MCP Server (manual URL):**
+
 ```python
 from databricks_langchain import DatabricksMCPServer, DatabricksMultiServerMCPClient
 
@@ -120,7 +113,6 @@ client = DatabricksMultiServerMCPClient([
     DatabricksMCPServer(
         name="system-ai",
         url=f"{host}/api/2.0/mcp/functions/system/ai",
-        handle_tool_error=True,  # Return errors as strings instead of raising
     )
 ])
 tools = await client.get_tools()
@@ -128,6 +120,7 @@ tools = await client.get_tools()
 
 **From UC Function (convenience helper):**
 Creates MCP server for Unity Catalog functions. If `function_name` is omitted, exposes all functions in the schema.
+
 ```python
 server = DatabricksMCPServer.from_uc_function(
     catalog="main",
@@ -141,6 +134,7 @@ server = DatabricksMCPServer.from_uc_function(
 
 **From Vector Search (convenience helper):**
 Creates MCP server for Vector Search indexes. If `index_name` is omitted, exposes all indexes in the schema.
+
 ```python
 server = DatabricksMCPServer.from_vector_search(
     catalog="main",
@@ -151,7 +145,20 @@ server = DatabricksMCPServer.from_vector_search(
 )
 ```
 
+**From Genie Space:**
+Create MCP server from Genie Space. Need to get the genie space ID. Can prompt the user to retrieve this via the UI by getting the link to the genie space.
+
+Ex: https://db-ml-models-dev-us-west.cloud.databricks.com/genie/rooms/01f0515f6739169283ef2c39b7329700?o=3217006663075879 means the genie space ID is 01f0515f6739169283ef2c39b7329700
+
+```python
+DatabricksMCPServer(
+    name="genie",
+    url=f"{host_name}/api/2.0/mcp/genie/01f0515f6739169283ef2c39b7329700",
+),
+```
+
 **Non-Databricks MCP Server:**
+
 ```python
 from databricks_langchain import MCPServer
 
@@ -170,15 +177,19 @@ server = MCPServer(
 Reference: https://docs.databricks.com/aws/en/generative-ai/agent-framework/
 
 ### Tool Types
+
 1. **Unity Catalog Function Tools** - SQL UDFs managed in UC with built-in governance
 2. **Agent Code Tools** - Defined directly in agent code for REST APIs and low-latency operations
 3. **MCP Tools** - Interoperable tools via Model Context Protocol (Databricks-managed, external, or self-hosted)
 
 ### Built-in Tools
+
 - **system.ai.python_exec** - Execute Python code dynamically within agent queries (code interpreter)
 
 ### External Connection Tools
+
 Connect to external services via Unity Catalog HTTP connections:
+
 - **Slack** - Post messages to channels
 - **Google Calendar** - Calendar operations
 - **Microsoft Graph API** - Office 365 services
@@ -188,6 +199,7 @@ Connect to external services via Unity Catalog HTTP connections:
 Example: Create UC function wrapping HTTP request for Slack, then expose via MCP.
 
 ### Common Patterns
+
 - **Structured data retrieval** - Query SQL tables/databases
 - **Unstructured data retrieval** - Document search and RAG via Vector Search
 - **Code interpreter** - Python execution for analysis via system.ai.python_exec

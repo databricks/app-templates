@@ -29,7 +29,16 @@ curl -X POST http://localhost:8000/invocations \
 
 ---
 
-## Modifying with databricks-langchain SDK
+## Modifying the agent
+
+Anytime the user wants to modify the agent, look through each of the following resources to help them accomplish their goal:
+
+1. Look through existing databricks-langchain APIs to see if they can use one of these to accomplish their goal.
+2. Look through the folders in https://github.com/bbqiu/agent-on-app-prototype to see if there's an existing example similar to what they're looking to do.
+3. Reference the documentation available under https://docs.databricks.com/aws/en/generative-ai/agent-framework/ and its subpages.
+4. For stuff like LangGraph routing, configuration, and customization, refer to the langgraph documentation: https://docs.langchain.com/oss/python/langgraph/overview.
+
+## databricks-langchain SDK overview
 
 **SDK Location:** `https://github.com/databricks/databricks-ai-bridge`
 
@@ -170,7 +179,9 @@ server = MCPServer(
 )
 ```
 
----
+### Stateful LangGraph agent
+
+Look through the package files for the latest on stateful langgraph agents. Can start by looking at the databricks_langchain/checkpoints.py and databricks_langchain/store.py files.
 
 ## Agent Framework Capabilities
 

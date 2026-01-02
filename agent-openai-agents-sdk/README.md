@@ -24,7 +24,7 @@ This script will:
 After the setup is complete, you can start the agent server and the chat app locally with:
 
 ```bash
-./scripts/start-app.sh
+uv run start-app
 ```
 
 This will start the agent server and the chat app at http://localhost:8000.
@@ -99,7 +99,7 @@ This will start the agent server and the chat app at http://localhost:8000.
    Start up the agent server and chat UI locally:
 
    ```bash
-   ./scripts/start-app.sh
+   uv run start-app
    ```
 
    Query your agent via the UI (http://localhost:8000) or REST API:

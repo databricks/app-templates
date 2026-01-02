@@ -22,9 +22,31 @@ uv run start-server --workers 4
 **Test API:**
 
 ```bash
+# Streaming request
 curl -X POST http://localhost:8000/invocations \
   -H "Content-Type: application/json" \
   -d '{ "input": [{ "role": "user", "content": "hi" }], "stream": true }'
+
+# Non-streaming request
+curl -X POST http://localhost:8000/invocations \
+  -H "Content-Type: application/json" \
+  -d '{ "input": [{ "role": "user", "content": "hi" }] }'
+```
+
+---
+
+## Testing the Agent
+
+**Run evaluation:**
+
+```bash
+uv run agent-evaluate     # Uses MLflow scorers (RelevanceToQuery, Safety)
+```
+
+**Run unit tests:**
+
+```bash
+pytest [path]             # Standard pytest execution
 ```
 
 ---
@@ -39,7 +61,11 @@ If the user wants to convert something into Responses API, refer to https://mlfl
 2. Look through the folders in https://github.com/bbqiu/agent-on-app-prototype to see if there's an existing example similar to what they're looking to do.
 3. Reference the documentation available under https://docs.databricks.com/aws/en/generative-ai/agent-framework/ and its subpages.
 4. For adding tools and capabilities, refer to: https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool
-5. For stuff like LangGraph routing, configuration, and customization, refer to the langgraph documentation: https://docs.langchain.com/oss/python/langgraph/overview.
+5. For stuff like LangGraph routing, configuration, and customization, refer to the LangGraph documentation: https://docs.langchain.com/oss/python/langgraph/overview.
+
+**Main file to modify:** `agent_server/agent.py`
+
+---
 
 ## databricks-langchain SDK overview
 
@@ -52,8 +78,6 @@ uv add databricks-langchain
 ```
 
 Before making any changes, ensure that the APIs actually exist in the SDK. If something is missing from the documentation here, feel free to look in the venv's `site-packages` directory for the `databricks_langchain` package. If it's not installed, run `uv sync` in this folder to create the .venv and install the package.
-
-**Main file to modify:** `agent_server/agent.py`
 
 ---
 
@@ -218,3 +242,97 @@ Example: Create UC function wrapping HTTP request for Slack, then expose via MCP
 - **Unstructured data retrieval** - Document search and RAG via Vector Search
 - **Code interpreter** - Python execution for analysis via system.ai.python_exec
 - **External connections** - Integrate services like Slack via HTTP connections
+
+---
+
+## Authentication Setup
+
+**Option 1: OAuth (Recommended)**
+
+```bash
+databricks auth login
+```
+
+Set in `.env.local`:
+
+```bash
+DATABRICKS_CONFIG_PROFILE=DEFAULT
+```
+
+**Option 2: Personal Access Token**
+
+Set in `.env.local`:
+
+```bash
+DATABRICKS_HOST="https://host.databricks.com"
+DATABRICKS_TOKEN="dapi_token"
+```
+
+---
+
+## MLflow Experiment Setup
+
+Create and link an MLflow experiment:
+
+```bash
+DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
+databricks experiments create-experiment /Users/$DATABRICKS_USERNAME/agents-on-apps
+```
+
+Add the experiment ID to `.env.local`:
+
+```bash
+MLFLOW_EXPERIMENT_ID=<your-experiment-id>
+```
+
+---
+
+## Key Files
+
+| File                             | Purpose                                       |
+| -------------------------------- | --------------------------------------------- |
+| `agent_server/agent.py`          | Agent logic, model, instructions, MCP servers |
+| `agent_server/start_server.py`   | FastAPI server + MLflow setup                 |
+| `agent_server/evaluate_agent.py` | Agent evaluation with MLflow scorers          |
+| `agent_server/utils.py`          | Databricks auth helpers, stream processing    |
+| `scripts/start_app.py`           | Manages backend+frontend startup              |
+
+---
+
+## Deploying to Databricks Apps
+
+**Create app:**
+
+```bash
+databricks apps create agent-langgraph
+```
+
+**Sync files:**
+
+```bash
+DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
+databricks sync . "/Users/$DATABRICKS_USERNAME/agent-langgraph"
+```
+
+**Deploy:**
+
+```bash
+databricks apps deploy agent-langgraph --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/agent-langgraph
+```
+
+**Query deployed app:**
+
+Generate OAuth token (PATs are not supported):
+
+```bash
+databricks auth token
+```
+
+Send request:
+
+```bash
+curl -X POST <app-url>/invocations \
+  -H "Authorization: Bearer <oauth-token>" \
+  -H "Content-Type: application/json" \
+  -d '{ "input": [{ "role": "user", "content": "hi" }], "stream": true }'
+```

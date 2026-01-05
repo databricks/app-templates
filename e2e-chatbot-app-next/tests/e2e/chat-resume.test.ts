@@ -73,7 +73,7 @@ test.describe('Chat stream resume behavior', () => {
     await chatPage.isGenerationComplete();
 
     // Count assistant messages - should be exactly 1
-    const assistantMessages = await chatPage['page']
+    const assistantMessages = await chatPage.page
       .getByTestId('message-assistant')
       .count();
     expect(assistantMessages).toBe(1);

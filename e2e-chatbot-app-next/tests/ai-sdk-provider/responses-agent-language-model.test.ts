@@ -141,6 +141,8 @@ test.describe('DatabricksResponsesAgentLanguageModel', () => {
         part.type !== 'raw',
     );
 
+    console.log('contentParts', JSON.stringify(contentParts, null, 2));
+
     // Verify the number of parts matches expected
     expect(contentParts.length).toBe(
       RESPONSES_AGENT_OUTPUT_WITH_TOOL_CALLS.out.length,
@@ -213,7 +215,9 @@ test.describe('MCP Approval Streaming', () => {
   });
 
   test('correctly converts MCP approval response (approved) stream', async () => {
-    const mockFetch = createMockFetch(MCP_APPROVAL_RESPONSE_APPROVED_FIXTURE.in);
+    const mockFetch = createMockFetch(
+      MCP_APPROVAL_RESPONSE_APPROVED_FIXTURE.in,
+    );
 
     const model = new DatabricksResponsesAgentLanguageModel('test-model', {
       provider: 'databricks',
@@ -277,7 +281,9 @@ test.describe('MCP Approval Streaming', () => {
           'mcp_approval_response',
     );
     expect(mcpResponsePart).toBeDefined();
-    expect((mcpResponsePart as any).result).toEqual({ __approvalStatus__: true });
+    expect((mcpResponsePart as any).result).toEqual({
+      __approvalStatus__: true,
+    });
   });
 
   test('correctly converts MCP approval response (denied) stream', async () => {
@@ -348,5 +354,118 @@ test.describe('MCP Approval Streaming', () => {
     expect((mcpResponsePart as any).result).toEqual({
       __approvalStatus__: false,
     });
+  });
+});
+
+test.describe('Deduplication Logic', () => {
+  test('deduplicates .done event when text matches reconstructed deltas', async () => {
+    const sseContent = `
+data: {
+  "type": "response.output_text.delta",
+  "item_id": "msg_123",
+  "delta": "Hello "
+}
+
+data: {
+  "type": "response.output_text.delta",
+  "item_id": "msg_123",
+  "delta": "World"
+}
+
+data: {
+  "type": "response.output_item.done",
+  "item": {
+    "type": "message",
+    "id": "msg_123",
+    "role": "assistant",
+    "content": [{ "type": "text", "text": "Hello World[^ref]" }]
+  }
+}
+    `;
+
+    const mockFetch = createMockFetch(sseContent);
+    const model = new DatabricksResponsesAgentLanguageModel('test-model', {
+      provider: 'databricks',
+      headers: () => ({ Authorization: 'Bearer test-token' }),
+      url: () => 'http://test.example.com/api',
+      fetch: mockFetch,
+    });
+
+    const result = await model.doStream({
+      prompt: [{ role: 'user', content: [{ type: 'text', text: 'test' }] }],
+    });
+
+    const parts: LanguageModelV2StreamPart[] = [];
+    const reader = result.stream.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value);
+    }
+
+    const textParts = parts.filter((p) => p.type === 'text-delta');
+
+    // Expect "Hello " and "World", but NOT "Hello World[^ref]" from .done
+    expect(textParts.length).toBe(2);
+    expect(textParts[0].delta).toBe('Hello ');
+    expect(textParts[1].delta).toBe('World');
+  });
+
+  test('does NOT dedupe .done event when text content differs', async () => {
+    const sseContent = `
+data: {
+  "type": "response.output_text.delta",
+  "item_id": "msg_123",
+  "delta": "Hello "
+}
+
+data: {
+  "type": "response.output_text.delta",
+  "item_id": "msg_123",
+  "delta": "World"
+}
+
+data: {
+  "type": "response.output_item.done",
+  "item": {
+    "type": "message",
+    "id": "msg_123",
+    "role": "assistant",
+    "content": [{ "type": "text", "text": "Different Text" }]
+  }
+}
+    `;
+
+    const mockFetch = createMockFetch(sseContent);
+    const model = new DatabricksResponsesAgentLanguageModel('test-model', {
+      provider: 'databricks',
+      headers: () => ({ Authorization: 'Bearer test-token' }),
+      url: () => 'http://test.example.com/api',
+      fetch: mockFetch,
+    });
+
+    const result = await model.doStream({
+      prompt: [{ role: 'user', content: [{ type: 'text', text: 'test' }] }],
+    });
+
+    const parts: LanguageModelV2StreamPart[] = [];
+    const reader = result.stream.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value);
+    }
+
+    const textParts = parts.filter((p) => p.type === 'text-delta');
+    // "Hello ", "World", and then "Different Text" from .done
+    expect(textParts.length).toBe(3);
+    expect(textParts[0].delta).toBe('Hello ');
+    expect(textParts[1].delta).toBe('World');
+    expect(textParts[2].delta).toBe('Different Text');
+
+    // Should NOT be deduped -> .done event emits text-start?
+    // Since we removed text-start from .done converter, we only expect the initial text-start from the stream
+    const textStartParts = parts.filter((p) => p.type === 'text-start');
+    expect(textStartParts.length).toBe(1);
   });
 });

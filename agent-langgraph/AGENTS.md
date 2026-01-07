@@ -212,6 +212,14 @@ To enable statefulness in a LangGraph agent, we need to install `databricks-lang
 
 Look through the package files for the latest on stateful langgraph agents. Can start by looking at the databricks_langchain/checkpoints.py and databricks_langchain/store.py files.
 
+## Lakebase instance setup for stateful agents
+
+Add the lakebase name to `.env.local`:
+
+```bash
+LAKEBASE_INSTANCE_NAME=<your-lakebase-name>
+```
+
 ## Agent Framework Capabilities
 
 Reference: https://docs.databricks.com/aws/en/generative-ai/agent-framework/

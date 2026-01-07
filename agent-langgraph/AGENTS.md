@@ -51,7 +51,7 @@ pytest [path]             # Standard pytest execution
 
 ---
 
-## Modifying the agent
+## Modifying the Agent
 
 Anytime the user wants to modify the agent, look through each of the following resources to help them accomplish their goal:
 
@@ -207,6 +207,8 @@ server = MCPServer(
 ```
 
 ### Stateful LangGraph agent
+
+To enable statefulness in a LangGraph agent, we need to install `databricks-langchain[memory]`.
 
 Look through the package files for the latest on stateful langgraph agents. Can start by looking at the databricks_langchain/checkpoints.py and databricks_langchain/store.py files.
 

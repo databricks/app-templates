@@ -9,6 +9,7 @@ Requirements:
 """
 
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -97,7 +98,7 @@ class ProcessManager:
             check=True,
         )
         Path("temp-app-templates/e2e-chatbot-app-next").rename("e2e-chatbot-app-next")
-        subprocess.run(["rm", "-rf", "temp-app-templates"], check=True)
+        shutil.rmtree("temp-app-templates", ignore_errors=True)
         return True
 
     def start_process(self, cmd, name, log_file, patterns, cwd=None):
@@ -160,13 +161,19 @@ class ProcessManager:
             frontend_dir = Path("e2e-chatbot-app-next")
             for cmd, desc in [("npm install", "install"), ("npm run build", "build")]:
                 print(f"Running npm {desc}...")
-                result = subprocess.run(cmd.split(), cwd=frontend_dir, capture_output=True, text=True)
+                result = subprocess.run(
+                    cmd.split(), cwd=frontend_dir, capture_output=True, text=True
+                )
                 if result.returncode != 0:
                     print(f"npm {desc} failed: {result.stderr}")
                     return 1
 
             self.frontend_process = self.start_process(
-                ["npm", "run", "start"], "frontend", self.frontend_log, FRONTEND_READY, cwd=frontend_dir
+                ["npm", "run", "start"],
+                "frontend",
+                self.frontend_log,
+                FRONTEND_READY,
+                cwd=frontend_dir,
             )
 
             print(
@@ -183,7 +190,9 @@ class ProcessManager:
 
             # Determine which failed
             failed_name = "backend" if self.backend_process.poll() is not None else "frontend"
-            failed_proc = self.backend_process if failed_name == "backend" else self.frontend_process
+            failed_proc = (
+                self.backend_process if failed_name == "backend" else self.frontend_process
+            )
             exit_code = failed_proc.returncode if failed_proc else 1
 
             print(

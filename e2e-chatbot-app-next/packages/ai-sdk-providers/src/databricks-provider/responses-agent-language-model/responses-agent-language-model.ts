@@ -105,8 +105,6 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
 
     const allParts: LanguageModelV2StreamPart[] = [];
 
-    console.log('response', response);
-
     return {
       stream: response
         .pipeThrough(
@@ -122,8 +120,6 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
               if (options.includeRawChunks) {
                 controller.enqueue({ type: 'raw', rawValue: chunk.rawValue });
               }
-
-              console.log('chunk', JSON.stringify(chunk, null, 2));
 
               // handle failed chunk parsing / validation:
               if (!chunk.success) {

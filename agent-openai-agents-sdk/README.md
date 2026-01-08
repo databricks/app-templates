@@ -24,7 +24,7 @@ This script will:
 After the setup is complete, you can start the agent server and the chat app locally with:
 
 ```bash
-./scripts/start-app.sh
+uv run start-app
 ```
 
 This will start the agent server and the chat app at http://localhost:8000.
@@ -99,7 +99,7 @@ This will start the agent server and the chat app at http://localhost:8000.
    Start up the agent server and chat UI locally:
 
    ```bash
-   ./scripts/start-app.sh
+   uv run start-app
    ```
 
    Query your agent via the UI (http://localhost:8000) or REST API:
@@ -173,9 +173,9 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
 1. **Set up authentication to Databricks resources**
 
-   For this example, you need to add an MLflow Experiment as a resource to your app. Grant the App's Service Principal (SP) permission to edit the experiment [manually in the MLflow experiments UI](https://docs.databricks.com/aws/en/mlflow/experiments#change-permissions-for-an-experiment). See the [Apps authorization docs](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#app-authorization) to find the SP's ID in the App Details page.
+   For this example, you need to add an MLflow Experiment as a resource to your app. Grant the App's Service Principal (SP) permission to edit the experiment by clicking `edit` on your app home page. See the [Databricks Apps MLflow experiment documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/mlflow) for more information.
 
-   To access resources like serving endpoints, genie spaces, MLflow experiments, UC Functions, and Vector Search Indexes, click `edit` on your app home page to grant the App's SP permission. See the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources).
+   To grant access to other resources like serving endpoints, genie spaces, UC Functions, and Vector Search Indexes, click `edit` on your app home page to grant the App's SP permission. See the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources).
 
    For resources that are not supported yet, see the [Agent Framework authentication documentation](https://docs.databricks.com/aws/en/generative-ai/agent-framework/deploy-agent#automatic-authentication-passthrough) for the correct permission level to grant to your app SP.
 

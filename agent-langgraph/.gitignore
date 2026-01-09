@@ -204,5 +204,5 @@ sketch
 **/mlruns/
 **/.vite/
 **/.databricks
-**/.claude
+#**/.claude
 **/.env.local

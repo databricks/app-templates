@@ -567,6 +567,93 @@ For rapid iteration:
 5. **Check logs:** `databricks apps logs <app-name> --follow`
 6. **Iterate**
 
+### Important Configuration Notes
+
+#### App Naming Requirements
+
+**Critical:** App names must follow strict naming conventions:
+- ✅ Lowercase letters, numbers, and dashes only
+- ❌ No underscores allowed
+- ✅ Example: `dev-my-agent` (correct)
+- ❌ Example: `dev-my_agent` (incorrect - will fail deployment)
+
+When configuring `databricks.yml`:
+```yaml
+resources:
+  apps:
+    my_agent:  # Resource identifier (can use underscores)
+      name: "${bundle.target}-my-agent"  # Must use dashes
+```
+
+#### CLI-Only Deployment (When Experiment Resource Unavailable)
+
+If the `experiments` resource in bundles is not yet supported in your CLI version, use this workflow:
+
+**1. Remove experiment resource from `databricks.yml`:**
+```yaml
+bundle:
+  name: my-agent
+
+resources:
+  # Remove or comment out experiments resource
+  apps:
+    my-agent:
+      name: "${bundle.target}-my-agent"
+      description: "OpenAI Agents SDK agent application"
+      source_code_path: ./
+```
+
+**2. Create experiment manually via quickstart:**
+```bash
+./scripts/quickstart.sh --profile <profile-name>
+```
+
+This creates the MLflow experiment and provides the experiment ID.
+
+**3. Configure app.yaml with explicit experiment ID:**
+```yaml
+env:
+  - name: MLFLOW_EXPERIMENT_ID
+    value: "1234567890123456"  # Use actual ID from quickstart
+```
+
+**4. Deploy using CLI commands:**
+```bash
+# Deploy bundle
+databricks bundle deploy --profile <profile-name>
+
+# Start app compute
+databricks apps start <app-name> --profile <profile-name>
+
+# Wait for compute to start (check status)
+databricks apps get <app-name> --profile <profile-name> --output json | jq '{app_status, compute_status}'
+
+# Deploy source code
+DATABRICKS_USERNAME=$(databricks current-user me --profile <profile-name> | jq -r .userName)
+databricks apps deploy <app-name> \
+  --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/.bundle/<bundle-name>/dev/files \
+  --profile <profile-name>
+```
+
+**5. Manually grant app service principal permission to experiment:**
+
+The app's service principal needs explicit permission to access the MLflow experiment:
+
+```bash
+# Get service principal details
+SP_ID=$(databricks apps get <app-name> --profile <profile-name> --output json | jq -r '.service_principal_id')
+SP_NAME=$(databricks apps get <app-name> --profile <profile-name> --output json | jq -r '.service_principal_name')
+
+# Grant CAN_MANAGE permission on experiment
+# See workspace UI: Experiments → Permissions → Add service principal
+```
+
+**Note:** This manual step is only required when the experiment resource isn't available in bundles. Once experiment resources are supported, permissions are granted automatically.
+
+#### Importing Existing Apps
+
+If you created an app through the UI or another method and want to manage it via bundles, see [IMPORTING_EXISTING_APPS.md](./IMPORTING_EXISTING_APPS.md) for detailed instructions on using `databricks bundle deployment bind`.
+
 ---
 
 ## Agent Framework Capabilities

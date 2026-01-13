@@ -164,6 +164,14 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
 ## Deploying to Databricks Apps
 
+**Deployment Approaches:**
+
+This guide covers the UI-based deployment approach. For alternative deployment methods:
+- **Infrastructure as Code (Bundles)**: See [AGENTS.md](./AGENTS.md#deploying-to-databricks-apps) for bundle-based deployment with automatic resource provisioning
+- **Importing Existing Apps**: See [IMPORTING_EXISTING_APPS.md](./IMPORTING_EXISTING_APPS.md) for managing UI-created apps via bundles
+
+**UI-Based Deployment:**
+
 0. **Create a Databricks App**:
    Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/tutorial) installed and configured.
 

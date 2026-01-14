@@ -55,7 +55,7 @@ This ensures commands run in the correct environment with proper dependencies.
 - Scorer registration (check MLflow docs for scorer APIs)
 - Evaluation execution (understand mlflow.genai.evaluate API)
 
-**Before writing any code**
+**Before writing any agent evaluation code**
 - Read `.claude/skills/agent-evaluation/patterns/GOTCHAS.md` for common mistakes that cause failures
 - Read `.claude/skills/agent-evaluation/patterns/CRITICAL-interfaces.md` for exact API signatures and data schemas
 
@@ -312,37 +312,36 @@ Detailed guides loaded as needed:
   - **Covers**: Environment, tracing, dataset, evaluation, scorer issues
   - Organized by phase with error/cause/solution format
 
-### Patterns
+### Patterns (patterns/)
 
-  - **CRITICAL-interfaces.md**
+  - **CRITICAL-interfaces.md** (~472 lines)
 
-  - **When to read**:
-  - **Covers**: 
-  - 
+  - **When to read**: Always read first before writing evaluation code
+  - **Covers**: API signatures, schemas
+  - Learn API patterns, understand scorer interface
 
-- **GOTCHAS.md** 
+- **GOTCHAS.md** (~547 lines)
 
-  - **When to read**:
-  - **Covers**: 
-  - 
+  - **When to read**: Always read first before writing evaluation code
+  - **Covers**: Common mistakes
+  - Exact API signatures and data schemas to avoid mistakes with wrong and correct formats
 
-- **patterns-datasets.md** 
+- **patterns-datasets.md** (~870 lines)
 
-  - **When to read**: 
-  - **Covers**: 
-  - 
+  - **When to read**: When preparing evaluation data
+  - **Covers**: Dataset building, dataset schemas, trace analysis
+  - Supports dataset construction by providing a number of possible patterns
 
-- **patterns-evaluation.md** 
+- **patterns-evaluation.md** (~582 lines)
 
-  - **When to read**: 
-  - **Covers**: 
-  - 
+  - **When to read**: When executing evaluations
+  - **Covers**: Running evals, comparing, test with evaluation
+  - Working patterns for running evaluations, comparing results, and iterating on quality.
 
-- **patterns-scorers.md** 
-  - **When to read**: 
-  - **Covers**: 
-  - 
-
+- **patterns-scorers.md** (~804 lines)
+  - **When to read**: When built-in scorers aren't enough
+  - **Covers**: Custom scorer creation
+  - Working code patterns for creating and using scorers.
 
 ### Assets (assets/)
 

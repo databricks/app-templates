@@ -11,6 +11,18 @@ Workflow to extract relevant information regarding the agent
 
 **PRIORITY:** Before writing evaluation code, complete strategy alignment. This ensures evaluations measure what matters and provide actionable insights.
 
+### Step 0: Check if `agent_server/evaluation/docs/agent_strategy.md` file exists
+
+- If it doesn't exist ask the user if he would like to create one.
+**Options:**
+1. **Yes**: Proceed with Steps 1 to Step 4, complete Strategy Alignment Checklist, and save information
+2. **No**: Skip everything, but warn the user this is not recommended.
+
+- If it exits, ask user whether he would like to modify, or use existing one
+**Options:**
+2. **Modify** - Proceed by asking which Step and preceed accordingly
+3. **Use Current** - Skip everything and use current `agent_server/evaluation/docs/agent_strategy.md` file
+
 ### Step 1: Understand the Agent
 
 Before evaluating, gather context about what you're evaluating:
@@ -41,6 +53,7 @@ Before evaluating, gather context about what you're evaluating:
 - **Equivalence**: Response equivalent to expectations
 - **Sufficiency**: Retrieved documents contain all necessary information (for RAG agents)
 - **Guidelines and Expectations Adherence**: Following specific business rules
+- **Other**: Custom dimensionality to consider
 
 **Questions to ask the user:**
 1. What are the **must-have** quality criteria? (safety, accuracy, relevance)

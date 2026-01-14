@@ -17,12 +17,13 @@ import { formatISO } from 'date-fns';
  */
 export const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL || ''
-).replace(/\/$/, '');
+).replace(/\/+$/, '');
 
 /**
  * Constructs an API URL with the configured base URL.
+ * @param path - API path starting with '/' (e.g., '/api/session')
  */
-export function apiUrl(path: string): string {
+export function apiUrl(path: `/${string}`): string {
   return `${API_BASE_URL}${path}`;
 }
 

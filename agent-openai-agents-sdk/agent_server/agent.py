@@ -18,10 +18,10 @@ from agent_server.utils import (
     process_agent_stream_events,
 )
 
-# NOTE: this will work for all databricks models OTHER than GPT-OSS, which uses a slightly different API
 set_default_openai_client(AsyncDatabricksOpenAI())
 set_default_openai_api("chat_completions")
-set_trace_processors([])  # only use mlflow for trace processing
+# disables the openai-agents-sdk default tracer so we can use MLflow for trace processing
+set_trace_processors([])
 mlflow.openai.autolog()
 
 
@@ -36,7 +36,7 @@ def create_coding_agent(mcp_server: McpServer) -> Agent:
     return Agent(
         name="code execution agent",
         instructions="You are a code execution agent. You can execute code and return the results.",
-        model="databricks-claude-3-7-sonnet",
+        model="databricks-gpt-5-2",
         mcp_servers=[mcp_server],
     )
 

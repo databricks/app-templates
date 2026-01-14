@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 /**
  * E2E tests for VITE_API_BASE_URL configuration.
@@ -19,6 +19,25 @@ import { expect, test } from '@playwright/test';
 // This should match what was used during the client build
 const API_BASE_URL = process.env.VITE_API_BASE_URL || '';
 const isAbsoluteUrlMode = API_BASE_URL !== '';
+
+/**
+ * Helper to navigate to a page and wait for initial API calls to complete.
+ * This replaces arbitrary waitForTimeout with proper request/response waiting.
+ */
+async function gotoAndWaitForApi(
+  page: Page,
+  path: string,
+  expectedEndpoints: string[] = ['/api/session', '/api/config'],
+): Promise<void> {
+  const responsePromises = expectedEndpoints.map((endpoint) =>
+    page.waitForResponse(
+      (response) => response.url().includes(endpoint),
+      { timeout: 10000 },
+    ),
+  );
+
+  await Promise.all([page.goto(path), ...responsePromises]);
+}
 
 test.describe('API Base URL Configuration', () => {
   test.beforeEach(async () => {
@@ -41,8 +60,7 @@ test.describe('API Base URL Configuration', () => {
         }
       });
 
-      await page.goto('/');
-      await page.waitForTimeout(1000);
+      await gotoAndWaitForApi(page, '/');
 
       const sessionCall = apiCalls.find((url) => url.includes('/api/session'));
       expect(sessionCall).toBeDefined();
@@ -66,8 +84,7 @@ test.describe('API Base URL Configuration', () => {
         }
       });
 
-      await page.goto('/');
-      await page.waitForTimeout(1000);
+      await gotoAndWaitForApi(page, '/');
 
       const configCall = apiCalls.find((url) => url.includes('/api/config'));
       expect(configCall).toBeDefined();
@@ -89,8 +106,7 @@ test.describe('API Base URL Configuration', () => {
         }
       });
 
-      await page.goto('/');
-      await page.waitForTimeout(1000);
+      await gotoAndWaitForApi(page, '/');
 
       expect(apiCalls.length).toBeGreaterThan(0);
 
@@ -119,8 +135,7 @@ test.describe('API Base URL Configuration', () => {
         }
       });
 
-      await page.goto('/');
-      await page.waitForTimeout(1000);
+      await gotoAndWaitForApi(page, '/');
 
       const expectedEndpoints = ['/api/session', '/api/config'];
 
@@ -142,9 +157,12 @@ test.describe('API Base URL Configuration', () => {
         }
       });
 
-      // Navigate to a chat page
-      await page.goto('/chat/test-chat-id');
-      await page.waitForTimeout(1000);
+      // Navigate to a chat page - wait for chat and messages endpoints
+      await gotoAndWaitForApi(page, '/chat/test-chat-id', [
+        '/api/session',
+        '/api/config',
+        '/api/chat/test-chat-id',
+      ]);
 
       const chatCalls = apiCalls.filter(
         (url) => url.includes('/api/chat/') || url.includes('/api/messages/'),
@@ -179,8 +197,7 @@ test.describe('API Base URL Configuration', () => {
         }
       });
 
-      await page.goto('/');
-      await page.waitForTimeout(1000);
+      await gotoAndWaitForApi(page, '/');
 
       // When using absolute URLs, API calls should go to API_BASE_URL
       // which may be different from the page's baseURL
@@ -208,8 +225,7 @@ test.describe('API Base URL Configuration', () => {
         }
       });
 
-      await page.goto('/');
-      await page.waitForTimeout(1000);
+      await gotoAndWaitForApi(page, '/');
 
       // When using relative URLs, API calls should go to the page's origin
       for (const call of apiCalls) {

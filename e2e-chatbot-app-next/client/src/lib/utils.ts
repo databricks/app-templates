@@ -13,8 +13,11 @@ import { formatISO } from 'date-fns';
 /**
  * Base URL for API calls. Set VITE_API_BASE_URL when running behind a proxy
  * that doesn't forward API calls (e.g., MLflow agent server).
+ * Trailing slashes are stripped to prevent double-slash URLs.
  */
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+export const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL || ''
+).replace(/\/$/, '');
 
 /**
  * Constructs an API URL with the configured base URL.

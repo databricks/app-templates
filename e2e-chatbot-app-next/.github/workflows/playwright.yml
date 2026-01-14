@@ -48,12 +48,13 @@ jobs:
           node-version: lts/*
           cache: npm
 
-      - uses: actions/cache@v3
+      - name: Cache npm
+        uses: actions/cache@v3
         with:
-          path: ${{ steps.npm-cache.outputs.STORE_PATH }}
-          key: ${{ runner.os }}-npm-store-${{ hashFiles('**/package-lock.json') }}
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
-            ${{ runner.os }}-npm-store-
+            ${{ runner.os }}-npm-
 
       - name: Install dependencies
         run: npm ci
@@ -104,12 +105,13 @@ jobs:
           node-version: lts/*
           cache: npm
 
-      - uses: actions/cache@v3
+      - name: Cache npm
+        uses: actions/cache@v3
         with:
-          path: ${{ steps.npm-cache.outputs.STORE_PATH }}
-          key: ${{ runner.os }}-npm-store-${{ hashFiles('**/package-lock.json') }}
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
-            ${{ runner.os }}-npm-store-
+            ${{ runner.os }}-npm-
 
       - name: Install dependencies
         run: npm ci
@@ -162,12 +164,13 @@ jobs:
           node-version: lts/*
           cache: npm
 
-      - uses: actions/cache@v3
+      - name: Cache npm
+        uses: actions/cache@v3
         with:
-          path: ${{ steps.npm-cache.outputs.STORE_PATH }}
-          key: ${{ runner.os }}-npm-store-${{ hashFiles('**/package-lock.json') }}
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
-            ${{ runner.os }}-npm-store-
+            ${{ runner.os }}-npm-
 
       - name: Install dependencies
         run: npm ci

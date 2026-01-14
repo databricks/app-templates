@@ -13,21 +13,42 @@ If no profiles exist, guide the user through running `./scripts/quickstart.sh` t
 
 ---
 
+## Getting Started with Your Agent
+
+This guide walks you through the initial setup of your agent project: installing prerequisites, discovering available tools in your workspace, and testing the baseline template locally.
+
+**After completing these steps**, see the README.md for information on modifying your agent and deploying to Databricks.
+
+---
+
 ## Quick Setup
 
 **Prerequisites:** uv, nvm (Node 20), Databricks CLI
 
+**What you need:**
+- uv (Python package manager)
+- nvm (Node.js version manager) with Node 20
+- Databricks CLI
+
+**Quickest path to running:**
+
 ```bash
-# 1. Run quickstart for setup (auth, MLflow experiment)
+# 1. Initialize git (recommended for version control)
+git init
+
+# 2. Run quickstart for setup (auth, MLflow experiment)
 ./scripts/quickstart.sh
 
 # Or run non-interactively with a profile
 ./scripts/quickstart.sh --profile DEFAULT
 
-# 2. Discover available tools (IMPORTANT - do this before coding!)
+# Or with a host URL for initial setup
+./scripts/quickstart.sh --host https://your-workspace.cloud.databricks.com
+
+# 3. Discover available tools (IMPORTANT - do this before coding!)
 uv run discover-tools
 
-# 3. Start the agent server
+# 4. Start the agent server
 uv run start-app
 ```
 
@@ -35,6 +56,11 @@ uv run start-app
 - Databricks authentication (OAuth)
 - MLflow experiment creation
 - Environment variable configuration (`.env.local`)
+
+**Quickstart options:**
+- `--profile NAME`: Use specified Databricks profile (non-interactive)
+- `--host URL`: Databricks workspace URL (for initial setup)
+- `-h, --help`: Show help message
 
 ---
 
@@ -45,14 +71,26 @@ uv run start-app
 This step helps you understand what resources are already available in your workspace, preventing duplicate work and showing you the best practices for connecting to each resource.
 
 ```bash
-# Discover all available resources (recommended first step)
+# Discover all available resources (recommended)
 uv run discover-tools
+
+# Use a specific Databricks CLI profile
+uv run discover-tools --profile my-profile
 
 # Limit to specific catalog/schema
 uv run discover-tools --catalog my_catalog --schema my_schema
 
+# Customize search depth for faster execution
+uv run discover-tools --max-results 50 --max-schemas 10
+
+# Deep search for more comprehensive discovery (slower, but finds more)
+uv run discover-tools --max-results 500 --max-schemas 100
+
 # Output as JSON for programmatic use
 uv run discover-tools --format json --output tools.json
+
+# Save markdown report
+uv run discover-tools --output tools.md
 ```
 
 **What gets discovered:**
@@ -86,6 +124,45 @@ agent = Agent(
 ```
 
 See the [MCP documentation](https://docs.databricks.com/aws/en/generative-ai/mcp/) for more details.
+
+---
+
+## Running the App Locally
+
+**Start the server:**
+
+```bash
+uv run start-app
+```
+
+This starts the agent at http://localhost:8000
+
+**Advanced server options:**
+
+```bash
+uv run start-server --reload   # Hot-reload on code changes during development
+uv run start-server --port 8001
+uv run start-server --workers 4
+```
+
+**Test the API:**
+
+```bash
+# Streaming request
+curl -X POST http://localhost:8000/invocations \
+  -H "Content-Type: application/json" \
+  -d '{ "input": [{ "role": "user", "content": "hi" }], "stream": true }'
+
+# Non-streaming request
+curl -X POST http://localhost:8000/invocations \
+  -H "Content-Type: application/json" \
+  -d '{ "input": [{ "role": "user", "content": "hi" }] }'
+```
+
+**Common issues:**
+- Port already in use: Use `--port` to specify a different port
+- Authentication errors: Verify `.env.local` is correct
+- Module not found: Run `uv sync` to install dependencies
 
 ---
 
@@ -221,3 +298,26 @@ databricks apps get my-agent --output json | jq '{app_status, compute_status}'
 - **External connections** - Integrate services like Slack via HTTP connections
 
 Reference: https://docs.databricks.com/aws/en/generative-ai/agent-framework/
+
+---
+
+## Next Steps
+
+✅ **You've completed the initial setup!**
+
+After running the quickstart script, you have:
+- ✅ Installed prerequisites
+- ✅ Authenticated with Databricks
+- ✅ Created MLflow experiment
+- ✅ Discovered available tools in your workspace
+
+Now you're ready to:
+- Start the agent locally: `uv run start-app`
+- Modify your agent to use the tools you discovered
+- Deploy your agent to Databricks
+
+**See the README.md** for more information on:
+- Modifying the agent and adding tools
+- Evaluating your agent
+- Deploying to Databricks Apps
+- Debugging and monitoring deployed apps

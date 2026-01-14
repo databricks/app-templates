@@ -8,7 +8,10 @@ Requirements:
 3. Printing error logs if either process fails
 
 Usage:
-    start-app [--port PORT] [--host HOST] [--workers N] [--reload]
+    start-app [OPTIONS]
+
+All options are passed through to the backend server (start-server).
+See 'uv run start-server --help' for available options.
 """
 
 import argparse
@@ -145,7 +148,7 @@ class ProcessManager:
         if self.frontend_log:
             self.frontend_log.close()
 
-    def run(self, args=None):
+    def run(self, backend_args=None):
         load_dotenv(dotenv_path=".env.local", override=True)
 
         if not self.clone_frontend_if_needed():
@@ -156,17 +159,10 @@ class ProcessManager:
         self.frontend_log = open("frontend.log", "w", buffering=1)
 
         try:
-            # Build backend command with optional arguments
+            # Build backend command, passing through all arguments
             backend_cmd = ["uv", "run", "start-server"]
-            if args:
-                if args.port:
-                    backend_cmd.extend(["--port", str(args.port)])
-                if args.host:
-                    backend_cmd.extend(["--host", args.host])
-                if args.workers:
-                    backend_cmd.extend(["--workers", str(args.workers)])
-                if args.reload:
-                    backend_cmd.append("--reload")
+            if backend_args:
+                backend_cmd.extend(backend_args)
 
             # Start backend
             self.backend_process = self.start_process(
@@ -227,14 +223,15 @@ class ProcessManager:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Start agent frontend and backend")
-    parser.add_argument("--port", type=int, help="Backend server port (default: 8000)")
-    parser.add_argument("--host", help="Backend server host (default: 0.0.0.0)")
-    parser.add_argument("--workers", type=int, help="Number of worker processes")
-    parser.add_argument("--reload", action="store_true", help="Enable auto-reload for development")
-    args = parser.parse_args()
+    parser = argparse.ArgumentParser(
+        description="Start agent frontend and backend",
+        usage="%(prog)s [OPTIONS]\n\nAll options are passed through to start-server. "
+        "Use 'uv run start-server --help' for available options."
+    )
+    # Parse known args (none currently) and pass remaining to backend
+    _, backend_args = parser.parse_known_args()
 
-    sys.exit(ProcessManager().run(args))
+    sys.exit(ProcessManager().run(backend_args))
 
 
 if __name__ == "__main__":

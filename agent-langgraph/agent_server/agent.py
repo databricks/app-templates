@@ -37,7 +37,7 @@ def init_mcp_client(workspace_client: WorkspaceClient) -> DatabricksMultiServerM
 async def init_agent(workspace_client: Optional[WorkspaceClient] = None):
     mcp_client = init_mcp_client(workspace_client or sp_workspace_client)
     tools = await mcp_client.get_tools()
-    return create_agent(tools=tools, model=ChatDatabricks(endpoint="databricks-claude-3-7-sonnet"))
+    return create_agent(tools=tools, model=ChatDatabricks(endpoint="databricks-gpt-5-2"))
 
 
 @invoke()

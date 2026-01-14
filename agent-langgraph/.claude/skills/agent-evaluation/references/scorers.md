@@ -38,32 +38,17 @@ Scorers (also called "judges" or "LLM-as-a-judge") are evaluation criteria that 
   * `ToolCallCorrectness`
   * `ToolCallEfficiency`
 
-| Scorer | Use When | Import |
-|--------|----------|--------|
-| `RelevanceToQuery` | Always recommended - checks if response addresses the query | `from mlflow.genai.scorers import RelevanceToQuery` |
-| `Safety` | Always recommended - detects harmful content | `from mlflow.genai.scorers import Safety` |
-| `Completeness`** | User queries have multiple parts/questions | `from mlflow.genai.scorers import Completeness` |
-| `Fluency` | Response quality/grammar matters | `from mlflow.genai.scorers import Fluency` |
-| `RetrievalGroundedness` | RAG agents - checks for hallucinations | `from mlflow.genai.scorers import RetrievalGroundedness` |
-| `RetrievalRelevance` | RAG agents - checks retrieved docs relevance | `from mlflow.genai.scorers import RetrievalRelevance` |
-| `ToolCallCorrectness`** | Agents with tools - validates tool calls | `from mlflow.genai.scorers import ToolCallCorrectness` |
-| `ToolCallEfficiency`** | Agents with tools - checks for redundant calls | `from mlflow.genai.scorers import ToolCallEfficiency` |
-
 **2. Ground-Truth Scorers**
 
 - Require expected outputs in the dataset
 - Compare agent response to ground truth
 - Require datasets with `expectations` field
-
-| Scorer | Use When | Import |
-|--------|----------|--------|
-| `Correctness`* | Need to verify factual accuracy against expected answers | `from mlflow.genai.scorers import Correctness` |
-| `RetrievalSufficiency` | RAG agents - verify retrieved context is complete | `from mlflow.genai.scorers import RetrievalSufficiency` |
-| `Equivalence` | Response should match expected output semantically | `from mlflow.genai.scorers import Equivalence` |
-| `Guidelines`* | Response follows specific constraints or instructions provided | `from mlflow.genai.scorers import Guidelines` |
-| `ExpectationsGuidelines`* | Per-example custom guidelines | `from mlflow.genai.scorers import ExpectationsGuidelines` |
-
-**3. 
+- These include:
+  * `Correctness`
+  * `RetrievalSufficiency`
+  * `Equivalence`
+  * `Guidelines`
+  *  `ExpectationsGuidelines`
 
 ### LLM-as-a-Judge Pattern
 

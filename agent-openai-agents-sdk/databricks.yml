@@ -1,15 +1,15 @@
 bundle:
-  name: {{.project_name}}
+  name: agent_openai_agents_sdk
 
 resources:
   # MLflow experiment for agent tracing - automatically created by bundle
   experiments:
-    {{.project_name}}_experiment:
-      name: {{if .mlflow_experiment_name}}{{.mlflow_experiment_name}}{{else}}/Users/${workspace.current_user.userName}/${bundle.name}-${bundle.target}{{end}}
+    agent_openai_agents_sdk_experiment:
+      name: /Users/${workspace.current_user.userName}/${bundle.name}-${bundle.target}
 
   apps:
-    {{.project_name}}:
-      name: "${bundle.target}-{{.project_name}}"
+    agent_openai_agents_sdk:
+      name: "${bundle.target}-agent-openai-agents-sdk"
       description: "OpenAI Agents SDK agent application"
       source_code_path: ./
 
@@ -17,15 +17,15 @@ resources:
       resources:
         - name: 'experiment'
           experiment:
-            experiment_id: "${resources.experiments.{{.project_name}}_experiment.id}"
+            experiment_id: "${resources.experiments.agent_openai_agents_sdk_experiment.id}"
             permission: 'CAN_MANAGE'
 
 targets:
   dev:
     mode: development
     default: true
-    workspace:
-      host: {{workspace_host}}
+    # workspace:
+    #   host: https://...
 
   prod:
     mode: production
@@ -33,5 +33,5 @@ targets:
     #   host: https://...
     resources:
       apps:
-        {{.project_name}}:
-          name: {{.project_name}}
+        agent_openai_agents_sdk:
+          name: agent-openai-agents-sdk

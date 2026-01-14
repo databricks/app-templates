@@ -1,37 +1,6 @@
 #!/bin/bash
 set -e
 
-# Parse command line arguments
-PROFILE_ARG=""
-HOST_ARG=""
-
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --profile)
-            PROFILE_ARG="$2"
-            shift 2
-            ;;
-        --host)
-            HOST_ARG="$2"
-            shift 2
-            ;;
-        -h|--help)
-            echo "Usage: $0 [OPTIONS]"
-            echo ""
-            echo "Options:"
-            echo "  --profile NAME    Use specified Databricks profile (non-interactive)"
-            echo "  --host URL        Databricks workspace URL (for initial setup)"
-            echo "  -h, --help        Show this help message"
-            exit 0
-            ;;
-        *)
-            echo "Error: Unknown option $1"
-            echo "Use --help for usage information"
-            exit 1
-            ;;
-    esac
-done
-
 # Helper function to check if a command exists
 command_exists() {
     command -v "$1" >/dev/null 2>&1
@@ -152,81 +121,71 @@ echo
 
 echo "Setting up Databricks authentication..."
 
-# If --profile flag was provided, use that directly
-if [ -n "$PROFILE_ARG" ]; then
-    PROFILE_NAME="$PROFILE_ARG"
-    echo "Using specified profile: $PROFILE_NAME"
-else
-    # Check if there are existing profiles
-    set +e
-    EXISTING_PROFILES=$(databricks auth profiles 2>/dev/null)
-    PROFILES_EXIT_CODE=$?
-    set -e
+# Check if there are existing profiles
+set +e
+EXISTING_PROFILES=$(databricks auth profiles 2>/dev/null)
+PROFILES_EXIT_CODE=$?
+set -e
 
-    if [ $PROFILES_EXIT_CODE -eq 0 ] && [ -n "$EXISTING_PROFILES" ]; then
-        # Profiles exist - let user select one
-        echo "Found existing Databricks profiles:"
-        echo
+if [ $PROFILES_EXIT_CODE -eq 0 ] && [ -n "$EXISTING_PROFILES" ]; then
+    # Profiles exist - let user select one
+    echo "Found existing Databricks profiles:"
+    echo
 
-        # Parse profiles into an array (compatible with older bash)
-        # Skip the first line (header row)
-        PROFILE_ARRAY=()
-        PROFILE_NAMES=()
-        LINE_NUM=0
-        while IFS= read -r line; do
-            if [ -n "$line" ]; then
-                if [ $LINE_NUM -eq 0 ]; then
-                    # Print header without number
-                    echo "$line"
-                else
-                    # Add full line to display array
-                    PROFILE_ARRAY+=("$line")
-                    # Extract just the profile name (first column) for selection
-                    PROFILE_NAME_ONLY=$(echo "$line" | awk '{print $1}')
-                    PROFILE_NAMES+=("$PROFILE_NAME_ONLY")
-                fi
-                LINE_NUM=$((LINE_NUM + 1))
+    # Parse profiles into an array (compatible with older bash)
+    # Skip the first line (header row)
+    PROFILE_ARRAY=()
+    PROFILE_NAMES=()
+    LINE_NUM=0
+    while IFS= read -r line; do
+        if [ -n "$line" ]; then
+            if [ $LINE_NUM -eq 0 ]; then
+                # Print header without number
+                echo "$line"
+            else
+                # Add full line to display array
+                PROFILE_ARRAY+=("$line")
+                # Extract just the profile name (first column) for selection
+                PROFILE_NAME_ONLY=$(echo "$line" | awk '{print $1}')
+                PROFILE_NAMES+=("$PROFILE_NAME_ONLY")
             fi
-        done <<< "$EXISTING_PROFILES"
-        echo
-
-        # Display numbered list
-        for i in "${!PROFILE_ARRAY[@]}"; do
-            echo "$((i+1))) ${PROFILE_ARRAY[$i]}"
-        done
-        echo
-
-        echo "Enter the number of the profile you want to use:"
-        read -r PROFILE_CHOICE
-
-        if [ -z "$PROFILE_CHOICE" ]; then
-            echo "Error: Profile selection is required"
-            exit 1
+            LINE_NUM=$((LINE_NUM + 1))
         fi
+    done <<< "$EXISTING_PROFILES"
+    echo
 
-        # Validate the choice is a number
-        if ! [[ "$PROFILE_CHOICE" =~ ^[0-9]+$ ]]; then
-            echo "Error: Please enter a valid number"
-            exit 1
-        fi
+    # Display numbered list
+    for i in "${!PROFILE_ARRAY[@]}"; do
+        echo "$((i+1))) ${PROFILE_ARRAY[$i]}"
+    done
+    echo
 
-        # Convert to array index (subtract 1)
-        PROFILE_INDEX=$((PROFILE_CHOICE - 1))
+    echo "Enter the number of the profile you want to use:"
+    read -r PROFILE_CHOICE
 
-        # Check if the index is valid
-        if [ $PROFILE_INDEX -lt 0 ] || [ $PROFILE_INDEX -ge ${#PROFILE_NAMES[@]} ]; then
-            echo "Error: Invalid selection. Please choose a number between 1 and ${#PROFILE_NAMES[@]}"
-            exit 1
-        fi
-
-        # Get the selected profile name (just the name, not the full line)
-        PROFILE_NAME="${PROFILE_NAMES[$PROFILE_INDEX]}"
-        echo "Selected profile: $PROFILE_NAME"
+    if [ -z "$PROFILE_CHOICE" ]; then
+        echo "Error: Profile selection is required"
+        exit 1
     fi
-fi
 
-# Validate the profile if it was specified
-if [ -n "$PROFILE_NAME" ]; then
+    # Validate the choice is a number
+    if ! [[ "$PROFILE_CHOICE" =~ ^[0-9]+$ ]]; then
+        echo "Error: Please enter a valid number"
+        exit 1
+    fi
+
+    # Convert to array index (subtract 1)
+    PROFILE_INDEX=$((PROFILE_CHOICE - 1))
+
+    # Check if the index is valid
+    if [ $PROFILE_INDEX -lt 0 ] || [ $PROFILE_INDEX -ge ${#PROFILE_NAMES[@]} ]; then
+        echo "Error: Invalid selection. Please choose a number between 1 and ${#PROFILE_NAMES[@]}"
+        exit 1
+    fi
+
+    # Get the selected profile name (just the name, not the full line)
+    PROFILE_NAME="${PROFILE_NAMES[$PROFILE_INDEX]}"
+    echo "Selected profile: $PROFILE_NAME"
 
     # Test if the profile works
     set +e
@@ -275,19 +234,12 @@ if [ -n "$PROFILE_NAME" ]; then
 else
     # No profiles exist - create default one
     echo "No existing profiles found. Setting up Databricks authentication..."
+    echo "Please enter your Databricks host URL (e.g., https://your-workspace.cloud.databricks.com):"
+    read -r DATABRICKS_HOST
 
-    # Use --host flag if provided, otherwise prompt
-    if [ -n "$HOST_ARG" ]; then
-        DATABRICKS_HOST="$HOST_ARG"
-        echo "Using specified host: $DATABRICKS_HOST"
-    else
-        echo "Please enter your Databricks host URL (e.g., https://your-workspace.cloud.databricks.com):"
-        read -r DATABRICKS_HOST
-
-        if [ -z "$DATABRICKS_HOST" ]; then
-            echo "Error: Databricks host is required"
-            exit 1
-        fi
+    if [ -z "$DATABRICKS_HOST" ]; then
+        echo "Error: Databricks host is required"
+        exit 1
     fi
 
     echo "Authenticating with Databricks..."

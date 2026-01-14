@@ -139,12 +139,12 @@ Multi-Turn Scorers:
 
   | Scorer | Use When | Import |
   |--------|----------|--------|
-  | `CoversationCompleteness` | Need to verify factual accuracy against expected answers | `from mlflow.genai.scorers import CoversationCompleteness` |
-  | `ConversationalRoleAdherence` | RAG agents - verify retrieved context is complete | `from mlflow.genai.scorers import ConversationalRoleAdherence` |
-  | `ConversationalSafety` | Response should match expected output semantically | `from mlflow.genai.scorers import ConversationalSafety` |
-  | `ConversationalToolCallEfficiency` | Response follows specific constraints or instructions provided | `from mlflow.genai.scorers import ConversationalToolCallEfficiency` |
-  | `KnowledgeRetention`| Per-example custom guidelines | `from mlflow.genai.scorers import ` KnowledgeRetention|
-  | `UserFrustration` | Is the user showing frustration | `from mlflow.genai.scorers import UserFrustration` |
+  | `CoversationCompleteness` | Agent address all user questions throughout the conversation | `from mlflow.genai.scorers import CoversationCompleteness` |
+  | `ConversationalRoleAdherence` | Assistant maintains its assigned role throughout the conversation | `from mlflow.genai.scorers import ConversationalRoleAdherence` |
+  | `ConversationalSafety` | Assistant's responses are sage and free of harmful content | `from mlflow.genai.scorers import ConversationalSafety` |
+  | `ConversationalToolCallEfficiency` | Tool usage across conversation was efficient and appropriate | `from mlflow.genai.scorers import ConversationalToolCallEfficiency` |
+  | `KnowledgeRetention`| Assistant correctly retains information from earlier user inputs | `from mlflow.genai.scorers import ` KnowledgeRetention|
+  | `UserFrustration` | Is the user showing frustration and was his frustration resolved? | `from mlflow.genai.scorers import UserFrustration` |
 
 **Common categories include:**
 

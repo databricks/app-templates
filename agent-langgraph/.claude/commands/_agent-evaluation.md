@@ -93,6 +93,7 @@ Guide the user through creating a synthetic dataset:
         * Spark DataFrame
         * List of dictionaries
         * List of Trace objects
+
 5. **Dataset Examples**: 
 ```python
 eval_dataset = [
@@ -248,14 +249,14 @@ mlflow.genai.evaluate(
 )
 ```
 
-## Step 6: Create an Agent Evaluation Configuration
+## Step 5: Create an Agent Evaluation Configuration
 
 Create an agent configuration file under `/agent_server/config/agent_eval_config.yaml`
 
 The configuration will contain the models used for each scorer or custom-judge created.
 
-Example configuration file:
-```agent_eval_config.yaml
+Example configuration file for agent_eval_config.yaml:
+```yaml
 
 CORRECTNESS_EVAL_ENDPOINT: "databricks:/databricks-gpt-oss-20b"
 RETRIEVAL_SUFFICIENCY_ENDPOINT: "databricks:/databricks-gpt-5-mini"
@@ -273,8 +274,7 @@ Best models to leverage as judges as of 12/01/2026:
 * databricks:/databricks-gemini-2-5-pro
 * databricks:/databricks-meta-llama-3-1-405b-instruct
 
-
-## Step 5: Write the Evaluation Code
+## Step 6: Write the Evaluation Code
 
 After gathering all requirements, write the complete evaluation code to `agent_server/evaluate_agent.py`.
 
@@ -310,7 +310,7 @@ eval_dataset = [
 ]
 
 # Load the agent_eval_config.yaml file 
-with open("./artifacts/configs/agent_eval_config.yaml", "r") as f:
+with open("/agent_server/config/agent_eval_config.yaml", "r") as f:
     eval_config = yaml.safe_load(f)
 
 correctness_eval_endpoint = eval_config['CORRECTNESS_EVAL_ENDPOINT']

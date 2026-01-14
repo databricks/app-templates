@@ -1,7 +1,7 @@
 import useSWR from 'swr';
 import type { Chat } from '@chat-template/db';
 import type { ChatMessage } from '@chat-template/core';
-import { convertToUIMessages } from '@/lib/utils';
+import { apiUrl, convertToUIMessages } from '@/lib/utils';
 
 interface ChatData {
   chat: Chat;
@@ -16,7 +16,7 @@ async function fetchChatData(url: string): Promise<ChatData | null> {
   const chatId = url.split('/').pop();
 
   // Fetch chat details
-  const chatResponse = await fetch(`/api/chat/${chatId}`, {
+  const chatResponse = await fetch(apiUrl(`/api/chat/${chatId}`), {
     credentials: 'include',
   });
 
@@ -30,7 +30,7 @@ async function fetchChatData(url: string): Promise<ChatData | null> {
   const chat = await chatResponse.json();
 
   // Fetch messages
-  const messagesResponse = await fetch(`/api/messages/${chatId}`, {
+  const messagesResponse = await fetch(apiUrl(`/api/messages/${chatId}`), {
     credentials: 'include',
   });
 

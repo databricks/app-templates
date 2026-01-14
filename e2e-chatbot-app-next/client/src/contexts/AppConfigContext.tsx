@@ -1,6 +1,6 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import useSWR from 'swr';
-import { fetcher } from '@/lib/utils';
+import { apiUrl, fetcher } from '@/lib/utils';
 
 interface ConfigResponse {
   features: {
@@ -21,7 +21,7 @@ const AppConfigContext = createContext<AppConfigContextType | undefined>(
 
 export function AppConfigProvider({ children }: { children: ReactNode }) {
   const { data, error, isLoading } = useSWR<ConfigResponse>(
-    '/api/config',
+    apiUrl('/api/config'),
     fetcher,
     {
       revalidateOnFocus: false,

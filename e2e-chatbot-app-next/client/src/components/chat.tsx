@@ -3,7 +3,7 @@ import { useChat } from '@ai-sdk/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSWRConfig } from 'swr';
 import { ChatHeader } from '@/components/chat-header';
-import { fetchWithErrorHandlers, generateUUID } from '@/lib/utils';
+import { apiUrl, fetchWithErrorHandlers, generateUUID } from '@/lib/utils';
 import { MultimodalInput } from './multimodal-input';
 import { Messages } from './messages';
 import type {
@@ -118,7 +118,7 @@ export function Chat({
         setStreamCursor((cursor) => cursor + 1);
         setLastPart(part);
       },
-      api: '/api/chat',
+      api: apiUrl('/api/chat'),
       fetch: fetchWithAbort,
       prepareSendMessagesRequest({ messages, id, body }) {
         const lastMessage = messages.at(-1);
@@ -154,7 +154,7 @@ export function Chat({
       },
       prepareReconnectToStreamRequest({ id }) {
         return {
-          api: `/api/chat/${id}/stream`,
+          api: apiUrl(`/api/chat/${id}/stream`),
           credentials: 'include',
           headers: {
             // Pass the cursor to the server so it can resume the stream from the correct point

@@ -27,7 +27,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import type { Chat } from '@chat-template/db';
-import { fetcher } from '@/lib/utils';
+import { apiUrl, fetcher } from '@/lib/utils';
 import { ChatItem } from './sidebar-history-item';
 import useSWRInfinite from 'swr/infinite';
 import { LoaderIcon } from 'lucide-react';
@@ -88,13 +88,15 @@ export function getChatHistoryPaginationKey(
     return null;
   }
 
-  if (pageIndex === 0) return `/api/history?limit=${PAGE_SIZE}`;
+  if (pageIndex === 0) return apiUrl(`/api/history?limit=${PAGE_SIZE}`);
 
   const firstChatFromPage = previousPageData.chats.at(-1);
 
   if (!firstChatFromPage) return null;
 
-  return `/api/history?ending_before=${firstChatFromPage.id}&limit=${PAGE_SIZE}`;
+  return apiUrl(
+    `/api/history?ending_before=${firstChatFromPage.id}&limit=${PAGE_SIZE}`,
+  );
 }
 
 export function SidebarHistory({ user }: { user?: ClientUser | null }) {
@@ -125,7 +127,7 @@ export function SidebarHistory({ user }: { user?: ClientUser | null }) {
     : false;
 
   const handleDelete = async () => {
-    const deletePromise = fetch(`/api/chat/${deleteId}`, {
+    const deletePromise = fetch(apiUrl(`/api/chat/${deleteId}`), {
       method: 'DELETE',
     });
 

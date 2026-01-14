@@ -10,6 +10,19 @@ import type {
 } from '@chat-template/core';
 import { formatISO } from 'date-fns';
 
+/**
+ * Base URL for API calls. Set VITE_API_BASE_URL when running behind a proxy
+ * that doesn't forward API calls (e.g., MLflow agent server).
+ */
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+
+/**
+ * Constructs an API URL with the configured base URL.
+ */
+export function apiUrl(path: string): string {
+  return `${API_BASE_URL}${path}`;
+}
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }

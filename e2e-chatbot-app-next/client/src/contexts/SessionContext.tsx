@@ -6,6 +6,7 @@ import React, {
   useCallback,
 } from 'react';
 import type { ClientSession } from '@chat-template/auth';
+import { apiUrl } from '@/lib/utils';
 
 interface SessionContextType {
   session: ClientSession | null;
@@ -25,7 +26,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch('/api/session', {
+      const response = await fetch(apiUrl('/api/session'), {
         credentials: 'include',
       });
 

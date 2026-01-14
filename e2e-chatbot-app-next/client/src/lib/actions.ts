@@ -1,4 +1,4 @@
-import { fetchWithErrorHandlers } from './utils';
+import { apiUrl, fetchWithErrorHandlers } from './utils';
 import type { VisibilityType } from '@chat-template/core';
 
 /**
@@ -12,7 +12,7 @@ export async function updateChatVisibility({
   visibility: VisibilityType;
 }) {
   const response = await fetchWithErrorHandlers(
-    `/api/chat/${chatId}/visibility`,
+    apiUrl(`/api/chat/${chatId}/visibility`),
     {
       method: 'PATCH',
       headers: {
@@ -35,7 +35,7 @@ export async function deleteTrailingMessages({
   messageId: string;
 }) {
   const response = await fetchWithErrorHandlers(
-    `/api/messages/${messageId}/trailing`,
+    apiUrl(`/api/messages/${messageId}/trailing`),
     {
       method: 'DELETE',
       credentials: 'include',

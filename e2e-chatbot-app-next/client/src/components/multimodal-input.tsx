@@ -31,6 +31,7 @@ import type { VisibilityType } from './visibility-selector';
 import type { Attachment, ChatMessage } from '@chat-template/core';
 import { softNavigateToChatId } from '@/lib/navigation';
 import { useAppConfig } from '@/contexts/AppConfigContext';
+import { apiUrl } from '@/lib/utils';
 
 function PureMultimodalInput({
   chatId,
@@ -151,7 +152,7 @@ function PureMultimodalInput({
     formData.append('file', file);
 
     try {
-      const response = await fetch('/api/files/upload', {
+      const response = await fetch(apiUrl('/api/files/upload'), {
         method: 'POST',
         body: formData,
       });

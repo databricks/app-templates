@@ -1,6 +1,6 @@
 ---
 name: agent-evaluation
-description: Use this when you need to CREATE, IMPROVE or OPTIMIZE an existing LLM agent - including tool selection accuracy, answer quality, reducing costs, or fixing issues where the agent gives wrong/incomplete responses. Evaluates agents systematically using MLflow evaluation with datasets, scorers, and tracing. Covers end-to-end evaluation workflow or individual components (tracing setup, dataset creation, scorer definition, evaluation execution).
+description: Use this when you need to IMPROVE or OPTIMIZE an existing LLM agent's performance - including improving tool selection accuracy, answer quality, reducing costs, or fixing issues where the agent gives wrong/incomplete responses. Evaluates agents systematically using MLflow evaluation with datasets, scorers, and tracing. Covers end-to-end evaluation workflow or individual components (tracing setup, dataset creation, scorer definition, evaluation execution).
 allowed-tools: Read, Write, Bash, Grep, Glob, WebFetch
 ---
 
@@ -22,13 +22,13 @@ Comprehensive guide for evaluating GenAI agents with MLflow. Use this skill for 
 
 **Evaluation workflow in 4 steps**:
 
-1. **Understand**: Understand purpose and strategy of the agent
+1. **Understand**: Run agent, inspect traces, understand purpose
 2. **Define**: Select/create scorers for quality criteria
 3. **Dataset**: ALWAYS discover existing datasets first, only create new if needed
 4. **Evaluate**: Run agent on dataset, apply scorers, analyze results
 5. **Record**: Save evaluation procedure for reference, tracking, and history
 
-## Command Conventions 
+## Command Conventions
 
 **Always use `uv run` for MLflow and Python commands:**
 
@@ -39,6 +39,31 @@ uv run python -c "..."           # Python one-liners
 ```
 
 This ensures commands run in the correct environment with proper dependencies.
+
+**CRITICAL: Separate stderr from stdout when capturing CLI output:**
+
+When saving CLI command output to files for parsing (JSON, CSV, etc.), always redirect stderr separately to avoid mixing logs with structured data:
+
+```bash
+# WRONG - mixes progress bars and logs with JSON output
+uv run mlflow traces evaluate ... --output json > results.json
+
+# CORRECT - separates stderr from JSON output
+uv run mlflow traces evaluate ... --output json 2>/dev/null > results.json
+
+# ALTERNATIVE - save both separately for debugging
+uv run mlflow traces evaluate ... --output json > results.json 2> evaluation.log
+```
+
+**When to separate streams:**
+- Any command with `--output json` flag
+- Commands that output structured data (CSV, JSON, XML)
+- When piping output to parsing tools (`jq`, `grep`, etc.)
+
+**When NOT to separate:**
+- Interactive commands where you want to see progress
+- Debugging scenarios where logs provide context
+- Commands that only output unstructured text
 
 ## Documentation Access Protocol
 
@@ -70,7 +95,7 @@ This ensures commands run in the correct environment with proper dependencies.
 | `patterns-scorers.md` | Custom scorer creation | When built-in scorers aren't enough |
 | `patterns-datasets.md` | Dataset building | When preparing evaluation data |
 
-## Pre-Flight Validation 
+## Pre-Flight Validation
 
 Validate environment before starting:
 
@@ -81,6 +106,48 @@ uv run python -c "import mlflow; print(f'MLflow {mlflow.__version__} installed')
 
 If MLflow is missing or version is <3.8.0, see Setup Overview below.
 
+## Discovering Agent Structure
+
+**Each project has unique structure.** Use dynamic exploration instead of assumptions:
+
+### Find Agent Entry Points
+```bash
+# Search for main agent functions
+grep -r "def.*agent" . --include="*.py"
+grep -r "def (run|stream|handle|process)" . --include="*.py"
+
+# Check common locations
+ls main.py app.py src/*/agent.py 2>/dev/null
+
+# Look for API routes
+grep -r "@app\.(get|post)" . --include="*.py"  # FastAPI/Flask
+grep -r "def.*route" . --include="*.py"
+```
+
+### Find Tracing Integration
+```bash
+# Find autolog calls
+grep -r "mlflow.*autolog" . --include="*.py"
+
+# Find trace decorators
+grep -r "@mlflow.trace" . --include="*.py"
+
+# Check imports
+grep -r "import mlflow" . --include="*.py"
+```
+
+### Understand Project Structure
+```bash
+# Check entry points in package config
+cat pyproject.toml setup.py 2>/dev/null | grep -A 5 "scripts\|entry_points"
+
+# Read project documentation
+cat README.md docs/*.md 2>/dev/null | head -100
+
+# Explore main directories
+ls -la src/ app/ agent/ 2>/dev/null
+```
+
 ## Setup Overview
 
 Before evaluation, complete these three setup steps:
@@ -88,10 +155,10 @@ Before evaluation, complete these three setup steps:
 1. **Install MLflow** (version >=3.8.0)
 2. **Configure environment** (tracking URI and experiment)
 3. **Integrate tracing** (autolog and @mlflow.trace decorators)
+   - ⚠️ **MANDATORY**: Read `references/tracing-integration.md` documentation BEFORE implementing
+   - ✓ **VERIFY**: Run validation script AFTER implementing
 
 ⚠️ **Tracing must work before evaluation.** If tracing fails, stop and troubleshoot.
-  - ⚠️ **MANDATORY**: Read `references/tracing-integration.md` documentation BEFORE implementing
-  - ✓ **VERIFY**: Run validation script AFTER implementing
 
 **Checkpoint - verify before proceeding:**
 
@@ -113,10 +180,18 @@ Before evaluation, complete these three setup steps:
 
 ### Step 2: Define Quality Scorers
 
-1. Check existing scorers: `uv run mlflow scorers list --experiment-id $MLFLOW_EXPERIMENT_ID`
-2. Discover built-in scorers: `uv run mlflow scorers list -b`
-3. Identify gaps and register additional scorers if needed
-4. Test scorers on sample trace before full evaluation
+1. **Discover built-in scorers using documentation protocol:**
+   - Query `https://mlflow.org/docs/latest/llms.txt` for "What built-in LLM judges or scorers are available?"
+   - Read scorer documentation to understand their purpose and requirements
+   - Note: Do NOT use `mlflow scorers list -b` - use documentation instead for accurate information
+
+2. **Check registered scorers in your experiment:**
+   ```bash
+   uv run mlflow scorers list -x $MLFLOW_EXPERIMENT_ID
+   ```
+
+3. Identify quality dimensions for your agent and select appropriate scorers
+4. Register scorers and test on sample trace before full evaluation
 
 **For scorer selection and registration:** See `references/scorers.md`
 **For CLI constraints (yes/no format, template variables):** See `references/scorers-constraints.md`
@@ -155,7 +230,8 @@ Proceeding with scorers that don't require ground truth..."
 1. **Run dataset discovery** (mandatory):
 
    ```bash
-   uv run python scripts/list_datasets.py
+   uv run python scripts/list_datasets.py  # Lists all datasets as table
+   uv run python scripts/list_datasets.py --format json  # For machine-readable output
    ```
 
 2. **Present findings to user**:
@@ -171,7 +247,8 @@ Proceeding with scorers that don't require ground truth..."
 
 4. **Create new dataset only if user declined existing ones**:
    ```bash
-   uv run python scripts/create_dataset_template.py
+   uv run python scripts/create_dataset_template.py --test-cases-file test_cases.txt
+   # Optional: --dataset-name my-eval --catalog main --schema ml --table eval_v1
    ```
    Review and execute the generated script.
 
@@ -183,26 +260,27 @@ Proceeding with scorers that don't require ground truth..."
 
 1. Generate traces:
 
-  Write script to `agent_server/evaluate_agent.py` file
-   
+  Write output to `agent_server/evaluate_agent.py`
    ```bash
-   uv run python scripts/run_evaluation_template.py
+   uv run python scripts/run_evaluation_template.py  # Auto-detects module, entry point, dataset
+   # Optional: --module my_agent.agent --entry-point run_agent --dataset-name my-dataset
    ```
    Review and execute the generated script.
 
 2. Apply scorers:
 
+  Write output to `evaluation_results.json` to `agent_server/evaluation/`
    ```bash
+   # IMPORTANT: Redirect stderr to avoid mixing logs with JSON output
    uv run mlflow traces evaluate \
      --trace-ids <comma_separated_trace_ids> \
      --scorers <scorer1>,<scorer2>,... \
-     --output json > evaluation_results.json
+     --output json 2>/dev/null > evaluation_results.json
    ```
 
 3. Analyze results:
 
-  Write the generated report `evaluation_report.md` to `agent_server/evaluation/docs/`
-   
+  Write the generated report's output `evaluation_report.md` to `agent_server/evaluation/`
    ```bash
    uv run python scripts/analyze_results.py evaluation_results.json
    ```
@@ -236,12 +314,13 @@ Executable automation for common operations:
 - **validate_tracing_runtime.py**: Runtime tracing validation (REQUIRES auth, BLOCKING)
   - **Use**: Step 4.4 Stage 2
   - Runs agent to verify traces are captured
+  - Auto-detects module and entry point (override with --module, --entry-point)
 
 **Setup & Configuration:**
 
-- **setup_mlflow.py**: Interactive environment configuration
+- **setup_mlflow.py**: Environment configuration with auto-detection
   - **Use**: Step 2 (Configure Environment)
-  - Handles tracking URI and experiment ID setup
+  - Auto-detects tracking URI and experiment ID with optional overrides
 
 **Dataset Management:**
 
@@ -254,6 +333,7 @@ Executable automation for common operations:
 - **create_dataset_template.py**: Dataset creation code generator
   - **Use**: Step 4 - ONLY if user declines existing datasets
   - Generates customized dataset creation script
+  - **REQUIRED**: --test-cases-file argument with test queries
   - **IMPORTANT**: Generated code uses `mlflow.genai.datasets` APIs and prompts you to inspect agent function signature to match parameters exactly
 
 **Evaluation:**
@@ -262,11 +342,39 @@ Executable automation for common operations:
 
   - **Use**: Step 5.1 (Generate Traces)
   - Generates evaluation script using `mlflow.genai.evaluate()`
+  - Auto-detects agent module, entry point, and dataset
   - **IMPORTANT**: Loads dataset using `mlflow.genai.datasets.search_datasets()` - never manually recreates data
 
 - **analyze_results.py**: Results analysis and insights
   - **Use**: Step 5.3 (After applying scorers)
   - Pattern detection, recommendations, report generation
+
+### Script CLI Arguments Reference
+
+All scripts support non-interactive execution with CLI arguments:
+
+**Setup:**
+
+- `setup_mlflow.py [--tracking-uri URI] [--experiment-name NAME] [--experiment-id ID] [--create]`
+
+**Validation:**
+
+- `validate_environment.py` (no args)
+- `validate_auth.py` (no args)
+- `validate_tracing_static.py` (no args)
+- `validate_tracing_runtime.py [--module NAME] [--entry-point FUNC]`
+
+**Datasets:**
+
+- `list_datasets.py [--format {table,json,names-only}]`
+- `create_dataset_template.py --test-cases-file FILE [--dataset-name NAME] [--catalog C --schema S --table T]`
+
+**Evaluation:**
+
+- `run_evaluation_template.py [--module NAME] [--entry-point FUNC] [--dataset-name NAME]`
+- `analyze_results.py RESULTS_FILE`
+
+**Auto-detection**: Scripts with optional arguments will auto-detect values when not specified. Provide explicit values only when auto-detection fails or you need to override.
 
 ### References (references/)
 

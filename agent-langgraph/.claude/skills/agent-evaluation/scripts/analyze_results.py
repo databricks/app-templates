@@ -3,10 +3,9 @@ Analyze MLflow evaluation results and generate actionable insights.
 
 This script parses the JSON output from `mlflow traces evaluate` and generates:
 - Pass rate analysis per scorer
-- Failure pattern detection
-- Query correlation analysis
+- Failure pattern detection (multi-failure queries)
 - Actionable recommendations
-- Markdown evaluation report
+- Markdown evaluation report (NOT HTML)
 
 Usage:
     python scripts/analyze_results.py evaluation_results.json
@@ -16,10 +15,29 @@ Usage:
 """
 
 import json
+import re
 import sys
 from collections import defaultdict
 from datetime import datetime
 from typing import Any
+
+
+def strip_ansi_codes(text: str) -> str:
+    """Remove ANSI escape sequences from text.
+
+    This handles color codes, cursor movement, and other terminal control sequences
+    that may appear in mlflow traces evaluate output.
+
+    Args:
+        text: Text that may contain ANSI escape sequences
+
+    Returns:
+        Text with all ANSI escape sequences removed
+    """
+    # Standard ANSI escape sequence pattern
+    # Matches: ESC [ <parameters> <command>
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    return ansi_escape.sub('', text)
 
 
 def load_evaluation_results(json_file: str) -> list[dict[str, Any]]:
@@ -32,6 +50,9 @@ def load_evaluation_results(json_file: str) -> list[dict[str, Any]]:
     try:
         with open(json_file) as f:
             content = f.read()
+
+        # Strip ANSI codes before processing
+        content = strip_ansi_codes(content)
 
         # Find the start of JSON array (skip console output)
         json_start = content.find("[")
@@ -86,7 +107,8 @@ def extract_scorer_results(data: list[dict[str, Any]]) -> dict[str, list[dict]]:
 
         for assessment in assessments:
             scorer_name = assessment.get("name", "unknown")
-            result_str = assessment.get("result", "fail").lower()
+            result = assessment.get("result", "fail")
+            result_str = result.lower() if result else "fail"
             rationale = assessment.get("rationale", "")
             error = assessment.get("error")
 
@@ -170,7 +192,7 @@ def detect_failure_patterns(scorer_results: dict[str, list[dict]]) -> list[dict]
                     }
                 )
 
-    # Pattern 1: Multi-failure queries (queries failing 3+ scorers)
+    # Pattern: Multi-failure queries (queries failing 3+ scorers)
     multi_failures = []
     for query, failures in failures_by_query.items():
         if len(failures) >= 3:
@@ -187,36 +209,6 @@ def detect_failure_patterns(scorer_results: dict[str, list[dict]]) -> list[dict]
                 "priority": "CRITICAL",
             }
         )
-
-    # Pattern 2: Keyword-based patterns
-    keyword_patterns = [
-        ("PR", "PR-Related Queries", "Agent struggles with pull request queries"),
-        ("how", "How-to Questions", "Incomplete coverage of instructional queries"),
-        ("documentation", "Documentation Queries", "Issues with documentation retrieval"),
-        ("release", "Release Information", "Challenges with release-specific details"),
-    ]
-
-    for keyword, pattern_name, description in keyword_patterns:
-        matching_failures = []
-        for query, failures in failures_by_query.items():
-            if keyword.lower() in query.lower():
-                matching_failures.append(
-                    {
-                        "query": query,
-                        "scorers": [f["scorer"] for f in failures],
-                        "count": len(failures),
-                    }
-                )
-
-        if matching_failures:
-            patterns.append(
-                {
-                    "name": pattern_name,
-                    "description": description,
-                    "queries": matching_failures,
-                    "priority": "HIGH",
-                }
-            )
 
     return patterns
 
@@ -468,4 +460,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    

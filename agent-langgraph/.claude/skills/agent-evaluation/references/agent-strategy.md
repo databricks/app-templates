@@ -11,7 +11,7 @@ Workflow to extract relevant information regarding the agent
 
 **PRIORITY:** Before writing evaluation code, complete strategy alignment. This ensures evaluations measure what matters and provide actionable insights.
 
-### Step 0: Check if `agent_server/evaluation/docs/agent_strategy.md` file exists
+### Step 0: Check if `agent_server/evaluation/agent_strategy.md` file exists
 
 - If it doesn't exist ask the user if he would like to create one.
 **Options:**
@@ -21,7 +21,7 @@ Workflow to extract relevant information regarding the agent
 - If it exits, ask user whether he would like to modify, or use existing one
 **Options:**
 2. **Modify** - Proceed by asking which Step and preceed accordingly
-3. **Use Current** - Skip everything and use current `agent_server/evaluation/docs/agent_strategy.md` file
+3. **Use Current** - Skip everything and use current `agent_server/evaluation/agent_strategy.md` file
 
 ### Step 1: Understand the Agent
 
@@ -122,4 +122,4 @@ Before implementing evaluation, confirm:
 - [ ] Test case categories identified
 - [ ] Success criteria defined
 
-**Finish by creating a document under `agent_server/evaluation/docs/agent_strategy.md` with all pertinent responses for all Steps. This will be used for reference.** 
+**Finish by creating a document under `agent_server/evaluation/agent_strategy.md` with all pertinent responses for all Steps. This will be used for reference.** 

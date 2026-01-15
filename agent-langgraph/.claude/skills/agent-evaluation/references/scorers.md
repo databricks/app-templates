@@ -48,7 +48,7 @@ Scorers (also called "judges" or "LLM-as-a-judge") are evaluation criteria that 
   * `RetrievalSufficiency`
   * `Equivalence`
   * `Guidelines`
-  *  `ExpectationsGuidelines`
+  * `ExpectationsGuidelines`
 
 ### LLM-as-a-Judge Pattern
 
@@ -65,31 +65,43 @@ MLflow provides several built-in scorers for common evaluation criteria.
 
 ### Discovering Built-in Scorers
 
-List all available built-in scorers:
+**IMPORTANT: Use the documentation protocol to discover built-in scorers.**
 
-```bash
-uv run mlflow scorers list -b
-```
+Do NOT use `mlflow scorers list -b` - it may be incomplete or unavailable in some environments. Instead:
 
-This shows all built-in scorers provided by MLflow with their names and descriptions.
+1. Query MLflow documentation via llms.txt:
+   ```
+   WebFetch https://mlflow.org/docs/latest/llms.txt with prompt:
+   "What built-in LLM judges or scorers are available in MLflow for evaluating GenAI agents?"
+   ```
+
+2. Read scorer documentation pages referenced in llms.txt to understand:
+   - Scorer names and how to import them
+   - What each scorer evaluates
+   - Required inputs (trace structure, expected_response, etc.)
+   - When to use each scorer
+
+3. Verify scorer availability by attempting import:
+   ```python
+   from mlflow.genai.scorers import Correctness, RelevanceToQuery
+   ```
 
 ### Checking Registered Scorers
 
 List scorers registered in your experiment:
 
 ```bash
-uv run mlflow scorers list --experiment-id $MLFLOW_EXPERIMENT_ID
+uv run mlflow scorers list -x $MLFLOW_EXPERIMENT_ID
 ```
 
 Output shows:
-
 - Scorer names
 - Whether they're built-in or custom
 - Registration details
 
 ### Understanding Built-in Scorers
 
-Use `uv run mlflow scorers list -b` to see the complete list of available built-in scorers for your MLflow version.
+After querying the documentation, you'll typically find scorers in these categories:
 
 Use the following tables to fill any gaps:
 
@@ -172,11 +184,14 @@ Before using a built-in scorer:
 
 ### Using Built-in Scorers
 
-Register built-in scorers to your experiment:
+After discovering scorers via documentation, register them to your experiment:
 
 ```python
 import os
-from mlflow.genai.scorers import Correctness, Relevance
+from mlflow.genai.scorers import Correctness, RelevanceToQuery
+
+# Note: Import exact class names from documentation
+# Common mistake: trying to import "Relevance" when it's actually "RelevanceToQuery"
 
 # Register built-in scorer to experiment
 scorer = Correctness()
@@ -185,7 +200,7 @@ scorer.register(experiment_id=os.getenv("MLFLOW_EXPERIMENT_ID"))
 
 **Benefits of registration**:
 
-- Shows up in `mlflow scorers list --experiment-id <id>`
+- Shows up in `mlflow scorers list -x <id>`
 - Keeps all evaluation criteria in one place
 - Makes it clear what scorers are being used for the experiment
 
@@ -219,7 +234,7 @@ Before creating custom scorers, read the complete constraints guide:
 **Step 1: Define Quality Criterion Clearly**
 
 What specific aspect of quality are you judging? 
-Use file `agent_server/evaluation/docs/agent_strategy.md` to support your desing process
+Use file `agent_server/evaluation/docs/agent_strategy.md` to support your design process
 
 **Examples**:
 

@@ -3,6 +3,8 @@
 
 databricks.yml
 
+e2e-chatbot-app-next/
+
 ### Python ###
 # Byte-compiled / optimized / DLL files
 __pycache__/

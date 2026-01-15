@@ -3,56 +3,21 @@ Generate a template script for running agent evaluation.
 
 This script creates a customized Python script that executes the agent
 on an evaluation dataset and collects trace IDs for scoring.
+
+Usage:
+    python run_evaluation_template.py                                        # Auto-detect everything
+    python run_evaluation_template.py --module my_agent.agent                # Specify module
+    python run_evaluation_template.py --entry-point run_agent                # Specify entry point
+    python run_evaluation_template.py --dataset-name my-dataset              # Specify dataset
+    python run_evaluation_template.py --module my_agent --entry-point run_agent --dataset-name my-dataset
 """
 
-import importlib
+import argparse
 import os
 import subprocess
 import sys
-from pathlib import Path
 
-
-def detect_agent_module() -> str | None:
-    """Find the agent module in the project."""
-    # Common patterns
-    candidates = [
-        "src/*/agent/__init__.py",
-        "src/*/agent.py",
-        "*/agent/__init__.py",
-        "*/agent.py",
-    ]
-
-    for pattern in candidates:
-        matches = list(Path(".").glob(pattern))
-        if matches:
-            # Convert path to module name
-            path = matches[0]
-            parts = path.parts
-            if parts[0] == "src":
-                parts = parts[1:]
-            module_parts = [p for p in parts if p != "__init__.py" and not p.endswith(".py")]
-            if path.name != "__init__.py":
-                module_parts.append(path.stem)
-
-            return ".".join(module_parts)
-
-    return None
-
-
-def find_entry_point(module_name: str) -> str | None:
-    """Find the entry point function in the agent module."""
-    try:
-        module = importlib.import_module(module_name)
-
-        # Common entry point names
-        for name in ["run_agent", "stream_agent", "handle_request", "query", "chat"]:
-            if hasattr(module, name):
-                return name
-
-        return None
-    except ImportError as e:
-        print(f"✗ Could not import module '{module_name}': {e}")
-        return None
+from utils import validate_env_vars
 
 
 def list_datasets() -> list[str]:
@@ -222,85 +187,85 @@ print("=" * 60)
 
 def main():
     """Main workflow."""
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(
+        description="Generate evaluation execution template script",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--module", help="Agent module name (e.g., 'my_agent.agent')")
+    parser.add_argument("--entry-point", help="Entry point function name (e.g., 'run_agent')")
+    parser.add_argument("--dataset-name", help="Dataset name to use")
+    parser.add_argument("--output", default="run_agent_evaluation.py", help="Output file name")
+    args = parser.parse_args()
+
     print("=" * 60)
     print("MLflow Evaluation Execution Template Generator")
     print("=" * 60)
     print()
 
     # Check environment
-    tracking_uri = os.getenv("MLFLOW_TRACKING_URI")
-    if not tracking_uri:
-        print("✗ MLFLOW_TRACKING_URI not set")
-        print("  Run scripts/setup_mlflow.py first")
+    errors = validate_env_vars()
+    if errors:
+        print("✗ Environment validation failed:")
+        for error in errors:
+            print(f"  - {error}")
+        print("\nRun scripts/setup_mlflow.py first")
         sys.exit(1)
 
+    tracking_uri = os.getenv("MLFLOW_TRACKING_URI")
     experiment_id = os.getenv("MLFLOW_EXPERIMENT_ID")
-    if not experiment_id:
-        print("✗ MLFLOW_EXPERIMENT_ID not set")
-        print("  Run scripts/setup_mlflow.py first")
-        sys.exit(1)
 
     print(f"Tracking URI: {tracking_uri}")
     print(f"Experiment ID: {experiment_id}")
     print()
 
-    # Detect agent module
-    print("Detecting agent module...")
-    agent_module = detect_agent_module()
-
+    # Get agent module (must be specified manually)
+    print("Agent module configuration...")
+    agent_module = args.module
     if not agent_module:
-        print("  ✗ Could not detect automatically")
-        agent_module = input("Enter agent module name (e.g., 'mlflow_agent.agent'): ").strip()
-        if not agent_module:
-            print("✗ No module specified")
-            sys.exit(1)
+        print("  ✗ Agent module not specified")
+        print("  Use --module to specify your agent module")
+        print("  Example: --module my_agent.agent")
+        print("\n  To find your agent module:")
+        print("    grep -r 'def.*agent' . --include='*.py'")
+        sys.exit(1)
     else:
-        print(f"  ✓ Found: {agent_module}")
+        print(f"  ✓ Using specified: {agent_module}")
 
-    # Find entry point
-    print("\nFinding entry point function...")
-    entry_point = find_entry_point(agent_module)
-
+    # Get entry point (must be specified manually)
+    print("\nEntry point configuration...")
+    entry_point = args.entry_point
     if not entry_point:
-        print("  ✗ Could not detect automatically")
-        entry_point = input("Enter entry point function name (e.g., 'run_agent'): ").strip()
-        if not entry_point:
-            print("✗ No entry point specified")
-            sys.exit(1)
+        print("  ✗ Entry point not specified")
+        print("  Use --entry-point to specify your agent's main function")
+        print("  Example: --entry-point run_agent")
+        print("\n  To find entry points with @mlflow.trace:")
+        print("    grep -r '@mlflow.trace' . --include='*.py'")
+        sys.exit(1)
     else:
-        print(f"  ✓ Found: {entry_point}")
+        print(f"  ✓ Using specified: {entry_point}")
 
     # Get dataset name
     print("\nFetching available datasets...")
-    datasets = list_datasets()
+    dataset_name = args.dataset_name
+    if not dataset_name:
+        datasets = list_datasets()
 
-    if datasets:
-        print(f"\n✓ Found {len(datasets)} dataset(s):")
-        for i, name in enumerate(datasets, 1):
-            print(f"  {i}. {name}")
+        if datasets:
+            print(f"\n✓ Found {len(datasets)} dataset(s):")
+            for i, name in enumerate(datasets, 1):
+                print(f"  {i}. {name}")
 
-        print()
-        while True:
-            try:
-                choice = input(f"Select dataset (1-{len(datasets)}) or enter name: ").strip()
-                if choice.isdigit():
-                    idx = int(choice) - 1
-                    if 0 <= idx < len(datasets):
-                        dataset_name = datasets[idx]
-                        break
-                else:
-                    dataset_name = choice
-                    break
-            except ValueError:
-                print("Invalid selection")
-    else:
-        print("  ✗ No datasets found")
-        dataset_name = input("Enter dataset name: ").strip()
-        if not dataset_name:
-            print("✗ No dataset specified")
+            # Auto-select first dataset
+            dataset_name = datasets[0]
+            print(f"\n✓ Auto-selected: {dataset_name}")
+            print("  (Use --dataset-name to specify a different dataset)")
+        else:
+            print("  ✗ No datasets found")
+            print("  Please create a dataset first or specify with --dataset-name")
             sys.exit(1)
-
-    print(f"\nSelected dataset: {dataset_name}")
+    else:
+        print(f"  ✓ Using specified: {dataset_name}")
 
     # Generate code
     print("\n" + "=" * 60)
@@ -311,8 +276,8 @@ def main():
         tracking_uri, experiment_id, dataset_name, agent_module, entry_point
     )
 
-    # Write to file `agent_server/evaluate_agent.py`
-    output_file = ""
+    # Write to file
+    output_file = args.output
     with open(output_file, "w") as f:
         f.write(code)
 

@@ -6,4 +6,4 @@ env:
   - name: "SPEC_FILE_NAME"
     value: "spec.json"            # TODO: Update the spec file name if different from spec.json
   - name: "SPEC_VOLUME_PATH"
-    valueFrom: "spec_volume_path"
+    valueFrom: "uc-volume"

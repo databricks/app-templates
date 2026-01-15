@@ -178,6 +178,17 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
                   }
                 }
               }
+              // Dedupe logic for messages sent via response.output_item.done
+              // MAS relies on sending text via response.output_item.done ONLY without any delta chunks
+              // We have to decide when to display these messages in the UI
+              if (
+                shouldDedupeOutputItemDone(
+                  parts,
+                  allParts.slice(0, -parts.length),
+                )
+              ) {
+                return;
+              }
               for (const part of parts) {
                 controller.enqueue(part);
               }
@@ -230,4 +241,55 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
       fetch: config.fetch,
     };
   }
+}
+
+function shouldDedupeOutputItemDone(
+  incomingParts: LanguageModelV2StreamPart[],
+  previousParts: LanguageModelV2StreamPart[],
+): boolean {
+  // Determine if the incoming parts contain a text-delta that is a response.output_item.done
+  const doneTextDelta = incomingParts.find(
+    (p) =>
+      p.type === 'text-delta' &&
+      p.providerMetadata?.databricks?.itemType === 'response.output_item.done',
+  );
+
+  // If the incoming parts do not contain a text-delta that is a response.output_item.done, return false
+  if (
+    !doneTextDelta ||
+    doneTextDelta.type !== 'text-delta' ||
+    !doneTextDelta.id
+  ) {
+    return false;
+  }
+
+  /**
+   * To determine if the text in response.output_item.done is a duplicate, we need to reconstruct the text from the
+   * previous consecutive text-deltas and check if the .done text is already present in what we've streamed.
+   *
+   * The caveat is that the response.output_item.done text uses GFM footnote syntax, where as the streamed content
+   * uses response.output_text.delta and response.output_text.annotation.added events. So we reconstruct all the
+   * delta text and check if the .done text is contained in it (meaning we've already streamed it).
+   */
+  // 1. Reconstruct the last contiguous text block from previous text-deltas
+  // We iterate backwards to get the most recent text block
+  let reconstructedText = '';
+  for (let i = previousParts.length - 1; i >= 0; i--) {
+    const part = previousParts[i];
+    if (part.type === 'text-delta') {
+      reconstructedText = part.delta + reconstructedText;
+    } else {
+      // We've hit a non-text-delta part, stop here
+      break;
+    }
+  }
+
+  // 2. Check if the reconstructed delta text is present in the .done text
+  // The .done text may include footnote syntax like [^ref] that wasn't in the deltas
+  // If the .done text contains all the delta text, we should dedupe it
+  if (reconstructedText.length === 0) {
+    return false;
+  }
+
+  return doneTextDelta.delta.includes(reconstructedText);
 }

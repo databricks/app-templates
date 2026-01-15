@@ -10,8 +10,8 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.12",
     "uvicorn>=0.34.2",
-    "databricks-openai>=0.7.0",
-    "mlflow>=3.6.0",
+    "databricks-openai>=0.8.0",
+    "mlflow>=3.8.0rc0",
     "openai-agents>=0.4.1",
     "python-dotenv",
 ]
@@ -20,8 +20,8 @@ dependencies = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.hatch.metadata]
-allow-direct-references = true
+[tool.uv]
+prerelease = "allow"
 
 [dependency-groups]
 dev = [
@@ -31,5 +31,6 @@ dev = [
 
 
 [project.scripts]
+start-app = "scripts.start_app:main"
 start-server = "agent_server.start_server:main"
 agent-evaluate = "agent_server.evaluate_agent:evaluate"

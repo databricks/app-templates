@@ -57,26 +57,17 @@ export const convertResponsesAgentChunkToMessagePart = (
 
     case 'response.output_item.done':
       if (chunk.item.type === 'message') {
-        parts.push(
-          {
-            type: 'text-start',
-            id: chunk.item.id,
-          },
-          {
-            type: 'text-delta',
-            id: chunk.item.id,
-            delta: chunk.item.content[0].text,
-            providerMetadata: {
-              databricks: {
-                itemId: chunk.item.id,
-              },
+        parts.push({
+          type: 'text-delta',
+          id: chunk.item.id,
+          delta: chunk.item.content[0].text,
+          providerMetadata: {
+            databricks: {
+              itemId: chunk.item.id,
+              itemType: 'response.output_item.done',
             },
           },
-          {
-            type: 'text-end',
-            id: chunk.item.id,
-          },
-        );
+        });
       } else if (chunk.item.type === 'function_call') {
         parts.push({
           type: 'tool-call',

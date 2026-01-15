@@ -1,23 +1,23 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * E2E tests for VITE_API_BASE_URL configuration.
+ * E2E tests for UI_API_BASE_URL configuration.
  *
  * These tests verify that API calls are made to the correct URLs based on
- * the VITE_API_BASE_URL environment variable configuration.
+ * the UI_API_BASE_URL environment variable configuration.
  *
- * When VITE_API_BASE_URL is:
+ * When UI_API_BASE_URL is:
  * - Empty (default): API calls use relative paths (e.g., /api/session)
  * - Set to a URL: API calls use absolute URLs (e.g., http://localhost:3000/api/session)
  *
  * To test with absolute URLs:
- *   VITE_API_BASE_URL=http://localhost:3000 npm run build:client
- *   VITE_API_BASE_URL=http://localhost:3000 TEST_MODE=ephemeral npx playwright test tests/e2e/api-base-url.test.ts
+ *   UI_API_BASE_URL=http://localhost:3000 npm run build:client
+ *   UI_API_BASE_URL=http://localhost:3000 TEST_MODE=ephemeral npx playwright test tests/e2e/api-base-url.test.ts
  */
 
 // Get the configured API base URL from environment
 // This should match what was used during the client build
-const API_BASE_URL = process.env.VITE_API_BASE_URL || '';
+const API_BASE_URL = process.env.UI_API_BASE_URL || '';
 const isAbsoluteUrlMode = API_BASE_URL !== '';
 
 /**
@@ -182,7 +182,7 @@ test.describe('API Base URL Configuration', () => {
 
   // This test only makes sense when absolute URLs are configured
   test.describe('absolute URL mode specific', () => {
-    test.skip(!isAbsoluteUrlMode, 'Only runs when VITE_API_BASE_URL is set');
+    test.skip(!isAbsoluteUrlMode, 'Only runs when UI_API_BASE_URL is set');
 
     test('API calls go to different origin than page', async ({
       page,
@@ -213,7 +213,7 @@ test.describe('API Base URL Configuration', () => {
 
   // This test only makes sense when relative URLs are used
   test.describe('relative URL mode specific', () => {
-    test.skip(isAbsoluteUrlMode, 'Only runs when VITE_API_BASE_URL is empty');
+    test.skip(isAbsoluteUrlMode, 'Only runs when UI_API_BASE_URL is empty');
 
     test('API calls go to same origin as page', async ({ page, baseURL }) => {
       const apiCalls: string[] = [];

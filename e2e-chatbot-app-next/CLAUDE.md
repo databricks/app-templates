@@ -190,6 +190,32 @@ npx playwright test --headed --project=e2e  # Run E2E tests with browser visible
 **Test projects:** `unit`, `e2e`, `routes`
 **Test timeout:** 240 seconds (very generous for AI operations)
 
+### Running Playwright Tests Locally
+
+**Test modes:**
+- `npm run test:with-db` - Tests with PostgreSQL database (requires DB setup)
+- `npm run test:ephemeral` - Tests without database (in-memory mode)
+- `npm test` - Runs both modes sequentially
+
+**Environment variables for testing:**
+- `PLAYWRIGHT=True` - Auto-set when running tests via npm scripts
+- `TEST_MODE=with-db|ephemeral` - Controls database mode
+- `UI_API_BASE_URL` - (Optional) Set to absolute URL for testing behind proxy
+
+**Running specific tests:**
+```bash
+npx playwright test tests/e2e/api-base-url.test.ts  # Specific test file
+npx playwright test --project=e2e                    # Only E2E tests
+npx playwright test --headed                         # Show browser
+npx playwright test --ui                             # Interactive UI mode
+```
+
+**Testing with absolute API URLs:**
+```bash
+UI_API_BASE_URL=http://localhost:3000 npm run build:client
+UI_API_BASE_URL=http://localhost:3000 TEST_MODE=ephemeral npx playwright test tests/e2e/api-base-url.test.ts
+```
+
 ### Deployment (Databricks Asset Bundle)
 
 **IMPORTANT Pre-Deployment Checklist:**

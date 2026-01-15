@@ -115,8 +115,8 @@ export default defineConfig({
       DATABRICKS_CLIENT_ID: 'mock-value',
       DATABRICKS_CLIENT_SECRET: 'mock-value',
       DATABRICKS_HOST: 'mock-value',
-      // Pass through VITE_API_BASE_URL for absolute URL testing
-      VITE_API_BASE_URL: process.env.VITE_API_BASE_URL ?? '',
+      // Pass through UI_API_BASE_URL for absolute URL testing
+      UI_API_BASE_URL: process.env.UI_API_BASE_URL ?? '',
       ...(TEST_MODE === 'ephemeral'
         ? {
             POSTGRES_URL: '',

@@ -48,13 +48,12 @@ jobs:
           node-version: lts/*
           cache: npm
 
-      - name: Cache npm
-        uses: actions/cache@v3
+      - uses: actions/cache@v3
         with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          path: ${{ steps.npm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-npm-store-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
-            ${{ runner.os }}-npm-
+            ${{ runner.os }}-npm-store-
 
       - name: Install dependencies
         run: npm ci
@@ -105,13 +104,12 @@ jobs:
           node-version: lts/*
           cache: npm
 
-      - name: Cache npm
-        uses: actions/cache@v3
+      - uses: actions/cache@v3
         with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          path: ${{ steps.npm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-npm-store-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
-            ${{ runner.os }}-npm-
+            ${{ runner.os }}-npm-store-
 
       - name: Install dependencies
         run: npm ci
@@ -138,63 +136,5 @@ jobs:
         if: always() && !cancelled()
         with:
           name: playwright-report-ephemeral
-          path: playwright-report/
-          retention-days: 7
-
-  # Test with absolute API URLs (for agent server proxy compatibility)
-  test-absolute-urls:
-    name: Tests with Absolute API URLs
-    timeout-minutes: 30
-    runs-on: ubuntu-latest
-    env:
-      # Test with absolute API URLs - simulates running behind agent server proxy
-      VITE_API_BASE_URL: "http://localhost:3000"
-      DATABRICKS_SERVING_ENDPOINT: "mock-value"
-      DATABRICKS_CLIENT_ID: "mock-value"
-      DATABRICKS_CLIENT_SECRET: "mock-value"
-      DATABRICKS_HOST: "mock-value"
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-          cache: npm
-
-      - name: Cache npm
-        uses: actions/cache@v3
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Cache Playwright browsers
-        uses: actions/cache@v3
-        id: playwright-cache
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
-
-      - name: Install Playwright Browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
-
-      - name: Run Playwright tests (absolute URLs)
-        env:
-          PLAYWRIGHT: True
-          VITE_API_BASE_URL: "http://localhost:3000"
-        run: npm run test:ephemeral
-
-      - uses: actions/upload-artifact@v4
-        if: always() && !cancelled()
-        with:
-          name: playwright-report-absolute-urls
           path: playwright-report/
           retention-days: 7

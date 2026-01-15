@@ -3,8 +3,6 @@
 
 databricks.yml
 
-e2e-chatbot-app-next/
-
 ### Python ###
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -208,3 +206,6 @@ sketch
 **/.databricks
 #**/.claude
 **/.env.local
+
+# Remove this line if you want to track the chatbot app.
+e2e-chatbot-app-next/

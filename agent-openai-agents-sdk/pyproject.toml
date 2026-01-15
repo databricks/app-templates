@@ -11,7 +11,7 @@ dependencies = [
     "fastapi>=0.115.12",
     "uvicorn>=0.34.2",
     "databricks-openai",
-    "mlflow>=3.8.0",
+    "mlflow @ git+https://github.com/mlflow/mlflow.git@refs/pull/19981/merge",
     "openai-agents>=0.4.1",
     "python-dotenv",
 ]

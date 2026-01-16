@@ -297,9 +297,9 @@ else
     # Temporarily disable exit on error for the auth command
     set +e
 
-    # Run auth login with host parameter and capture output while still showing it to the user
+    # Run auth login with profile DEFAULT and host parameter
     AUTH_LOG=$(mktemp)
-    databricks auth login --host "$DATABRICKS_HOST" 2>&1 | tee "$AUTH_LOG"
+    databricks auth login --profile DEFAULT --host "$DATABRICKS_HOST" 2>&1 | tee "$AUTH_LOG"
     AUTH_EXIT_CODE=$?
 
     set -e
@@ -307,18 +307,11 @@ else
     if [ $AUTH_EXIT_CODE -eq 0 ]; then
         echo "✓ Successfully authenticated with Databricks"
 
-        # Extract profile name from the captured output
-        # Expected format: "Profile DEFAULT was successfully saved"
-        PROFILE_NAME=$(grep -i "Profile .* was successfully saved" "$AUTH_LOG" | sed -E 's/.*Profile ([^ ]+) was successfully saved.*/\1/' | head -1)
+        # Use DEFAULT as the profile name
+        PROFILE_NAME="DEFAULT"
 
         # Clean up temp file
         rm -f "$AUTH_LOG"
-
-        # If we couldn't extract the profile name, default to "DEFAULT"
-        if [ -z "$PROFILE_NAME" ]; then
-            PROFILE_NAME="DEFAULT"
-            echo "Note: Could not detect profile name, using 'DEFAULT'"
-        fi
 
         # Update .env.local with the profile name
         if grep -q "DATABRICKS_CONFIG_PROFILE=" .env.local; then

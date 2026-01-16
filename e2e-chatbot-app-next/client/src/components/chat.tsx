@@ -1,29 +1,29 @@
-import type { DataUIPart, LanguageModelUsage, UIMessageChunk } from "ai";
-import { useChat } from "@ai-sdk/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSWRConfig } from "swr";
-import { ChatHeader } from "@/components/chat-header";
-import { fetchWithErrorHandlers, generateUUID } from "@/lib/utils";
-import { MultimodalInput } from "./multimodal-input";
-import { Messages } from "./messages";
+import type { DataUIPart, LanguageModelUsage, UIMessageChunk } from 'ai';
+import { useChat } from '@ai-sdk/react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSWRConfig } from 'swr';
+import { ChatHeader } from '@/components/chat-header';
+import { fetchWithErrorHandlers, generateUUID } from '@/lib/utils';
+import { MultimodalInput } from './multimodal-input';
+import { Messages } from './messages';
 import type {
   Attachment,
   ChatMessage,
   CustomUIDataTypes,
   VisibilityType,
-} from "@chat-template/core";
-import { unstable_serialize } from "swr/infinite";
-import { getChatHistoryPaginationKey } from "./sidebar-history";
-import { toast } from "./toast";
-import { useSearchParams } from "react-router-dom";
-import { useChatVisibility } from "@/hooks/use-chat-visibility";
-import { ChatSDKError } from "@chat-template/core/errors";
-import { useDataStream } from "./data-stream-provider";
-import { isCredentialErrorMessage } from "@/lib/oauth-error-utils";
-import { ChatTransport } from "../lib/ChatTransport";
-import type { ClientSession } from "@chat-template/auth";
-import { softNavigateToChatId } from "@/lib/navigation";
-import { useAppConfig } from "@/contexts/AppConfigContext";
+} from '@chat-template/core';
+import { unstable_serialize } from 'swr/infinite';
+import { getChatHistoryPaginationKey } from './sidebar-history';
+import { toast } from './toast';
+import { useSearchParams } from 'react-router-dom';
+import { useChatVisibility } from '@/hooks/use-chat-visibility';
+import { ChatSDKError } from '@chat-template/core/errors';
+import { useDataStream } from './data-stream-provider';
+import { isCredentialErrorMessage } from '@/lib/oauth-error-utils';
+import { ChatTransport } from '../lib/ChatTransport';
+import type { ClientSession } from '@chat-template/auth';
+import { softNavigateToChatId } from '@/lib/navigation';
+import { useAppConfig } from '@/contexts/AppConfigContext';
 
 export function Chat({
   id,
@@ -50,9 +50,9 @@ export function Chat({
   const { setDataStream } = useDataStream();
   const { chatHistoryEnabled } = useAppConfig();
 
-  const [input, setInput] = useState<string>("");
+  const [input, setInput] = useState<string>('');
   const [_usage, setUsage] = useState<LanguageModelUsage | undefined>(
-    initialLastContext
+    initialLastContext,
   );
 
   const [streamCursor, setStreamCursor] = useState(0);
@@ -69,7 +69,7 @@ export function Chat({
   const abortController = useRef<AbortController | null>(new AbortController());
   useEffect(() => {
     return () => {
-      abortController.current?.abort("ABORT_SIGNAL");
+      abortController.current?.abort('ABORT_SIGNAL');
     };
   }, []);
 
@@ -82,7 +82,7 @@ export function Chat({
   }, []);
 
   const stop = useCallback(() => {
-    abortController.current?.abort("USER_ABORT_SIGNAL");
+    abortController.current?.abort('USER_ABORT_SIGNAL');
   }, []);
 
   const isNewChat = initialMessages.length === 0;
@@ -120,7 +120,7 @@ export function Chat({
         setStreamCursor((cursor) => cursor + 1);
         setLastPart(part);
       },
-      api: "/api/chat",
+      api: '/api/chat',
       fetch: fetchWithAbort,
       prepareSendMessagesRequest({ messages, id, body }) {
         const lastMessage = messages.at(-1);
@@ -157,19 +157,19 @@ export function Chat({
       prepareReconnectToStreamRequest({ id }) {
         return {
           api: `/api/chat/${id}/stream`,
-          credentials: "include",
+          credentials: 'include',
           headers: {
             // Pass the cursor to the server so it can resume the stream from the correct point
-            "X-Resume-Stream-Cursor": streamCursorRef.current.toString(),
+            'X-Resume-Stream-Cursor': streamCursorRef.current.toString(),
           },
         };
       },
     }),
     onData: (dataPart) => {
       setDataStream((ds) =>
-        ds ? [...ds, dataPart as DataUIPart<CustomUIDataTypes>] : []
+        ds ? [...ds, dataPart as DataUIPart<CustomUIDataTypes>] : [],
       );
-      if (dataPart.type === "data-usage") {
+      if (dataPart.type === 'data-usage') {
         setUsage(dataPart.data as LanguageModelUsage);
       }
     },
@@ -184,7 +184,7 @@ export function Chat({
 
       // If user aborted, don't try to resume
       if (isAbort) {
-        console.log("[Chat onFinish] Stream was aborted by user, not resuming");
+        console.log('[Chat onFinish] Stream was aborted by user, not resuming');
         setStreamCursor(0);
         fetchChatHistory();
         return;
@@ -195,14 +195,14 @@ export function Chat({
       const lastMessage = finishedMessages?.at(-1);
       const hasOAuthError = lastMessage?.parts?.some(
         (part) =>
-          part.type === "data-error" &&
-          typeof part.data === "string" &&
-          isCredentialErrorMessage(part.data)
+          part.type === 'data-error' &&
+          typeof part.data === 'string' &&
+          isCredentialErrorMessage(part.data),
       );
 
       if (hasOAuthError) {
         console.log(
-          "[Chat onFinish] OAuth credential error detected, not resuming"
+          '[Chat onFinish] OAuth credential error detected, not resuming',
         );
         setStreamCursor(0);
         fetchChatHistory();
@@ -214,41 +214,41 @@ export function Chat({
       // 1. Stream didn't end with a 'finish' part (incomplete)
       // 2. It was a disconnect/error that terminated the stream
       // 3. We haven't exceeded max resume attempts
-      const streamIncomplete = lastPartRef.current?.type !== "finish";
+      const streamIncomplete = lastPartRef.current?.type !== 'finish';
       const shouldResume =
         streamIncomplete &&
         (isDisconnect || isError || lastPartRef.current === undefined);
 
       if (shouldResume && resumeAttemptCountRef.current < maxResumeAttempts) {
         console.log(
-          "[Chat onFinish] Resuming stream. Attempt:",
-          resumeAttemptCountRef.current + 1
+          '[Chat onFinish] Resuming stream. Attempt:',
+          resumeAttemptCountRef.current + 1,
         );
         resumeAttemptCountRef.current++;
         resumeStream();
       } else {
         // Stream completed normally or we've exhausted resume attempts
         if (resumeAttemptCountRef.current >= maxResumeAttempts) {
-          console.warn("[Chat onFinish] Max resume attempts reached");
+          console.warn('[Chat onFinish] Max resume attempts reached');
         }
         setStreamCursor(0);
         fetchChatHistory();
       }
     },
     onError: (error) => {
-      console.log("[Chat onError] Error occurred:", error);
+      console.log('[Chat onError] Error occurred:', error);
 
       // Only show toast for explicit ChatSDKError (backend validation errors)
       // Other errors (network, schema validation) are handled silently or in message parts
       if (error instanceof ChatSDKError) {
         toast({
-          type: "error",
+          type: 'error',
           description: error.message,
         });
       } else {
         // Non-ChatSDKError: Could be network error or in-stream error
         // Log but don't toast - errors during streaming may be informational
-        console.warn("[Chat onError] Error during streaming:", error.message);
+        console.warn('[Chat onError] Error during streaming:', error.message);
       }
       // Note: We don't call resumeStream here because onError can be called
       // while the stream is still active (e.g., for data-error parts).
@@ -257,15 +257,15 @@ export function Chat({
   });
 
   const [searchParams] = useSearchParams();
-  const query = searchParams.get("query");
+  const query = searchParams.get('query');
 
   const [hasAppendedQuery, setHasAppendedQuery] = useState(false);
 
   useEffect(() => {
     if (query && !hasAppendedQuery) {
       sendMessage({
-        role: "user" as const,
-        parts: [{ type: "text", text: query }],
+        role: 'user' as const,
+        parts: [{ type: 'text', text: query }],
       });
 
       setHasAppendedQuery(true);

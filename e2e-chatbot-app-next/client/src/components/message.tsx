@@ -1,8 +1,8 @@
-import { motion } from "framer-motion";
-import React, { memo, useState } from "react";
-import { AnimatedAssistantIcon } from "./animation-assistant-icon";
-import { Response } from "./elements/response";
-import { MessageContent } from "./elements/message";
+import { motion } from 'framer-motion';
+import React, { memo, useState } from 'react';
+import { AnimatedAssistantIcon } from './animation-assistant-icon';
+import { Response } from './elements/response';
+import { MessageContent } from './elements/message';
 import {
   Tool,
   ToolHeader,
@@ -10,41 +10,41 @@ import {
   ToolInput,
   ToolOutput,
   type ToolState,
-} from "./elements/tool";
+} from './elements/tool';
 import {
   McpTool,
   McpToolHeader,
   McpToolContent,
   McpToolInput,
   McpApprovalActions,
-} from "./elements/mcp-tool";
-import { MessageActions } from "./message-actions";
-import { PreviewAttachment } from "./preview-attachment";
-import equal from "fast-deep-equal";
-import { cn, sanitizeText } from "@/lib/utils";
-import { MessageEditor } from "./message-editor";
-import { MessageReasoning } from "./message-reasoning";
-import type { UseChatHelpers } from "@ai-sdk/react";
-import type { ChatMessage } from "@chat-template/core";
-import { useDataStream } from "./data-stream-provider";
+} from './elements/mcp-tool';
+import { MessageActions } from './message-actions';
+import { PreviewAttachment } from './preview-attachment';
+import equal from 'fast-deep-equal';
+import { cn, sanitizeText } from '@/lib/utils';
+import { MessageEditor } from './message-editor';
+import { MessageReasoning } from './message-reasoning';
+import type { UseChatHelpers } from '@ai-sdk/react';
+import type { ChatMessage } from '@chat-template/core';
+import { useDataStream } from './data-stream-provider';
 import {
   createMessagePartSegments,
   formatNamePart,
   isNamePart,
   joinMessagePartSegments,
-} from "./databricks-message-part-transformers";
-import { MessageError } from "./message-error";
-import { MessageOAuthError } from "./message-oauth-error";
-import { isCredentialErrorMessage } from "@/lib/oauth-error-utils";
-import { Streamdown } from "streamdown";
-import { DATABRICKS_TOOL_CALL_ID } from "@chat-template/ai-sdk-providers/tools";
+} from './databricks-message-part-transformers';
+import { MessageError } from './message-error';
+import { MessageOAuthError } from './message-oauth-error';
+import { isCredentialErrorMessage } from '@/lib/oauth-error-utils';
+import { Streamdown } from 'streamdown';
+import { DATABRICKS_TOOL_CALL_ID } from '@chat-template/ai-sdk-providers/tools';
 import {
   extractDatabricksMetadata,
   isMcpApprovalRequest,
   getMcpApprovalState,
   isApprovalStatusOutput,
-} from "@chat-template/ai-sdk-providers/mcp";
-import { useApproval } from "@/hooks/use-approval";
+} from '@chat-template/ai-sdk-providers/mcp';
+import { useApproval } from '@/hooks/use-approval';
 
 const PurePreviewMessage = ({
   message,
@@ -61,14 +61,14 @@ const PurePreviewMessage = ({
   message: ChatMessage;
   allMessages: ChatMessage[];
   isLoading: boolean;
-  setMessages: UseChatHelpers<ChatMessage>["setMessages"];
-  addToolResult: UseChatHelpers<ChatMessage>["addToolResult"];
-  sendMessage: UseChatHelpers<ChatMessage>["sendMessage"];
-  regenerate: UseChatHelpers<ChatMessage>["regenerate"];
+  setMessages: UseChatHelpers<ChatMessage>['setMessages'];
+  addToolResult: UseChatHelpers<ChatMessage>['addToolResult'];
+  sendMessage: UseChatHelpers<ChatMessage>['sendMessage'];
+  regenerate: UseChatHelpers<ChatMessage>['regenerate'];
   isReadonly: boolean;
   requiresScrollPadding: boolean;
 }) => {
-  const [mode, setMode] = useState<"view" | "edit">("view");
+  const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [showErrors, setShowErrors] = useState(false);
 
   // Hook for handling MCP approval requests
@@ -78,19 +78,19 @@ const PurePreviewMessage = ({
   });
 
   const attachmentsFromMessage = message.parts.filter(
-    (part) => part.type === "file"
+    (part) => part.type === 'file',
   );
 
   // Extract non-OAuth error parts separately (OAuth errors are rendered inline)
   const errorParts = React.useMemo(
     () =>
       message.parts
-        .filter((part) => part.type === "data-error")
+        .filter((part) => part.type === 'data-error')
         .filter((part) => {
           // OAuth errors are rendered inline, not in the error section
           return !isCredentialErrorMessage(part.data);
         }),
-    [message.parts]
+    [message.parts],
   );
 
   useDataStream();
@@ -105,16 +105,16 @@ const PurePreviewMessage = ({
       createMessagePartSegments(
         message.parts.filter(
           (part) =>
-            part.type !== "data-error" || isCredentialErrorMessage(part.data)
-        )
+            part.type !== 'data-error' || isCredentialErrorMessage(part.data),
+        ),
       ),
-    [message.parts]
+    [message.parts],
   );
 
   // Check if message only contains non-OAuth errors (no other content)
   const hasOnlyErrors = React.useMemo(() => {
     const nonErrorParts = message.parts.filter(
-      (part) => part.type !== "data-error"
+      (part) => part.type !== 'data-error',
     );
     // Only consider non-OAuth errors for this check
     return errorParts.length > 0 && nonErrorParts.length === 0;
@@ -127,21 +127,21 @@ const PurePreviewMessage = ({
       data-role={message.role}
     >
       <div
-        className={cn("flex w-full items-start gap-2 md:gap-3", {
-          "justify-end": message.role === "user",
-          "justify-start": message.role === "assistant",
+        className={cn('flex w-full items-start gap-2 md:gap-3', {
+          'justify-end': message.role === 'user',
+          'justify-start': message.role === 'assistant',
         })}
       >
-        {message.role === "assistant" && (
+        {message.role === 'assistant' && (
           <AnimatedAssistantIcon size={14} isLoading={isLoading} />
         )}
 
         <div
-          className={cn("flex min-w-0 flex-col gap-3", {
-            "w-full": message.role === "assistant" || mode === "edit",
-            "min-h-96": message.role === "assistant" && requiresScrollPadding,
-            "max-w-[70%] sm:max-w-[min(fit-content,80%)]":
-              message.role === "user" && mode !== "edit",
+          className={cn('flex min-w-0 flex-col gap-3', {
+            'w-full': message.role === 'assistant' || mode === 'edit',
+            'min-h-96': message.role === 'assistant' && requiresScrollPadding,
+            'max-w-[70%] sm:max-w-[min(fit-content,80%)]':
+              message.role === 'user' && mode !== 'edit',
           })}
         >
           {attachmentsFromMessage.length > 0 && (
@@ -153,7 +153,7 @@ const PurePreviewMessage = ({
                 <PreviewAttachment
                   key={attachment.url}
                   attachment={{
-                    name: attachment.filename ?? "file",
+                    name: attachment.filename ?? 'file',
                     contentType: attachment.mediaType,
                     url: attachment.url,
                   }}
@@ -167,7 +167,7 @@ const PurePreviewMessage = ({
             const { type } = part;
             const key = `message-${message.id}-part-${index}`;
 
-            if (type === "reasoning" && part.text?.trim().length > 0) {
+            if (type === 'reasoning' && part.text?.trim().length > 0) {
               return (
                 <MessageReasoning
                   key={key}
@@ -177,7 +177,7 @@ const PurePreviewMessage = ({
               );
             }
 
-            if (type === "text") {
+            if (type === 'text') {
               if (isNamePart(part)) {
                 return (
                   <Streamdown
@@ -186,20 +186,20 @@ const PurePreviewMessage = ({
                   >{`# ${formatNamePart(part)}`}</Streamdown>
                 );
               }
-              if (mode === "view") {
+              if (mode === 'view') {
                 return (
                   <div key={key}>
                     <MessageContent
                       data-testid="message-content"
                       className={cn({
-                        "w-fit break-words rounded-2xl px-3 py-2 text-right text-white":
-                          message.role === "user",
-                        "bg-transparent px-0 py-0 text-left":
-                          message.role === "assistant",
+                        'w-fit break-words rounded-2xl px-3 py-2 text-right text-white':
+                          message.role === 'user',
+                        'bg-transparent px-0 py-0 text-left':
+                          message.role === 'assistant',
                       })}
                       style={
-                        message.role === "user"
-                          ? { backgroundColor: "#006cff" }
+                        message.role === 'user'
+                          ? { backgroundColor: '#006cff' }
                           : undefined
                       }
                     >
@@ -211,7 +211,7 @@ const PurePreviewMessage = ({
                 );
               }
 
-              if (mode === "edit") {
+              if (mode === 'edit') {
                 return (
                   <div
                     key={key}
@@ -236,7 +236,7 @@ const PurePreviewMessage = ({
             if (part.type === `tool-${DATABRICKS_TOOL_CALL_ID}`) {
               const { toolCallId, input, state, errorText, output } = part;
               const metadata =
-                "callProviderMetadata" in part
+                'callProviderMetadata' in part
                   ? extractDatabricksMetadata(part)
                   : undefined;
               const toolName = metadata?.toolName?.toString();
@@ -251,9 +251,9 @@ const PurePreviewMessage = ({
               // When approved but only have approval status (not actual output), show as input-available
               const effectiveState: ToolState =
                 isMcpApproval &&
-                approvalStatus === "approved" &&
+                approvalStatus === 'approved' &&
                 isApprovalStatusOutput(output)
-                  ? "input-available"
+                  ? 'input-available'
                   : state;
 
               // Render MCP tool calls with special styling
@@ -262,13 +262,13 @@ const PurePreviewMessage = ({
                   <McpTool key={toolCallId} defaultOpen={true}>
                     <McpToolHeader
                       serverName={mcpServerName}
-                      toolName={toolName || "mcp-tool"}
+                      toolName={toolName || 'mcp-tool'}
                       state={effectiveState}
                       approvalStatus={approvalStatus}
                     />
                     <McpToolContent>
                       <McpToolInput input={input} />
-                      {approvalStatus === "awaiting-approval" && (
+                      {approvalStatus === 'awaiting-approval' && (
                         <McpApprovalActions
                           onApprove={() =>
                             submitApproval({
@@ -287,7 +287,7 @@ const PurePreviewMessage = ({
                           }
                         />
                       )}
-                      {state === "output-available" &&
+                      {state === 'output-available' &&
                         !isApprovalStatusOutput(output) && (
                           <ToolOutput
                             output={
@@ -297,7 +297,7 @@ const PurePreviewMessage = ({
                                 </div>
                               ) : (
                                 <div className="whitespace-pre-wrap font-mono text-sm">
-                                  {typeof output === "string"
+                                  {typeof output === 'string'
                                     ? output
                                     : JSON.stringify(output, null, 2)}
                                 </div>
@@ -315,12 +315,12 @@ const PurePreviewMessage = ({
               return (
                 <Tool key={toolCallId} defaultOpen={true}>
                   <ToolHeader
-                    type={toolName || "tool-call"}
+                    type={toolName || 'tool-call'}
                     state={effectiveState}
                   />
                   <ToolContent>
                     <ToolInput input={input} />
-                    {state === "output-available" && (
+                    {state === 'output-available' && (
                       <ToolOutput
                         output={
                           errorText ? (
@@ -329,7 +329,7 @@ const PurePreviewMessage = ({
                             </div>
                           ) : (
                             <div className="whitespace-pre-wrap font-mono text-sm">
-                              {typeof output === "string"
+                              {typeof output === 'string'
                                 ? output
                                 : JSON.stringify(output, null, 2)}
                             </div>
@@ -344,7 +344,7 @@ const PurePreviewMessage = ({
             }
 
             // Support for citations/annotations
-            if (type === "source-url") {
+            if (type === 'source-url') {
               return (
                 <a
                   key={key}
@@ -359,7 +359,7 @@ const PurePreviewMessage = ({
             }
 
             // Render OAuth errors inline
-            if (type === "data-error" && isCredentialErrorMessage(part.data)) {
+            if (type === 'data-error' && isCredentialErrorMessage(part.data)) {
               return (
                 <MessageOAuthError
                   key={key}
@@ -410,11 +410,11 @@ export const PreviewMessage = memo(
     if (!equal(prevProps.message.parts, nextProps.message.parts)) return false;
 
     return false;
-  }
+  },
 );
 
 export const AwaitingResponseMessage = () => {
-  const role = "assistant";
+  const role = 'assistant';
 
   return (
     <div
@@ -438,18 +438,18 @@ export const AwaitingResponseMessage = () => {
 const LoadingText = ({ children }: { children: React.ReactNode }) => {
   return (
     <motion.div
-      animate={{ backgroundPosition: ["100% 50%", "-100% 50%"] }}
+      animate={{ backgroundPosition: ['100% 50%', '-100% 50%'] }}
       transition={{
         duration: 1.5,
         repeat: Number.POSITIVE_INFINITY,
-        ease: "linear",
+        ease: 'linear',
       }}
       style={{
         background:
-          "linear-gradient(90deg, hsl(var(--muted-foreground)) 0%, hsl(var(--muted-foreground)) 35%, hsl(var(--foreground)) 50%, hsl(var(--muted-foreground)) 65%, hsl(var(--muted-foreground)) 100%)",
-        backgroundSize: "200% 100%",
-        WebkitBackgroundClip: "text",
-        backgroundClip: "text",
+          'linear-gradient(90deg, hsl(var(--muted-foreground)) 0%, hsl(var(--muted-foreground)) 35%, hsl(var(--foreground)) 50%, hsl(var(--muted-foreground)) 65%, hsl(var(--muted-foreground)) 100%)',
+        backgroundSize: '200% 100%',
+        WebkitBackgroundClip: 'text',
+        backgroundClip: 'text',
       }}
       className="flex items-center text-transparent"
     >

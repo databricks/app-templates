@@ -13,11 +13,12 @@
     "@chat-template/auth": "*",
     "@chat-template/core": "*",
     "@chat-template/db": "*",
+    "@databricks/ai-sdk-provider": "^0.1.0",
     "ai": "5.0.76",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
-    "zod": "^3.25.76"
+    "zod": "^4.3.5"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

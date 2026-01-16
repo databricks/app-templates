@@ -11,7 +11,7 @@ import {
   MCP_APPROVAL_STATUS_KEY,
   MCP_APPROVAL_REQUEST_TYPE,
   MCP_APPROVAL_RESPONSE_TYPE,
-} from '../../packages/ai-sdk-providers/src/mcp-approval-utils';
+} from '@databricks/ai-sdk-provider';
 
 test.describe('MCP Approval Utils', () => {
   test.describe('Constants', () => {

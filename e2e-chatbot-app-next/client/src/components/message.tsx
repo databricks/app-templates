@@ -35,13 +35,13 @@ import {
 } from './databricks-message-part-transformers';
 import { MessageError } from './message-error';
 import { Streamdown } from 'streamdown';
-import { DATABRICKS_TOOL_CALL_ID } from '@chat-template/ai-sdk-providers/tools';
 import {
+  DATABRICKS_TOOL_CALL_ID,
   extractDatabricksMetadata,
   isMcpApprovalRequest,
   getMcpApprovalState,
   isApprovalStatusOutput,
-} from '@chat-template/ai-sdk-providers/mcp';
+} from '@databricks/ai-sdk-provider';
 import { useApproval } from '@/hooks/use-approval';
 
 const PurePreviewMessage = ({

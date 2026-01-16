@@ -16,7 +16,7 @@ import {
   ToolStatusBadge,
   type ToolState,
 } from './tool';
-import type { McpApprovalState } from '@chat-template/ai-sdk-providers/mcp';
+import type { McpApprovalState } from '@databricks/ai-sdk-provider';
 
 // MCP-specific container with distinct styling
 type McpToolProps = Parameters<typeof ToolContainer>[0];

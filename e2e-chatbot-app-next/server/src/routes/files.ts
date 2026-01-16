@@ -38,6 +38,16 @@ filesRouter.post(
           .json({ error: 'File path is required in request body' });
       }
 
+      // Validate that the path is a Unity Catalog Volumes path
+      // Expected format: /Volumes/catalog/schema/volume/path/to/file or Volumes/catalog/schema/volume/path/to/file
+      const volumesPathRegex = /^\/?Volumes\/[^/]+\/[^/]+\/[^/]+\/.+$/;
+      if (!volumesPathRegex.test(filePath)) {
+        return res.status(400).json({
+          error:
+            'Invalid file path format. Path must be a Unity Catalog Volumes path (e.g., /Volumes/catalog/schema/volume/file.pdf)',
+        });
+      }
+
       // Get Databricks host - prefer cached CLI host, fall back to env
       let hostUrl = getCachedCliHost();
       if (!hostUrl) {
@@ -50,7 +60,14 @@ filesRouter.post(
       const normalizedPath = filePath.startsWith('/')
         ? filePath
         : `/${filePath}`;
-      const databricksUrl = `${hostUrl}/api/2.0/fs/files${normalizedPath}`;
+
+      // URL-encode each path segment to handle spaces and special characters
+      const encodedPath = normalizedPath
+        .split('/')
+        .map((segment) => encodeURIComponent(segment))
+        .join('/');
+
+      const databricksUrl = `${hostUrl}/api/2.0/fs/files${encodedPath}`;
 
       console.log(`[Files Proxy] Fetching: ${databricksUrl}`);
 

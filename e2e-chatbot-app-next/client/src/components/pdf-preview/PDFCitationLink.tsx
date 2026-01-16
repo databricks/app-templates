@@ -1,6 +1,7 @@
 import { useState, useCallback, type ReactNode } from 'react';
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Button } from '@/components/ui/button';
 import { PDFPreviewSheet } from './PDFPreviewSheet';
 import type { UCPDFMetadata } from '@/lib/pdf-utils';
 
@@ -21,13 +22,14 @@ export function PDFCitationLink({ children, pdfMetadata }: PDFCitationLinkProps)
     <>
       <Tooltip>
         <TooltipTrigger asChild>
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={handleClick}
-            className="cursor-pointer rounded-md bg-muted-foreground px-2 py-0 font-medium text-zinc-200 underline"
+            className="h-auto px-2 py-0 font-medium underline"
           >
             {children}
-          </button>
+          </Button>
         </TooltipTrigger>
         <TooltipContent
           style={{ maxWidth: '350px', padding: '8px', wordWrap: 'break-word' }}

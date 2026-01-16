@@ -2,6 +2,12 @@
  * Utilities for parsing and handling Unity Catalog PDF links.
  */
 
+import {
+  PDFNotFoundError,
+  PDFPermissionError,
+  PDFLoadError,
+} from './pdf-errors';
+
 export interface UCPDFMetadata {
   filename: string;
   volumePath: string;
@@ -52,21 +58,19 @@ export function parseUnityCatalogPDFLink(href: string): UCPDFMetadata | null {
         }
 
         // Check for text fragment in hash (format: :~:text=...)
-        const textFragmentMatch = hash.match(/:~:text=(.+)$/);
-        if (textFragmentMatch) {
+        // Uses .* to match empty text fragments as well
+        const textFragmentMatch = hash.match(/:~:text=(.*)$/);
+        if (textFragmentMatch?.[1]) {
           textFragment = decodeURIComponent(textFragmentMatch[1]);
-        } else if (hash.startsWith(':~:text=')) {
-          // Handle case where hash only contains text fragment without page
-          textFragment = decodeURIComponent(hash.substring(':~:text='.length));
         }
       }
 
       // Full path for the UC file
       const filePath = `${match[1]}/${match[2]}`;
 
-      // Keep the original URL for reference (e.g., for "Open in Catalog" link)
-      const originalUrl = new URL(href, window.location.origin);
-      originalUrl.searchParams.delete('page');
+      // Create clean URL for reference (e.g., for "Open in Catalog" link)
+      // Remove the page param since it's stored separately
+      urlObject.searchParams.delete('page');
 
       return {
         volumePath: match[1],
@@ -74,7 +78,7 @@ export function parseUnityCatalogPDFLink(href: string): UCPDFMetadata | null {
         filePath,
         page,
         textFragment,
-        originalUrl: originalUrl.toString(),
+        originalUrl: urlObject.toString(),
       };
     }
   } catch {
@@ -112,6 +116,10 @@ export function getUnityCatalogExplorerUrl(
 /**
  * Fetch a Databricks file through our backend proxy.
  * Returns a blob URL that can be used as a src for PDF viewers.
+ *
+ * @throws {PDFNotFoundError} When the file is not found (404)
+ * @throws {PDFPermissionError} When access is denied (403)
+ * @throws {PDFLoadError} For other errors
  */
 export async function fetchDatabricksFile(filePath: string): Promise<string> {
   const response = await fetch('/api/files/databricks-file', {
@@ -125,7 +133,14 @@ export async function fetchDatabricksFile(filePath: string): Promise<string> {
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     const message = errorData.error || response.statusText;
-    throw new Error(`${response.status}: ${message}`);
+
+    if (response.status === 404) {
+      throw new PDFNotFoundError(message);
+    }
+    if (response.status === 403) {
+      throw new PDFPermissionError(message);
+    }
+    throw new PDFLoadError(`${response.status}: ${message}`);
   }
 
   const blob = await response.blob();

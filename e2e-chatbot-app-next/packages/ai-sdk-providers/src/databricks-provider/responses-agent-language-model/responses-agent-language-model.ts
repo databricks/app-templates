@@ -3,7 +3,7 @@ import type {
   LanguageModelV2CallOptions,
   LanguageModelV2FinishReason,
   LanguageModelV2StreamPart,
-} from '@ai-sdk/provider';
+} from "@ai-sdk/provider";
 import {
   type ParseResult,
   combineHeaders,
@@ -11,23 +11,23 @@ import {
   createJsonErrorResponseHandler,
   createJsonResponseHandler,
   postJsonToApi,
-} from '@ai-sdk/provider-utils';
-import { z } from 'zod/v4';
-import type { DatabricksLanguageModelConfig } from '../databricks-language-model';
+} from "@ai-sdk/provider-utils";
+import { z } from "zod/v4";
+import type { DatabricksLanguageModelConfig } from "../databricks-language-model";
 import {
   responsesAgentResponseSchema,
   looseResponseAgentChunkSchema,
   type responsesAgentChunkSchema,
-} from './responses-agent-schema';
+} from "./responses-agent-schema";
 import {
   convertResponsesAgentChunkToMessagePart,
   convertResponsesAgentResponseToMessagePart,
-} from './responses-convert-to-message-parts';
-import { convertToResponsesInput } from './responses-convert-to-input';
-import { getDatabricksLanguageModelTransformStream } from '../stream-transformers/databricks-stream-transformer';
+} from "./responses-convert-to-message-parts";
+import { convertToResponsesInput } from "./responses-convert-to-input";
+import { getDatabricksLanguageModelTransformStream } from "../stream-transformers/databricks-stream-transformer";
 
 export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
-  readonly specificationVersion = 'v2';
+  readonly specificationVersion = "v2";
 
   readonly modelId: string;
 
@@ -45,8 +45,8 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
   readonly supportedUrls: Record<string, RegExp[]> = {};
 
   async doGenerate(
-    options: Parameters<LanguageModelV2['doGenerate']>[0],
-  ): Promise<Awaited<ReturnType<LanguageModelV2['doGenerate']>>> {
+    options: Parameters<LanguageModelV2["doGenerate"]>[0]
+  ): Promise<Awaited<ReturnType<LanguageModelV2["doGenerate"]>>> {
     const networkArgs = await this.getArgs({
       config: this.config,
       options,
@@ -57,7 +57,7 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
     const { value: response } = await postJsonToApi({
       ...networkArgs,
       successfulResponseHandler: createJsonResponseHandler(
-        responsesAgentResponseSchema,
+        responsesAgentResponseSchema
       ),
       failedResponseHandler: createJsonErrorResponseHandler({
         errorSchema: z.any(), // TODO: Implement error schema
@@ -68,7 +68,7 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
 
     return {
       content: convertResponsesAgentResponseToMessagePart(response),
-      finishReason: 'stop',
+      finishReason: "stop",
       usage: {
         inputTokens: 0,
         outputTokens: 0,
@@ -79,8 +79,8 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
   }
 
   async doStream(
-    options: Parameters<LanguageModelV2['doStream']>[0],
-  ): Promise<Awaited<ReturnType<LanguageModelV2['doStream']>>> {
+    options: Parameters<LanguageModelV2["doStream"]>[0]
+  ): Promise<Awaited<ReturnType<LanguageModelV2["doStream"]>>> {
     const networkArgs = await this.getArgs({
       config: this.config,
       options,
@@ -96,12 +96,12 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
         isRetryable: () => false,
       }),
       successfulResponseHandler: createEventSourceResponseHandler(
-        looseResponseAgentChunkSchema,
+        looseResponseAgentChunkSchema
       ),
       abortSignal: options.abortSignal,
     });
 
-    let finishReason: LanguageModelV2FinishReason = 'unknown';
+    let finishReason: LanguageModelV2FinishReason = "unknown";
 
     const allParts: LanguageModelV2StreamPart[] = [];
 
@@ -113,23 +113,23 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
             LanguageModelV2StreamPart
           >({
             start(controller) {
-              controller.enqueue({ type: 'stream-start', warnings: [] });
+              controller.enqueue({ type: "stream-start", warnings: [] });
             },
 
             transform(chunk, controller) {
               if (options.includeRawChunks) {
-                controller.enqueue({ type: 'raw', rawValue: chunk.rawValue });
+                controller.enqueue({ type: "raw", rawValue: chunk.rawValue });
               }
 
               // handle failed chunk parsing / validation:
               if (!chunk.success) {
-                finishReason = 'error';
-                controller.enqueue({ type: 'error', error: chunk.error });
+                finishReason = "error";
+                controller.enqueue({ type: "error", error: chunk.error });
                 return;
               }
 
               const parts = convertResponsesAgentChunkToMessagePart(
-                chunk.value,
+                chunk.value
               );
 
               allParts.push(...parts);
@@ -142,35 +142,35 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
                 return;
               }
               const part = parts[0];
-              if (part.type === 'tool-result') {
+              if (part.type === "tool-result") {
                 // First check if the tool call is in the current stream parts
                 const matchingToolCallInParts = parts.find(
                   (c) =>
-                    c.type === 'tool-call' && c.toolCallId === part.toolCallId,
+                    c.type === "tool-call" && c.toolCallId === part.toolCallId
                 );
                 // Also check if the tool call was emitted earlier in this stream
                 const matchingToolCallInStream = allParts.find(
                   (c) =>
-                    c.type === 'tool-call' && c.toolCallId === part.toolCallId,
+                    c.type === "tool-call" && c.toolCallId === part.toolCallId
                 );
                 if (!matchingToolCallInParts && !matchingToolCallInStream) {
                   // Find the tool call in the prompt (previous messages)
                   const toolCallFromPreviousMessages = options.prompt
                     .flatMap((message) => {
-                      if (typeof message.content === 'string') return [];
+                      if (typeof message.content === "string") return [];
                       return message.content;
                     })
                     .find(
                       (p) =>
-                        p.type === 'tool-call' &&
-                        p.toolCallId === part.toolCallId,
+                        p.type === "tool-call" &&
+                        p.toolCallId === part.toolCallId
                     );
                   if (!toolCallFromPreviousMessages) {
                     throw new Error(
-                      'No matching tool call found in previous message',
+                      "No matching tool call found in previous message"
                     );
                   }
-                  if (toolCallFromPreviousMessages.type === 'tool-call') {
+                  if (toolCallFromPreviousMessages.type === "tool-call") {
                     controller.enqueue({
                       ...toolCallFromPreviousMessages,
                       input: JSON.stringify(toolCallFromPreviousMessages.input),
@@ -184,7 +184,7 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
               if (
                 shouldDedupeOutputItemDone(
                   parts,
-                  allParts.slice(0, -parts.length),
+                  allParts.slice(0, -parts.length)
                 )
               ) {
                 return;
@@ -196,7 +196,7 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
 
             flush(controller) {
               controller.enqueue({
-                type: 'finish',
+                type: "finish",
                 finishReason,
                 usage: {
                   inputTokens: 0,
@@ -205,7 +205,7 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
                 },
               });
             },
-          }),
+          })
         )
         .pipeThrough(getDatabricksLanguageModelTransformStream()),
       request: { body: networkArgs.body },
@@ -226,11 +226,11 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
   }) {
     const { input } = await convertToResponsesInput({
       prompt: options.prompt,
-      systemMessageMode: 'system',
+      systemMessageMode: "system",
     });
     return {
       url: config.url({
-        path: '/responses',
+        path: "/responses",
       }),
       headers: combineHeaders(config.headers(), options.headers),
       body: {
@@ -245,19 +245,19 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
 
 function shouldDedupeOutputItemDone(
   incomingParts: LanguageModelV2StreamPart[],
-  previousParts: LanguageModelV2StreamPart[],
+  previousParts: LanguageModelV2StreamPart[]
 ): boolean {
   // Determine if the incoming parts contain a text-delta that is a response.output_item.done
   const doneTextDelta = incomingParts.find(
     (p) =>
-      p.type === 'text-delta' &&
-      p.providerMetadata?.databricks?.itemType === 'response.output_item.done',
+      p.type === "text-delta" &&
+      p.providerMetadata?.databricks?.itemType === "response.output_item.done"
   );
 
   // If the incoming parts do not contain a text-delta that is a response.output_item.done, return false
   if (
     !doneTextDelta ||
-    doneTextDelta.type !== 'text-delta' ||
+    doneTextDelta.type !== "text-delta" ||
     !doneTextDelta.id
   ) {
     return false;
@@ -271,25 +271,34 @@ function shouldDedupeOutputItemDone(
    * uses response.output_text.delta and response.output_text.annotation.added events. So we reconstruct all the
    * delta text and check if the .done text is contained in it (meaning we've already streamed it).
    */
-  // 1. Reconstruct the last contiguous text block from previous text-deltas
-  // We iterate backwards to get the most recent text block
-  let reconstructedText = '';
-  for (let i = previousParts.length - 1; i >= 0; i--) {
+  // 1. Reconstruct all text blocks from previous parts and separate them by non-text-delta parts
+  const reconstructuredTexts: string[] = [];
+  let currentText = "";
+  for (let i = 0; i < previousParts.length; i++) {
     const part = previousParts[i];
-    if (part.type === 'text-delta') {
-      reconstructedText = part.delta + reconstructedText;
-    } else {
-      // We've hit a non-text-delta part, stop here
-      break;
+    if (part.type === "text-delta") {
+      currentText += part.delta;
+    } else if (currentText.trim().length > 0) {
+      reconstructuredTexts.push(currentText.trim());
+      currentText = "";
     }
   }
+  reconstructuredTexts.push(currentText);
 
-  // 2. Check if the reconstructed delta text is present in the .done text
-  // The .done text may include footnote syntax like [^ref] that wasn't in the deltas
-  // If the .done text contains all the delta text, we should dedupe it
-  if (reconstructedText.length === 0) {
+  // 2. check if the .done text is contained in the reconstructed text and that it follows the same order as the previous parts
+  if (reconstructuredTexts.length === 0) {
     return false;
   }
-
-  return doneTextDelta.delta.includes(reconstructedText);
+  let lastIndex = 0;
+  for (let i = 0; i < reconstructuredTexts.length; i++) {
+    const indexOfReconstructedText = doneTextDelta.delta.indexOf(
+      reconstructuredTexts[i],
+      lastIndex
+    );
+    if (indexOfReconstructedText === -1) {
+      return false;
+    }
+    lastIndex = indexOfReconstructedText + reconstructuredTexts[i].length;
+  }
+  return true;
 }

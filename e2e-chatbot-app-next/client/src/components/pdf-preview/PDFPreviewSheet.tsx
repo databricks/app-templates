@@ -1,4 +1,11 @@
-import { useState, useCallback, useEffect } from 'react';
+import {
+  useReducer,
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import {
   Download,
   ExternalLink,
@@ -23,6 +30,7 @@ import {
   getUnityCatalogExplorerUrl,
   fetchDatabricksFile,
 } from '@/lib/pdf-utils';
+import { isPDFError, } from '@/lib/pdf-errors';
 import { useAppConfig } from '@/contexts/AppConfigContext';
 
 export interface PDFPreviewSheetProps {
@@ -35,6 +43,44 @@ export interface PDFPreviewSheetProps {
   initialPage?: number;
   highlightText?: string;
 }
+
+// State machine for PDF loading
+type LoadingState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'success'; blobUrl: string }
+  | { status: 'error'; error: PDFError };
+
+type LoadingAction =
+  | { type: 'START_LOADING' }
+  | { type: 'LOAD_SUCCESS'; blobUrl: string }
+  | { type: 'LOAD_ERROR'; error: PDFError }
+  | { type: 'RETRY' }
+  | { type: 'RESET' };
+
+function loadingReducer(state: LoadingState, action: LoadingAction): LoadingState {
+  switch (action.type) {
+    case 'START_LOADING':
+      return { status: 'loading' };
+    case 'LOAD_SUCCESS':
+      return { status: 'success', blobUrl: action.blobUrl };
+    case 'LOAD_ERROR':
+      return { status: 'error', error: action.error };
+    case 'RETRY':
+      return { status: 'loading' };
+    case 'RESET':
+      return { status: 'idle' };
+    default:
+      return state;
+  }
+}
+
+const initialLoadingState: LoadingState = { status: 'idle' };
+
+// Resize constraints
+const MIN_WIDTH = 400;
+const MAX_WIDTH_PERCENT = 95;
+const DEFAULT_WIDTH_PERCENT = 85;
 
 function PDFErrorState({
   error,
@@ -97,12 +143,31 @@ export function PDFPreviewSheet({
   initialPage,
   highlightText,
 }: PDFPreviewSheetProps) {
-  const [error, setError] = useState<PDFError | null>(null);
-  const [retryKey, setRetryKey] = useState(0);
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [loadingState, dispatch] = useReducer(loadingReducer, initialLoadingState);
+  const [retryCount, setRetryCount] = useState(0);
   const [showCitedText, setShowCitedText] = useState(true);
   const { workspaceUrl } = useAppConfig();
+
+  // Resize state
+  const [width, setWidth] = useState(() =>
+    Math.round((window.innerWidth * DEFAULT_WIDTH_PERCENT) / 100)
+  );
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStartX = useRef(0);
+  const resizeStartWidth = useRef(0);
+
+  // Ref to track blob URL for cleanup (avoids dependency issues with useEffect)
+  const blobUrlRef = useRef<string | null>(null);
+
+  // Derive values from state for easier access
+  const isLoading = loadingState.status === 'loading';
+  const error = loadingState.status === 'error' ? loadingState.error : null;
+  const blobUrl = loadingState.status === 'success' ? loadingState.blobUrl : null;
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    blobUrlRef.current = blobUrl;
+  }, [blobUrl]);
 
   const ucExplorerUrl = getUnityCatalogExplorerUrl(
     volumePath,
@@ -110,42 +175,43 @@ export function PDFPreviewSheet({
     workspaceUrl,
   );
 
-  // Fetch the PDF when the sheet opens
+  // Fetch the PDF when the sheet opens or retryCount changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: retryCount is intentionally used to trigger re-fetches
   useEffect(() => {
     if (!open || !filePath) return;
 
     let cancelled = false;
-    const currentBlobUrl = blobUrl;
 
     const loadPdf = async () => {
-      setIsLoading(true);
-      setError(null);
+      // Cleanup previous blob URL before starting new load
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+
+      dispatch({ type: 'START_LOADING' });
 
       try {
         const url = await fetchDatabricksFile(filePath);
         if (!cancelled) {
-          setBlobUrl(url);
+          dispatch({ type: 'LOAD_SUCCESS', blobUrl: url });
         } else {
           // Clean up if cancelled
           URL.revokeObjectURL(url);
         }
       } catch (err) {
         if (!cancelled) {
-          const message = err instanceof Error ? err.message.toLowerCase() : '';
-          if (message.includes('404')) {
-            setError({ type: 'NotFoundError' });
-          } else if (message.includes('403')) {
-            setError({ type: 'PermissionError' });
+          if (isPDFError(err)) {
+            dispatch({ type: 'LOAD_ERROR', error: { type: err.type, message: err.message } });
           } else {
-            setError({
-              type: 'LoadError',
-              message: err instanceof Error ? err.message : 'Unknown error',
+            dispatch({
+              type: 'LOAD_ERROR',
+              error: {
+                type: 'LoadError',
+                message: err instanceof Error ? err.message : 'Unknown error',
+              },
             });
           }
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
         }
       }
     };
@@ -154,36 +220,30 @@ export function PDFPreviewSheet({
 
     return () => {
       cancelled = true;
-      // Revoke old blob URL on cleanup
-      if (currentBlobUrl) {
-        URL.revokeObjectURL(currentBlobUrl);
-      }
     };
-  }, [open, filePath, retryKey]);
-
-  // Cleanup blob URL when component unmounts or sheet closes
-  useEffect(() => {
-    if (!open && blobUrl) {
-      URL.revokeObjectURL(blobUrl);
-      setBlobUrl(null);
-    }
-  }, [open, blobUrl]);
+    // retryCount is intentionally included to trigger re-fetches on retry
+  }, [open, filePath, retryCount]);
 
   const handleLoadError = useCallback((err: PDFError) => {
-    setError(err);
+    dispatch({ type: 'LOAD_ERROR', error: err });
   }, []);
 
   const handleRetry = useCallback(() => {
-    setError(null);
-    setBlobUrl(null);
-    setRetryKey((prev) => prev + 1);
+    // Cleanup is handled in the useEffect when retryCount changes
+    dispatch({ type: 'RETRY' });
+    setRetryCount((prev) => prev + 1);
   }, []);
 
-  // Reset state when sheet closes
+  // Reset state and cleanup blob URL when sheet closes
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
       if (!isOpen) {
-        setError(null);
+        // Cleanup blob URL via ref
+        if (blobUrlRef.current) {
+          URL.revokeObjectURL(blobUrlRef.current);
+          blobUrlRef.current = null;
+        }
+        dispatch({ type: 'RESET' });
       }
       onOpenChange(isOpen);
     },
@@ -208,12 +268,53 @@ export function PDFPreviewSheet({
     }
   }, [blobUrl, filePath, filename]);
 
+  // Resize handlers
+  const handleResizeStart = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsResizing(true);
+    resizeStartX.current = e.clientX;
+    resizeStartWidth.current = width;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }, [width]);
+
+  const handleResizeMove = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (!isResizing) return;
+
+      // Calculate new width (dragging left edge, so subtract delta)
+      const delta = resizeStartX.current - e.clientX;
+      const newWidth = resizeStartWidth.current + delta;
+
+      // Apply constraints
+      const maxWidth = Math.round((window.innerWidth * MAX_WIDTH_PERCENT) / 100);
+      const clampedWidth = Math.max(MIN_WIDTH, Math.min(maxWidth, newWidth));
+
+      setWidth(clampedWidth);
+    },
+    [isResizing]
+  );
+
+  const handleResizeEnd = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    setIsResizing(false);
+    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+  }, []);
+
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent
-        className="flex w-[70vw] max-w-4xl flex-col gap-0 p-0 sm:max-w-4xl"
+        className="flex flex-col gap-0 p-0 sm:max-w-none"
+        style={{ width: `${width}px` }}
         side="right"
       >
+        {/* Resize handle */}
+        <div
+          onPointerDown={handleResizeStart}
+          onPointerMove={handleResizeMove}
+          onPointerUp={handleResizeEnd}
+          className={`absolute top-0 left-0 h-full w-1.5 cursor-ew-resize bg-transparent transition-colors hover:bg-primary/20 ${
+            isResizing ? 'bg-primary/30' : ''
+          }`}
+        />
         <SheetHeader className="space-y-0 border-b px-4 py-3">
           <div className="flex items-center justify-between gap-4">
             <SheetTitle className="truncate">{filename}</SheetTitle>
@@ -279,7 +380,7 @@ export function PDFPreviewSheet({
             />
           ) : blobUrl ? (
             <PDFViewer
-              key={retryKey}
+              key={retryCount}
               url={blobUrl}
               initialPage={initialPage}
               onLoadError={handleLoadError}

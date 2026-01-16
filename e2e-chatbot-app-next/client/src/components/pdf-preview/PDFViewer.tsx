@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -71,17 +71,29 @@ export function PDFViewer({
   }, [numPages]);
 
   // Measure container width for responsive PDF scaling
-  const containerRef = useCallback((node: HTMLDivElement | null) => {
-    if (node) {
-      const resizeObserver = new ResizeObserver((entries) => {
-        for (const entry of entries) {
-          setContainerWidth(entry.contentRect.width);
-        }
-      });
-      resizeObserver.observe(node);
-      // Set initial width
-      setContainerWidth(node.clientWidth);
-    }
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+
+    // Set initial width
+    setContainerWidth(node.clientWidth);
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      // We only observe one element, so take the first entry directly
+      const entry = entries[0];
+      if (entry) {
+        setContainerWidth(entry.contentRect.width);
+      }
+    });
+
+    resizeObserver.observe(node);
+
+    // Cleanup: disconnect observer when component unmounts or ref changes
+    return () => {
+      resizeObserver.disconnect();
+    };
   }, []);
 
   return (

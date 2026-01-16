@@ -11,6 +11,15 @@ This helps you understand:
 
 If no profiles exist, guide the user through running `./scripts/quickstart.sh` to set up authentication.
 
+## For AI Agents: Handling Deployment Errors
+
+**If `databricks bundle deploy` fails with "An app with the same name already exists":**
+
+Ask the user: "I see there's an existing app with the same name. Would you like me to bind it to this bundle so we can manage it, or delete it and create a new one?"
+
+- **If they want to bind**: Follow the steps in the "Binding an existing app to your bundle" section
+- **If they want to delete**: Run `databricks apps delete <app-name>` then deploy again
+
 ---
 
 ## Getting Started with Your Agent
@@ -23,16 +32,20 @@ This guide walks you through the initial setup of your agent project: installing
 
 ## Quick Setup
 
-**Prerequisites:** uv, nvm (Node 20), Databricks CLI
+**Prerequisites:** uv, nvm (Node 20), Databricks CLI (v0.283.0+)
 
 **What you need:**
 - uv (Python package manager)
 - nvm (Node.js version manager) with Node 20
-- Databricks CLI
+- Databricks CLI v0.283.0 or above
 
 **Quickest path to running:**
 
 ```bash
+# 0. Ensure you have the latest Databricks CLI
+databricks -v  # Should be v0.283.0 or above
+brew upgrade databricks # Offer to run if the Databricks CLI version is too old 
+
 # 1. Initialize git (recommended for version control)
 git init
 
@@ -219,24 +232,107 @@ curl -X POST http://localhost:8000/invocations \
 
 ## Deploying to Databricks Apps
 
-**Create app:**
+**Deploy using Databricks bundles:**
 
 ```bash
-databricks apps create my-agent
+# Deploy the bundle (creates/updates resources and uploads files)
+databricks bundle deploy
+
+# Run the app (starts/restarts the app with uploaded source code)
+databricks bundle run agent_openai_agents_sdk
 ```
 
-**Sync files:**
+The resource key `agent_openai_agents_sdk` matches the app name defined in `databricks.yml` under `resources.apps.agent_openai_agents_sdk`.
+
+**Error: "An app with the same name already exists"**
+
+If you see this error when running `databricks bundle deploy`:
+
+```
+Error: failed to create app
+
+Failed to create app <app-name>. An app with the same name already exists.
+```
+
+This means you have an existing app that needs to be linked to your bundle. You have two options:
+
+1. **Bind the existing app to your bundle** (recommended if you want to manage the existing app):
+   - Follow the steps in [Binding an existing app to your bundle](#binding-an-existing-app-to-your-bundle) below
+   - This will link the existing app to your bundle so future deploys update it
+
+2. **Delete the existing app and let the bundle create a new one**:
+   ```bash
+   databricks apps delete <app-name>
+   databricks bundle deploy
+   ```
+   - ⚠️ This will permanently delete the existing app including its URL, OAuth credentials, and service principal
+
+**Binding an existing app to your bundle:**
+
+If you've already deployed an app from a different directory or through the UI and want to link it to this bundle, follow these steps:
+
+**Step 1: Update `databricks.yml` to match the existing app name**
+
+⚠️ **CRITICAL**: The app name in your `databricks.yml` **must match** the existing app name exactly, or Terraform will **destroy and recreate** the app (not update it in-place).
+
+First, find your existing app name:
+```bash
+# List existing apps to find the app name
+databricks apps list --output json | jq '.[].name'
+```
+
+Then update `databricks.yml` to use that exact name:
+```yaml
+resources:
+  apps:
+    agent_openai_agents_sdk:
+      name: "openai-agents-sdk-agent"  # Match your existing app name exactly
+      description: "OpenAI Agents SDK agent application"
+      source_code_path: ./
+```
+
+The default configuration uses:
+```yaml
+name: "${bundle.target}-agent-openai-agents-sdk"  # Evaluates to "dev-agent-openai-agents-sdk"
+```
+
+Make sure to replace this with your actual app name.
+
+**Step 2: Bind the resource to the existing app**
 
 ```bash
-DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
-databricks sync . "/Users/$DATABRICKS_USERNAME/my-agent"
+# Bind the resource to the existing app
+databricks bundle deployment bind agent_openai_agents_sdk <existing-app-name>
+
+# Example:
+databricks bundle deployment bind agent_openai_agents_sdk openai-agents-sdk-agent
+
+# If the operation requires confirmation and you want to skip prompts:
+databricks bundle deployment bind agent_openai_agents_sdk openai-agents-sdk-agent --auto-approve
 ```
 
-**Deploy:**
+This links your bundle configuration to the existing deployed app. Future `databricks bundle deploy` commands will update the existing app instead of creating a new one.
+
+**Important notes about binding:**
+- **Remote Terraform state**: Databricks stores Terraform state remotely, so the same app can be detected across different local directories
+- **Name is immutable**: The `name` field cannot be changed in-place; changing it forces replacement (destroy + create)
+- **Review the plan**: When binding, carefully review the Terraform plan output. Look for `# forces replacement` which indicates the app will be destroyed and recreated
+- **Existing binding**: If a resource is already bound to another app, you must unbind it first before binding to a different app
+
+**Unbinding a resource:**
+
+To remove the link between your bundle and the deployed app:
 
 ```bash
-databricks apps deploy my-agent --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/my-agent
+databricks bundle deployment unbind agent_openai_agents_sdk
 ```
+
+This is useful when:
+- You want to bind to a different app
+- You want to let the bundle create a new app on the next deploy
+- You're switching between different deployed instances
+
+Note: Unbinding only removes the link in your bundle state - it does not delete the deployed app.
 
 **Query deployed app:**
 
@@ -258,11 +354,11 @@ curl -X POST <app-url>/invocations \
 **Debug deployed apps:**
 
 ```bash
-# View logs
-databricks apps logs my-agent --follow
+# View logs (use the deployed app name from databricks.yml)
+databricks apps logs dev-agent-openai-agents-sdk --follow
 
 # Check status
-databricks apps get my-agent --output json | jq '{app_status, compute_status}'
+databricks apps get dev-agent-openai-agents-sdk --output json | jq '{app_status, compute_status}'
 ```
 
 ---

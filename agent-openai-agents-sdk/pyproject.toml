@@ -12,7 +12,7 @@ dependencies = [
     "uvicorn>=0.34.2",
     "databricks-openai>=0.8.0",
     "mlflow>=3.8.0rc0",
-    "openai-agents>=0.4.1",
+    "openai-agents>=0.4.1,<0.6.3",
     "python-dotenv",
 ]
 

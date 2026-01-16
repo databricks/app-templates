@@ -24,7 +24,7 @@ This script will:
 After the setup is complete, you can start the agent server and the chat app locally with:
 
 ```bash
-./scripts/start-app.sh
+uv run start-app
 ```
 
 This will start the agent server and the chat app at http://localhost:8000.
@@ -99,7 +99,7 @@ This will start the agent server and the chat app at http://localhost:8000.
    Start up the agent server and chat UI locally:
 
    ```bash
-   ./scripts/start-app.sh
+   uv run start-app
    ```
 
    Query your agent via the UI (http://localhost:8000) or REST API:
@@ -173,19 +173,15 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
 1. **Set up authentication to Databricks resources**
 
-   For this example, you need to add an MLflow Experiment as a resource to your app. Navigate to the [MLFlow Experiments UI](https://docs.databricks.com/aws/en/mlflow/experiments#change-permissions-for-an-experiment) and grant the App's Service Principal (SP) permission to edit the experiment. See the [Apps authorization docs](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#app-authorization) to find the SP's ID in the App Details page.
+   For this example, you need to add an MLflow Experiment as a resource to your app. Grant the App's Service Principal (SP) permission to edit the experiment by clicking `edit` on your app home page. See the [Databricks Apps MLflow experiment documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/mlflow) for more information.
 
-   To access resources like serving endpoints, genie spaces, MLflow experiments, UC Functions, and Vector Search Indexes, click `edit` on your app home page to grant the App's SP permission. See the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources).
+   To grant access to other resources like serving endpoints, genie spaces, UC Functions, and Vector Search Indexes, click `edit` on your app home page to grant the App's SP permission. See the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources).
 
    For resources that are not supported yet, see the [Agent Framework authentication documentation](https://docs.databricks.com/aws/en/generative-ai/agent-framework/deploy-agent#automatic-authentication-passthrough) for the correct permission level to grant to your app SP.
 
    **On-behalf-of (OBO) User Authentication**: Use `get_user_workspace_client()` from `agent_server.utils` to authenticate as the requesting user instead of the app service principal. See the [OBO authentication documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#retrieve-user-authorization-credentials).
 
-2. **Make sure the value of `MLFLOW_EXPERIMENT_ID` is set in `app.yaml`**
-
-   The `MLFLOW_EXPERIMENT_ID` in `app.yaml` should have been filled in by the `./scripts/quickstart.sh` script. If it is not set, you can manually fill in the value in `app.yaml`. Refer to the [Databricks Apps environment variable documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/environment-variables) for more info.
-
-3. **Sync local files to your workspace**
+2. **Sync local files to your workspace**
 
    See the [Databricks Apps deploy documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy?language=Databricks+CLI#deploy-the-app).
 
@@ -194,7 +190,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
    databricks sync . "/Users/$DATABRICKS_USERNAME/agent-openai-agents-sdk"
    ```
 
-4. **Deploy your Databricks App**
+3. **Deploy your Databricks App**
 
    See the [Databricks Apps deploy documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy?language=Databricks+CLI#deploy-the-app).
 
@@ -202,7 +198,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
    databricks apps deploy agent-openai-agents-sdk --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/agent-openai-agents-sdk
    ```
 
-5. **Query your agent hosted on Databricks Apps**
+4. **Query your agent hosted on Databricks Apps**
 
    Databricks Apps are _only_ queryable via OAuth token. You cannot use a PAT to query your agent. Generate an [OAuth token with your credentials using the Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/authentication#u2m-auth):
 

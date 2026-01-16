@@ -8,6 +8,11 @@ import type {
   responsesAgentResponseSchema,
 } from './responses-agent-schema';
 import { DATABRICKS_TOOL_CALL_ID } from '../databricks-tool-calling';
+import {
+  MCP_APPROVAL_REQUEST_TYPE,
+  MCP_APPROVAL_RESPONSE_TYPE,
+  createApprovalStatusOutput,
+} from '../../mcp-approval-utils';
 
 export const convertResponsesAgentChunkToMessagePart = (
   chunk: z.infer<typeof responsesAgentChunkSchema>,
@@ -52,26 +57,17 @@ export const convertResponsesAgentChunkToMessagePart = (
 
     case 'response.output_item.done':
       if (chunk.item.type === 'message') {
-        parts.push(
-          {
-            type: 'text-start',
-            id: chunk.item.id,
-          },
-          {
-            type: 'text-delta',
-            id: chunk.item.id,
-            delta: chunk.item.content[0].text,
-            providerMetadata: {
-              databricks: {
-                itemId: chunk.item.id,
-              },
+        parts.push({
+          type: 'text-delta',
+          id: chunk.item.id,
+          delta: chunk.item.content[0].text,
+          providerMetadata: {
+            databricks: {
+              itemId: chunk.item.id,
+              itemType: 'response.output_item.done',
             },
           },
-          {
-            type: 'text-end',
-            id: chunk.item.id,
-          },
-        );
+        });
       } else if (chunk.item.type === 'function_call') {
         parts.push({
           type: 'tool-call',
@@ -113,6 +109,34 @@ export const convertResponsesAgentChunkToMessagePart = (
             id: chunk.item.id,
           },
         );
+      } else if (chunk.item.type === 'mcp_approval_request') {
+        parts.push({
+          type: 'tool-call',
+          toolCallId: chunk.item.id,
+          toolName: DATABRICKS_TOOL_CALL_ID,
+          input: chunk.item.arguments,
+          providerMetadata: {
+            databricks: {
+              type: MCP_APPROVAL_REQUEST_TYPE,
+              toolName: chunk.item.name,
+              itemId: chunk.item.id,
+              serverLabel: chunk.item.server_label,
+            },
+          },
+        });
+      } else if (chunk.item.type === 'mcp_approval_response') {
+        parts.push({
+          type: 'tool-result',
+          toolCallId: chunk.item.approval_request_id,
+          toolName: DATABRICKS_TOOL_CALL_ID,
+          result: createApprovalStatusOutput(chunk.item.approve),
+          providerMetadata: {
+            databricks: {
+              type: MCP_APPROVAL_RESPONSE_TYPE,
+              ...(chunk.item.id != null && { itemId: chunk.item.id }),
+            },
+          },
+        });
       } else {
         void (chunk.item as never);
       }
@@ -207,6 +231,37 @@ export const convertResponsesAgentResponseToMessagePart = (
         });
         break;
 
+      case 'mcp_approval_request':
+        parts.push({
+          type: 'tool-call',
+          toolCallId: output.id,
+          toolName: DATABRICKS_TOOL_CALL_ID,
+          input: output.arguments,
+          providerMetadata: {
+            databricks: {
+              type: MCP_APPROVAL_REQUEST_TYPE,
+              toolName: output.name,
+              itemId: output.id,
+              serverLabel: output.server_label,
+            },
+          },
+        });
+        break;
+
+      case 'mcp_approval_response':
+        parts.push({
+          type: 'tool-result',
+          toolCallId: output.approval_request_id,
+          toolName: DATABRICKS_TOOL_CALL_ID,
+          result: createApprovalStatusOutput(output.approve),
+          providerMetadata: {
+            databricks: {
+              type: MCP_APPROVAL_RESPONSE_TYPE,
+              ...(output.id != null && { itemId: output.id }),
+            },
+          },
+        });
+        break;
       default: {
         void (output as never);
         break;

@@ -7,6 +7,7 @@ import {
   gte,
   inArray,
   lt,
+  sql,
   type SQL,
 } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -273,7 +274,19 @@ export async function saveMessages({
   }
 
   try {
-    return await (await ensureDb()).insert(message).values(messages);
+    // Use upsert to handle both new messages and updates (e.g., MCP approval continuations)
+    // When a message ID already exists, update its parts (which may have changed)
+    // Using sql`excluded.X` to reference the values that would have been inserted
+    return await (await ensureDb())
+      .insert(message)
+      .values(messages)
+      .onConflictDoUpdate({
+        target: message.id,
+        set: {
+          parts: sql`excluded.parts`,
+          attachments: sql`excluded.attachments`,
+        },
+      });
   } catch (_error) {
     throw new ChatSDKError('bad_request:database', 'Failed to save messages');
   }

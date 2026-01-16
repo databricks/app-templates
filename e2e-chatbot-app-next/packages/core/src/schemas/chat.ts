@@ -33,11 +33,14 @@ const previousMessageSchema = z.object({
 
 export const postRequestBodySchema = z.object({
   id: z.string().uuid(),
-  message: z.object({
-    id: z.string().uuid(),
-    role: z.enum(['user']),
-    parts: z.array(partSchema),
-  }),
+  // Optional for continuation/regeneration scenarios (no new user message)
+  message: z
+    .object({
+      id: z.string().uuid(),
+      role: z.enum(['user']),
+      parts: z.array(partSchema),
+    })
+    .optional(),
   selectedChatModel: z.enum(['chat-model', 'chat-model-reasoning']),
   selectedVisibilityType: z.enum(['public', 'private']),
   // Optional field for ephemeral mode: frontend sends previous conversation history

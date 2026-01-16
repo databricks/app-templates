@@ -1,6 +1,6 @@
 ---
 name: agent-evaluation
-description: Use this when you need to IMPROVE or OPTIMIZE an existing LLM agent's performance - including improving tool selection accuracy, answer quality, reducing costs, or fixing issues where the agent gives wrong/incomplete responses. Evaluates agents systematically using MLflow evaluation with datasets, scorers, and tracing. Covers end-to-end evaluation workflow or individual components (tracing setup, dataset creation, scorer definition, evaluation execution).
+description: Use this when you need to EVALUATE an existing LLM agent's performance - including task completion rate, sub-goal success rate, tool selection accuracy, answer quality, self-correction, safety, cost, and efficiency. Evaluates agents systematically using MLflow evaluation with datasets, scorers, and tracing. Covers end-to-end evaluation workflow or individual components (tracing setup, dataset creation, scorer definition, evaluation execution).
 allowed-tools: Read, Write, Bash, Grep, Glob, WebFetch
 ---
 
@@ -10,21 +10,21 @@ Comprehensive guide for evaluating GenAI agents with MLflow. Use this skill for 
 
 ## Table of Contents
 
-1. [Quick Start](#quick-start)
-2. [Documentation Access Protocol](#documentation-access-protocol)
-3. [Setup Overview](#setup-overview)
-4. [Evaluation Workflow](#evaluation-workflow)
-5. [Bundled Resources](#bundled-resources)
+1. [Evaluation Overview](#evaluation-overview)
+2. [Command Conventions](#command-conventions)
+3. [Pre-Flight Validation](#pre-flight-validation)
+4. [Documentation Access Protocol](#documentation-access-protocol)
+5. [Discovering Agent Server Structure](#discovering-agent-server-structure)
+6. [Verify Current Agent](#verify-current-agent)
+7. [Evaluation Workflow](#evaluation-workflow)
 
-## Quick Start
+## Evaluation Overview
 
 **Setup (prerequisite)**: Install MLflow 3.8+, configure environment, integrate tracing
 
-**Evaluation workflow in 4 steps**:
-
-1. **Understand**: Run agent, inspect traces, understand purpose
-2. **Define**: Select/create scorers for quality criteria
-3. **Dataset**: ALWAYS discover existing datasets first, only create new if needed
+1. **Understand**: Understand agent purpose and strategy
+2. **Dataset**: Agent dataset discovery
+3. **Define**: Select and create scorers for quality criteria
 4. **Evaluate**: Run agent on dataset, apply scorers, analyze results
 5. **Record**: Save evaluation procedure for reference, tracking, and history
 
@@ -65,9 +65,20 @@ uv run mlflow traces evaluate ... --output json > results.json 2> evaluation.log
 - Debugging scenarios where logs provide context
 - Commands that only output unstructured text
 
+## Pre-Flight Validation
+
+Validate environment before starting:
+
+```bash
+uv run mlflow --version  # Should be >=3.8.0
+uv run python -c "import mlflow; print(f'MLflow {mlflow.__version__} installed')"
+```
+
+If MLflow is missing or version is <3.8.0, see Setup overview here `references/setup-guide`
+
 ## Documentation Access Protocol
 
-**All MLflow documentation must be accessed through llms.txt:**
+**CRITICAL: All MLflow documentation must be accessed through llms.txt:**
 
 1. Start at: `https://mlflow.org/docs/latest/llms.txt`
 2. Query llms.txt for your topic with specific prompt
@@ -80,33 +91,7 @@ uv run mlflow traces evaluate ... --output json > results.json 2> evaluation.log
 - Scorer registration (check MLflow docs for scorer APIs)
 - Evaluation execution (understand mlflow.genai.evaluate API)
 
-**Before writing any agent evaluation code**
-- Read `.claude/skills/agent-evaluation/patterns/GOTCHAS.md` for common mistakes that cause failures
-- Read `.claude/skills/agent-evaluation/patterns/CRITICAL-interfaces.md` for exact API signatures and data schemas
-
-**For further documentation** 
-- Quick lookup of available files under `.claude/skills/agent-evaluation/patterns/`:
-
-| Reference | Purpose | When to Read |
-|-----------|---------|--------------|
-| `GOTCHAS.md` | Common mistakes | **Always read first** before writing code |
-| `CRITICAL-interfaces.md` | API signatures, schemas |  **Always read first** When writing any evaluation code |
-| `patterns-evaluation.md` | Running evals, comparing | When executing evaluations |
-| `patterns-scorers.md` | Custom scorer creation | When built-in scorers aren't enough |
-| `patterns-datasets.md` | Dataset building | When preparing evaluation data |
-
-## Pre-Flight Validation
-
-Validate environment before starting:
-
-```bash
-uv run mlflow --version  # Should be >=3.8.0
-uv run python -c "import mlflow; print(f'MLflow {mlflow.__version__} installed')"
-```
-
-If MLflow is missing or version is <3.8.0, see Setup Overview below.
-
-## Discovering Agent Structure
+## Discovering Agent Server Structure
 
 **Each project has unique structure.** Use dynamic exploration instead of assumptions:
 
@@ -148,15 +133,16 @@ cat README.md docs/*.md 2>/dev/null | head -100
 ls -la src/ app/ agent/ 2>/dev/null
 ```
 
-## Setup Overview
+**IMPORTANT: Always let the user know the server structure has been evaluated**
 
-Before evaluation, complete these three setup steps:
+## Verify Current Agent
 
-1. **Install MLflow** (version >=3.8.0)
-2. **Configure environment** (tracking URI and experiment)
-3. **Integrate tracing** (autolog and @mlflow.trace decorators)
-   - ⚠️ **MANDATORY**: Read `references/tracing-integration.md` documentation BEFORE implementing
-   - ✓ **VERIFY**: Run validation script AFTER implementing
+Complete two verification steps:
+
+1. **Environment Check** (tracking URI and experiment)
+2. **Integrate tracing** (autolog and @mlflow.trace decorators)
+   - ⚠️ **MANDATORY**: Read `references/tracing-integration.md` documentation and implement any changes
+   - ✓ **VERIFY**: Run `scripts/validate_agent_tracing.py` to validate work
 
 ⚠️ **Tracing must work before evaluation.** If tracing fails, stop and troubleshoot.
 
@@ -165,15 +151,13 @@ Before evaluation, complete these three setup steps:
 - [ ] MLflow >=3.8.0 installed
 - [ ] MLFLOW_TRACKING_URI and MLFLOW_EXPERIMENT_ID set
 - [ ] Autolog enabled and @mlflow.trace decorators added
-- [ ] Test run creates a trace (verify trace ID is not None)
-
-**For complete setup instructions:** See `references/setup-guide.md`
+- [ ] Test run creates a trace (verify trace ID is not None) 
 
 ## Evaluation Workflow
 
 ### Step 1: Understand Agent Purpose
 
-1. See `references/agent-strategy.md` to start
+1. Invoke agent with sample input
 2. Inspect MLflow trace (especially LLM prompts describing agent purpose)
 3. Print your understanding and ask user for verification
 4. **Wait for confirmation before proceeding**
@@ -192,6 +176,7 @@ Before evaluation, complete these three setup steps:
 
 3. Identify quality dimensions for your agent and select appropriate scorers
 4. Register scorers and test on sample trace before full evaluation
+5. Provide table with Scorer, Purpose, and Selection Reason
 
 **For scorer selection and registration:** See `references/scorers.md`
 **For CLI constraints (yes/no format, template variables):** See `references/scorers-constraints.md`
@@ -215,9 +200,9 @@ Ask the user:
 2. **No** - Proceed with scorers that don't require ground truth"
 
 ### If User Says YES (Create Evaluation Dataset Step 4):
-### If User Says NO (No Ground Truth Dataset Skip Step 4):
+### If User Says NO (Warn User and Skip to Step 5):
 
-Warn the user:
+No Ground Truth Dataset Warning:
 
 "**Important Note:** While you can evaluate without ground truth, having a ground truth dataset significantly improves evaluation quality. You'll be limited to scorers that assess general quality rather than correctness against expected answers. Consider creating even a small ground truth dataset (10-15 examples) for your most critical use cases.
 
@@ -245,9 +230,12 @@ Proceeding with scorers that don't require ground truth..."
    - If yes: Ask which dataset to use and record the dataset name
    - If no: Proceed to step 5
 
-4. **Create new dataset only if user declined existing ones**:
+4. **Create new dataset only if user declined existing ones or No existing datasets found**:
+  - Prompt user to name test cases file
+  - Write results file in `agent_server/evaluation/test_cases/`
+  
    ```bash
-   uv run python scripts/create_dataset_template.py --test-cases-file test_cases.txt
+   uv run python scripts/create_dataset_template.py --test-cases-file <path to test cases file>
    # Optional: --dataset-name my-eval --catalog main --schema ml --table eval_v1
    ```
    Review and execute the generated script.
@@ -258,203 +246,44 @@ Proceeding with scorers that don't require ground truth..."
 
 ### Step 5: Create and Run Evaluation
 
-1. Generate traces:
+**Coding Support** 
+- For coding patterns see `skills/agent-evaluation/patterns/`:
 
-  Write output to `agent_server/evaluate_agent.py`
+| Reference | Purpose | When to Read |
+|-----------|---------|--------------|
+| `GOTCHAS.md` | Common mistakes | **Always read first** before writing code |
+| `CRITICAL-interfaces.md` | API signatures, schemas |  **Always read first** When writing any evaluation code |
+| `patterns-evaluation.md` | Running evals, comparing | When executing evaluations |
+| `patterns-scorers.md` | Custom scorer creation | When built-in scorers aren't enough |
+| `patterns-datasets.md` | Dataset building | When preparing evaluation data |
+
+1. Generate evaluation script:
+  - Write output to `agent_server/evaluate_agent.py`
+   
    ```bash
    uv run python scripts/run_evaluation_template.py  # Auto-detects module, entry point, dataset
    # Optional: --module my_agent.agent --entry-point run_agent --dataset-name my-dataset
+  
    ```
-   Review and execute the generated script.
+  Review and execute the generated script.
 
 2. Apply scorers:
-
-  Write output to `evaluation_results.json` to `agent_server/evaluation/`
+  - Prompt user to name results file
+  - Write results file to `agent_server/evaluation/results`
+   
    ```bash
    # IMPORTANT: Redirect stderr to avoid mixing logs with JSON output
    uv run mlflow traces evaluate \
      --trace-ids <comma_separated_trace_ids> \
      --scorers <scorer1>,<scorer2>,... \
-     --output json 2>/dev/null > evaluation_results.json
+     --output json 2>/dev/null > <path to results file>
    ```
 
 3. Analyze results:
+  - Prompt user to name evaluation report file
+  - Write results file to `agent_server/evaluation/reports`
 
-  Write the generated report's output `evaluation_report.md` to `agent_server/evaluation/`
    ```bash
-   uv run python scripts/analyze_results.py evaluation_results.json
+   uv run python scripts/analyze_results.py <path to results file name>
    ```
    Generates `evaluation_report.md` with pass rates, failure patterns, and recommendations.
-
-## Bundled Resources
-
-This skill includes scripts and reference documentation to support the evaluation workflow.
-
-### Scripts (scripts/)
-
-Executable automation for common operations:
-
-**Validation Scripts:**
-
-- **validate_environment.py**: Environment validation (mlflow doctor + custom checks)
-
-  - **Use**: Pre-flight check before starting
-  - Checks MLflow version, env vars, connectivity
-
-- **validate_auth.py**: Authentication testing
-
-  - **Use**: Before expensive operations
-  - Tests Databricks/local auth, LLM provider
-
-- **validate_tracing_static.py**: Static tracing validation (NO auth needed)
-
-  - **Use**: Step 4.4 Stage 1
-  - Code analysis only - fast validation
-
-- **validate_tracing_runtime.py**: Runtime tracing validation (REQUIRES auth, BLOCKING)
-  - **Use**: Step 4.4 Stage 2
-  - Runs agent to verify traces are captured
-  - Auto-detects module and entry point (override with --module, --entry-point)
-
-**Setup & Configuration:**
-
-- **setup_mlflow.py**: Environment configuration with auto-detection
-  - **Use**: Step 2 (Configure Environment)
-  - Auto-detects tracking URI and experiment ID with optional overrides
-
-**Dataset Management:**
-
-- **list_datasets.py**: Dataset discovery and comparison
-
-  - **Use**: Step 4 - MANDATORY first step
-  - Lists, compares, recommends datasets with diversity metrics
-  - Always run before considering dataset creation
-
-- **create_dataset_template.py**: Dataset creation code generator
-  - **Use**: Step 4 - ONLY if user declines existing datasets
-  - Generates customized dataset creation script
-  - **REQUIRED**: --test-cases-file argument with test queries
-  - **IMPORTANT**: Generated code uses `mlflow.genai.datasets` APIs and prompts you to inspect agent function signature to match parameters exactly
-
-**Evaluation:**
-
-- **run_evaluation_template.py**: Evaluation execution code generator
-
-  - **Use**: Step 5.1 (Generate Traces)
-  - Generates evaluation script using `mlflow.genai.evaluate()`
-  - Auto-detects agent module, entry point, and dataset
-  - **IMPORTANT**: Loads dataset using `mlflow.genai.datasets.search_datasets()` - never manually recreates data
-
-- **analyze_results.py**: Results analysis and insights
-  - **Use**: Step 5.3 (After applying scorers)
-  - Pattern detection, recommendations, report generation
-
-### Script CLI Arguments Reference
-
-All scripts support non-interactive execution with CLI arguments:
-
-**Setup:**
-
-- `setup_mlflow.py [--tracking-uri URI] [--experiment-name NAME] [--experiment-id ID] [--create]`
-
-**Validation:**
-
-- `validate_environment.py` (no args)
-- `validate_auth.py` (no args)
-- `validate_tracing_static.py` (no args)
-- `validate_tracing_runtime.py [--module NAME] [--entry-point FUNC]`
-
-**Datasets:**
-
-- `list_datasets.py [--format {table,json,names-only}]`
-- `create_dataset_template.py --test-cases-file FILE [--dataset-name NAME] [--catalog C --schema S --table T]`
-
-**Evaluation:**
-
-- `run_evaluation_template.py [--module NAME] [--entry-point FUNC] [--dataset-name NAME]`
-- `analyze_results.py RESULTS_FILE`
-
-**Auto-detection**: Scripts with optional arguments will auto-detect values when not specified. Provide explicit values only when auto-detection fails or you need to override.
-
-### References (references/)
-
-Detailed guides loaded as needed:
-
-- **setup-guide.md** (~180 lines)
-
-  - **When to read**: During Setup (before evaluation)
-  - **Covers**: MLflow installation, environment configuration, tracing integration
-  - Complete setup instructions with checkpoints
-
-- **agent-strategy.md** (~125 lines)
-  - **When to read**: When extracting agent information and understanding
-  - **Covers**: agent architecture, user intent, purpose, relevant score finding
-  - Interactive guide with instructions and questions
-
-- **tracing-integration.md** (~450 lines)
-
-  - **When to read**: During Step 3 of Setup (Integrate Tracing)
-  - **Covers**: Autolog, decorators, session tracking, verification
-  - Complete implementation guide with code examples
-
-- **dataset-preparation.md** (~320 lines)
-
-  - **When to read**: During Evaluation Step 3 (Prepare Dataset)
-  - **Covers**: Dataset schema, APIs, creation, Unity Catalog
-  - Full workflow with Databricks considerations
-
-- **scorers.md** (~430 lines)
-
-  - **When to read**: During Evaluation Step 2 (Define Scorers)
-  - **Covers**: Built-in vs custom, registration, testing, design patterns
-  - Comprehensive scorer guide
-
-- **scorers-constraints.md** (~150 lines)
-
-  - **When to read**: When registering custom scorers with CLI
-  - **Covers**: Template variable constraints, yes/no format, common mistakes
-  - Critical CLI requirements and examples
-
-- **troubleshooting.md** (~460 lines)
-  - **When to read**: When encountering errors at any step
-  - **Covers**: Environment, tracing, dataset, evaluation, scorer issues
-  - Organized by phase with error/cause/solution format
-
-### Patterns (patterns/)
-
-  - **CRITICAL-interfaces.md** (~472 lines)
-
-  - **When to read**: Always read first before writing evaluation code
-  - **Covers**: API signatures, schemas
-  - Learn API patterns, understand scorer interface
-
-- **GOTCHAS.md** (~547 lines)
-
-  - **When to read**: Always read first before writing evaluation code
-  - **Covers**: Common mistakes
-  - Exact API signatures and data schemas to avoid mistakes with wrong and correct formats
-
-- **patterns-datasets.md** (~870 lines)
-
-  - **When to read**: When preparing evaluation data
-  - **Covers**: Dataset building, dataset schemas, trace analysis
-  - Supports dataset construction by providing a number of possible patterns
-
-- **patterns-evaluation.md** (~582 lines)
-
-  - **When to read**: When executing evaluations
-  - **Covers**: Running evals, comparing, test with evaluation
-  - Working patterns for running evaluations, comparing results, and iterating on quality.
-
-- **patterns-scorers.md** (~804 lines)
-  - **When to read**: When built-in scorers aren't enough
-  - **Covers**: Custom scorer creation
-  - Working code patterns for creating and using scorers.
-
-### Assets (assets/)
-
-Output templates (not loaded to context):
-
-- **evaluation_report_template.md**
-  - **Use**: Step 5.3 (Analyze Results)
-  - Structured template for evaluation report generation

@@ -11,7 +11,7 @@ Workflow to extract relevant information regarding the agent
 
 **PRIORITY:** Before writing evaluation code, complete strategy alignment. This ensures evaluations measure what matters and provide actionable insights.
 
-### Step 0: Check if `agent_server/evaluation/agent_strategy.md` file exists
+### Check if `agent_server/evaluation/agent_strategy.md` file exists
 
 - If it doesn't exist ask the user if he would like to create one.
 **Options:**
@@ -23,7 +23,56 @@ Workflow to extract relevant information regarding the agent
 2. **Modify** - Proceed by asking which Step and preceed accordingly
 3. **Use Current** - Skip everything and use current `agent_server/evaluation/agent_strategy.md` file
 
-### Step 1: Understand the Agent
+## Discovering Agent Server Structure
+
+- Read all the files within the agent's server folder `agent_server` 
+- Review the configuration files for system prompts and tool definitions
+- Check existing tests or evaluation scripts
+- Look at CLAUDE.md, AGENTS.md, and README for project context
+
+**Each project has unique structure.** Use dynamic exploration instead of assumptions:
+
+### Find Agent Entry Points
+```bash
+# Search for main agent functions
+grep -r "def.*agent" . --include="*.py"
+grep -r "def (run|stream|handle|process)" . --include="*.py"
+
+# Check common locations
+ls main.py app.py src/*/agent.py 2>/dev/null
+
+# Look for API routes
+grep -r "@app\.(get|post)" . --include="*.py"  # FastAPI/Flask
+grep -r "def.*route" . --include="*.py"
+```
+
+### Find Tracing Integration
+```bash
+# Find autolog calls
+grep -r "mlflow.*autolog" . --include="*.py"
+
+# Find trace decorators
+grep -r "@mlflow.trace" . --include="*.py"
+
+# Check imports
+grep -r "import mlflow" . --include="*.py"
+```
+
+### Understand Project Structure
+```bash
+# Check entry points in package config
+cat pyproject.toml setup.py 2>/dev/null | grep -A 5 "scripts\|entry_points"
+
+# Read project documentation
+cat README.md docs/*.md 2>/dev/null | head -100
+
+# Explore main directories
+ls -la src/ app/ agent/ 2>/dev/null
+```
+
+**IMPORTANT: Always let the user know the server structure has been evaluated**
+
+### Further Understand the Agent Context
 
 Before evaluating, gather context about what you're evaluating:
 
@@ -33,13 +82,7 @@ Before evaluating, gather context about what you're evaluating:
 3. **What is the input/output format?** (messages format, structured output)
 4. **What is the current state?** (prototype, production, needs improvement)
 
-**Actions to take:**
-- Read all the files within the agent's server folder `agent_server` 
-- Review the configuration files for system prompts and tool definitions
-- Check existing tests or evaluation scripts
-- Look at CLAUDE.md, AGENTS.md, and README for project context
-
-### Step 2: Align on What to Evaluate
+### Align on What to Evaluate
 
 **Evaluation dimensions to consider:**
 
@@ -60,25 +103,7 @@ Before evaluating, gather context about what you're evaluating:
 2. What are the **nice-to-have** criteria? (conciseness, tone, format)
 3. Are there **specific failure modes** you've seen or worry about?
 
-## Step 3: Synthetic Ground Truth Dataset Decision
-
-Ask the user:
-
-"Would you like to create a synthetic ground truth dataset for evaluation?
-
-**Benefits of a ground truth dataset:**
-- Enables **Correctness** scoring (comparing against expected answers)
-- Enables **RetrievalSufficiency** scoring (for RAG agents)
-- Enables **Guidelines** and **ExpectationsGuidelines** scoring (adherence to guidelines and expectations)
-- Enables **Equivalence** scoring (reponse agrees with predicted response)
-- Provides consistent, repeatable evaluation baselines
-- Allows tracking improvement over time
-
-**Options:**
-1. **Yes** - I'll guide you through creating a synthetic dataset relevant to your use case
-2. **No** - Proceed with scorers that don't require ground truth"
-
-### Step 3: Define User Scenarios (Evaluation Dataset)
+### Define User Scenarios 
 
 **Types of test cases to include:**
 
@@ -96,17 +121,18 @@ Ask the user:
 3. Are there questions it should **refuse** to answer?
 4. Do you have **existing test cases** or production traces to start from?
 
-### Step 4: Establish Success Criteria
+### Establish Success Criteria
 
-**Define quality gates before running evaluation:**
+**Define quality gates for evaluation:**
 
-```python
-QUALITY_GATES = {
-    "safety": 1.0,           # 100% - non-negotiable
-    "correctness": 0.9,      # 90% - high bar for accuracy
-    "relevance": 0.85,       # 85% - good relevance
-    "concise": 0.8,          # 80% - nice to have
-}
+Based on Chosen evaluation dimension.
+
+Example:
+```
+"safety": 1.0,           # 100% - non-negotiable
+"correctness": 0.9,      # 90% - high bar for accuracy
+"relevance": 0.85,       # 85% - good relevance
+"concise": 0.8,          # 80% - nice to have
 ```
 
 **Questions to ask the user:**

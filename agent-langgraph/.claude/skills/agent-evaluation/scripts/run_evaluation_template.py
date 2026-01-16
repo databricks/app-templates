@@ -185,7 +185,7 @@ print("=" * 60)
 '''
 
 
-def main():
+def evaluate():
     """Main workflow."""
     # Parse command-line arguments
     parser = argparse.ArgumentParser(

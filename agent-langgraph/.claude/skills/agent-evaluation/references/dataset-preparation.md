@@ -102,7 +102,7 @@ results = mlflow.genai.evaluate(
 **For complete workflows:**
 
 - Check existing datasets: `python scripts/list_datasets.py` (auto-lists all)
-- Create new dataset: `python scripts/create_dataset_template.py --test-cases-file test_cases.txt`
+- Create new dataset: `python scripts/create_dataset_template.py --test-cases-file <test cases filename>`
 
 ---
 
@@ -181,11 +181,13 @@ If no suitable dataset exists, create a new one.
 ### Use the Dataset Template Generator
 
 ```bash
-uv run python scripts/create_dataset_template.py --test-cases-file test_cases.txt
+uv run python scripts/create_dataset_template.py --test-cases-file <test cases filename>
+```
+For Databricks Unity Catalog
 
-# For Databricks Unity Catalog:
+```bash
 uv run python scripts/create_dataset_template.py \
-  --test-cases-file test_cases.txt \
+  --test-cases-file <test cases filename> \
   --catalog main --schema ml --table eval_v1
 ```
 
@@ -244,7 +246,7 @@ When using Databricks as your tracking URI, special considerations apply.
 **Option 1: Use the script**
 
 ```bash
-uv run python scripts/create_dataset_template.py --test-cases-file test_cases.txt
+uv run python scripts/create_dataset_template.py --test-cases-file <test cases filename>
 ```
 
 **Option 2: List with Databricks CLI**

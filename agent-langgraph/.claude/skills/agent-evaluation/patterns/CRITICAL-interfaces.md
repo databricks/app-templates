@@ -14,8 +14,6 @@
 - [Evaluation Datasets (MLflow-managed)](#evaluation-datasets-mlflow-managed)
 - [Production Monitoring](#production-monitoring)
 - [Key Constants](#key-constants)
-- [Installation](#installation)
-- [Setup](#setup)
 
 ---
 
@@ -447,27 +445,4 @@ True | False     # Boolean
 0.0 - 1.0        # Float scores
 int              # Integer scores
 str              # Categorical values
-```
-
----
-
-## Installation
-
-```bash
-pip install --upgrade "mlflow[databricks]>=3.1.0" openai
-```
-
-## Setup
-
-```python
-import mlflow
-
-# Enable auto-tracing
-mlflow.openai.autolog()  # or mlflow.langchain.autolog(), etc.
-
-# Set tracking URI
-mlflow.set_tracking_uri("databricks")
-
-# Set experiment
-mlflow.set_experiment("/Shared/my-experiment")
 ```

@@ -1,6 +1,7 @@
 import os
-import uuid
 from typing import Any, AsyncGenerator, Optional, Sequence, TypedDict
+
+import uuid_utils
 
 import mlflow
 from databricks.sdk import WorkspaceClient
@@ -86,7 +87,7 @@ def _get_or_create_thread_id(request: ResponsesAgentRequest) -> str:
     if request.context and getattr(request.context, "conversation_id", None):
         return str(request.context.conversation_id)
 
-    return str(uuid.uuid4())
+    return str(uuid_utils.uuid7())
 
 
 @invoke()

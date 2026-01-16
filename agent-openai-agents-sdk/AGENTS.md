@@ -140,6 +140,116 @@ See the [MCP documentation](https://docs.databricks.com/aws/en/generative-ai/mcp
 
 ---
 
+## Granting Access to App Resources
+
+### ⚠️ CRITICAL: Resource Permissions
+
+**After adding any MCP server to your agent, you MUST grant the app access to the server's dependent resource(s) in `databricks.yml`.**
+
+Without this, you'll get permission errors when the agent tries to use the resource.
+
+### Example Workflow
+
+**1. Add MCP server in `agent_server/agent.py`:**
+
+```python
+from databricks_openai.agents import McpServer
+
+genie_server = McpServer(
+    url=f"{host}/api/2.0/mcp/genie/01234567-89ab-cdef",
+    name="my genie space",
+)
+
+agent = Agent(
+    name="my agent",
+    instructions="You are a helpful agent.",
+    model="databricks-claude-3-7-sonnet",
+    mcp_servers=[genie_server],
+)
+```
+
+**2. Grant access in `databricks.yml`:**
+
+```yaml
+resources:
+  apps:
+    agent_openai_agents_sdk:
+      resources:
+        - name: 'my_genie_space'
+          genie_space:
+            name: 'My Genie Space'
+            space_id: '01234567-89ab-cdef'
+            permission: 'CAN_RUN'
+```
+
+### Resource Type Examples
+
+```yaml
+# Unity Catalog function (for UC functions accessed via MCP)
+- name: 'my_uc_function'
+  uc_securable:
+    securable_full_name: 'catalog.schema.function_name'
+    securable_type: 'FUNCTION'
+    permission: 'EXECUTE'
+
+# Unity Catalog connection (for external MCP servers via UC connections)
+- name: 'my_connection'
+  uc_securable:
+    securable_full_name: 'my-connection-name'
+    securable_type: 'CONNECTION'
+    permission: 'USE_CONNECTION'
+
+# Vector search index
+- name: 'my_vector_index'
+  uc_securable:
+    securable_full_name: 'catalog.schema.index_name'
+    securable_type: 'TABLE'
+    permission: 'SELECT'
+
+# SQL warehouse
+- name: 'my_warehouse'
+  sql_warehouse:
+    sql_warehouse_id: 'abc123def456'
+    permission: 'CAN_USE'
+
+# Model serving endpoint
+- name: 'my_endpoint'
+  serving_endpoint:
+    name: 'my_endpoint'
+    permission: 'CAN_QUERY'
+
+# Genie space
+- name: 'my_genie_space'
+  genie_space:
+    name: 'My Genie Space'
+    space_id: '01234567-89ab-cdef'
+    permission: 'CAN_RUN'
+```
+
+### Custom MCP Servers (Databricks Apps)
+
+If you're using custom MCP servers deployed as Databricks Apps (names starting with `mcp-`), you need to manually grant your agent app's service principal permission to access them:
+
+1. Find your agent app's service principal name:
+```bash
+databricks apps get <your-agent-app-name> --output json | jq -r '.service_principal_name'
+```
+
+2. Grant the service principal `CAN_USE` permission on the MCP server app:
+```bash
+databricks apps update-permissions <mcp-server-app-name> --service-principal <agent-app-service-principal> --permission-level CAN_USE
+```
+
+**Note:** Apps are not yet supported as resource dependencies for other apps in `databricks.yml`, so this manual permission grant is required for now.
+
+### Important Notes
+
+- The app automatically has access to the MLflow experiment (already configured in template)
+- For all other resources (UC functions, Genie spaces, vector indexes, warehouses, etc.), you MUST add them
+- Without proper resource grants, you'll see permission errors at runtime
+
+---
+
 ## Running the App Locally
 
 **Start the server:**

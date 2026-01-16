@@ -6,8 +6,15 @@ Requirements:
 1. Not reporting ready until BOTH frontend and backend processes are ready
 2. Exiting as soon as EITHER process fails
 3. Printing error logs if either process fails
+
+Usage:
+    start-app [OPTIONS]
+
+All options are passed through to the backend server (start-server).
+See 'uv run start-server --help' for available options.
 """
 
+import argparse
 import re
 import shutil
 import subprocess
@@ -141,7 +148,7 @@ class ProcessManager:
         if self.frontend_log:
             self.frontend_log.close()
 
-    def run(self):
+    def run(self, backend_args=None):
         load_dotenv(dotenv_path=".env.local", override=True)
 
         if not self.clone_frontend_if_needed():
@@ -152,9 +159,14 @@ class ProcessManager:
         self.frontend_log = open("frontend.log", "w", buffering=1)
 
         try:
+            # Build backend command, passing through all arguments
+            backend_cmd = ["uv", "run", "start-server"]
+            if backend_args:
+                backend_cmd.extend(backend_args)
+
             # Start backend
             self.backend_process = self.start_process(
-                ["uv", "run", "start-server"], "backend", self.backend_log, BACKEND_READY
+                backend_cmd, "backend", self.backend_log, BACKEND_READY
             )
 
             # Setup and start frontend
@@ -211,7 +223,15 @@ class ProcessManager:
 
 
 def main():
-    sys.exit(ProcessManager().run())
+    parser = argparse.ArgumentParser(
+        description="Start agent frontend and backend",
+        usage="%(prog)s [OPTIONS]\n\nAll options are passed through to start-server. "
+        "Use 'uv run start-server --help' for available options."
+    )
+    # Parse known args (none currently) and pass remaining to backend
+    _, backend_args = parser.parse_known_args()
+
+    sys.exit(ProcessManager().run(backend_args))
 
 
 if __name__ == "__main__":

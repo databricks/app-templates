@@ -124,6 +124,15 @@ This will start the agent server and the chat app at http://localhost:8000.
      -H "Content-Type: application/json" \
      -d '{ "input": [{ "role": "user", "content": "hi" }] }'
      ```
+    - Example request passing in user id context (for long term agent example):
+      ```bash
+      curl -X POST http://localhost:8000/invocations \
+      -H "Content-Type: application/json" \
+      -d '{
+         "input": [{"role": "user", "content": "What is my favorite color?"}],
+         "context": {"user_id": "test@example.com"}
+      }'
+      ```
 
 ## Modifying your agent
 
@@ -173,7 +182,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
 1. **Set up authentication to Databricks resources**
 
-   For this example, you need to add an MLflow Experiment as a resource to your app. Grant the App's Service Principal (SP) permission to edit the experiment by clicking `edit` on your app home page. See the [Databricks Apps MLflow experiment documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/mlflow) for more information.
+   For this example, you need to add an MLflow Experiment and Lakebase instance as a resource to your app. Grant the App's Service Principal (SP) permission to edit the experiment by clicking `edit` on your app home page. See the [Databricks Apps MLflow experiment documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/mlflow) for more information.
 
    To grant access to other resources like serving endpoints, genie spaces, UC Functions, and Vector Search Indexes, click `edit` on your app home page to grant the App's SP permission. See the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources).
 
@@ -190,7 +199,45 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
    databricks sync . "/Users/$DATABRICKS_USERNAME/agent-langgraph"
    ```
 
-3. **Deploy your Databricks App**
+3. **Grant Lakebase permissions to your App's Service Principal**
+
+   Before deploying/querying your agent, you need to ensure your app has access to the necessary Lakebase tables for short-term memory.
+
+   First, add your Lakebase instance as a resource to your app:
+   - Go to the Databricks UI
+   - Navigate to your app and click **Edit**
+   - Go to **App resources** → **Add resource**
+   - Add your Lakebase instance that you are using for short-term memory store
+
+   Then, grant the necessary permissions on your Lakebase instance for your app's service principal. Run the following SQL commands on your Lakebase instance (replace `app-sp-id` with your app's service principal UUID):
+
+   ```sql
+   DO $$
+   DECLARE
+      app_sp text := 'app-sp-uuid';  -- TODO: Replace with your App's Service Principal ID here
+   BEGIN
+      -------------------------------------------------------------------
+      -- Drizzle schema: migration metadata tables
+      -------------------------------------------------------------------
+      EXECUTE format('GRANT USAGE, CREATE ON SCHEMA drizzle TO %I;', app_sp);
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA drizzle TO %I;', app_sp);
+      -------------------------------------------------------------------
+      -- App schema: business tables (Chat, Message, etc.)
+      -------------------------------------------------------------------
+      EXECUTE format('GRANT USAGE, CREATE ON SCHEMA ai_chatbot TO %I;', app_sp);
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA ai_chatbot TO %I;', app_sp);
+      -------------------------------------------------------------------
+      -- Public schema for checkpoint tables
+      -------------------------------------------------------------------
+      EXECUTE format('GRANT USAGE, CREATE ON SCHEMA public TO %I;', app_sp);
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE public.checkpoint_migrations TO %I;', app_sp);
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE public.checkpoint_writes TO %I;',       app_sp);
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE public.checkpoints TO %I;',             app_sp);
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE public.checkpoint_blobs TO %I;',        app_sp);
+   END $$;
+   ```
+
+4. **Deploy your Databricks App**
 
    See the [Databricks Apps deploy documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy?language=Databricks+CLI#deploy-the-app).
 
@@ -198,7 +245,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
    databricks apps deploy agent-langgraph --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/agent-langgraph
    ```
 
-4. **Query your agent hosted on Databricks Apps**
+5. **Query your agent hosted on Databricks Apps**
 
    Databricks Apps are _only_ queryable via OAuth token. You cannot use a PAT to query your agent. Generate an [OAuth token with your credentials using the Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/authentication#u2m-auth):
 
@@ -226,6 +273,16 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
         -H "Content-Type: application/json" \
         -d '{ "input": [{ "role": "user", "content": "hi" }] }'
      ```
+
+   - Example request passing in user id context (for long term agent example):
+      ```bash
+      curl -X POST <app-url.databricksapps.com>/invocations \
+      -H "Content-Type: application/json" \
+      -d '{
+         "input": [{"role": "user", "content": "What is my favorite color?"}],
+         "context": {"user_id": "test@example.com"}
+      }'
+      ```
 
 For future updates to the agent, sync and redeploy your agent.
 

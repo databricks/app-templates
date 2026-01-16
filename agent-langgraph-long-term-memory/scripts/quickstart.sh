@@ -324,6 +324,43 @@ echo "Updating .env.local with experiment ID..."
 sed -i '' "s/MLFLOW_EXPERIMENT_ID=.*/MLFLOW_EXPERIMENT_ID=$EXPERIMENT_ID/" .env.local
 echo
 
+# ===================================================================
+# Section 5: Lakebase Instance Setup
+# ===================================================================
+
+# Check if LAKEBASE_INSTANCE_NAME already exists in app.yaml
+if grep -q "name: LAKEBASE_INSTANCE_NAME" app.yaml; then
+    echo "LAKEBASE_INSTANCE_NAME already exists in app.yaml, skipping Lakebase setup..."
+    # Extract the existing value from app.yaml for display in summary
+    LAKEBASE_INSTANCE_NAME=$(grep -A1 "name: LAKEBASE_INSTANCE_NAME" app.yaml | grep "value:" | sed 's/.*value: *"\?\([^"]*\)"\?/\1/')
+else
+    echo "Setting up Lakebase instance..."
+    echo "Please enter your Lakebase instance name:"
+    read -r LAKEBASE_INSTANCE_NAME
+
+    if [ -z "$LAKEBASE_INSTANCE_NAME" ]; then
+        echo "Error: Lakebase instance name is required"
+        exit 1
+    fi
+
+    # Update .env.local with the Lakebase instance name
+    if grep -q "LAKEBASE_INSTANCE_NAME=" .env.local; then
+        sed -i '' "s/LAKEBASE_INSTANCE_NAME=.*/LAKEBASE_INSTANCE_NAME=$LAKEBASE_INSTANCE_NAME/" .env.local
+    else
+        echo "LAKEBASE_INSTANCE_NAME=$LAKEBASE_INSTANCE_NAME" >> .env.local
+    fi
+    echo "✓ Lakebase instance name saved to .env.local"
+
+    echo "Adding LAKEBASE_INSTANCE_NAME to app.yaml..."
+    # Add the two lines to the env section
+    sed -i '' "/^env:/a\\
+  - name: LAKEBASE_INSTANCE_NAME\\
+    value: \"$LAKEBASE_INSTANCE_NAME\"
+" app.yaml
+    echo "✓ Added LAKEBASE_INSTANCE_NAME to app.yaml"
+fi
+echo
+
 echo "==================================================================="
 echo "Setup Complete!"
 echo "==================================================================="

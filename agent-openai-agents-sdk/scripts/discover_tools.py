@@ -176,33 +176,6 @@ def discover_genie_spaces(w: WorkspaceClient) -> List[Dict[str, Any]]:
     return spaces
 
 
-def discover_mcp_servers() -> List[Dict[str, Any]]:
-    """Discover custom MCP servers (Python packages starting with mcp-)."""
-    mcp_servers = []
-
-    try:
-        # Check if uv is available
-        result = subprocess.run(
-            ["uv", "pip", "list", "--format", "json"],
-            capture_output=True,
-            text=True,
-        )
-
-        if result.returncode == 0:
-            packages = json.loads(result.stdout)
-            for pkg in packages:
-                name = pkg.get("name", "")
-                if name.startswith("mcp-") or "mcp" in name.lower():
-                    mcp_servers.append({
-                        "type": "mcp_server_package",
-                        "package": name,
-                        "version": pkg.get("version"),
-                    })
-    except Exception as e:
-        print(f"Error discovering MCP servers: {e}", file=sys.stderr)
-
-    return mcp_servers
-
 
 def discover_custom_mcp_servers(w: WorkspaceClient) -> List[Dict[str, Any]]:
     """Discover custom MCP servers deployed as Databricks apps."""

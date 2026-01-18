@@ -8,6 +8,7 @@ This script scans for:
 - Vector search indexes (RAG data sources)
 - Genie spaces (conversational data access)
 - Custom MCP servers (mcp-* packages)
+- External MCP servers (via Unity Catalog connections)
 """
 
 import json

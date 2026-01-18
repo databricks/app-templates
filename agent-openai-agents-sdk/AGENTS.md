@@ -90,17 +90,8 @@ This step helps you understand what resources are already available in your work
 # Discover all available resources (recommended)
 uv run discover-tools
 
-# Use a specific Databricks CLI profile
-uv run discover-tools --profile my-profile
-
 # Limit to specific catalog/schema
 uv run discover-tools --catalog my_catalog --schema my_schema
-
-# Customize search depth for faster execution
-uv run discover-tools --max-results 50 --max-schemas 10
-
-# Deep search for more comprehensive discovery (slower, but finds more)
-uv run discover-tools --max-results 500 --max-schemas 100
 
 # Output as JSON for programmatic use
 uv run discover-tools --format json --output tools.json
@@ -227,6 +218,12 @@ resources:
     name: 'My Genie Space'
     space_id: '01234567-89ab-cdef'
     permission: 'CAN_RUN'
+
+# MLflow experiment
+- name: 'my_experiment'
+  experiment:
+    experiment_id: "12349876"
+    permission: 'CAN_MANAGE'
 ```
 
 ### Custom MCP Servers (Databricks Apps)

@@ -69,6 +69,9 @@ uv run start-app
 - Databricks authentication (OAuth)
 - MLflow experiment creation
 - Environment variable configuration (`.env.local`)
+  - Sets `DATABRICKS_CONFIG_PROFILE` to your selected profile
+  - Configures `MLFLOW_TRACKING_URI` as `databricks://<profile-name>` for proper local authentication
+  - Sets `MLFLOW_EXPERIMENT_ID` to the created experiment
 
 **Quickstart options:**
 - `--profile NAME`: Use specified Databricks profile (non-interactive)
@@ -286,6 +289,7 @@ curl -X POST http://localhost:8000/invocations \
 - Port already in use: Use `--port` to specify a different port
 - Authentication errors: Verify `.env.local` is correct
 - Module not found: Run `uv sync` to install dependencies
+- **MLflow experiment not found**: If you see an error like "The provided MLFLOW_EXPERIMENT_ID environment variable value does not exist", ensure your `MLFLOW_TRACKING_URI` in `.env.local` is set to `databricks://<profile-name>` (e.g., `databricks://DEFAULT-testing`). The quickstart script should configure this automatically, but if you manually edit `.env.local`, make sure to include the profile name in the tracking URI.
 
 ---
 

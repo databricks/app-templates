@@ -271,6 +271,13 @@ if [ -n "$PROFILE_NAME" ]; then
     else
         echo "DATABRICKS_CONFIG_PROFILE=$PROFILE_NAME" >> .env.local
     fi
+
+    # Update MLFLOW_TRACKING_URI to use the profile for local development
+    if grep -q "MLFLOW_TRACKING_URI=" .env.local; then
+        sed -i '' "s|MLFLOW_TRACKING_URI=.*|MLFLOW_TRACKING_URI=\"databricks://$PROFILE_NAME\"|" .env.local
+    else
+        echo "MLFLOW_TRACKING_URI=\"databricks://$PROFILE_NAME\"" >> .env.local
+    fi
     echo "✓ Databricks profile '$PROFILE_NAME' saved to .env.local"
 else
     # No profiles exist - create default one
@@ -318,6 +325,13 @@ else
             sed -i '' "s/DATABRICKS_CONFIG_PROFILE=.*/DATABRICKS_CONFIG_PROFILE=$PROFILE_NAME/" .env.local
         else
             echo "DATABRICKS_CONFIG_PROFILE=$PROFILE_NAME" >> .env.local
+        fi
+
+        # Update MLFLOW_TRACKING_URI to use the profile for local development
+        if grep -q "MLFLOW_TRACKING_URI=" .env.local; then
+            sed -i '' "s|MLFLOW_TRACKING_URI=.*|MLFLOW_TRACKING_URI=\"databricks://$PROFILE_NAME\"|" .env.local
+        else
+            echo "MLFLOW_TRACKING_URI=\"databricks://$PROFILE_NAME\"" >> .env.local
         fi
 
         echo "✓ Databricks profile '$PROFILE_NAME' saved to .env.local"

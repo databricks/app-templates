@@ -1,10 +1,7 @@
 import { generateUUID, getMessageByErrorCode } from '@chat-template/core';
 import { expect, test } from '../fixtures';
 import { TEST_PROMPTS } from '../prompts/routes';
-import {
-  skipInEphemeralMode,
-  skipInWithDatabaseMode,
-} from 'tests/helpers';
+import { skipInEphemeralMode, skipInWithDatabaseMode } from 'tests/helpers';
 
 const chatIdsCreatedByAda: Array<string> = [];
 
@@ -366,56 +363,20 @@ test.describe
     // });
   });
 
-test.describe.serial('/api/chat - Ephemeral Mode', () => {
-  test('Ada can send multi-turn conversation with previousMessages', async ({
-    adaContext,
-  }) => {
-    skipInWithDatabaseMode(test);
+test.describe
+  .serial('/api/chat - Ephemeral Mode', () => {
+    test('Ada can send multi-turn conversation with previousMessages', async ({
+      adaContext,
+    }) => {
+      skipInWithDatabaseMode(test);
 
-    const chatId = generateUUID();
+      const chatId = generateUUID();
 
-    // First message - establish context
-    const firstResponse = await adaContext.request.post('/api/chat', {
-      data: {
-        id: chatId,
-        message: {
-          id: generateUUID(),
-          role: 'user',
-          parts: [
-            {
-              type: 'text',
-              text: 'My favorite color is blue.',
-            },
-          ],
-        },
-        selectedChatModel: 'chat-model',
-        selectedVisibilityType: 'private',
-      },
-    });
-    expect(firstResponse.status()).toBe(200);
-
-    const firstText = await firstResponse.text();
-    expect(firstText).toBeTruthy();
-
-    // Second message - reference context from first message
-    // Include previousMessages to simulate frontend behavior in ephemeral mode
-    const secondResponse = await adaContext.request.post('/api/chat', {
-      data: {
-        id: chatId,
-        message: {
-          id: generateUUID(),
-          role: 'user',
-          parts: [
-            {
-              type: 'text',
-              text: 'What is my favorite color?',
-            },
-          ],
-        },
-        selectedChatModel: 'chat-model',
-        selectedVisibilityType: 'private',
-        previousMessages: [
-          {
+      // First message - establish context
+      const firstResponse = await adaContext.request.post('/api/chat', {
+        data: {
+          id: chatId,
+          message: {
             id: generateUUID(),
             role: 'user',
             parts: [
@@ -425,45 +386,82 @@ test.describe.serial('/api/chat - Ephemeral Mode', () => {
               },
             ],
           },
-          {
+          selectedChatModel: 'chat-model',
+          selectedVisibilityType: 'private',
+        },
+      });
+      expect(firstResponse.status()).toBe(200);
+
+      const firstText = await firstResponse.text();
+      expect(firstText).toBeTruthy();
+
+      // Second message - reference context from first message
+      // Include previousMessages to simulate frontend behavior in ephemeral mode
+      const secondResponse = await adaContext.request.post('/api/chat', {
+        data: {
+          id: chatId,
+          message: {
             id: generateUUID(),
-            role: 'assistant',
+            role: 'user',
             parts: [
               {
                 type: 'text',
-                text: 'I understand that your favorite color is blue.',
+                text: 'What is my favorite color?',
               },
             ],
           },
-        ],
-      },
+          selectedChatModel: 'chat-model',
+          selectedVisibilityType: 'private',
+          previousMessages: [
+            {
+              id: generateUUID(),
+              role: 'user',
+              parts: [
+                {
+                  type: 'text',
+                  text: 'My favorite color is blue.',
+                },
+              ],
+            },
+            {
+              id: generateUUID(),
+              role: 'assistant',
+              parts: [
+                {
+                  type: 'text',
+                  text: 'I understand that your favorite color is blue.',
+                },
+              ],
+            },
+          ],
+        },
+      });
+      expect(secondResponse.status()).toBe(200);
+
+      const secondText = await secondResponse.text();
+      expect(secondText).toBeTruthy();
+      expect(secondText.toLowerCase()).toContain('blue');
     });
-    expect(secondResponse.status()).toBe(200);
 
-    const secondText = await secondResponse.text();
-    expect(secondText).toBeTruthy();
-    expect(secondText.toLowerCase()).toContain('blue');
-  });
+    test('Ada can send message without previousMessages in ephemeral mode', async ({
+      adaContext,
+    }) => {
+      skipInWithDatabaseMode(test);
 
-  test('Ada can send message without previousMessages in ephemeral mode', async ({
-    adaContext,
-  }) => {
-    skipInWithDatabaseMode(test);
+      const chatId = generateUUID();
 
-    const chatId = generateUUID();
+      // Message without previousMessages should work (first message scenario)
+      const response = await adaContext.request.post('/api/chat', {
+        data: {
+          id: chatId,
+          message: TEST_PROMPTS.SKY.MESSAGE,
+          selectedChatModel: 'chat-model',
+          selectedVisibilityType: 'private',
+        },
+      });
+      expect(response.status()).toBe(200);
 
-    // Message without previousMessages should work (first message scenario)
-    const response = await adaContext.request.post('/api/chat', {
-      data: {
-        id: chatId,
-        message: TEST_PROMPTS.SKY.MESSAGE,
-        selectedChatModel: 'chat-model',
-        selectedVisibilityType: 'private',
-      },
+      const text = await response.text();
+      expect(text).toBeTruthy();
     });
-    expect(response.status()).toBe(200);
-
-    const text = await response.text();
-    expect(text).toBeTruthy();
   });
-});

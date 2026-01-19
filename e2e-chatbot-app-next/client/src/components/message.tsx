@@ -45,6 +45,7 @@ import {
 import { useApproval } from '@/hooks/use-approval';
 
 const PurePreviewMessage = ({
+  chatId,
   message,
   isLoading,
   setMessages,
@@ -347,6 +348,7 @@ const PurePreviewMessage = ({
           {!isReadonly && !hasOnlyErrors && (
             <MessageActions
               key={`action-${message.id}`}
+              chatId={chatId}
               message={message}
               isLoading={isLoading}
               setMode={setMode}

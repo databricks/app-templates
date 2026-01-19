@@ -43,9 +43,7 @@ test.describe('MCP Approval Flow', () => {
     });
 
     // Verify pending status badge is visible
-    await expect(
-      page.getByTestId('mcp-approval-status-pending'),
-    ).toBeVisible();
+    await expect(page.getByTestId('mcp-approval-status-pending')).toBeVisible();
 
     // Verify Allow and Deny buttons are enabled
     await expect(page.getByTestId('mcp-approval-allow')).toBeEnabled();
@@ -71,9 +69,9 @@ test.describe('MCP Approval Flow', () => {
     await response.finished();
 
     // Verify status changes to allowed
-    await expect(
-      page.getByTestId('mcp-approval-status-allowed'),
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('mcp-approval-status-allowed')).toBeVisible({
+      timeout: 10000,
+    });
 
     // Verify approval actions are no longer visible
     await expect(page.getByTestId('mcp-approval-actions')).not.toBeVisible();
@@ -132,9 +130,7 @@ test.describe('MCP Approval Flow', () => {
         expect(denyButton).toBeDisabled(),
       ]).then(() => true),
       // Option 2: Actions are already hidden (submission was fast)
-      expect(
-        page.getByTestId('mcp-approval-actions'),
-      )
+      expect(page.getByTestId('mcp-approval-actions'))
         .not.toBeVisible()
         .then(() => true),
     ]).catch(() => false);

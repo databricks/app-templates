@@ -104,12 +104,8 @@
           "tableFrom": "Message",
           "tableTo": "Chat",
           "schemaTo": "ai_chatbot",
-          "columnsFrom": [
-            "chatId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["chatId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }

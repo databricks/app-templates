@@ -13,7 +13,7 @@ import {
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
-import { chat, message, type DBMessage, type Chat } from './schema';
+import { chat, message, feedback, type DBMessage, type Chat } from './schema';
 import type { VisibilityType } from '@chat-template/utils';
 import { ChatSDKError } from '@chat-template/core/errors';
 import type { LanguageModelV2Usage } from '@ai-sdk/provider';
@@ -294,7 +294,9 @@ export async function saveMessages({
 
 export async function getMessagesByChatId({ id }: { id: string }) {
   if (!isDatabaseAvailable()) {
-    console.log('[getMessagesByChatId] Database not available, returning empty');
+    console.log(
+      '[getMessagesByChatId] Database not available, returning empty',
+    );
     return [];
   }
 
@@ -339,7 +341,9 @@ export async function deleteMessagesByChatIdAfterTimestamp({
   timestamp: Date;
 }) {
   if (!isDatabaseAvailable()) {
-    console.log('[deleteMessagesByChatIdAfterTimestamp] Database not available, skipping deletion');
+    console.log(
+      '[deleteMessagesByChatIdAfterTimestamp] Database not available, skipping deletion',
+    );
     return;
   }
 
@@ -376,7 +380,9 @@ export async function updateChatVisiblityById({
   visibility: 'private' | 'public';
 }) {
   if (!isDatabaseAvailable()) {
-    console.log('[updateChatVisiblityById] Database not available, skipping update');
+    console.log(
+      '[updateChatVisiblityById] Database not available, skipping update',
+    );
     return;
   }
 
@@ -402,7 +408,9 @@ export async function updateChatLastContextById({
   context: LanguageModelV2Usage;
 }) {
   if (!isDatabaseAvailable()) {
-    console.log('[updateChatLastContextById] Database not available, skipping update');
+    console.log(
+      '[updateChatLastContextById] Database not available, skipping update',
+    );
     return;
   }
 
@@ -414,5 +422,163 @@ export async function updateChatLastContextById({
   } catch (error) {
     console.warn('Failed to update lastContext for chat', chatId, error);
     return;
+  }
+}
+
+// Feedback operations
+
+export async function createFeedback({
+  messageId,
+  chatId,
+  userId,
+  feedbackType,
+  mlflowAssessmentId,
+}: {
+  messageId: string;
+  chatId: string;
+  userId: string;
+  feedbackType: 'thumbs_up' | 'thumbs_down';
+  mlflowAssessmentId?: string;
+}) {
+  if (!isDatabaseAvailable()) {
+    console.log(
+      '[createFeedback] Database not available, skipping persistence',
+    );
+    return null;
+  }
+
+  try {
+    const [result] = await (await ensureDb())
+      .insert(feedback)
+      .values({
+        messageId,
+        chatId,
+        userId,
+        feedbackType,
+        mlflowAssessmentId: mlflowAssessmentId || null,
+        createdAt: new Date(),
+        updatedAt: null,
+      })
+      .returning();
+
+    return result;
+  } catch (error) {
+    console.error('[createFeedback] Error creating feedback:', error);
+    throw new ChatSDKError('bad_request:database', 'Failed to create feedback');
+  }
+}
+
+export async function getFeedbackByMessageId({
+  messageId,
+}: {
+  messageId: string;
+}) {
+  if (!isDatabaseAvailable()) {
+    console.log(
+      '[getFeedbackByMessageId] Database not available, returning null',
+    );
+    return null;
+  }
+
+  try {
+    const [result] = await (await ensureDb())
+      .select()
+      .from(feedback)
+      .where(eq(feedback.messageId, messageId))
+      .limit(1);
+
+    return result || null;
+  } catch (error) {
+    console.error('[getFeedbackByMessageId] Error getting feedback:', error);
+    throw new ChatSDKError(
+      'bad_request:database',
+      'Failed to get feedback by message id',
+    );
+  }
+}
+
+export async function getFeedbackByChatId({ chatId }: { chatId: string }) {
+  if (!isDatabaseAvailable()) {
+    console.log(
+      '[getFeedbackByChatId] Database not available, returning empty',
+    );
+    return [];
+  }
+
+  try {
+    return await (await ensureDb())
+      .select()
+      .from(feedback)
+      .where(eq(feedback.chatId, chatId))
+      .orderBy(asc(feedback.createdAt));
+  } catch (error) {
+    console.error('[getFeedbackByChatId] Error getting feedback:', error);
+    throw new ChatSDKError(
+      'bad_request:database',
+      'Failed to get feedback by chat id',
+    );
+  }
+}
+
+export async function updateFeedback({
+  id,
+  feedbackType,
+  mlflowAssessmentId,
+}: {
+  id: string;
+  feedbackType?: 'thumbs_up' | 'thumbs_down';
+  mlflowAssessmentId?: string;
+}) {
+  if (!isDatabaseAvailable()) {
+    console.log('[updateFeedback] Database not available, skipping update');
+    return null;
+  }
+
+  try {
+    const updateData: {
+      feedbackType?: 'thumbs_up' | 'thumbs_down';
+      mlflowAssessmentId?: string;
+      updatedAt: Date;
+    } = {
+      updatedAt: new Date(),
+    };
+
+    if (feedbackType !== undefined) {
+      updateData.feedbackType = feedbackType;
+    }
+
+    if (mlflowAssessmentId !== undefined) {
+      updateData.mlflowAssessmentId = mlflowAssessmentId;
+    }
+
+    const [result] = await (await ensureDb())
+      .update(feedback)
+      .set(updateData)
+      .where(eq(feedback.id, id))
+      .returning();
+
+    return result;
+  } catch (error) {
+    console.error('[updateFeedback] Error updating feedback:', error);
+    throw new ChatSDKError('bad_request:database', 'Failed to update feedback');
+  }
+}
+
+export async function deleteFeedback({ id }: { id: string }) {
+  if (!isDatabaseAvailable()) {
+    console.log('[deleteFeedback] Database not available, skipping deletion');
+    return null;
+  }
+
+  try {
+    const [result] = await (await ensureDb())
+      .delete(feedback)
+      .where(eq(feedback.id, id))
+      .returning();
+
+    return result;
+  } catch (error) {
+    console.error('[deleteFeedback] Error deleting feedback:', error);
+    throw new ChatSDKError('bad_request:database', 'Failed to delete feedback');
   }
 }

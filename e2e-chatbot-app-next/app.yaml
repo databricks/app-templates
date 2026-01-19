@@ -4,3 +4,6 @@ runtime: nodejs20
 env:
   - name: DATABRICKS_SERVING_ENDPOINT
     valueFrom: serving-endpoint
+  # Uncomment to enable MLflow feedback logging
+  # - name: MLFLOW_EXPERIMENT_ID
+  #   value: "your-experiment-id"

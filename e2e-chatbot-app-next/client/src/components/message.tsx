@@ -34,6 +34,8 @@ import {
   joinMessagePartSegments,
 } from './databricks-message-part-transformers';
 import { MessageError } from './message-error';
+import { MessageOAuthError } from './message-oauth-error';
+import { isCredentialErrorMessage } from '@/lib/oauth-error-utils';
 import { Streamdown } from 'streamdown';
 import { DATABRICKS_TOOL_CALL_ID } from '@chat-template/ai-sdk-providers/tools';
 import {
@@ -46,6 +48,7 @@ import { useApproval } from '@/hooks/use-approval';
 
 const PurePreviewMessage = ({
   message,
+  allMessages,
   isLoading,
   setMessages,
   addToolResult,
@@ -56,6 +59,7 @@ const PurePreviewMessage = ({
 }: {
   chatId: string;
   message: ChatMessage;
+  allMessages: ChatMessage[];
   isLoading: boolean;
   setMessages: UseChatHelpers<ChatMessage>['setMessages'];
   addToolResult: UseChatHelpers<ChatMessage>['addToolResult'];
@@ -77,9 +81,15 @@ const PurePreviewMessage = ({
     (part) => part.type === 'file',
   );
 
-  // Extract error parts separately
+  // Extract non-OAuth error parts separately (OAuth errors are rendered inline)
   const errorParts = React.useMemo(
-    () => message.parts.filter((part) => part.type === 'data-error'),
+    () =>
+      message.parts
+        .filter((part) => part.type === 'data-error')
+        .filter((part) => {
+          // OAuth errors are rendered inline, not in the error section
+          return !isCredentialErrorMessage(part.data);
+        }),
     [message.parts],
   );
 
@@ -89,19 +99,24 @@ const PurePreviewMessage = ({
     /**
      * We segment message parts into segments that can be rendered as a single component.
      * Used to render citations as part of the associated text.
+     * Note: OAuth errors are included here for inline rendering, non-OAuth errors are filtered out.
      */
     () =>
       createMessagePartSegments(
-        message.parts.filter((part) => part.type !== 'data-error'),
+        message.parts.filter(
+          (part) =>
+            part.type !== 'data-error' || isCredentialErrorMessage(part.data),
+        ),
       ),
     [message.parts],
   );
 
-  // Check if message only contains errors (no other content)
+  // Check if message only contains non-OAuth errors (no other content)
   const hasOnlyErrors = React.useMemo(() => {
     const nonErrorParts = message.parts.filter(
       (part) => part.type !== 'data-error',
     );
+    // Only consider non-OAuth errors for this check
     return errorParts.length > 0 && nonErrorParts.length === 0;
   }, [message.parts, errorParts.length]);
 
@@ -340,6 +355,19 @@ const PurePreviewMessage = ({
                 >
                   <sup className="text-xs">[{part.title || part.url}]</sup>
                 </a>
+              );
+            }
+
+            // Render OAuth errors inline
+            if (type === 'data-error' && isCredentialErrorMessage(part.data)) {
+              return (
+                <MessageOAuthError
+                  key={key}
+                  error={part.data}
+                  allMessages={allMessages}
+                  setMessages={setMessages}
+                  sendMessage={sendMessage}
+                />
               );
             }
           })}

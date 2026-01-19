@@ -73,6 +73,7 @@ function PureMessages({
               key={message.id}
               chatId={chatId}
               message={message}
+              allMessages={messages}
               isLoading={
                 status === 'streaming' && messages.length - 1 === index
               }
@@ -80,6 +81,7 @@ function PureMessages({
               addToolResult={addToolResult}
               sendMessage={sendMessage}
               regenerate={regenerate}
+              sendMessage={sendMessage}
               isReadonly={isReadonly}
               requiresScrollPadding={
                 hasSentMessage && index === messages.length - 1

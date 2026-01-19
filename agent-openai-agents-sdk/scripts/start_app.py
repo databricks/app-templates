@@ -15,6 +15,7 @@ See 'uv run start-server --help' for available options.
 """
 
 import argparse
+import os
 import re
 import shutil
 import subprocess
@@ -154,6 +155,9 @@ class ProcessManager:
 
         if not self.clone_frontend_if_needed():
             return 1
+
+        # Set API_PROXY environment variable for frontend to connect to backend
+        os.environ["API_PROXY"] = f"http://localhost:{self.port}/invocations"
 
         # Open log files
         self.backend_log = open("backend.log", "w", buffering=1)

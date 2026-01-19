@@ -8,7 +8,9 @@
       "@chat-template/core": ["./packages/core/src/index.ts"],
       "@chat-template/utils": ["./packages/utils/src/index.ts"],
       "@chat-template/auth": ["./packages/auth/src/index.ts"],
-      "@chat-template/ai-sdk-providers": ["./packages/ai-sdk-providers/src/index.ts"],
+      "@chat-template/ai-sdk-providers": [
+        "./packages/ai-sdk-providers/src/index.ts"
+      ],
       "@chat-template/db": ["./packages/db/src/index.ts"]
     }
   },

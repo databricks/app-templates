@@ -76,13 +76,17 @@ export function useChatData(chatId: string | undefined, enabled = true) {
       keepPreviousData: true,
       // Dedupe requests within 2 seconds
       dedupingInterval: 2000,
-    }
+    },
   );
 
   return {
     chatData: data,
     isLoading,
-    error: error ? 'Failed to load chat' : data === null && !isLoading ? 'Chat not found or you do not have access' : null,
+    error: error
+      ? 'Failed to load chat'
+      : data === null && !isLoading
+        ? 'Chat not found or you do not have access'
+        : null,
     mutate, // Expose mutate for manual cache updates if needed
   };
 }

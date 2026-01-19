@@ -1,17 +1,266 @@
-# Agent OpenAI Agents SDK Development Guide
+# Agent Development Guide
 
-## Running the App
+## For AI Agents: MANDATORY First Action
 
-**Prerequisites:** uv, nvm (Node 20), Databricks CLI
+**BEFORE any other action, run `databricks auth profiles` to check authentication status.**
 
-**Quick Start:**
+This helps you understand:
+- Which Databricks profiles are configured
+- Whether authentication is already set up
+- Which profile to use for subsequent commands
+
+If no profiles exist, guide the user through running `./scripts/quickstart.sh` to set up authentication.
+
+## For AI Agents: Handling Deployment Errors
+
+**If `databricks bundle deploy` fails with "An app with the same name already exists":**
+
+Ask the user: "I see there's an existing app with the same name. Would you like me to bind it to this bundle so we can manage it, or delete it and create a new one?"
+
+- **If they want to bind**: Follow the steps in the "Binding an existing app to your bundle" section
+- **If they want to delete**: Run `databricks apps delete <app-name>` then deploy again
+
+---
+
+## Getting Started with Your Agent
+
+This guide walks you through the initial setup of your agent project: installing prerequisites, discovering available tools in your workspace, and testing the baseline template locally.
+
+**After completing these steps**, see the README.md for information on modifying your agent and deploying to Databricks.
+
+---
+
+## Quick Setup
+
+**Prerequisites:** uv, nvm (Node 20), Databricks CLI (v0.283.0+)
+
+**What you need:**
+- uv (Python package manager)
+- nvm (Node.js version manager) with Node 20
+- Databricks CLI v0.283.0 or above
+
+**Quickest path to running:**
 
 ```bash
-./scripts/quickstart.sh   # First-time setup (auth, MLflow experiment, env)
-uv run start-app          # Start app at http://localhost:8000
+# 0. Ensure you have the latest Databricks CLI
+databricks -v  # Should be v0.283.0 or above
+brew upgrade databricks # Offer to run if the Databricks CLI version is too old 
+
+# 1. Initialize git (recommended for version control)
+git init
+
+# 2. Run quickstart for setup (auth, MLflow experiment)
+./scripts/quickstart.sh
+
+# Or run non-interactively with a profile
+./scripts/quickstart.sh --profile DEFAULT
+
+# Or with a host URL for initial setup
+./scripts/quickstart.sh --host https://your-workspace.cloud.databricks.com
+
+# 3. Discover available tools (IMPORTANT - do this before coding!)
+uv run discover-tools
+
+# 4. Start the agent server
+uv run start-app
 ```
 
-**Advanced Server Options:**
+**Quickstart script handles:**
+- Databricks authentication (OAuth)
+- MLflow experiment creation
+- Environment variable configuration (`.env.local`)
+  - Sets `DATABRICKS_CONFIG_PROFILE` to your selected profile
+  - Configures `MLFLOW_TRACKING_URI` as `databricks://<profile-name>` for proper local authentication
+  - Sets `MLFLOW_EXPERIMENT_ID` to the created experiment
+
+**Quickstart options:**
+- `--profile NAME`: Use specified Databricks profile (non-interactive)
+- `--host URL`: Databricks workspace URL (for initial setup)
+- `-h, --help`: Show help message
+
+---
+
+## Discovering Available Tools
+
+**⚠️ CRITICAL:** Always run tool discovery BEFORE writing agent code!
+
+This step helps you understand what resources are already available in your workspace, preventing duplicate work and showing you the best practices for connecting to each resource.
+
+```bash
+# Discover all available resources (recommended)
+uv run discover-tools
+
+# Limit to specific catalog/schema
+uv run discover-tools --catalog my_catalog --schema my_schema
+
+# Output as JSON for programmatic use
+uv run discover-tools --format json --output tools.json
+
+# Save markdown report
+uv run discover-tools --output tools.md
+```
+
+**What gets discovered:**
+1. **Unity Catalog Functions** - SQL UDFs usable as agent tools
+2. **Unity Catalog Tables** - Structured data for querying
+3. **Vector Search Indexes** - For RAG applications
+4. **Genie Spaces** - Natural language interface to data
+5. **Custom MCP Servers** - Your MCP servers deployed as Databricks Apps
+6. **External MCP Servers** - Third-party MCP servers via UC connections
+
+**Using discovered tools in your agent:**
+
+After discovering tools, configure your agent to use them:
+
+```python
+from databricks_openai.agents import McpServer
+
+async def init_mcp_server():
+    return McpServer(
+        url=f"{host}/api/2.0/mcp/functions/{catalog}/{schema}",
+        name="my custom tools",
+    )
+
+# Use in agent
+agent = Agent(
+    name="my agent",
+    instructions="You are a helpful agent.",
+    model="databricks-claude-3-7-sonnet",
+    mcp_servers=[mcp_server],
+)
+```
+
+See the [MCP documentation](https://docs.databricks.com/aws/en/generative-ai/mcp/) for more details.
+
+---
+
+## Granting Access to App Resources
+
+### ⚠️ CRITICAL: Resource Permissions
+
+**After adding any MCP server to your agent, you MUST grant the app access to the server's dependent resource(s) in `databricks.yml`.**
+
+Without this, you'll get permission errors when the agent tries to use the resource.
+
+### Example Workflow
+
+**1. Add MCP server in `agent_server/agent.py`:**
+
+```python
+from databricks_openai.agents import McpServer
+
+genie_server = McpServer(
+    url=f"{host}/api/2.0/mcp/genie/01234567-89ab-cdef",
+    name="my genie space",
+)
+
+agent = Agent(
+    name="my agent",
+    instructions="You are a helpful agent.",
+    model="databricks-claude-3-7-sonnet",
+    mcp_servers=[genie_server],
+)
+```
+
+**2. Grant access in `databricks.yml`:**
+
+```yaml
+resources:
+  apps:
+    agent_openai_agents_sdk:
+      resources:
+        - name: 'my_genie_space'
+          genie_space:
+            name: 'My Genie Space'
+            space_id: '01234567-89ab-cdef'
+            permission: 'CAN_RUN'
+```
+
+### Resource Type Examples
+
+```yaml
+# Unity Catalog function (for UC functions accessed via MCP)
+- name: 'my_uc_function'
+  uc_securable:
+    securable_full_name: 'catalog.schema.function_name'
+    securable_type: 'FUNCTION'
+    permission: 'EXECUTE'
+
+# Unity Catalog connection (for external MCP servers via UC connections)
+- name: 'my_connection'
+  uc_securable:
+    securable_full_name: 'my-connection-name'
+    securable_type: 'CONNECTION'
+    permission: 'USE_CONNECTION'
+
+# Vector search index
+- name: 'my_vector_index'
+  uc_securable:
+    securable_full_name: 'catalog.schema.index_name'
+    securable_type: 'TABLE'
+    permission: 'SELECT'
+
+# SQL warehouse
+- name: 'my_warehouse'
+  sql_warehouse:
+    sql_warehouse_id: 'abc123def456'
+    permission: 'CAN_USE'
+
+# Model serving endpoint
+- name: 'my_endpoint'
+  serving_endpoint:
+    name: 'my_endpoint'
+    permission: 'CAN_QUERY'
+
+# Genie space
+- name: 'my_genie_space'
+  genie_space:
+    name: 'My Genie Space'
+    space_id: '01234567-89ab-cdef'
+    permission: 'CAN_RUN'
+
+# MLflow experiment
+- name: 'my_experiment'
+  experiment:
+    experiment_id: "12349876"
+    permission: 'CAN_MANAGE'
+```
+
+### Custom MCP Servers (Databricks Apps)
+
+If you're using custom MCP servers deployed as Databricks Apps (names starting with `mcp-`), you need to manually grant your agent app's service principal permission to access them:
+
+1. Find your agent app's service principal name:
+```bash
+databricks apps get <your-agent-app-name> --output json | jq -r '.service_principal_name'
+```
+
+2. Grant the service principal `CAN_USE` permission on the MCP server app:
+```bash
+databricks apps update-permissions <mcp-server-app-name> --service-principal <agent-app-service-principal> --permission-level CAN_USE
+```
+
+**Note:** Apps are not yet supported as resource dependencies for other apps in `databricks.yml`, so this manual permission grant is required for now.
+
+### Important Notes
+
+- The app automatically has access to the MLflow experiment (already configured in template)
+- For all other resources (UC functions, Genie spaces, vector indexes, warehouses, etc.), you MUST add them
+- Without proper resource grants, you'll see permission errors at runtime
+
+---
+
+## Running the App Locally
+
+**Start the server:**
+
+```bash
+uv run start-app
+```
+
+This starts the agent at http://localhost:8000
+
+**Advanced server options:**
 
 ```bash
 uv run start-server --reload   # Hot-reload on code changes during development
@@ -19,7 +268,64 @@ uv run start-server --port 8001
 uv run start-server --workers 4
 ```
 
-**Test API:**
+**Test the API:**
+
+```bash
+# Streaming request
+curl -X POST http://localhost:8000/invocations \
+  -H "Content-Type: application/json" \
+  -d '{ "input": [{ "role": "user", "content": "hi" }], "stream": true }'
+
+# Non-streaming request
+curl -X POST http://localhost:8000/invocations \
+  -H "Content-Type: application/json" \
+  -d '{ "input": [{ "role": "user", "content": "hi" }] }'
+```
+
+**Common issues:**
+- Port already in use: Use `--port` to specify a different port
+- Authentication errors: Verify `.env.local` is correct
+- Module not found: Run `uv sync` to install dependencies
+- **MLflow experiment not found**: If you see an error like "The provided MLFLOW_EXPERIMENT_ID environment variable value does not exist", ensure your `MLFLOW_TRACKING_URI` in `.env.local` is set to `databricks://<profile-name>` (e.g., `databricks://DEFAULT-testing`). The quickstart script should configure this automatically, but if you manually edit `.env.local`, make sure to include the profile name in the tracking URI.
+
+---
+
+## Modifying the Agent
+
+**Main file to modify:** `agent_server/agent.py`
+
+**Key resources:**
+1. [databricks-openai SDK](https://github.com/databricks/databricks-ai-bridge/tree/main/integrations/openai)
+2. [Agent examples](https://github.com/bbqiu/agent-on-app-prototype)
+3. [Agent Framework docs](https://docs.databricks.com/aws/en/generative-ai/agent-framework/)
+4. [Adding tools](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool)
+5. [OpenAI Agents SDK](https://platform.openai.com/docs/guides/agents-sdk)
+6. [Responses API](https://mlflow.org/docs/latest/genai/serving/responses-agent/)
+
+**databricks-openai SDK basics:**
+
+```python
+from databricks_openai import AsyncDatabricksOpenAI
+from agents import set_default_openai_api, set_default_openai_client
+
+# Set up async client (recommended for agent servers)
+set_default_openai_client(AsyncDatabricksOpenAI())
+set_default_openai_api("chat_completions")
+```
+
+---
+
+## Testing the Agent
+
+```bash
+# Run evaluation
+uv run agent-evaluate
+
+# Run unit tests
+pytest [path]
+```
+
+**Test API locally:**
 
 ```bash
 # Streaming request
@@ -35,237 +341,109 @@ curl -X POST http://localhost:8000/invocations \
 
 ---
 
-## Testing the Agent
-
-**Run evaluation:**
-
-```bash
-uv run agent-evaluate     # Uses MLflow scorers (RelevanceToQuery, Safety)
-```
-
-**Run unit tests:**
-
-```bash
-pytest [path]             # Standard pytest execution
-```
-
----
-
-## Modifying the Agent
-
-Anytime the user wants to modify the agent, look through each of the following resources to help them accomplish their goal:
-
-If the user wants to convert something into Responses API, refer to https://mlflow.org/docs/latest/genai/serving/responses-agent/ for more information.
-
-1. Look through existing databricks-openai APIs to see if they can use one of these to accomplish their goal.
-2. Look through the folders in https://github.com/bbqiu/agent-on-app-prototype to see if there's an existing example similar to what they're looking to do.
-3. Reference the documentation available under https://docs.databricks.com/aws/en/generative-ai/agent-framework/ and its subpages.
-4. For adding tools and capabilities, refer to: https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool
-5. Reference the OpenAI Agents SDK documentation: https://platform.openai.com/docs/guides/agents-sdk
-
-**Main file to modify:** `agent_server/agent.py`
-
----
-
-## databricks-openai SDK Overview
-
-**SDK Location:** `https://github.com/databricks/databricks-ai-bridge/tree/main/integrations/openai`
-
-**Development Workflow:**
-
-```bash
-uv add databricks-openai
-```
-
-Before making any changes, ensure that the APIs actually exist in the SDK. If something is missing from the documentation here, feel free to look in the venv's `site-packages` directory for the `databricks_openai` package. If it's not installed, run `uv sync` in this folder to create the .venv and install the package.
-
----
-
-### Key Components
-
-#### 1. MCP Servers - Tool Integration
-
-Connect to MCP (Model Context Protocol) servers to get tools for your agent.
-
-**Basic MCP Server:**
-
-```python
-from databricks_openai.agents import McpServer
-
-async def init_mcp_server():
-    return McpServer(
-        url=f"{host}/api/2.0/mcp/functions/system/ai",
-        name="system.ai uc function mcp server",
-    )
-
-# Use in agent
-agent = Agent(
-    name="code execution agent",
-    instructions="You are a code execution agent.",
-    model="databricks-claude-3-7-sonnet",
-    mcp_servers=[mcp_server],
-)
-```
-
-#### 2. Sync and Async Databricks OpenAI Clients
-
-Set up Databricks-hosted OpenAI-compatible models:
-
-```python
-from databricks_openai import AsyncDatabricksOpenAI, DatabricksOpenAI
-from agents import set_default_openai_api, set_default_openai_client
-
-# Async client (recommended for agent servers)
-set_default_openai_client(AsyncDatabricksOpenAI())
-set_default_openai_api("chat_completions")
-
-# Sync client
-client = DatabricksOpenAI()
-```
-
-**Note:** This works for all Databricks models except GPT-OSS, which uses a slightly different API.
-
----
-
-## Agent Development Patterns
-
-### Creating and Running Agents
-
-```python
-from agents import Agent, Runner
-from databricks_openai.agents import McpServer
-
-# Create agent with MCP servers
-agent = Agent(
-    name="code execution agent",
-    instructions="You are a code execution agent.",
-    model="databricks-claude-3-7-sonnet",
-    mcp_servers=[mcp_server],
-)
-
-# Run agent (non-streaming)
-messages = [{"role": "user", "content": "hi"}]
-result = await Runner.run(agent, messages)
-
-# Run agent (streaming)
-result = Runner.run_streamed(agent, input=messages)
-async for event in result.stream_events():
-    # Process stream events
-    pass
-```
-
-### MLflow Tracing with Decorators
-
-The template uses MLflow's `@invoke()` and `@stream()` decorators for automatic tracing:
-
-```python
-from mlflow.genai.agent_server import invoke, stream
-from mlflow.types.responses import (
-    ResponsesAgentRequest,
-    ResponsesAgentResponse,
-    ResponsesAgentStreamEvent,
-)
-
-@invoke()
-async def invoke(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
-    # Agent logic here
-    pass
-
-@stream()
-async def stream(request: dict) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
-    # Streaming agent logic here
-    pass
-```
-
-### Adding Custom Tracing
-
-Beyond built-in tracing, you can add additional instrumentation:
-
-```python
-import mlflow
-
-mlflow.openai.autolog()  # Auto-trace OpenAI calls
-
-# For more granular tracing, see:
-# https://docs.databricks.com/aws/en/mlflow3/genai/tracing/app-instrumentation/
-```
-
----
-
-## Authentication Setup
-
-**Option 1: OAuth (Recommended)**
-
-```bash
-databricks auth login
-```
-
-Set in `.env.local`:
-
-```bash
-DATABRICKS_CONFIG_PROFILE=DEFAULT
-```
-
-**Option 2: Personal Access Token**
-
-Set in `.env.local`:
-
-```bash
-DATABRICKS_HOST="https://host.databricks.com"
-DATABRICKS_TOKEN="dapi_token"
-```
-
----
-
-## MLflow Experiment Setup
-
-Create and link an MLflow experiment:
-
-```bash
-DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
-databricks experiments create-experiment /Users/$DATABRICKS_USERNAME/agents-on-apps
-```
-
-Add the experiment ID to `.env.local`:
-
-```bash
-MLFLOW_EXPERIMENT_ID=<your-experiment-id>
-```
-
----
-
-## Key Files
-
-| File                             | Purpose                                       |
-| -------------------------------- | --------------------------------------------- |
-| `agent_server/agent.py`          | Agent logic, model, instructions, MCP servers |
-| `agent_server/start_server.py`   | FastAPI server + MLflow setup                 |
-| `agent_server/evaluate_agent.py` | Agent evaluation with MLflow scorers          |
-| `agent_server/utils.py`          | Databricks auth helpers, stream processing    |
-| `scripts/start_app.py`           | Manages backend+frontend startup              |
-
----
-
 ## Deploying to Databricks Apps
 
-**Create app:**
+**Deploy using Databricks bundles:**
 
 ```bash
-databricks apps create agent-openai-agents-sdk
+# Deploy the bundle (creates/updates resources and uploads files)
+databricks bundle deploy
+
+# Run the app (starts/restarts the app with uploaded source code)
+databricks bundle run agent_openai_agents_sdk
 ```
 
-**Sync files:**
+The resource key `agent_openai_agents_sdk` matches the app name defined in `databricks.yml` under `resources.apps.agent_openai_agents_sdk`.
+
+**Error: "An app with the same name already exists"**
+
+If you see this error when running `databricks bundle deploy`:
+
+```
+Error: failed to create app
+
+Failed to create app <app-name>. An app with the same name already exists.
+```
+
+This means you have an existing app that needs to be linked to your bundle. You have two options:
+
+1. **Bind the existing app to your bundle** (recommended if you want to manage the existing app):
+   - Follow the steps in [Binding an existing app to your bundle](#binding-an-existing-app-to-your-bundle) below
+   - This will link the existing app to your bundle so future deploys update it
+
+2. **Delete the existing app and let the bundle create a new one**:
+   ```bash
+   databricks apps delete <app-name>
+   databricks bundle deploy
+   ```
+   - ⚠️ This will permanently delete the existing app including its URL, OAuth credentials, and service principal
+
+**Binding an existing app to your bundle:**
+
+If you've already deployed an app from a different directory or through the UI and want to link it to this bundle, follow these steps:
+
+**Step 1: Update `databricks.yml` to match the existing app name**
+
+⚠️ **CRITICAL**: The app name in your `databricks.yml` **must match** the existing app name exactly, or Terraform will **destroy and recreate** the app (not update it in-place).
+
+First, find your existing app name:
+```bash
+# List existing apps to find the app name
+databricks apps list --output json | jq '.[].name'
+```
+
+Then update `databricks.yml` to use that exact name:
+```yaml
+resources:
+  apps:
+    agent_openai_agents_sdk:
+      name: "openai-agents-sdk-agent"  # Match your existing app name exactly
+      description: "OpenAI Agents SDK agent application"
+      source_code_path: ./
+```
+
+The default configuration uses:
+```yaml
+name: "${bundle.target}-agent-openai-agents-sdk"  # Evaluates to "dev-agent-openai-agents-sdk"
+```
+
+Make sure to replace this with your actual app name.
+
+**Step 2: Bind the resource to the existing app**
 
 ```bash
-DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
-databricks sync . "/Users/$DATABRICKS_USERNAME/agent-openai-agents-sdk"
+# Bind the resource to the existing app
+databricks bundle deployment bind agent_openai_agents_sdk <existing-app-name>
+
+# Example:
+databricks bundle deployment bind agent_openai_agents_sdk openai-agents-sdk-agent
+
+# If the operation requires confirmation and you want to skip prompts:
+databricks bundle deployment bind agent_openai_agents_sdk openai-agents-sdk-agent --auto-approve
 ```
 
-**Deploy:**
+This links your bundle configuration to the existing deployed app. Future `databricks bundle deploy` commands will update the existing app instead of creating a new one.
+
+**Important notes about binding:**
+- **Remote Terraform state**: Databricks stores Terraform state remotely, so the same app can be detected across different local directories
+- **Name is immutable**: The `name` field cannot be changed in-place; changing it forces replacement (destroy + create)
+- **Review the plan**: When binding, carefully review the Terraform plan output. Look for `# forces replacement` which indicates the app will be destroyed and recreated
+- **Existing binding**: If a resource is already bound to another app, you must unbind it first before binding to a different app
+
+**Unbinding a resource:**
+
+To remove the link between your bundle and the deployed app:
 
 ```bash
-databricks apps deploy agent-openai-agents-sdk --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/agent-openai-agents-sdk
+databricks bundle deployment unbind agent_openai_agents_sdk
 ```
+
+This is useful when:
+- You want to bind to a different app
+- You want to let the bundle create a new app on the next deploy
+- You're switching between different deployed instances
+
+Note: Unbinding only removes the link in your bundle state - it does not delete the deployed app.
 
 **Query deployed app:**
 
@@ -284,25 +462,69 @@ curl -X POST <app-url>/invocations \
   -d '{ "input": [{ "role": "user", "content": "hi" }], "stream": true }'
 ```
 
+**Debug deployed apps:**
+
+```bash
+# View logs (use the deployed app name from databricks.yml)
+databricks apps logs dev-agent-openai-agents-sdk --follow
+
+# Check status
+databricks apps get dev-agent-openai-agents-sdk --output json | jq '{app_status, compute_status}'
+```
+
+---
+
+## Key Files
+
+| File                             | Purpose                                       |
+| -------------------------------- | --------------------------------------------- |
+| `agent_server/agent.py`          | Agent logic, model, instructions, MCP servers |
+| `agent_server/start_server.py`   | FastAPI server + MLflow setup                 |
+| `agent_server/evaluate_agent.py` | Agent evaluation with MLflow scorers          |
+| `agent_server/utils.py`          | Databricks auth helpers, stream processing    |
+| `scripts/start_app.py`           | Manages backend+frontend startup              |
+| `scripts/discover_tools.py`      | Discovers available workspace resources       |
+| `scripts/quickstart.sh`          | One-command setup script                      |
+
 ---
 
 ## Agent Framework Capabilities
 
-Reference: https://docs.databricks.com/aws/en/generative-ai/agent-framework/
-
-### Tool Types
-
+**Tool Types:**
 1. **Unity Catalog Function Tools** - SQL UDFs managed in UC with built-in governance
 2. **Agent Code Tools** - Defined directly in agent code for REST APIs and low-latency operations
 3. **MCP Tools** - Interoperable tools via Model Context Protocol (Databricks-managed, external, or self-hosted)
 
-### Built-in Tools
-
+**Built-in Tools:**
 - **system.ai.python_exec** - Execute Python code dynamically within agent queries (code interpreter)
 
-### Common Patterns
-
+**Common Patterns:**
 - **Structured data retrieval** - Query SQL tables/databases
 - **Unstructured data retrieval** - Document search and RAG via Vector Search
 - **Code interpreter** - Python execution for analysis via system.ai.python_exec
 - **External connections** - Integrate services like Slack via HTTP connections
+
+Reference: https://docs.databricks.com/aws/en/generative-ai/agent-framework/
+
+---
+
+## Next Steps
+
+✅ **You've completed the initial setup!**
+
+After running the quickstart script, you have:
+- ✅ Installed prerequisites
+- ✅ Authenticated with Databricks
+- ✅ Created MLflow experiment
+- ✅ Discovered available tools in your workspace
+
+Now you're ready to:
+- Start the agent locally: `uv run start-app`
+- Modify your agent to use the tools you discovered
+- Deploy your agent to Databricks
+
+**See the README.md** for more information on:
+- Modifying the agent and adding tools
+- Evaluating your agent
+- Deploying to Databricks Apps
+- Debugging and monitoring deployed apps

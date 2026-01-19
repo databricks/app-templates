@@ -1,6 +1,37 @@
 #!/bin/bash
 set -e
 
+# Parse command line arguments
+PROFILE_ARG=""
+HOST_ARG=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --profile)
+            PROFILE_ARG="$2"
+            shift 2
+            ;;
+        --host)
+            HOST_ARG="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --profile NAME    Use specified Databricks profile (non-interactive)"
+            echo "  --host URL        Databricks workspace URL (for initial setup)"
+            echo "  -h, --help        Show this help message"
+            exit 0
+            ;;
+        *)
+            echo "Error: Unknown option $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
 # Helper function to check if a command exists
 command_exists() {
     command -v "$1" >/dev/null 2>&1
@@ -121,71 +152,81 @@ echo
 
 echo "Setting up Databricks authentication..."
 
-# Check if there are existing profiles
-set +e
-EXISTING_PROFILES=$(databricks auth profiles 2>/dev/null)
-PROFILES_EXIT_CODE=$?
-set -e
+# If --profile flag was provided, use that directly
+if [ -n "$PROFILE_ARG" ]; then
+    PROFILE_NAME="$PROFILE_ARG"
+    echo "Using specified profile: $PROFILE_NAME"
+else
+    # Check if there are existing profiles
+    set +e
+    EXISTING_PROFILES=$(databricks auth profiles 2>/dev/null)
+    PROFILES_EXIT_CODE=$?
+    set -e
 
-if [ $PROFILES_EXIT_CODE -eq 0 ] && [ -n "$EXISTING_PROFILES" ]; then
-    # Profiles exist - let user select one
-    echo "Found existing Databricks profiles:"
-    echo
+    if [ $PROFILES_EXIT_CODE -eq 0 ] && [ -n "$EXISTING_PROFILES" ]; then
+        # Profiles exist - let user select one
+        echo "Found existing Databricks profiles:"
+        echo
 
-    # Parse profiles into an array (compatible with older bash)
-    # Skip the first line (header row)
-    PROFILE_ARRAY=()
-    PROFILE_NAMES=()
-    LINE_NUM=0
-    while IFS= read -r line; do
-        if [ -n "$line" ]; then
-            if [ $LINE_NUM -eq 0 ]; then
-                # Print header without number
-                echo "$line"
-            else
-                # Add full line to display array
-                PROFILE_ARRAY+=("$line")
-                # Extract just the profile name (first column) for selection
-                PROFILE_NAME_ONLY=$(echo "$line" | awk '{print $1}')
-                PROFILE_NAMES+=("$PROFILE_NAME_ONLY")
+        # Parse profiles into an array (compatible with older bash)
+        # Skip the first line (header row)
+        PROFILE_ARRAY=()
+        PROFILE_NAMES=()
+        LINE_NUM=0
+        while IFS= read -r line; do
+            if [ -n "$line" ]; then
+                if [ $LINE_NUM -eq 0 ]; then
+                    # Print header without number
+                    echo "$line"
+                else
+                    # Add full line to display array
+                    PROFILE_ARRAY+=("$line")
+                    # Extract just the profile name (first column) for selection
+                    PROFILE_NAME_ONLY=$(echo "$line" | awk '{print $1}')
+                    PROFILE_NAMES+=("$PROFILE_NAME_ONLY")
+                fi
+                LINE_NUM=$((LINE_NUM + 1))
             fi
-            LINE_NUM=$((LINE_NUM + 1))
+        done <<< "$EXISTING_PROFILES"
+        echo
+
+        # Display numbered list
+        for i in "${!PROFILE_ARRAY[@]}"; do
+            echo "$((i+1))) ${PROFILE_ARRAY[$i]}"
+        done
+        echo
+
+        echo "Enter the number of the profile you want to use:"
+        read -r PROFILE_CHOICE
+
+        if [ -z "$PROFILE_CHOICE" ]; then
+            echo "Error: Profile selection is required"
+            exit 1
         fi
-    done <<< "$EXISTING_PROFILES"
-    echo
 
-    # Display numbered list
-    for i in "${!PROFILE_ARRAY[@]}"; do
-        echo "$((i+1))) ${PROFILE_ARRAY[$i]}"
-    done
-    echo
+        # Validate the choice is a number
+        if ! [[ "$PROFILE_CHOICE" =~ ^[0-9]+$ ]]; then
+            echo "Error: Please enter a valid number"
+            exit 1
+        fi
 
-    echo "Enter the number of the profile you want to use:"
-    read -r PROFILE_CHOICE
+        # Convert to array index (subtract 1)
+        PROFILE_INDEX=$((PROFILE_CHOICE - 1))
 
-    if [ -z "$PROFILE_CHOICE" ]; then
-        echo "Error: Profile selection is required"
-        exit 1
+        # Check if the index is valid
+        if [ $PROFILE_INDEX -lt 0 ] || [ $PROFILE_INDEX -ge ${#PROFILE_NAMES[@]} ]; then
+            echo "Error: Invalid selection. Please choose a number between 1 and ${#PROFILE_NAMES[@]}"
+            exit 1
+        fi
+
+        # Get the selected profile name (just the name, not the full line)
+        PROFILE_NAME="${PROFILE_NAMES[$PROFILE_INDEX]}"
+        echo "Selected profile: $PROFILE_NAME"
     fi
+fi
 
-    # Validate the choice is a number
-    if ! [[ "$PROFILE_CHOICE" =~ ^[0-9]+$ ]]; then
-        echo "Error: Please enter a valid number"
-        exit 1
-    fi
-
-    # Convert to array index (subtract 1)
-    PROFILE_INDEX=$((PROFILE_CHOICE - 1))
-
-    # Check if the index is valid
-    if [ $PROFILE_INDEX -lt 0 ] || [ $PROFILE_INDEX -ge ${#PROFILE_NAMES[@]} ]; then
-        echo "Error: Invalid selection. Please choose a number between 1 and ${#PROFILE_NAMES[@]}"
-        exit 1
-    fi
-
-    # Get the selected profile name (just the name, not the full line)
-    PROFILE_NAME="${PROFILE_NAMES[$PROFILE_INDEX]}"
-    echo "Selected profile: $PROFILE_NAME"
+# Validate the profile if it was specified
+if [ -n "$PROFILE_NAME" ]; then
 
     # Test if the profile works
     set +e
@@ -230,16 +271,30 @@ if [ $PROFILES_EXIT_CODE -eq 0 ] && [ -n "$EXISTING_PROFILES" ]; then
     else
         echo "DATABRICKS_CONFIG_PROFILE=$PROFILE_NAME" >> .env.local
     fi
+
+    # Update MLFLOW_TRACKING_URI to use the profile for local development
+    if grep -q "MLFLOW_TRACKING_URI=" .env.local; then
+        sed -i '' "s|MLFLOW_TRACKING_URI=.*|MLFLOW_TRACKING_URI=\"databricks://$PROFILE_NAME\"|" .env.local
+    else
+        echo "MLFLOW_TRACKING_URI=\"databricks://$PROFILE_NAME\"" >> .env.local
+    fi
     echo "✓ Databricks profile '$PROFILE_NAME' saved to .env.local"
 else
     # No profiles exist - create default one
     echo "No existing profiles found. Setting up Databricks authentication..."
-    echo "Please enter your Databricks host URL (e.g., https://your-workspace.cloud.databricks.com):"
-    read -r DATABRICKS_HOST
 
-    if [ -z "$DATABRICKS_HOST" ]; then
-        echo "Error: Databricks host is required"
-        exit 1
+    # Use --host flag if provided, otherwise prompt
+    if [ -n "$HOST_ARG" ]; then
+        DATABRICKS_HOST="$HOST_ARG"
+        echo "Using specified host: $DATABRICKS_HOST"
+    else
+        echo "Please enter your Databricks host URL (e.g., https://your-workspace.cloud.databricks.com):"
+        read -r DATABRICKS_HOST
+
+        if [ -z "$DATABRICKS_HOST" ]; then
+            echo "Error: Databricks host is required"
+            exit 1
+        fi
     fi
 
     echo "Authenticating with Databricks..."
@@ -249,9 +304,9 @@ else
     # Temporarily disable exit on error for the auth command
     set +e
 
-    # Run auth login with host parameter and capture output while still showing it to the user
+    # Run auth login with profile DEFAULT and host parameter
     AUTH_LOG=$(mktemp)
-    databricks auth login --host "$DATABRICKS_HOST" 2>&1 | tee "$AUTH_LOG"
+    databricks auth login --profile DEFAULT --host "$DATABRICKS_HOST" 2>&1 | tee "$AUTH_LOG"
     AUTH_EXIT_CODE=$?
 
     set -e
@@ -259,24 +314,24 @@ else
     if [ $AUTH_EXIT_CODE -eq 0 ]; then
         echo "✓ Successfully authenticated with Databricks"
 
-        # Extract profile name from the captured output
-        # Expected format: "Profile DEFAULT was successfully saved"
-        PROFILE_NAME=$(grep -i "Profile .* was successfully saved" "$AUTH_LOG" | sed -E 's/.*Profile ([^ ]+) was successfully saved.*/\1/' | head -1)
+        # Use DEFAULT as the profile name
+        PROFILE_NAME="DEFAULT"
 
         # Clean up temp file
         rm -f "$AUTH_LOG"
-
-        # If we couldn't extract the profile name, default to "DEFAULT"
-        if [ -z "$PROFILE_NAME" ]; then
-            PROFILE_NAME="DEFAULT"
-            echo "Note: Could not detect profile name, using 'DEFAULT'"
-        fi
 
         # Update .env.local with the profile name
         if grep -q "DATABRICKS_CONFIG_PROFILE=" .env.local; then
             sed -i '' "s/DATABRICKS_CONFIG_PROFILE=.*/DATABRICKS_CONFIG_PROFILE=$PROFILE_NAME/" .env.local
         else
             echo "DATABRICKS_CONFIG_PROFILE=$PROFILE_NAME" >> .env.local
+        fi
+
+        # Update MLFLOW_TRACKING_URI to use the profile for local development
+        if grep -q "MLFLOW_TRACKING_URI=" .env.local; then
+            sed -i '' "s|MLFLOW_TRACKING_URI=.*|MLFLOW_TRACKING_URI=\"databricks://$PROFILE_NAME\"|" .env.local
+        else
+            echo "MLFLOW_TRACKING_URI=\"databricks://$PROFILE_NAME\"" >> .env.local
         fi
 
         echo "✓ Databricks profile '$PROFILE_NAME' saved to .env.local"

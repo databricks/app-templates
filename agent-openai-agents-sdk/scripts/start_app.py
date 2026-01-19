@@ -31,7 +31,7 @@ FRONTEND_READY = [r"Server is running on http://localhost"]
 
 
 class ProcessManager:
-    def __init__(self):
+    def __init__(self, port=8000):
         self.backend_process = None
         self.frontend_process = None
         self.backend_ready = False
@@ -39,6 +39,7 @@ class ProcessManager:
         self.failed = threading.Event()
         self.backend_log = None
         self.frontend_log = None
+        self.port = port
 
     def monitor_process(self, process, name, log_file, patterns):
         is_ready = False
@@ -63,7 +64,7 @@ class ProcessManager:
                     if self.backend_ready and self.frontend_ready:
                         print("\n" + "=" * 50)
                         print("✓ Both frontend and backend are ready!")
-                        print("✓ Open the frontend at http://localhost:8000")
+                        print(f"✓ Open the frontend at http://localhost:{self.port}")
                         print("=" * 50 + "\n")
 
             process.wait()
@@ -231,7 +232,17 @@ def main():
     # Parse known args (none currently) and pass remaining to backend
     _, backend_args = parser.parse_known_args()
 
-    sys.exit(ProcessManager().run(backend_args))
+    # Extract port from backend_args if specified
+    port = 8000
+    for i, arg in enumerate(backend_args):
+        if arg == "--port" and i + 1 < len(backend_args):
+            try:
+                port = int(backend_args[i + 1])
+            except ValueError:
+                pass
+            break
+
+    sys.exit(ProcessManager(port=port).run(backend_args))
 
 
 if __name__ == "__main__":

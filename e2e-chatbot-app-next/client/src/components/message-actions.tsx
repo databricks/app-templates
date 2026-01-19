@@ -1,13 +1,21 @@
 import { useCopyToClipboard } from 'usehooks-ts';
 
 import { Actions, Action } from './elements/actions';
-import { memo } from 'react';
+import { memo, useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import type { ChatMessage } from '@chat-template/core';
-import { ChevronDown, ChevronUp, CopyIcon, PencilLineIcon } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronUp,
+  CopyIcon,
+  PencilLineIcon,
+  ThumbsUp,
+  ThumbsDown,
+} from 'lucide-react';
 
 function PureMessageActions({
   message,
+  chatId,
   isLoading,
   setMode,
   errorCount = 0,
@@ -15,6 +23,7 @@ function PureMessageActions({
   onToggleErrors,
 }: {
   message: ChatMessage;
+  chatId: string;
   isLoading: boolean;
   setMode?: (mode: 'view' | 'edit') => void;
   errorCount?: number;
@@ -22,6 +31,10 @@ function PureMessageActions({
   onToggleErrors?: () => void;
 }) {
   const [_, copyToClipboard] = useCopyToClipboard();
+  const [feedback, setFeedback] = useState<'thumbs_up' | 'thumbs_down' | null>(
+    null,
+  );
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
   if (isLoading) return null;
 
@@ -40,6 +53,45 @@ function PureMessageActions({
     await copyToClipboard(textFromParts);
     toast.success('Copied to clipboard!');
   };
+
+  const handleFeedback = useCallback(
+    async (feedbackType: 'thumbs_up' | 'thumbs_down') => {
+      if (isSubmittingFeedback) return;
+
+      setIsSubmittingFeedback(true);
+
+      try {
+        const response = await fetch('/api/feedback', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messageId: message.id,
+            chatId,
+            feedbackType,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to submit feedback');
+        }
+
+        setFeedback(feedbackType);
+        toast.success(
+          feedbackType === 'thumbs_up'
+            ? 'Thanks for the positive feedback!'
+            : 'Thanks for the feedback!',
+        );
+      } catch (error) {
+        console.error('Error submitting feedback:', error);
+        toast.error('Failed to submit feedback. Please try again.');
+      } finally {
+        setIsSubmittingFeedback(false);
+      }
+    },
+    [message.id, chatId, isSubmittingFeedback],
+  );
 
   // User messages get edit (on hover) and copy actions
   if (message.role === 'user') {
@@ -71,6 +123,22 @@ function PureMessageActions({
           <CopyIcon />
         </Action>
       )}
+      <Action
+        tooltip="Thumbs up"
+        onClick={() => handleFeedback('thumbs_up')}
+        className={feedback === 'thumbs_up' ? 'text-green-600' : ''}
+        data-testid="thumbs-up-button"
+      >
+        <ThumbsUp />
+      </Action>
+      <Action
+        tooltip="Thumbs down"
+        onClick={() => handleFeedback('thumbs_down')}
+        className={feedback === 'thumbs_down' ? 'text-red-600' : ''}
+        data-testid="thumbs-down-button"
+      >
+        <ThumbsDown />
+      </Action>
       {errorCount > 0 && onToggleErrors && (
         <Action
           tooltip={showErrors ? 'Hide errors' : 'Show errors'}

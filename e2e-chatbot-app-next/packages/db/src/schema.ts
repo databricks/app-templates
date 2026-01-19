@@ -51,3 +51,24 @@ export const message = createTable('Message', {
 });
 
 export type DBMessage = InferSelectModel<typeof message>;
+
+export const feedback = createTable('Feedback', {
+  id: uuid('id').primaryKey().notNull().defaultRandom(),
+  messageId: uuid('messageId')
+    .notNull()
+    .references(() => message.id, { onDelete: 'cascade' }),
+  chatId: uuid('chatId')
+    .notNull()
+    .references(() => chat.id, { onDelete: 'cascade' }),
+  userId: text('userId')
+    .notNull()
+    .references(() => user.id),
+  feedbackType: varchar('feedbackType', {
+    enum: ['thumbs_up', 'thumbs_down'],
+  }).notNull(),
+  mlflowAssessmentId: text('mlflowAssessmentId'),
+  createdAt: timestamp('createdAt').notNull(),
+  updatedAt: timestamp('updatedAt'),
+});
+
+export type Feedback = InferSelectModel<typeof feedback>;

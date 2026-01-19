@@ -8,7 +8,7 @@ import {
   getDatabricksUserIdentity,
   getCachedCliHost,
 } from '@chat-template/auth';
-import { createDatabricksProvider } from './databricks-provider/index';
+import { createDatabricksProvider } from '@databricks/ai-sdk-provider';
 import { extractReasoningMiddleware, wrapLanguageModel } from 'ai';
 
 // Use centralized authentication - only on server side

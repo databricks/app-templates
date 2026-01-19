@@ -40,8 +40,8 @@ import {
 import {
   DATABRICKS_TOOL_CALL_ID,
   DATABRICKS_TOOL_DEFINITION,
-} from '@chat-template/ai-sdk-providers/tools';
-import { extractApprovalStatus } from '@chat-template/ai-sdk-providers/mcp';
+  extractApprovalStatus,
+} from '@databricks/ai-sdk-provider';
 import { ChatSDKError } from '@chat-template/core/errors';
 
 export const chatRouter: RouterType = Router();

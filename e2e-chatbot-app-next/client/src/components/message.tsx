@@ -37,13 +37,13 @@ import { MessageError } from './message-error';
 import { MessageOAuthError } from './message-oauth-error';
 import { isCredentialErrorMessage } from '@/lib/oauth-error-utils';
 import { Streamdown } from 'streamdown';
-import { DATABRICKS_TOOL_CALL_ID } from '@chat-template/ai-sdk-providers/tools';
 import {
+  DATABRICKS_TOOL_CALL_ID,
   extractDatabricksMetadata,
   isMcpApprovalRequest,
   getMcpApprovalState,
   isApprovalStatusOutput,
-} from '@chat-template/ai-sdk-providers/mcp';
+} from '@databricks/ai-sdk-provider';
 import { useApproval } from '@/hooks/use-approval';
 
 const PurePreviewMessage = ({

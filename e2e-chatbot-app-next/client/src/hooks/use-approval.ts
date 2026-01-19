@@ -1,8 +1,10 @@
 import { useState, useCallback } from 'react';
 import type { UseChatHelpers } from '@ai-sdk/react';
 import type { ChatMessage } from '@chat-template/core';
-import { DATABRICKS_TOOL_CALL_ID } from '@chat-template/ai-sdk-providers/tools';
-import { createApprovalStatusOutput } from '@chat-template/ai-sdk-providers/mcp';
+import {
+  DATABRICKS_TOOL_CALL_ID,
+  createApprovalStatusOutput,
+} from '@databricks/ai-sdk-provider';
 
 interface ApprovalSubmission {
   approvalRequestId: string;

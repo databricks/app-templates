@@ -11,6 +11,43 @@ has_brew() {
     command_exists brew
 }
 
+# Parse command line arguments
+PROFILE_ARG=""
+HOST_ARG=""
+LAKEBASE_ARG=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --profile)
+            PROFILE_ARG="$2"
+            shift 2
+            ;;
+        --host)
+            HOST_ARG="$2"
+            shift 2
+            ;;
+        --lakebase)
+            LAKEBASE_ARG="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --profile NAME    Use specified Databricks profile (non-interactive)"
+            echo "  --host URL        Databricks workspace URL (for initial setup)"
+            echo "  --lakebase NAME   Lakebase instance name for memory features"
+            echo "  -h, --help        Show this help message"
+            exit 0
+            ;;
+        *)
+            echo "Error: Unknown option $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
 echo "==================================================================="
 echo "Agent on Apps - Quickstart Setup"
 echo "==================================================================="
@@ -121,71 +158,10 @@ echo
 
 echo "Setting up Databricks authentication..."
 
-# Check if there are existing profiles
-set +e
-EXISTING_PROFILES=$(databricks auth profiles 2>/dev/null)
-PROFILES_EXIT_CODE=$?
-set -e
-
-if [ $PROFILES_EXIT_CODE -eq 0 ] && [ -n "$EXISTING_PROFILES" ]; then
-    # Profiles exist - let user select one
-    echo "Found existing Databricks profiles:"
-    echo
-
-    # Parse profiles into an array (compatible with older bash)
-    # Skip the first line (header row)
-    PROFILE_ARRAY=()
-    PROFILE_NAMES=()
-    LINE_NUM=0
-    while IFS= read -r line; do
-        if [ -n "$line" ]; then
-            if [ $LINE_NUM -eq 0 ]; then
-                # Print header without number
-                echo "$line"
-            else
-                # Add full line to display array
-                PROFILE_ARRAY+=("$line")
-                # Extract just the profile name (first column) for selection
-                PROFILE_NAME_ONLY=$(echo "$line" | awk '{print $1}')
-                PROFILE_NAMES+=("$PROFILE_NAME_ONLY")
-            fi
-            LINE_NUM=$((LINE_NUM + 1))
-        fi
-    done <<< "$EXISTING_PROFILES"
-    echo
-
-    # Display numbered list
-    for i in "${!PROFILE_ARRAY[@]}"; do
-        echo "$((i+1))) ${PROFILE_ARRAY[$i]}"
-    done
-    echo
-
-    echo "Enter the number of the profile you want to use:"
-    read -r PROFILE_CHOICE
-
-    if [ -z "$PROFILE_CHOICE" ]; then
-        echo "Error: Profile selection is required"
-        exit 1
-    fi
-
-    # Validate the choice is a number
-    if ! [[ "$PROFILE_CHOICE" =~ ^[0-9]+$ ]]; then
-        echo "Error: Please enter a valid number"
-        exit 1
-    fi
-
-    # Convert to array index (subtract 1)
-    PROFILE_INDEX=$((PROFILE_CHOICE - 1))
-
-    # Check if the index is valid
-    if [ $PROFILE_INDEX -lt 0 ] || [ $PROFILE_INDEX -ge ${#PROFILE_NAMES[@]} ]; then
-        echo "Error: Invalid selection. Please choose a number between 1 and ${#PROFILE_NAMES[@]}"
-        exit 1
-    fi
-
-    # Get the selected profile name (just the name, not the full line)
-    PROFILE_NAME="${PROFILE_NAMES[$PROFILE_INDEX]}"
-    echo "Selected profile: $PROFILE_NAME"
+# If --profile was provided, use it directly
+if [ -n "$PROFILE_ARG" ]; then
+    PROFILE_NAME="$PROFILE_ARG"
+    echo "Using provided profile: $PROFILE_NAME"
 
     # Test if the profile works
     set +e
@@ -196,32 +172,9 @@ if [ $PROFILES_EXIT_CODE -eq 0 ] && [ -n "$EXISTING_PROFILES" ]; then
     if [ $PROFILE_TEST -eq 0 ]; then
         echo "✓ Successfully validated profile '$PROFILE_NAME'"
     else
-        # Profile exists but isn't authenticated - prompt to authenticate
-        echo "Profile '$PROFILE_NAME' is not authenticated."
-        echo "Authenticating profile '$PROFILE_NAME'..."
-        echo "You will be prompted to log in to Databricks in your browser."
-        echo
-
-        # Temporarily disable exit on error for the auth command
-        set +e
-
-        # Run auth login with the profile name and capture output while still showing it to the user
-        AUTH_LOG=$(mktemp)
-        databricks auth login --profile "$PROFILE_NAME" 2>&1 | tee "$AUTH_LOG"
-        AUTH_EXIT_CODE=$?
-
-        set -e
-
-        if [ $AUTH_EXIT_CODE -eq 0 ]; then
-            echo "✓ Successfully authenticated profile '$PROFILE_NAME'"
-            # Clean up temp file
-            rm -f "$AUTH_LOG"
-        else
-            # Clean up temp file
-            rm -f "$AUTH_LOG"
-            echo "Error: Profile '$PROFILE_NAME' authentication failed"
-            exit 1
-        fi
+        echo "Error: Profile '$PROFILE_NAME' is not valid or not authenticated"
+        echo "Please authenticate first with: databricks auth login --profile $PROFILE_NAME"
+        exit 1
     fi
 
     # Update .env.local with the profile name
@@ -231,45 +184,142 @@ if [ $PROFILES_EXIT_CODE -eq 0 ] && [ -n "$EXISTING_PROFILES" ]; then
         echo "DATABRICKS_CONFIG_PROFILE=$PROFILE_NAME" >> .env.local
     fi
     echo "✓ Databricks profile '$PROFILE_NAME' saved to .env.local"
-else
-    # No profiles exist - create default one
-    echo "No existing profiles found. Setting up Databricks authentication..."
-    echo "Please enter your Databricks host URL (e.g., https://your-workspace.cloud.databricks.com):"
-    read -r DATABRICKS_HOST
 
-    if [ -z "$DATABRICKS_HOST" ]; then
-        echo "Error: Databricks host is required"
-        exit 1
-    fi
-
-    echo "Authenticating with Databricks..."
+# If --host was provided, use it for initial setup
+elif [ -n "$HOST_ARG" ]; then
+    echo "Setting up authentication with host: $HOST_ARG"
     echo "You will be prompted to log in to Databricks in your browser."
     echo
 
-    # Temporarily disable exit on error for the auth command
     set +e
-
-    # Run auth login with host parameter and capture output while still showing it to the user
     AUTH_LOG=$(mktemp)
-    databricks auth login --host "$DATABRICKS_HOST" 2>&1 | tee "$AUTH_LOG"
+    databricks auth login --host "$HOST_ARG" 2>&1 | tee "$AUTH_LOG"
     AUTH_EXIT_CODE=$?
-
     set -e
 
     if [ $AUTH_EXIT_CODE -eq 0 ]; then
         echo "✓ Successfully authenticated with Databricks"
-
-        # Extract profile name from the captured output
-        # Expected format: "Profile DEFAULT was successfully saved"
         PROFILE_NAME=$(grep -i "Profile .* was successfully saved" "$AUTH_LOG" | sed -E 's/.*Profile ([^ ]+) was successfully saved.*/\1/' | head -1)
-
-        # Clean up temp file
         rm -f "$AUTH_LOG"
 
-        # If we couldn't extract the profile name, default to "DEFAULT"
         if [ -z "$PROFILE_NAME" ]; then
             PROFILE_NAME="DEFAULT"
-            echo "Note: Could not detect profile name, using 'DEFAULT'"
+        fi
+
+        if grep -q "DATABRICKS_CONFIG_PROFILE=" .env.local; then
+            sed -i '' "s/DATABRICKS_CONFIG_PROFILE=.*/DATABRICKS_CONFIG_PROFILE=$PROFILE_NAME/" .env.local
+        else
+            echo "DATABRICKS_CONFIG_PROFILE=$PROFILE_NAME" >> .env.local
+        fi
+        echo "✓ Databricks profile '$PROFILE_NAME' saved to .env.local"
+    else
+        rm -f "$AUTH_LOG"
+        echo "Databricks authentication failed."
+        exit 1
+    fi
+
+else
+    # Interactive mode - check for existing profiles
+    set +e
+    EXISTING_PROFILES=$(databricks auth profiles 2>/dev/null)
+    PROFILES_EXIT_CODE=$?
+    set -e
+
+    if [ $PROFILES_EXIT_CODE -eq 0 ] && [ -n "$EXISTING_PROFILES" ]; then
+        # Profiles exist - let user select one
+        echo "Found existing Databricks profiles:"
+        echo
+
+        # Parse profiles into an array (compatible with older bash)
+        # Skip the first line (header row)
+        PROFILE_ARRAY=()
+        PROFILE_NAMES=()
+        LINE_NUM=0
+        while IFS= read -r line; do
+            if [ -n "$line" ]; then
+                if [ $LINE_NUM -eq 0 ]; then
+                    # Print header without number
+                    echo "$line"
+                else
+                    # Add full line to display array
+                    PROFILE_ARRAY+=("$line")
+                    # Extract just the profile name (first column) for selection
+                    PROFILE_NAME_ONLY=$(echo "$line" | awk '{print $1}')
+                    PROFILE_NAMES+=("$PROFILE_NAME_ONLY")
+                fi
+                LINE_NUM=$((LINE_NUM + 1))
+            fi
+        done <<< "$EXISTING_PROFILES"
+        echo
+
+        # Display numbered list
+        for i in "${!PROFILE_ARRAY[@]}"; do
+            echo "$((i+1))) ${PROFILE_ARRAY[$i]}"
+        done
+        echo
+
+        echo "Enter the number of the profile you want to use:"
+        read -r PROFILE_CHOICE
+
+        if [ -z "$PROFILE_CHOICE" ]; then
+            echo "Error: Profile selection is required"
+            exit 1
+        fi
+
+        # Validate the choice is a number
+        if ! [[ "$PROFILE_CHOICE" =~ ^[0-9]+$ ]]; then
+            echo "Error: Please enter a valid number"
+            exit 1
+        fi
+
+        # Convert to array index (subtract 1)
+        PROFILE_INDEX=$((PROFILE_CHOICE - 1))
+
+        # Check if the index is valid
+        if [ $PROFILE_INDEX -lt 0 ] || [ $PROFILE_INDEX -ge ${#PROFILE_NAMES[@]} ]; then
+            echo "Error: Invalid selection. Please choose a number between 1 and ${#PROFILE_NAMES[@]}"
+            exit 1
+        fi
+
+        # Get the selected profile name (just the name, not the full line)
+        PROFILE_NAME="${PROFILE_NAMES[$PROFILE_INDEX]}"
+        echo "Selected profile: $PROFILE_NAME"
+
+        # Test if the profile works
+        set +e
+        DATABRICKS_CONFIG_PROFILE="$PROFILE_NAME" databricks current-user me >/dev/null 2>&1
+        PROFILE_TEST=$?
+        set -e
+
+        if [ $PROFILE_TEST -eq 0 ]; then
+            echo "✓ Successfully validated profile '$PROFILE_NAME'"
+        else
+            # Profile exists but isn't authenticated - prompt to authenticate
+            echo "Profile '$PROFILE_NAME' is not authenticated."
+            echo "Authenticating profile '$PROFILE_NAME'..."
+            echo "You will be prompted to log in to Databricks in your browser."
+            echo
+
+            # Temporarily disable exit on error for the auth command
+            set +e
+
+            # Run auth login with the profile name and capture output while still showing it to the user
+            AUTH_LOG=$(mktemp)
+            databricks auth login --profile "$PROFILE_NAME" 2>&1 | tee "$AUTH_LOG"
+            AUTH_EXIT_CODE=$?
+
+            set -e
+
+            if [ $AUTH_EXIT_CODE -eq 0 ]; then
+                echo "✓ Successfully authenticated profile '$PROFILE_NAME'"
+                # Clean up temp file
+                rm -f "$AUTH_LOG"
+            else
+                # Clean up temp file
+                rm -f "$AUTH_LOG"
+                echo "Error: Profile '$PROFILE_NAME' authentication failed"
+                exit 1
+            fi
         fi
 
         # Update .env.local with the profile name
@@ -278,14 +328,63 @@ else
         else
             echo "DATABRICKS_CONFIG_PROFILE=$PROFILE_NAME" >> .env.local
         fi
-
         echo "✓ Databricks profile '$PROFILE_NAME' saved to .env.local"
     else
-        # Clean up temp file
-        rm -f "$AUTH_LOG"
-        echo "Databricks authentication was cancelled or failed."
-        echo "Please run this script again when you're ready to authenticate."
-        exit 1
+        # No profiles exist - create default one
+        echo "No existing profiles found. Setting up Databricks authentication..."
+        echo "Please enter your Databricks host URL (e.g., https://your-workspace.cloud.databricks.com):"
+        read -r DATABRICKS_HOST
+
+        if [ -z "$DATABRICKS_HOST" ]; then
+            echo "Error: Databricks host is required"
+            exit 1
+        fi
+
+        echo "Authenticating with Databricks..."
+        echo "You will be prompted to log in to Databricks in your browser."
+        echo
+
+        # Temporarily disable exit on error for the auth command
+        set +e
+
+        # Run auth login with host parameter and capture output while still showing it to the user
+        AUTH_LOG=$(mktemp)
+        databricks auth login --host "$DATABRICKS_HOST" 2>&1 | tee "$AUTH_LOG"
+        AUTH_EXIT_CODE=$?
+
+        set -e
+
+        if [ $AUTH_EXIT_CODE -eq 0 ]; then
+            echo "✓ Successfully authenticated with Databricks"
+
+            # Extract profile name from the captured output
+            # Expected format: "Profile DEFAULT was successfully saved"
+            PROFILE_NAME=$(grep -i "Profile .* was successfully saved" "$AUTH_LOG" | sed -E 's/.*Profile ([^ ]+) was successfully saved.*/\1/' | head -1)
+
+            # Clean up temp file
+            rm -f "$AUTH_LOG"
+
+            # If we couldn't extract the profile name, default to "DEFAULT"
+            if [ -z "$PROFILE_NAME" ]; then
+                PROFILE_NAME="DEFAULT"
+                echo "Note: Could not detect profile name, using 'DEFAULT'"
+            fi
+
+            # Update .env.local with the profile name
+            if grep -q "DATABRICKS_CONFIG_PROFILE=" .env.local; then
+                sed -i '' "s/DATABRICKS_CONFIG_PROFILE=.*/DATABRICKS_CONFIG_PROFILE=$PROFILE_NAME/" .env.local
+            else
+                echo "DATABRICKS_CONFIG_PROFILE=$PROFILE_NAME" >> .env.local
+            fi
+
+            echo "✓ Databricks profile '$PROFILE_NAME' saved to .env.local"
+        else
+            # Clean up temp file
+            rm -f "$AUTH_LOG"
+            echo "Databricks authentication was cancelled or failed."
+            echo "Please run this script again when you're ready to authenticate."
+            exit 1
+        fi
     fi
 fi
 echo
@@ -328,37 +427,61 @@ echo
 # Section 5: Lakebase Instance Setup
 # ===================================================================
 
-# Check if LAKEBASE_INSTANCE_NAME already exists in app.yaml
-if grep -q "name: LAKEBASE_INSTANCE_NAME" app.yaml; then
-    echo "LAKEBASE_INSTANCE_NAME already exists in app.yaml, skipping Lakebase setup..."
-    # Extract the existing value from app.yaml for display in summary
-    LAKEBASE_INSTANCE_NAME=$(grep -A1 "name: LAKEBASE_INSTANCE_NAME" app.yaml | grep "value:" | sed 's/.*value: *"\?\([^"]*\)"\?/\1/')
+echo "Setting up Lakebase instance for memory..."
+
+# If --lakebase was provided, use it directly
+if [ -n "$LAKEBASE_ARG" ]; then
+    LAKEBASE_INSTANCE_NAME="$LAKEBASE_ARG"
+    echo "Using provided Lakebase instance: $LAKEBASE_INSTANCE_NAME"
 else
-    echo "Setting up Lakebase instance..."
-    echo "Please enter your Lakebase instance name:"
-    read -r LAKEBASE_INSTANCE_NAME
-
-    if [ -z "$LAKEBASE_INSTANCE_NAME" ]; then
-        echo "Error: Lakebase instance name is required"
-        exit 1
-    fi
-
-    # Update .env.local with the Lakebase instance name
-    if grep -q "LAKEBASE_INSTANCE_NAME=" .env.local; then
-        sed -i '' "s/LAKEBASE_INSTANCE_NAME=.*/LAKEBASE_INSTANCE_NAME=$LAKEBASE_INSTANCE_NAME/" .env.local
+    # Check if already configured in app.yaml (via valueFrom: database)
+    if grep -q "name: LAKEBASE_INSTANCE_NAME" app.yaml 2>/dev/null; then
+        echo "Found LAKEBASE_INSTANCE_NAME configured in app.yaml"
+        # Check if we have the actual instance name in .env.local
+        if grep -q "LAKEBASE_INSTANCE_NAME=." .env.local 2>/dev/null; then
+            LAKEBASE_INSTANCE_NAME=$(grep "LAKEBASE_INSTANCE_NAME=" .env.local | cut -d'=' -f2)
+            echo "Current Lakebase instance in .env.local: $LAKEBASE_INSTANCE_NAME"
+            echo "Press Enter to keep this value, or enter a new instance name:"
+            read -r NEW_LAKEBASE
+            if [ -n "$NEW_LAKEBASE" ]; then
+                LAKEBASE_INSTANCE_NAME="$NEW_LAKEBASE"
+            fi
+        else
+            echo "Please enter your Lakebase instance name (must match the database resource in your app):"
+            read -r LAKEBASE_INSTANCE_NAME
+            if [ -z "$LAKEBASE_INSTANCE_NAME" ]; then
+                echo "Error: Lakebase instance name is required for memory features"
+                exit 1
+            fi
+        fi
+    # Check if already set in .env.local only
+    elif grep -q "LAKEBASE_INSTANCE_NAME=." .env.local 2>/dev/null; then
+        LAKEBASE_INSTANCE_NAME=$(grep "LAKEBASE_INSTANCE_NAME=" .env.local | cut -d'=' -f2)
+        echo "Found existing Lakebase instance in .env.local: $LAKEBASE_INSTANCE_NAME"
+        echo "Press Enter to keep this value, or enter a new instance name:"
+        read -r NEW_LAKEBASE
+        if [ -n "$NEW_LAKEBASE" ]; then
+            LAKEBASE_INSTANCE_NAME="$NEW_LAKEBASE"
+        fi
     else
-        echo "LAKEBASE_INSTANCE_NAME=$LAKEBASE_INSTANCE_NAME" >> .env.local
-    fi
-    echo "✓ Lakebase instance name saved to .env.local"
+        # Interactive mode - prompt for instance name
+        echo "Please enter your Lakebase instance name:"
+        read -r LAKEBASE_INSTANCE_NAME
 
-    echo "Adding LAKEBASE_INSTANCE_NAME to app.yaml..."
-    # Add the two lines to the env section
-    sed -i '' "/^env:/a\\
-  - name: LAKEBASE_INSTANCE_NAME\\
-    value: \"$LAKEBASE_INSTANCE_NAME\"
-" app.yaml
-    echo "✓ Added LAKEBASE_INSTANCE_NAME to app.yaml"
+        if [ -z "$LAKEBASE_INSTANCE_NAME" ]; then
+            echo "Error: Lakebase instance name is required for memory features"
+            exit 1
+        fi
+    fi
 fi
+
+# Update .env.local with the Lakebase instance name
+if grep -q "LAKEBASE_INSTANCE_NAME=" .env.local; then
+    sed -i '' "s/LAKEBASE_INSTANCE_NAME=.*/LAKEBASE_INSTANCE_NAME=$LAKEBASE_INSTANCE_NAME/" .env.local
+else
+    echo "LAKEBASE_INSTANCE_NAME=$LAKEBASE_INSTANCE_NAME" >> .env.local
+fi
+echo "✓ Lakebase instance name '$LAKEBASE_INSTANCE_NAME' saved to .env.local"
 echo
 
 echo "==================================================================="
@@ -369,6 +492,10 @@ echo "✓ Databricks authenticated with profile: $PROFILE_NAME"
 echo "✓ Configuration files created (.env.local)"
 echo "✓ MLflow experiment created: $EXPERIMENT_NAME"
 echo "✓ Experiment ID: $EXPERIMENT_ID"
+echo "✓ Lakebase instance: $LAKEBASE_INSTANCE_NAME"
 echo "✓ Configuration updated in .env.local"
 echo "==================================================================="
+echo
+echo "To start the app locally, run:"
+echo "  uv run start-app"
 echo

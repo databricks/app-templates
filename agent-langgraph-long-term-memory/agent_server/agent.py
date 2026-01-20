@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from typing import Any, AsyncGenerator, Optional
 
@@ -10,6 +11,7 @@ from databricks_langchain import (
     DatabricksMCPServer,
     DatabricksMultiServerMCPClient,
 )
+from fastapi import HTTPException
 from langchain.agents import create_agent
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
@@ -28,6 +30,7 @@ from agent_server.utils import (
     process_agent_astream_events,
 )
 
+logger = logging.getLogger(__name__)
 mlflow.langchain.autolog()
 sp_workspace_client = WorkspaceClient()
 
@@ -38,6 +41,13 @@ LLM_ENDPOINT_NAME = "databricks-claude-sonnet-4-5"
 LAKEBASE_INSTANCE_NAME = os.getenv("LAKEBASE_INSTANCE_NAME", "")
 EMBEDDING_ENDPOINT = "databricks-gte-large-en"
 EMBEDDING_DIMS = 1024
+
+if not LAKEBASE_INSTANCE_NAME:
+    raise ValueError(
+        "LAKEBASE_INSTANCE_NAME environment variable is required but not set. "
+        "Please set it in your environment:\n"
+        "  LAKEBASE_INSTANCE_NAME=<your-lakebase-instance-name>\n"
+    )
 
 SYSTEM_PROMPT = """You are a helpful assistant. Use the available tools to answer questions.
 
@@ -52,7 +62,7 @@ Always check for relevant memories at the start of a conversation to provide per
 ############################################
 # Memory tools
 ############################################
-def memory_tools():
+def init_memory_tools():
     @tool
     async def get_user_memory(query: str, config: RunnableConfig) -> str:
         """Search for relevant information about the user from long-term memory."""
@@ -127,7 +137,7 @@ def init_mcp_client(workspace_client: WorkspaceClient) -> DatabricksMultiServerM
 
 async def init_agent(store: BaseStore, workspace_client: Optional[WorkspaceClient] = None):
     mcp_client = init_mcp_client(workspace_client or sp_workspace_client)
-    tools = await mcp_client.get_tools() + memory_tools()
+    tools = await mcp_client.get_tools() + init_memory_tools()
 
     return create_agent(
         model=ChatDatabricks(endpoint=LLM_ENDPOINT_NAME),
@@ -173,18 +183,58 @@ async def streaming(
         "messages": to_chat_completions_input([i.model_dump() for i in request.input])
     }
 
-    async with AsyncDatabricksStore(
-        instance_name=LAKEBASE_INSTANCE_NAME,
-        embedding_endpoint=EMBEDDING_ENDPOINT,
-        embedding_dims=EMBEDDING_DIMS,
-    ) as store:
-        config: dict[str, Any] = {"configurable": {"store": store}}
-        if user_id:
-            config["configurable"]["user_id"] = user_id
+    try:
+        async with AsyncDatabricksStore(
+            instance_name=LAKEBASE_INSTANCE_NAME,
+            embedding_endpoint=EMBEDDING_ENDPOINT,
+            embedding_dims=EMBEDDING_DIMS,
+        ) as store:
+            config: dict[str, Any] = {"configurable": {"store": store}}
+            if user_id:
+                config["configurable"]["user_id"] = user_id
 
-        agent = await init_agent(store=store)
+            agent = await init_agent(store=store)
 
-        async for event in process_agent_astream_events(
-            agent.astream(messages, config, stream_mode=["updates", "messages"])
+            async for event in process_agent_astream_events(
+                agent.astream(messages, config, stream_mode=["updates", "messages"])
+            ):
+                yield event
+    except Exception as e:
+        error_msg = str(e).lower()
+        # Check for Lakebase access/connection errors
+        if any(
+            keyword in error_msg
+            for keyword in ["permission"]
         ):
-            yield event
+            logger.error(f"Lakebase access error: {e}")
+            raise HTTPException(status_code=503, detail=_get_lakebase_access_error_message()) from e
+        raise
+
+
+def _is_databricks_app_env() -> bool:
+    """Check if running in a Databricks App environment."""
+    return bool(os.getenv("DATABRICKS_APP_NAME"))
+
+
+def _get_lakebase_access_error_message() -> str:
+    """Generate a helpful error message for Lakebase access issues."""
+    if _is_databricks_app_env():
+        app_name = os.getenv("DATABRICKS_APP_NAME")
+        return (
+            f"Failed to connect to Lakebase instance '{LAKEBASE_INSTANCE_NAME}'. "
+            f"The App Service Principal for '{app_name}' may not have access.\n\n"
+            "To fix this:\n"
+            "1. Go to the Databricks UI and navigate to your app\n"
+            "2. Click 'Edit' → 'App resources' → 'Add resource'\n"
+            "3. Add your Lakebase instance as a resource\n"
+            "4. Grant the necessary permissions on your Lakebase instance. "
+            "See the README section 'Grant Lakebase permissions to your App's Service Principal' for the SQL commands."
+        )
+    else:
+        return (
+            f"Failed to connect to Lakebase instance '{LAKEBASE_INSTANCE_NAME}'. "
+            "Please verify:\n"
+            "1. The instance name is correct\n"
+            "2. You have the necessary permissions to access the instance\n"
+            "3. Your Databricks authentication is configured correctly"
+        )

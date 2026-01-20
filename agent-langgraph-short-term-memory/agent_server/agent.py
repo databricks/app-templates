@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Any, AsyncGenerator, Optional, Sequence, TypedDict
 
@@ -11,6 +12,7 @@ from databricks_langchain import (
     DatabricksMCPServer,
     DatabricksMultiServerMCPClient,
 )
+from fastapi import HTTPException
 from langchain.agents import create_agent
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
@@ -29,13 +31,23 @@ from agent_server.utils import (
     process_agent_astream_events,
 )
 
+logger = logging.getLogger(__name__)
 mlflow.langchain.autolog()
 sp_workspace_client = WorkspaceClient()
 
-# TODO: Update values here if needed
+############################################
+# Configuration
+############################################
 LLM_ENDPOINT_NAME = "databricks-claude-sonnet-4-5"
 SYSTEM_PROMPT = "You are a helpful assistant. Use the available tools to answer questions."
 LAKEBASE_INSTANCE_NAME = os.getenv("LAKEBASE_INSTANCE_NAME", "")
+
+if not LAKEBASE_INSTANCE_NAME:
+    raise ValueError(
+        "LAKEBASE_INSTANCE_NAME environment variable is required but not set. "
+        "Please set it in your environment:\n"
+        "  LAKEBASE_INSTANCE_NAME=<your-lakebase-instance-name>\n"
+    )
 
 
 class StatefulAgentState(TypedDict, total=False):
@@ -117,14 +129,51 @@ async def streaming(
         "custom_inputs": dict(request.custom_inputs or {}),
     }
 
-    async with AsyncCheckpointSaver(instance_name=LAKEBASE_INSTANCE_NAME) as checkpointer:
-        agent = await init_agent(checkpointer=checkpointer)
+    try:
+        async with AsyncCheckpointSaver(instance_name=LAKEBASE_INSTANCE_NAME) as checkpointer:
+            agent = await init_agent(checkpointer=checkpointer)
 
-        async for event in process_agent_astream_events(
-            agent.astream(
-                input_state,
-                config,
-                stream_mode=["updates", "messages"],
-            )
-        ):
-            yield event
+            async for event in process_agent_astream_events(
+                agent.astream(
+                    input_state,
+                    config,
+                    stream_mode=["updates", "messages"],
+                )
+            ):
+                yield event
+    except Exception as e:
+        error_msg = str(e).lower()
+        # Check for Lakebase access/connection errors
+        if any(keyword in error_msg for keyword in ["permission"]):
+            logger.error(f"Lakebase access error: {e}")
+            raise HTTPException(status_code=503, detail=_get_lakebase_access_error_message()) from e
+        raise
+
+
+def _is_databricks_app_env() -> bool:
+    """Check if running in a Databricks App environment."""
+    return bool(os.getenv("DATABRICKS_APP_NAME"))
+
+
+def _get_lakebase_access_error_message() -> str:
+    """Generate a helpful error message for Lakebase access issues."""
+    if _is_databricks_app_env():
+        app_name = os.getenv("DATABRICKS_APP_NAME")
+        return (
+            f"Failed to connect to Lakebase instance '{LAKEBASE_INSTANCE_NAME}'. "
+            f"The App Service Principal for '{app_name}' may not have access.\n\n"
+            "To fix this:\n"
+            "1. Go to the Databricks UI and navigate to your app\n"
+            "2. Click 'Edit' → 'App resources' → 'Add resource'\n"
+            "3. Add your Lakebase instance as a resource\n"
+            "4. Grant the necessary permissions on your Lakebase instance. "
+            "See the README section 'Grant Lakebase permissions to your App's Service Principal' for the SQL commands."
+        )
+    else:
+        return (
+            f"Failed to connect to Lakebase instance '{LAKEBASE_INSTANCE_NAME}'. "
+            "Please verify:\n"
+            "1. The instance name is correct\n"
+            "2. You have the necessary permissions to access the instance\n"
+            "3. Your Databricks authentication is configured correctly"
+        )

@@ -182,7 +182,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
 1. **Set up authentication to Databricks resources**
 
-   For this example, you need to add an MLflow Experiment and Lakebase instance as a resource to your app. Grant the App's Service Principal (SP) permission to edit the experiment by clicking `edit` on your app home page. See the [Databricks Apps MLflow experiment documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/mlflow) for more information.
+   For this example, you need to add an MLflow Experiment and Lakebase instance as a resource to your app. Grant the App's Service Principal (SP) permission to edit the experiment by clicking `edit` on your app home page. See the [Databricks Apps MLflow experiment documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/mlflow) and [Databricks Apps Lakebase documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/lakebase) for more information.
 
    To grant access to other resources like serving endpoints, genie spaces, UC Functions, and Vector Search Indexes, click `edit` on your app home page to grant the App's SP permission. See the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources).
 

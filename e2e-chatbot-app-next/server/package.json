@@ -13,7 +13,7 @@
     "@chat-template/auth": "*",
     "@chat-template/core": "*",
     "@chat-template/db": "*",
-    "@databricks/ai-sdk-provider": "^0.1.0",
+    "@databricks/ai-sdk-provider": "^0.2.0",
     "ai": "5.0.76",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",

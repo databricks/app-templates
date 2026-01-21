@@ -17,13 +17,9 @@ Scripts for testing and developing the MCP server.
 ./scripts/dev/start_server.sh  # Terminal 1
 ```
 
-```python
-from databricks_mcp import DatabricksMCPClient
-mcp_client = DatabricksMCPClient(
-    server_url="http://localhost:8000"
-)
-# List available MCP tools
-print(mcp_client.list_tools())
+With the server running you can run the `query_local.py` file to test the server locally. `query_local.py` lists and returns all the available tools. Uncomment code as necessary in the script to call an individual tool.
+```bash
+python query_local.py # Terminal 2
 ```
 
 ### Remote Testing

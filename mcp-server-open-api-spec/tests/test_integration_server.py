@@ -8,7 +8,8 @@ from contextlib import closing
 
 import pytest
 import requests
-from databricks_mcp import DatabricksMCPClient
+from mcp.client.session import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
 
 
 def _find_free_port() -> int:
@@ -85,15 +86,36 @@ def run_mcp_server():
 
 
 # Test List Tools runs without errors
-def test_list_tools(run_mcp_server):
-    url = run_mcp_server
-    mcp_client = DatabricksMCPClient(server_url=f"{url}/mcp")
-    tools = mcp_client.list_tools()
+@pytest.mark.asyncio
+async def test_list_tools(run_mcp_server):
+    url = f"{run_mcp_server}/mcp"
+    async with streamablehttp_client(url=url) as (
+        read_stream,
+        write_stream,
+        _,
+    ):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+
+            response = await session.list_tools()
+            tools = response.tools
+
+            assert tools is not None
+            assert isinstance(tools, list)
+            assert len(tools) > 0
 
 
 # Test Call Tools runs without errors
-def test_call_tools(run_mcp_server):
-    url = run_mcp_server
-    mcp_client = DatabricksMCPClient(server_url=f"{url}/mcp")
-    result = mcp_client.call_tool("list_api_endpoints")
-    assert result is not None
+@pytest.mark.asyncio
+async def test_list_tools(run_mcp_server):
+    url = f"{run_mcp_server}/mcp"
+    async with streamablehttp_client(url=url) as (
+        read_stream,
+        write_stream,
+        _,
+    ):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+
+            response = await session.call_tool("list_api_endpoints")
+            assert response is not None

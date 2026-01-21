@@ -26,6 +26,7 @@ dev = [
     "databricks-sdk",
     "databricks-mcp",
     "pytest",
+    "pytest-asyncio",
     "requests"
 ]
 

@@ -201,7 +201,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
 3. **Grant Lakebase permissions to your App's Service Principal**
 
-   Before deploying/querying your agent, you need to ensure your app has access to the necessary Lakebase tables for short-term memory.
+   Before deploying/querying your agent, you need to ensure your app has access to the necessary Lakebase tables for memory.
 
    First, add your Lakebase instance as a resource to your app:
    - Go to the Databricks UI
@@ -209,12 +209,12 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
    - Go to **App resources** → **Add resource**
    - Add your Lakebase instance that you are using for short-term memory store
 
-   Then, grant the necessary permissions on your Lakebase instance for your app's service principal. Run the following SQL commands on your Lakebase instance (replace `app-sp-id` with your app's service principal UUID):
+   After adding your Lakebase as a resource to your app (with the Connect + Create permissions), you'll need to ensure access to certain schemas and tables that have already been created during local testing. To grant the necessary permissions on your Lakebase instance for your app's service principal, run the following SQL commands on your Lakebase instance (replace `app-sp-id` with your app's service principal UUID):
 
    ```sql
    DO $$
    DECLARE
-      app_sp text := 'app-sp-uuid';  -- TODO: Replace with your App's Service Principal ID here
+      app_sp text := 'app-sp-id';  -- TODO: Replace with your App's Service Principal ID here
    BEGIN
       -------------------------------------------------------------------
       -- Drizzle schema: migration metadata tables
@@ -273,7 +273,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
         -H "Content-Type: application/json" \
         -d '{ "input": [{ "role": "user", "content": "hi" }] }'
      ```
-   - Example request with thread ID (for stateful short-term agent):
+   - Example request with thread ID (for stateful agent):
    
      ```bash
      curl -X POST <app-url.databricksapps.com>/invocations \

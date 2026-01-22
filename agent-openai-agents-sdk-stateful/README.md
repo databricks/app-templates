@@ -173,7 +173,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
 1. **Set up authentication to Databricks resources**
 
-   For this example, you need to add an MLflow Experiment as a resource to your app. Grant the App's Service Principal (SP) permission to edit the experiment by clicking `edit` on your app home page. See the [Databricks Apps MLflow experiment documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/mlflow) for more information.
+   For this example, you need to add an MLflow Experiment and Lakebase instance as a resource to your app. Grant the App's Service Principal (SP) permission to edit the experiment by clicking `edit` on your app home page. See the [Databricks Apps MLflow experiment documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/mlflow) and [Databricks Apps Lakebase documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/lakebase) for more information.
 
    To grant access to other resources like serving endpoints, genie spaces, UC Functions, and Vector Search Indexes, click `edit` on your app home page to grant the App's SP permission. See the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources).
 
@@ -190,7 +190,49 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
    databricks sync . "/Users/$DATABRICKS_USERNAME/agent-openai-agents-sdk"
    ```
 
-3. **Deploy your Databricks App**
+3. **Grant Lakebase permissions to your App's Service Principal**
+
+   Before deploying/querying your agent, you need to ensure your app has access to the necessary Lakebase tables for memory.
+
+   First, add your Lakebase instance as a resource to your app:
+   - Go to the Databricks UI
+   - Navigate to your app and click **Edit**
+   - Go to **App resources** → **Add resource**
+   - Add your Lakebase instance that you are using for short-term memory store
+
+   After adding your Lakebase as a resource to your app (with the Connect + Create permissions), you'll need to ensure access to certain schemas and tables that have already been created during local testing. To grant the necessary permissions on your Lakebase instance for your app's service principal, run the following SQL commands on your Lakebase instance (replace `app-sp-id` with your app's service principal UUID):
+
+   ```sql
+   DO $$
+   DECLARE
+      app_sp text := 'app-sp-id';  -- TODO: Replace with your App's Service Principal ID here
+   BEGIN
+      EXECUTE format('GRANT CREATE ON DATABASE databricks_postgres TO %I;', app_sp);
+      -------------------------------------------------------------------
+      -- Drizzle schema: migration metadata tables
+      -------------------------------------------------------------------
+      EXECUTE format('GRANT USAGE, CREATE ON SCHEMA drizzle TO %I;', app_sp);
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA drizzle TO %I;', app_sp);
+      -------------------------------------------------------------------
+      -- App schema: business tables (Chat, Message, etc.)
+      -------------------------------------------------------------------
+      EXECUTE format('GRANT USAGE, CREATE ON SCHEMA ai_chatbot TO %I;', app_sp);
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA ai_chatbot TO %I;', app_sp);
+      -------------------------------------------------------------------
+      -- For agent memory/backend: Public schema for short-term memory tables
+      -------------------------------------------------------------------
+      EXECUTE format('GRANT USAGE, CREATE ON SCHEMA public TO %I;', app_sp);
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE public.agent_sessions TO %I;', app_sp);
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE public.agent_messages TO %I;',       app_sp);
+      -- For all sequences in public (short-term memory tables)
+      EXECUTE format(
+         'GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO %I;',
+         app_sp
+      );
+   END $$;
+   ```
+
+4. **Deploy your Databricks App**
 
    See the [Databricks Apps deploy documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy?language=Databricks+CLI#deploy-the-app).
 
@@ -198,7 +240,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
    databricks apps deploy agent-openai-agents-sdk --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/agent-openai-agents-sdk
    ```
 
-4. **Query your agent hosted on Databricks Apps**
+5. **Query your agent hosted on Databricks Apps**
 
    Databricks Apps are _only_ queryable via OAuth token. You cannot use a PAT to query your agent. Generate an [OAuth token with your credentials using the Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/authentication#u2m-auth):
 

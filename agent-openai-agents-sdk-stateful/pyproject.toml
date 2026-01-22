@@ -10,10 +10,12 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.12",
     "uvicorn>=0.34.2",
-    "databricks-openai>=0.9.0",
     "mlflow>=3.8.0rc0",
     "openai-agents>=0.4.1",
     "python-dotenv",
+    "uuid-utils>=0.10.0",
+    # Note: Using git reference until official release
+    "databricks-openai[memory] @ git+https://github.com/databricks/databricks-ai-bridge@openai-memory-session#subdirectory=integrations/openai",
 ]
 
 [build-system]
@@ -22,6 +24,10 @@ build-backend = "hatchling.build"
 
 [tool.uv]
 prerelease = "allow"
+
+[tool.hatch.metadata]
+# Note: Required for direct git references. Delete when official databricks-openai[memory] release is available
+allow-direct-references = true
 
 [dependency-groups]
 dev = [

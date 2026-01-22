@@ -140,7 +140,7 @@ Multi-Turn Scorers:
   | `ConversationalRoleAdherence` | Assistant maintains its assigned role throughout the conversation | `from mlflow.genai.scorers import ConversationalRoleAdherence` |
   | `ConversationalSafety` | Assistant's responses are sage and free of harmful content | `from mlflow.genai.scorers import ConversationalSafety` |
   | `ConversationalToolCallEfficiency` | Tool usage across conversation was efficient and appropriate | `from mlflow.genai.scorers import ConversationalToolCallEfficiency` |
-  | `KnowledgeRetention`| Assistant correctly retains information from earlier user inputs | `from mlflow.genai.scorers import ` KnowledgeRetention|
+  | `KnowledgeRetention`| Assistant correctly retains information from earlier user inputs | `from mlflow.genai.scorers import KnowledgeRetention`|
   | `UserFrustration` | Is the user showing frustration and was his frustration resolved? | `from mlflow.genai.scorers import UserFrustration` |
 
 **Common categories include:**

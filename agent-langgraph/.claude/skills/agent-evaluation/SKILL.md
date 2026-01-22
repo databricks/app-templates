@@ -81,8 +81,8 @@ If MLflow is missing or version is <3.8.0, see Setup overview here `references/s
 **CRITICAL: All MLflow documentation must be accessed through llms.txt:**
 
 1. Start at: `https://mlflow.org/docs/latest/llms.txt`
-2. Query llms.txt for your topic with specific prompt
-3. If llms.txt references another doc, use WebFetch with that URL
+2. Query `llms.txt` for your topic with specific prompt
+3. If `llms.txt` references another doc, use WebFetch with that URL
 4. Do not use WebSearch - use WebFetch with llms.txt first
 
 **This applies to all steps**, especially:
@@ -90,50 +90,6 @@ If MLflow is missing or version is <3.8.0, see Setup overview here `references/s
 - Dataset creation (read GenAI dataset docs from llms.txt)
 - Scorer registration (check MLflow docs for scorer APIs)
 - Evaluation execution (understand mlflow.genai.evaluate API)
-
-## Discovering Agent Server Structure
-
-**Each project has unique structure.** Use dynamic exploration instead of assumptions:
-
-### Find Agent Entry Points
-```bash
-# Search for main agent functions
-grep -r "def.*agent" . --include="*.py"
-grep -r "def (run|stream|handle|process)" . --include="*.py"
-
-# Check common locations
-ls main.py app.py src/*/agent.py 2>/dev/null
-
-# Look for API routes
-grep -r "@app\.(get|post)" . --include="*.py"  # FastAPI/Flask
-grep -r "def.*route" . --include="*.py"
-```
-
-### Find Tracing Integration
-```bash
-# Find autolog calls
-grep -r "mlflow.*autolog" . --include="*.py"
-
-# Find trace decorators
-grep -r "@mlflow.trace" . --include="*.py"
-
-# Check imports
-grep -r "import mlflow" . --include="*.py"
-```
-
-### Understand Project Structure
-```bash
-# Check entry points in package config
-cat pyproject.toml setup.py 2>/dev/null | grep -A 5 "scripts\|entry_points"
-
-# Read project documentation
-cat README.md docs/*.md 2>/dev/null | head -100
-
-# Explore main directories
-ls -la src/ app/ agent/ 2>/dev/null
-```
-
-**IMPORTANT: Always let the user know the server structure has been evaluated**
 
 ## Verify Current Agent
 
@@ -157,31 +113,12 @@ Complete two verification steps:
 
 ### Step 1: Understand Agent Purpose
 
-1. Invoke agent with sample input
+1. Run `references/agent-strategy.md` then continue evaluation from here
 2. Inspect MLflow trace (especially LLM prompts describing agent purpose)
 3. Print your understanding and ask user for verification
 4. **Wait for confirmation before proceeding**
 
-### Step 2: Define Quality Scorers
-
-1. **Discover built-in scorers using documentation protocol:**
-   - Query `https://mlflow.org/docs/latest/llms.txt` for "What built-in LLM judges or scorers are available?"
-   - Read scorer documentation to understand their purpose and requirements
-   - Note: Do NOT use `mlflow scorers list -b` - use documentation instead for accurate information
-
-2. **Check registered scorers in your experiment:**
-   ```bash
-   uv run mlflow scorers list -x $MLFLOW_EXPERIMENT_ID
-   ```
-
-3. Identify quality dimensions for your agent and select appropriate scorers
-4. Register scorers and test on sample trace before full evaluation
-5. Provide table with Scorer, Purpose, and Selection Reason
-
-**For scorer selection and registration:** See `references/scorers.md`
-**For CLI constraints (yes/no format, template variables):** See `references/scorers-constraints.md`
-
-## Step 3: Evaluation Dataset and Ground Truth
+## Step 2: Evaluation Dataset and Ground Truth
 
 Ask the user:
 
@@ -208,9 +145,13 @@ No Ground Truth Dataset Warning:
 
 Proceeding with scorers that don't require ground truth..."
 
-## Step 4: Prepare Evaluation Dataset
+## Step 3: Prepare Evaluation Dataset
 
 **ALWAYS discover existing datasets first** to prevent duplicate work:
+**IMPORTANT**: Do not skip dataset discovery. Always run `list_datasets.py` first, even if you plan to create a new dataset. This prevents duplicate work and ensures users are aware of existing evaluation datasets.
+**IMPORTANT**: Ask user wether the dataset should be local, UC, or both.
+
+**For complete dataset guide:** See `references/dataset-preparation.md`
 
 1. **Run dataset discovery** (mandatory):
 
@@ -232,6 +173,7 @@ Proceeding with scorers that don't require ground truth..."
 
 4. **Create new dataset only if user declined existing ones or No existing datasets found**:
   - Prompt user to name test cases file
+  - Prompt user for number of test cases to create
   - Write results file in `agent_server/evaluation/test_cases/`
   
    ```bash
@@ -240,11 +182,7 @@ Proceeding with scorers that don't require ground truth..."
    ```
    Review and execute the generated script.
 
-**IMPORTANT**: Do not skip dataset discovery. Always run `list_datasets.py` first, even if you plan to create a new dataset. This prevents duplicate work and ensures users are aware of existing evaluation datasets.
-
-**For complete dataset guide:** See `references/dataset-preparation.md`
-
-### Step 5: Create and Run Evaluation
+### Step 4: Create and Run Evaluation
 
 **Coding Support** 
 - For coding patterns see `skills/agent-evaluation/patterns/`:
@@ -257,6 +195,10 @@ Proceeding with scorers that don't require ground truth..."
 | `patterns-scorers.md` | Custom scorer creation | When built-in scorers aren't enough |
 | `patterns-datasets.md` | Dataset building | When preparing evaluation data |
 
+**Reference** If it exits, check `agent_server/evaluation/reports/agent_strategy.md` for scorers
+**For scorer selection and registration:** See `references/scorers.md`
+**For CLI constraints (yes/no format, template variables):** See `references/scorers-constraints.md`
+
 1. Generate evaluation script:
   - Write output to `agent_server/evaluate_agent.py`
    
@@ -268,22 +210,22 @@ Proceeding with scorers that don't require ground truth..."
   Review and execute the generated script.
 
 2. Apply scorers:
-  - Prompt user to name results file
-  - Write results file to `agent_server/evaluation/results`
+  - Prompt user to name scorers results .json file
+  - Write scorers results .json file to `agent_server/evaluation/results/`
    
    ```bash
    # IMPORTANT: Redirect stderr to avoid mixing logs with JSON output
    uv run mlflow traces evaluate \
      --trace-ids <comma_separated_trace_ids> \
      --scorers <scorer1>,<scorer2>,... \
-     --output json 2>/dev/null > <path to results file>
+     --output json 2>/dev/null > <path to results .json file>
    ```
 
-3. Analyze results:
-  - Prompt user to name evaluation report file
-  - Write results file to `agent_server/evaluation/reports`
+3. Analyze scorers results:
+  - Prompt user to name scorer analysis report file
+  - Write results file to `agent_server/evaluation/reports/`
 
    ```bash
-   uv run python scripts/analyze_results.py <path to results file name>
+   uv run python scripts/analyze_results.py <path to results .json file> --output <path to scorer analysis report>
    ```
-   Generates `evaluation_report.md` with pass rates, failure patterns, and recommendations.
+   Generates scorer analysis report with pass rates, failure patterns, and recommendations.

@@ -11,7 +11,7 @@ Workflow to extract relevant information regarding the agent
 
 **PRIORITY:** Before writing evaluation code, complete strategy alignment. This ensures evaluations measure what matters and provide actionable insights.
 
-### Check if `agent_server/evaluation/agent_strategy.md` file exists
+### Check if `agent_server/evaluation/reports/agent_strategy.md` file exists
 
 - If it doesn't exist ask the user if he would like to create one.
 **Options:**
@@ -21,7 +21,7 @@ Workflow to extract relevant information regarding the agent
 - If it exits, ask user whether he would like to modify, or use existing one
 **Options:**
 2. **Modify** - Proceed by asking which Step and preceed accordingly
-3. **Use Current** - Skip everything and use current `agent_server/evaluation/agent_strategy.md` file
+3. **Use Current** - Skip everything and use current `agent_server/evaluation/reports/agent_strategy.md` file
 
 ## Discovering Agent Server Structure
 
@@ -82,7 +82,7 @@ Before evaluating, gather context about what you're evaluating:
 3. **What is the input/output format?** (messages format, structured output)
 4. **What is the current state?** (prototype, production, needs improvement)
 
-### Align on What to Evaluate
+### Align on What to Evaluate & Define Quality Scorers
 
 **Evaluation dimensions to consider:**
 
@@ -98,10 +98,21 @@ Before evaluating, gather context about what you're evaluating:
 - **Guidelines and Expectations Adherence**: Following specific business rules
 - **Other**: Custom dimensionality to consider
 
+1. **Discover built-in scorers using documentation protocol:**
+   - Query `https://mlflow.org/docs/latest/llms.txt` for "What built-in LLM judges or scorers are available?"
+   - Read scorer documentation to understand their purpose and requirements
+   - Note: Do NOT use `mlflow scorers list -b` - use documentation instead for accurate information
+2. **Check registered scorers in your experiment:**
+   ```bash
+   uv run mlflow scorers list -x $MLFLOW_EXPERIMENT_ID
+   ```
+3. Identify quality dimensions for the agent and select appropriate scorers
 **Questions to ask the user:**
-1. What are the **must-have** quality criteria? (safety, accuracy, relevance)
-2. What are the **nice-to-have** criteria? (conciseness, tone, format)
-3. Are there **specific failure modes** you've seen or worry about?
+- What are the **must-have** quality criteria? 
+- What are the **nice-to-have** criteria? 
+- Are there **specific failure modes** you've seen or worry about?
+4. Register scorers and test on sample trace before full evaluation
+5. Provide table with Scorer, Purpose, and Selection Reason
 
 ### Define User Scenarios 
 
@@ -125,7 +136,7 @@ Before evaluating, gather context about what you're evaluating:
 
 **Define quality gates for evaluation:**
 
-Based on Chosen evaluation dimension.
+Based on Chosen evaluation dimensions.
 
 Example:
 ```
@@ -148,4 +159,4 @@ Before implementing evaluation, confirm:
 - [ ] Test case categories identified
 - [ ] Success criteria defined
 
-**Finish by creating a document under `agent_server/evaluation/agent_strategy.md` with all pertinent responses for all Steps. This will be used for reference.** 
+**Finish by creating a document under `agent_server/evaluation/reports/agent_strategy.md` with all pertinent responses for all Steps. This will be used for reference.** 

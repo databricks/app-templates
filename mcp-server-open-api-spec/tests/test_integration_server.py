@@ -107,7 +107,7 @@ async def test_list_tools(run_mcp_server):
 
 # Test Call Tools runs without errors
 @pytest.mark.asyncio
-async def test_list_tools(run_mcp_server):
+async def test_call_tools(run_mcp_server):
     url = f"{run_mcp_server}/mcp"
     async with streamablehttp_client(url=url) as (
         read_stream,

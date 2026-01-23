@@ -429,6 +429,12 @@ def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> bool:
         print_success(f"Lakebase instance '{lakebase_name}' validated")
         return True
 
+    # Check if postgres command is not recognized (old CLI version)
+    if 'unknown command "postgres" for "databricks"' in (result.stderr or ""):
+        print_error("The 'databricks postgres' command requires a newer version of the Databricks CLI.")
+        print("  Please upgrade: https://docs.databricks.com/dev-tools/cli/install.html")
+        return False
+
     error_msg = result.stderr.lower() if result.stderr else ""
     if "not found" in error_msg:
         print_error(f"Lakebase instance '{lakebase_name}' not found. Please check the instance name.")

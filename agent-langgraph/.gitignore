@@ -204,5 +204,8 @@ sketch
 **/mlruns/
 **/.vite/
 **/.databricks
-**/.claude
+#**/.claude
 **/.env.local
+
+# Remove this line if you want to track the chatbot app.
+e2e-chatbot-app-next/

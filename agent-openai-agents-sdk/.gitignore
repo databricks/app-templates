@@ -202,5 +202,16 @@ sketch
 **/mlruns/
 **/.vite/
 **/.databricks
-**/.claude
 **/.env.local
+
+# Ignore .claude directory but track template-provided skills
+# User-created skills will be ignored by default (no conflicts)
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/quickstart/
+!.claude/skills/discover-tools/
+!.claude/skills/deploy/
+!.claude/skills/add-tools/
+!.claude/skills/run-locally/
+!.claude/skills/modify-agent/

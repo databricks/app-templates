@@ -53,6 +53,21 @@ def print_error(text: str) -> None:
     print(f"✗ {text}", file=sys.stderr)
 
 
+def print_troubleshooting_auth() -> None:
+    print("\nTroubleshooting tips:")
+    print("  • Ensure you have network connectivity to your Databricks workspace")
+    print("  • Try running 'databricks auth login' manually to see detailed errors")
+    print("  • Check that your workspace URL is correct")
+    print("  • If using a browser for OAuth, ensure popups are not blocked")
+
+
+def print_troubleshooting_api() -> None:
+    print("\nTroubleshooting tips:")
+    print("  • Your authentication token may have expired - try 'databricks auth login' to refresh")
+    print("  • Verify your profile is valid with 'databricks auth profiles'")
+    print("  • Check network connectivity to your Databricks workspace")
+
+
 def command_exists(cmd: str) -> bool:
     """Check if a command exists in PATH."""
     return shutil.which(cmd) is not None
@@ -124,6 +139,9 @@ def check_missing_prerequisites(prereqs: dict[str, bool]) -> list[str]:
             missing.append("Databricks CLI - Install with: brew install databricks/tap/databricks")
         else:
             missing.append("Databricks CLI - Install with: curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh")
+
+    if missing:
+        missing.append("Note: These install commands are for Unix/macOS. For Windows, please visit the official documentation for each tool.")
 
     return missing
 
@@ -247,12 +265,12 @@ def select_profile_interactive(profiles: list[dict]) -> str:
     print()
 
     while True:
-        try:
-            choice = input("Enter the number of the profile you want to use: ").strip()
-            if not choice:
-                print_error("Profile selection is required")
-                continue
+        choice = input("Enter the number of the profile you want to use: ").strip()
+        if not choice:
+            print_error("Profile selection is required")
+            continue
 
+        try:
             index = int(choice) - 1
             if 0 <= index < len(profiles):
                 return profiles[index]["name"]
@@ -260,9 +278,6 @@ def select_profile_interactive(profiles: list[dict]) -> str:
                 print_error(f"Please choose a number between 1 and {len(profiles)}")
         except ValueError:
             print_error("Please enter a valid number")
-        except KeyboardInterrupt:
-            print("\n\nSetup cancelled.")
-            sys.exit(1)
 
 
 def setup_databricks_auth(profile_arg: str = None, host_arg: str = None) -> str:
@@ -292,6 +307,7 @@ def setup_databricks_auth(profile_arg: str = None, host_arg: str = None) -> str:
             print(f"Profile '{profile_name}' is not authenticated.")
             if not authenticate_profile(profile_name):
                 print_error(f"Failed to authenticate profile '{profile_name}'")
+                print_troubleshooting_auth()
                 sys.exit(1)
             print_success(f"Successfully authenticated profile '{profile_name}'")
     else:
@@ -302,11 +318,7 @@ def setup_databricks_auth(profile_arg: str = None, host_arg: str = None) -> str:
             host = host_arg
             print(f"Using specified host: {host}")
         else:
-            try:
-                host = input("\nPlease enter your Databricks host URL\n(e.g., https://your-workspace.cloud.databricks.com): ").strip()
-            except KeyboardInterrupt:
-                print("\n\nSetup cancelled.")
-                sys.exit(1)
+            host = input("\nPlease enter your Databricks host URL\n(e.g., https://your-workspace.cloud.databricks.com): ").strip()
 
             if not host:
                 print_error("Databricks host is required")
@@ -315,6 +327,7 @@ def setup_databricks_auth(profile_arg: str = None, host_arg: str = None) -> str:
         profile_name = "DEFAULT"
         if not authenticate_profile(profile_name, host):
             print_error("Databricks authentication failed")
+            print_troubleshooting_auth()
             sys.exit(1)
         print_success(f"Successfully authenticated with Databricks")
 
@@ -336,6 +349,7 @@ def get_databricks_username(profile_name: str) -> str:
         return user_data.get("userName", "")
     except Exception as e:
         print_error(f"Failed to get Databricks username: {e}")
+        print_troubleshooting_api()
         sys.exit(1)
 
 
@@ -373,6 +387,7 @@ def create_mlflow_experiment(profile_name: str, username: str) -> tuple[str, str
 
     except Exception as e:
         print_error(f"Failed to create MLflow experiment: {e}")
+        print_troubleshooting_api()
         sys.exit(1)
 
 
@@ -400,7 +415,31 @@ def get_env_value(key: str) -> str:
     return ""
 
 
-def setup_lakebase(lakebase_arg: str = None) -> str:
+def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> bool:
+    """Validate that the Lakebase instance exists and user has access."""
+    print(f"Validating Lakebase instance '{lakebase_name}'...")
+
+    result = run_command(
+        ["databricks", "-p", profile_name, "postgres", "get-project",
+         f"projects/{lakebase_name}", "--output", "json"],
+        check=False
+    )
+
+    if result.returncode == 0:
+        print_success(f"Lakebase instance '{lakebase_name}' validated")
+        return True
+
+    error_msg = result.stderr.lower() if result.stderr else ""
+    if "not found" in error_msg:
+        print_error(f"Lakebase instance '{lakebase_name}' not found. Please check the instance name.")
+    elif "permission" in error_msg or "forbidden" in error_msg or "unauthorized" in error_msg:
+        print_error(f"No permission to access Lakebase instance '{lakebase_name}'")
+    else:
+        print_error(f"Failed to validate Lakebase instance: {result.stderr.strip() if result.stderr else 'Unknown error'}")
+    return False
+
+
+def setup_lakebase(profile_name: str, lakebase_arg: str = None) -> str:
     """Set up Lakebase instance for memory features."""
     print_step("Setting up Lakebase instance for memory...")
 
@@ -415,23 +454,19 @@ def setup_lakebase(lakebase_arg: str = None) -> str:
         existing = get_env_value("LAKEBASE_INSTANCE_NAME")
         if existing:
             print(f"Found existing Lakebase instance in .env.local: {existing}")
-            try:
-                new_value = input("Press Enter to keep this value, or enter a new instance name: ").strip()
-                lakebase_name = new_value if new_value else existing
-            except KeyboardInterrupt:
-                print("\n\nSetup cancelled.")
-                sys.exit(1)
+            new_value = input("Press Enter to keep this value, or enter a new instance name: ").strip()
+            lakebase_name = new_value if new_value else existing
         else:
             # Interactive mode - prompt for instance name
-            try:
-                lakebase_name = input("Please enter your Lakebase instance name: ").strip()
-            except KeyboardInterrupt:
-                print("\n\nSetup cancelled.")
-                sys.exit(1)
+            lakebase_name = input("Please enter your Lakebase instance name: ").strip()
 
             if not lakebase_name:
                 print_error("Lakebase instance name is required for memory features")
                 sys.exit(1)
+
+    # Validate that the Lakebase instance exists and user has access
+    if not validate_lakebase_instance(profile_name, lakebase_name):
+        sys.exit(1)
 
     # Update .env.local with the Lakebase instance name
     update_env_file("LAKEBASE_INSTANCE_NAME", lakebase_name)
@@ -470,60 +505,64 @@ Examples:
 
     args = parser.parse_args()
 
-    print_header("Agent on Apps - Quickstart Setup")
+    try:
+        print_header("Agent on Apps - Quickstart Setup")
 
-    # Step 1: Check prerequisites
-    prereqs = check_prerequisites()
-    missing = check_missing_prerequisites(prereqs)
+        # Step 1: Check prerequisites
+        prereqs = check_prerequisites()
+        missing = check_missing_prerequisites(prereqs)
 
-    if missing:
-        print_step("Missing prerequisites:")
-        for item in missing:
-            print(f"  • {item}")
-        print("\nPlease install the missing prerequisites and run this script again.")
-        sys.exit(1)
+        if missing:
+            print_step("Missing prerequisites:")
+            for item in missing:
+                print(f"  • {item}")
+            print("\nPlease install the missing prerequisites and run this script again.")
+            sys.exit(1)
 
-    # Step 2: Set up .env.local
-    setup_env_file()
+        # Step 2: Set up .env.local
+        setup_env_file()
 
-    # Step 3: Databricks authentication
-    profile_name = setup_databricks_auth(args.profile, args.host)
+        # Step 3: Databricks authentication
+        profile_name = setup_databricks_auth(args.profile, args.host)
 
-    # Step 4: Get username and create MLflow experiment
-    print_step("Getting Databricks username...")
-    username = get_databricks_username(profile_name)
-    print(f"Username: {username}")
+        # Step 4: Get username and create MLflow experiment
+        print_step("Getting Databricks username...")
+        username = get_databricks_username(profile_name)
+        print(f"Username: {username}")
 
-    experiment_name, experiment_id = create_mlflow_experiment(profile_name, username)
+        experiment_name, experiment_id = create_mlflow_experiment(profile_name, username)
 
-    # Step 5: Update .env.local with experiment ID
-    update_env_file("MLFLOW_EXPERIMENT_ID", experiment_id)
-    print_success("Updated .env.local with experiment ID")
+        # Step 5: Update .env.local with experiment ID
+        update_env_file("MLFLOW_EXPERIMENT_ID", experiment_id)
+        print_success("Updated .env.local with experiment ID")
 
-    # Step 6: Lakebase setup (if needed for memory features)
-    lakebase_name = None
-    lakebase_required = args.lakebase or check_lakebase_required()
-    if lakebase_required:
-        lakebase_name = setup_lakebase(args.lakebase)
+        # Step 6: Lakebase setup (if needed for memory features)
+        lakebase_name = None
+        lakebase_required = args.lakebase or check_lakebase_required()
+        if lakebase_required:
+            lakebase_name = setup_lakebase(profile_name, args.lakebase)
 
-    # Final summary
-    print_header("Setup Complete!")
-    summary = f"""
+        # Final summary
+        print_header("Setup Complete!")
+        summary = f"""
 ✓ Prerequisites verified (uv, Node.js, Databricks CLI)
 ✓ Databricks authenticated with profile: {profile_name}
 ✓ Configuration files created (.env.local)
 ✓ MLflow experiment created: {experiment_name}
 ✓ Experiment ID: {experiment_id}"""
 
-    if lakebase_name:
-        summary += f"\n✓ Lakebase instance: {lakebase_name}"
+        if lakebase_name:
+            summary += f"\n✓ Lakebase instance: {lakebase_name}"
 
-    summary += """
+        summary += """
 
-Next steps:
-  1. Run 'uv run start-app' to start the agent locally
+Next step: Run 'uv run start-app' to start the agent locally
 """
-    print(summary)
+        print(summary)
+
+    except KeyboardInterrupt:
+        print("\n\nSetup cancelled.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

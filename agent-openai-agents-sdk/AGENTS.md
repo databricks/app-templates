@@ -9,7 +9,7 @@ This helps you understand:
 - Whether authentication is already set up
 - Which profile to use for subsequent commands
 
-If no profiles exist, guide the user through running `./scripts/quickstart.sh` to set up authentication.
+If no profiles exist, guide the user through running `uv run quickstart` to set up authentication.
 
 ## For AI Agents: Handling Deployment Errors
 
@@ -50,13 +50,13 @@ brew upgrade databricks # Offer to run if the Databricks CLI version is too old
 git init
 
 # 2. Run quickstart for setup (auth, MLflow experiment)
-./scripts/quickstart.sh
+uv run quickstart
 
 # Or run non-interactively with a profile
-./scripts/quickstart.sh --profile DEFAULT
+uv run quickstart --profile DEFAULT
 
 # Or with a host URL for initial setup
-./scripts/quickstart.sh --host https://your-workspace.cloud.databricks.com
+uv run quickstart --host https://your-workspace.cloud.databricks.com
 
 # 3. Discover available tools (IMPORTANT - do this before coding!)
 uv run discover-tools
@@ -482,9 +482,9 @@ databricks apps get dev-agent-openai-agents-sdk --output json | jq '{app_status,
 | `agent_server/start_server.py`   | FastAPI server + MLflow setup                 |
 | `agent_server/evaluate_agent.py` | Agent evaluation with MLflow scorers          |
 | `agent_server/utils.py`          | Databricks auth helpers, stream processing    |
+| `scripts/quickstart.py`          | One-command setup script                      |
 | `scripts/start_app.py`           | Manages backend+frontend startup              |
 | `scripts/discover_tools.py`      | Discovers available workspace resources       |
-| `scripts/quickstart.sh`          | One-command setup script                      |
 
 ---
 

@@ -8,7 +8,7 @@ import {
   buildConnectionUrl,
 } from '@chat-template/db';
 
-config({ path: '.env.local' });
+config({ path: '.env' });
 
 async function getConnectionUrl() {
   // Use POSTGRES_URL if available

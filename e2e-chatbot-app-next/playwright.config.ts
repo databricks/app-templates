@@ -6,7 +6,7 @@ import { config } from 'dotenv';
  *
  * Tests can run in two modes:
  * - with-db: Tests with PostgreSQL database (persistent mode)
- *   - Loads .env.local first (contains database config)
+ *   - Loads .env first (contains database config)
  *   - Verifies isDatabaseAvailable() returns true
  *   - Passes database configuration to the server process
  *
@@ -24,9 +24,9 @@ import { config } from 'dotenv';
 // Determine which mode to run (default: with-db)
 const TEST_MODE = process.env.TEST_MODE || 'with-db';
 
-// Load .env.local
+// Load .env
 if (TEST_MODE === 'with-db') {
-  config({ path: ['.env.local'] });
+  config({ path: ['.env'] });
 }
 
 console.log(`[Playwright] Running in "${TEST_MODE}" mode)`);
@@ -40,9 +40,9 @@ if (TEST_MODE === 'with-db') {
     console.error(
       '\n❌ ERROR: Running with-db tests but no database configuration found!',
     );
-    console.error('Expected POSTGRES_URL or PGHOST+PGDATABASE in .env.local');
+    console.error('Expected POSTGRES_URL or PGHOST+PGDATABASE in .env');
     console.error('\nPlease either:');
-    console.error('  1. Add database configuration to .env.local, or');
+    console.error('  1. Add database configuration to .env, or');
     console.error('  2. Run ephemeral tests instead: npm run test:ephemeral\n');
     process.exit(0);
   }

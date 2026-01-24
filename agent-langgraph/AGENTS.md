@@ -214,7 +214,7 @@ Look through the package files for the latest on stateful langgraph agents. Can 
 
 ## Lakebase instance setup for stateful agents
 
-Add the lakebase name to `.env.local`:
+Add the lakebase name to `.env`:
 
 ```bash
 LAKEBASE_INSTANCE_NAME=<your-lakebase-name>
@@ -263,7 +263,7 @@ Example: Create UC function wrapping HTTP request for Slack, then expose via MCP
 databricks auth login
 ```
 
-Set in `.env.local`:
+Set in `.env`:
 
 ```bash
 DATABRICKS_CONFIG_PROFILE=DEFAULT
@@ -271,7 +271,7 @@ DATABRICKS_CONFIG_PROFILE=DEFAULT
 
 **Option 2: Personal Access Token**
 
-Set in `.env.local`:
+Set in `.env`:
 
 ```bash
 DATABRICKS_HOST="https://host.databricks.com"
@@ -289,7 +289,7 @@ DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
 databricks experiments create-experiment /Users/$DATABRICKS_USERNAME/agents-on-apps
 ```
 
-Add the experiment ID to `.env.local`:
+Add the experiment ID to `.env`:
 
 ```bash
 MLFLOW_EXPERIMENT_ID=<your-experiment-id>

@@ -1,8 +1,8 @@
 from dotenv import load_dotenv
 from mlflow.genai.agent_server import AgentServer, setup_mlflow_git_based_version_tracking
 
-# Load environment variables from .env.local if it exists
-load_dotenv(dotenv_path=".env.local", override=True)
+# Load environment variables from .env if it exists
+load_dotenv(dotenv_path=".env", override=True)
 
 # Need to import the agent to register the functions with the server
 # Set the env vars before importing the agent for proper auth

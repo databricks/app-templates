@@ -1,8 +1,8 @@
-dash
-dash-bootstrap-components
-pandas
-plotly
-databricks-sql-connector[pyarrow]
-databricks-sdk
-python-dotenv
-dash-ag-grid
+dash~=2.18.1
+dash-bootstrap-components~=1.6.0
+pandas~=2.2.3
+plotly~=5.24.1
+databricks-sql-connector~=3.4.0
+databricks-sdk~=0.33.0
+python-dotenv~=1.2.1
+dash-ag-grid~=31.2.0

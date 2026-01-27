@@ -391,8 +391,10 @@ export const PreviewMessage = memo(
     if (prevProps.requiresScrollPadding !== nextProps.requiresScrollPadding)
       return false;
     if (!equal(prevProps.message.parts, nextProps.message.parts)) return false;
+    if (prevProps.initialFeedback?.feedbackType !== nextProps.initialFeedback?.feedbackType)
+      return false;
 
-    return false;
+    return true; // Props are equal, skip re-render
   },
 );
 

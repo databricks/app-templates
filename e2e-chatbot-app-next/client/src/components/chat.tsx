@@ -114,15 +114,6 @@ export function Chat({
     resume: id !== undefined && initialMessages.length > 0, // Enable automatic stream resumption
     transport: new ChatTransport({
       onStreamPart: (part) => {
-        // Debug: Log stream parts as they arrive
-        if (part.type === 'text-delta') {
-          console.log('[ChatTransport] Text delta received:', part.textDelta?.length || 0, 'chars');
-        } else if (part.type === 'finish') {
-          console.log('[ChatTransport] Stream finished');
-        } else {
-          console.log('[ChatTransport] Stream part:', part.type);
-        }
-
         // As soon as we recive a stream part, we fetch the chat history again for new chats
         if (isNewChat && !didFetchHistoryOnNewChat.current) {
           fetchChatHistory();
@@ -254,25 +245,6 @@ export function Chat({
       // Resume logic is handled exclusively in onFinish.
     },
   });
-
-  // Debug: Log when messages change to see if streaming updates the array
-  useEffect(() => {
-    if (status === 'streaming' && messages.length > 0) {
-      const lastMessage = messages[messages.length - 1];
-      if (lastMessage.role === 'assistant') {
-        const textParts = lastMessage.parts.filter((p) => p.type === 'text');
-        const totalLength = textParts.reduce(
-          (sum, p) => sum + (p.text?.length || 0),
-          0,
-        );
-        console.log(
-          '[Chat] Messages updated during streaming:',
-          totalLength,
-          'chars in assistant message',
-        );
-      }
-    }
-  }, [messages, status]);
 
   const [searchParams] = useSearchParams();
   const query = searchParams.get('query');

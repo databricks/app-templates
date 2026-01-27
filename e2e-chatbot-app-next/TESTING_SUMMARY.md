@@ -69,6 +69,20 @@ Comprehensive E2E testing completed successfully using the automated test script
 **Fix**: Added `feedback: {}` to 404 error return
 **Impact**: Ensures consistent data structure across all code paths
 
+#### 3. Streaming Display Not Working (client/src/components/message.tsx)
+**Issue**: Tokens not streaming incrementally in UI; entire message appeared at once after completion
+**Root Cause**: PreviewMessage memo function blocked re-renders during streaming. While `isLoading` stayed `true` and message content updated, the memo comparison didn't detect changes because:
+- `isLoading` prop remained unchanged (true throughout streaming)
+- AI SDK potentially reused message object references while mutating content
+- Deep equality check couldn't detect in-place mutations
+
+**Fix**: Modified memo comparison to always re-render when loading:
+```typescript
+// Always re-render when message is loading (streaming)
+if (prevProps.isLoading || nextProps.isLoading) return false;
+```
+**Impact**: Tokens now display incrementally as they arrive, while maintaining performance optimization for static messages
+
 ### API Endpoints Validated
 
 - ✅ `GET /api/session` - Session verification
@@ -100,6 +114,7 @@ Comprehensive E2E testing completed successfully using the automated test script
 2. ~~Feedback submission FK constraint violations~~ - Fixed with `ensureUserExists()`
 3. ~~UI disappearing after streaming~~ - Fixed with memo corrections
 4. ~~Missing feedback field in data paths~~ - Fixed
+5. ~~Streaming display not working~~ - Fixed by disabling memo during streaming
 
 ### Outstanding
 None currently known

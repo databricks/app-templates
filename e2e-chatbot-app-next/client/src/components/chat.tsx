@@ -191,6 +191,15 @@ export function Chat({
         return;
       }
 
+      // Don't try to resume if we haven't received any stream parts in this session
+      // This happens on page reload when there's no active stream to resume
+      if (streamCursorRef.current === 0) {
+        console.log('[Chat onFinish] No stream parts received, skipping resume');
+        setStreamCursor(0);
+        fetchChatHistory();
+        return;
+      }
+
       // Determine if we should attempt to resume:
       // 1. Stream didn't end with a 'finish' part (incomplete)
       // 2. It was a disconnect/error that terminated the stream

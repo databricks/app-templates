@@ -81,7 +81,6 @@ function PureMessages({
               addToolResult={addToolResult}
               sendMessage={sendMessage}
               regenerate={regenerate}
-              sendMessage={sendMessage}
               isReadonly={isReadonly}
               requiresScrollPadding={
                 hasSentMessage && index === messages.length - 1

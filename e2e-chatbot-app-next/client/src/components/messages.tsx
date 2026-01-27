@@ -125,7 +125,11 @@ function PureMessages({
 }
 
 export const Messages = memo(PureMessages, (prevProps, nextProps) => {
-  if (prevProps.status !== nextProps.status) return false;
+  // Always re-render during streaming to ensure incremental token display
+  if (prevProps.status === 'streaming' || nextProps.status === 'streaming') {
+    return false;
+  }
+
   if (prevProps.selectedModelId !== nextProps.selectedModelId) return false;
   if (prevProps.messages.length !== nextProps.messages.length) return false;
   if (!equal(prevProps.messages, nextProps.messages)) return false;

@@ -7,6 +7,7 @@ This guide provides patterns and best practices for AI agents (like Claude Code)
 - [UI Development Patterns](#ui-development-patterns)
 - [API Endpoint Testing](#api-endpoint-testing)
 - [Common UI Tasks](#common-ui-tasks)
+- [E2E Testing with Test Script](#e2e-testing-with-test-script)
 - [Debugging Patterns](#debugging-patterns)
 - [Performance Optimization](#performance-optimization)
 
@@ -405,6 +406,114 @@ If UI elements disappear or flicker:
    ```bash
    npx playwright test --headed --grep "component-name"
    ```
+
+## E2E Testing with Test Script
+
+The application includes an automated E2E test script that validates the complete user flow from chat creation through feedback submission.
+
+### Running the E2E Test Script
+
+**Prerequisites:**
+- Dev server must be running (`npm run dev`)
+- Database must be configured (or server will run in ephemeral mode)
+
+**Run the test:**
+```bash
+./scripts/test-e2e-flow.sh
+```
+
+**With custom user:**
+```bash
+./scripts/test-e2e-flow.sh "user-123" "user@example.com"
+```
+
+### What the Script Tests
+
+The script validates 7 complete scenarios:
+
+1. **Session Verification** - Header-based authentication working correctly
+2. **Chat Creation** - Creating a new chat and streaming a message
+3. **Message Retrieval** - Fetching messages from the chat
+4. **Feedback Submission** - Submitting thumbs up feedback
+5. **Feedback Verification** - Verifying feedback was saved to database
+6. **Feedback Update** - Updating feedback from thumbs up to thumbs down
+7. **Chat History** - Verifying chat appears in user's history
+
+### Script Output
+
+The script provides colored output showing:
+- ✓ **Green checkmarks** for passing tests
+- ✗ **Red X** for failing tests
+- ⚠ **Yellow warnings** for informational messages
+
+**Example output:**
+```
+==========================================
+  E2E Chatbot Application Test Suite
+==========================================
+
+✓ Backend server is running
+✓ Frontend server is running
+✓ Using test user: test-e2e@example.com (ID: test-user-1769490795)
+
+Running tests with:
+  User ID: test-user-1769490795
+  Email: test-e2e@example.com
+
+✓ Chat created and streaming started: 11533a27-a93e-42bf-b431-caeff0845690
+✓ Chat metadata retrieved: E2E Test Message
+✓ Messages retrieved: 2 messages
+✓ Feedback submitted: b8ccc2de-1397-4681-9519-62e6ea9cb729
+✓ Feedback verified: thumbs_up
+✓ Feedback updated to thumbs_down
+✓ Chat history retrieved: 1 chats found
+
+==========================================
+✓ All tests passed!
+==========================================
+```
+
+### When to Run This Script
+
+Run the E2E test script:
+- **Before committing changes** - Validates the complete flow still works
+- **After making API changes** - Ensures endpoints work correctly
+- **After database schema changes** - Verifies migrations were applied
+- **When debugging issues** - Isolates where problems occur in the flow
+
+### Test Data Cleanup
+
+The script creates test data (chats, messages, feedback) that persists in the database. To clean up:
+
+```bash
+# View test chats
+curl -s http://localhost:3001/api/history \
+  -H "X-Forwarded-User: test-user-1769490795" \
+  -H "X-Forwarded-Email: test-e2e@example.com"
+
+# Delete specific chat
+curl -X DELETE http://localhost:3001/api/chat/{chatId} \
+  -H "X-Forwarded-User: test-user-1769490795" \
+  -H "X-Forwarded-Email: test-e2e@example.com"
+```
+
+### Troubleshooting Test Failures
+
+**"Backend server not responding"**
+- Ensure dev server is running: `npm run dev`
+- Check server is on port 3001: `curl http://localhost:3001/api/session -H "X-Forwarded-User: test"`
+
+**"Failed to get messages by chat id"**
+- Database schema mismatch - run migrations: `npm run db:migrate`
+- Database connection issue - verify PGHOST in `.env.local`
+
+**"Failed to submit feedback"**
+- Foreign key violation - ensure User table is populated
+- Check server logs: `tail -50 /tmp/dev-server-*.log`
+
+**"Chat not found in history"**
+- Timing issue - increase wait time in script
+- Database query issue - check `getChatsByUserId` function
 
 ## Debugging Patterns
 

@@ -109,7 +109,7 @@ export function Chat({
   } = useChat<ChatMessage>({
     id,
     messages: initialMessages,
-    experimental_throttle: 100,
+    experimental_throttle: 50, // Reduced from 100ms for smoother streaming display
     generateId: generateUUID,
     resume: id !== undefined && initialMessages.length > 0, // Enable automatic stream resumption
     transport: new ChatTransport({

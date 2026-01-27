@@ -1,7 +1,7 @@
 import { useCopyToClipboard } from 'usehooks-ts';
 
 import { Actions, Action } from './elements/actions';
-import { memo, useState, useCallback } from 'react';
+import { memo, useState, useCallback, useEffect } from 'react';
 import { toast } from 'sonner';
 import type { ChatMessage } from '@chat-template/core';
 import {
@@ -13,6 +13,12 @@ import {
   ThumbsDown,
 } from 'lucide-react';
 
+interface InitialFeedback {
+  id: string;
+  messageId: string;
+  feedbackType: 'thumbs_up' | 'thumbs_down';
+}
+
 function PureMessageActions({
   message,
   chatId,
@@ -21,6 +27,7 @@ function PureMessageActions({
   errorCount = 0,
   showErrors = false,
   onToggleErrors,
+  initialFeedback,
 }: {
   message: ChatMessage;
   chatId: string;
@@ -29,12 +36,18 @@ function PureMessageActions({
   errorCount?: number;
   showErrors?: boolean;
   onToggleErrors?: () => void;
+  initialFeedback?: InitialFeedback;
 }) {
   const [_, copyToClipboard] = useCopyToClipboard();
   const [feedback, setFeedback] = useState<'thumbs_up' | 'thumbs_down' | null>(
-    null,
+    initialFeedback?.feedbackType || null,
   );
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+
+  // Update feedback state when initialFeedback changes (e.g., when switching chats)
+  useEffect(() => {
+    setFeedback(initialFeedback?.feedbackType || null);
+  }, [initialFeedback]);
 
   if (isLoading) return null;
 

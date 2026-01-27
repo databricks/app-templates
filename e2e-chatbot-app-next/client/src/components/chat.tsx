@@ -24,6 +24,12 @@ import type { ClientSession } from '@chat-template/auth';
 import { softNavigateToChatId } from '@/lib/navigation';
 import { useAppConfig } from '@/contexts/AppConfigContext';
 
+interface FeedbackData {
+  id: string;
+  messageId: string;
+  feedbackType: 'thumbs_up' | 'thumbs_down';
+}
+
 export function Chat({
   id,
   initialMessages,
@@ -31,6 +37,7 @@ export function Chat({
   initialVisibilityType,
   isReadonly,
   initialLastContext,
+  feedback = {},
 }: {
   id: string;
   initialMessages: ChatMessage[];
@@ -39,6 +46,7 @@ export function Chat({
   isReadonly: boolean;
   session: ClientSession;
   initialLastContext?: LanguageModelUsage;
+  feedback?: Record<string, FeedbackData>;
 }) {
   const { visibilityType } = useChatVisibility({
     chatId: id,
@@ -263,6 +271,7 @@ export function Chat({
           regenerate={regenerate}
           isReadonly={isReadonly}
           selectedModelId={initialChatModel}
+          feedback={feedback}
         />
 
         <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 border-t-0 bg-background px-2 pb-3 md:px-4 md:pb-4">

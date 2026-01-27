@@ -9,6 +9,12 @@ import { useDataStream } from './data-stream-provider';
 import { Conversation, ConversationContent } from './elements/conversation';
 import { ArrowDownIcon } from 'lucide-react';
 
+interface FeedbackData {
+  id: string;
+  messageId: string;
+  feedbackType: 'thumbs_up' | 'thumbs_down';
+}
+
 interface MessagesProps {
   chatId: string;
   status: UseChatHelpers<ChatMessage>['status'];
@@ -19,6 +25,7 @@ interface MessagesProps {
   regenerate: UseChatHelpers<ChatMessage>['regenerate'];
   isReadonly: boolean;
   selectedModelId: string;
+  feedback?: Record<string, FeedbackData>;
 }
 
 function PureMessages({
@@ -31,6 +38,7 @@ function PureMessages({
   regenerate,
   isReadonly,
   selectedModelId,
+  feedback = {},
 }: MessagesProps) {
   const {
     containerRef: messagesContainerRef,
@@ -84,6 +92,7 @@ function PureMessages({
               requiresScrollPadding={
                 hasSentMessage && index === messages.length - 1
               }
+              initialFeedback={feedback[message.id]}
             />
           ))}
 

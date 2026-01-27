@@ -13,12 +13,14 @@ import {
 import {
   createFeedback,
   getFeedbackByMessageId,
+  getFeedbackByChatId,
   updateFeedback,
   deleteFeedback,
   getMessageById,
   isDatabaseAvailable,
+  ensureUserExists,
 } from '@chat-template/db';
-import { ChatSDKError } from '@chat-template/core';
+import { ChatSDKError, checkChatAccess } from '@chat-template/core';
 import { submitToMLflow } from '../utils/mlflow-client';
 
 export const feedbackRouter: RouterType = Router();
@@ -42,12 +44,19 @@ const updateFeedbackSchema = z.object({
  */
 feedbackRouter.post(
   '/',
-  [requireAuth, requireChatAccess],
+  [requireAuth],
   async (req: Request, res: Response) => {
+    console.log('[Feedback POST] Request received:', {
+      body: req.body,
+      headers: req.headers,
+      session: req.session,
+    });
+
     try {
       // Validate request body
       const validationResult = createFeedbackSchema.safeParse(req.body);
       if (!validationResult.success) {
+        console.log('[Feedback POST] Validation failed:', validationResult.error);
         return res.status(400).json({
           error: 'Invalid request body',
           details: validationResult.error.format(),
@@ -62,6 +71,20 @@ feedbackRouter.post(
         const response = error.toResponse();
         return res.status(response.status).json(response.json);
       }
+
+      // Verify chat access manually (requireChatAccess expects :id param)
+      const { allowed } = await checkChatAccess(chatId, userId);
+      if (!allowed) {
+        const error = new ChatSDKError('forbidden:chat');
+        const response = error.toResponse();
+        return res.status(response.status).json(response.json);
+      }
+
+      // Ensure user exists in database (for foreign key constraint)
+      await ensureUserExists({
+        id: userId,
+        email: req.session.user.email || `${userId}@databricks.com`,
+      });
 
       // Check if feedback already exists for this message
       const existingFeedback = await getFeedbackByMessageId({ messageId });
@@ -152,6 +175,43 @@ feedbackRouter.get(
       return res.status(200).json(feedback);
     } catch (error) {
       console.error('[Feedback] Error getting feedback:', error);
+      if (error instanceof ChatSDKError) {
+        const response = error.toResponse();
+        return res.status(response.status).json(response.json);
+      }
+      return res.status(500).json({ error: 'Failed to get feedback' });
+    }
+  },
+);
+
+/**
+ * GET /api/feedback/chat/:chatId - Get all feedback for a chat
+ */
+feedbackRouter.get(
+  '/chat/:chatId',
+  [requireAuth],
+  async (req: Request, res: Response) => {
+    try {
+      const { chatId } = req.params;
+
+      if (!chatId) {
+        return res.status(400).json({ error: 'Chat ID is required' });
+      }
+
+      // Verify chat access manually (requireChatAccess expects :id param)
+      const { allowed } = await checkChatAccess(chatId, req.session?.user.id);
+      if (!allowed) {
+        const error = new ChatSDKError('forbidden:chat');
+        const response = error.toResponse();
+        return res.status(response.status).json(response.json);
+      }
+
+      const feedbackList = await getFeedbackByChatId({ chatId });
+
+      // Return empty array if no feedback found (not 404)
+      return res.status(200).json(feedbackList || []);
+    } catch (error) {
+      console.error('[Feedback] Error getting feedback for chat:', error);
       if (error instanceof ChatSDKError) {
         const response = error.toResponse();
         return res.status(response.status).json(response.json);

@@ -3,9 +3,21 @@ import type { Chat } from '@chat-template/db';
 import type { ChatMessage } from '@chat-template/core';
 import { convertToUIMessages } from '@/lib/utils';
 
+interface Feedback {
+  id: string;
+  messageId: string;
+  chatId: string;
+  userId: string;
+  feedbackType: 'thumbs_up' | 'thumbs_down';
+  mlflowAssessmentId: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
 interface ChatData {
   chat: Chat;
   messages: ChatMessage[];
+  feedback: Record<string, Feedback>; // Map of messageId -> feedback
 }
 
 /**
@@ -48,9 +60,33 @@ async function fetchChatData(url: string): Promise<ChatData | null> {
   const messagesFromDb = await messagesResponse.json();
   const messages = convertToUIMessages(messagesFromDb);
 
+  // Fetch feedback for this chat
+  let feedbackMap: Record<string, Feedback> = {};
+  try {
+    const feedbackResponse = await fetch(`/api/feedback/chat/${chatId}`, {
+      credentials: 'include',
+    });
+
+    if (feedbackResponse.ok) {
+      const feedbackList: Feedback[] = await feedbackResponse.json();
+      // Convert array to map keyed by messageId for O(1) lookup
+      feedbackMap = feedbackList.reduce(
+        (acc, feedback) => {
+          acc[feedback.messageId] = feedback;
+          return acc;
+        },
+        {} as Record<string, Feedback>,
+      );
+    }
+  } catch (error) {
+    // If feedback fetch fails, just continue without it
+    console.warn('Failed to fetch feedback:', error);
+  }
+
   return {
     chat,
     messages,
+    feedback: feedbackMap,
   };
 }
 

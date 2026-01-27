@@ -44,6 +44,12 @@ import {
 } from '@chat-template/ai-sdk-providers/mcp';
 import { useApproval } from '@/hooks/use-approval';
 
+interface InitialFeedback {
+  id: string;
+  messageId: string;
+  feedbackType: 'thumbs_up' | 'thumbs_down';
+}
+
 const PurePreviewMessage = ({
   chatId,
   message,
@@ -54,6 +60,7 @@ const PurePreviewMessage = ({
   regenerate,
   isReadonly,
   requiresScrollPadding,
+  initialFeedback,
 }: {
   chatId: string;
   message: ChatMessage;
@@ -64,6 +71,7 @@ const PurePreviewMessage = ({
   regenerate: UseChatHelpers<ChatMessage>['regenerate'];
   isReadonly: boolean;
   requiresScrollPadding: boolean;
+  initialFeedback?: InitialFeedback;
 }) => {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [showErrors, setShowErrors] = useState(false);
@@ -355,6 +363,7 @@ const PurePreviewMessage = ({
               errorCount={errorParts.length}
               showErrors={showErrors}
               onToggleErrors={() => setShowErrors(!showErrors)}
+              initialFeedback={initialFeedback}
             />
           )}
 

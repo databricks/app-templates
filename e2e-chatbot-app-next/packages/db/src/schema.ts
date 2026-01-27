@@ -39,7 +39,7 @@ export const chat = createTable('Chat', {
 
 export type Chat = InferSelectModel<typeof chat>;
 
-export const message = createTable('Message', {
+export const message = createTable('Message_v2', {
   id: uuid('id').primaryKey().notNull().defaultRandom(),
   chatId: uuid('chatId')
     .notNull()

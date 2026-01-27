@@ -13,7 +13,14 @@ import {
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
-import { chat, message, feedback, type DBMessage, type Chat } from './schema';
+import {
+  chat,
+  message,
+  feedback,
+  user,
+  type DBMessage,
+  type Chat,
+} from './schema';
 import type { VisibilityType } from '@chat-template/utils';
 import { ChatSDKError } from '@chat-template/core/errors';
 import type { LanguageModelV2Usage } from '@ai-sdk/provider';
@@ -307,6 +314,7 @@ export async function getMessagesByChatId({ id }: { id: string }) {
       .where(eq(message.chatId, id))
       .orderBy(asc(message.createdAt));
   } catch (_error) {
+    console.error('[getMessagesByChatId] Database error:', _error);
     throw new ChatSDKError(
       'bad_request:database',
       'Failed to get messages by chat id',
@@ -580,5 +588,32 @@ export async function deleteFeedback({ id }: { id: string }) {
   } catch (error) {
     console.error('[deleteFeedback] Error deleting feedback:', error);
     throw new ChatSDKError('bad_request:database', 'Failed to delete feedback');
+  }
+}
+
+/**
+ * Ensure a user exists in the database.
+ * Creates the user if they don't exist (idempotent).
+ */
+export async function ensureUserExists({
+  id,
+  email,
+}: {
+  id: string;
+  email: string;
+}) {
+  if (!isDatabaseAvailable()) {
+    console.log('[ensureUserExists] Database not available, skipping');
+    return;
+  }
+
+  try {
+    await (await ensureDb())
+      .insert(user)
+      .values({ id, email })
+      .onConflictDoNothing();
+  } catch (error) {
+    console.error('[ensureUserExists] Error ensuring user exists:', error);
+    // Don't throw - this is a best-effort operation
   }
 }

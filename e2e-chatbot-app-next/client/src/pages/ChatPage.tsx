@@ -44,7 +44,7 @@ export default function ChatPage() {
     );
   }
 
-  const { chat, messages } = chatData;
+  const { chat, messages, feedback } = chatData;
   // For now, assume chats are not readonly unless we add proper ACL
   // The server will handle permission checks
   const isReadonly = false;
@@ -61,6 +61,7 @@ export default function ChatPage() {
       isReadonly={isReadonly}
       session={session}
       initialLastContext={chat.lastContext ?? undefined}
+      feedback={feedback}
     />
   );
 }

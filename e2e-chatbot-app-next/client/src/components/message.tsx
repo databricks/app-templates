@@ -76,6 +76,15 @@ const PurePreviewMessage = ({
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [showErrors, setShowErrors] = useState(false);
 
+  // Debug: Log renders to see if streaming is updating the component
+  React.useEffect(() => {
+    if (message.role === 'assistant' && isLoading) {
+      const textParts = message.parts.filter(p => p.type === 'text');
+      const totalLength = textParts.reduce((sum, p) => sum + (p.text?.length || 0), 0);
+      console.log(`[PreviewMessage] Streaming update - message ${message.id.slice(0, 8)}: ${totalLength} chars, isLoading: ${isLoading}`);
+    }
+  }, [message.parts, message.id, message.role, isLoading]);
+
   // Hook for handling MCP approval requests
   const { submitApproval, isSubmitting, pendingApprovalId } = useApproval({
     addToolResult,

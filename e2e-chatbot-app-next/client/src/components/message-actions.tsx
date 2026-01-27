@@ -1,7 +1,7 @@
 import { useCopyToClipboard } from 'usehooks-ts';
 
 import { Actions, Action } from './elements/actions';
-import { memo, useState, useCallback, useEffect } from 'react';
+import { memo, useState, useCallback, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import type { ChatMessage } from '@chat-template/core';
 import {
@@ -38,34 +38,28 @@ function PureMessageActions({
   onToggleErrors?: () => void;
   initialFeedback?: InitialFeedback;
 }) {
+  // All hooks MUST be called before any early returns
   const [_, copyToClipboard] = useCopyToClipboard();
   const [feedback, setFeedback] = useState<'thumbs_up' | 'thumbs_down' | null>(
     initialFeedback?.feedbackType || null,
   );
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
+  // Memoize text extraction from message parts
+  const textFromParts = useMemo(
+    () =>
+      message.parts
+        ?.filter((part) => part.type === 'text')
+        .map((part) => part.text)
+        .join('\n')
+        .trim(),
+    [message.parts],
+  );
+
   // Update feedback state when initialFeedback changes (e.g., when switching chats)
   useEffect(() => {
     setFeedback(initialFeedback?.feedbackType || null);
   }, [initialFeedback]);
-
-  if (isLoading) return null;
-
-  const textFromParts = message.parts
-    ?.filter((part) => part.type === 'text')
-    .map((part) => part.text)
-    .join('\n')
-    .trim();
-
-  const handleCopy = async () => {
-    if (!textFromParts) {
-      toast.error("There's no text to copy!");
-      return;
-    }
-
-    await copyToClipboard(textFromParts);
-    toast.success('Copied to clipboard!');
-  };
 
   const handleFeedback = useCallback(
     async (feedbackType: 'thumbs_up' | 'thumbs_down') => {
@@ -105,6 +99,19 @@ function PureMessageActions({
     },
     [message.id, chatId, isSubmittingFeedback],
   );
+
+  const handleCopy = useCallback(async () => {
+    if (!textFromParts) {
+      toast.error("There's no text to copy!");
+      return;
+    }
+
+    await copyToClipboard(textFromParts);
+    toast.success('Copied to clipboard!');
+  }, [textFromParts, copyToClipboard]);
+
+  // Early return AFTER all hooks have been called
+  if (isLoading) return null;
 
   // User messages get edit (on hover) and copy actions
   if (message.role === 'user') {
@@ -176,6 +183,7 @@ export const MessageActions = memo(
     if (prevProps.isLoading !== nextProps.isLoading) return false;
     if (prevProps.errorCount !== nextProps.errorCount) return false;
     if (prevProps.showErrors !== nextProps.showErrors) return false;
+    if (prevProps.initialFeedback?.feedbackType !== nextProps.initialFeedback?.feedbackType) return false;
 
     return true;
   },

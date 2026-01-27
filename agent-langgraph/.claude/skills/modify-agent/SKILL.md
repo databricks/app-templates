@@ -188,7 +188,7 @@ server = MCPServer(
 ```python
 from langchain.agents import create_agent
 
-# Create agent
+# Create agent - ONLY accepts tools and model, NO prompt/instructions parameter
 agent = create_agent(tools=tools, model=llm)
 
 # Non-streaming
@@ -214,25 +214,47 @@ async for event in process_agent_astream_events(
 
 ---
 
-## Customizing Agent Behavior
+## Customizing Agent Behavior (System Instructions)
 
-In LangGraph, agent behavior is customized via system messages and agent configuration rather than an `instructions` parameter.
+> **IMPORTANT:** `create_agent()` does NOT accept `prompt`, `instructions`, or `system_message` parameters. Attempting to pass these will cause a runtime error.
 
-**Add system message to conversation:**
+In LangGraph, agent behavior is customized by prepending a system message to the conversation messages.
+
+**Correct pattern in `agent.py`:**
+
+1. Define instructions as a constant:
 ```python
-messages = {
-    "messages": [
-        {"role": "system", "content": """You are a helpful data analyst assistant.
+AGENT_INSTRUCTIONS = """You are a helpful data analyst assistant.
 
 You have access to:
 - Company sales data via Genie
 - Product documentation via vector search
 
-Always cite your sources when answering questions."""},
-        {"role": "user", "content": "What were Q4 sales?"}
-    ]
-}
-result = await agent.ainvoke(messages)
+Always cite your sources when answering questions."""
+```
+
+2. Prepend to messages in the `streaming()` function:
+```python
+@stream()
+async def streaming(request: ResponsesAgentRequest) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
+    agent = await init_agent()
+    # Prepend system instructions to user messages
+    user_messages = to_chat_completions_input([i.model_dump() for i in request.input])
+    messages = {"messages": [{"role": "system", "content": AGENT_INSTRUCTIONS}] + user_messages}
+
+    async for event in process_agent_astream_events(
+        agent.astream(input=messages, stream_mode=["updates", "messages"])
+    ):
+        yield event
+```
+
+**Common mistake to avoid:**
+```python
+# WRONG - will cause "unexpected keyword argument" error
+agent = create_agent(tools=tools, model=llm, prompt=AGENT_INSTRUCTIONS)
+
+# CORRECT - add instructions via messages
+messages = {"messages": [{"role": "system", "content": AGENT_INSTRUCTIONS}] + user_messages}
 ```
 
 For advanced customization (routing, state management, custom graphs), refer to the [LangGraph documentation](https://docs.langchain.com/oss/python/langgraph/overview).

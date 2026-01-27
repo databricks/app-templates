@@ -8,7 +8,7 @@ The agent input and output format are defined by MLflow's ResponsesAgent interfa
 
 ## Quick start
 
-Run the `./scripts/quickstart.sh` script to quickly set up your local environment and start the agent server. At any step, if there are issues, refer to the manual local development loop setup below.
+Run the `uv run quickstart` script to quickly set up your local environment and start the agent server. At any step, if there are issues, refer to the manual local development loop setup below.
 
 This script will:
 
@@ -18,7 +18,7 @@ This script will:
 4. Start the agent server and chat app
 
 ```bash
-./scripts/quickstart.sh
+uv run quickstart
 ```
 
 After the setup is complete, you can start the agent server and the chat app locally with:
@@ -76,7 +76,7 @@ This will start the agent server and the chat app at http://localhost:8000.
 
 3. **Create and link an MLflow experiment to your app**
 
-   Create an MLflow experiment to enable tracing and version tracking. This is automatically done by the `./scripts/quickstart.sh` script.
+   Create an MLflow experiment to enable tracing and version tracking. This is automatically done by the `uv run quickstart` script.
 
    Create the MLflow experiment via the CLI:
 

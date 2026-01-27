@@ -8,7 +8,7 @@ import {
   getDatabricksUserIdentity,
   getCachedCliHost,
 } from '@chat-template/auth';
-import { createDatabricksProvider } from './databricks-provider/index';
+import { createDatabricksProvider } from '@databricks/ai-sdk-provider';
 import { extractReasoningMiddleware, wrapLanguageModel } from 'ai';
 
 // Use centralized authentication - only on server side
@@ -265,10 +265,12 @@ export class OAuthAwareProvider implements SmartProvider {
     const model = await (async () => {
       if (API_PROXY) {
         // For API proxy we always use the responses agent
-        return provider.responsesAgent(id);
+        return provider.responses(id);
       }
       if (id === 'title-model' || id === 'artifact-model') {
-        return provider.fmapi('databricks-meta-llama-3-3-70b-instruct');
+        return provider.chatCompletions(
+          'databricks-meta-llama-3-3-70b-instruct',
+        );
       }
       // Server-side environment validation
       if (!process.env.DATABRICKS_SERVING_ENDPOINT) {
@@ -286,11 +288,11 @@ export class OAuthAwareProvider implements SmartProvider {
           return provider.chatAgent(servingEndpoint);
         case 'agent/v1/responses':
         case 'agent/v2/responses':
-          return provider.responsesAgent(servingEndpoint);
+          return provider.responses(servingEndpoint);
         case 'llm/v1/chat':
-          return provider.fmapi(servingEndpoint);
+          return provider.chatCompletions(servingEndpoint);
         default:
-          return provider.responsesAgent(servingEndpoint);
+          return provider.responses(servingEndpoint);
       }
     })();
 

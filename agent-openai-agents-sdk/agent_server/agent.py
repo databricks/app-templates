@@ -36,7 +36,7 @@ def create_coding_agent(mcp_server: McpServer) -> Agent:
     return Agent(
         name="code execution agent",
         instructions="You are a code execution agent. You can execute code and return the results.",
-        model="databricks-claude-3-7-sonnet",
+        model="databricks-gpt-5-2",
         mcp_servers=[mcp_server],
     )
 

@@ -47,7 +47,8 @@
     "@chat-template/ai-sdk-providers": "*",
     "@chat-template/db": "*",
     "@chat-template/utils": "*",
+    "@databricks/ai-sdk-provider": "^0.2.0",
     "date-fns": "^4.1.0",
-    "zod": "^3.25.76"
+    "zod": "^4.3.5"
   }
 }

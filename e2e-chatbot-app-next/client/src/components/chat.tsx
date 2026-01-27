@@ -19,6 +19,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useChatVisibility } from '@/hooks/use-chat-visibility';
 import { ChatSDKError } from '@chat-template/core/errors';
 import { useDataStream } from './data-stream-provider';
+import { isCredentialErrorMessage } from '@/lib/oauth-error-utils';
 import { ChatTransport } from '../lib/ChatTransport';
 import type { ClientSession } from '@chat-template/auth';
 import { softNavigateToChatId } from '@/lib/navigation';
@@ -104,6 +105,7 @@ export function Chat({
     sendMessage,
     status,
     resumeStream,
+    clearError,
     addToolResult,
     regenerate,
   } = useChat<ChatMessage>({
@@ -179,7 +181,12 @@ export function Chat({
         setUsage(dataPart.data as LanguageModelUsage);
       }
     },
-    onFinish: ({ isAbort, isDisconnect, isError }) => {
+    onFinish: ({
+      isAbort,
+      isDisconnect,
+      isError,
+      messages: finishedMessages,
+    }) => {
       // Reset state for next message
       didFetchHistoryOnNewChat.current = false;
 
@@ -188,6 +195,26 @@ export function Chat({
         console.log('[Chat onFinish] Stream was aborted by user, not resuming');
         setStreamCursor(0);
         fetchChatHistory();
+        return;
+      }
+
+      // Check if the last message contains an OAuth credential error
+      // If so, don't try to resume - the user needs to authenticate first
+      const lastMessage = finishedMessages?.at(-1);
+      const hasOAuthError = lastMessage?.parts?.some(
+        (part) =>
+          part.type === 'data-error' &&
+          typeof part.data === 'string' &&
+          isCredentialErrorMessage(part.data),
+      );
+
+      if (hasOAuthError) {
+        console.log(
+          '[Chat onFinish] OAuth credential error detected, not resuming',
+        );
+        setStreamCursor(0);
+        fetchChatHistory();
+        clearError();
         return;
       }
 
@@ -276,8 +303,8 @@ export function Chat({
           messages={messages}
           setMessages={setMessages}
           addToolResult={addToolResult}
-          sendMessage={sendMessage}
           regenerate={regenerate}
+          sendMessage={sendMessage}
           isReadonly={isReadonly}
           selectedModelId={initialChatModel}
           feedback={feedback}

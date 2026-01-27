@@ -92,18 +92,6 @@ export function Chat({
     abortController.current?.abort('USER_ABORT_SIGNAL');
   }, []);
 
-  // Debug: Log when messages change to see if streaming updates the array
-  useEffect(() => {
-    if (status === 'streaming' && messages.length > 0) {
-      const lastMessage = messages[messages.length - 1];
-      if (lastMessage.role === 'assistant') {
-        const textParts = lastMessage.parts.filter(p => p.type === 'text');
-        const totalLength = textParts.reduce((sum, p) => sum + (p.text?.length || 0), 0);
-        console.log('[Chat] Messages updated during streaming:', totalLength, 'chars in assistant message');
-      }
-    }
-  }, [messages, status]);
-
   const isNewChat = initialMessages.length === 0;
   const didFetchHistoryOnNewChat = useRef(false);
   const fetchChatHistory = useCallback(() => {
@@ -266,6 +254,25 @@ export function Chat({
       // Resume logic is handled exclusively in onFinish.
     },
   });
+
+  // Debug: Log when messages change to see if streaming updates the array
+  useEffect(() => {
+    if (status === 'streaming' && messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.role === 'assistant') {
+        const textParts = lastMessage.parts.filter((p) => p.type === 'text');
+        const totalLength = textParts.reduce(
+          (sum, p) => sum + (p.text?.length || 0),
+          0,
+        );
+        console.log(
+          '[Chat] Messages updated during streaming:',
+          totalLength,
+          'chars in assistant message',
+        );
+      }
+    }
+  }, [messages, status]);
 
   const [searchParams] = useSearchParams();
   const query = searchParams.get('query');

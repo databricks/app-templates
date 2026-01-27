@@ -1,37 +1,101 @@
 import { useCopyToClipboard } from 'usehooks-ts';
 
 import { Actions, Action } from './elements/actions';
-import { memo } from 'react';
+import { memo, useState, useCallback, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import type { ChatMessage } from '@chat-template/core';
-import { ChevronDown, ChevronUp, CopyIcon, PencilLineIcon } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronUp,
+  CopyIcon,
+  PencilLineIcon,
+  ThumbsUp,
+  ThumbsDown,
+} from 'lucide-react';
+
+interface InitialFeedback {
+  id: string;
+  messageId: string;
+  feedbackType: 'thumbs_up' | 'thumbs_down';
+}
 
 function PureMessageActions({
   message,
+  chatId,
   isLoading,
   setMode,
   errorCount = 0,
   showErrors = false,
   onToggleErrors,
+  initialFeedback,
 }: {
   message: ChatMessage;
+  chatId: string;
   isLoading: boolean;
   setMode?: (mode: 'view' | 'edit') => void;
   errorCount?: number;
   showErrors?: boolean;
   onToggleErrors?: () => void;
+  initialFeedback?: InitialFeedback;
 }) {
+  // All hooks MUST be called before any early returns
   const [_, copyToClipboard] = useCopyToClipboard();
+  const [feedback, setFeedback] = useState<'thumbs_up' | 'thumbs_down' | null>(
+    initialFeedback?.feedbackType || null,
+  );
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
-  if (isLoading) return null;
+  // Memoize text extraction from message parts
+  const textFromParts = useMemo(
+    () =>
+      message.parts
+        ?.filter((part) => part.type === 'text')
+        .map((part) => part.text)
+        .join('\n')
+        .trim(),
+    [message.parts],
+  );
 
-  const textFromParts = message.parts
-    ?.filter((part) => part.type === 'text')
-    .map((part) => part.text)
-    .join('\n')
-    .trim();
+  // Update feedback state when initialFeedback changes (e.g., when switching chats)
+  useEffect(() => {
+    setFeedback(initialFeedback?.feedbackType || null);
+  }, [initialFeedback]);
 
-  const handleCopy = async () => {
+  const handleFeedback = useCallback(
+    async (feedbackType: 'thumbs_up' | 'thumbs_down') => {
+      if (isSubmittingFeedback) return;
+
+      setIsSubmittingFeedback(true);
+
+      try {
+        const response = await fetch('/api/feedback', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messageId: message.id,
+            chatId,
+            feedbackType,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to submit feedback');
+        }
+
+        setFeedback(feedbackType);
+      } catch (error) {
+        console.error('Error submitting feedback:', error);
+        toast.error('Failed to submit feedback. Please try again.');
+      } finally {
+        setIsSubmittingFeedback(false);
+      }
+    },
+    [message.id, chatId, isSubmittingFeedback],
+  );
+
+  const handleCopy = useCallback(async () => {
     if (!textFromParts) {
       toast.error("There's no text to copy!");
       return;
@@ -39,7 +103,10 @@ function PureMessageActions({
 
     await copyToClipboard(textFromParts);
     toast.success('Copied to clipboard!');
-  };
+  }, [textFromParts, copyToClipboard]);
+
+  // Early return AFTER all hooks have been called
+  if (isLoading) return null;
 
   // User messages get edit (on hover) and copy actions
   if (message.role === 'user') {
@@ -71,6 +138,22 @@ function PureMessageActions({
           <CopyIcon />
         </Action>
       )}
+      <Action
+        tooltip="Thumbs up"
+        onClick={() => handleFeedback('thumbs_up')}
+        className={feedback === 'thumbs_up' ? 'text-green-600' : ''}
+        data-testid="thumbs-up-button"
+      >
+        <ThumbsUp />
+      </Action>
+      <Action
+        tooltip="Thumbs down"
+        onClick={() => handleFeedback('thumbs_down')}
+        className={feedback === 'thumbs_down' ? 'text-red-600' : ''}
+        data-testid="thumbs-down-button"
+      >
+        <ThumbsDown />
+      </Action>
       {errorCount > 0 && onToggleErrors && (
         <Action
           tooltip={showErrors ? 'Hide errors' : 'Show errors'}
@@ -95,6 +178,7 @@ export const MessageActions = memo(
     if (prevProps.isLoading !== nextProps.isLoading) return false;
     if (prevProps.errorCount !== nextProps.errorCount) return false;
     if (prevProps.showErrors !== nextProps.showErrors) return false;
+    if (prevProps.initialFeedback?.feedbackType !== nextProps.initialFeedback?.feedbackType) return false;
 
     return true;
   },

@@ -25,6 +25,12 @@ import type { ClientSession } from '@chat-template/auth';
 import { softNavigateToChatId } from '@/lib/navigation';
 import { useAppConfig } from '@/contexts/AppConfigContext';
 
+interface FeedbackData {
+  id: string;
+  messageId: string;
+  feedbackType: 'thumbs_up' | 'thumbs_down';
+}
+
 export function Chat({
   id,
   initialMessages,
@@ -32,6 +38,7 @@ export function Chat({
   initialVisibilityType,
   isReadonly,
   initialLastContext,
+  feedback = {},
 }: {
   id: string;
   initialMessages: ChatMessage[];
@@ -40,6 +47,7 @@ export function Chat({
   isReadonly: boolean;
   session: ClientSession;
   initialLastContext?: LanguageModelUsage;
+  feedback?: Record<string, FeedbackData>;
 }) {
   const { visibilityType } = useChatVisibility({
     chatId: id,
@@ -103,7 +111,7 @@ export function Chat({
   } = useChat<ChatMessage>({
     id,
     messages: initialMessages,
-    experimental_throttle: 100,
+    experimental_throttle: 50, // Reduced from 100ms for smoother streaming display
     generateId: generateUUID,
     resume: id !== undefined && initialMessages.length > 0, // Enable automatic stream resumption
     transport: new ChatTransport({
@@ -210,6 +218,15 @@ export function Chat({
         return;
       }
 
+      // Don't try to resume if we haven't received any stream parts in this session
+      // This happens on page reload when there's no active stream to resume
+      if (streamCursorRef.current === 0) {
+        console.log('[Chat onFinish] No stream parts received, skipping resume');
+        setStreamCursor(0);
+        fetchChatHistory();
+        return;
+      }
+
       // Determine if we should attempt to resume:
       // 1. Stream didn't end with a 'finish' part (incomplete)
       // 2. It was a disconnect/error that terminated the stream
@@ -290,6 +307,7 @@ export function Chat({
           sendMessage={sendMessage}
           isReadonly={isReadonly}
           selectedModelId={initialChatModel}
+          feedback={feedback}
         />
 
         <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 border-t-0 bg-background px-2 pb-3 md:px-4 md:pb-4">

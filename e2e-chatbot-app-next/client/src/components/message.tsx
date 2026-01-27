@@ -46,7 +46,14 @@ import {
 } from '@databricks/ai-sdk-provider';
 import { useApproval } from '@/hooks/use-approval';
 
+interface InitialFeedback {
+  id: string;
+  messageId: string;
+  feedbackType: 'thumbs_up' | 'thumbs_down';
+}
+
 const PurePreviewMessage = ({
+  chatId,
   message,
   allMessages,
   isLoading,
@@ -56,6 +63,7 @@ const PurePreviewMessage = ({
   regenerate,
   isReadonly,
   requiresScrollPadding,
+  initialFeedback,
 }: {
   chatId: string;
   message: ChatMessage;
@@ -67,6 +75,7 @@ const PurePreviewMessage = ({
   regenerate: UseChatHelpers<ChatMessage>['regenerate'];
   isReadonly: boolean;
   requiresScrollPadding: boolean;
+  initialFeedback?: InitialFeedback;
 }) => {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [showErrors, setShowErrors] = useState(false);
@@ -375,12 +384,14 @@ const PurePreviewMessage = ({
           {!isReadonly && !hasOnlyErrors && (
             <MessageActions
               key={`action-${message.id}`}
+              chatId={chatId}
               message={message}
               isLoading={isLoading}
               setMode={setMode}
               errorCount={errorParts.length}
               showErrors={showErrors}
               onToggleErrors={() => setShowErrors(!showErrors)}
+              initialFeedback={initialFeedback}
             />
           )}
 
@@ -403,13 +414,17 @@ const PurePreviewMessage = ({
 export const PreviewMessage = memo(
   PurePreviewMessage,
   (prevProps, nextProps) => {
-    if (prevProps.isLoading !== nextProps.isLoading) return false;
+    // Always re-render when message is loading (streaming)
+    if (prevProps.isLoading || nextProps.isLoading) return false;
+
     if (prevProps.message.id !== nextProps.message.id) return false;
     if (prevProps.requiresScrollPadding !== nextProps.requiresScrollPadding)
       return false;
     if (!equal(prevProps.message.parts, nextProps.message.parts)) return false;
+    if (prevProps.initialFeedback?.feedbackType !== nextProps.initialFeedback?.feedbackType)
+      return false;
 
-    return false;
+    return true; // Props are equal, skip re-render
   },
 );
 

@@ -9,6 +9,12 @@ import { useDataStream } from './data-stream-provider';
 import { Conversation, ConversationContent } from './elements/conversation';
 import { ArrowDownIcon } from 'lucide-react';
 
+interface FeedbackData {
+  id: string;
+  messageId: string;
+  feedbackType: 'thumbs_up' | 'thumbs_down';
+}
+
 interface MessagesProps {
   chatId: string;
   status: UseChatHelpers<ChatMessage>['status'];
@@ -19,6 +25,7 @@ interface MessagesProps {
   regenerate: UseChatHelpers<ChatMessage>['regenerate'];
   isReadonly: boolean;
   selectedModelId: string;
+  feedback?: Record<string, FeedbackData>;
 }
 
 function PureMessages({
@@ -31,6 +38,7 @@ function PureMessages({
   regenerate,
   isReadonly,
   selectedModelId,
+  feedback = {},
 }: MessagesProps) {
   const {
     containerRef: messagesContainerRef,
@@ -81,11 +89,11 @@ function PureMessages({
               addToolResult={addToolResult}
               sendMessage={sendMessage}
               regenerate={regenerate}
-              sendMessage={sendMessage}
               isReadonly={isReadonly}
               requiresScrollPadding={
                 hasSentMessage && index === messages.length - 1
               }
+              initialFeedback={feedback[message.id]}
             />
           ))}
 
@@ -118,10 +126,15 @@ function PureMessages({
 }
 
 export const Messages = memo(PureMessages, (prevProps, nextProps) => {
-  if (prevProps.status !== nextProps.status) return false;
+  // Always re-render during streaming to ensure incremental token display
+  if (prevProps.status === 'streaming' || nextProps.status === 'streaming') {
+    return false;
+  }
+
   if (prevProps.selectedModelId !== nextProps.selectedModelId) return false;
   if (prevProps.messages.length !== nextProps.messages.length) return false;
   if (!equal(prevProps.messages, nextProps.messages)) return false;
+  if (!equal(prevProps.feedback, nextProps.feedback)) return false;
 
-  return false;
+  return true; // Props are equal, skip re-render
 });

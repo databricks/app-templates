@@ -205,7 +205,17 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     let finalUsage: LanguageModelUsage | undefined;
     const streamId = generateUUID();
 
-    const model = await myProvider.languageModel(selectedChatModel);
+    console.log(
+      `[Chat] Attempting to get language model: ${selectedChatModel}`,
+    );
+    let model;
+    try {
+      model = await myProvider.languageModel(selectedChatModel);
+      console.log(`[Chat] Successfully got language model: ${selectedChatModel}`);
+    } catch (modelError) {
+      console.error('[Chat] Failed to get language model:', modelError);
+      throw modelError;
+    }
     const result = streamText({
       model,
       messages: convertToModelMessages(uiMessages),
@@ -287,13 +297,20 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
+    console.error('[Chat] Caught error in chat API:', {
+      errorType: error?.constructor?.name,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      error,
+    });
+
     if (error instanceof ChatSDKError) {
+      console.log('[Chat] Error is ChatSDKError, returning structured response');
       const response = error.toResponse();
       return res.status(response.status).json(response.json);
     }
 
-    console.error('Unhandled error in chat API:', error);
-
+    console.error('[Chat] Unhandled error, returning offline:chat');
     const chatError = new ChatSDKError('offline:chat');
     const response = chatError.toResponse();
     return res.status(response.status).json(response.json);

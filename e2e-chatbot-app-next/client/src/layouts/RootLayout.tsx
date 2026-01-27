@@ -14,7 +14,10 @@ export default function RootLayout() {
 
     const updateThemeColor = () => {
       const isDark = html.classList.contains('dark');
-      meta.setAttribute('content', isDark ? DARK_THEME_COLOR : LIGHT_THEME_COLOR);
+      meta.setAttribute(
+        'content',
+        isDark ? DARK_THEME_COLOR : LIGHT_THEME_COLOR,
+      );
     };
 
     const observer = new MutationObserver(updateThemeColor);

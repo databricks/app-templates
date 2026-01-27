@@ -22,12 +22,18 @@ description: "Modify agent code, add tools, or change configuration. Use when: (
 ## SDK Setup
 
 ```python
+import mlflow
 from databricks_openai import AsyncDatabricksOpenAI
 from agents import set_default_openai_api, set_default_openai_client, Agent
+from agents.tracing import set_trace_processors
 
 # Set up async client (recommended for agent servers)
 set_default_openai_client(AsyncDatabricksOpenAI())
 set_default_openai_api("chat_completions")
+
+# Use MLflow for tracing (disables SDK's built-in tracing)
+set_trace_processors([])
+mlflow.openai.autolog()
 ```
 
 ## Adding MCP Servers
@@ -62,7 +68,7 @@ agent = Agent(
 )
 ```
 
-**After adding MCP servers:** Grant permissions in `databricks.yml` (see **add-resource** skill)
+**After adding MCP servers:** Grant permissions in `databricks.yml` (see **add-tools** skill)
 
 ## Changing the Model
 
@@ -78,6 +84,8 @@ agent = Agent(
     ...
 )
 ```
+
+**Note:** Some workspaces require granting the app access to the serving endpoint in `databricks.yml`. See the **add-tools** skill and `examples/serving-endpoint.yaml`.
 
 ## Changing Instructions
 
@@ -111,6 +119,16 @@ async for event in result.stream_events():
     pass
 ```
 
+**Converting to Responses API format:** Use `process_agent_stream_events()` from `agent_server/utils.py` to convert streaming output to Responses API compatible format:
+
+```python
+from agent_server.utils import process_agent_stream_events
+
+result = Runner.run_streamed(agent, input=messages)
+async for event in process_agent_stream_events(result.stream_events()):
+    yield event  # Yields ResponsesAgentStreamEvent objects
+```
+
 ## External Resources
 
 1. [databricks-openai SDK](https://github.com/databricks/databricks-ai-bridge/tree/main/integrations/openai)
@@ -123,6 +141,6 @@ async for event in result.stream_events():
 ## Next Steps
 
 - Discover available tools: see **discover-tools** skill
-- Grant resource permissions: see **add-resource** skill
+- Grant resource permissions: see **add-tools** skill
 - Test locally: see **run-locally** skill
 - Deploy: see **deploy** skill

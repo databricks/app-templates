@@ -76,5 +76,5 @@ agent = Agent(
 ## Next Steps
 
 After adding MCP servers to your agent:
-1. **Grant permissions** in `databricks.yml` (see **add-resource** skill)
+1. **Grant permissions** in `databricks.yml` (see **add-tools** skill)
 2. Test locally with `uv run start-app` (see **run-locally** skill)

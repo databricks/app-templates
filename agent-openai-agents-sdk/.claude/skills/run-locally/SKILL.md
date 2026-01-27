@@ -72,6 +72,11 @@ pytest [path]
 
 If you see: "The provided MLFLOW_EXPERIMENT_ID environment variable value does not exist"
 
+**Verify the experiment exists:**
+```bash
+databricks -p <profile> experiments get-experiment <experiment_id>
+```
+
 **Fix:** Ensure `.env.local` has the correct tracking URI format:
 ```bash
 MLFLOW_TRACKING_URI="databricks://DEFAULT"  # Include profile name

@@ -59,11 +59,21 @@ databricks auth login --host https://your-workspace.cloud.databricks.com
 databricks auth profiles
 ```
 
-Then manually create `.env.local`:
+Then manually create `.env.local` (copy from `.env.example`):
 ```bash
+# Authentication (choose one method)
 DATABRICKS_CONFIG_PROFILE=DEFAULT
-MLFLOW_TRACKING_URI="databricks://DEFAULT"
+# DATABRICKS_HOST=https://<your-workspace-here>.databricks.com
+# DATABRICKS_TOKEN=dapi....
+
+# MLflow configuration
 MLFLOW_EXPERIMENT_ID=<your-experiment-id>
+MLFLOW_TRACKING_URI="databricks://DEFAULT"
+MLFLOW_REGISTRY_URI="databricks-uc"
+
+# Frontend proxy settings
+CHAT_APP_PORT=3000
+CHAT_PROXY_TIMEOUT_SECONDS=300
 ```
 
 ## Next Steps

@@ -56,7 +56,7 @@ This will start the agent server and the chat app at http://localhost:8000.
    databricks auth login
    ```
 
-   Set the `DATABRICKS_CONFIG_PROFILE` environment variable in your .env.local file to the profile you used to authenticate:
+   Set the `DATABRICKS_CONFIG_PROFILE` environment variable in your .env file to the profile you used to authenticate:
 
    ```bash
    DATABRICKS_CONFIG_PROFILE="DEFAULT" # change to the profile name you chose
@@ -67,7 +67,7 @@ This will start the agent server and the chat app at http://localhost:8000.
    See the [PAT documentation](https://docs.databricks.com/aws/en/dev-tools/auth/pat#databricks-personal-access-tokens-for-workspace-users).
 
    ```bash
-   # Add these to your .env.local file
+   # Add these to your .env file
    DATABRICKS_HOST="https://host.databricks.com"
    DATABRICKS_TOKEN="dapi_token"
    ```
@@ -85,11 +85,11 @@ This will start the agent server and the chat app at http://localhost:8000.
    databricks experiments create-experiment /Users/$DATABRICKS_USERNAME/agents-on-apps
    ```
 
-   Make a copy of `.env.example` to `.env.local` and update the `MLFLOW_EXPERIMENT_ID` in your `.env.local` file with the experiment ID you created. The `.env.local` file will be automatically loaded when starting the server.
+   Make a copy of `.env.example` to `.env` and update the `MLFLOW_EXPERIMENT_ID` in your `.env` file with the experiment ID you created. The `.env` file will be automatically loaded when starting the server.
 
    ```bash
-   cp .env.example .env.local
-   # Edit .env.local and fill in your experiment ID
+   cp .env.example .env
+   # Edit .env and fill in your experiment ID
    ```
 
    See the [MLflow experiments documentation](https://docs.databricks.com/aws/en/mlflow/experiments#create-experiment-from-the-workspace).

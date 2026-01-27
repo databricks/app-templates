@@ -205,4 +205,4 @@ sketch
 **/.vite/
 **/.databricks
 **/.claude
-**/.env.local
+**/.env

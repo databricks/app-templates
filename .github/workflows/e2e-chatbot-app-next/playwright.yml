@@ -1,9 +1,15 @@
-name: Playwright Tests
+name: Playwright Tests (e2e-chatbot-app-next)
 on:
   push:
     branches: [main, master]
+    paths:
+      - 'e2e-chatbot-app-next/**'
+      - '.github/workflows/e2e-chatbot-app-next/**'
   pull_request:
     branches: [main, master]
+    paths:
+      - 'e2e-chatbot-app-next/**'
+      - '.github/workflows/e2e-chatbot-app-next/**'
 
 jobs:
   # Test with database (persistent mode)
@@ -47,15 +53,17 @@ jobs:
         with:
           node-version: lts/*
           cache: npm
+          cache-dependency-path: e2e-chatbot-app-next/package-lock.json
 
       - uses: actions/cache@v3
         with:
           path: ${{ steps.npm-cache.outputs.STORE_PATH }}
-          key: ${{ runner.os }}-npm-store-${{ hashFiles('**/package-lock.json') }}
+          key: ${{ runner.os }}-npm-store-${{ hashFiles('e2e-chatbot-app-next/**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-store-
 
       - name: Install dependencies
+        working-directory: e2e-chatbot-app-next
         run: npm ci
 
       - name: Cache Playwright browsers
@@ -63,23 +71,26 @@ jobs:
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
+          key: ${{ runner.os }}-playwright-${{ hashFiles('e2e-chatbot-app-next/**/package-lock.json') }}
 
       - name: Install Playwright Browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
+        working-directory: e2e-chatbot-app-next
         run: npx playwright install --with-deps chromium
 
       - name: Run database migrations
+        working-directory: e2e-chatbot-app-next
         run: npm run db:migrate
 
       - name: Run Playwright tests (with database)
+        working-directory: e2e-chatbot-app-next
         run: npm run test:with-db
 
       - uses: actions/upload-artifact@v4
         if: always() && !cancelled()
         with:
           name: playwright-report-with-db
-          path: playwright-report/
+          path: e2e-chatbot-app-next/playwright-report/
           retention-days: 7
 
   # Test without database (ephemeral mode)
@@ -103,15 +114,17 @@ jobs:
         with:
           node-version: lts/*
           cache: npm
+          cache-dependency-path: e2e-chatbot-app-next/package-lock.json
 
       - uses: actions/cache@v3
         with:
           path: ${{ steps.npm-cache.outputs.STORE_PATH }}
-          key: ${{ runner.os }}-npm-store-${{ hashFiles('**/package-lock.json') }}
+          key: ${{ runner.os }}-npm-store-${{ hashFiles('e2e-chatbot-app-next/**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-store-
 
       - name: Install dependencies
+        working-directory: e2e-chatbot-app-next
         run: npm ci
 
       - name: Cache Playwright browsers
@@ -119,15 +132,17 @@ jobs:
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
+          key: ${{ runner.os }}-playwright-${{ hashFiles('e2e-chatbot-app-next/**/package-lock.json') }}
 
       - name: Install Playwright Browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
+        working-directory: e2e-chatbot-app-next
         run: npx playwright install --with-deps chromium
 
       # No database migrations in ephemeral mode
 
       - name: Run Playwright tests (ephemeral mode)
+        working-directory: e2e-chatbot-app-next
         env:
           PLAYWRIGHT: True
         run: npm run test:ephemeral
@@ -136,5 +151,5 @@ jobs:
         if: always() && !cancelled()
         with:
           name: playwright-report-ephemeral
-          path: playwright-report/
+          path: e2e-chatbot-app-next/playwright-report/
           retention-days: 7

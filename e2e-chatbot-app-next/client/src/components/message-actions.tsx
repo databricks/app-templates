@@ -85,11 +85,6 @@ function PureMessageActions({
         }
 
         setFeedback(feedbackType);
-        toast.success(
-          feedbackType === 'thumbs_up'
-            ? 'Thanks for the positive feedback!'
-            : 'Thanks for the feedback!',
-        );
       } catch (error) {
         console.error('Error submitting feedback:', error);
         toast.error('Failed to submit feedback. Please try again.');

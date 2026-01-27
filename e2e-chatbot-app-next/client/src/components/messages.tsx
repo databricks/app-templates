@@ -129,6 +129,7 @@ export const Messages = memo(PureMessages, (prevProps, nextProps) => {
   if (prevProps.selectedModelId !== nextProps.selectedModelId) return false;
   if (prevProps.messages.length !== nextProps.messages.length) return false;
   if (!equal(prevProps.messages, nextProps.messages)) return false;
+  if (!equal(prevProps.feedback, nextProps.feedback)) return false;
 
-  return false;
+  return true; // Props are equal, skip re-render
 });

@@ -52,6 +52,7 @@ async function fetchChatData(url: string): Promise<ChatData | null> {
       return {
         chat,
         messages: [],
+        feedback: {},
       };
     }
     throw new Error('Failed to load messages');

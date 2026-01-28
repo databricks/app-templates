@@ -1,0 +1,27 @@
+[project]
+name = "mse-to-app-migration"
+version = "0.1.0"
+description = "Migrate MLflow ResponsesAgent from Model Serving to Databricks Apps"
+readme = "README.md"
+authors = [
+    { name = "Databricks", email = "developer@databricks.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "databricks-sdk>=0.40.0",
+    "mlflow[databricks]>=3.8.0rc0",
+    "boto3",
+]
+
+[tool.uv]
+prerelease = "allow"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["scripts"]
+
+[project.scripts]
+migrate = "scripts.migrate:main"

@@ -103,4 +103,24 @@ test.describe('Chat activity', () => {
     await chatPage.waitForScrollToBottom();
     await expect(chatPage.scrollToBottomButton).not.toBeVisible();
   });
+
+  test('shows loading indicator while waiting for response', async ({ page }) => {
+    await expect(chatPage.loadingIndicator).not.toBeVisible();
+
+    await chatPage.multimodalInput.click();
+    await chatPage.multimodalInput.fill('Hello');
+
+    const responsePromise = page.waitForResponse((response) =>
+      response.url().includes('/api/chat'),
+    );
+
+    await chatPage.sendButton.click();
+
+    await expect(chatPage.loadingIndicator).toBeVisible();
+
+    const response = await responsePromise;
+    await response.finished();
+
+    await expect(chatPage.loadingIndicator).not.toBeVisible();
+  });
 });

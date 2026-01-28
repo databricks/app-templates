@@ -230,4 +230,8 @@ export class ChatPage {
       element.scrollTop = 0;
     });
   }
+
+  public get loadingIndicator() {
+    return this.page.getByTestId('message-assistant-loading');
+  }
 }

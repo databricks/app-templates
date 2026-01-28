@@ -120,6 +120,10 @@ const PurePreviewMessage = ({
     return errorParts.length > 0 && nonErrorParts.length === 0;
   }, [message.parts, errorParts.length]);
 
+  // Check if the message has any visible content to display
+  const hasVisibleContent =
+    partSegments.length > 0 || attachmentsFromMessage.length > 0;
+
   return (
     <div
       data-testid={`message-${message.role}`}

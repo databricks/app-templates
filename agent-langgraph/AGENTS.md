@@ -48,8 +48,12 @@ Ask the user: "I see there's an existing app with the same name. Would you like 
 | Add tools & permissions | **add-tools** | `.claude/skills/add-tools/SKILL.md` |
 | Run/test locally | **run-locally** | `.claude/skills/run-locally/SKILL.md` |
 | Modify agent code | **modify-agent** | `.claude/skills/modify-agent/SKILL.md` |
+| Configure Lakebase storage | **lakebase-setup** | `.claude/skills/lakebase-setup/SKILL.md` |
+| Add memory capabilities | **agent-memory** | `.claude/skills/agent-memory/SKILL.md` |
 
 **Note:** All agent skills are located in `.claude/skills/` directory.
+
+> **Adding Memory?** The **lakebase-setup** and **agent-memory** skills help you add conversation history or persistent user memory to this agent. For pre-configured memory, see the `agent-langgraph-short-term-memory` or `agent-langgraph-long-term-memory` templates.
 
 ---
 

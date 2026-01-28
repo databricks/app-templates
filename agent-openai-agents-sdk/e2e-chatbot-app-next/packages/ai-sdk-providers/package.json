@@ -1,0 +1,67 @@
+{
+  "name": "@chat-template/ai-sdk-providers",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tools": "./src/databricks-provider/databricks-tool-calling.ts",
+    "./mcp": "./src/mcp-approval-utils.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "import": {
+          "types": "./dist/index.d.ts",
+          "default": "./dist/index.js"
+        },
+        "require": {
+          "types": "./dist/index.d.ts",
+          "default": "./dist/index.cjs"
+        }
+      },
+      "./tools": {
+        "import": {
+          "types": "./dist/tools.d.ts",
+          "default": "./dist/tools.js"
+        },
+        "require": {
+          "types": "./dist/tools.d.ts",
+          "default": "./dist/tools.cjs"
+        }
+      },
+      "./mcp": {
+        "import": {
+          "types": "./dist/mcp.d.ts",
+          "default": "./dist/mcp.js"
+        },
+        "require": {
+          "types": "./dist/mcp.d.ts",
+          "default": "./dist/mcp.cjs"
+        }
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/node": "^22.8.6",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@ai-sdk/provider": "^2.0.0",
+    "@ai-sdk/provider-utils": "^3.0.13",
+    "@chat-template/auth": "*",
+    "@chat-template/utils": "*",
+    "ai": "5.0.76",
+    "zod": "^3.25.76"
+  }
+}

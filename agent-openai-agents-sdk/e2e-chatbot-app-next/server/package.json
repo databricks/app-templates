@@ -1,0 +1,30 @@
+{
+  "name": "@databricks/chatbot-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node ../node_modules/tsx/dist/cli.mjs watch --inspect src/index.ts",
+    "build": "tsdown",
+    "start": "NODE_ENV=production node --env-file-if-exists ../.env.local dist/index.mjs"
+  },
+  "dependencies": {
+    "@chat-template/ai-sdk-providers": "*",
+    "@chat-template/auth": "*",
+    "@chat-template/core": "*",
+    "@chat-template/db": "*",
+    "ai": "5.0.76",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.4",
+    "@types/node": "^22.8.6",
+    "tsdown": "^0.16.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
+  }
+}

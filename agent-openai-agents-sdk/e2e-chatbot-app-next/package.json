@@ -1,0 +1,49 @@
+{
+  "name": "databricks/e2e-chatbot-app",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": ["client", "server", "packages/*"],
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "npm run dev --workspace=@databricks/chatbot-server",
+    "dev:client": "npm run dev --workspace=@databricks/chatbot-client",
+    "build": "npm run db:migrate && npm run build:client && npm run build:server",
+    "build:client": "npm run build --workspace=@databricks/chatbot-client",
+    "build:server": "npm run build --workspace=@databricks/chatbot-server",
+    "start": "npm run start --workspace=@databricks/chatbot-server",
+    "lint": "biome lint --write --unsafe",
+    "lint:fix": "biome lint --write --unsafe && biome format --write",
+    "format": "biome format --write",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:reset": "tsx scripts/reset-database.ts",
+    "db:studio": "drizzle-kit studio",
+    "db:push": "drizzle-kit push",
+    "db:pull": "drizzle-kit pull",
+    "db:check": "drizzle-kit check",
+    "db:up": "drizzle-kit up",
+    "test": "npm run test:with-db && npm run test:ephemeral",
+    "test:with-db": "PLAYWRIGHT=True TEST_MODE=with-db npx playwright test",
+    "test:ephemeral": "PLAYWRIGHT=True TEST_MODE=ephemeral npx playwright test"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "drizzle-kit": "^0.31.5",
+    "drizzle-orm": "^0.44.6",
+    "tsx": "^4.19.1"
+  },
+  "devDependencies": {
+    "@ai-sdk/provider": "^2.0.0",
+    "@biomejs/biome": "1.9.4",
+    "@playwright/test": "^1.50.1",
+    "@types/node": "^22.8.6",
+    "concurrently": "^8.2.2",
+    "msw": "^2.11.6",
+    "tsdown": "0.15.9",
+    "typescript": "^5.9.3"
+  }
+}

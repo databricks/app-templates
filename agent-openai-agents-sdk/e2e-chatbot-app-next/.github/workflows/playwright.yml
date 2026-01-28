@@ -1,0 +1,140 @@
+name: Playwright Tests
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  # Test with database (persistent mode)
+  test-with-db:
+    name: Tests with Database
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: chatbot
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/chatbot?sslmode=disable
+      PGHOST: localhost
+      PGPORT: 5432
+      PGDATABASE: chatbot
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGSSLMODE: disable
+      DATABRICKS_SERVING_ENDPOINT: "mock-value"
+      DATABRICKS_CLIENT_ID: "mock-value"
+      DATABRICKS_CLIENT_SECRET: "mock-value"
+      DATABRICKS_HOST: "mock-value"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: actions/cache@v3
+        with:
+          path: ${{ steps.npm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-npm-store-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-store-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v3
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Install Playwright Browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Run database migrations
+        run: npm run db:migrate
+
+      - name: Run Playwright tests (with database)
+        run: npm run test:with-db
+
+      - uses: actions/upload-artifact@v4
+        if: always() && !cancelled()
+        with:
+          name: playwright-report-with-db
+          path: playwright-report/
+          retention-days: 7
+
+  # Test without database (ephemeral mode)
+  test-ephemeral:
+    name: Tests without Database (Ephemeral)
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    env:
+      # No POSTGRES_URL or PG* variables - testing ephemeral mode
+      DATABRICKS_SERVING_ENDPOINT: "mock-value"
+      DATABRICKS_CLIENT_ID: "mock-value"
+      DATABRICKS_CLIENT_SECRET: "mock-value"
+      DATABRICKS_HOST: "mock-value"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: actions/cache@v3
+        with:
+          path: ${{ steps.npm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-npm-store-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-store-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v3
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Install Playwright Browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      # No database migrations in ephemeral mode
+
+      - name: Run Playwright tests (ephemeral mode)
+        env:
+          PLAYWRIGHT: True
+        run: npm run test:ephemeral
+
+      - uses: actions/upload-artifact@v4
+        if: always() && !cancelled()
+        with:
+          name: playwright-report-ephemeral
+          path: playwright-report/
+          retention-days: 7

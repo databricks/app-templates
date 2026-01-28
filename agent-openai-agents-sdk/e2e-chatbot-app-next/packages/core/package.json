@@ -1,0 +1,53 @@
+{
+  "name": "@chat-template/core",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./errors": "./src/errors.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "import": {
+          "types": "./dist/index.d.ts",
+          "default": "./dist/index.js"
+        },
+        "require": {
+          "types": "./dist/index.d.ts",
+          "default": "./dist/index.cjs"
+        }
+      },
+      "./errors": {
+        "import": {
+          "types": "./dist/errors.d.ts",
+          "default": "./dist/errors.js"
+        },
+        "require": {
+          "types": "./dist/errors.d.ts",
+          "default": "./dist/errors.cjs"
+        }
+      }
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "ai": "5.0.76",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@chat-template/ai-sdk-providers": "*",
+    "@chat-template/db": "*",
+    "@chat-template/utils": "*",
+    "date-fns": "^4.1.0",
+    "zod": "^3.25.76"
+  }
+}

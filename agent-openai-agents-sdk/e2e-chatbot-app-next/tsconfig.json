@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "forceConsistentCasingInFileNames": true,
+    "allowSyntheticDefaultImports": true,
+    "isolatedDeclarations": false,
+    "baseUrl": ".",
+    "paths": {
+      "@chat-template/core": ["./packages/core/src/index.ts"],
+      "@chat-template/utils": ["./packages/utils/src/index.ts"],
+      "@chat-template/auth": ["./packages/auth/src/index.ts"],
+      "@chat-template/ai-sdk-providers": ["./packages/ai-sdk-providers/src/index.ts"],
+      "@chat-template/db": ["./packages/db/src/index.ts"]
+    }
+  },
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+} 

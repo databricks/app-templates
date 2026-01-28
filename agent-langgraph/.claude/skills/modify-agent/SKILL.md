@@ -288,5 +288,6 @@ Example: Create UC function wrapping HTTP request for Slack, then expose via MCP
 
 - Discover available tools: see **discover-tools** skill
 - Grant resource permissions: see **add-tools** skill
+- Add memory capabilities: see **agent-memory** skill
 - Test locally: see **run-locally** skill
 - Deploy: see **deploy** skill

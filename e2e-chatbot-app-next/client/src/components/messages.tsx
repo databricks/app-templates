@@ -89,12 +89,22 @@ function PureMessages({
             />
           ))}
 
-          {status === 'submitted' &&
+          {(status === 'submitted' || status === 'streaming') &&
             messages.length > 0 &&
-            messages[messages.length - 1].role === 'user' &&
-            selectedModelId !== 'chat-model-reasoning' && (
-              <AwaitingResponseMessage />
-            )}
+            selectedModelId !== 'chat-model-reasoning' &&
+            (() => {
+              const lastMessage = messages[messages.length - 1];
+              // Show animation if last message is from user (waiting for assistant to respond)
+              if (lastMessage.role === 'user') return true;
+              // Show animation if assistant message has no text content yet
+              if (lastMessage.role === 'assistant') {
+                const hasTextContent = lastMessage.parts?.some(
+                  (part) => part.type === 'text' && part.text.trim().length > 0,
+                );
+                return !hasTextContent;
+              }
+              return false;
+            })() && <AwaitingResponseMessage />}
 
           <div
             ref={messagesEndRef}

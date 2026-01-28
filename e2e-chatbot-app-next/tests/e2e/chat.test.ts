@@ -104,9 +104,7 @@ test.describe('Chat activity', () => {
     await expect(chatPage.scrollToBottomButton).not.toBeVisible();
   });
 
-  test('shows loading indicator while waiting for response', async ({ page }) => {
-    await expect(chatPage.loadingIndicator).not.toBeVisible();
-
+  test('shows assistant message while streaming response', async ({ page }) => {
     await chatPage.multimodalInput.click();
     await chatPage.multimodalInput.fill('Hello');
 
@@ -116,11 +114,13 @@ test.describe('Chat activity', () => {
 
     await chatPage.sendButton.click();
 
-    await expect(chatPage.loadingIndicator).toBeVisible();
+    // Assistant message should appear during streaming
+    await expect(page.getByTestId('message-assistant')).toBeVisible();
 
     const response = await responsePromise;
     await response.finished();
 
-    await expect(chatPage.loadingIndicator).not.toBeVisible();
+    // Assistant message should still be visible after streaming completes
+    await expect(page.getByTestId('message-assistant')).toBeVisible();
   });
 });

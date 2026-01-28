@@ -14,7 +14,7 @@ This template uses Lakebase (Databricks-managed PostgreSQL) to store conversatio
 
 ## Local Development Setup
 
-**Step 1:** Add the Lakebase instance name to `.env.local`:
+**Step 1:** Add the Lakebase instance name to `.env`:
 
 ```bash
 LAKEBASE_INSTANCE_NAME=<your-lakebase-instance-name>
@@ -131,7 +131,7 @@ END $$;
 
 | Issue | Solution |
 |-------|----------|
-| **"LAKEBASE_INSTANCE_NAME environment variable is required"** | Add `LAKEBASE_INSTANCE_NAME=<name>` to `.env.local` |
+| **"LAKEBASE_INSTANCE_NAME environment variable is required"** | Add `LAKEBASE_INSTANCE_NAME=<name>` to `.env` |
 | **"Failed to connect to Lakebase instance"** | Verify instance name is correct and your profile has access |
 | **Permission errors on checkpoint tables** | Run the SDK script or SQL grant commands above |
 | **Deployed app can't access Lakebase** | Add Lakebase as app resource in Databricks UI |

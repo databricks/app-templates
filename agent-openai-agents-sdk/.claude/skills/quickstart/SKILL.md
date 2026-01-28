@@ -1,6 +1,6 @@
 ---
 name: quickstart
-description: "Set up Databricks agent development environment. Use when: (1) First time setup, (2) Configuring Databricks authentication, (3) User says 'quickstart', 'set up', 'authenticate', or 'configure databricks', (4) No .env.local file exists."
+description: "Set up Databricks agent development environment. Use when: (1) First time setup, (2) Configuring Databricks authentication, (3) User says 'quickstart', 'set up', 'authenticate', or 'configure databricks', (4) No .env file exists."
 ---
 
 # Quickstart & Authentication
@@ -42,7 +42,7 @@ uv run quickstart --host https://your-workspace.cloud.databricks.com
 
 ## What Quickstart Configures
 
-Creates/updates `.env.local` with:
+Creates/updates `.env` with:
 - `DATABRICKS_CONFIG_PROFILE` - Selected CLI profile
 - `MLFLOW_TRACKING_URI` - Set to `databricks://<profile-name>` for local auth
 - `MLFLOW_EXPERIMENT_ID` - Auto-created experiment ID
@@ -59,7 +59,7 @@ databricks auth login --host https://your-workspace.cloud.databricks.com
 databricks auth profiles
 ```
 
-Then manually create `.env.local` (copy from `.env.example`):
+Then manually create `.env` (copy from `.env.example`):
 ```bash
 # Authentication (choose one method)
 DATABRICKS_CONFIG_PROFILE=DEFAULT

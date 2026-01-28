@@ -6,7 +6,7 @@ This script handles:
 - Checking prerequisites (uv, nvm, Node 20, Databricks CLI)
 - Databricks authentication (OAuth)
 - MLflow experiment creation
-- Environment variable configuration (.env.local)
+- Environment variable configuration (.env)
 - Lakebase instance setup (for memory-enabled templates)
 
 Usage:
@@ -147,19 +147,19 @@ def check_missing_prerequisites(prereqs: dict[str, bool]) -> list[str]:
 
 
 def setup_env_file() -> None:
-    """Copy .env.example to .env.local if it doesn't exist."""
+    """Copy .env.example to .env if it doesn't exist."""
     print_step("Setting up configuration files...")
 
-    env_local = Path(".env.local")
+    env_local = Path(".env")
     env_example = Path(".env.example")
 
     if env_local.exists():
-        print("  .env.local already exists, skipping copy...")
+        print("  .env already exists, skipping copy...")
     elif env_example.exists():
         shutil.copy(env_example, env_local)
-        print_success("Copied .env.example to .env.local")
+        print_success("Copied .env.example to .env")
     else:
-        # Create a minimal .env.local
+        # Create a minimal .env
         env_local.write_text(
             "# Databricks configuration\n"
             "DATABRICKS_CONFIG_PROFILE=DEFAULT\n"
@@ -167,12 +167,12 @@ def setup_env_file() -> None:
             'MLFLOW_TRACKING_URI="databricks"\n'
             'MLFLOW_REGISTRY_URI="databricks-uc"\n'
         )
-        print_success("Created .env.local")
+        print_success("Created .env")
 
 
 def update_env_file(key: str, value: str) -> None:
-    """Update or add a key-value pair in .env.local."""
-    env_file = Path(".env.local")
+    """Update or add a key-value pair in .env."""
+    env_file = Path(".env")
 
     if not env_file.exists():
         env_file.write_text(f"{key}={value}\n")
@@ -331,10 +331,10 @@ def setup_databricks_auth(profile_arg: str = None, host_arg: str = None) -> str:
             sys.exit(1)
         print_success(f"Successfully authenticated with Databricks")
 
-    # Update .env.local with profile
+    # Update .env with profile
     update_env_file("DATABRICKS_CONFIG_PROFILE", profile_name)
     update_env_file("MLFLOW_TRACKING_URI", f'"databricks://{profile_name}"')
-    print_success(f"Databricks profile '{profile_name}' saved to .env.local")
+    print_success(f"Databricks profile '{profile_name}' saved to .env")
 
     return profile_name
 
@@ -402,8 +402,8 @@ def check_lakebase_required() -> bool:
 
 
 def get_env_value(key: str) -> str:
-    """Get a value from .env.local file."""
-    env_file = Path(".env.local")
+    """Get a value from .env file."""
+    env_file = Path(".env")
     if not env_file.exists():
         return ""
 
@@ -456,10 +456,10 @@ def setup_lakebase(profile_name: str, lakebase_arg: str = None) -> str:
         lakebase_name = lakebase_arg
         print(f"Using provided Lakebase instance: {lakebase_name}")
     else:
-        # Check if already set in .env.local
+        # Check if already set in .env
         existing = get_env_value("LAKEBASE_INSTANCE_NAME")
         if existing:
-            print(f"Found existing Lakebase instance in .env.local: {existing}")
+            print(f"Found existing Lakebase instance in .env: {existing}")
             new_value = input("Press Enter to keep this value, or enter a new instance name: ").strip()
             lakebase_name = new_value if new_value else existing
         else:
@@ -474,9 +474,9 @@ def setup_lakebase(profile_name: str, lakebase_arg: str = None) -> str:
     if not validate_lakebase_instance(profile_name, lakebase_name):
         sys.exit(1)
 
-    # Update .env.local with the Lakebase instance name
+    # Update .env with the Lakebase instance name
     update_env_file("LAKEBASE_INSTANCE_NAME", lakebase_name)
-    print_success(f"Lakebase instance name '{lakebase_name}' saved to .env.local")
+    print_success(f"Lakebase instance name '{lakebase_name}' saved to .env")
 
     return lakebase_name
 
@@ -525,7 +525,7 @@ Examples:
             print("\nPlease install the missing prerequisites and run this script again.")
             sys.exit(1)
 
-        # Step 2: Set up .env.local
+        # Step 2: Set up .env
         setup_env_file()
 
         # Step 3: Databricks authentication
@@ -538,9 +538,9 @@ Examples:
 
         experiment_name, experiment_id = create_mlflow_experiment(profile_name, username)
 
-        # Step 5: Update .env.local with experiment ID
+        # Step 5: Update .env with experiment ID
         update_env_file("MLFLOW_EXPERIMENT_ID", experiment_id)
-        print_success("Updated .env.local with experiment ID")
+        print_success("Updated .env with experiment ID")
 
         # Step 6: Lakebase setup (if needed for memory features)
         lakebase_name = None
@@ -553,7 +553,7 @@ Examples:
         summary = f"""
 ✓ Prerequisites verified (uv, Node.js, Databricks CLI)
 ✓ Databricks authenticated with profile: {profile_name}
-✓ Configuration files created (.env.local)
+✓ Configuration files created (.env)
 ✓ MLflow experiment created: {experiment_name}
 ✓ Experiment ID: {experiment_id}"""
 

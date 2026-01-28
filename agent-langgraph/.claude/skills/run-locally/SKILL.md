@@ -64,9 +64,9 @@ pytest [path]
 | Issue | Solution |
 |-------|----------|
 | **Port already in use** | Use `--port 8001` or kill existing process |
-| **Authentication errors** | Verify `.env.local` is correct; run **quickstart** skill |
+| **Authentication errors** | Verify `.env` is correct; run **quickstart** skill |
 | **Module not found** | Run `uv sync` to install dependencies |
-| **MLflow experiment not found** | Ensure `MLFLOW_TRACKING_URI` in `.env.local` is `databricks://<profile-name>` |
+| **MLflow experiment not found** | Ensure `MLFLOW_TRACKING_URI` in `.env` is `databricks://<profile-name>` |
 
 ### MLflow Experiment Not Found
 
@@ -77,12 +77,12 @@ If you see: "The provided MLFLOW_EXPERIMENT_ID environment variable value does n
 databricks -p <profile> experiments get-experiment <experiment_id>
 ```
 
-**Fix:** Ensure `.env.local` has the correct tracking URI format:
+**Fix:** Ensure `.env` has the correct tracking URI format:
 ```bash
 MLFLOW_TRACKING_URI="databricks://DEFAULT"  # Include profile name
 ```
 
-The quickstart script configures this automatically. If you manually edited `.env.local`, ensure the profile name is included.
+The quickstart script configures this automatically. If you manually edited `.env`, ensure the profile name is included.
 
 ## Next Steps
 

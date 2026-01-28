@@ -33,7 +33,7 @@ uv sync
 
 ## Step 2: Configure Lakebase Instance
 
-Add to your `.env.local`:
+Add to your `.env`:
 ```bash
 LAKEBASE_INSTANCE_NAME="<your-lakebase-instance>"
 ```
@@ -98,7 +98,7 @@ See the **agent-memory** skill for code patterns to add:
 
 | Issue | Solution |
 |-------|----------|
-| **"Failed to connect to Lakebase"** | Verify `LAKEBASE_INSTANCE_NAME` in `.env.local` |
+| **"Failed to connect to Lakebase"** | Verify `LAKEBASE_INSTANCE_NAME` in `.env` |
 | **Permission denied on tables** | Run the SQL grants above after deployment |
 | **"Role does not exist"** | Use the service principal ID, not name |
 | **Tables not created** | Tables are created automatically on first use |

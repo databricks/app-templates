@@ -319,6 +319,29 @@ client.grant_table(
 client.execute("SELECT * FROM pg_tables WHERE schemaname = 'public'")
 ```
 
+### Service Principal Identifiers
+
+When granting permissions manually, note that Databricks apps have multiple identifiers:
+
+| Field | Format | Example |
+|-------|--------|---------|
+| `service_principal_id` | Numeric ID | `1234567890123456` |
+| `service_principal_client_id` | UUID | `a1b2c3d4-e5f6-7890-abcd-ef1234567890` |
+| `service_principal_name` | String name | `my-app-service-principal` |
+
+**Get all identifiers:**
+```bash
+databricks apps get <app-name> --output json | jq '{
+  id: .service_principal_id,
+  client_id: .service_principal_client_id,
+  name: .service_principal_name
+}'
+```
+
+**Which to use:**
+- `LakebaseClient.create_role()` - Use `service_principal_client_id` (UUID) or `service_principal_name`
+- Raw SQL grants - Use `service_principal_client_id` (UUID)
+
 ---
 
 ## Next Steps

@@ -12,8 +12,6 @@ import { createDatabricksProvider } from '@databricks/ai-sdk-provider';
 import { extractReasoningMiddleware, wrapLanguageModel } from 'ai';
 import { shouldInjectContextForEndpoint } from './request-context';
 
-export { shouldInjectContextForEndpoint } from './request-context';
-
 // Header keys for passing context through streamText headers
 export const CONTEXT_HEADER_CONVERSATION_ID = 'x-databricks-conversation-id';
 export const CONTEXT_HEADER_USER_ID = 'x-databricks-user-id';

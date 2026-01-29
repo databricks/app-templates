@@ -1,4 +1,4 @@
-import type { LanguageModelV2StreamPart } from '@ai-sdk/provider';
+import type { LanguageModelV3StreamPart } from '@ai-sdk/provider';
 
 /**
  * MCP Approval Request/Response Fixtures
@@ -474,5 +474,5 @@ data: {
 
 type LLMOutputFixtures = {
   in: string;
-  out: Array<LanguageModelV2StreamPart>;
+  out: Array<LanguageModelV3StreamPart>;
 };

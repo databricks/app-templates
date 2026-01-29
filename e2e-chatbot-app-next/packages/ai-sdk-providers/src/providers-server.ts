@@ -1,4 +1,4 @@
-import type { LanguageModelV2 } from '@ai-sdk/provider';
+import type { LanguageModelV3 } from '@ai-sdk/provider';
 
 import { getHostUrl } from '@chat-template/utils';
 // Import auth module directly
@@ -64,7 +64,7 @@ async function getWorkspaceHostname(): Promise<string> {
 }
 
 // Environment variable to enable SSE logging
-const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true';
+const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true' || true;
 
 // Custom fetch function to transform Databricks responses to OpenAI format
 export const databricksFetch: typeof fetch = async (input, init) => {
@@ -181,6 +181,8 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
 
   // Create provider with fetch that always uses fresh token
   const provider = createDatabricksProvider({
+    // When using endpoints such as Agent Bricks or custom agents, we need to use remote tool calling to handle the tool calls
+    useRemoteToolCalling: true,
     baseURL: `${hostname}/serving-endpoints`,
     formatUrl: ({ baseUrl, path }) => API_PROXY ?? `${baseUrl}${path}`,
     fetch: async (...[input, init]: Parameters<typeof fetch>) => {
@@ -241,17 +243,17 @@ const getEndpointDetails = async (servingEndpoint: string) => {
 
 // Create a smart provider wrapper that handles OAuth initialization
 interface SmartProvider {
-  languageModel(id: string): Promise<LanguageModelV2>;
+  languageModel(id: string): Promise<LanguageModelV3>;
 }
 
 export class OAuthAwareProvider implements SmartProvider {
   private modelCache = new Map<
     string,
-    { model: LanguageModelV2; timestamp: number }
+    { model: LanguageModelV3; timestamp: number }
   >();
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-  async languageModel(id: string): Promise<LanguageModelV2> {
+  async languageModel(id: string): Promise<LanguageModelV3> {
     // Check cache first
     const cached = this.modelCache.get(id);
     if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {

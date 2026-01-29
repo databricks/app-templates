@@ -1,6 +1,11 @@
 # Agent Development Guide
 
-## MANDATORY First Action
+## MANDATORY First Actions
+
+**BEFORE any actions, ask for crucial follow-ups about the app deployment specifics (do this interactively!)**
+
+1. ALWAYS make sure to ask the user if they have an existing app name that they want to deploy to and ask for them to provide it to you first interactively!  
+2. (MEMORY ONLY OPTIONAL) ALWAYS make sure to ask the user if they have an existing lakebase instance that they want to use for memory and provide it to you first interactively! 
 
 **BEFORE any other action, run `databricks auth profiles` to check authentication status.**
 

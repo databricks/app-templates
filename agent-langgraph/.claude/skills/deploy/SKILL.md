@@ -7,13 +7,17 @@ description: "Deploy agent to Databricks Apps using DAB (Databricks Asset Bundle
 
 ## Deploy Commands
 
+**IMPORTANT:** Always run BOTH commands to deploy and start your app:
+
 ```bash
-# Deploy the bundle (creates/updates resources, uploads files)
+# 1. Deploy the bundle (creates/updates resources, uploads files)
 databricks bundle deploy
 
-# Run the app (starts/restarts with uploaded source code)
+# 2. Run the app (starts/restarts with uploaded source code) - REQUIRED!
 databricks bundle run agent_langgraph
 ```
+
+> **Note:** `bundle deploy` only uploads files and configures resources. `bundle run` is **required** to actually start/restart the app with the new code. If you only run `deploy`, the app will continue running old code!
 
 The resource key `agent_langgraph` matches the app name in `databricks.yml` under `resources.apps`.
 
@@ -143,3 +147,5 @@ databricks apps get <app-name> --output json | jq -r '.url'
 | Auth token expired | Run `databricks auth token` again |
 | "Provider produced inconsistent result" | Sync app config to `databricks.yml`|
 | "should set workspace.root_path" | Add `root_path` to production target |
+| App running old code after deploy | Run `databricks bundle run agent_langgraph` after deploy |
+| Env var is None in deployed app | Check `valueFrom` in app.yaml matches resource `name` in databricks.yml |

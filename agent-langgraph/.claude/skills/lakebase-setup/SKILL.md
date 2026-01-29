@@ -15,13 +15,24 @@ Lakebase provides persistent storage for agent memory:
 - **Short-term memory**: Conversation history within a thread (`AsyncCheckpointSaver`)
 - **Long-term memory**: User facts across sessions (`AsyncDatabricksStore`)
 
+## Complete Setup Workflow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  1. Add dependency  →  2. Get instance  →  3. Configure DAB + app.yaml     │
+│  4. Configure .env.local  →  5. Initialize tables  →  6. Deploy + Run      │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## Step 1: Add Memory Dependency
 
 Add the memory extra to your `pyproject.toml`:
 
 ```toml
 dependencies = [
-    "databricks-langchain[memory]>=0.13.0",
+    "databricks-langchain[memory]",
     # ... other dependencies
 ]
 ```
@@ -31,80 +42,287 @@ Then sync dependencies:
 uv sync
 ```
 
-## Step 2: Configure Lakebase Instance
+---
 
-Add to your `.env`:
-```bash
-LAKEBASE_INSTANCE_NAME="<your-lakebase-instance>"
+## Step 2: Create or Get Lakebase Instance
+
+### Option A: Create New Instance (via Databricks UI)
+
+1. Go to your Databricks workspace
+2. Navigate to **Compute** → **Lakebase**
+3. Click **Create Instance**
+4. Note the instance name
+
+### Option B: Use Existing Instance
+
+If you have an existing instance, note its name for the next step.
+
+---
+
+## Step 3: Configure databricks.yml (Lakebase Resource)
+
+Add the Lakebase `database` resource to your app in `databricks.yml`:
+
+```yaml
+resources:
+  apps:
+    agent_langgraph:
+      name: "your-app-name"
+      source_code_path: ./
+
+      resources:
+        # ... other resources (experiment, UC functions, etc.) ...
+
+        # Lakebase instance for long-term memory
+        - name: 'database'
+          database:
+            instance_name: '<your-lakebase-instance-name>'
+            database_name: 'postgres'
+            permission: 'CAN_CONNECT_AND_CREATE'
 ```
 
-The quickstart script can help you find or create a Lakebase instance.
+**Important:**
+- The `name: 'database'` must match the `valueFrom` reference in `app.yaml`
+- Using the `database` resource type automatically grants the app's service principal access to Lakebase
 
-## Step 3: Grant Permissions (After Deployment)
+### Update app.yaml (Environment Variables)
 
-After deploying your app, grant the app's service principal access to Lakebase.
+Update `app.yaml` with the Lakebase instance name:
 
-### Option A: Using LakebaseClient SDK (Recommended)
+```yaml
+env:
+  # ... other env vars ...
+
+  # Lakebase instance name - must match instance_name in databricks.yml database resource
+  # Note: Use 'value' (not 'valueFrom') because AsyncDatabricksStore needs the instance name,
+  # not the full connection string that valueFrom would provide
+  - name: LAKEBASE_INSTANCE_NAME
+    value: "<your-lakebase-instance-name>"
+
+  # Static values for embedding configuration
+  - name: EMBEDDING_ENDPOINT
+    value: "databricks-gte-large-en"
+  - name: EMBEDDING_DIMS
+    value: "1024"
+```
+
+**Important:**
+- The `LAKEBASE_INSTANCE_NAME` value must match the `instance_name` in your `databricks.yml` database resource
+- The `database` resource handles permissions; `app.yaml` provides the instance name to your code
+- Don't use `valueFrom` for Lakebase - it provides the connection string, not the instance name
+
+---
+
+## Step 4: Configure .env.local (Local Development)
+
+For local development, add to `.env.local`:
+
+```bash
+# Lakebase configuration for long-term memory
+LAKEBASE_INSTANCE_NAME=<your-instance-name>
+EMBEDDING_ENDPOINT=databricks-gte-large-en
+EMBEDDING_DIMS=1024
+```
+
+**Important:** `embedding_dims` must match the embedding endpoint:
+
+| Endpoint | Dimensions |
+|----------|------------|
+| `databricks-gte-large-en` | 1024 |
+| `databricks-bge-large-en` | 1024 |
+
+> **Note:** `.env.local` is only for local development. When deployed, the app gets `LAKEBASE_INSTANCE_NAME` from the `valueFrom` reference in `app.yaml`.
+
+---
+
+## Step 5: Initialize Store Tables (CRITICAL - First Time Only)
+
+**Before deploying**, you must initialize the Lakebase tables. The `AsyncDatabricksStore` creates tables on first use, but you need to do this locally first:
+
+```python
+# Run this script locally BEFORE first deployment
+import asyncio
+from databricks_langchain import AsyncDatabricksStore
+
+async def setup_store():
+    async with AsyncDatabricksStore(
+        instance_name="<your-instance-name>",
+        embedding_endpoint="databricks-gte-large-en",
+        embedding_dims=1024,
+    ) as store:
+        print("Setting up store tables...")
+        await store.setup()  # Creates required tables
+        print("Store tables created!")
+
+        # Verify with a test write/read
+        await store.aput(("test", "init"), "test_key", {"value": "test_value"})
+        results = await store.asearch(("test", "init"), query="test", limit=1)
+        print(f"Test successful: {results}")
+
+asyncio.run(setup_store())
+```
+
+Run with:
+```bash
+uv run python -c "$(cat <<'EOF'
+import asyncio
+from databricks_langchain import AsyncDatabricksStore
+
+async def setup():
+    async with AsyncDatabricksStore(
+        instance_name="<your-instance-name>",
+        embedding_endpoint="databricks-gte-large-en",
+        embedding_dims=1024,
+    ) as store:
+        await store.setup()
+        print("Tables created!")
+
+asyncio.run(setup())
+EOF
+)"
+```
+
+This creates these tables in the `public` schema:
+- `store` - Key-value storage for memories
+- `store_vectors` - Vector embeddings for semantic search
+- `store_migrations` - Schema migration tracking
+- `vector_migrations` - Vector schema migration tracking
+
+---
+
+## Step 6: Deploy and Run Your App
+
+**IMPORTANT:** Always run both `deploy` AND `run` commands:
+
+```bash
+# Deploy resources and upload files
+databricks bundle deploy
+
+# Start/restart the app with new code (REQUIRED!)
+databricks bundle run agent_langgraph
+```
+
+> **Note:** `bundle deploy` only uploads files and configures resources. `bundle run` is required to actually start the app with the new code.
+
+---
+
+## Complete Example: databricks.yml with Lakebase
+
+```yaml
+bundle:
+  name: agent_langgraph
+
+resources:
+  experiments:
+    agent_langgraph_experiment:
+      name: /Users/${workspace.current_user.userName}/${bundle.name}-${bundle.target}
+
+  apps:
+    agent_langgraph:
+      name: "my-agent-app"
+      description: "Agent with long-term memory"
+      source_code_path: ./
+
+      resources:
+        - name: 'experiment'
+          experiment:
+            experiment_id: "${resources.experiments.agent_langgraph_experiment.id}"
+            permission: 'CAN_MANAGE'
+
+        # Lakebase instance for long-term memory
+        - name: 'database'
+          database:
+            instance_name: '<your-lakebase-instance-name>'
+            database_name: 'postgres'
+            permission: 'CAN_CONNECT_AND_CREATE'
+
+targets:
+  dev:
+    mode: development
+    default: true
+```
+
+## Complete Example: app.yaml
+
+```yaml
+command: ["uv", "run", "start-app"]
+
+env:
+  - name: MLFLOW_TRACKING_URI
+    value: "databricks"
+  - name: MLFLOW_REGISTRY_URI
+    value: "databricks-uc"
+  - name: API_PROXY
+    value: "http://localhost:8000/invocations"
+  - name: CHAT_APP_PORT
+    value: "3000"
+  - name: CHAT_PROXY_TIMEOUT_SECONDS
+    value: "300"
+  # Reference experiment resource from databricks.yml
+  - name: MLFLOW_EXPERIMENT_ID
+    valueFrom: "experiment"
+  # Lakebase instance name (must match instance_name in databricks.yml)
+  - name: LAKEBASE_INSTANCE_NAME
+    value: "<your-lakebase-instance-name>"
+  # Embedding configuration
+  - name: EMBEDDING_ENDPOINT
+    value: "databricks-gte-large-en"
+  - name: EMBEDDING_DIMS
+    value: "1024"
+```
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| **"embedding_dims is required when embedding_endpoint is specified"** | Missing `embedding_dims` parameter | Add `embedding_dims=1024` to AsyncDatabricksStore |
+| **"relation 'store' does not exist"** | Tables not initialized | Run `await store.setup()` locally first (Step 5) |
+| **"Unable to resolve Lakebase instance 'None'"** | Missing env var in deployed app | Add `LAKEBASE_INSTANCE_NAME` value to app.yaml |
+| **"Unable to resolve Lakebase instance '...database.cloud.databricks.com'"** | Used valueFrom instead of value | Use `value: "<instance-name>"` not `valueFrom` for Lakebase |
+| **"permission denied for table store"** | Missing grants | The `database` resource in DAB should handle this; verify the resource is configured |
+| **"Failed to connect to Lakebase"** | Wrong instance name | Verify instance name in databricks.yml and .env.local |
+| **Connection pool errors on exit** | Python cleanup race | Ignore `PythonFinalizationError` - it's harmless |
+| **App not updated after deploy** | Forgot to run bundle | Run `databricks bundle run agent_langgraph` after deploy |
+| **valueFrom not resolving** | Resource name mismatch | Ensure `valueFrom` value matches `name` in databricks.yml resources |
+
+---
+
+## Quick Reference: LakebaseClient API
+
+For manual permission management (usually not needed with DAB `database` resource):
 
 ```python
 from databricks_ai_bridge.lakebase import LakebaseClient, SchemaPrivilege, TablePrivilege
 
-# Initialize client
-client = LakebaseClient(instance_name="<your-lakebase-instance>")
+client = LakebaseClient(instance_name="...")
 
-# Get app service principal from: databricks apps get <app-name>
-app_sp = "<app-service-principal-id>"
+# Create role (must do first)
+client.create_role(identity_name, "SERVICE_PRINCIPAL")
 
-# Create role for the service principal
-client.create_role(app_sp, "SERVICE_PRINCIPAL")
-
-# Grant schema privileges
+# Grant schema (note: schemas is a list, grantee not role)
 client.grant_schema(
-    role=app_sp,
-    schema="public",
+    grantee="...",
+    schemas=["public"],
     privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE],
 )
 
-# Grant table privileges (for existing tables)
-client.grant_all_tables_in_schema(
-    role=app_sp,
-    schema="public",
-    privileges=[TablePrivilege.SELECT, TablePrivilege.INSERT, TablePrivilege.UPDATE, TablePrivilege.DELETE],
+# Grant tables (note: tables includes schema prefix)
+client.grant_table(
+    grantee="...",
+    tables=["public.store"],
+    privileges=[TablePrivilege.SELECT, TablePrivilege.INSERT, ...],
 )
+
+# Execute raw SQL
+client.execute("SELECT * FROM pg_tables WHERE schemaname = 'public'")
 ```
 
-### Option B: Using SQL
-
-Connect to your Lakebase instance via SQL and run:
-
-```sql
--- Replace <app-service-principal-id> with your app's service principal
--- Get it from: databricks apps get <app-name> --output json | jq -r '.service_principal_id'
-
--- Grant schema access
-GRANT USAGE, CREATE ON SCHEMA public TO "<app-service-principal-id>";
-
--- Grant table access for memory tables
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "<app-service-principal-id>";
-```
-
-## Adding Memory to Your Agent
-
-See the **agent-memory** skill for code patterns to add:
-- Short-term memory (conversation history)
-- Long-term memory (persistent user facts)
-
-## Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| **"Failed to connect to Lakebase"** | Verify `LAKEBASE_INSTANCE_NAME` in `.env` |
-| **Permission denied on tables** | Run the SQL grants above after deployment |
-| **"Role does not exist"** | Use the service principal ID, not name |
-| **Tables not created** | Tables are created automatically on first use |
+---
 
 ## Next Steps
 
-- Add memory patterns: see **agent-memory** skill
+- Add memory to agent code: see **agent-memory** skill
 - Test locally: see **run-locally** skill
 - Deploy: see **deploy** skill

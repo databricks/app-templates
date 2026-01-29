@@ -10,6 +10,13 @@ import {
 } from '@chat-template/auth';
 import { createDatabricksProvider } from '@databricks/ai-sdk-provider';
 import { extractReasoningMiddleware, wrapLanguageModel } from 'ai';
+import {
+  createContextAwareFetch,
+  shouldInjectContextForEndpoint,
+  type DatabricksRequestContext,
+} from './request-context';
+
+export type { DatabricksRequestContext } from './request-context';
 
 // Use centralized authentication - only on server side
 async function getProviderToken(): Promise<string> {
@@ -242,6 +249,10 @@ const getEndpointDetails = async (servingEndpoint: string) => {
 // Create a smart provider wrapper that handles OAuth initialization
 interface SmartProvider {
   languageModel(id: string): Promise<LanguageModelV2>;
+  languageModelWithContext(
+    id: string,
+    context: DatabricksRequestContext,
+  ): Promise<LanguageModelV2>;
 }
 
 export class OAuthAwareProvider implements SmartProvider {
@@ -304,6 +315,99 @@ export class OAuthAwareProvider implements SmartProvider {
     // Cache the model
     this.modelCache.set(id, { model: wrappedModel, timestamp: Date.now() });
     return wrappedModel;
+  }
+
+  /**
+   * Creates a language model with request context (conversation_id, user_id).
+   * This method bypasses caching since each request may have different context.
+   *
+   * Context is only injected for:
+   * - Requests using API_PROXY
+   * - agent/v2/chat endpoints
+   * - agent/v1/responses endpoints
+   */
+  async languageModelWithContext(
+    id: string,
+    context: DatabricksRequestContext,
+  ): Promise<LanguageModelV2> {
+    // For title and artifact models, use regular languageModel (no context needed)
+    if (id === 'title-model' || id === 'artifact-model') {
+      return this.languageModel(id);
+    }
+
+    // Ensure we have a valid token before creating provider
+    await getProviderToken();
+    const hostname = await getWorkspaceHostname();
+
+    // Determine the endpoint task type
+    let endpointTask: string | undefined;
+    if (!API_PROXY && process.env.DATABRICKS_SERVING_ENDPOINT) {
+      const endpointDetails = await getEndpointDetails(
+        process.env.DATABRICKS_SERVING_ENDPOINT,
+      );
+      endpointTask = endpointDetails.task;
+    }
+
+    const shouldInjectContext = shouldInjectContextForEndpoint(endpointTask);
+    console.log(
+      `[languageModelWithContext] endpoint=${process.env.DATABRICKS_SERVING_ENDPOINT}, task=${endpointTask}, shouldInjectContext=${shouldInjectContext}`,
+    );
+
+    // Create a context-aware fetch that injects user/conversation info
+    const contextAwareFetch = createContextAwareFetch(
+      databricksFetch,
+      context,
+      shouldInjectContext,
+    );
+
+    // Create provider with context-aware fetch (fresh for each request)
+    const provider = createDatabricksProvider({
+      baseURL: `${hostname}/serving-endpoints`,
+      formatUrl: ({ baseUrl, path }) => API_PROXY ?? `${baseUrl}${path}`,
+      fetch: async (...[input, init]: Parameters<typeof fetch>) => {
+        const currentToken = await getProviderToken();
+        const headers = new Headers(init?.headers);
+        headers.set('Authorization', `Bearer ${currentToken}`);
+
+        return contextAwareFetch(input, {
+          ...init,
+          headers,
+        });
+      },
+    });
+
+    // Create the model based on endpoint type
+    const model = await (async () => {
+      if (API_PROXY) {
+        return provider.responses(id);
+      }
+
+      if (!process.env.DATABRICKS_SERVING_ENDPOINT) {
+        throw new Error(
+          'Please set the DATABRICKS_SERVING_ENDPOINT environment variable to the name of an agent serving endpoint',
+        );
+      }
+
+      const servingEndpoint = process.env.DATABRICKS_SERVING_ENDPOINT;
+
+      console.log(`[languageModelWithContext] Creating model for ${id}`);
+      switch (endpointTask) {
+        case 'agent/v2/chat':
+          return provider.chatAgent(servingEndpoint);
+        case 'agent/v1/responses':
+        case 'agent/v2/responses':
+          return provider.responses(servingEndpoint);
+        case 'llm/v1/chat':
+          return provider.chatCompletions(servingEndpoint);
+        default:
+          return provider.responses(servingEndpoint);
+      }
+    })();
+
+    return wrapLanguageModel({
+      model,
+      middleware: [extractReasoningMiddleware({ tagName: 'think' })],
+    });
   }
 }
 

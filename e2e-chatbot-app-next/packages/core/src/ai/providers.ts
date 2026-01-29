@@ -3,7 +3,12 @@
  * This file should NOT be imported by client components
  */
 
-import type { OAuthAwareProvider } from '@chat-template/ai-sdk-providers';
+import type {
+  OAuthAwareProvider,
+  DatabricksRequestContext,
+} from '@chat-template/ai-sdk-providers';
+
+export type { DatabricksRequestContext } from '@chat-template/ai-sdk-providers';
 
 // For server-side usage, get the authenticated provider
 async function getServerProvider() {
@@ -26,5 +31,16 @@ export const myProvider = {
       cachedServerProvider = await getServerProvider();
     }
     return await cachedServerProvider.languageModel(id);
+  },
+
+  /**
+   * Creates a language model with request context (conversation_id, user_id).
+   * Use this for chat endpoints that need to pass context to Databricks Agent Endpoints.
+   */
+  async languageModelWithContext(id: string, context: DatabricksRequestContext) {
+    if (!cachedServerProvider) {
+      cachedServerProvider = await getServerProvider();
+    }
+    return await cachedServerProvider.languageModelWithContext(id, context);
   },
 };

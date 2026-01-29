@@ -205,7 +205,10 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     let finalUsage: LanguageModelUsage | undefined;
     const streamId = generateUUID();
 
-    const model = await myProvider.languageModel(selectedChatModel);
+    const model = await myProvider.languageModelWithContext(selectedChatModel, {
+      conversationId: id,
+      userId: session.user.email ?? session.user.id,
+    });
     const result = streamText({
       model,
       messages: convertToModelMessages(uiMessages),

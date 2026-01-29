@@ -33,37 +33,6 @@ export function resetMcpApprovalState() {
 }
 
 // ============================================================================
-// Mock Endpoint Task Type
-// ============================================================================
-
-/**
- * The task type returned by the mock endpoint details API.
- * This controls whether context injection is enabled.
- */
-let mockEndpointTask: string = 'agent/v1/responses';
-
-/**
- * Set the mock endpoint task type.
- */
-export function setMockEndpointTask(task: string) {
-  mockEndpointTask = task;
-}
-
-/**
- * Get the current mock endpoint task type.
- */
-export function getMockEndpointTask(): string {
-  return mockEndpointTask;
-}
-
-/**
- * Reset the mock endpoint task to default.
- */
-export function resetMockEndpointTask() {
-  mockEndpointTask = 'agent/v1/responses';
-}
-
-// ============================================================================
 // Context Injection Tracking
 // ============================================================================
 
@@ -247,11 +216,11 @@ export const handlers = [
   }),
 
   // Mock fetching endpoint details
-  // Returns mockEndpointTask (default: agent/v1/responses) to control context injection testing
+  // Returns agent/v1/responses to enable context injection testing
   http.get(/\/api\/2\.0\/serving-endpoints\/[^/]+$/, () => {
     return HttpResponse.json({
       name: 'test-endpoint',
-      task: mockEndpointTask,
+      task: 'agent/v1/responses',
     });
   }),
 

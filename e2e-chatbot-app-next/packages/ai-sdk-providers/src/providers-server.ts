@@ -81,21 +81,6 @@ const endpointDetailsCache = new Map<
 const ENDPOINT_DETAILS_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 /**
- * Clears the endpoint details cache. Used for testing.
- */
-export function clearEndpointDetailsCache() {
-  endpointDetailsCache.clear();
-}
-
-/**
- * Clears the OAuth provider cache. Used for testing.
- */
-export function clearProviderCache() {
-  oauthProviderCache = null;
-  oauthProviderCacheTime = 0;
-}
-
-/**
  * Checks if context should be injected based on cached endpoint details.
  * Returns true if API_PROXY is set or if the endpoint task type is agent/v2/chat or agent/v1/responses.
  */
@@ -372,13 +357,6 @@ export class OAuthAwareProvider implements SmartProvider {
     this.modelCache.set(id, { model: wrappedModel, timestamp: Date.now() });
     return wrappedModel;
   }
-
-  /**
-   * Clears the model cache. Used for testing.
-   */
-  clearModelCache() {
-    this.modelCache.clear();
-  }
 }
 
 // Create a singleton instance
@@ -387,20 +365,4 @@ const providerInstance = new OAuthAwareProvider();
 // Export function that returns the provider (no server function needed here)
 export function getDatabricksServerProvider() {
   return providerInstance;
-}
-
-/**
- * Clears the model cache from the provider instance. Used for testing.
- */
-export function clearModelCache() {
-  providerInstance.clearModelCache();
-}
-
-/**
- * Clears all caches (endpoint details, provider, model). Used for testing.
- */
-export function clearAllCaches() {
-  clearEndpointDetailsCache();
-  clearProviderCache();
-  clearModelCache();
 }

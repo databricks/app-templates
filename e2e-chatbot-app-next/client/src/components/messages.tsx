@@ -1,4 +1,4 @@
-import { PreviewMessage } from './message';
+import { PreviewMessage, AwaitingResponseMessage } from './message';
 import { Greeting } from './greeting';
 import { memo, useEffect } from 'react';
 import equal from 'fast-deep-equal';
@@ -81,7 +81,6 @@ function PureMessages({
               addToolResult={addToolResult}
               sendMessage={sendMessage}
               regenerate={regenerate}
-              sendMessage={sendMessage}
               isReadonly={isReadonly}
               requiresScrollPadding={
                 hasSentMessage && index === messages.length - 1
@@ -89,6 +88,12 @@ function PureMessages({
             />
           ))}
 
+          {status === 'submitted' &&
+            messages.length > 0 &&
+            messages[messages.length - 1].role === 'user' &&
+            selectedModelId !== 'chat-model-reasoning' && (
+              <AwaitingResponseMessage />
+            )}
 
           <div
             ref={messagesEndRef}

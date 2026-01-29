@@ -66,6 +66,9 @@ async function getWorkspaceHostname(): Promise<string> {
 // Environment variable to enable SSE logging
 const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true';
 
+// API_PROXY for local development - needs to be before databricksFetch
+const API_PROXY = process.env.API_PROXY;
+
 // Custom fetch function to transform Databricks responses to OpenAI format
 export const databricksFetch: typeof fetch = async (input, init) => {
   const url = input.toString();
@@ -81,6 +84,9 @@ export const databricksFetch: typeof fetch = async (input, init) => {
           url,
           method: init.method || 'POST',
           body: requestBody,
+          headers: init.headers
+            ? Object.fromEntries(new Headers(init.headers).entries())
+            : {},
         }),
       );
     } catch (_e) {
@@ -92,7 +98,87 @@ export const databricksFetch: typeof fetch = async (input, init) => {
     }
   }
 
+  // Log if using API_PROXY
+  if (API_PROXY) {
+    console.log(`[API_PROXY] Making request to proxy: ${url}`);
+  }
+
   const response = await fetch(url, init);
+
+  // When using API_PROXY, fix Content-Type if needed for SSE streaming
+  // The proxy may return application/json instead of text/event-stream
+  if (API_PROXY && response.body) {
+    const contentType = response.headers.get('content-type') || '';
+    console.log(
+      `[API_PROXY] Response Content-Type: "${contentType}", has body: ${!!response.body}`,
+    );
+
+    // Always wrap with logging stream for API_PROXY to debug streaming
+    const isSSE = contentType.includes('text/event-stream');
+    const needsTransform = contentType.includes('application/json');
+
+    if (isSSE || needsTransform) {
+      console.log(
+        `[API_PROXY] Wrapping stream (isSSE: ${isSSE}, needsTransform: ${needsTransform})`,
+      );
+      const originalBody = response.body;
+      const reader = originalBody.getReader();
+      const decoder = new TextDecoder();
+      const encoder = new TextEncoder();
+      let chunkCount = 0;
+
+      // Transform stream: convert NDJSON to SSE format if needed, always log chunks
+      const transformedStream = new ReadableStream({
+        async pull(controller) {
+          const { done, value } = await reader.read();
+          if (done) {
+            console.log(
+              `[API_PROXY] Stream complete after ${chunkCount} chunks`,
+            );
+            controller.close();
+            return;
+          }
+
+          chunkCount++;
+          const text = decoder.decode(value, { stream: true });
+          console.log(
+            `[API_PROXY] Chunk #${chunkCount}: ${value.length} bytes at ${Date.now()}`,
+          );
+          const lines = text.split('\n').filter((line) => line.trim());
+
+          // If already SSE, pass through the raw data without modification
+          if (isSSE) {
+            controller.enqueue(value);
+          } else {
+            // Transform NDJSON to SSE format
+            for (const line of lines) {
+              if (line.startsWith('data:')) {
+                controller.enqueue(encoder.encode(`${line}\n\n`));
+              } else {
+                controller.enqueue(encoder.encode(`data: ${line}\n\n`));
+              }
+            }
+          }
+        },
+        cancel() {
+          reader.cancel();
+        },
+      });
+
+      // Return new response with correct headers for streaming
+      // Don't copy Content-Length or Transfer-Encoding as they may conflict
+      const newHeaders = new Headers();
+      newHeaders.set('Content-Type', 'text/event-stream');
+      newHeaders.set('Cache-Control', 'no-cache');
+      newHeaders.set('Connection', 'keep-alive');
+
+      return new Response(transformedStream, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: newHeaders,
+      });
+    }
+  }
 
   // If SSE logging is enabled and this is a streaming response, wrap the body to log events
   if (LOG_SSE_EVENTS && response.body) {
@@ -160,8 +246,6 @@ type CachedProvider = ReturnType<typeof createDatabricksProvider>;
 let oauthProviderCache: CachedProvider | null = null;
 let oauthProviderCacheTime = 0;
 const PROVIDER_CACHE_DURATION = 5 * 60 * 1000; // Cache provider for 5 minutes
-
-const API_PROXY = process.env.API_PROXY;
 
 // Helper function to get or create the Databricks provider with OAuth
 async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {

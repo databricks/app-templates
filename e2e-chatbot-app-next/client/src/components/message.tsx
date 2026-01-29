@@ -423,7 +423,7 @@ export const AwaitingResponseMessage = () => {
       data-role={role}
     >
       <div className="flex items-start justify-start gap-3">
-        <AnimatedAssistantIcon size={14} isLoading={false} muted={true} />
+        <AnimatedAssistantIcon size={14} isLoading={true} muted={false} />
 
         <div className="flex w-full flex-col gap-2 md:gap-4">
           <div className="p-0 text-muted-foreground text-sm">

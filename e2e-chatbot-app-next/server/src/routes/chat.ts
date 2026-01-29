@@ -10,7 +10,6 @@ import {
   streamText,
   generateText,
   type LanguageModelUsage,
-  pipeUIMessageStreamToResponse,
 } from 'ai';
 import {
   authMiddleware,
@@ -221,26 +220,42 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
      * We manually create the stream to have access to the stream writer.
      * This allows us to inject custom stream parts like data-error.
      */
+    const streamStartTime = Date.now();
+    let uiPartCount = 0;
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
-        writer.merge(
-          result.toUIMessageStream({
-            originalMessages: uiMessages,
-            generateMessageId: generateUUID,
-            sendReasoning: true,
-            sendSources: true,
-            onError: (error) => {
-              console.error('Stream error:', error);
+        const uiStream = result.toUIMessageStream({
+          originalMessages: uiMessages,
+          generateMessageId: generateUUID,
+          sendReasoning: true,
+          sendSources: true,
+          onError: (error) => {
+            console.error('Stream error:', error);
 
-              const errorMessage =
-                error instanceof Error ? error.message : JSON.stringify(error);
+            const errorMessage =
+              error instanceof Error ? error.message : JSON.stringify(error);
 
-              writer.write({ type: 'data-error', data: errorMessage });
+            writer.write({ type: 'data-error', data: errorMessage });
 
-              return errorMessage;
+            return errorMessage;
+          },
+        });
+
+        // Log when UI stream parts are being processed
+        const loggingStream = uiStream.pipeThrough(
+          new TransformStream({
+            transform(chunk, controller) {
+              uiPartCount++;
+              console.log(
+                `[UI Stream] Part #${uiPartCount} at +${Date.now() - streamStartTime}ms:`,
+                typeof chunk === 'string' ? chunk.substring(0, 50) : chunk,
+              );
+              controller.enqueue(chunk);
             },
           }),
         );
+
+        writer.merge(loggingStream);
       },
       onFinish: async ({ responseMessage }) => {
         console.log(
@@ -275,17 +290,63 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       },
     });
 
-    pipeUIMessageStreamToResponse({
-      stream,
-      response: res,
-      consumeSseStream({ stream }) {
-        streamCache.storeStream({
-          streamId,
-          chatId: id,
-          stream,
-        });
-      },
-    });
+    // Manually pipe the stream to see when data is being written
+    const sseStartTime = Date.now();
+    let ssePartCount = 0;
+
+    // Set SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+
+    // Disable Nagle's algorithm to prevent TCP buffering of small packets
+    res.socket?.setNoDelay(true);
+
+    res.flushHeaders();
+
+    // Manually consume and write the stream
+    const reader = stream.getReader();
+    const encoder = new TextEncoder();
+
+    const processStream = async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            console.log(
+              `[SSE Write] Complete: ${ssePartCount} parts over ${Date.now() - sseStartTime}ms`,
+            );
+            res.end();
+            break;
+          }
+
+          ssePartCount++;
+          const sseData = `data: ${JSON.stringify(value)}\n\n`;
+          console.log(
+            `[SSE Write] Part #${ssePartCount} at +${Date.now() - sseStartTime}ms`,
+          );
+          res.write(sseData);
+
+          // Store in cache for resumption
+          streamCache.storeStream({
+            streamId,
+            chatId: id,
+            stream: new ReadableStream({
+              start(controller) {
+                controller.enqueue(encoder.encode(sseData));
+                controller.close();
+              },
+            }),
+          });
+        }
+      } catch (error) {
+        console.error('[SSE Write] Error:', error);
+        res.end();
+      }
+    };
+
+    processStream();
   } catch (error) {
     if (error instanceof ChatSDKError) {
       const response = error.toResponse();

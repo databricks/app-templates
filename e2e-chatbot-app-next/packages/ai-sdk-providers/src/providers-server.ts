@@ -1,21 +1,21 @@
-import type { LanguageModelV2 } from '@ai-sdk/provider';
+import type { LanguageModelV2 } from "@ai-sdk/provider";
 
-import { getHostUrl } from '@chat-template/utils';
+import { getHostUrl } from "@chat-template/utils";
 // Import auth module directly
 import {
   getDatabricksToken,
   getAuthMethod,
   getDatabricksUserIdentity,
   getCachedCliHost,
-} from '@chat-template/auth';
-import { createDatabricksProvider } from '@databricks/ai-sdk-provider';
-import { extractReasoningMiddleware, wrapLanguageModel } from 'ai';
+} from "@chat-template/auth";
+import { createDatabricksProvider } from "@databricks/ai-sdk-provider";
+import { extractReasoningMiddleware, wrapLanguageModel } from "ai";
 
 // Use centralized authentication - only on server side
 async function getProviderToken(): Promise<string> {
   // First, check if we have a PAT token
   if (process.env.DATABRICKS_TOKEN) {
-    console.log('Using PAT token from DATABRICKS_TOKEN env var');
+    console.log("Using PAT token from DATABRICKS_TOKEN env var");
     return process.env.DATABRICKS_TOKEN;
   }
 
@@ -36,7 +36,7 @@ async function getWorkspaceHostname(): Promise<string> {
     // Use the same approach as getDatabricksCurrentUser to get hostname
     const authMethod = getAuthMethod();
 
-    if (authMethod === 'cli') {
+    if (authMethod === "cli") {
       // For CLI auth, we need to call getDatabricksUserIdentity which handles hostname resolution
       // This will trigger the CLI auth flow and properly cache the host
       await getDatabricksUserIdentity();
@@ -48,7 +48,7 @@ async function getWorkspaceHostname(): Promise<string> {
         return cachedWorkspaceHostname;
       } else {
         throw new Error(
-          'CLI authentication succeeded but hostname was not cached',
+          "CLI authentication succeeded but hostname was not cached",
         );
       }
     } else {
@@ -58,13 +58,13 @@ async function getWorkspaceHostname(): Promise<string> {
     }
   } catch (error) {
     throw new Error(
-      `Unable to determine Databricks workspace hostname: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      `Unable to determine Databricks workspace hostname: ${error instanceof Error ? error.message : "Unknown error"}`,
     );
   }
 }
 
 // Environment variable to enable SSE logging
-const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true';
+const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === "true";
 
 // API_PROXY for local development - needs to be before databricksFetch
 const API_PROXY = process.env.API_PROXY;
@@ -77,12 +77,12 @@ export const databricksFetch: typeof fetch = async (input, init) => {
   if (init?.body) {
     try {
       const requestBody =
-        typeof init.body === 'string' ? JSON.parse(init.body) : init.body;
+        typeof init.body === "string" ? JSON.parse(init.body) : init.body;
       console.log(
-        'Databricks request:',
+        "Databricks request:",
         JSON.stringify({
           url,
-          method: init.method || 'POST',
+          method: init.method || "POST",
           body: requestBody,
           headers: init.headers
             ? Object.fromEntries(new Headers(init.headers).entries())
@@ -90,9 +90,9 @@ export const databricksFetch: typeof fetch = async (input, init) => {
         }),
       );
     } catch (_e) {
-      console.log('Databricks request (raw):', {
+      console.log("Databricks request (raw):", {
         url,
-        method: init.method || 'POST',
+        method: init.method || "POST",
         body: init.body,
       });
     }
@@ -106,57 +106,48 @@ export const databricksFetch: typeof fetch = async (input, init) => {
   const response = await fetch(url, init);
 
   // When using API_PROXY, fix Content-Type if needed for SSE streaming
-  // The proxy may return application/json instead of text/event-stream
+  // Only transform if proxy returns application/json instead of text/event-stream
   if (API_PROXY && response.body) {
-    const contentType = response.headers.get('content-type') || '';
+    const contentType = response.headers.get("content-type") || "";
     console.log(
       `[API_PROXY] Response Content-Type: "${contentType}", has body: ${!!response.body}`,
     );
 
-    // Always wrap with logging stream for API_PROXY to debug streaming
-    const isSSE = contentType.includes('text/event-stream');
-    const needsTransform = contentType.includes('application/json');
-
-    if (isSSE || needsTransform) {
+    // For SSE responses, pass through without wrapping to avoid buffering issues
+    // The wrapping was causing streaming to break
+    if (contentType.includes("text/event-stream")) {
       console.log(
-        `[API_PROXY] Wrapping stream (isSSE: ${isSSE}, needsTransform: ${needsTransform})`,
+        "[API_PROXY] SSE response - passing through without modification",
       );
+      // Return the original response unchanged to preserve streaming
+      return response;
+    }
+
+    // Transform if Content-Type is application/json (needs SSE conversion)
+    if (contentType.includes("application/json")) {
+      console.log("[API_PROXY] Transforming application/json to SSE format");
       const originalBody = response.body;
       const reader = originalBody.getReader();
       const decoder = new TextDecoder();
       const encoder = new TextEncoder();
-      let chunkCount = 0;
 
-      // Transform stream: convert NDJSON to SSE format if needed, always log chunks
+      // Transform stream: convert NDJSON to SSE format
       const transformedStream = new ReadableStream({
         async pull(controller) {
           const { done, value } = await reader.read();
           if (done) {
-            console.log(
-              `[API_PROXY] Stream complete after ${chunkCount} chunks`,
-            );
             controller.close();
             return;
           }
 
-          chunkCount++;
           const text = decoder.decode(value, { stream: true });
-          console.log(
-            `[API_PROXY] Chunk #${chunkCount}: ${value.length} bytes at ${Date.now()}`,
-          );
-          const lines = text.split('\n').filter((line) => line.trim());
+          const lines = text.split("\n").filter((line) => line.trim());
 
-          // If already SSE, pass through the raw data without modification
-          if (isSSE) {
-            controller.enqueue(value);
-          } else {
-            // Transform NDJSON to SSE format
-            for (const line of lines) {
-              if (line.startsWith('data:')) {
-                controller.enqueue(encoder.encode(`${line}\n\n`));
-              } else {
-                controller.enqueue(encoder.encode(`data: ${line}\n\n`));
-              }
+          for (const line of lines) {
+            if (line.startsWith("data:")) {
+              controller.enqueue(encoder.encode(`${line}\n\n`));
+            } else {
+              controller.enqueue(encoder.encode(`data: ${line}\n\n`));
             }
           }
         },
@@ -165,12 +156,11 @@ export const databricksFetch: typeof fetch = async (input, init) => {
         },
       });
 
-      // Return new response with correct headers for streaming
-      // Don't copy Content-Length or Transfer-Encoding as they may conflict
+      // Return new response with SSE headers
       const newHeaders = new Headers();
-      newHeaders.set('Content-Type', 'text/event-stream');
-      newHeaders.set('Cache-Control', 'no-cache');
-      newHeaders.set('Connection', 'keep-alive');
+      newHeaders.set("Content-Type", "text/event-stream");
+      newHeaders.set("Cache-Control", "no-cache");
+      newHeaders.set("Connection", "keep-alive");
 
       return new Response(transformedStream, {
         status: response.status,
@@ -182,10 +172,10 @@ export const databricksFetch: typeof fetch = async (input, init) => {
 
   // If SSE logging is enabled and this is a streaming response, wrap the body to log events
   if (LOG_SSE_EVENTS && response.body) {
-    const contentType = response.headers.get('content-type') || '';
+    const contentType = response.headers.get("content-type") || "";
     const isSSE =
-      contentType.includes('text/event-stream') ||
-      contentType.includes('application/x-ndjson');
+      contentType.includes("text/event-stream") ||
+      contentType.includes("application/x-ndjson");
 
     if (isSSE) {
       const originalBody = response.body;
@@ -198,18 +188,18 @@ export const databricksFetch: typeof fetch = async (input, init) => {
           const { done, value } = await reader.read();
 
           if (done) {
-            console.log('[SSE] Stream ended');
+            console.log("[SSE] Stream ended");
             controller.close();
             return;
           }
 
           // Decode and log the chunk
           const text = decoder.decode(value, { stream: true });
-          const lines = text.split('\n').filter((line) => line.trim());
+          const lines = text.split("\n").filter((line) => line.trim());
 
           for (const line of lines) {
             eventCounter++;
-            if (line.startsWith('data:')) {
+            if (line.startsWith("data:")) {
               const data = line.slice(5).trim();
               try {
                 const parsed = JSON.parse(data);
@@ -254,11 +244,11 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
     oauthProviderCache &&
     Date.now() - oauthProviderCacheTime < PROVIDER_CACHE_DURATION
   ) {
-    console.log('Using cached OAuth provider');
+    console.log("Using cached OAuth provider");
     return oauthProviderCache;
   }
 
-  console.log('Creating new OAuth provider');
+  console.log("Creating new OAuth provider");
   // Ensure we have a valid token before creating provider
   await getProviderToken();
   const hostname = await getWorkspaceHostname();
@@ -271,7 +261,7 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
       // Always get fresh token for each request (will use cache if valid)
       const currentToken = await getProviderToken();
       const headers = new Headers(init?.headers);
-      headers.set('Authorization', `Bearer ${currentToken}`);
+      headers.set("Authorization", `Bearer ${currentToken}`);
 
       return databricksFetch(input, {
         ...init,
@@ -305,12 +295,12 @@ const getEndpointDetails = async (servingEndpoint: string) => {
   const currentToken = await getProviderToken();
   const hostname = await getWorkspaceHostname();
   const headers = new Headers();
-  headers.set('Authorization', `Bearer ${currentToken}`);
+  headers.set("Authorization", `Bearer ${currentToken}`);
 
   const response = await databricksFetch(
     `${hostname}/api/2.0/serving-endpoints/${servingEndpoint}`,
     {
-      method: 'GET',
+      method: "GET",
       headers,
     },
   );
@@ -351,15 +341,15 @@ export class OAuthAwareProvider implements SmartProvider {
         // For API proxy we always use the responses agent
         return provider.responses(id);
       }
-      if (id === 'title-model' || id === 'artifact-model') {
+      if (id === "title-model" || id === "artifact-model") {
         return provider.chatCompletions(
-          'databricks-meta-llama-3-3-70b-instruct',
+          "databricks-meta-llama-3-3-70b-instruct",
         );
       }
       // Server-side environment validation
       if (!process.env.DATABRICKS_SERVING_ENDPOINT) {
         throw new Error(
-          'Please set the DATABRICKS_SERVING_ENDPOINT environment variable to the name of an agent serving endpoint',
+          "Please set the DATABRICKS_SERVING_ENDPOINT environment variable to the name of an agent serving endpoint",
         );
       }
 
@@ -368,13 +358,13 @@ export class OAuthAwareProvider implements SmartProvider {
 
       console.log(`Creating fresh model for ${id}`);
       switch (endpointDetails.task) {
-        case 'agent/v2/chat':
-          return provider.chatAgent(servingEndpoint);
-        case 'agent/v1/responses':
-        case 'agent/v2/responses':
-          return provider.responses(servingEndpoint);
-        case 'llm/v1/chat':
-          return provider.chatCompletions(servingEndpoint);
+        // case 'agent/v2/chat':
+        //   return provider.chatAgent(servingEndpoint);
+        // case 'agent/v1/responses':
+        // case 'agent/v2/responses':
+        //   return provider.responses(servingEndpoint);
+        // case 'llm/v1/chat':
+        //   return provider.chatCompletions(servingEndpoint);
         default:
           return provider.responses(servingEndpoint);
       }
@@ -382,7 +372,7 @@ export class OAuthAwareProvider implements SmartProvider {
 
     const wrappedModel = wrapLanguageModel({
       model,
-      middleware: [extractReasoningMiddleware({ tagName: 'think' })],
+      middleware: [extractReasoningMiddleware({ tagName: "think" })],
     });
 
     // Cache the model

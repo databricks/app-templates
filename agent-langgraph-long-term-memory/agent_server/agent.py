@@ -21,14 +21,16 @@ from mlflow.types.responses import (
     to_chat_completions_input,
 )
 
-from agent_server.utils import (
+from agent_server.utils_memory import (
     get_lakebase_access_error_message,
     get_user_id,
+    memory_tools,
+    resolve_lakebase_instance_name,
+)
+from agent_server.utils import (
     get_databricks_host_from_env,
     get_user_workspace_client,
-    memory_tools,
     process_agent_astream_events,
-    resolve_lakebase_instance_name,
 )
 
 logger = logging.getLogger(__name__)

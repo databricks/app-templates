@@ -11,8 +11,6 @@ import {
   generateText,
   type LanguageModelUsage,
   pipeUIMessageStreamToResponse,
-  tool,
-  ToolLoopAgent,
 } from 'ai';
 import type { LanguageModelV3Usage } from '@ai-sdk/provider';
 
@@ -62,7 +60,6 @@ import {
   extractApprovalStatus,
 } from '@databricks/ai-sdk-provider';
 import { ChatSDKError } from '@chat-template/core/errors';
-import z from 'zod';
 
 export const chatRouter: RouterType = Router();
 

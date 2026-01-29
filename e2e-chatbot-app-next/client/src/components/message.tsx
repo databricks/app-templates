@@ -94,8 +94,6 @@ const PurePreviewMessage = ({
 
   useDataStream();
 
-  console.log('message.parts', message.parts);
-
   const partSegments = React.useMemo(
     /**
      * We segment message parts into segments that can be rendered as a single component.

@@ -64,7 +64,7 @@ async function getWorkspaceHostname(): Promise<string> {
 }
 
 // Environment variable to enable SSE logging
-const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true' || true;
+const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true';
 
 // Custom fetch function to transform Databricks responses to OpenAI format
 export const databricksFetch: typeof fetch = async (input, init) => {
@@ -180,23 +180,23 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
   const hostname = await getWorkspaceHostname();
 
   // Create provider with fetch that always uses fresh token
-  const provider = createDatabricksProvider({
-    // When using endpoints such as Agent Bricks or custom agents, we need to use remote tool calling to handle the tool calls
-    useRemoteToolCalling: true,
-    baseURL: `${hostname}/serving-endpoints`,
-    formatUrl: ({ baseUrl, path }) => API_PROXY ?? `${baseUrl}${path}`,
-    fetch: async (...[input, init]: Parameters<typeof fetch>) => {
-      // Always get fresh token for each request (will use cache if valid)
-      const currentToken = await getProviderToken();
-      const headers = new Headers(init?.headers);
-      headers.set('Authorization', `Bearer ${currentToken}`);
+const provider = createDatabricksProvider({
+  // When using endpoints such as Agent Bricks or custom agents, we need to use remote tool calling to handle the tool calls
+  useRemoteToolCalling: true,
+  baseURL: `${hostname}/serving-endpoints`,
+  formatUrl: ({ baseUrl, path }) => API_PROXY ?? `${baseUrl}${path}`,
+  fetch: async (...[input, init]: Parameters<typeof fetch>) => {
+    // Always get fresh token for each request (will use cache if valid)
+    const currentToken = await getProviderToken();
+    const headers = new Headers(init?.headers);
+    headers.set('Authorization', `Bearer ${currentToken}`);
 
-      return databricksFetch(input, {
-        ...init,
-        headers,
-      });
-    },
-  });
+    return databricksFetch(input, {
+      ...init,
+      headers,
+    });
+  },
+});
 
   oauthProviderCache = provider;
   oauthProviderCacheTime = Date.now();

@@ -111,11 +111,6 @@ export const databricksFetch: typeof fetch = async (input, init) => {
         const body = JSON.parse(requestInit.body);
         const enhancedBody = {
           ...body,
-          databricks_options: {
-            ...body.databricks_options,
-            conversation_id: requestContext.conversationId,
-            return_trace: true,
-          },
           context: {
             ...body.context,
             conversation_id: requestContext.conversationId,

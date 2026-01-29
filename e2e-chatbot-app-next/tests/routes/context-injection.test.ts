@@ -28,6 +28,52 @@ test.describe.serial('Context Injection', () => {
   test.beforeEach(async ({ adaContext }) => {
     // Reset captured requests before each test
     await adaContext.request.post('/api/test/reset-captured-requests');
+    // Reset endpoint task to default (agent/v1/responses)
+    await adaContext.request.post('/api/test/reset-endpoint-task');
+    // Clear the endpoint details cache to ensure fresh lookups
+    await adaContext.request.post('/api/test/clear-endpoint-cache');
+  });
+
+  test.describe('llm/v1/chat endpoints', () => {
+    test('does NOT inject context for llm/v1/chat endpoint task', async ({
+      adaContext,
+    }) => {
+      // Set the mock endpoint task to llm/v1/chat
+      await adaContext.request.post('/api/test/set-endpoint-task', {
+        data: { task: 'llm/v1/chat' },
+      });
+
+      const chatId = generateUUID();
+      const response = await adaContext.request.post('/api/chat', {
+        data: {
+          id: chatId,
+          message: TEST_PROMPTS.SKY.MESSAGE,
+          selectedChatModel: 'chat-model',
+          selectedVisibilityType: 'private',
+        },
+      });
+
+      expect(response.status()).toBe(200);
+
+      // Get captured requests from the server
+      const capturedResponse = await adaContext.request.get(
+        '/api/test/captured-requests',
+      );
+      const capturedRequests =
+        (await capturedResponse.json()) as CapturedRequest[];
+
+      // Find the request to the serving endpoint
+      const chatRequest = capturedRequests.find(
+        (req) =>
+          req.url.includes('/chat/completions') ||
+          req.url.includes('/responses'),
+      );
+
+      expect(chatRequest).toBeDefined();
+      // Context should NOT be injected for llm/v1/chat
+      expect(chatRequest?.hasContext).toBe(false);
+      expect(chatRequest?.context).toBeUndefined();
+    });
   });
 
   test.describe('agent/v1/responses endpoints', () => {

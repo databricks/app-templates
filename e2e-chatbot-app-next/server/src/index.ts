@@ -111,18 +111,15 @@ async function startServer() {
         mockServer.listHandlers().length,
       );
 
-      // Import captured request utilities for testing context injection
-      const handlersPath = path.join(
-        dirname(dirname(__dirname)),
-        'tests',
-        'api-mocking',
-        'api-mock-handlers.ts',
-      );
+      // Import test utilities from the same module as mockServer to ensure shared state
       const {
         getCapturedRequests,
         resetCapturedRequests,
         getLastCapturedRequest,
-      } = await import(handlersPath);
+        setMockEndpointTask,
+        getMockEndpointTask,
+        resetMockEndpointTask,
+      } = await import(modulePath);
 
       // Test-only endpoint to get captured requests (for context injection testing)
       app.get('/api/test/captured-requests', (_req, res) => {
@@ -142,6 +139,35 @@ async function startServer() {
       // Test-only endpoint to reset captured requests
       app.post('/api/test/reset-captured-requests', (_req, res) => {
         resetCapturedRequests();
+        res.json({ success: true });
+      });
+
+      // Test-only endpoint to set the mock endpoint task type
+      app.post('/api/test/set-endpoint-task', (req, res) => {
+        const { task } = req.body as { task: string };
+        if (!task) {
+          res.status(400).json({ error: 'task is required' });
+          return;
+        }
+        setMockEndpointTask(task);
+        res.json({ success: true, task });
+      });
+
+      // Test-only endpoint to get the current mock endpoint task type
+      app.get('/api/test/endpoint-task', (_req, res) => {
+        res.json({ task: getMockEndpointTask() });
+      });
+
+      // Test-only endpoint to reset the mock endpoint task type
+      app.post('/api/test/reset-endpoint-task', (_req, res) => {
+        resetMockEndpointTask();
+        res.json({ success: true });
+      });
+
+      // Test-only endpoint to clear all server-side caches (endpoint details, provider, model)
+      app.post('/api/test/clear-endpoint-cache', async (_req, res) => {
+        const { clearAllCaches } = await import('@chat-template/ai-sdk-providers');
+        clearAllCaches();
         res.json({ success: true });
       });
 

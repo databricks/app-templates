@@ -40,7 +40,7 @@ Adding memory requires changes to **4 files**:
 | File | What to Add |
 |------|-------------|
 | `pyproject.toml` | Memory dependency + hatch config |
-| `.env.local` | Lakebase env vars (for local dev) |
+| `.env` | Lakebase env vars (for local dev) |
 | `databricks.yml` | Lakebase database resource |
 | `app.yaml` | `valueFrom` reference to lakebase resource |
 | `agent_server/agent.py` | Memory tools and AsyncDatabricksStore |
@@ -108,9 +108,9 @@ The `database` resource's `valueFrom` provides the full connection string (e.g.,
 
 ---
 
-## Step 3: Configure .env.local (Local Development)
+## Step 3: Configure .env (Local Development)
 
-For local development, add to `.env.local`:
+For local development, add to `.env`:
 
 ```bash
 # Lakebase configuration for long-term memory
@@ -119,7 +119,7 @@ EMBEDDING_ENDPOINT=databricks-gte-large-en
 EMBEDDING_DIMS=1024
 ```
 
-> **Note:** `.env.local` is only for local development. When deployed, the app gets `LAKEBASE_INSTANCE_NAME` from the `valueFrom` reference in `app.yaml`.
+> **Note:** `.env` is only for local development. When deployed, the app gets `LAKEBASE_INSTANCE_NAME` from the `valueFrom` reference in `app.yaml`.
 
 ---
 
@@ -457,7 +457,7 @@ curl -X POST https://<app-url>/invocations \
 - [ ] Added `databricks-langchain[memory]` to `pyproject.toml`
 - [ ] Run `uv sync` to install dependencies
 - [ ] Created or identified Lakebase instance
-- [ ] Added Lakebase env vars to `.env.local` (for local dev)
+- [ ] Added Lakebase env vars to `.env` (for local dev)
 - [ ] Added `database` resource to `databricks.yml` (for permissions)
 - [ ] Added `LAKEBASE_INSTANCE_NAME` value to `app.yaml` (matching instance_name in databricks.yml)
 - [ ] **Initialized tables locally** by running `await store.setup()`

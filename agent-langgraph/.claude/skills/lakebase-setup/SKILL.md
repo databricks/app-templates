@@ -20,7 +20,7 @@ Lakebase provides persistent storage for agent memory:
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  1. Add dependency  →  2. Get instance  →  3. Configure DAB + app.yaml     │
-│  4. Configure .env.local  →  5. Initialize tables  →  6. Deploy + Run      │
+│  4. Configure .env  →  5. Initialize tables  →  6. Deploy + Run      │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -113,9 +113,9 @@ env:
 
 ---
 
-## Step 4: Configure .env.local (Local Development)
+## Step 4: Configure .env (Local Development)
 
-For local development, add to `.env.local`:
+For local development, add to `.env`:
 
 ```bash
 # Lakebase configuration for long-term memory
@@ -131,7 +131,7 @@ EMBEDDING_DIMS=1024
 | `databricks-gte-large-en` | 1024 |
 | `databricks-bge-large-en` | 1024 |
 
-> **Note:** `.env.local` is only for local development. When deployed, the app gets `LAKEBASE_INSTANCE_NAME` from the `valueFrom` reference in `app.yaml`.
+> **Note:** `.env` is only for local development. When deployed, the app gets `LAKEBASE_INSTANCE_NAME` from the `valueFrom` reference in `app.yaml`.
 
 ---
 
@@ -282,7 +282,7 @@ env:
 | **"Unable to resolve Lakebase instance 'None'"** | Missing env var in deployed app | Add `LAKEBASE_INSTANCE_NAME` value to app.yaml |
 | **"Unable to resolve Lakebase instance '...database.cloud.databricks.com'"** | Used valueFrom instead of value | Use `value: "<instance-name>"` not `valueFrom` for Lakebase |
 | **"permission denied for table store"** | Missing grants | The `database` resource in DAB should handle this; verify the resource is configured |
-| **"Failed to connect to Lakebase"** | Wrong instance name | Verify instance name in databricks.yml and .env.local |
+| **"Failed to connect to Lakebase"** | Wrong instance name | Verify instance name in databricks.yml and .env |
 | **Connection pool errors on exit** | Python cleanup race | Ignore `PythonFinalizationError` - it's harmless |
 | **App not updated after deploy** | Forgot to run bundle | Run `databricks bundle run agent_langgraph` after deploy |
 | **valueFrom not resolving** | Resource name mismatch | Ensure `valueFrom` value matches `name` in databricks.yml resources |

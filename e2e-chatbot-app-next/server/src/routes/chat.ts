@@ -36,6 +36,8 @@ import {
   type PostRequestBody,
   StreamCache,
   type VisibilityType,
+  CONTEXT_HEADER_CONVERSATION_ID,
+  CONTEXT_HEADER_USER_ID,
 } from '@chat-template/core';
 import {
   DATABRICKS_TOOL_CALL_ID,
@@ -209,6 +211,10 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     const result = streamText({
       model,
       messages: convertToModelMessages(uiMessages),
+      headers: {
+        [CONTEXT_HEADER_CONVERSATION_ID]: id,
+        [CONTEXT_HEADER_USER_ID]: session.user.email ?? session.user.id,
+      },
       onFinish: ({ usage }) => {
         finalUsage = usage;
       },

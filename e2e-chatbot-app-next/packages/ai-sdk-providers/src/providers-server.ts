@@ -16,7 +16,7 @@ import {
 } from './request-context';
 
 export type { DatabricksRequestContext } from './request-context';
-export { runWithRequestContext } from './request-context';
+export { runWithRequestContext, shouldInjectContextForEndpoint } from './request-context';
 
 // Use centralized authentication - only on server side
 async function getProviderToken(): Promise<string> {

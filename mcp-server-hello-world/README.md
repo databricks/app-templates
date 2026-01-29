@@ -120,7 +120,7 @@ uv run pytest tests/
 ./scripts/dev/start_server.sh
 ```
 ```bash
-python ./scripts/dev/query_local.py
+uv run query-local
 ```
 
 With the server running you can run the `query_local.py` file to test the server locally. `query_local.py` lists and returns all the available tools. Uncomment code as necessary in the script to call an individual tool.

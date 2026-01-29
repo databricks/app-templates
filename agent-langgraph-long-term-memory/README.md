@@ -221,19 +221,22 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
       -------------------------------------------------------------------
       EXECUTE format('GRANT USAGE, CREATE ON SCHEMA drizzle TO %I;', app_sp);
       EXECUTE format('GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA drizzle TO %I;', app_sp);
+
       -------------------------------------------------------------------
       -- App schema: business tables (Chat, Message, etc.)
       -------------------------------------------------------------------
       EXECUTE format('GRANT USAGE, CREATE ON SCHEMA ai_chatbot TO %I;', app_sp);
       EXECUTE format('GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA ai_chatbot TO %I;', app_sp);
+
       -------------------------------------------------------------------
       -- Public schema for checkpoint tables
       -------------------------------------------------------------------
       EXECUTE format('GRANT USAGE, CREATE ON SCHEMA public TO %I;', app_sp);
-      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE public.checkpoint_migrations TO %I;', app_sp);
-      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE public.checkpoint_writes TO %I;',       app_sp);
-      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE public.checkpoints TO %I;',             app_sp);
-      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE public.checkpoint_blobs TO %I;',        app_sp);
+
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE public.store_migrations TO %I;', app_sp);
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE public.store TO %I;',       app_sp);
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE public.store_vectors TO %I;',       app_sp);
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE public.vector_migrations TO %I;',       app_sp);
    END $$;
    ```
 

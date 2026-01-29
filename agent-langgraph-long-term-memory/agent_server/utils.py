@@ -1,8 +1,8 @@
+import json
 import logging
 from typing import Any, AsyncGenerator, AsyncIterator, Optional
 
 from databricks.sdk import WorkspaceClient
-from databricks_langchain.chat_models import json
 from langchain.messages import AIMessageChunk, ToolMessage
 from mlflow.genai.agent_server import get_request_headers
 from mlflow.types.responses import (

@@ -34,6 +34,7 @@ import {
   myProvider,
   postRequestBodySchema,
   type PostRequestBody,
+  runWithRequestContext,
   StreamCache,
   type VisibilityType,
 } from '@chat-template/core';
@@ -205,20 +206,21 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     let finalUsage: LanguageModelUsage | undefined;
     const streamId = generateUUID();
 
-    const model = await myProvider.languageModelWithContext(selectedChatModel, {
-      conversationId: id,
-      userId: session.user.email ?? session.user.id,
-    });
-    const result = streamText({
-      model,
-      messages: convertToModelMessages(uiMessages),
-      onFinish: ({ usage }) => {
-        finalUsage = usage;
-      },
-      tools: {
-        [DATABRICKS_TOOL_CALL_ID]: DATABRICKS_TOOL_DEFINITION,
-      },
-    });
+    const model = await myProvider.languageModel(selectedChatModel);
+    const result = runWithRequestContext(
+      { conversationId: id, userId: session.user.email ?? session.user.id },
+      () =>
+        streamText({
+          model,
+          messages: convertToModelMessages(uiMessages),
+          onFinish: ({ usage }) => {
+            finalUsage = usage;
+          },
+          tools: {
+            [DATABRICKS_TOOL_CALL_ID]: DATABRICKS_TOOL_DEFINITION,
+          },
+        }),
+    );
 
     /**
      * We manually create the stream to have access to the stream writer.

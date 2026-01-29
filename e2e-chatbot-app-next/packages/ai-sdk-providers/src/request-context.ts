@@ -1,7 +1,9 @@
 /**
- * Context types and fetch factory for injecting user/conversation context
+ * Request context using AsyncLocalStorage for injecting user/conversation context
  * into Databricks Agent Endpoint requests.
  */
+
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 /**
  * Context to be passed with each request to Databricks Agent Endpoints.
@@ -13,73 +15,28 @@ export interface DatabricksRequestContext {
   userId: string;
 }
 
+const requestContextStorage = new AsyncLocalStorage<DatabricksRequestContext>();
+
 /**
- * Creates a fetch function that injects conversation and user context
- * into the request body for Databricks Agent Endpoints.
- *
- * The context is injected into the request body as:
- * ```json
- * {
- *   "databricks_options": {
- *     "conversation_id": "<chat-id>",
- *     "return_trace": true
- *   },
- *   "context": {
- *     "conversation_id": "<chat-id>",
- *     "user_id": "<user-email>"
- *   }
- * }
- * ```
- *
- * @param baseFetch - The base fetch function to wrap
- * @param context - The context containing conversation and user information
- * @param shouldInjectContext - Whether to inject context into the request
- * @returns A fetch function that injects context when appropriate
+ * Gets the current request context from AsyncLocalStorage.
+ * Returns undefined if not within a runWithRequestContext call.
  */
-export function createContextAwareFetch(
-  baseFetch: typeof fetch,
+export function getRequestContext(): DatabricksRequestContext | undefined {
+  return requestContextStorage.getStore();
+}
+
+/**
+ * Runs a function with the given request context available via getRequestContext().
+ *
+ * @param context - The context containing conversation and user information
+ * @param fn - The function to run with the context
+ * @returns The return value of the function
+ */
+export function runWithRequestContext<T>(
   context: DatabricksRequestContext,
-  shouldInjectContext: boolean,
-): typeof fetch {
-  if (!shouldInjectContext) {
-    return baseFetch;
-  }
-
-  return async (
-    input: RequestInfo | URL,
-    init?: RequestInit,
-  ): Promise<Response> => {
-    if (!init?.body || typeof init.body !== 'string') {
-      return baseFetch(input, init);
-    }
-
-    try {
-      const body = JSON.parse(init.body);
-
-      // Inject databricks_options with conversation_id and return_trace
-      const enhancedBody = {
-        ...body,
-        databricks_options: {
-          ...body.databricks_options,
-          conversation_id: context.conversationId,
-          return_trace: true,
-        },
-        context: {
-          ...body.context,
-          conversation_id: context.conversationId,
-          user_id: context.userId,
-        },
-      };
-
-      return baseFetch(input, {
-        ...init,
-        body: JSON.stringify(enhancedBody),
-      });
-    } catch {
-      // If JSON parsing fails, pass through unchanged
-      return baseFetch(input, init);
-    }
-  };
+  fn: () => T,
+): T {
+  return requestContextStorage.run(context, fn);
 }
 
 /**

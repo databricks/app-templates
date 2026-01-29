@@ -102,5 +102,8 @@ Output Schema:
     # print(result)
 
 
-if __name__ == "__main__":
+def run_locally():
     asyncio.run(main())
+
+if __name__ == "__main__":
+    run_locally()

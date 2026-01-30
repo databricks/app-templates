@@ -35,7 +35,6 @@
     "test:ephemeral": "PLAYWRIGHT=True TEST_MODE=ephemeral npx playwright test"
   },
   "dependencies": {
-    "@databricks/ai-sdk-provider": "^0.3.0",
     "dotenv": "^17.2.3",
     "drizzle-kit": "^0.31.5",
     "drizzle-orm": "^0.44.6",

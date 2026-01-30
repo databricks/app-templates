@@ -21,7 +21,6 @@
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.59",
-    "@databricks/ai-sdk-provider": "^0.3.0",
     "@radix-ui/react-alert-dialog": "^1.1.2",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dialog": "^1.1.2",

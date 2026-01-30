@@ -16,7 +16,9 @@ import {
   ToolStatusBadge,
   type ToolState,
 } from './tool';
-import type { McpApprovalState } from '@databricks/ai-sdk-provider';
+
+/** State of an MCP approval request */
+export type McpApprovalState = 'awaiting-approval' | 'approved' | 'denied';
 
 // MCP-specific container with distinct styling
 type McpToolProps = Parameters<typeof ToolContainer>[0];

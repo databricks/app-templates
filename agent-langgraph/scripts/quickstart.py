@@ -420,8 +420,8 @@ def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> bool:
     print(f"Validating Lakebase instance '{lakebase_name}'...")
 
     result = run_command(
-        ["databricks", "-p", profile_name, "postgres", "get-project",
-         f"projects/{lakebase_name}", "--output", "json"],
+        ["databricks", "-p", profile_name, "database", "get-database-instance",
+         lakebase_name, "--output", "json"],
         check=False
     )
 
@@ -429,9 +429,9 @@ def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> bool:
         print_success(f"Lakebase instance '{lakebase_name}' validated")
         return True
 
-    # Check if postgres command is not recognized (old CLI version)
-    if 'unknown command "postgres" for "databricks"' in (result.stderr or ""):
-        print_error("The 'databricks postgres' command requires a newer version of the Databricks CLI.")
+    # Check if database command is not recognized (old CLI version)
+    if 'unknown command "database" for "databricks"' in (result.stderr or ""):
+        print_error("The 'databricks database' command requires a newer version of the Databricks CLI.")
         print("  Please upgrade: https://docs.databricks.com/dev-tools/cli/install.html")
         return False
 

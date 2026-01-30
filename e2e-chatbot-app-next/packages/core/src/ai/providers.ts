@@ -5,6 +5,11 @@
 
 import type { OAuthAwareProvider } from '@chat-template/ai-sdk-providers';
 
+export {
+  CONTEXT_HEADER_CONVERSATION_ID,
+  CONTEXT_HEADER_USER_ID,
+} from '@chat-template/ai-sdk-providers';
+
 // For server-side usage, get the authenticated provider
 async function getServerProvider() {
   const { getDatabricksServerProvider } = await import(

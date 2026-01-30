@@ -32,6 +32,61 @@ export function resetMcpApprovalState() {
   mcpApprovalState = 'idle';
 }
 
+// ============================================================================
+// Context Injection Tracking
+// ============================================================================
+
+/**
+ * Captured request contexts for testing context injection.
+ * Each entry contains the context object if present, or undefined if not.
+ */
+export interface CapturedRequest {
+  url: string;
+  timestamp: number;
+  context?: {
+    conversation_id?: string;
+    user_id?: string;
+    [key: string]: unknown;
+  };
+  hasContext: boolean;
+}
+
+let capturedRequests: CapturedRequest[] = [];
+
+/**
+ * Reset captured requests. Call this before tests that need to verify context injection.
+ */
+export function resetCapturedRequests() {
+  capturedRequests = [];
+}
+
+/**
+ * Get all captured requests.
+ */
+export function getCapturedRequests(): CapturedRequest[] {
+  return [...capturedRequests];
+}
+
+/**
+ * Get the most recent captured request.
+ */
+export function getLastCapturedRequest(): CapturedRequest | undefined {
+  return capturedRequests[capturedRequests.length - 1];
+}
+
+/**
+ * Helper to capture request context from a request body.
+ */
+function captureRequestContext(url: string, body: unknown): void {
+  const context = (body as { context?: CapturedRequest['context'] })?.context;
+  capturedRequests.push({
+    url,
+    timestamp: Date.now(),
+    context,
+    hasContext: context !== undefined && context !== null,
+  });
+}
+
 /**
  * Check if the request body contains MCP approval trigger message.
  */
@@ -122,6 +177,7 @@ export const handlers = [
   // Use RegExp for better URL matching - matches any URL containing /serving-endpoints/ and ending with /chat/completions
   http.post(/\/serving-endpoints\/[^/]+\/chat\/completions$/, async (req) => {
     const body = await req.request.clone().json();
+    captureRequestContext(req.request.url, body);
     if ((body as { stream?: boolean })?.stream) {
       return createMockStreamResponse(
         TEST_PROMPTS.SKY.OUTPUT_STREAM.responseSSE,
@@ -131,10 +187,11 @@ export const handlers = [
     }
   }),
 
-  // Mock responses endpoint (agent/v2/responses)
+  // Mock responses endpoint (agent/v1/responses)
   // URL pattern: {host}/serving-endpoints/responses
   http.post(/\/serving-endpoints\/responses$/, async (req) => {
     const body = await req.request.clone().json();
+    captureRequestContext(req.request.url, body);
     const isStreaming = (body as { stream?: boolean })?.stream;
 
     // Check for MCP approval response in the request
@@ -185,11 +242,11 @@ export const handlers = [
   }),
 
   // Mock fetching endpoint details
-  // Returns agent/v2/responses to enable MCP approval testing
+  // Returns agent/v1/responses to enable context injection testing
   http.get(/\/api\/2\.0\/serving-endpoints\/[^/]+$/, () => {
     return HttpResponse.json({
       name: 'test-endpoint',
-      task: 'agent/v2/responses',
+      task: 'agent/v1/responses',
     });
   }),
 

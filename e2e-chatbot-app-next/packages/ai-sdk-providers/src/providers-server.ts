@@ -1,4 +1,4 @@
-import type { LanguageModelV2 } from '@ai-sdk/provider';
+import type { LanguageModelV3 } from '@ai-sdk/provider';
 
 import { getHostUrl } from '@chat-template/utils';
 // Import auth module directly
@@ -238,21 +238,23 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
   const hostname = await getWorkspaceHostname();
 
   // Create provider with fetch that always uses fresh token
-  const provider = createDatabricksProvider({
-    baseURL: `${hostname}/serving-endpoints`,
-    formatUrl: ({ baseUrl, path }) => API_PROXY ?? `${baseUrl}${path}`,
-    fetch: async (...[input, init]: Parameters<typeof fetch>) => {
-      // Always get fresh token for each request (will use cache if valid)
-      const currentToken = await getProviderToken();
-      const headers = new Headers(init?.headers);
-      headers.set('Authorization', `Bearer ${currentToken}`);
+const provider = createDatabricksProvider({
+  // When using endpoints such as Agent Bricks or custom agents, we need to use remote tool calling to handle the tool calls
+  useRemoteToolCalling: true,
+  baseURL: `${hostname}/serving-endpoints`,
+  formatUrl: ({ baseUrl, path }) => API_PROXY ?? `${baseUrl}${path}`,
+  fetch: async (...[input, init]: Parameters<typeof fetch>) => {
+    // Always get fresh token for each request (will use cache if valid)
+    const currentToken = await getProviderToken();
+    const headers = new Headers(init?.headers);
+    headers.set('Authorization', `Bearer ${currentToken}`);
 
-      return databricksFetch(input, {
-        ...init,
-        headers,
-      });
-    },
-  });
+    return databricksFetch(input, {
+      ...init,
+      headers,
+    });
+  },
+});
 
   oauthProviderCache = provider;
   oauthProviderCacheTime = Date.now();
@@ -293,17 +295,17 @@ const getEndpointDetails = async (servingEndpoint: string) => {
 
 // Create a smart provider wrapper that handles OAuth initialization
 interface SmartProvider {
-  languageModel(id: string): Promise<LanguageModelV2>;
+  languageModel(id: string): Promise<LanguageModelV3>;
 }
 
 export class OAuthAwareProvider implements SmartProvider {
   private modelCache = new Map<
     string,
-    { model: LanguageModelV2; timestamp: number }
+    { model: LanguageModelV3; timestamp: number }
   >();
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-  async languageModel(id: string): Promise<LanguageModelV2> {
+  async languageModel(id: string): Promise<LanguageModelV3> {
     // Check cache first
     const cached = this.modelCache.get(id);
     if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {

@@ -2,17 +2,17 @@ import { useState, useCallback } from 'react';
 import type { UseChatHelpers } from '@ai-sdk/react';
 import type { ChatMessage } from '@chat-template/core';
 import {
-  DATABRICKS_TOOL_CALL_ID,
   createApprovalStatusOutput,
 } from '@databricks/ai-sdk-provider';
 
 interface ApprovalSubmission {
+  tool: string;
   approvalRequestId: string;
   approve: boolean;
 }
 
 interface UseApprovalOptions {
-  addToolResult: UseChatHelpers<ChatMessage>['addToolResult'];
+  addToolOutput: UseChatHelpers<ChatMessage>['addToolOutput'];
   sendMessage: UseChatHelpers<ChatMessage>['sendMessage'];
 }
 
@@ -24,7 +24,7 @@ interface UseApprovalOptions {
  * 2. Calls sendMessage() without arguments to trigger continuation
  */
 export function useApproval({
-  addToolResult,
+  addToolOutput,
   sendMessage,
 }: UseApprovalOptions) {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -33,14 +33,14 @@ export function useApproval({
   );
 
   const submitApproval = useCallback(
-    async ({ approvalRequestId, approve }: ApprovalSubmission) => {
+    async ({ tool, approvalRequestId, approve }: ApprovalSubmission) => {
       setIsSubmitting(true);
       setPendingApprovalId(approvalRequestId);
 
       try {
         // Add tool result with approval status
-        await addToolResult({
-          tool: DATABRICKS_TOOL_CALL_ID,
+        await addToolOutput({
+          tool,
           toolCallId: approvalRequestId,
           state: 'output-available',
           output: createApprovalStatusOutput(approve),
@@ -56,7 +56,7 @@ export function useApproval({
         setPendingApprovalId(null);
       }
     },
-    [addToolResult, sendMessage],
+    [addToolOutput, sendMessage],
   );
 
   return { submitApproval, isSubmitting, pendingApprovalId };

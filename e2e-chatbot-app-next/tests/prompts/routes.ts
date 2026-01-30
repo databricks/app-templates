@@ -54,7 +54,7 @@ export const TEST_PROMPTS = {
         'data: {"type":"text-delta","id":"STATIC_ID","delta":"It\'s just blue duh!"}',
         'data: {"type":"text-end","id":"STATIC_ID"}',
         'data: {"type":"finish-step"}',
-        'data: {"type":"finish"}',
+        'data: {"type":"finish","finishReason":"stop"}',
         'data: [DONE]',
       ],
       expectedText: "It's just blue duh!",

@@ -119,7 +119,11 @@ function isMcpTriggerMessage(body: unknown): boolean {
 }
 
 /**
- * Check if the request contains an MCP approval response (tool result).
+ * Check if the request contains an MCP approval response.
+ *
+ * This can come in two forms:
+ * 1. Explicit mcp_approval_response type (from server-side conversion)
+ * 2. function_call_output with __approvalStatus__ in the output (from client-side addToolOutput)
  */
 function containsMcpApprovalResponse(body: unknown): {
   found: boolean;
@@ -129,13 +133,35 @@ function containsMcpApprovalResponse(body: unknown): {
   if (!Array.isArray(input)) return { found: false, approved: false };
 
   for (const item of input) {
-    if (
-      typeof item === 'object' &&
-      item !== null &&
-      (item as { type?: string }).type === 'mcp_approval_response'
-    ) {
+    if (typeof item !== 'object' || item === null) continue;
+
+    const itemType = (item as { type?: string }).type;
+
+    // Check for explicit mcp_approval_response type
+    if (itemType === 'mcp_approval_response') {
       const approved = (item as { approve?: boolean }).approve === true;
       return { found: true, approved };
+    }
+
+    // Check for function_call_output with approval status in the output
+    // This handles the case where the approval comes via addToolOutput from the client
+    if (itemType === 'function_call_output') {
+      const output = (item as { output?: string }).output;
+      if (typeof output === 'string') {
+        try {
+          const parsed = JSON.parse(output);
+          if (
+            typeof parsed === 'object' &&
+            parsed !== null &&
+            '__approvalStatus__' in parsed
+          ) {
+            const approved = parsed.__approvalStatus__ === true;
+            return { found: true, approved };
+          }
+        } catch {
+          // Not valid JSON, skip
+        }
+      }
     }
   }
 

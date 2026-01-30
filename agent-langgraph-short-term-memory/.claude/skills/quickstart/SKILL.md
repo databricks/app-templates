@@ -79,6 +79,5 @@ CHAT_PROXY_TIMEOUT_SECONDS=300
 ## Next Steps
 
 After quickstart completes:
-1. **Configure Lakebase** for memory storage (see **lakebase-setup** skill)
-2. Run `uv run discover-tools` to find available workspace resources (see **discover-tools** skill)
-3. Run `uv run start-app` to test locally (see **run-locally** skill)
+1. Run `uv run discover-tools` to find available workspace resources (see **discover-tools** skill)
+2. Run `uv run start-app` to test locally (see **run-locally** skill)

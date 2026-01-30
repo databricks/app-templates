@@ -187,6 +187,24 @@ async def save_user_memory(memory_key: str, memory_data: str, config: RunnableCo
     namespace = ("user_memories", user_id.replace(".", "-").replace("@", "-"))
     await store.aput(namespace, memory_key, {"value": memory_data})
     return f"Saved memory: {memory_key}"
+
+
+@tool
+async def delete_user_memory(memory_key: str, config: RunnableConfig) -> str:
+    """Delete a specific memory from the user's long-term memory.
+    Use this when the user asks to forget something or correct stored information.
+
+    Args:
+        memory_key: The key of the memory to delete (e.g., "preferred_name", "team")
+    """
+    user_id = config.get("configurable", {}).get("user_id")
+    store = config.get("configurable", {}).get("store")
+    if not user_id or not store:
+        return "Memory not available - no user context"
+
+    namespace = ("user_memories", user_id.replace(".", "-").replace("@", "-"))
+    await store.adelete(namespace, memory_key)
+    return f"Deleted memory: {memory_key}"
 ```
 
 ### Add Helper Functions
@@ -228,7 +246,7 @@ async def streaming(
     mcp_tools = await mcp_client.get_tools()
 
     # Memory tools
-    memory_tools = [get_user_memory, save_user_memory]
+    memory_tools = [get_user_memory, save_user_memory, delete_user_memory]
 
     # Combine all tools
     all_tools = mcp_tools + memory_tools
@@ -430,6 +448,14 @@ curl -X POST http://localhost:8000/invocations \
   -H "Content-Type: application/json" \
   -d '{
       "input": [{"role": "user", "content": "What team am I on?"}],
+      "custom_inputs": {"user_id": "alice@example.com"}
+  }'
+
+# Delete a memory
+curl -X POST http://localhost:8000/invocations \
+  -H "Content-Type: application/json" \
+  -d '{
+      "input": [{"role": "user", "content": "Forget what team I am on"}],
       "custom_inputs": {"user_id": "alice@example.com"}
   }'
 ```

@@ -39,42 +39,9 @@ uv run discover-tools --profile DEFAULT
 | **Custom MCP Servers** | Apps starting with `mcp-*` | `{app_url}/mcp` |
 | **External MCP Servers** | Via UC connections | `{host}/api/2.0/mcp/external/{connection_name}` |
 
-## Using Discovered Tools in Code
-
-After discovering tools, add them to your agent in `agent_server/agent.py`:
-
-```python
-from databricks_openai.agents import McpServer
-
-# Example: Add UC functions from a schema
-uc_functions_server = McpServer(
-    url=f"{host}/api/2.0/mcp/functions/{catalog}/{schema}",
-    name="my uc functions",
-)
-
-# Example: Add a Genie space
-genie_server = McpServer(
-    url=f"{host}/api/2.0/mcp/genie/{space_id}",
-    name="my genie space",
-)
-
-# Example: Add vector search
-vector_server = McpServer(
-    url=f"{host}/api/2.0/mcp/vector-search/{catalog}/{schema}/{index_name}",
-    name="my vector index",
-)
-
-# Add to agent
-agent = Agent(
-    name="my agent",
-    instructions="You are a helpful agent.",
-    model="databricks-claude-3-7-sonnet",
-    mcp_servers=[uc_functions_server, genie_server, vector_server],
-)
-```
-
 ## Next Steps
 
-After adding MCP servers to your agent:
-1. **Grant permissions** in `databricks.yml` (see **add-tools** skill)
-2. Test locally with `uv run start-app` (see **run-locally** skill)
+After discovering tools:
+1. **Add MCP servers to your agent** - See **modify-agent** skill for SDK-specific code examples
+2. **Grant permissions** in `databricks.yml` - See **add-tools** skill for YAML snippets
+3. **Test locally** with `uv run start-app` - See **run-locally** skill

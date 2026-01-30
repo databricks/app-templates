@@ -24,7 +24,7 @@ tools = await mcp_client.get_tools()
 
 ```bash
 databricks bundle deploy
-databricks bundle run agent_langgraph_short_term_memory
+databricks bundle run agent_langgraph
 ```
 
 ### 3. Get your agent app's service principal

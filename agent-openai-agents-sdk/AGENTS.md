@@ -1,15 +1,25 @@
 # Agent Development Guide
 
-## MANDATORY First Action
+## MANDATORY First Actions
 
-**BEFORE any other action, run `databricks auth profiles` to check authentication status.**
+**Ask the user interactively:**
+
+1. **App deployment target:**
+   > "Do you have an existing Databricks app you want to deploy to, or should we create a new one? If existing, what's the app name?"
+
+   *Note: New apps should use the `agent-*` prefix (e.g., `agent-data-analyst`) unless the user specifies otherwise.*
+
+2. **If the user mentions memory, conversation history, or persistence:**
+   > "For memory capabilities, do you have an existing Lakebase instance? If so, what's the instance name?"
+
+**Then check authentication status by running `databricks auth profiles`.**
 
 This helps you understand:
 - Which Databricks profiles are configured
 - Whether authentication is already set up
 - Which profile to use for subsequent commands
 
-If no profiles exist, guide the user through running `uv run quickstart` to set up authentication.
+If no profiles exist or `.env` is missing, guide the user through running `uv run quickstart` to set up authentication and configuration. See the **quickstart** skill for details.
 
 ## Understanding User Goals
 

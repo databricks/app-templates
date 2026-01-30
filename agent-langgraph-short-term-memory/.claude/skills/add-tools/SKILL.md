@@ -28,7 +28,7 @@ tools = await mcp_client.get_tools()
 ```yaml
 resources:
   apps:
-    agent_langgraph_short_term_memory:
+    agent_langgraph:
       resources:
         - name: 'my_genie_space'
           genie_space:
@@ -37,7 +37,13 @@ resources:
             permission: 'CAN_RUN'
 ```
 
-**Step 3:** Deploy with `databricks bundle deploy` (see **deploy** skill)
+**Step 3:** Deploy and run:
+```bash
+databricks bundle deploy
+databricks bundle run agent_langgraph  # Required to start app with new code!
+```
+
+See **deploy** skill for more details.
 
 ## Resource Type Examples
 
@@ -51,6 +57,7 @@ See the `examples/` directory for complete YAML snippets:
 | `sql-warehouse.yaml` | SQL warehouse | SQL execution |
 | `serving-endpoint.yaml` | Model serving endpoint | Model inference |
 | `genie-space.yaml` | Genie space | Natural language data |
+| `lakebase.yaml` | Lakebase database | Agent memory storage |
 | `experiment.yaml` | MLflow experiment | Tracing (already configured) |
 | `custom-mcp-server.md` | Custom MCP apps | Apps starting with `mcp-*` |
 
@@ -72,17 +79,26 @@ databricks apps update-permissions <mcp-server-app-name> \
 
 See `examples/custom-mcp-server.md` for detailed steps.
 
+## valueFrom Pattern (for app.yaml)
+
+**IMPORTANT**: Make sure all `valueFrom` references in `app.yaml` reference an existing key in the `databricks.yml` file. 
+Some resources need environment variables in your app. Use `valueFrom` in `app.yaml` to reference resources defined in `databricks.yml`:
+
+```yaml
+# app.yaml
+env:
+  - name: MLFLOW_EXPERIMENT_ID
+    valueFrom: "experiment"        # References resources.apps.<app>.resources[name='experiment']
+  - name: LAKEBASE_INSTANCE_NAME
+    valueFrom: "database"   # References resources.apps.<app>.resources[name='database']
+```
+
+**Critical:** Every `valueFrom` value must match a `name` field in `databricks.yml` resources.
+
 ## Important Notes
 
 - **MLflow experiment**: Already configured in template, no action needed
-- **Lakebase permissions**: Memory storage requires separate Lakebase setup (see **lakebase-setup** skill)
 - **Multiple resources**: Add multiple entries under `resources:` list
 - **Permission types vary**: Each resource type has specific permission values
-- **Deploy after changes**: Run `databricks bundle deploy` after modifying `databricks.yml`
-
-## Next Steps
-
-- Configure memory storage: see **lakebase-setup** skill
-- Understand memory patterns: see **agent-memory** skill
-- Test locally: see **run-locally** skill
-- Deploy: see **deploy** skill
+- **Deploy + Run after changes**: Run both `databricks bundle deploy` AND `databricks bundle run agent_langgraph`
+- **valueFrom matching**: Ensure `app.yaml` `valueFrom` values match `databricks.yml` resource `name` values

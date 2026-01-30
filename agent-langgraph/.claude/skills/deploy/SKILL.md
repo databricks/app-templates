@@ -5,15 +5,33 @@ description: "Deploy agent to Databricks Apps using DAB (Databricks Asset Bundle
 
 # Deploy to Databricks Apps
 
+## App Naming Convention
+
+Unless the user specifies a different name, apps should use the prefix `agent-*`:
+- `agent-data-analyst`
+- `agent-customer-support`
+- `agent-code-helper`
+
+Update the app name in `databricks.yml`:
+```yaml
+resources:
+  apps:
+    agent_langgraph:
+      name: "agent-your-app-name"  # Use agent-* prefix
+```
+
 ## Deploy Commands
 
 **IMPORTANT:** Always run BOTH commands to deploy and start your app:
 
 ```bash
-# 1. Deploy the bundle (creates/updates resources, uploads files)
+# 1. Validate bundle configuration (catches errors before deploy)
+databricks bundle validate
+
+# 2. Deploy the bundle (creates/updates resources, uploads files)
 databricks bundle deploy
 
-# 2. Run the app (starts/restarts with uploaded source code) - REQUIRED!
+# 3. Run the app (starts/restarts with uploaded source code) - REQUIRED!
 databricks bundle run agent_langgraph
 ```
 
@@ -105,7 +123,9 @@ Note: Unbinding doesn't delete the deployed app.
 
 ## Query Deployed App
 
-**Get OAuth token** (PATs not supported):
+> **IMPORTANT:** Databricks Apps are **only** queryable via OAuth token. You **cannot** use a Personal Access Token (PAT) to query your agent. Attempting to use a PAT will result in a 302 redirect error.
+
+**Get OAuth token:**
 ```bash
 databricks auth token
 ```
@@ -117,6 +137,33 @@ curl -X POST <app-url>/invocations \
   -H "Content-Type: application/json" \
   -d '{ "input": [{ "role": "user", "content": "hi" }], "stream": true }'
 ```
+
+**If using memory** - include `user_id` to scope memories per user:
+```bash
+curl -X POST <app-url>/invocations \
+  -H "Authorization: Bearer <oauth-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+      "input": [{"role": "user", "content": "What do you remember about me?"}],
+      "custom_inputs": {"user_id": "user@example.com"}
+  }'
+```
+
+## On-Behalf-Of (OBO) User Authentication
+
+To authenticate as the requesting user instead of the app service principal:
+
+```python
+from agent_server.utils import get_user_workspace_client
+
+# In your agent code
+user_client = get_user_workspace_client()
+# Use user_client for operations that should run as the user
+```
+
+This is useful when you want the agent to access resources with the user's permissions rather than the app's service principal permissions.
+
+See: [OBO authentication documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth#retrieve-user-authorization-credentials)
 
 ## Debug Deployed Apps
 
@@ -138,14 +185,38 @@ databricks apps get <app-name> --output json | jq -r '.url'
 - **Remote Terraform state**: Databricks stores state remotely; same app detected across directories
 - **Review the plan**: Look for `# forces replacement` in Terraform output before confirming
 
+## FAQ
+
+**Q: I see a 200 OK in the logs, but get an error in the actual stream. What's going on?**
+
+This is expected behavior. The initial 200 OK confirms stream setup was successful. Errors that occur during streaming don't affect the initial HTTP status code. Check the stream content for the actual error message.
+
+**Q: When querying my agent, I get a 302 redirect error. What's wrong?**
+
+You're likely using a Personal Access Token (PAT). Databricks Apps only support OAuth tokens. Generate one with:
+```bash
+databricks auth token
+```
+
+**Q: How do I add dependencies to my agent?**
+
+Use `uv add`:
+```bash
+uv add <package_name>
+# Example: uv add "mlflow-skinny[databricks]"
+```
+
 ## Troubleshooting
 
 | Issue | Solution |
 |-------|----------|
+| Validation errors | Run `databricks bundle validate` to see detailed errors before deploying |
 | Permission errors at runtime | Grant resources in `databricks.yml` (see **add-tools** skill) |
+| Lakebase access errors | See **lakebase-setup** skill for permissions (if using memory) |
 | App not starting | Check `databricks apps logs <app-name>` |
 | Auth token expired | Run `databricks auth token` again |
-| "Provider produced inconsistent result" | Sync app config to `databricks.yml`|
+| 302 redirect error | Use OAuth token, not PAT |
+| "Provider produced inconsistent result" | Sync app config to `databricks.yml` |
 | "should set workspace.root_path" | Add `root_path` to production target |
 | App running old code after deploy | Run `databricks bundle run agent_langgraph` after deploy |
 | Env var is None in deployed app | Check `valueFrom` in app.yaml matches resource `name` in databricks.yml |

@@ -5,17 +5,37 @@ description: "Deploy agent to Databricks Apps using DAB (Databricks Asset Bundle
 
 # Deploy to Databricks Apps
 
-> **Memory Template:** Before deploying, ensure Lakebase is configured. See the **lakebase-setup** skill for permissions setup required after deployment.
+## App Naming Convention
+
+Unless the user specifies a different name, apps should use the prefix `agent-*`:
+- `agent-data-analyst`
+- `agent-customer-support`
+- `agent-code-helper`
+
+Update the app name in `databricks.yml`:
+```yaml
+resources:
+  apps:
+    agent_langgraph_short_term_memory:
+      name: "agent-your-app-name"  # Use agent-* prefix
+```
 
 ## Deploy Commands
 
+**IMPORTANT:** Always run BOTH commands to deploy and start your app:
+
 ```bash
-# Deploy the bundle (creates/updates resources, uploads files)
+# 1. Validate bundle configuration (catches errors before deploy)
+databricks bundle validate
+
+# 2. Deploy the bundle (creates/updates resources, uploads files)
 databricks bundle deploy
 
-# Run the app (starts/restarts with uploaded source code)
+# 3. Run the app (starts/restarts with uploaded source code) - REQUIRED!
 databricks bundle run agent_langgraph_short_term_memory
 ```
+
+> **Note:** `bundle deploy` only uploads files and configures resources. `bundle run` is **required** to actually start/restart the app with the new code. If you only run `deploy`, the app will continue running old code!
 
 The resource key `agent_langgraph_short_term_memory` matches the app name in `databricks.yml` under `resources.apps`.
 
@@ -86,15 +106,6 @@ databricks bundle deploy
 
 **Warning:** This permanently deletes the app's URL, OAuth credentials, and service principal.
 
-## Post-Deployment: Lakebase Permissions
-
-**After deploying a memory-enabled agent, you must grant Lakebase permissions.**
-
-See the **lakebase-setup** skill for:
-- Adding Lakebase as an app resource
-- SDK or SQL commands to grant checkpoint table permissions
-- Troubleshooting access errors
-
 ## Unbinding an App
 
 To remove the link between bundle and deployed app:
@@ -127,7 +138,16 @@ curl -X POST <app-url>/invocations \
   -d '{ "input": [{ "role": "user", "content": "hi" }], "stream": true }'
 ```
 
-For memory-specific request examples (with thread_id), see the **agent-memory** skill.
+**If using memory** - include `user_id` to scope memories per user:
+```bash
+curl -X POST <app-url>/invocations \
+  -H "Authorization: Bearer <oauth-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+      "input": [{"role": "user", "content": "What do you remember about me?"}],
+      "custom_inputs": {"user_id": "user@example.com"}
+  }'
+```
 
 ## On-Behalf-Of (OBO) User Authentication
 
@@ -190,16 +210,13 @@ uv add <package_name>
 
 | Issue | Solution |
 |-------|----------|
+| Validation errors | Run `databricks bundle validate` to see detailed errors before deploying |
 | Permission errors at runtime | Grant resources in `databricks.yml` (see **add-tools** skill) |
-| Lakebase access errors | See **lakebase-setup** skill for permissions |
+| Lakebase access errors | See **lakebase-setup** skill for permissions (if using memory) |
 | App not starting | Check `databricks apps logs <app-name>` |
 | Auth token expired | Run `databricks auth token` again |
 | 302 redirect error | Use OAuth token, not PAT |
-| "Provider produced inconsistent result" | Sync app config to `databricks.yml`|
+| "Provider produced inconsistent result" | Sync app config to `databricks.yml` |
 | "should set workspace.root_path" | Add `root_path` to production target |
-
-## Next Steps
-
-- Grant Lakebase permissions: see **lakebase-setup** skill
-- Understand memory patterns: see **agent-memory** skill
-- Add tools and permissions: see **add-tools** skill
+| App running old code after deploy | Run `databricks bundle run agent_langgraph_short_term_memory` after deploy |
+| Env var is None in deployed app | Check `valueFrom` in app.yaml matches resource `name` in databricks.yml |

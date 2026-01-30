@@ -5,8 +5,6 @@ description: "Modify agent code, add tools, or change configuration. Use when: (
 
 # Modify the Agent
 
-> **Memory Template:** This template uses short-term memory (conversation history). See the **agent-memory** skill for memory-specific patterns.
-
 ## Main File
 
 **`agent_server/agent.py`** - Agent logic, model selection, instructions, MCP servers
@@ -290,7 +288,6 @@ Example: Create UC function wrapping HTTP request for Slack, then expose via MCP
 
 - Discover available tools: see **discover-tools** skill
 - Grant resource permissions: see **add-tools** skill
-- Memory patterns: see **agent-memory** skill
-- Lakebase setup: see **lakebase-setup** skill
+- Add memory capabilities: see **agent-memory** skill
 - Test locally: see **run-locally** skill
 - Deploy: see **deploy** skill

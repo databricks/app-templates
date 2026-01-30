@@ -17,7 +17,6 @@ import {
   McpToolContent,
   McpToolInput,
   McpApprovalActions,
-  type McpApprovalState,
 } from './elements/mcp-tool';
 import { MessageActions } from './message-actions';
 import { PreviewAttachment } from './preview-attachment';
@@ -235,35 +234,11 @@ const PurePreviewMessage = ({
               const isMcpApproval = part.callProviderMetadata?.databricks?.approvalRequestId != null;
               const mcpServerName = part.callProviderMetadata?.databricks?.mcpServerName?.toString();
 
-              // Look for tool-approval-response parts across ALL messages to determine approval status
-              // This handles the case where addToolApprovalResponse adds a part in a 'tool' role message
-              // Note: The part uses 'approvalId' property, and the toolCallId matches the approvalId
-              const approvalResponsePart = allMessages
-                .flatMap((m) => m.parts)
-                .find(
-                  (p) =>
-                    p.type === 'tool-approval-response' &&
-                    'approvalId' in p &&
-                    p.approvalId === toolCallId,
-                );
-
-              // Determine approval status from AI SDK state
-              const approvalStatus: McpApprovalState = (() => {
-                // Check tool state from AI SDK (most authoritative)
-                if (state === 'approval-requested') return 'awaiting-approval';
-                if (state === 'output-denied') return 'denied';
-                if (state === 'output-available' || output != null) return 'approved';
-                // approval-responded means user clicked approve/deny - check the approval object
-                if (state === 'approval-responded' && 'approval' in part) {
-                  const approval = part.approval as { approved?: boolean };
-                  return approval?.approved ? 'approved' : 'denied';
-                }
-                // Check tool-approval-response parts in messages as fallback
-                if (approvalResponsePart && 'approved' in approvalResponsePart) {
-                  return approvalResponsePart.approved ? 'approved' : 'denied';
-                }
-                return 'awaiting-approval';
-              })();
+              // Extract approval outcome for 'approval-responded' state
+              // When addToolApprovalResponse is called, AI SDK sets the `approval` property
+              // on the tool-call part and changes state to 'approval-responded'
+              const approved: boolean | undefined =
+                'approval' in part ? part.approval?.approved : undefined;
 
 
               // When approved but only have approval status (not actual output), show as input-available
@@ -282,11 +257,11 @@ const PurePreviewMessage = ({
                       serverName={mcpServerName}
                       toolName={toolName}
                       state={effectiveState}
-                      approvalStatus={approvalStatus}
+                      approved={approved}
                     />
                     <McpToolContent>
                       <McpToolInput input={input} />
-                      {approvalStatus === 'awaiting-approval' && (
+                      {state === 'approval-requested' && (
                         <McpApprovalActions
                           onApprove={() =>
                             submitApproval({
@@ -306,23 +281,23 @@ const PurePreviewMessage = ({
                         />
                       )}
                       {state === 'output-available' && output != null && (
-                          <ToolOutput
-                            output={
-                              errorText ? (
-                                <div className="rounded border p-2 text-red-500">
-                                  Error: {errorText}
-                                </div>
-                              ) : (
-                                <div className="whitespace-pre-wrap font-mono text-sm">
-                                  {typeof output === 'string'
-                                    ? output
-                                    : JSON.stringify(output, null, 2)}
-                                </div>
-                              )
-                            }
-                            errorText={undefined}
-                          />
-                        )}
+                        <ToolOutput
+                          output={
+                            errorText ? (
+                              <div className="rounded border p-2 text-red-500">
+                                Error: {errorText}
+                              </div>
+                            ) : (
+                              <div className="whitespace-pre-wrap font-mono text-sm">
+                                {typeof output === 'string'
+                                  ? output
+                                  : JSON.stringify(output, null, 2)}
+                              </div>
+                            )
+                          }
+                          errorText={undefined}
+                        />
+                      )}
                     </McpToolContent>
                   </McpTool>
                 );

@@ -195,14 +195,17 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           });
 
           // Check if this is an MCP denial - if so, we're done (no need to call LLM)
-          // In AI SDK v6, denial is indicated by a tool-approval-response part with approved: false
+          // Denial is indicated by a dynamic-tool part with state 'output-denied'
+          // or with approval.approved === false
           const hasMcpDenial = requestBody.previousMessages?.some(
             (m: ChatMessage) =>
               m.parts?.some(
                 (p) =>
-                  p.type === 'tool-approval-response' &&
-                  'approved' in p &&
-                  p.approved === false,
+                  p.type === 'dynamic-tool' &&
+                  (p.state === 'output-denied' ||
+                    ('approval' in p &&
+                      (p.approval)?.approved ===
+                        false)),
               ),
           );
 

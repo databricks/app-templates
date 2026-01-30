@@ -276,26 +276,85 @@ curl -X POST http://localhost:8000/invocations \
 
 ## Step 7: Deploy to Databricks Apps
 
-### Create the App
+### 7.1 Extract Resources from Original Model
 
-```bash
-databricks apps create <app-name>
+The original model's `MLmodel` file contains a `resources` section that lists all Databricks resources the agent needs access to. Check `./original_model/MLmodel` for content like:
+
+```yaml
+resources:
+  api_version: '1'
+  databricks:
+    lakebase:
+    - name: lakebase
+    serving_endpoint:
+    - name: databricks-claude-sonnet-4-5
 ```
 
-### Sync Files
+### 7.2 Create the App with Resources
+
+Convert the MLmodel resources to the Databricks Apps API format and pass them via `--json`.
+
+**Resource Type Mapping (MLmodel → Apps API):**
+
+| MLmodel Resource | Apps API Resource Type | Key Fields |
+|------------------|------------------------|------------|
+| `serving_endpoint` | `serving_endpoint` | `name`, `permission` (CAN_MANAGE, CAN_QUERY, CAN_VIEW) |
+| `lakebase` | `database` | `instance_name`, `permission` (CAN_CONNECT_AND_CREATE) |
+| `vector_search_index` | `uc_securable` | `securable_full_name`, `securable_type`: TABLE, `permission`: SELECT |
+| `function` | `uc_securable` | `securable_full_name`, `securable_type`: FUNCTION, `permission`: EXECUTE |
+| `table` | `uc_securable` | `securable_full_name`, `securable_type`: TABLE, `permission`: SELECT |
+| `uc_connection` | `uc_securable` | `securable_full_name`, `securable_type`: CONNECTION, `permission`: USE_CONNECTION |
+| `sql_warehouse` | `sql_warehouse` | `id`, `permission` (CAN_MANAGE, CAN_USE, IS_OWNER) |
+| `genie_space` | `genie_space` | `space_id`, `permission` (CAN_MANAGE, CAN_EDIT, CAN_RUN, CAN_VIEW) |
+| `app` | `app` | `name`, `permission` (CAN_USE) |
+
+**Example with multiple resources:**
+
+```bash
+databricks apps create demo-short-term-memory-agent --json '{
+  "name": "demo-short-term-memory-agent",
+  "resources": [
+    {
+      "name": "serving-endpoint",
+      "serving_endpoint": {
+        "name": "databricks-claude-sonnet-4-5",
+        "permission": "CAN_QUERY"
+      }
+    },
+    {
+      "name": "database",
+      "database": {
+        "instance_name": "lakebase",
+        "permission": "CAN_CONNECT_AND_CREATE"
+      }
+    },
+    {
+      "name": "experiment",
+      "experiment": {
+        "experiment_id": "1234567890",
+        "permission": "CAN_MANAGE"
+      }
+    }
+  ]
+}'
+```
+
+> **Note:** Always refer to [MLflow resources.py](https://github.com/mlflow/mlflow/blob/master/mlflow/models/resources.py) for the full list of MLmodel resource types and the [Apps API documentation](https://docs.databricks.com/api/workspace/apps/create) for the correct resource field names and permissions.
+
+### 7.3 Sync Files
 
 ```bash
 DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
 databricks sync . "/Users/$DATABRICKS_USERNAME/<app-name>"
 ```
 
-### Deploy
+### 7.4 Deploy
 
 ```bash
 databricks apps deploy <app-name> --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/<app-name>
 ```
 
-### Test Deployed App
+### 7.5 Test Deployed App
 
 ```bash
 # Get OAuth token

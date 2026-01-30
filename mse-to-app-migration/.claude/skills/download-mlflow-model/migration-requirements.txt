@@ -1,4 +1,4 @@
 # Requirements for MLflow model artifact download during migration
 # Install these in a virtual environment before running the migration
-mlflow>=2.15.0
+mlflow[databricks]>=2.15.0
 databricks-sdk>=0.30.0

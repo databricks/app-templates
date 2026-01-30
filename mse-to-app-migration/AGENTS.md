@@ -14,6 +14,57 @@ This guide instructs LLM coding agents how to migrate an MLflow ResponsesAgent f
 
 ---
 
+## Step 0: Verify Databricks Authentication
+
+Before starting the migration, verify you have valid authentication to the correct Databricks workspace.
+
+### 0.1 List Available Profiles
+
+```bash
+databricks auth profiles
+```
+
+This shows all configured profiles and their authentication status.
+
+### 0.2 Select or Confirm Profile
+
+Ask the user which profile to use for the migration. If the user provides an endpoint URL, extract the workspace host to help identify the correct profile.
+
+**Example interaction:**
+> "I see you have the following Databricks profiles configured:
+> 1. DEFAULT (https://myworkspace.cloud.databricks.com)
+> 2. prod (https://prod.cloud.databricks.com)
+>
+> Which profile corresponds to your Model Serving endpoint? (Enter number or profile name)"
+
+### 0.3 Validate Authentication
+
+Test that the selected profile has a valid OAuth token:
+
+```bash
+databricks current-user me --profile <selected-profile>
+```
+
+If this fails with an authentication error, prompt the user to re-authenticate:
+
+```bash
+databricks auth login --profile <selected-profile>
+```
+
+Or if they need to authenticate to a new workspace:
+
+```bash
+databricks auth login --host <workspace-url>
+```
+
+### 0.4 Set Profile for Migration
+
+Once validated, use this profile for ALL subsequent `databricks` CLI commands by adding `--profile <selected-profile>`.
+
+> **Important:** Remember to include `--profile <profile-name>` on every `databricks` CLI command throughout the migration, or set `export DATABRICKS_CONFIG_PROFILE=<profile-name>` in your environment.
+
+---
+
 ## Step 1: Get the Original Agent Code
 
 First, download the original agent code from the Model Serving endpoint.
@@ -337,10 +388,38 @@ Convert the MLmodel resources to the Databricks Apps API format and pass them vi
 | `genie_space` | `genie_space` | `space_id`, `permission` (CAN_MANAGE, CAN_EDIT, CAN_RUN, CAN_VIEW) |
 | `app` | `app` | `name`, `permission` (CAN_USE) |
 
-**Example with multiple resources:**
+**Important:** When using `--json`, do NOT include the app name as a positional argument—put it inside the JSON only.
+
+**Example with serving endpoint and UC function (e.g., python_exec):**
 
 ```bash
-databricks apps create demo-short-term-memory-agent --json '{
+# Correct: app name is ONLY in the JSON when you pass resources in
+databricks apps create --json '{
+  "name": "my-mcp-agent",
+  "resources": [
+    {
+      "name": "serving-endpoint",
+      "serving_endpoint": {
+        "name": "databricks-claude-sonnet-4-5",
+        "permission": "CAN_QUERY"
+      }
+    },
+    {
+      "name": "python-exec",
+      "uc_securable": {
+        "securable_full_name": "system.ai.python_exec",
+        "securable_type": "FUNCTION",
+        "permission": "EXECUTE"
+      }
+    }
+  ]
+}'
+```
+
+**Example with Lakebase (for stateful agents):**
+
+```bash
+databricks apps create --json '{
   "name": "demo-short-term-memory-agent",
   "resources": [
     {

@@ -18,25 +18,17 @@ This guide instructs LLM coding agents how to migrate an MLflow ResponsesAgent f
 
 First, download the original agent code from the Model Serving endpoint.
 
-**Using Databricks CLI:**
+> **Use the `/download-mlflow-model` skill** to set up a virtual environment with the required dependencies and download the model artifacts. This handles MLflow installation and authentication automatically.
+
+Alternatively, if you already have MLflow installed:
 
 ```bash
 # Get the endpoint info to find the model URI
 databricks serving-endpoints get <endpoint-name> --output json
 
 # The response contains served_entities[0].entity_name (model name) and entity_version
-# Download the model artifacts
-mlflow artifacts download -u "models:/<model-name>/<version>" -d ./original_model
-```
-
-**Alternative - Using MLflow Python:**
-
-```python
-import mlflow
-mlflow.artifacts.download_artifacts(
-    artifact_uri="models:/<model-name>/<version>",
-    dst_path="./original_model"
-)
+# Download the model artifacts using MLflow Python (requires mlflow package)
+python3 -c "import mlflow; mlflow.set_tracking_uri('databricks'); mlflow.artifacts.download_artifacts(artifact_uri='models:/<model-name>/<version>', dst_path='./original_model')"
 ```
 
 The original agent code is typically in:

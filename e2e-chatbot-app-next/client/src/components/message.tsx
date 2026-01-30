@@ -238,7 +238,6 @@ const PurePreviewMessage = ({
                 'callProviderMetadata' in part
                   ? extractDatabricksMetadata(part)
                   : undefined;
-              // const toolName = metadata?.toolName?.toString();
 
               // Check if this is an MCP tool call
               const isMcpApproval = isMcpApprovalRequest(metadata);
@@ -321,7 +320,7 @@ const PurePreviewMessage = ({
               return (
                 <Tool key={toolCallId} defaultOpen={true}>
                   <ToolHeader
-                    type={toolName  }
+                    type={toolName}
                     state={effectiveState}
                   />
                   <ToolContent>

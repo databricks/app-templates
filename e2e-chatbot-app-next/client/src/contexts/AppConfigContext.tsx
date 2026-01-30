@@ -6,6 +6,7 @@ interface ConfigResponse {
   features: {
     chatHistory: boolean;
   };
+  workspaceUrl?: string;
 }
 
 interface AppConfigContextType {
@@ -13,6 +14,7 @@ interface AppConfigContextType {
   isLoading: boolean;
   error: Error | undefined;
   chatHistoryEnabled: boolean;
+  workspaceUrl: string | undefined;
 }
 
 const AppConfigContext = createContext<AppConfigContextType | undefined>(
@@ -37,6 +39,7 @@ export function AppConfigProvider({ children }: { children: ReactNode }) {
     error,
     // Default to true until loaded to avoid breaking existing behavior
     chatHistoryEnabled: data?.features.chatHistory ?? true,
+    workspaceUrl: data?.workspaceUrl,
   };
 
   return (

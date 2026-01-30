@@ -16,11 +16,7 @@ import { TEST_PROMPTS } from '../prompts/routes';
  * State machine for MCP approval flow.
  * This tracks the state of approval requests across multiple API calls.
  */
-type McpApprovalState =
-  | 'idle'
-  | 'awaiting-approval'
-  | 'approved'
-  | 'denied';
+type McpApprovalState = 'idle' | 'awaiting-approval' | 'approved' | 'denied';
 
 let mcpApprovalState: McpApprovalState = 'idle';
 const MCP_REQUEST_ID = '__fake_mcp_request_id__';
@@ -254,6 +250,143 @@ export const handlers = [
   http.post(/\/oidc\/v1\/token$/, () => {
     return HttpResponse.json({
       access_token: 'test-token',
+    });
+  }),
+
+  // Mock Databricks Files API
+  http.get(/\/api\/2\.0\/fs\/files\/Volumes\//, async (req) => {
+    const url = new URL(req.request.url);
+    const path = url.pathname.replace('/api/2.0/fs/files', '');
+
+    // Handle 404 - file not found
+    if (path.includes('nonexistent')) {
+      return new HttpResponse(null, { status: 404 });
+    }
+
+    // Handle 403 - forbidden
+    if (path.includes('forbidden')) {
+      return new HttpResponse(null, { status: 403 });
+    }
+
+    // Handle 500 - server error
+    if (path.includes('server-error')) {
+      return new HttpResponse(null, { status: 500 });
+    }
+
+    // Handle large file
+    if (path.includes('large.pdf')) {
+      const largeBuffer = Buffer.alloc(2 * 1024 * 1024, 'a'); // 2MB file
+      return new HttpResponse(largeBuffer, {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Length': largeBuffer.length.toString(),
+        },
+      });
+    }
+
+    // Handle no-stream fallback case (body is null)
+    if (path.includes('no-stream')) {
+      const content = Buffer.from('Buffer fallback content');
+      return new HttpResponse(content, {
+        headers: {
+          'Content-Type': 'application/pdf',
+        },
+      });
+    }
+
+    // Handle file with Content-Disposition
+    if (path.includes('download.pdf')) {
+      const content = Buffer.from('Downloadable PDF content');
+      return new HttpResponse(content, {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Length': content.length.toString(),
+          'Content-Disposition': 'attachment; filename="download.pdf"',
+        },
+      });
+    }
+
+    // Handle PDF files
+    if (path.endsWith('.pdf')) {
+      const content = Buffer.from('Mock PDF content');
+      return new HttpResponse(content, {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Length': content.length.toString(),
+        },
+      });
+    }
+
+    // Handle JSON files
+    if (path.endsWith('.json')) {
+      const content = JSON.stringify({ message: 'Mock JSON data' });
+      return new HttpResponse(content, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': content.length.toString(),
+        },
+      });
+    }
+
+    // Handle text files
+    if (path.endsWith('.txt')) {
+      const content = 'Mock text content';
+      return new HttpResponse(content, {
+        headers: {
+          'Content-Type': 'text/plain',
+          'Content-Length': content.length.toString(),
+        },
+      });
+    }
+
+    // Handle image files
+    if (path.endsWith('.png')) {
+      const content = Buffer.from('Mock PNG image');
+      return new HttpResponse(content, {
+        headers: {
+          'Content-Type': 'image/png',
+          'Content-Length': content.length.toString(),
+        },
+      });
+    }
+
+    if (path.endsWith('.jpg') || path.endsWith('.jpeg')) {
+      const content = Buffer.from('Mock JPEG image');
+      return new HttpResponse(content, {
+        headers: {
+          'Content-Type': 'image/jpeg',
+          'Content-Length': content.length.toString(),
+        },
+      });
+    }
+
+    if (path.endsWith('.gif')) {
+      const content = Buffer.from('Mock GIF image');
+      return new HttpResponse(content, {
+        headers: {
+          'Content-Type': 'image/gif',
+          'Content-Length': content.length.toString(),
+        },
+      });
+    }
+
+    if (path.endsWith('.svg')) {
+      const content = '<svg></svg>';
+      return new HttpResponse(content, {
+        headers: {
+          'Content-Type': 'image/svg+xml',
+          'Content-Length': content.length.toString(),
+        },
+      });
+    }
+
+    // Default case for unknown file types
+    const content = Buffer.from('Mock file content');
+    return new HttpResponse(content, {
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': content.length.toString(),
+      },
     });
   }),
 ];

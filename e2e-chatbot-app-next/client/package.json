@@ -38,8 +38,10 @@
     "framer-motion": "^11.3.19",
     "lucide-react": "^0.446.0",
     "next-themes": "^0.4.6",
+    "pdfjs-dist": "^5.4.296",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-pdf": "^10.2.0",
     "react-router-dom": "^6.22.0",
     "react-syntax-highlighter": "^15.6.6",
     "sonner": "^1.5.0",
@@ -63,6 +65,7 @@
     "tailwindcss": "^4.1.13",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.9.3",
-    "vite": "npm:rolldown-vite@latest"
+    "vite": "npm:rolldown-vite@latest",
+    "vite-plugin-static-copy": "^3.1.4"
   }
 }

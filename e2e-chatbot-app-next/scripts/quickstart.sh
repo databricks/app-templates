@@ -186,13 +186,13 @@ echo
 # ===================================================================
 echo "Setting up configuration files..."
 
-# Copy .env.example to .env.local if it doesn't exist
-if [ ! -f ".env.local" ]; then
-    echo "Copying .env.example to .env.local..."
-    cp .env.example .env.local
+# Copy .env.example to .env if it doesn't exist
+if [ ! -f ".env" ]; then
+    echo "Copying .env.example to .env..."
+    cp .env.example .env
     echo
 else
-    echo ".env.local already exists, skipping copy..."
+    echo ".env already exists, skipping copy..."
 fi
 echo
 
@@ -319,17 +319,17 @@ else
     fi
 fi
 
-# Save profile to .env.local
-if grep -q "DATABRICKS_CONFIG_PROFILE=" .env.local; then
+# Save profile to .env
+if grep -q "DATABRICKS_CONFIG_PROFILE=" .env; then
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        sed -i '' "s/DATABRICKS_CONFIG_PROFILE=.*/DATABRICKS_CONFIG_PROFILE=$PROFILE_NAME/" .env.local
+        sed -i '' "s/DATABRICKS_CONFIG_PROFILE=.*/DATABRICKS_CONFIG_PROFILE=$PROFILE_NAME/" .env
     else
-        sed -i "s/DATABRICKS_CONFIG_PROFILE=.*/DATABRICKS_CONFIG_PROFILE=$PROFILE_NAME/" .env.local
+        sed -i "s/DATABRICKS_CONFIG_PROFILE=.*/DATABRICKS_CONFIG_PROFILE=$PROFILE_NAME/" .env
     fi
 else
-    echo "DATABRICKS_CONFIG_PROFILE=$PROFILE_NAME" >> .env.local
+    echo "DATABRICKS_CONFIG_PROFILE=$PROFILE_NAME" >> .env
 fi
-echo "✓ Databricks profile '$PROFILE_NAME' saved to .env.local"
+echo "✓ Databricks profile '$PROFILE_NAME' saved to .env"
 echo
 
 # Validation will happen after name customization section
@@ -398,15 +398,15 @@ else
     sed -i 's/# default: "your-serving-endpoint-name-goes-here"/default: "'"$SERVING_ENDPOINT"'"/' databricks.yml
 fi
 
-# Update .env.local with serving endpoint
-if grep -q "DATABRICKS_SERVING_ENDPOINT=" .env.local; then
+# Update .env with serving endpoint
+if grep -q "DATABRICKS_SERVING_ENDPOINT=" .env; then
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        sed -i '' "s|DATABRICKS_SERVING_ENDPOINT=.*|DATABRICKS_SERVING_ENDPOINT=$SERVING_ENDPOINT|" .env.local
+        sed -i '' "s|DATABRICKS_SERVING_ENDPOINT=.*|DATABRICKS_SERVING_ENDPOINT=$SERVING_ENDPOINT|" .env
     else
-        sed -i "s|DATABRICKS_SERVING_ENDPOINT=.*|DATABRICKS_SERVING_ENDPOINT=$SERVING_ENDPOINT|" .env.local
+        sed -i "s|DATABRICKS_SERVING_ENDPOINT=.*|DATABRICKS_SERVING_ENDPOINT=$SERVING_ENDPOINT|" .env
     fi
 else
-    echo "DATABRICKS_SERVING_ENDPOINT=$SERVING_ENDPOINT" >> .env.local
+    echo "DATABRICKS_SERVING_ENDPOINT=$SERVING_ENDPOINT" >> .env
 fi
 echo "✓ Serving endpoint configured"
 
@@ -828,26 +828,26 @@ if [ "$USE_DATABASE" = true ]; then
     if [[ -n "$PGHOST" && "$PGHOST" != "null" ]]; then
         echo "✓ Database found: $PGHOST"
 
-        # Update .env.local with DB config
+        # Update .env with DB config
         # Always ensure all database variables are set
 
         # Remove existing database section if it exists to avoid duplicates
         if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' '/^# Database Configuration$/,/^PGPORT=.*$/d' .env.local 2>/dev/null || true
-            sed -i '' '/^PGUSER=.*$/d' .env.local 2>/dev/null || true
-            sed -i '' '/^PGHOST=.*$/d' .env.local 2>/dev/null || true
-            sed -i '' '/^PGDATABASE=.*$/d' .env.local 2>/dev/null || true
-            sed -i '' '/^PGPORT=.*$/d' .env.local 2>/dev/null || true
+            sed -i '' '/^# Database Configuration$/,/^PGPORT=.*$/d' .env 2>/dev/null || true
+            sed -i '' '/^PGUSER=.*$/d' .env 2>/dev/null || true
+            sed -i '' '/^PGHOST=.*$/d' .env 2>/dev/null || true
+            sed -i '' '/^PGDATABASE=.*$/d' .env 2>/dev/null || true
+            sed -i '' '/^PGPORT=.*$/d' .env 2>/dev/null || true
         else
-            sed -i '/^# Database Configuration$/,/^PGPORT=.*$/d' .env.local 2>/dev/null || true
-            sed -i '/^PGUSER=.*$/d' .env.local 2>/dev/null || true
-            sed -i '/^PGHOST=.*$/d' .env.local 2>/dev/null || true
-            sed -i '/^PGDATABASE=.*$/d' .env.local 2>/dev/null || true
-            sed -i '/^PGPORT=.*$/d' .env.local 2>/dev/null || true
+            sed -i '/^# Database Configuration$/,/^PGPORT=.*$/d' .env 2>/dev/null || true
+            sed -i '/^PGUSER=.*$/d' .env 2>/dev/null || true
+            sed -i '/^PGHOST=.*$/d' .env 2>/dev/null || true
+            sed -i '/^PGDATABASE=.*$/d' .env 2>/dev/null || true
+            sed -i '/^PGPORT=.*$/d' .env 2>/dev/null || true
         fi
 
         # Add all database variables
-        cat >> .env.local << EOF
+        cat >> .env << EOF
 
 # Database Configuration
 PGUSER=$USERNAME

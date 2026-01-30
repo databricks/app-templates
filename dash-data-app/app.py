@@ -101,4 +101,4 @@ if __name__ == "__main__":
     # Set initial value for prediction-output
     app.layout.children[1].children[1].children[-1].children = initial_prediction
 
-    app.run_server(debug=True)
+    app.run(debug=True)

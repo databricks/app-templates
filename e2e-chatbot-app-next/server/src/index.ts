@@ -112,6 +112,42 @@ async function startServer() {
         '[Test Mode] Registered handlers:',
         mockServer.listHandlers().length,
       );
+
+      // Import captured request utilities for testing context injection
+      const handlersPath = path.join(
+        dirname(dirname(__dirname)),
+        'tests',
+        'api-mocking',
+        'api-mock-handlers.ts',
+      );
+      const {
+        getCapturedRequests,
+        resetCapturedRequests,
+        getLastCapturedRequest,
+      } = await import(handlersPath);
+
+      // Test-only endpoint to get captured requests (for context injection testing)
+      app.get('/api/test/captured-requests', (_req, res) => {
+        res.json(getCapturedRequests());
+      });
+
+      // Test-only endpoint to get the last captured request
+      app.get('/api/test/last-captured-request', (_req, res) => {
+        const lastRequest = getLastCapturedRequest();
+        if (lastRequest) {
+          res.json(lastRequest);
+        } else {
+          res.status(404).json({ error: 'No captured requests' });
+        }
+      });
+
+      // Test-only endpoint to reset captured requests
+      app.post('/api/test/reset-captured-requests', (_req, res) => {
+        resetCapturedRequests();
+        res.json({ success: true });
+      });
+
+      console.log('[Test Mode] Test endpoints for context injection registered');
     } catch (error) {
       console.error('[Test Mode] Failed to start MSW:', error);
       console.error(

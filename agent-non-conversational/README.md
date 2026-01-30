@@ -4,7 +4,7 @@ This template contains a non-conversational GenAI agent server implementation th
 
 ## Quick start
 
-Run the `./scripts/quickstart.sh` script to quickly set up your local environment and start the agent server. At any step, if there are issues, refer to the manual local development loop setup below.
+Run the `uv run quickstart` script to quickly set up your local environment and start the agent server. At any step, if there are issues, refer to the manual local development loop setup below.
 
 This script will:
 
@@ -13,7 +13,7 @@ This script will:
 3. Configure agent tracing, by creating and linking an MLflow experiment to your app
 
 ```bash
-./scripts/quickstart.sh
+uv run quickstart
 ```
 
 After the setup is complete, you can start the agent server at port 8000 locally with:
@@ -44,7 +44,7 @@ uv run start-server
    databricks auth login
    ```
 
-   Set the `DATABRICKS_CONFIG_PROFILE` environment variable in your .env.local file to the profile you used to authenticate:
+   Set the `DATABRICKS_CONFIG_PROFILE` environment variable in your .env file to the profile you used to authenticate:
 
    ```bash
    DATABRICKS_CONFIG_PROFILE="DEFAULT" # change to the profile name you chose
@@ -55,7 +55,7 @@ uv run start-server
    See the [PAT documentation](https://docs.databricks.com/aws/en/dev-tools/auth/pat#databricks-personal-access-tokens-for-workspace-users).
 
    ```bash
-   # Add these to your .env.local file
+   # Add these to your .env file
    DATABRICKS_HOST="https://host.databricks.com"
    DATABRICKS_TOKEN="dapi_token"
    ```
@@ -64,7 +64,7 @@ uv run start-server
 
 3. **Create and link an MLflow experiment to your app**
 
-   Create an MLflow experiment to enable tracing and version tracking. This is automatically done by the `./scripts/quickstart.sh` script.
+   Create an MLflow experiment to enable tracing and version tracking. This is automatically done by the `uv run quickstart` script.
 
    Create the MLflow experiment via the CLI:
 
@@ -73,11 +73,11 @@ uv run start-server
    databricks experiments create-experiment /Users/$DATABRICKS_USERNAME/agents-on-apps
    ```
 
-   Make a copy of `.env.example` to `.env.local` and update the `MLFLOW_EXPERIMENT_ID` in your `.env.local` file with the experiment ID you created. The `.env.local` file will be automatically loaded when starting the server.
+   Make a copy of `.env.example` to `.env` and update the `MLFLOW_EXPERIMENT_ID` in your `.env` file with the experiment ID you created. The `.env` file will be automatically loaded when starting the server.
 
    ```bash
-   cp .env.example .env.local
-   # Edit .env.local and fill in your experiment ID
+   cp .env.example .env
+   # Edit .env and fill in your experiment ID
    ```
 
    See the [MLflow experiments documentation](https://docs.databricks.com/aws/en/mlflow/experiments#create-experiment-from-the-workspace).

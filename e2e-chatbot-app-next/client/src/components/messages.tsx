@@ -14,7 +14,7 @@ interface MessagesProps {
   status: UseChatHelpers<ChatMessage>['status'];
   messages: ChatMessage[];
   setMessages: UseChatHelpers<ChatMessage>['setMessages'];
-  addToolResult: UseChatHelpers<ChatMessage>['addToolResult'];
+  addToolOutput: UseChatHelpers<ChatMessage>['addToolOutput'];
   sendMessage: UseChatHelpers<ChatMessage>['sendMessage'];
   regenerate: UseChatHelpers<ChatMessage>['regenerate'];
   isReadonly: boolean;
@@ -26,7 +26,7 @@ function PureMessages({
   status,
   messages,
   setMessages,
-  addToolResult,
+  addToolOutput,
   sendMessage,
   regenerate,
   isReadonly,
@@ -73,11 +73,12 @@ function PureMessages({
               key={message.id}
               chatId={chatId}
               message={message}
+              allMessages={messages}
               isLoading={
                 status === 'streaming' && messages.length - 1 === index
               }
               setMessages={setMessages}
-              addToolResult={addToolResult}
+              addToolOutput={addToolOutput}
               sendMessage={sendMessage}
               regenerate={regenerate}
               isReadonly={isReadonly}

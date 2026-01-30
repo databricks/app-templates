@@ -34,21 +34,23 @@ import {
   joinMessagePartSegments,
 } from './databricks-message-part-transformers';
 import { MessageError } from './message-error';
+import { MessageOAuthError } from './message-oauth-error';
+import { isCredentialErrorMessage } from '@/lib/oauth-error-utils';
 import { Streamdown } from 'streamdown';
-import { DATABRICKS_TOOL_CALL_ID } from '@chat-template/ai-sdk-providers/tools';
 import {
   extractDatabricksMetadata,
   isMcpApprovalRequest,
   getMcpApprovalState,
   isApprovalStatusOutput,
-} from '@chat-template/ai-sdk-providers/mcp';
+} from '@databricks/ai-sdk-provider';
 import { useApproval } from '@/hooks/use-approval';
 
 const PurePreviewMessage = ({
   message,
+  allMessages,
   isLoading,
   setMessages,
-  addToolResult,
+  addToolOutput,
   sendMessage,
   regenerate,
   isReadonly,
@@ -56,9 +58,10 @@ const PurePreviewMessage = ({
 }: {
   chatId: string;
   message: ChatMessage;
+  allMessages: ChatMessage[];
   isLoading: boolean;
   setMessages: UseChatHelpers<ChatMessage>['setMessages'];
-  addToolResult: UseChatHelpers<ChatMessage>['addToolResult'];
+  addToolOutput: UseChatHelpers<ChatMessage>['addToolOutput'];
   sendMessage: UseChatHelpers<ChatMessage>['sendMessage'];
   regenerate: UseChatHelpers<ChatMessage>['regenerate'];
   isReadonly: boolean;
@@ -69,7 +72,7 @@ const PurePreviewMessage = ({
 
   // Hook for handling MCP approval requests
   const { submitApproval, isSubmitting, pendingApprovalId } = useApproval({
-    addToolResult,
+    addToolOutput,
     sendMessage,
   });
 
@@ -77,9 +80,15 @@ const PurePreviewMessage = ({
     (part) => part.type === 'file',
   );
 
-  // Extract error parts separately
+  // Extract non-OAuth error parts separately (OAuth errors are rendered inline)
   const errorParts = React.useMemo(
-    () => message.parts.filter((part) => part.type === 'data-error'),
+    () =>
+      message.parts
+        .filter((part) => part.type === 'data-error')
+        .filter((part) => {
+          // OAuth errors are rendered inline, not in the error section
+          return !isCredentialErrorMessage(part.data);
+        }),
     [message.parts],
   );
 
@@ -89,19 +98,24 @@ const PurePreviewMessage = ({
     /**
      * We segment message parts into segments that can be rendered as a single component.
      * Used to render citations as part of the associated text.
+     * Note: OAuth errors are included here for inline rendering, non-OAuth errors are filtered out.
      */
     () =>
       createMessagePartSegments(
-        message.parts.filter((part) => part.type !== 'data-error'),
+        message.parts.filter(
+          (part) =>
+            part.type !== 'data-error' || isCredentialErrorMessage(part.data),
+        ),
       ),
     [message.parts],
   );
 
-  // Check if message only contains errors (no other content)
+  // Check if message only contains non-OAuth errors (no other content)
   const hasOnlyErrors = React.useMemo(() => {
     const nonErrorParts = message.parts.filter(
       (part) => part.type !== 'data-error',
     );
+    // Only consider non-OAuth errors for this check
     return errorParts.length > 0 && nonErrorParts.length === 0;
   }, [message.parts, errorParts.length]);
 
@@ -218,13 +232,12 @@ const PurePreviewMessage = ({
             }
 
             // Render Databricks tool calls and results
-            if (part.type === `tool-${DATABRICKS_TOOL_CALL_ID}`) {
-              const { toolCallId, input, state, errorText, output } = part;
+            if (part.type === `dynamic-tool`) {
+              const { toolCallId, input, state, errorText, output, toolName } = part;
               const metadata =
                 'callProviderMetadata' in part
                   ? extractDatabricksMetadata(part)
                   : undefined;
-              const toolName = metadata?.toolName?.toString();
 
               // Check if this is an MCP tool call
               const isMcpApproval = isMcpApprovalRequest(metadata);
@@ -234,12 +247,17 @@ const PurePreviewMessage = ({
               const approvalStatus = getMcpApprovalState(output);
 
               // When approved but only have approval status (not actual output), show as input-available
-              const effectiveState: ToolState =
-                isMcpApproval &&
-                approvalStatus === 'approved' &&
-                isApprovalStatusOutput(output)
-                  ? 'input-available'
-                  : state;
+              const effectiveState: ToolState = (() => {
+                  if (part.providerExecuted && !isLoading) {
+                    return 'output-available'
+                  }
+                if (isMcpApproval &&
+                  approvalStatus === 'approved' &&
+                  isApprovalStatusOutput(output)) {
+                  return 'input-available';
+                }
+                return state;
+              })()
 
               // Render MCP tool calls with special styling
               if (isMcpApproval) {
@@ -247,7 +265,7 @@ const PurePreviewMessage = ({
                   <McpTool key={toolCallId} defaultOpen={true}>
                     <McpToolHeader
                       serverName={mcpServerName}
-                      toolName={toolName || 'mcp-tool'}
+                      toolName={toolName}
                       state={effectiveState}
                       approvalStatus={approvalStatus}
                     />
@@ -257,12 +275,14 @@ const PurePreviewMessage = ({
                         <McpApprovalActions
                           onApprove={() =>
                             submitApproval({
+                              tool: toolName,
                               approvalRequestId: toolCallId,
                               approve: true,
                             })
                           }
                           onDeny={() =>
                             submitApproval({
+                              tool: toolName,
                               approvalRequestId: toolCallId,
                               approve: false,
                             })
@@ -300,7 +320,7 @@ const PurePreviewMessage = ({
               return (
                 <Tool key={toolCallId} defaultOpen={true}>
                   <ToolHeader
-                    type={toolName || 'tool-call'}
+                    type={toolName}
                     state={effectiveState}
                   />
                   <ToolContent>
@@ -340,6 +360,19 @@ const PurePreviewMessage = ({
                 >
                   <sup className="text-xs">[{part.title || part.url}]</sup>
                 </a>
+              );
+            }
+
+            // Render OAuth errors inline
+            if (type === 'data-error' && isCredentialErrorMessage(part.data)) {
+              return (
+                <MessageOAuthError
+                  key={key}
+                  error={part.data}
+                  allMessages={allMessages}
+                  setMessages={setMessages}
+                  sendMessage={sendMessage}
+                />
               );
             }
           })}

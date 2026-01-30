@@ -1,4 +1,4 @@
-import type { LanguageModelV2 } from '@ai-sdk/provider';
+import type { LanguageModelV3 } from '@ai-sdk/provider';
 
 import { getHostUrl } from '@chat-template/utils';
 // Import auth module directly
@@ -8,8 +8,13 @@ import {
   getDatabricksUserIdentity,
   getCachedCliHost,
 } from '@chat-template/auth';
-import { createDatabricksProvider } from './databricks-provider/index';
+import { createDatabricksProvider } from '@databricks/ai-sdk-provider';
 import { extractReasoningMiddleware, wrapLanguageModel } from 'ai';
+import { shouldInjectContextForEndpoint } from './request-context';
+
+// Header keys for passing context through streamText headers
+export const CONTEXT_HEADER_CONVERSATION_ID = 'x-databricks-conversation-id';
+export const CONTEXT_HEADER_USER_ID = 'x-databricks-user-id';
 
 // Use centralized authentication - only on server side
 async function getProviderToken(): Promise<string> {
@@ -66,33 +71,88 @@ async function getWorkspaceHostname(): Promise<string> {
 // Environment variable to enable SSE logging
 const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true';
 
+const API_PROXY = process.env.API_PROXY;
+
+// Cache for endpoint details to check task type
+const endpointDetailsCache = new Map<
+  string,
+  { task: string | undefined; timestamp: number }
+>();
+const ENDPOINT_DETAILS_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Checks if context should be injected based on cached endpoint details.
+ * Returns true if API_PROXY is set or if the endpoint task type is agent/v2/chat or agent/v1/responses.
+ */
+function shouldInjectContext(): boolean {
+  const servingEndpoint = process.env.DATABRICKS_SERVING_ENDPOINT;
+  if (!servingEndpoint) {
+    return Boolean(API_PROXY);
+  }
+
+  const cached = endpointDetailsCache.get(servingEndpoint);
+  const endpointTask = cached?.task;
+
+  return shouldInjectContextForEndpoint(endpointTask);
+}
+
 // Custom fetch function to transform Databricks responses to OpenAI format
 export const databricksFetch: typeof fetch = async (input, init) => {
   const url = input.toString();
+  let requestInit = init;
+
+  // Extract context from headers (passed via streamText headers option)
+  const headers = new Headers(requestInit?.headers);
+  const conversationId = headers.get(CONTEXT_HEADER_CONVERSATION_ID);
+  const userId = headers.get(CONTEXT_HEADER_USER_ID);
+  // Remove context headers so they don't get sent to the API
+  headers.delete(CONTEXT_HEADER_CONVERSATION_ID);
+  headers.delete(CONTEXT_HEADER_USER_ID);
+  requestInit = { ...requestInit, headers };
+
+  // Inject context into request body if appropriate
+  if (conversationId && userId && requestInit?.body && typeof requestInit.body === 'string') {
+    if (shouldInjectContext()) {
+      try {
+        const body = JSON.parse(requestInit.body);
+        const enhancedBody = {
+          ...body,
+          context: {
+            ...body.context,
+            conversation_id: conversationId,
+            user_id: userId,
+          },
+        };
+        requestInit = { ...requestInit, body: JSON.stringify(enhancedBody) };
+      } catch {
+        // If JSON parsing fails, pass through unchanged
+      }
+    }
+  }
 
   // Log the request being sent to Databricks
-  if (init?.body) {
+  if (requestInit?.body) {
     try {
       const requestBody =
-        typeof init.body === 'string' ? JSON.parse(init.body) : init.body;
+        typeof requestInit.body === 'string' ? JSON.parse(requestInit.body) : requestInit.body;
       console.log(
         'Databricks request:',
         JSON.stringify({
           url,
-          method: init.method || 'POST',
+          method: requestInit.method || 'POST',
           body: requestBody,
         }),
       );
     } catch (_e) {
       console.log('Databricks request (raw):', {
         url,
-        method: init.method || 'POST',
-        body: init.body,
+        method: requestInit.method || 'POST',
+        body: requestInit.body,
       });
     }
   }
 
-  const response = await fetch(url, init);
+  const response = await fetch(url, requestInit);
 
   // If SSE logging is enabled and this is a streaming response, wrap the body to log events
   if (LOG_SSE_EVENTS && response.body) {
@@ -161,8 +221,6 @@ let oauthProviderCache: CachedProvider | null = null;
 let oauthProviderCacheTime = 0;
 const PROVIDER_CACHE_DURATION = 5 * 60 * 1000; // Cache provider for 5 minutes
 
-const API_PROXY = process.env.API_PROXY;
-
 // Helper function to get or create the Databricks provider with OAuth
 async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
   // Check if we have a cached provider that's still fresh
@@ -180,32 +238,28 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
   const hostname = await getWorkspaceHostname();
 
   // Create provider with fetch that always uses fresh token
-  const provider = createDatabricksProvider({
-    baseURL: `${hostname}/serving-endpoints`,
-    formatUrl: ({ baseUrl, path }) => API_PROXY ?? `${baseUrl}${path}`,
-    fetch: async (...[input, init]: Parameters<typeof fetch>) => {
-      // Always get fresh token for each request (will use cache if valid)
-      const currentToken = await getProviderToken();
-      const headers = new Headers(init?.headers);
-      headers.set('Authorization', `Bearer ${currentToken}`);
+const provider = createDatabricksProvider({
+  // When using endpoints such as Agent Bricks or custom agents, we need to use remote tool calling to handle the tool calls
+  useRemoteToolCalling: true,
+  baseURL: `${hostname}/serving-endpoints`,
+  formatUrl: ({ baseUrl, path }) => API_PROXY ?? `${baseUrl}${path}`,
+  fetch: async (...[input, init]: Parameters<typeof fetch>) => {
+    // Always get fresh token for each request (will use cache if valid)
+    const currentToken = await getProviderToken();
+    const headers = new Headers(init?.headers);
+    headers.set('Authorization', `Bearer ${currentToken}`);
 
-      return databricksFetch(input, {
-        ...init,
-        headers,
-      });
-    },
-  });
+    return databricksFetch(input, {
+      ...init,
+      headers,
+    });
+  },
+});
 
   oauthProviderCache = provider;
   oauthProviderCacheTime = Date.now();
   return provider;
 }
-
-const endpointDetailsCache = new Map<
-  string,
-  { task: string | undefined; timestamp: number }
->();
-const ENDPOINT_DETAILS_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 // Get the task type of the serving endpoint
 const getEndpointDetails = async (servingEndpoint: string) => {
@@ -241,17 +295,17 @@ const getEndpointDetails = async (servingEndpoint: string) => {
 
 // Create a smart provider wrapper that handles OAuth initialization
 interface SmartProvider {
-  languageModel(id: string): Promise<LanguageModelV2>;
+  languageModel(id: string): Promise<LanguageModelV3>;
 }
 
 export class OAuthAwareProvider implements SmartProvider {
   private modelCache = new Map<
     string,
-    { model: LanguageModelV2; timestamp: number }
+    { model: LanguageModelV3; timestamp: number }
   >();
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-  async languageModel(id: string): Promise<LanguageModelV2> {
+  async languageModel(id: string): Promise<LanguageModelV3> {
     // Check cache first
     const cached = this.modelCache.get(id);
     if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
@@ -265,10 +319,12 @@ export class OAuthAwareProvider implements SmartProvider {
     const model = await (async () => {
       if (API_PROXY) {
         // For API proxy we always use the responses agent
-        return provider.responsesAgent(id);
+        return provider.responses(id);
       }
       if (id === 'title-model' || id === 'artifact-model') {
-        return provider.fmapi('databricks-meta-llama-3-3-70b-instruct');
+        return provider.chatCompletions(
+          'databricks-meta-llama-3-3-70b-instruct',
+        );
       }
       // Server-side environment validation
       if (!process.env.DATABRICKS_SERVING_ENDPOINT) {
@@ -286,11 +342,11 @@ export class OAuthAwareProvider implements SmartProvider {
           return provider.chatAgent(servingEndpoint);
         case 'agent/v1/responses':
         case 'agent/v2/responses':
-          return provider.responsesAgent(servingEndpoint);
+          return provider.responses(servingEndpoint);
         case 'llm/v1/chat':
-          return provider.fmapi(servingEndpoint);
+          return provider.chatCompletions(servingEndpoint);
         default:
-          return provider.responsesAgent(servingEndpoint);
+          return provider.responses(servingEndpoint);
       }
     })();
 

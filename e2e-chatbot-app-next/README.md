@@ -122,7 +122,7 @@ Use our automated quickstart script for the fastest setup experience:
    - **Set up serving endpoint** - Prompts for your endpoint name and validates it exists
    - **Database setup (optional)** - Choose persistent chat history or ephemeral mode
    - **Deploy to Databricks (optional)** - Optionally deploys resources and provisions database
-   - **Configure local environment** - Automatically creates and populates .env.local
+   - **Configure local environment** - Automatically creates and populates .env
    - **Run migrations** - Sets up database schema if database is enabled
 
    The script handles the entire setup process automatically, including waiting for database provisioning and configuring connection details.
@@ -159,10 +159,10 @@ If you prefer to configure the environment manually:
 2. **Set up environment variables**:
 
    ```bash
-   cp .env.example .env.local
+   cp .env.example .env
    ```
 
-   Address the TODOs in `.env.local`, specifying your Databricks CLI profile and database connection details.
+   Address the TODOs in `.env`, specifying your Databricks CLI profile and database connection details.
 
 3. **Run the application**:
 
@@ -225,7 +225,7 @@ If you initially installed the template without database support (ephemeral mode
 When prompted about enabling persistent chat history, select "Yes". The script will:
 - Uncomment the required database sections in `databricks.yml`
 - Optionally deploy the Lakebase database instance
-- Configure your `.env.local` file with database connection details
+- Configure your `.env` file with database connection details
 - Run database migrations if the database is provisioned
 - Set up your local environment with the correct database settings
 
@@ -249,7 +249,7 @@ If you prefer to enable the database manually:
    ```
    (First deployment takes several minutes for provisioning)
 
-3. **Configure `.env.local`** with database variables:
+3. **Configure `.env`** with database variables:
    ```bash
    PGUSER=your-databricks-username
    PGHOST=your-postgres-host  # Get with: ./scripts/get-pghost.sh
@@ -272,7 +272,7 @@ Tests run in two separate modes to ensure both database and non-database functio
 
 #### With Database Mode
 
-- Uses database environment variables (either set in .env.local or declared elsewhere)
+- Uses database environment variables (either set in .env or declared elsewhere)
 - Includes full Postgres database
 - Tests chat history persistence, pagination, and deletion
 - Will throw a warning and stop if no database exists

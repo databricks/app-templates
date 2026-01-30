@@ -238,13 +238,40 @@ MY_API_KEY=<value>
 
 ## Step 6: Test Locally
 
-### Start the Server
+> Test your migrated agent locally before deploying to Databricks Apps. This helps catch configuration issues early and ensures the agent works correctly.
+
+### 6.1 Start the Server
 
 ```bash
 uv run start-app
 ```
 
-### Test the API
+Wait for the server to start. You should see output indicating the server is running on `http://localhost:8000`.
+
+### 6.2 Test with Original Input Example
+
+The original model artifacts include an `input_example.json` file that contains a sample request. Use this to verify your migrated agent produces the same behavior. If there's no valid sample request then figure out a valid sample request to query agent based on its code.
+
+```bash
+# Check the original input example
+cat ./original_model/input_example.json
+```
+
+Example content:
+```json
+{"input": [{"role": "user", "content": "What is an LLM agent?"}], "custom_inputs": {"thread_id": "example-thread-123"}}
+```
+
+Test your local server with this input:
+
+```bash
+# Test with the original input example
+curl -X POST http://localhost:8000/invocations \
+  -H "Content-Type: application/json" \
+  -d "$(cat ./original_model/input_example.json)"
+```
+
+### 6.3 Test Basic Requests
 
 ```bash
 # Non-streaming
@@ -258,7 +285,7 @@ curl -X POST http://localhost:8000/invocations \
   -d '{"input": [{"role": "user", "content": "Hello!"}], "stream": true}'
 ```
 
-### Test with Custom Inputs (for stateful agents)
+### 6.4 Test with Custom Inputs (for stateful agents)
 
 ```bash
 # With thread_id for short-term memory
@@ -271,6 +298,16 @@ curl -X POST http://localhost:8000/invocations \
   -H "Content-Type: application/json" \
   -d '{"input": [{"role": "user", "content": "Hi"}], "custom_inputs": {"user_id": "user@example.com"}}'
 ```
+
+### 6.5 Verify Before Proceeding
+
+Before proceeding to deployment, ensure:
+- [ ] The server starts without errors
+- [ ] The original input example returns a valid response
+- [ ] Streaming responses work correctly
+- [ ] Custom inputs (thread_id, user_id) are handled properly (if applicable)
+
+> **Note:** Only proceed to Step 7 (Deploy) after confirming the agent works correctly locally.
 
 ---
 

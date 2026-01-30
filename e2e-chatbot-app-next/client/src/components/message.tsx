@@ -37,12 +37,6 @@ import { MessageError } from './message-error';
 import { MessageOAuthError } from './message-oauth-error';
 import { isCredentialErrorMessage } from '@/lib/oauth-error-utils';
 import { Streamdown } from 'streamdown';
-import {
-  extractDatabricksMetadata,
-  isMcpApprovalRequest,
-  getMcpApprovalState,
-  isApprovalStatusOutput,
-} from '@databricks/ai-sdk-provider';
 import { useApproval } from '@/hooks/use-approval';
 
 const PurePreviewMessage = ({
@@ -50,7 +44,7 @@ const PurePreviewMessage = ({
   allMessages,
   isLoading,
   setMessages,
-  addToolOutput,
+  addToolApprovalResponse,
   sendMessage,
   regenerate,
   isReadonly,
@@ -61,7 +55,7 @@ const PurePreviewMessage = ({
   allMessages: ChatMessage[];
   isLoading: boolean;
   setMessages: UseChatHelpers<ChatMessage>['setMessages'];
-  addToolOutput: UseChatHelpers<ChatMessage>['addToolOutput'];
+  addToolApprovalResponse: UseChatHelpers<ChatMessage>['addToolApprovalResponse'];
   sendMessage: UseChatHelpers<ChatMessage>['sendMessage'];
   regenerate: UseChatHelpers<ChatMessage>['regenerate'];
   isReadonly: boolean;
@@ -72,7 +66,7 @@ const PurePreviewMessage = ({
 
   // Hook for handling MCP approval requests
   const { submitApproval, isSubmitting, pendingApprovalId } = useApproval({
-    addToolOutput,
+    addToolApprovalResponse,
     sendMessage,
   });
 
@@ -234,28 +228,24 @@ const PurePreviewMessage = ({
             // Render Databricks tool calls and results
             if (part.type === `dynamic-tool`) {
               const { toolCallId, input, state, errorText, output, toolName } = part;
-              const metadata =
-                'callProviderMetadata' in part
-                  ? extractDatabricksMetadata(part)
-                  : undefined;
 
-              // Check if this is an MCP tool call
-              const isMcpApproval = isMcpApprovalRequest(metadata);
-              const mcpServerName = metadata?.mcpServerName?.toString();
+              // Check if this is an MCP tool call by looking for approvalRequestId in metadata
+              // This works across all states (approval-requested, approval-denied, output-available)
+              const isMcpApproval = part.callProviderMetadata?.databricks?.approvalRequestId != null;
+              const mcpServerName = part.callProviderMetadata?.databricks?.mcpServerName?.toString();
 
-              // Determine approval status for MCP tools
-              const approvalStatus = getMcpApprovalState(output);
+              // Extract approval outcome for 'approval-responded' state
+              // When addToolApprovalResponse is called, AI SDK sets the `approval` property
+              // on the tool-call part and changes state to 'approval-responded'
+              const approved: boolean | undefined =
+                'approval' in part ? part.approval?.approved : undefined;
+
 
               // When approved but only have approval status (not actual output), show as input-available
               const effectiveState: ToolState = (() => {
-                  if (part.providerExecuted && !isLoading) {
+                  if (part.providerExecuted && !isLoading && state === 'input-available') {
                     return 'output-available'
                   }
-                if (isMcpApproval &&
-                  approvalStatus === 'approved' &&
-                  isApprovalStatusOutput(output)) {
-                  return 'input-available';
-                }
                 return state;
               })()
 
@@ -267,22 +257,20 @@ const PurePreviewMessage = ({
                       serverName={mcpServerName}
                       toolName={toolName}
                       state={effectiveState}
-                      approvalStatus={approvalStatus}
+                      approved={approved}
                     />
                     <McpToolContent>
                       <McpToolInput input={input} />
-                      {approvalStatus === 'awaiting-approval' && (
+                      {state === 'approval-requested' && (
                         <McpApprovalActions
                           onApprove={() =>
                             submitApproval({
-                              tool: toolName,
                               approvalRequestId: toolCallId,
                               approve: true,
                             })
                           }
                           onDeny={() =>
                             submitApproval({
-                              tool: toolName,
                               approvalRequestId: toolCallId,
                               approve: false,
                             })
@@ -292,25 +280,24 @@ const PurePreviewMessage = ({
                           }
                         />
                       )}
-                      {state === 'output-available' &&
-                        !isApprovalStatusOutput(output) && (
-                          <ToolOutput
-                            output={
-                              errorText ? (
-                                <div className="rounded border p-2 text-red-500">
-                                  Error: {errorText}
-                                </div>
-                              ) : (
-                                <div className="whitespace-pre-wrap font-mono text-sm">
-                                  {typeof output === 'string'
-                                    ? output
-                                    : JSON.stringify(output, null, 2)}
-                                </div>
-                              )
-                            }
-                            errorText={undefined}
-                          />
-                        )}
+                      {state === 'output-available' && output != null && (
+                        <ToolOutput
+                          output={
+                            errorText ? (
+                              <div className="rounded border p-2 text-red-500">
+                                Error: {errorText}
+                              </div>
+                            ) : (
+                              <div className="whitespace-pre-wrap font-mono text-sm">
+                                {typeof output === 'string'
+                                  ? output
+                                  : JSON.stringify(output, null, 2)}
+                              </div>
+                            )
+                          }
+                          errorText={undefined}
+                        />
+                      )}
                     </McpToolContent>
                   </McpTool>
                 );

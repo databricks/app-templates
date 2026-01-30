@@ -98,7 +98,7 @@ export function Chat({
     status,
     resumeStream,
     clearError,
-    addToolOutput,
+    addToolApprovalResponse,
     regenerate,
   } = useChat<ChatMessage>({
     id,
@@ -285,7 +285,7 @@ export function Chat({
           status={status}
           messages={messages}
           setMessages={setMessages}
-          addToolOutput={addToolOutput}
+          addToolApprovalResponse={addToolApprovalResponse}
           regenerate={regenerate}
           sendMessage={sendMessage}
           isReadonly={isReadonly}

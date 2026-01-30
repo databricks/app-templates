@@ -58,9 +58,6 @@ import {
   CONTEXT_HEADER_CONVERSATION_ID,
   CONTEXT_HEADER_USER_ID,
 } from '@chat-template/core';
-import {
-  extractApprovalStatus,
-} from '@databricks/ai-sdk-provider';
 import { ChatSDKError } from '@chat-template/core/errors';
 
 export const chatRouter: RouterType = Router();
@@ -198,16 +195,19 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           });
 
           // Check if this is an MCP denial - if so, we're done (no need to call LLM)
-          // Only check the last assistant message's last part for a fresh denial
-          const lastAssistantMessage = assistantMessages.at(-1);
-          const lastPart = lastAssistantMessage?.parts?.at(-1);
-
-          const approvalStatus =
-            lastPart?.type === 'tool-databricks-tool-call' && lastPart.output
-              ? extractApprovalStatus(lastPart.output)
-              : undefined;
-
-          const hasMcpDenial = approvalStatus === false;
+          // Denial is indicated by a dynamic-tool part with state 'output-denied'
+          // or with approval.approved === false
+          const hasMcpDenial = requestBody.previousMessages?.some(
+            (m: ChatMessage) =>
+              m.parts?.some(
+                (p) =>
+                  p.type === 'dynamic-tool' &&
+                  (p.state === 'output-denied' ||
+                    ('approval' in p &&
+                      (p.approval)?.approved ===
+                        false)),
+              ),
+          );
 
           if (hasMcpDenial) {
             // We don't need to call the LLM because the user has denied the tool call

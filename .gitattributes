@@ -1,0 +1,3 @@
+# Mark synced skills in agent subfolders as generated
+# These are copied from .claude/skills/ by the sync script
+agent-*/.claude/skills/** linguist-generated=true

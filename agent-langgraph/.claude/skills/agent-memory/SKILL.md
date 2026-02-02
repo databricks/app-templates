@@ -122,16 +122,27 @@ config = {"configurable": {"user_id": user_id, "store": store}}
 
 ---
 
+## Complete Example
+
+A full implementation is available in this skill's examples folder:
+
+```bash
+# Copy to your project
+cp .claude/skills/agent-memory/examples/memory_tools.py agent_server/
+```
+
+See `examples/memory_tools.py` for production-ready code including all helper functions.
+
 ## Production Reference
 
-For complete, tested implementations:
+For implementations in the pre-built templates:
 
 | File | Description |
 |------|-------------|
 | [`agent-langgraph-long-term-memory/agent_server/utils_memory.py`](https://github.com/databricks/app-templates/tree/main/agent-langgraph-long-term-memory/agent_server/utils_memory.py) | Memory tools factory, helpers, error handling |
 | [`agent-langgraph-long-term-memory/agent_server/agent.py`](https://github.com/databricks/app-templates/tree/main/agent-langgraph-long-term-memory/agent_server/agent.py) | Integration with agent, store initialization |
 
-Key functions in `utils_memory.py`:
+Key functions:
 - `memory_tools()` - Factory returning get/save/delete tools
 - `get_user_id()` - Extract user_id from request
 - `resolve_lakebase_instance_name()` - Handle hostname vs instance name

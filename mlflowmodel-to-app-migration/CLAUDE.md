@@ -1,3 +1,3 @@
-@AGENTS.md
+# MLflow Model Serving to Databricks Apps Migration
 
-<!-- This file loads AGENTS.md into Claude Code for migration assistance -->
+Follow the instructions in AGENTS.md to help users migrate their agents from Databricks Model Serving to Databricks Apps.

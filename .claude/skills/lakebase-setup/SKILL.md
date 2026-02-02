@@ -82,7 +82,7 @@ resources:
 ```
 
 **Important:**
-- The `name: 'database'` must match the `valueFrom` reference in `app.yaml`
+- The `instance_name: '<your-lakebase-instance-name>'` must match the `value` reference in `app.yaml`
 - Using the `database` resource type automatically grants the app's service principal access to Lakebase
 
 ### Update app.yaml (Environment Variables)

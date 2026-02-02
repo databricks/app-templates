@@ -82,9 +82,10 @@ def sync_template(template: str, config: dict):
     copy_skill(SOURCE / f"modify-{sdk}-agent", dest / "modify-agent")
 
     # Memory skills (all LangGraph templates - enables adding memory to any agent)
+    # SDK-specific memory skills are renamed on copy (e.g., agent-langgraph-memory -> agent-memory)
     if sdk == "langgraph":
         copy_skill(SOURCE / "lakebase-setup", dest / "lakebase-setup")
-        copy_skill(SOURCE / "agent-memory", dest / "agent-memory")
+        copy_skill(SOURCE / "agent-langgraph-memory", dest / "agent-memory")
 
 
 def main():

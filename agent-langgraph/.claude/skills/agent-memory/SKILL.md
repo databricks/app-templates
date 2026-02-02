@@ -6,8 +6,8 @@ description: "Add memory capabilities to your agent. Use when: (1) User asks abo
 # Adding Memory to Your Agent
 
 > **Note:** This template does not include memory by default. Use this skill to **add memory capabilities**. For pre-configured memory templates, see:
-> - `agent-langgraph-short-term-memory` - Conversation history within a session
-> - `agent-langgraph-long-term-memory` - User facts that persist across sessions
+> - [agent-langgraph-short-term-memory](https://github.com/databricks/app-templates/tree/main/agent-langgraph-short-term-memory) - Conversation history within a session
+> - [agent-langgraph-long-term-memory](https://github.com/databricks/app-templates/tree/main/agent-langgraph-long-term-memory) - User facts that persist across sessions
 
 ## Memory Types
 
@@ -39,17 +39,111 @@ Adding memory requires changes to **4 files**:
 
 | File | What to Add |
 |------|-------------|
-| `pyproject.toml` | Memory dependency + hatch config |
+| `pyproject.toml` | Memory dependency |
 | `.env` | Lakebase env vars (for local dev) |
 | `databricks.yml` | Lakebase database resource |
-| `app.yaml` | `valueFrom` reference to lakebase resource |
+| `app.yaml` | Environment variables for Lakebase |
 | `agent_server/agent.py` | Memory tools and AsyncDatabricksStore |
 
 ---
 
-## Step 1: Configure databricks.yml (Lakebase Resource)
+## Key Principles
 
-Add the Lakebase database resource to your app in `databricks.yml`:
+Before implementing memory, understand these patterns from the production implementation.
+
+### 1. Factory Function Pattern
+
+Memory tools should be returned from a factory function, not defined as standalone functions:
+
+```python
+def memory_tools():
+    @tool
+    async def get_user_memory(query: str, config: RunnableConfig) -> str:
+        ...
+    @tool
+    async def save_user_memory(memory_key: str, memory_data_json: str, config: RunnableConfig) -> str:
+        ...
+    @tool
+    async def delete_user_memory(memory_key: str, config: RunnableConfig) -> str:
+        ...
+    return [get_user_memory, save_user_memory, delete_user_memory]
+```
+
+### 2. User ID Extraction
+
+Extract `user_id` from the request, checking `custom_inputs` first. Return `None` (not a default) to let the caller decide:
+
+```python
+def get_user_id(request: ResponsesAgentRequest) -> Optional[str]:
+    custom_inputs = dict(request.custom_inputs or {})
+    if "user_id" in custom_inputs:
+        return custom_inputs["user_id"]
+    if request.context and getattr(request.context, "user_id", None):
+        return request.context.user_id
+    return None
+```
+
+### 3. Separate Error Handling
+
+Check `user_id` and `store` separately with distinct error messages:
+
+```python
+user_id = config.get("configurable", {}).get("user_id")
+if not user_id:
+    return "Memory not available - no user_id provided."
+
+store: Optional[BaseStore] = config.get("configurable", {}).get("store")
+if not store:
+    return "Memory not available - store not configured."
+```
+
+### 4. JSON Validation for Save
+
+Validate JSON input before storing - the LLM may pass invalid JSON:
+
+```python
+try:
+    memory_data = json.loads(memory_data_json)
+    if not isinstance(memory_data, dict):
+        return f"Failed: memory_data must be a JSON object, not {type(memory_data).__name__}"
+    await store.aput(namespace, memory_key, memory_data)
+except json.JSONDecodeError as e:
+    return f"Failed to save memory: Invalid JSON - {e}"
+```
+
+### 5. Pass Store via RunnableConfig
+
+Pass the store through config, not as a function parameter:
+
+```python
+config = {"configurable": {"user_id": user_id, "store": store}}
+# Tools access via: config.get("configurable", {}).get("store")
+```
+
+---
+
+## Production Reference
+
+For complete, tested implementations:
+
+| File | Description |
+|------|-------------|
+| [`agent-langgraph-long-term-memory/agent_server/utils_memory.py`](https://github.com/databricks/app-templates/tree/main/agent-langgraph-long-term-memory/agent_server/utils_memory.py) | Memory tools factory, helpers, error handling |
+| [`agent-langgraph-long-term-memory/agent_server/agent.py`](https://github.com/databricks/app-templates/tree/main/agent-langgraph-long-term-memory/agent_server/agent.py) | Integration with agent, store initialization |
+
+Key functions in `utils_memory.py`:
+- `memory_tools()` - Factory returning get/save/delete tools
+- `get_user_id()` - Extract user_id from request
+- `resolve_lakebase_instance_name()` - Handle hostname vs instance name
+- `get_lakebase_access_error_message()` - Helpful error messages
+
+---
+
+## Configuration Files
+
+### Step 1: databricks.yml (Lakebase Resource)
+
+Add the Lakebase database resource to your app:
 
 ```yaml
 resources:
@@ -62,7 +156,7 @@ resources:
         # ... other resources (experiment, UC functions, etc.) ...
 
         # Lakebase instance for long-term memory
-        - name: 'lakebadatabasese_memory'
+        - name: 'database'
           database:
             instance_name: '<your-lakebase-instance-name>'
             database_name: 'postgres'
@@ -71,11 +165,7 @@ resources:
 
 **Important:** The `name: 'database'` must match the `valueFrom` reference in `app.yaml`.
 
----
-
-## Step 2: Configure app.yaml (Environment Variables)
-
-Update `app.yaml` with the Lakebase environment variables:
+### Step 2: app.yaml (Environment Variables)
 
 ```yaml
 command: ["uv", "run", "start-app"]
@@ -83,34 +173,20 @@ command: ["uv", "run", "start-app"]
 env:
   # ... other env vars ...
 
-  # MLflow experiment (uses valueFrom to reference databricks.yml resource)
-  - name: MLFLOW_EXPERIMENT_ID
-    valueFrom: "experiment"
-
-  # Lakebase instance name - must match the instance_name in databricks.yml database resource
-  # Note: Use 'value' (not 'valueFrom') because AsyncDatabricksStore needs the instance name,
-  # not the full connection string that valueFrom would provide
+  # Lakebase instance name
   - name: LAKEBASE_INSTANCE_NAME
     value: "<your-lakebase-instance-name>"
 
-  # Embedding configuration (static values)
+  # Embedding configuration
   - name: EMBEDDING_ENDPOINT
     value: "databricks-gte-large-en"
   - name: EMBEDDING_DIMS
     value: "1024"
 ```
 
-**Important:** The `LAKEBASE_INSTANCE_NAME` value must match the `instance_name` in your `databricks.yml` database resource. The `database` resource handles permissions, while `app.yaml` provides the instance name to your code.
+**Important:** `LAKEBASE_INSTANCE_NAME` must match `instance_name` in databricks.yml.
 
-### Why not valueFrom for Lakebase?
-
-The `database` resource's `valueFrom` provides the full connection string (e.g., `instance-xxx.database.staging.cloud.databricks.com`), but `AsyncDatabricksStore` expects just the instance name. So we use a static `value` instead.
-
----
-
-## Step 3: Configure .env (Local Development)
-
-For local development, add to `.env`:
+### Step 3: .env (Local Development)
 
 ```bash
 # Lakebase configuration for long-term memory
@@ -119,176 +195,37 @@ EMBEDDING_ENDPOINT=databricks-gte-large-en
 EMBEDDING_DIMS=1024
 ```
 
-> **Note:** `.env` is only for local development. When deployed, the app gets `LAKEBASE_INSTANCE_NAME` from the `valueFrom` reference in `app.yaml`.
-
 ---
 
-## Step 4: Update agent.py
+## Integration Example
 
-### Add Imports and Configuration
-
-```python
-import os
-import uuid
-from typing import AsyncGenerator
-
-from databricks_langchain import AsyncDatabricksStore, ChatDatabricks
-from langchain_core.runnables import RunnableConfig
-from langchain_core.tools import tool
-from langgraph.prebuilt import create_react_agent
-
-# Environment configuration
-LAKEBASE_INSTANCE_NAME = os.getenv("LAKEBASE_INSTANCE_NAME")
-EMBEDDING_ENDPOINT = os.getenv("EMBEDDING_ENDPOINT", "databricks-gte-large-en")
-EMBEDDING_DIMS = int(os.getenv("EMBEDDING_DIMS", "1024"))  # REQUIRED!
-```
-
-**CRITICAL:** You MUST specify `embedding_dims` when using `embedding_endpoint`. Without it, you'll get:
-```
-"embedding_dims is required when embedding_endpoint is specified"
-```
-
-### Create Memory Tools
+Minimal example showing how to integrate memory into your streaming function:
 
 ```python
-@tool
-async def get_user_memory(query: str, config: RunnableConfig) -> str:
-    """Search for relevant information about the user from long-term memory.
-    Use this to recall preferences, past interactions, or other saved information.
-    """
-    user_id = config.get("configurable", {}).get("user_id")
-    store = config.get("configurable", {}).get("store")
-    if not user_id or not store:
-        return "Memory not available - no user context"
+from agent_server.utils_memory import memory_tools, get_user_id
 
-    # Sanitize user_id for namespace (replace special chars)
-    namespace = ("user_memories", user_id.replace(".", "-").replace("@", "-"))
-    results = await store.asearch(namespace, query=query, limit=5)
-    if not results:
-        return "No memories found for this query"
-    return "\n".join([f"- {r.value}" for r in results])
-
-
-@tool
-async def save_user_memory(memory_key: str, memory_data: str, config: RunnableConfig) -> str:
-    """Save information about the user to long-term memory.
-    Use this to remember user preferences, important details, or other
-    information that should persist across conversations.
-
-    Args:
-        memory_key: A short descriptive key (e.g., "preferred_name", "team", "region")
-        memory_data: The information to save
-    """
-    user_id = config.get("configurable", {}).get("user_id")
-    store = config.get("configurable", {}).get("store")
-    if not user_id or not store:
-        return "Memory not available - no user context"
-
-    namespace = ("user_memories", user_id.replace(".", "-").replace("@", "-"))
-    await store.aput(namespace, memory_key, {"value": memory_data})
-    return f"Saved memory: {memory_key}"
-
-
-@tool
-async def delete_user_memory(memory_key: str, config: RunnableConfig) -> str:
-    """Delete a specific memory from the user's long-term memory.
-    Use this when the user asks to forget something or correct stored information.
-
-    Args:
-        memory_key: The key of the memory to delete (e.g., "preferred_name", "team")
-    """
-    user_id = config.get("configurable", {}).get("user_id")
-    store = config.get("configurable", {}).get("store")
-    if not user_id or not store:
-        return "Memory not available - no user context"
-
-    namespace = ("user_memories", user_id.replace(".", "-").replace("@", "-"))
-    await store.adelete(namespace, memory_key)
-    return f"Deleted memory: {memory_key}"
-```
-
-### Add Helper Functions
-
-```python
-def _get_user_id(request: ResponsesAgentRequest) -> str:
-    """Extract user_id from request context or custom inputs."""
-    custom_inputs = dict(request.custom_inputs or {})
-    if "user_id" in custom_inputs and custom_inputs["user_id"]:
-        return str(custom_inputs["user_id"])
-    if request.context and getattr(request.context, "user_id", None):
-        return str(request.context.user_id)
-    return "default-user"
-
-
-def _get_or_create_thread_id(request: ResponsesAgentRequest) -> str:
-    """Extract or create thread_id for conversation tracking."""
-    custom_inputs = dict(request.custom_inputs or {})
-    if "thread_id" in custom_inputs and custom_inputs["thread_id"]:
-        return str(custom_inputs["thread_id"])
-    if request.context and getattr(request.context, "conversation_id", None):
-        return str(request.context.conversation_id)
-    return str(uuid.uuid4())
-```
-
-### Update Streaming Function
-
-```python
 @stream()
-async def streaming(
-    request: ResponsesAgentRequest,
-) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
-    # Get user context
-    user_id = _get_user_id(request)
-    thread_id = _get_or_create_thread_id(request)
+async def streaming(request: ResponsesAgentRequest):
+    user_id = get_user_id(request)
 
-    # Get other tools (MCP, etc.)
-    mcp_client = init_mcp_client(sp_workspace_client)
-    mcp_tools = await mcp_client.get_tools()
-
-    # Memory tools
-    memory_tools = [get_user_memory, save_user_memory, delete_user_memory]
-
-    # Combine all tools
-    all_tools = mcp_tools + memory_tools
-
-    # Initialize model
-    model = ChatDatabricks(endpoint="databricks-claude-sonnet-4")
-
-    # Use AsyncDatabricksStore for long-term memory
     async with AsyncDatabricksStore(
         instance_name=LAKEBASE_INSTANCE_NAME,
         embedding_endpoint=EMBEDDING_ENDPOINT,
-        embedding_dims=EMBEDDING_DIMS,  # REQUIRED!
+        embedding_dims=EMBEDDING_DIMS,
     ) as store:
-        # Create agent with tools
-        agent = create_react_agent(
-            model=model,
-            tools=all_tools,
-            prompt=AGENT_INSTRUCTIONS,
-        )
+        await store.setup()  # Creates tables if needed
 
-        # Prepare input
-        messages = {"messages": to_chat_completions_input([i.model_dump() for i in request.input])}
+        tools = await mcp_client.get_tools() + memory_tools()
+        config = {"configurable": {"user_id": user_id, "store": store}}
 
-        # Configure with user context for memory tools
-        config = {
-            "configurable": {
-                "user_id": user_id,
-                "thread_id": thread_id,
-                "store": store,  # Pass store to tools via config
-            }
-        }
-
-        # Stream agent responses
-        async for event in process_agent_astream_events(
-            agent.astream(input=messages, config=config, stream_mode=["updates", "messages"])
-        ):
+        agent = create_react_agent(model=model, tools=tools)
+        async for event in agent.astream(messages, config):
             yield event
 ```
 
 ---
 
-## Step 5: Initialize Tables and Deploy
+## Initialize Tables and Deploy
 
 ### Initialize Lakebase Tables (First Time Only)
 
@@ -313,117 +250,32 @@ EOF
 )"
 ```
 
-### Deploy and Run
+### Deploy
 
-**IMPORTANT:** Always run `databricks bundle run` after `databricks bundle deploy` to start/restart the app with the new code:
-
-```bash
-# Deploy resources and upload files
-databricks bundle deploy
-
-# Start/restart the app with new code (REQUIRED!)
-databricks bundle run agent_langgraph
-```
-
-> **Note:** `bundle deploy` only uploads files and configures resources. `bundle run` is required to actually start the app with the new code.
+After initializing tables, deploy your agent. See **deploy** skill for full instructions.
 
 ---
 
-## Complete Example Files
+## Short-Term Memory
 
-### databricks.yml (with Lakebase)
-
-```yaml
-bundle:
-  name: agent_langgraph
-
-resources:
-  experiments:
-    agent_langgraph_experiment:
-      name: /Users/${workspace.current_user.userName}/${bundle.name}-${bundle.target}
-
-  apps:
-    agent_langgraph:
-      name: "my-agent-app"
-      description: "Agent with long-term memory"
-      source_code_path: ./
-
-      resources:
-        - name: 'experiment'
-          experiment:
-            experiment_id: "${resources.experiments.agent_langgraph_experiment.id}"
-            permission: 'CAN_MANAGE'
-
-        # Lakebase instance for long-term memory
-        - name: 'database'
-          database:
-            instance_name: '<your-lakebase-instance-name>'
-            database_name: 'postgres'
-            permission: 'CAN_CONNECT_AND_CREATE'
-
-targets:
-  dev:
-    mode: development
-    default: true
-```
-
-### app.yaml
-
-```yaml
-command: ["uv", "run", "start-app"]
-
-env:
-  - name: MLFLOW_TRACKING_URI
-    value: "databricks"
-  - name: MLFLOW_REGISTRY_URI
-    value: "databricks-uc"
-  - name: API_PROXY
-    value: "http://localhost:8000/invocations"
-  - name: CHAT_APP_PORT
-    value: "3000"
-  - name: CHAT_PROXY_TIMEOUT_SECONDS
-    value: "300"
-  # Reference experiment resource from databricks.yml
-  - name: MLFLOW_EXPERIMENT_ID
-    valueFrom: "experiment"
-  # Lakebase instance name (must match instance_name in databricks.yml)
-  - name: LAKEBASE_INSTANCE_NAME
-    value: "<your-lakebase-instance-name>"
-  # Embedding configuration
-  - name: EMBEDDING_ENDPOINT
-    value: "databricks-gte-large-en"
-  - name: EMBEDDING_DIMS
-    value: "1024"
-```
-
----
-
-## Adding Short-Term Memory
-
-Short-term memory stores conversation history within a thread.
-
-### Import and Initialize Checkpointer
+For conversation history within a session, use `AsyncCheckpointSaver`:
 
 ```python
 from databricks_langchain import AsyncCheckpointSaver
-
-LAKEBASE_INSTANCE_NAME = os.getenv("LAKEBASE_INSTANCE_NAME")
 
 async with AsyncCheckpointSaver(instance_name=LAKEBASE_INSTANCE_NAME) as checkpointer:
     agent = create_react_agent(
         model=model,
         tools=tools,
-        checkpointer=checkpointer,  # Enables conversation persistence
+        checkpointer=checkpointer,
     )
+
+    config = {"configurable": {"thread_id": thread_id}}
+    async for event in agent.astream(messages, config):
+        yield event
 ```
 
-### Use thread_id in Agent Config
-
-```python
-config = {"configurable": {"thread_id": thread_id}}
-async for event in agent.astream(input_state, config, stream_mode=["updates", "messages"]):
-    yield event
-```
+See the [agent-langgraph-short-term-memory](https://github.com/databricks/app-templates/tree/main/agent-langgraph-short-term-memory) template for a complete implementation.
 
 ---
 
@@ -484,11 +336,10 @@ curl -X POST https://<app-url>/invocations \
 - [ ] Run `uv sync` to install dependencies
 - [ ] Created or identified Lakebase instance
 - [ ] Added Lakebase env vars to `.env` (for local dev)
-- [ ] Added `database` resource to `databricks.yml` (for permissions)
-- [ ] Added `LAKEBASE_INSTANCE_NAME` value to `app.yaml` (matching instance_name in databricks.yml)
+- [ ] Added `database` resource to `databricks.yml`
+- [ ] Added `LAKEBASE_INSTANCE_NAME` to `app.yaml`
 - [ ] **Initialized tables locally** by running `await store.setup()`
-- [ ] Deployed with `databricks bundle deploy`
-- [ ] **Started app with `databricks bundle run agent_langgraph`**
+- [ ] Deployed with `databricks bundle deploy && databricks bundle run`
 
 ---
 
@@ -498,9 +349,9 @@ curl -X POST https://<app-url>/invocations \
 |-------|-------|----------|
 | **"embedding_dims is required"** | Missing parameter | Add `embedding_dims=1024` to AsyncDatabricksStore |
 | **"relation 'store' does not exist"** | Tables not created | Run `await store.setup()` locally first |
-| **"Unable to resolve Lakebase instance 'None'"** | Missing env var in deployed app | Add `valueFrom: "database"` to app.yaml |
-| **"permission denied for table store"** | Missing grants | Lakebase `database` resource in DAB should handle this |
-| **"Memory not available"** | No user_id in request | Ensure `custom_inputs.user_id` is passed |
+| **"Unable to resolve Lakebase instance 'None'"** | Missing env var | Check `LAKEBASE_INSTANCE_NAME` in app.yaml |
+| **"permission denied for table store"** | Missing grants | Add `database` resource to databricks.yml |
+| **"Memory not available - no user_id"** | Missing user_id | Pass `custom_inputs.user_id` in request |
 | **Memory not persisting** | Different user_ids | Use consistent user_id across requests |
 | **App not updated after deploy** | Forgot to run bundle | Run `databricks bundle run agent_langgraph` after deploy |
 
@@ -512,8 +363,8 @@ For fully configured implementations without manual setup:
 
 | Template | Memory Type | Key Features |
 |----------|-------------|--------------|
-| `agent-langgraph-short-term-memory` | Short-term | AsyncCheckpointSaver, thread_id |
-| `agent-langgraph-long-term-memory` | Long-term | AsyncDatabricksStore, memory tools |
+| [agent-langgraph-short-term-memory](https://github.com/databricks/app-templates/tree/main/agent-langgraph-short-term-memory) | Short-term | AsyncCheckpointSaver, thread_id |
+| [agent-langgraph-long-term-memory](https://github.com/databricks/app-templates/tree/main/agent-langgraph-long-term-memory) | Long-term | AsyncDatabricksStore, memory tools |
 
 ---
 

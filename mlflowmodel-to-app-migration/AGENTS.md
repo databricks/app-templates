@@ -254,7 +254,15 @@ cd <your-app-directory>
 uv sync
 ```
 
-### 5.2 Run Quickstart
+### 5.2 Create requirements.txt for Databricks Apps
+
+Databricks Apps requires a `requirements.txt` file with `uv` to install dependencies from `pyproject.toml`:
+
+```bash
+echo "uv" > requirements.txt
+```
+
+### 5.3 Run Quickstart (if available)
 
 ```bash
 uv run quickstart
@@ -265,7 +273,7 @@ This will:
 - Create an MLflow experiment
 - Configure `.env.local`
 
-### 5.3 Configure Environment
+### 5.4 Configure Environment
 
 If your agent needs additional environment variables, add them to `.env.local`:
 
@@ -451,8 +459,16 @@ databricks apps create --json '{
 
 ### 7.3 Sync Files
 
+**IMPORTANT:** Run the sync command from INSIDE the app directory, using `.` as the source.
+
 ```bash
+# Get your username
 DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
+
+# Change into the app directory first
+cd <app-name>
+
+# Sync current directory (.) to workspace
 databricks sync . "/Users/$DATABRICKS_USERNAME/<app-name>"
 ```
 
@@ -492,10 +508,13 @@ curl -X POST <app-url>/invocations \
 │   ├── quickstart.py     # Setup script
 │   └── start_app.py      # App startup
 ├── app.yaml              # Databricks Apps configuration
-├── pyproject.toml        # Dependencies
+├── pyproject.toml        # Dependencies (for local dev with uv)
+├── requirements.txt      # REQUIRED: Must contain "uv" for Databricks Apps
 ├── .env.example          # Environment template
 └── README.md
 ```
+
+> **IMPORTANT:** The `requirements.txt` file must exist and contain `uv` so that Databricks Apps can install dependencies using the `pyproject.toml`. Without this file, the app will fail to start.
 
 ---
 

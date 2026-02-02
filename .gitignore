@@ -183,4 +183,4 @@ tsconfig.tsbuildinfo
 !.claude/skills/modify-langgraph-agent/
 !.claude/skills/modify-openai-agent/
 !.claude/skills/lakebase-setup/
-!.claude/skills/agent-memory/
+!.claude/skills/agent-langgraph-memory/

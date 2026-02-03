@@ -1,0 +1,44 @@
+[project]
+name = "agent-server-stateful-memory"
+version = "0.1.0"
+description = "MLflow-compatible agent server with FastAPI and persistent memory using Lakebase"
+readme = "README.md"
+authors = [
+    { name = "Agent Developer", email = "developer@example.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.12",
+    "uvicorn>=0.34.2",
+    "mlflow>=3.8.0rc0",
+    "openai-agents>=0.4.1",
+    "python-dotenv",
+    "uuid-utils>=0.10.0",
+    # Note: Using git reference until official release
+    "databricks-openai[memory] @ git+https://github.com/databricks/databricks-ai-bridge@openai-memory-session#subdirectory=integrations/openai",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+# Note: Required for direct git references. Delete when official databricks-openai[memory] release is available
+allow-direct-references = true
+
+[tool.uv]
+prerelease = "allow"
+
+[dependency-groups]
+dev = [
+    "hatchling>=1.27.0",
+    "pytest>=7.0.0",
+]
+
+
+[project.scripts]
+quickstart = "scripts.quickstart:main"
+start-app = "scripts.start_app:main"
+start-server = "agent_server.start_server:main"
+agent-evaluate = "agent_server.evaluate_agent:evaluate"
+discover-tools = "scripts.discover_tools:main"

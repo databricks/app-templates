@@ -1,4 +1,5 @@
 import os
+import uuid
 from typing import AsyncGenerator
 
 import mlflow
@@ -22,6 +23,16 @@ from agent_server.utils import (
 
 # Lakebase instance name for persistent session storage
 LAKEBASE_INSTANCE_NAME = os.environ.get("LAKEBASE_INSTANCE_NAME", "lakebase")
+
+
+def get_session_id(request: ResponsesAgentRequest) -> str:
+    """Extract session_id from request or generate a new one."""
+    # Try to get session_id from custom_inputs if provided
+    if hasattr(request, "custom_inputs") and request.custom_inputs:
+        if "session_id" in request.custom_inputs:
+            return request.custom_inputs["session_id"]
+    # Fall back to generating a new session_id
+    return str(uuid.uuid4())
 
 # NOTE: this will work for all databricks models OTHER than GPT-OSS, which uses a slightly different API
 set_default_openai_client(AsyncDatabricksOpenAI())
@@ -51,9 +62,11 @@ async def invoke(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
 
+    session_id = get_session_id(request)
+
     # Create session for persistent conversation history with your Databricks Lakebase instance
     session = MemorySession(
-        session_id=request.session_id,
+        session_id=session_id,
         instance_name=LAKEBASE_INSTANCE_NAME,
     )
 
@@ -61,7 +74,10 @@ async def invoke(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
         agent = create_coding_agent(mcp_server)
         messages = [i.model_dump() for i in request.input]
         result = await Runner.run(agent, messages, session=session)
-        return ResponsesAgentResponse(output=[item.to_input_item() for item in result.new_items])
+        return ResponsesAgentResponse(
+            output=[item.to_input_item() for item in result.new_items],
+            custom_outputs={"session_id": session_id},
+        )
 
 
 @stream()
@@ -71,7 +87,7 @@ async def stream(request: ResponsesAgentRequest) -> AsyncGenerator[ResponsesAgen
 
     # Create session for persistent conversation history with your Databricks Lakebase instance
     session = MemorySession(
-        session_id=request.session_id,
+        session_id=get_session_id(request),
         instance_name=LAKEBASE_INSTANCE_NAME,
     )
 

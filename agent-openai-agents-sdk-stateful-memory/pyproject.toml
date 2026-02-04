@@ -26,6 +26,9 @@ build-backend = "hatchling.build"
 # Note: Required for direct git references. Delete when official databricks-openai[memory] release is available
 allow-direct-references = true
 
+[tool.hatch.build.targets.wheel]
+packages = ["agent_server", "scripts"]
+
 [tool.uv]
 prerelease = "allow"
 

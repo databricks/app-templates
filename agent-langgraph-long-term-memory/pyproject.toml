@@ -11,14 +11,11 @@ dependencies = [
     "fastapi>=0.115.12",
     "uvicorn>=0.34.2",
     "databricks-langchain[memory]>=0.13.0",
-    "mlflow>=3.8.0rc0",
+    "mlflow>=3.9.0",
     "langgraph>=1.0.1",
     "langchain-mcp-adapters>=0.1.11",
     "python-dotenv",
 ]
-
-[tool.uv]
-prerelease = "allow"
 
 [build-system]
 requires = ["hatchling"]

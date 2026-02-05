@@ -8,13 +8,20 @@ from mlflow.genai.agent_server import get_request_headers
 from mlflow.types.responses import ResponsesAgentStreamEvent
 
 
-def get_databricks_host_from_env() -> Optional[str]:
+def get_databricks_host(workspace_client: WorkspaceClient | None = None) -> Optional[str]:
+    workspace_client = workspace_client or WorkspaceClient()
     try:
-        w = WorkspaceClient()
-        return w.config.host
+        return workspace_client.config.host
     except Exception as e:
         logging.exception(f"Error getting databricks host from env: {e}")
         return None
+
+
+def build_mcp_url(path: str, workspace_client: WorkspaceClient | None = None) -> str:
+    if not path.startswith("/"):
+        return path
+    hostname = get_databricks_host(workspace_client)
+    return f"{hostname}{path}"
 
 
 def get_user_workspace_client() -> WorkspaceClient:

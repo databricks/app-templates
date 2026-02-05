@@ -35,7 +35,35 @@ This guide instructs LLM coding agents how to migrate an MLflow ResponsesAgent f
 
 ---
 
+## Before You Begin: Create Task List
+
+**At the start of the migration, create a task list to track progress.** This helps the user follow along and see what's completed, in progress, and pending.
+
+> **User tip:** Press `Ctrl+T` to toggle the task list view in your terminal. The display shows up to 10 tasks at a time with status indicators.
+
+Create the following tasks using the `TaskCreate` tool:
+
+| Task | Description |
+|------|-------------|
+| **Authenticate to Databricks** | Verify Databricks CLI authentication and select the correct profile for the workspace |
+| **Download original agent artifacts** | Download the MLflow model artifacts from Model Serving endpoint |
+| **Analyze and understand agent code** | Examine the original agent code, identify tools, resources, and dependencies |
+| **Migrate agent code to Apps format** | Transform ResponsesAgent class to @invoke/@stream decorated functions |
+| **Set up and configure the app** | Install dependencies, run quickstart, configure environment |
+| **Test agent locally** | Start local server and verify the agent works correctly |
+| **Deploy to Databricks Apps** | Create app with resources, sync files, and deploy |
+| **Test deployed app** | Verify the deployed app responds correctly |
+
+Update task status as you progress:
+- Mark tasks as `in_progress` when starting each step
+- Mark tasks as `completed` when finished
+- This gives the user visibility into migration progress
+
+---
+
 ## Step 0: Verify Databricks Authentication
+
+> **Task:** Mark "Authenticate to Databricks" as `in_progress`
 
 Before starting the migration, verify you have valid authentication to the correct Databricks workspace.
 
@@ -87,6 +115,8 @@ Once validated, use this profile for ALL subsequent `databricks` CLI commands by
 ---
 
 ## Step 1: Download the Original Agent Code
+
+> **Task:** Mark "Authenticate to Databricks" as `completed`. Mark "Download original agent artifacts" as `in_progress`.
 
 Download the original agent code from the Model Serving endpoint. This requires setting up a virtual environment with MLflow to access the model artifacts.
 
@@ -146,14 +176,11 @@ EOF
 
 ### 1.4 Verify Downloaded Artifacts
 
-Check that the key files exist:
+Check that the key files exist and understand the full structure:
 
 ```bash
-# List downloaded files
-ls -la ./original_mlflow_model/
-
-# The agent code is typically in one of these locations:
-ls ./original_mlflow_model/code/agent.py 2>/dev/null || ls ./original_mlflow_model/agent.py 2>/dev/null
+# List all downloaded files recursively
+find ./original_mlflow_model -type f | head -50
 
 # Check for MLmodel file (contains resource requirements)
 cat ./original_mlflow_model/MLmodel
@@ -161,6 +188,28 @@ cat ./original_mlflow_model/MLmodel
 # Check for input example (useful for testing)
 cat ./original_mlflow_model/input_example.json 2>/dev/null
 ```
+
+**Examine the `/code` folder** - contains all code dependencies logged via `code_paths=["..."]`:
+
+```bash
+# List all code files
+ls -la ./original_mlflow_model/code/
+
+# The main agent is typically agent.py, but there may be additional modules
+find ./original_mlflow_model/code -name "*.py" -type f
+```
+
+**Examine the `/artifacts` folder** (if present) - contains artifacts logged via `artifacts={...}`:
+
+```bash
+# Check for artifacts folder
+ls -la ./original_mlflow_model/artifacts/ 2>/dev/null
+
+# List all artifacts
+find ./original_mlflow_model/artifacts -type f 2>/dev/null
+```
+
+> **Important:** Take note of ALL files in `/code` and `/artifacts`. You will need to copy these to the migrated app and ensure imports still work correctly.
 
 ### 1.5 Deactivate Virtual Environment
 
@@ -177,8 +226,15 @@ After successful download, you should have:
 ```
 ./original_mlflow_model/
 ├── MLmodel              # Model metadata and resource requirements
-├── code/
-│   └── agent.py         # Main agent implementation
+├── code/                # Code logged via code_paths=["..."]
+│   ├── agent.py         # Main agent implementation
+│   ├── utils.py         # (optional) Helper modules
+│   ├── tools.py         # (optional) Custom tool definitions
+│   └── ...              # Any other code dependencies
+├── artifacts/           # (optional) Artifacts logged via artifacts={...}
+│   ├── config.yaml      # (optional) Configuration files
+│   ├── prompts/         # (optional) Prompt templates
+│   └── ...              # Any other artifacts (data files, etc.)
 ├── input_example.json   # Sample request for testing
 ├── requirements.txt     # Original dependencies
 └── ...
@@ -186,9 +242,11 @@ After successful download, you should have:
 
 ### Key Files to Examine
 
-1. **`agent.py`** - Contains the `ResponsesAgent` class with `predict()` and `predict_stream()` methods
-2. **`MLmodel`** - Contains the `resources` section listing required Databricks resources
-3. **`input_example.json`** - Use this to test the migrated agent
+1. **`code/agent.py`** - Contains the `ResponsesAgent` class with `predict()` and `predict_stream()` methods
+2. **`code/*.py`** - Any additional Python modules the agent imports
+3. **`MLmodel`** - Contains the `resources` section listing required Databricks resources
+4. **`artifacts/`** - Any configuration files, prompts, or data files the agent uses
+5. **`input_example.json`** - Use this to test the migrated agent
 
 ### Troubleshooting Model Download
 
@@ -228,6 +286,8 @@ databricks model-versions list --name "<model-name>" --profile <profile>
 ---
 
 ## Step 2: Understand the Key Transformations
+
+> **Task:** Mark "Download original agent artifacts" as `completed`. Mark "Analyze and understand agent code" as `in_progress`.
 
 ### Entry Point Transformation
 
@@ -307,15 +367,69 @@ async for chunk in stream:
 
 ## Step 3: Migrate the Agent Code
 
-### 3.1 Copy Your Configuration
+> **Task:** Mark "Analyze and understand agent code" as `completed`. Mark "Migrate agent code to Apps format" as `in_progress`.
 
-From the original agent, extract and preserve:
+### 3.1 Copy Code Dependencies and Artifacts
+
+The original MLflow model may contain multiple code files and artifacts that need to be migrated.
+
+**Copy all code files from `/code` to `agent_server/`:**
+
+```bash
+# Copy all Python files from original code folder
+cp ./original_mlflow_model/code/*.py ./migrated_app/agent_server/
+
+# If there are subdirectories with code, copy those too
+# cp -r ./original_mlflow_model/code/submodule ./migrated_app/agent_server/
+```
+
+**Copy artifacts (if present):**
+
+```bash
+# Create an artifacts directory in the migrated app if needed
+mkdir -p ./migrated_app/agent_server/artifacts
+
+# Copy all artifacts
+cp -r ./original_mlflow_model/artifacts/* ./migrated_app/agent_server/artifacts/ 2>/dev/null || true
+```
+
+**Fix import paths after copying:**
+
+When code files are moved, imports may break. Check and update imports in all copied files:
+
+```python
+# BEFORE (if files were in different locations):
+from code.utils import helper_function
+from artifacts.prompts import SYSTEM_PROMPT
+
+# AFTER (files are now in agent_server/):
+from agent_server.utils import helper_function
+# Or if in same directory:
+from .utils import helper_function
+
+# For artifacts, update file paths:
+# BEFORE:
+with open("artifacts/config.yaml") as f:
+# AFTER:
+import os
+config_path = os.path.join(os.path.dirname(__file__), "artifacts", "config.yaml")
+with open(config_path) as f:
+```
+
+> **Important:** Review each copied file and ensure all imports resolve correctly. The most common issues are:
+> - Relative imports that assumed a different directory structure
+> - Hardcoded file paths to artifacts
+> - Missing `__init__.py` files for package imports
+
+### 3.2 Extract Configuration
+
+From the original agent code, identify and preserve:
 - **LLM endpoint name** (e.g., `databricks-claude-sonnet-4-5`)
 - **System prompt**
 - **Tool definitions**
 - **Any custom logic**
 
-### 3.2 Create the App Structure
+### 3.3 Update the Agent Entry Point
 
 Edit `migrated_app/agent_server/agent.py`:
 
@@ -344,7 +458,7 @@ Edit `migrated_app/agent_server/agent.py`:
 4. **Preserve any special logic:**
    Migrate any custom preprocessing, postprocessing, or business logic from the original agent.
 
-### 3.3 Handle Stateful Agents
+### 3.4 Handle Stateful Agents
 
 **If original uses checkpointer (short-term memory):**
 - Add `AsyncCheckpointSaver` with Lakebase integration
@@ -359,6 +473,8 @@ Edit `migrated_app/agent_server/agent.py`:
 ---
 
 ## Step 4: Set Up the App
+
+> **Task:** Mark "Migrate agent code to Apps format" as `completed`. Mark "Set up and configure the app" as `in_progress`.
 
 ### 4.1 Verify Build Configuration
 
@@ -376,6 +492,11 @@ packages = ["agent_server", "scripts"]
 ```
 
 If the `[tool.hatch.build.targets.wheel]` section is missing, add it with the appropriate package directories.
+
+> **Note:** If you copied additional subdirectories from the original `/code` folder in Step 3.1, you may need to add them to the `packages` list. For example, if you copied a `utils/` module:
+> ```toml
+> packages = ["agent_server", "scripts", "utils"]
+> ```
 
 **Ensure a README file exists:**
 
@@ -447,6 +568,8 @@ databricks experiments create-experiment "/Users/<your-username>/<app-name>" --p
 ---
 
 ## Step 5: Test Locally
+
+> **Task:** Mark "Set up and configure the app" as `completed`. Mark "Test agent locally" as `in_progress`.
 
 > Test your migrated agent locally before deploying to Databricks Apps. This helps catch configuration issues early and ensures the agent works correctly.
 
@@ -527,6 +650,8 @@ Before proceeding to deployment, ensure:
 ---
 
 ## Step 6: Deploy to Databricks Apps
+
+> **Task:** Mark "Test agent locally" as `completed`. Mark "Deploy to Databricks Apps" as `in_progress`.
 
 ### 6.1 Extract Resources from Original Model
 
@@ -665,6 +790,8 @@ databricks apps deploy <app-name> --source-code-path /Workspace/Users/$DATABRICK
 
 ### 6.5 Test Deployed App
 
+> **Task:** Mark "Deploy to Databricks Apps" as `completed`. Mark "Test deployed app" as `in_progress`.
+
 ```bash
 # Get OAuth token
 TOKEN=$(databricks auth token | jq -r .access_token)
@@ -675,6 +802,10 @@ curl -X POST <app-url>/invocations \
   -H "Content-Type: application/json" \
   -d '{"input": [{"role": "user", "content": "Hello!"}]}'
 ```
+
+Once the deployed app responds successfully:
+
+> **Task:** Mark "Test deployed app" as `completed`. 🎉 **Migration complete!**
 
 ### 6.6 Deployment Troubleshooting
 

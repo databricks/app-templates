@@ -29,8 +29,6 @@ def _get_session_id() -> str:
 def send_telemetry(
     event_name: str,
     params: dict[str, Any] | None = None,
-    *,
-    use_staging: bool = True,
 ) -> None:
     """
     Send telemetry directly to MLflow telemetry endpoint.
@@ -38,14 +36,9 @@ def send_telemetry(
     Args:
         event_name: Name of the telemetry event.
         params: Optional parameters to include with the event.
-        use_staging: If True, send to staging endpoint. If False, send to production.
     """
     try:
-        ingestion_url = (
-            "https://api.mlflow-telemetry.io/staging/log"
-            if use_staging
-            else "https://api.mlflow-telemetry.io/log"
-        )
+        ingestion_url = "https://api.mlflow-telemetry.io/log"
 
         # Reuse MLflow's persistent installation ID
         installation_id = get_or_create_installation_id() or uuid.uuid4().hex

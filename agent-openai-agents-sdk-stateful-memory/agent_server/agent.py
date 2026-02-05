@@ -6,8 +6,7 @@ import mlflow
 from agents import Agent, Runner, set_default_openai_api, set_default_openai_client
 from agents.tracing import set_trace_processors
 from databricks_openai import AsyncDatabricksOpenAI
-from databricks_openai.agents import McpServer
-from databricks_openai.agents.session import MemorySession
+from databricks_openai.agents import AsyncDatabricksSession, McpServer
 from mlflow.genai.agent_server import invoke, stream
 from mlflow.types.responses import (
     ResponsesAgentRequest,
@@ -65,7 +64,7 @@ async def invoke(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
     session_id = get_session_id(request)
 
     # Create session for persistent conversation history with your Databricks Lakebase instance
-    session = MemorySession(
+    session = AsyncDatabricksSession(
         session_id=session_id,
         instance_name=LAKEBASE_INSTANCE_NAME,
     )
@@ -86,7 +85,7 @@ async def stream(request: ResponsesAgentRequest) -> AsyncGenerator[ResponsesAgen
     # user_workspace_client = get_user_workspace_client()
 
     # Create session for persistent conversation history with your Databricks Lakebase instance
-    session = MemorySession(
+    session = AsyncDatabricksSession(
         session_id=get_session_id(request),
         instance_name=LAKEBASE_INSTANCE_NAME,
     )

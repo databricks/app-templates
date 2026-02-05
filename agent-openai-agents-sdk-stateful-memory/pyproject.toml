@@ -15,7 +15,7 @@ dependencies = [
     "python-dotenv",
     "uuid-utils>=0.10.0",
     # Note: Using git reference until official release
-    "databricks-openai[memory] @ git+https://github.com/databricks/databricks-ai-bridge@openai-memory-session#subdirectory=integrations/openai",
+    "databricks-openai[memory] @ git+https://github.com/databricks/databricks-ai-bridge@openai-lakebasesqlalchemysession#subdirectory=integrations/openai",
 ]
 
 [build-system]

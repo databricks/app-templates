@@ -12,7 +12,7 @@ This guide instructs LLM coding agents how to migrate an MLflow ResponsesAgent f
 - Model Serving: Synchronous `predict()` and `predict_stream()` methods on a class
 - Apps: Asynchronous `@invoke` and `@stream` decorated functions
 
-**Deliverables:** After migration is complete, you will have two folders:
+**Deliverables:** After migration is complete, you will have:
 
 ```
 <working-directory>/
@@ -23,7 +23,7 @@ This guide instructs LLM coding agents how to migrate an MLflow ResponsesAgent f
 │   ├── input_example.json
 │   └── requirements.txt
 │
-└── migrated_app/             # New Databricks App (ready to deploy)
+└── <app-name>/               # New Databricks App (ready to deploy)
     ├── agent_server/
     │   ├── agent.py          # Migrated agent code
     │   └── ...
@@ -33,11 +33,54 @@ This guide instructs LLM coding agents how to migrate an MLflow ResponsesAgent f
     └── ...
 ```
 
+> **`<app-name>`** is the name the user provides at the start of the migration. It is used as both the directory name and the Databricks App name at deploy time.
+
 ---
 
-## Before You Begin: Create Task List
+## Before You Begin: Gather User Inputs
 
-**At the start of the migration, create a task list to track progress.** This helps the user follow along and see what's completed, in progress, and pending.
+**Before doing anything else, ask the user two questions.** Use the `AskUserQuestion` tool to collect both answers at once so the user is only prompted once, then Claude can execute the rest of the migration autonomously.
+
+**Questions to ask:**
+
+1. **Databricks profile:** Which Databricks CLI profile should be used for the workspace where the Model Serving endpoint lives? (Run `databricks auth profiles` first to list available profiles and their workspaces, then present the options to the user.)
+2. **App name:** What should the new Databricks App be named? (Must be lowercase, can contain letters, numbers, and hyphens, and must be unique within the workspace.)
+
+Store the answers as:
+- `<profile>` — used for ALL `databricks` CLI commands throughout the migration (via `--profile <profile>`)
+- `<app-name>` — used as both the directory name for the migrated app AND the app name when deploying with `databricks apps create`
+
+### Validate Authentication
+
+After receiving the user's answers, validate the selected profile:
+
+```bash
+databricks current-user me --profile <profile>
+```
+
+If this fails with an authentication error, prompt the user to re-authenticate:
+
+```bash
+databricks auth login --profile <profile>
+```
+
+> **Important:** Remember to include `--profile <profile>` on every `databricks` CLI command throughout the migration.
+
+### Create the App Directory
+
+The working directory contains the app scaffold template files (`agent_server/`, `scripts/`, `app.yaml`, `pyproject.toml`, etc.). **Copy these into a new directory named `<app-name>/`:**
+
+```bash
+# Create the app directory and copy scaffold files
+mkdir <app-name>
+cp -r agent_server scripts app.yaml pyproject.toml requirements.txt .env.example README.md <app-name>/
+```
+
+All subsequent migration steps operate inside the `<app-name>/` directory.
+
+### Create Task List
+
+**Create a task list to track progress.** This helps the user follow along and see what's completed, in progress, and pending.
 
 > **User tip:** Press `Ctrl+T` to toggle the task list view in your terminal. The display shows up to 10 tasks at a time with status indicators.
 
@@ -45,7 +88,7 @@ Create the following tasks using the `TaskCreate` tool:
 
 | Task | Description |
 |------|-------------|
-| **Authenticate to Databricks** | Verify Databricks CLI authentication and select the correct profile for the workspace |
+| **Authenticate to Databricks** | Verify Databricks CLI authentication and validate the selected profile |
 | **Download original agent artifacts** | Download the MLflow model artifacts from Model Serving endpoint |
 | **Analyze and understand agent code** | Examine the original agent code, identify tools, resources, and dependencies |
 | **Migrate agent code to Apps format** | Transform ResponsesAgent class to @invoke/@stream decorated functions |
@@ -61,62 +104,11 @@ Update task status as you progress:
 
 ---
 
-## Step 0: Verify Databricks Authentication
-
-> **Task:** Mark "Authenticate to Databricks" as `in_progress`
-
-Before starting the migration, verify you have valid authentication to the correct Databricks workspace.
-
-### 0.1 List Available Profiles
-
-```bash
-databricks auth profiles
-```
-
-This shows all configured profiles and their authentication status.
-
-### 0.2 Select or Confirm Profile
-
-Ask the user which profile to use for the migration. If the user provides an endpoint URL, extract the workspace host to help identify the correct profile.
-
-**Example interaction:**
-> "I see you have the following Databricks profiles configured:
-> 1. DEFAULT (https://myworkspace.cloud.databricks.com)
-> 2. prod (https://prod.cloud.databricks.com)
->
-> Which profile corresponds to your Model Serving endpoint? (Enter number or profile name)"
-
-### 0.3 Validate Authentication
-
-Test that the selected profile has a valid OAuth token:
-
-```bash
-databricks current-user me --profile <selected-profile>
-```
-
-If this fails with an authentication error, prompt the user to re-authenticate:
-
-```bash
-databricks auth login --profile <selected-profile>
-```
-
-Or if they need to authenticate to a new workspace:
-
-```bash
-databricks auth login --host <workspace-url>
-```
-
-### 0.4 Set Profile for Migration
-
-Once validated, use this profile for ALL subsequent `databricks` CLI commands by adding `--profile <selected-profile>`.
-
-> **Important:** Remember to include `--profile <profile-name>` on every `databricks` CLI command throughout the migration, or set `export DATABRICKS_CONFIG_PROFILE=<profile-name>` in your environment.
-
----
-
 ## Step 1: Download the Original Agent Code
 
 > **Task:** Mark "Authenticate to Databricks" as `completed`. Mark "Download original agent artifacts" as `in_progress`.
+>
+> **Note:** The `<profile>` and `<app-name>` values were collected from the user in the "Before You Begin" section. Use them throughout.
 
 Download the original agent code from the Model Serving endpoint. This requires setting up a virtual environment with MLflow to access the model artifacts.
 
@@ -156,7 +148,7 @@ import mlflow
 import os
 
 # Set profile for authentication (change if using non-default profile)
-os.environ["DATABRICKS_CONFIG_PROFILE"] = "<selected-profile>"
+os.environ["DATABRICKS_CONFIG_PROFILE"] = "<profile>"
 
 # Configure MLflow for Databricks
 mlflow.set_tracking_uri("databricks")
@@ -377,20 +369,20 @@ The original MLflow model may contain multiple code files and artifacts that nee
 
 ```bash
 # Copy all Python files from original code folder
-cp ./original_mlflow_model/code/*.py ./migrated_app/agent_server/
+cp ./original_mlflow_model/code/*.py ./<app-name>/agent_server/
 
 # If there are subdirectories with code, copy those too
-# cp -r ./original_mlflow_model/code/submodule ./migrated_app/agent_server/
+# cp -r ./original_mlflow_model/code/submodule ./<app-name>/agent_server/
 ```
 
 **Copy artifacts (if present):**
 
 ```bash
 # Create an artifacts directory in the migrated app if needed
-mkdir -p ./migrated_app/agent_server/artifacts
+mkdir -p ./<app-name>/agent_server/artifacts
 
 # Copy all artifacts
-cp -r ./original_mlflow_model/artifacts/* ./migrated_app/agent_server/artifacts/ 2>/dev/null || true
+cp -r ./original_mlflow_model/artifacts/* ./<app-name>/agent_server/artifacts/ 2>/dev/null || true
 ```
 
 **Fix import paths after copying:**
@@ -431,7 +423,7 @@ From the original agent code, identify and preserve:
 
 ### 3.3 Update the Agent Entry Point
 
-Edit `migrated_app/agent_server/agent.py`:
+Edit `<app-name>/agent_server/agent.py`:
 
 1. **Update the LLM endpoint:**
    ```python
@@ -510,7 +502,7 @@ fi
 ### 4.2 Install Dependencies
 
 ```bash
-cd migrated_app
+cd <app-name>
 uv sync
 ```
 
@@ -578,7 +570,7 @@ databricks experiments create-experiment "/Users/<your-username>/<app-name>" --p
 After the quickstart setup is complete, start the agent server and chat app locally:
 
 ```bash
-cd migrated_app
+cd <app-name>
 uv run start-app
 ```
 
@@ -591,7 +583,7 @@ Wait for the server to start. You should see output indicating the server is run
 The original model artifacts include an `input_example.json` file that contains a sample request. Use this to verify your migrated agent produces the same behavior. If there's no valid sample request then figure out a valid sample request to query agent based on its code.
 
 ```bash
-# Check the original input example (from the migrated_app directory)
+# Check the original input example (from the <app-name> directory)
 cat ../original_mlflow_model/input_example.json
 ```
 
@@ -669,11 +661,7 @@ resources:
 
 ### 6.2 Create the App with Resources
 
-**First, ask the user what they want to name their new app.**
-
-> "What would you like to name your new Databricks App? (App names must be lowercase, can contain letters, numbers, and hyphens, and must be unique within your workspace)"
-
-Use the name provided by the user in the `databricks apps create` command below.
+Use the `<app-name>` provided by the user at the start of the migration in the `databricks apps create` command below.
 
 Convert the MLmodel resources to the Databricks Apps API format and pass them via `--json`.
 
@@ -769,23 +757,23 @@ databricks apps create --json '{
 
 ### 6.3 Sync Files
 
-**IMPORTANT:** Run the sync command from INSIDE the `migrated_app` directory, using `.` as the source.
+**IMPORTANT:** Run the sync command from INSIDE the `<app-name>` directory, using `.` as the source.
 
 ```bash
 # Get your username
 DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
 
-# Change into the migrated_app directory
-cd migrated_app
+# Change into the app directory
+cd <app-name>
 
 # Sync current directory (.) to workspace
-databricks sync . "/Users/$DATABRICKS_USERNAME/migrated_app"
+databricks sync . "/Users/$DATABRICKS_USERNAME/<app-name>"
 ```
 
 ### 6.4 Deploy
 
 ```bash
-databricks apps deploy <app-name> --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/migrated_app
+databricks apps deploy <app-name> --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/<app-name>
 ```
 
 ### 6.5 Test Deployed App
@@ -828,7 +816,7 @@ databricks apps get <app-name> --output json | jq -r '.url'
 ## Reference: App File Structure
 
 ```
-migrated_app/
+<app-name>/
 ├── agent_server/
 │   ├── __init__.py
 │   ├── agent.py          # Main agent logic - THIS IS WHERE YOU MIGRATE TO

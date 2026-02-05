@@ -60,24 +60,48 @@ import {
   CONTEXT_HEADER_USER_ID,
 } from '@chat-template/core';
 import { ChatSDKError } from '@chat-template/core/errors';
+import { getBasicTools } from '../agent/tools.js';
 
 export const chatRouter: RouterType = Router();
 
 const streamCache = new StreamCache();
 
-// Define tools in AI SDK format
-const chatTools = {
-  get_current_time: {
-    description: 'Get the current date and time in a specific timezone',
-    parameters: z.object({
-      timezone: z.string().optional().describe('IANA timezone name, e.g. "America/New_York", "Europe/London", defaults to UTC'),
-    }),
-    execute: async ({ timezone = 'UTC' }: { timezone?: string }) => {
-      const now = new Date();
-      return `Current time in ${timezone}: ${now.toLocaleString('en-US', { timeZone: timezone })}`;
-    },
-  },
-};
+/**
+ * Convert LangChain tools to AI SDK format
+ * This allows us to use agent tool definitions with the AI SDK streaming
+ *
+ * LangChain tools use Zod schemas, AI SDK tools also use Zod schemas,
+ * so we can pass the schema directly.
+ */
+function convertLangChainToolsToAISDK(langChainTools: any[]) {
+  const aiTools: Record<string, any> = {};
+
+  for (const lcTool of langChainTools) {
+    aiTools[lcTool.name] = {
+      description: lcTool.description,
+      // LangChain tool's schema is already a Zod schema - pass it directly
+      parameters: lcTool.schema,
+      execute: async (args: any) => {
+        try {
+          // Call the LangChain tool's function with the args
+          const result = await lcTool.func(args);
+          return result;
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          return `Error: ${message}`;
+        }
+      },
+    };
+  }
+
+  return aiTools;
+}
+
+// Import tools from agent and convert to AI SDK format
+const langChainTools = getBasicTools();
+const chatTools = convertLangChainToolsToAISDK(langChainTools);
+
+console.log(`✅ Loaded ${Object.keys(chatTools).length} tool(s) from agent: ${Object.keys(chatTools).join(', ')}`);
 
 // Apply auth middleware to all chat routes
 chatRouter.use(authMiddleware);

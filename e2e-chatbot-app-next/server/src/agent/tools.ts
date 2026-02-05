@@ -94,7 +94,8 @@ export const timeTool = tool(
  * Get basic function tools
  */
 export function getBasicTools() {
-  return [weatherTool, calculatorTool, timeTool];
+  // Per PR feedback: keep only time tool, remove contrived examples
+  return [timeTool];
 }
 
 /**

@@ -60,48 +60,52 @@ import {
   CONTEXT_HEADER_USER_ID,
 } from '@chat-template/core';
 import { ChatSDKError } from '@chat-template/core/errors';
-import { getBasicTools } from '../agent/tools.js';
+import { createAgent, type AgentConfig } from '../agent/agent.js';
+import type { AgentExecutor } from 'langchain/agents';
 
 export const chatRouter: RouterType = Router();
 
 const streamCache = new StreamCache();
 
-/**
- * Convert LangChain tools to AI SDK format
- * This allows us to use agent tool definitions with the AI SDK streaming
- *
- * LangChain tools use Zod schemas, AI SDK tools also use Zod schemas,
- * so we can pass the schema directly.
- */
-function convertLangChainToolsToAISDK(langChainTools: any[]) {
-  const aiTools: Record<string, any> = {};
+// Cache the agent instance to avoid recreating it on every request
+let agentInstance: AgentExecutor | null = null;
+let agentInitPromise: Promise<AgentExecutor> | null = null;
 
-  for (const lcTool of langChainTools) {
-    aiTools[lcTool.name] = {
-      description: lcTool.description,
-      // LangChain tool's schema is already a Zod schema - pass it directly
-      parameters: lcTool.schema,
-      execute: async (args: any) => {
-        try {
-          // Call the LangChain tool's function with the args
-          const result = await lcTool.func(args);
-          return result;
-        } catch (error: unknown) {
-          const message = error instanceof Error ? error.message : String(error);
-          return `Error: ${message}`;
-        }
-      },
-    };
+/**
+ * Get or create the agent instance
+ */
+async function getAgent(): Promise<AgentExecutor> {
+  if (agentInstance) {
+    return agentInstance;
   }
 
-  return aiTools;
+  // If initialization is already in progress, wait for it
+  if (agentInitPromise) {
+    return agentInitPromise;
+  }
+
+  // Start initialization
+  agentInitPromise = (async () => {
+    console.log('🤖 Initializing LangChain agent...');
+
+    const config: AgentConfig = {
+      // Use a foundation model that supports tool calling
+      // "databricks-meta-llama-3-1-70b-instruct" supports tool calling
+      model: process.env.DATABRICKS_SERVING_ENDPOINT || "databricks-meta-llama-3-1-70b-instruct",
+      temperature: 0.1,
+      maxTokens: 2000,
+    };
+
+    const agent = await createAgent(config);
+    agentInstance = agent;
+    agentInitPromise = null;
+
+    console.log('✅ Agent initialized successfully');
+    return agent;
+  })();
+
+  return agentInitPromise;
 }
-
-// Import tools from agent and convert to AI SDK format
-const langChainTools = getBasicTools();
-const chatTools = convertLangChainToolsToAISDK(langChainTools);
-
-console.log(`✅ Loaded ${Object.keys(chatTools).length} tool(s) from agent: ${Object.keys(chatTools).join(', ')}`);
 
 // Apply auth middleware to all chat routes
 chatRouter.use(authMiddleware);
@@ -264,44 +268,109 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     let finalUsage: LanguageModelUsage | undefined;
     const streamId = generateUUID();
 
-    const model = await myProvider.languageModel(selectedChatModel);
-    const result = streamText({
-      model,
-      messages: await convertToModelMessages(uiMessages),
-      tools: chatTools,
-      headers: {
-        [CONTEXT_HEADER_CONVERSATION_ID]: id,
-        [CONTEXT_HEADER_USER_ID]: session.user.email ?? session.user.id,
-      },
-      onFinish: ({ usage }) => {
-        finalUsage = usage;
-      },
-    });
+    // Get the LangChain agent
+    const agent = await getAgent();
+
+    // Convert UI messages to agent format (simple string for latest message)
+    const userInput = message?.parts
+      ?.filter((p) => p.type === 'text')
+      .map((p) => (p as any).text)
+      .join('\n') || '';
+
+    // Extract chat history (previous messages)
+    const chatHistory = previousMessages
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.parts
+          ?.filter((p) => p.type === 'text')
+          .map((p) => (p as any).text)
+          .join('\n') || '',
+      }));
 
     /**
-     * We manually create the stream to have access to the stream writer.
-     * This allows us to inject custom stream parts like data-error.
+     * Create UI message stream from LangChain agent output
+     * This converts LangChain's streaming format to AI SDK's UIMessageChunk format
      */
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
-        writer.merge(
-          result.toUIMessageStream({
-            originalMessages: uiMessages,
-            generateMessageId: generateUUID,
-            sendReasoning: true,
-            sendSources: true,
-            onError: (error) => {
-              console.error('Stream error:', error);
+        try {
+          const messageId = generateUUID();
 
-              const errorMessage =
-                error instanceof Error ? error.message : JSON.stringify(error);
+          // Start the message
+          writer.write({ type: 'start', messageId });
+          writer.write({ type: 'start-step' });
+          writer.write({ type: 'text-start', id: messageId });
 
-              writer.write({ type: 'data-error', data: errorMessage });
+          // Stream from agent
+          const agentStream = await agent.stream({
+            input: userInput,
+            chat_history: chatHistory,
+          });
 
-              return errorMessage;
+          let toolCallId = 0;
+          let fullOutput = '';
+
+          for await (const chunk of agentStream) {
+            console.log('Agent chunk:', JSON.stringify(chunk, null, 2));
+
+            // Handle tool calls
+            if (chunk.actions && Array.isArray(chunk.actions)) {
+              for (const action of chunk.actions) {
+                const currentToolCallId = `tool-${messageId}-${toolCallId++}`;
+
+                writer.write({
+                  type: 'tool-call',
+                  toolCallId: currentToolCallId,
+                  toolName: action.tool,
+                  args: action.toolInput,
+                });
+
+                // The observation is the tool result
+                if (chunk.steps) {
+                  const step = chunk.steps.find((s: any) => s.action?.tool === action.tool);
+                  if (step?.observation) {
+                    writer.write({
+                      type: 'tool-result',
+                      toolCallId: currentToolCallId,
+                      toolName: action.tool,
+                      result: step.observation,
+                    });
+                  }
+                }
+              }
+            }
+
+            // Handle text output
+            if (chunk.output) {
+              const newText = chunk.output.substring(fullOutput.length);
+              if (newText) {
+                writer.write({
+                  type: 'text-delta',
+                  id: messageId,
+                  delta: newText,
+                });
+                fullOutput = chunk.output;
+              }
+            }
+          }
+
+          // Finish the stream
+          writer.write({
+            type: 'finish',
+            finishReason: 'stop',
+            usage: {
+              promptTokens: 0,
+              completionTokens: 0,
             },
-          }),
-        );
+          });
+
+        } catch (error) {
+          console.error('Agent streaming error:', error);
+          const errorMessage =
+            error instanceof Error ? error.message : JSON.stringify(error);
+          writer.write({ type: 'data-error', data: errorMessage });
+        }
       },
       onFinish: async ({ responseMessage }) => {
         console.log(

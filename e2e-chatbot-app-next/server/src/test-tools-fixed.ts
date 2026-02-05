@@ -5,6 +5,7 @@
 import { ChatDatabricks } from "@databricks/langchainjs";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod/v4";
+import "dotenv/config";
 
 const timeTool = tool(
   async ({ timezone }) => {
@@ -28,9 +29,12 @@ const timeTool = tool(
 async function testToolCalling() {
   console.log("🧪 Testing ChatDatabricks with useRemoteToolCalling fix\n");
 
-  // Use an endpoint that definitely supports tool calling
+  // Use the configured endpoint from environment
+  const endpoint = process.env.DATABRICKS_SERVING_ENDPOINT || "databricks-meta-llama-3-1-70b-instruct";
+  console.log(`Using endpoint: ${endpoint}`);
+
   const model = new ChatDatabricks({
-    model: "databricks-meta-llama-3-1-70b-instruct",
+    model: endpoint,
     useResponsesApi: false,
     temperature: 0.1,
     maxTokens: 500,

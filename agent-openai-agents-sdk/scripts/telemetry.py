@@ -15,16 +15,6 @@ import requests
 from mlflow.telemetry.installation_id import get_or_create_installation_id
 from mlflow.version import VERSION
 
-# Session ID persists for the lifetime of this process (one per app run)
-_SESSION_ID: str | None = None
-
-
-def _get_session_id() -> str:
-    global _SESSION_ID
-    if _SESSION_ID is None:
-        _SESSION_ID = uuid.uuid4().hex
-    return _SESSION_ID
-
 
 def send_telemetry(
     event_name: str,
@@ -40,10 +30,8 @@ def send_telemetry(
     try:
         ingestion_url = "https://api.mlflow-telemetry.io/log"
 
-        # Reuse MLflow's persistent installation ID
         installation_id = get_or_create_installation_id() or uuid.uuid4().hex
-        # Session ID is unique per process run
-        session_id = _get_session_id()
+        session_id = uuid.uuid4().hex
 
         record = {
             "data": {

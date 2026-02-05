@@ -360,14 +360,40 @@ Edit `migrated_app/agent_server/agent.py`:
 
 ## Step 4: Set Up the App
 
-### 4.1 Install Dependencies
+### 4.1 Verify Build Configuration
+
+Before installing dependencies, ensure the `pyproject.toml` has the correct hatchling configuration to find packages, and that a README file exists (hatchling requires this).
+
+**Check that `pyproject.toml` includes the hatch build configuration:**
+
+```toml
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["agent_server", "scripts"]
+```
+
+If the `[tool.hatch.build.targets.wheel]` section is missing, add it with the appropriate package directories.
+
+**Ensure a README file exists:**
+
+```bash
+# Create a minimal README if one doesn't exist
+if [ ! -f "README.md" ]; then
+  echo "# Migrated Agent App" > README.md
+fi
+```
+
+### 4.2 Install Dependencies
 
 ```bash
 cd migrated_app
 uv sync
 ```
 
-### 4.2 Create requirements.txt for Databricks Apps
+### 4.3 Create requirements.txt for Databricks Apps
 
 Databricks Apps requires a `requirements.txt` file with `uv` to install dependencies from `pyproject.toml`:
 
@@ -375,7 +401,7 @@ Databricks Apps requires a `requirements.txt` file with `uv` to install dependen
 echo "uv" > requirements.txt
 ```
 
-### 4.3 Run Quickstart
+### 4.4 Run Quickstart
 
 Run the `uv run quickstart` script to quickly set up your local environment. This is the **recommended** way to configure the app as it handles all necessary setup automatically.
 
@@ -392,9 +418,9 @@ This script will:
 
 > **Important:** The quickstart script creates the MLflow experiment that the app needs for logging traces and models. This experiment will be added as a resource when deploying the app.
 
-If there are issues with the quickstart script, refer to the manual setup in section 4.4.
+If there are issues with the quickstart script, refer to the manual setup in section 4.5.
 
-### 4.4 Manual Environment Configuration (Optional)
+### 4.5 Manual Environment Configuration (Optional)
 
 If you need to manually configure the environment or add additional variables, edit `.env`:
 
@@ -518,6 +544,12 @@ resources:
 
 ### 6.2 Create the App with Resources
 
+**First, ask the user what they want to name their new app.**
+
+> "What would you like to name your new Databricks App? (App names must be lowercase, can contain letters, numbers, and hyphens, and must be unique within your workspace)"
+
+Use the name provided by the user in the `databricks apps create` command below.
+
 Convert the MLmodel resources to the Databricks Apps API format and pass them via `--json`.
 
 **Resource Type Mapping (MLmodel → Apps API):**
@@ -546,8 +578,9 @@ Convert the MLmodel resources to the Databricks Apps API format and pass them vi
 EXPERIMENT_ID=$(grep MLFLOW_EXPERIMENT_ID .env | cut -d'=' -f2)
 
 # Correct: app name is ONLY in the JSON when you pass resources in
+# Replace <app-name> with the name provided by the user
 databricks apps create --json '{
-  "name": "my-mcp-agent",
+  "name": "<app-name>",
   "resources": [
     {
       "name": "serving-endpoint",
@@ -578,8 +611,9 @@ databricks apps create --json '{
 **Example with Lakebase (for stateful agents):**
 
 ```bash
+# Replace <app-name> with the name provided by the user
 databricks apps create --json '{
-  "name": "demo-short-term-memory-agent",
+  "name": "<app-name>",
   "resources": [
     {
       "name": "serving-endpoint",
@@ -640,6 +674,22 @@ curl -X POST <app-url>/invocations \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"input": [{"role": "user", "content": "Hello!"}]}'
+```
+
+### 6.6 Deployment Troubleshooting
+
+If you encounter issues during deployment, refer to the **deploy** skill for detailed guidance
+
+**Debug commands:**
+```bash
+# View app logs
+databricks apps logs <app-name> --follow
+
+# Check app status
+databricks apps get <app-name> --output json | jq '{app_status, compute_status}'
+
+# Get app URL
+databricks apps get <app-name> --output json | jq -r '.url'
 ```
 
 ---

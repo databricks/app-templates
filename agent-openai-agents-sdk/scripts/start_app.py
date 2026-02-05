@@ -246,7 +246,28 @@ def main():
                 pass
             break
 
-    sys.exit(ProcessManager(port=port).run(backend_args))
+    manager = ProcessManager(port=port)
+    exit_code = manager.run(backend_args)
+
+    # Send telemetry only if both frontend and backend started successfully
+    if manager.backend_ready and manager.frontend_ready:
+        from scripts.telemetry import send_telemetry
+
+        if databricks_app_name := os.environ.get("DATABRICKS_APP_NAME"):
+            send_telemetry(
+                event_name="databricks_app_start",
+                params={
+                    "template": "agent-openai-agents-sdk",
+                    "databricks_app_name": databricks_app_name,
+                },
+            )
+        else:
+            send_telemetry(
+                event_name="local_app_start",
+                params={"template": "agent-openai-agents-sdk"},
+            )
+
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

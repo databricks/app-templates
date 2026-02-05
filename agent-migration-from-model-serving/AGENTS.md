@@ -68,7 +68,9 @@ databricks auth login --profile <profile>
 
 ### Create the App Directory
 
-The working directory contains the app scaffold template files (`agent_server/`, `scripts/`, `app.yaml`, `pyproject.toml`, etc.). **Copy these into a new directory named `<app-name>/`:**
+> **Important:** All scaffold template files (`agent_server/`, `scripts/`, `app.yaml`, `pyproject.toml`, etc.) already exist in the current working directory. Do NOT search for or copy these files from other directories or templates — everything you need is right here.
+
+Copy the scaffold files into a new directory named `<app-name>/`:
 
 ```bash
 # Create the app directory and copy scaffold files
@@ -77,6 +79,8 @@ cp -r agent_server scripts app.yaml pyproject.toml requirements.txt .env.example
 ```
 
 All subsequent migration steps operate inside the `<app-name>/` directory.
+
+> **Note:** The `agent_server/agent.py` scaffold is intentionally framework-agnostic — it contains the `@invoke`/`@stream` decorator pattern with TODO placeholders. Step 3 (Migrate the Agent Code) will replace these placeholders with the actual agent logic from the original Model Serving endpoint.
 
 ### Create Task List
 

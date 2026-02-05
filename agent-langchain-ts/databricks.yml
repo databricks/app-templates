@@ -1,0 +1,47 @@
+bundle:
+  name: agent-langchain-ts
+
+variables:
+  serving_endpoint_name:
+    description: "The name of the Databricks model serving endpoint to use"
+    default: "databricks-claude-sonnet-4-5"
+
+  resource_name_suffix:
+    description: "Suffix to add to resource names for uniqueness"
+    default: "dev"
+
+include:
+  - resources/*.yml
+
+resources:
+  apps:
+    agent_langchain_ts:
+      name: agent-lc-ts-${var.resource_name_suffix}
+      description: "TypeScript LangChain agent with MLflow tracing"
+      source_code_path: ./
+      resources:
+        - name: serving-endpoint
+          serving_endpoint:
+            name: ${var.serving_endpoint_name}
+            permission: CAN_QUERY
+        - name: experiment
+          experiment:
+            experiment_id: "2610606164206831"
+            permission: CAN_MANAGE
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      profile: dogfood
+
+  prod:
+    mode: production
+    workspace:
+      profile: dogfood
+
+    # Production-specific configuration
+    variables:
+      resource_name_suffix:
+        default: "prod"

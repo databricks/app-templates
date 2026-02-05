@@ -1,0 +1,61 @@
+{
+  "name": "@databricks/agent-langchain-ts",
+  "version": "1.0.0",
+  "description": "TypeScript LangChain agent with MLflow tracing on Databricks",
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "node $PWD/dist/server.js",
+    "build": "tsc",
+    "test": "jest",
+    "quickstart": "tsx scripts/quickstart.ts",
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write \"src/**/*.ts\""
+  },
+  "dependencies": {
+    "@arizeai/openinference-instrumentation-langchain": "^4.0.0",
+    "@databricks/ai-sdk-provider": "^0.3.0",
+    "@databricks/langchainjs": "^0.1.0",
+    "@databricks/sdk-experimental": "^0.15.0",
+    "@langchain/core": "^1.1.8",
+    "@langchain/langgraph": "^1.1.2",
+    "@langchain/mcp-adapters": "^1.1.1",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-trace-otlp-proto": "^0.55.0",
+    "@opentelemetry/sdk-trace-node": "^1.28.0",
+    "ai": "^6.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^5.1.0",
+    "langchain": "^0.3.20",
+    "zod": "^4.3.5"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "jest": "^29.7.0",
+    "prettier": "^3.4.0",
+    "ts-jest": "^29.2.5",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "keywords": [
+    "databricks",
+    "langchain",
+    "mlflow",
+    "opentelemetry",
+    "tracing",
+    "agent",
+    "typescript"
+  ],
+  "author": "Databricks",
+  "license": "Apache-2.0"
+}

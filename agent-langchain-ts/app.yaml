@@ -1,0 +1,52 @@
+command:
+  - bash
+  - start.sh
+
+env:
+  # Model serving endpoint
+  - name: DATABRICKS_MODEL
+    value: "databricks-claude-sonnet-4-5"
+
+  # Model configuration
+  - name: USE_RESPONSES_API
+    value: "false"
+  - name: TEMPERATURE
+    value: "0.1"
+  - name: MAX_TOKENS
+    value: "2000"
+
+  # MLflow tracing
+  - name: MLFLOW_TRACKING_URI
+    value: "databricks"
+  - name: MLFLOW_EXPERIMENT_ID
+    valueFrom: "experiment"
+
+  # Server configuration
+  - name: PORT
+    value: "8000"
+
+  # MCP configuration (optional - uncomment to enable)
+  # - name: ENABLE_SQL_MCP
+  #   value: "true"
+
+  # Unity Catalog function (optional)
+  # - name: UC_FUNCTION_CATALOG
+  #   value: "main"
+  # - name: UC_FUNCTION_SCHEMA
+  #   value: "default"
+  # - name: UC_FUNCTION_NAME
+  #   value: "my_function"
+
+  # Vector Search (optional)
+  # - name: VECTOR_SEARCH_CATALOG
+  #   value: "main"
+  # - name: VECTOR_SEARCH_SCHEMA
+  #   value: "default"
+  # - name: VECTOR_SEARCH_INDEX
+  #   value: "my_index"
+
+resources:
+  - name: serving-endpoint
+    serving_endpoint:
+      name: ${var.serving_endpoint_name}
+      permission: CAN_QUERY

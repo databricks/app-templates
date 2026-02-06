@@ -1,7 +1,7 @@
-# command: ["python", "agent_server/start_server.py"]
+command: ["python", "scripts/start_app.py"]
 # databricks apps listen by default on port 8000
-command:
-  ["uvicorn", "agent_server.app:app", "--host", "0.0.0.0", "--port", "8000"]
+# command:
+# ["uvicorn", "agent_server.app:app", "--host", "0.0.0.0", "--port", "8000"]
 env:
   - name: MLFLOW_TRACKING_URI
     value: "databricks"

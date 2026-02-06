@@ -23,6 +23,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import uvicorn
 from dotenv import load_dotenv
 
 # Readiness patterns
@@ -141,7 +142,7 @@ class AsyncProcessManager:
     async def start_backend(self, backend_args=None):
         """Start the backend process using python directly."""
         print("Starting backend...")
-        cmd = [sys.executable, "-m", "agent_server.start_server"]
+        cmd = ["uvicorn", "agent_server.app:app", "--host", "0.0.0.0", "--port", str(self.port)]
         if backend_args:
             cmd.extend(backend_args)
 
@@ -159,16 +160,16 @@ class AsyncProcessManager:
         # Run npm install and build synchronously first
         for cmd, desc in [("npm install", "install"), ("npm run build", "build")]:
             print(f"Running npm {desc}...")
-            result = subprocess.run(
-                cmd.split(), cwd=frontend_dir, capture_output=True, text=True
-            )
+            result = subprocess.run(cmd.split(), cwd=frontend_dir, capture_output=True, text=True)
             if result.returncode != 0:
                 print(f"npm {desc} failed: {result.stderr}")
                 return None
 
         print("Starting frontend...")
         self.frontend_process = await asyncio.create_subprocess_exec(
-            "npm", "run", "start",
+            "npm",
+            "run",
+            "start",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=frontend_dir,
@@ -211,12 +212,6 @@ class AsyncProcessManager:
         """Main entry point to run both processes."""
         load_dotenv(dotenv_path=".env", override=True)
 
-        if not self.clone_frontend_if_needed():
-            return 1
-
-        # Set API_PROXY environment variable for frontend to connect to backend
-        os.environ["API_PROXY"] = f"http://localhost:{self.port}/invocations"
-
         # Open log files
         self.backend_log = open("backend.log", "w", buffering=1)
         self.frontend_log = open("frontend.log", "w", buffering=1)
@@ -232,6 +227,13 @@ class AsyncProcessManager:
             backend_monitor = asyncio.create_task(
                 self.monitor_process(backend_proc, "backend", self.backend_log, BACKEND_READY)
             )
+
+            if not self.clone_frontend_if_needed():
+                print("ERROR: Failed to clone frontend")
+                return 1
+
+            # Set API_PROXY environment variable for frontend to connect to backend
+            os.environ["API_PROXY"] = f"http://localhost:{self.port}/invocations"
 
             # Start frontend
             frontend_proc = await self.start_frontend()
@@ -257,7 +259,9 @@ class AsyncProcessManager:
             # Determine exit code
             if self.failed.is_set():
                 failed_proc = (
-                    self.backend_process if self.failed_process_name == "backend" else self.frontend_process
+                    self.backend_process
+                    if self.failed_process_name == "backend"
+                    else self.frontend_process
                 )
                 exit_code = failed_proc.returncode if failed_proc else 1
 

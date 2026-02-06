@@ -106,33 +106,19 @@ export async function createServer(
   const uiBuildPath = path.join(__dirname, "../../ui/server/dist");
   const uiClientPath = path.join(__dirname, "../../ui/client/dist");
 
-  if (existsSync(uiBuildPath) && existsSync(uiClientPath)) {
-    console.log("📦 UI build found, mounting UI routes...");
+  if (existsSync(uiClientPath)) {
+    console.log("📦 UI client found, serving static files...");
 
-    try {
-      // Import and mount UI routes dynamically
-      const uiIndexModule = await import(path.join(uiBuildPath, "index.js"));
+    // Serve static UI files
+    app.use(express.static(uiClientPath));
 
-      // Mount UI API routes
-      if (uiIndexModule.chatRouter) app.use("/api/chat", uiIndexModule.chatRouter);
-      if (uiIndexModule.historyRouter) app.use("/api/history", uiIndexModule.historyRouter);
-      if (uiIndexModule.sessionRouter) app.use("/api/session", uiIndexModule.sessionRouter);
-      if (uiIndexModule.messagesRouter) app.use("/api/messages", uiIndexModule.messagesRouter);
-      if (uiIndexModule.configRouter) app.use("/api/config", uiIndexModule.configRouter);
+    // SPA fallback - serve index.html for all non-API routes
+    // This must come AFTER API routes are mounted
+    app.get(/^\/(?!api|invocations|health).*/, (_req: Request, res: Response) => {
+      res.sendFile(path.join(uiClientPath, "index.html"));
+    });
 
-      // Serve static UI files
-      app.use(express.static(uiClientPath));
-
-      // SPA fallback - serve index.html for all non-API routes
-      app.get(/^\/(?!api|invocations|health).*/, (_req: Request, res: Response) => {
-        res.sendFile(path.join(uiClientPath, "index.html"));
-      });
-
-      console.log("✅ UI routes mounted");
-    } catch (error) {
-      console.warn("⚠️  Failed to mount UI routes:", error);
-      console.log("   Agent will run without UI");
-    }
+    console.log("✅ UI static files served");
   } else {
     console.log("ℹ️  UI build not found, running agent-only mode");
   }

@@ -300,7 +300,8 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           // Start the message
           writer.write({ type: 'start', messageId });
           writer.write({ type: 'start-step' });
-          writer.write({ type: 'text-start', id: messageId });
+          // Don't emit text-start yet - wait until we actually have text to send
+          // This ensures tool calls render before the final text response
 
           // Use streamEvents for granular event-by-event streaming
           const eventStream = agent.streamEvents(
@@ -314,6 +315,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           let toolCallId = 0;
           const toolCallMap = new Map<string, string>(); // Map LangChain tool call IDs to our IDs
           let fullOutput = '';
+          let hasEmittedTextStart = false;
 
           for await (const event of eventStream) {
             // Handle tool call start
@@ -367,6 +369,13 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
             if (event.event === 'on_chat_model_stream') {
               const content = event.data?.chunk?.content;
               if (typeof content === 'string' && content) {
+                // Emit text-start before the first text content
+                // This ensures tool calls are rendered before the text response
+                if (!hasEmittedTextStart) {
+                  writer.write({ type: 'text-start', id: messageId });
+                  hasEmittedTextStart = true;
+                }
+
                 writer.write({
                   type: 'text-delta',
                   id: messageId,
@@ -383,6 +392,12 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
                 // If there's output we haven't streamed yet, send it
                 const newText = output.substring(fullOutput.length);
                 if (newText) {
+                  // Emit text-start if we haven't already
+                  if (!hasEmittedTextStart) {
+                    writer.write({ type: 'text-start', id: messageId });
+                    hasEmittedTextStart = true;
+                  }
+
                   writer.write({
                     type: 'text-delta',
                     id: messageId,

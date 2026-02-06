@@ -10,13 +10,28 @@ if [ ! -d "dist" ]; then
   exit 1
 fi
 
-# Check if UI client build exists
-if [ -d "ui/client/dist" ]; then
-  echo "✅ UI build found - agent will serve UI on port 8000"
-else
-  echo "ℹ️  UI not found - running agent-only mode on port 8000"
-fi
+# Check if UI server build exists
+if [ -d "ui/server/dist" ]; then
+  echo "✅ UI backend found - running two-server architecture"
 
-# Start agent server on port 8000 (exposed port for Databricks Apps)
-# Agent serves both /invocations endpoint and UI static files
-PORT=8000 node dist/src/server.js
+  # Start agent server on internal port 8001 (provides /invocations)
+  PORT=8001 node dist/src/server.js &
+  AGENT_PID=$!
+  echo "Agent server started on port 8001 (PID: $AGENT_PID)"
+
+  # Give agent a moment to start
+  sleep 2
+
+  # Start UI server on port 8000 (exposed port) with API_PROXY to agent
+  cd ui/server
+  API_PROXY=http://localhost:8001/invocations PORT=8000 node dist/index.js &
+  UI_PID=$!
+  echo "UI server started on port 8000 (PID: $UI_PID)"
+  cd ../..
+
+  # Wait for both processes
+  wait $AGENT_PID $UI_PID
+else
+  echo "ℹ️  UI backend not found - running agent-only mode on port 8000"
+  PORT=8000 node dist/src/server.js
+fi

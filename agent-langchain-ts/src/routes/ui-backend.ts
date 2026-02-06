@@ -4,13 +4,8 @@
  */
 
 import { Router, Request, Response } from "express";
-import { streamText } from "ai";
-import { createDatabricks } from "@databricks/ai-sdk-provider";
 
 export const uiBackendRouter = Router();
-
-// Initialize Databricks AI SDK provider
-const databricks = createDatabricks();
 
 /**
  * Session endpoint - returns user info from Databricks headers

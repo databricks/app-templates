@@ -48,11 +48,13 @@ uiBackendRouter.get("/config", (_req: Request, res: Response) => {
 });
 
 /**
- * Chat endpoint - proxies to /invocations
- * The UI expects this endpoint for chat interactions
+ * Chat endpoint - proxies to /invocations and converts to AI SDK format
+ * The UI expects this endpoint for chat interactions using Vercel AI SDK
  */
 uiBackendRouter.post("/chat", async (req: Request, res: Response) => {
   try {
+    console.log("[/api/chat] Received request:", JSON.stringify(req.body).slice(0, 200));
+
     // Convert UI chat format to invocations format
     const messages = req.body.messages || [];
 
@@ -70,12 +72,20 @@ uiBackendRouter.post("/chat", async (req: Request, res: Response) => {
       }),
     });
 
-    // Set headers for SSE streaming
-    res.setHeader("Content-Type", "text/event-stream");
+    if (!response.ok) {
+      throw new Error(`Invocations endpoint failed: ${response.status}`);
+    }
+
+    // Set headers for AI SDK streaming (newline-delimited JSON)
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Vercel-AI-Data-Stream", "v1");
 
-    // Stream the response
+    let fullText = "";
+    let messageId = `msg_${Date.now()}`;
+
+    // Stream the response and convert Responses API to AI SDK format
     if (response.body) {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -85,11 +95,47 @@ uiBackendRouter.post("/chat", async (req: Request, res: Response) => {
         if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
-        res.write(chunk);
+
+        // Parse SSE events
+        const lines = chunk.split('\n');
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') {
+              // Send final message
+              const finalData = {
+                id: messageId,
+                role: "assistant",
+                content: fullText,
+                createdAt: new Date().toISOString(),
+              };
+              res.write(`0:${JSON.stringify(finalData)}\n`);
+              continue;
+            }
+
+            try {
+              const event = JSON.parse(data);
+
+              // Handle text deltas
+              if (event.type === 'response.output_text.delta') {
+                fullText += event.delta;
+                // Send text delta in AI SDK format
+                res.write(`0:"${event.delta.replace(/\n/g, '\\n').replace(/"/g, '\\"')}"\n`);
+              }
+              // Handle completion
+              else if (event.type === 'response.completed') {
+                // Completion handled by [DONE]
+              }
+            } catch (e) {
+              console.error("Error parsing event:", e);
+            }
+          }
+        }
       }
     }
 
     res.end();
+    console.log("[/api/chat] Stream completed");
   } catch (error) {
     console.error("Error in chat endpoint:", error);
     res.status(500).json({

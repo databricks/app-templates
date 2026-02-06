@@ -16,6 +16,10 @@ dependencies = [
     "python-dotenv",
 ]
 
+[tool.uv.pip]
+universal = true
+output-file = "requirements.txt"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

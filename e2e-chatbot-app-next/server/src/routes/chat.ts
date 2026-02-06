@@ -327,11 +327,20 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
 
               console.log(`🔧 Tool call: ${toolName}`, toolInput);
 
+              // Emit tool-input-start to signal tool call began
               writer.write({
-                type: 'tool-call',
+                type: 'tool-input-start',
                 toolCallId: currentToolCallId,
                 toolName: toolName,
-                args: toolInput,
+                dynamic: true,
+              });
+
+              // Emit tool-input-available with the tool input
+              writer.write({
+                type: 'tool-input-available',
+                toolCallId: currentToolCallId,
+                toolName: toolName,
+                input: toolInput,
               });
             }
 
@@ -344,11 +353,12 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
               if (currentToolCallId) {
                 console.log(`✅ Tool result: ${toolName}`, toolOutput);
 
+                // Emit tool-output-available with the tool output
                 writer.write({
-                  type: 'tool-result',
+                  type: 'tool-output-available',
                   toolCallId: currentToolCallId,
-                  toolName: toolName,
-                  result: toolOutput,
+                  output: toolOutput,
+                  dynamic: true,
                 });
               }
             }

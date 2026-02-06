@@ -2,8 +2,10 @@
  * Express server for the LangChain agent with MLflow tracing.
  *
  * Provides:
- * - REST API endpoint for agent invocations
- * - Server-Sent Events (SSE) for streaming responses
+ * - /invocations endpoint (MLflow-compatible Responses API)
+ * - /api/chat endpoint (legacy streaming)
+ * - UI routes (from workspace, if available)
+ * - Static file serving for UI
  * - Health check endpoint
  * - MLflow trace export via OpenTelemetry
  */
@@ -11,6 +13,10 @@
 import express, { Request, Response } from "express";
 import cors from "cors";
 import { config } from "dotenv";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
+import { existsSync } from "node:fs";
 import {
   createAgent,
   invokeAgent,
@@ -22,10 +28,15 @@ import {
   initializeMLflowTracing,
   setupTracingShutdownHandlers,
 } from "./tracing.js";
+import { createInvocationsRouter } from "./routes/invocations.js";
 import type { AgentExecutor } from "langchain/agents";
 
 // Load environment variables
 config();
+
+// ESM-compatible __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 /**
  * Request body for agent invocation
@@ -85,85 +96,11 @@ export async function createServer(
     });
   });
 
-  /**
-   * Agent invocation endpoint
-   *
-   * POST /api/chat
-   * Body: { messages: [...], stream?: boolean, config?: {...} }
-   *
-   * - If stream=true: Returns SSE stream
-   * - If stream=false: Returns JSON response
-   */
-  app.post("/api/chat", async (req: Request, res: Response) => {
-    try {
-      const { messages, stream = false, config: requestConfig }: AgentRequest = req.body;
+  // Mount /invocations endpoint (MLflow-compatible)
+  const invocationsRouter = createInvocationsRouter(agent);
+  app.use("/invocations", invocationsRouter);
 
-      // Validate request
-      if (!messages || !Array.isArray(messages) || messages.length === 0) {
-        return res.status(400).json({
-          error: "Invalid request: 'messages' array is required",
-        });
-      }
-
-      // Extract user input (last message should be from user)
-      const lastMessage = messages[messages.length - 1];
-      if (lastMessage.role !== "user") {
-        return res.status(400).json({
-          error: "Last message must be from 'user'",
-        });
-      }
-
-      const userInput = lastMessage.content;
-      const chatHistory = messages.slice(0, -1);
-
-      // Handle streaming response
-      if (stream) {
-        res.setHeader("Content-Type", "text/event-stream");
-        res.setHeader("Cache-Control", "no-cache");
-        res.setHeader("Connection", "keep-alive");
-
-        try {
-          for await (const chunk of streamAgent(
-            agent,
-            userInput,
-            chatHistory
-          )) {
-            res.write(`data: ${JSON.stringify({ chunk })}\n\n`);
-          }
-
-          res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-          res.end();
-        } catch (error: unknown) {
-          const message = error instanceof Error ? error.message : String(error);
-          console.error("Streaming error:", error);
-          res.write(
-            `data: ${JSON.stringify({ error: message })}\n\n`
-          );
-          res.end();
-        }
-
-        return;
-      }
-
-      // Handle non-streaming response
-      const response = await invokeAgent(agent, userInput, chatHistory);
-
-      res.json({
-        message: {
-          role: "assistant",
-          content: response.output,
-        },
-        intermediateSteps: response.intermediateSteps,
-      });
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error("Agent error:", error);
-      res.status(500).json({
-        error: "Internal server error",
-        message,
-      });
-    }
-  });
+  console.log("✅ Agent endpoints mounted");
 
   /**
    * Root endpoint
@@ -174,7 +111,7 @@ export async function createServer(
       version: "1.0.0",
       endpoints: {
         health: "GET /health",
-        chat: "POST /api/chat",
+        invocations: "POST /invocations (Responses API)",
       },
     });
   });
@@ -223,9 +160,9 @@ export async function startServer(config: Partial<ServerConfig> = {}) {
   const app = await createServer(serverConfig);
 
   app.listen(serverConfig.port, () => {
-    console.log(`\n🚀 Server running on http://localhost:${serverConfig.port}`);
+    console.log(`\n🚀 Agent Server running on http://localhost:${serverConfig.port}`);
     console.log(`   Health: http://localhost:${serverConfig.port}/health`);
-    console.log(`   Chat API: http://localhost:${serverConfig.port}/api/chat`);
+    console.log(`   Invocations API: http://localhost:${serverConfig.port}/invocations`);
     console.log(`\n📊 MLflow tracking enabled`);
     console.log(`   Experiment: ${process.env.MLFLOW_EXPERIMENT_ID || "default"}`);
   });

@@ -3,13 +3,19 @@
   "version": "1.0.0",
   "description": "TypeScript LangChain agent with MLflow tracing on Databricks",
   "type": "module",
+  "workspaces": [
+    "ui"
+  ],
   "engines": {
     "node": ">=18.0.0"
   },
   "scripts": {
+    "predev": "bash scripts/setup-ui.sh",
     "dev": "tsx watch src/server.ts",
     "start": "node $PWD/dist/server.js",
-    "build": "tsc",
+    "build": "bash scripts/setup-ui.sh && npm run build:agent && npm run build:ui",
+    "build:agent": "tsc",
+    "build:ui": "cd ui && npm run build",
     "test": "jest",
     "quickstart": "tsx scripts/quickstart.ts",
     "lint": "eslint src --ext .ts",

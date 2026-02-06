@@ -165,11 +165,71 @@ npm run dev  # UI auto-fetches, everything works
    - Configure UI frontend to query `/invocations` directly
    - Hybrid approach
 
+## Critical API Requirements
+
+### ✅ REQUIREMENT 1: Standalone UI Template
+**`e2e-chatbot-app-next` must be deployable as a standalone application**
+
+- Must build and deploy independently without agent code
+- Should work with any backend implementing the required endpoints
+- **DO NOT MODIFY** the UI template - it's shared across multiple agent implementations
+
+### ✅ REQUIREMENT 2: Two-Server Architecture
+**Agent and UI run as separate servers that communicate via `/invocations`**
+
+**Architecture:**
+1. **Agent Server** - Provides `/invocations` endpoint (Responses API)
+2. **UI Server** - Provides `/api/chat`, `/api/session`, etc. (calls agent via `API_PROXY`)
+
+**Why this matters:**
+- The UI backend already has proper AI SDK implementation (`streamText` + `createUIMessageStream`)
+- The agent provides `/invocations` in Responses API format
+- The UI backend converts between formats using AI SDK
+- **DO NOT try to implement `/api/chat` in the agent server!**
+
+**Local Development:**
+```bash
+# Terminal 1: Agent server (port 5001)
+npm run dev:agent
+
+# Terminal 2: UI server (port 3001) with API_PROXY
+cd ui && API_PROXY=http://localhost:5001/invocations npm run dev
+```
+
+**How it works:**
+```
+Browser → UI Frontend (3000) → UI Backend (3001) → Agent (5001)
+                                /api/chat           /invocations
+                                [AI SDK format]     [Responses API]
+```
+
+### ✅ REQUIREMENT 3: MLflow-Compatible /invocations
+**`/invocations` must return Responses API formatted output**
+
+The endpoint MUST:
+- Follow OpenAI Responses API SSE format
+- Return `response.output_text.delta` events for streaming
+- Be compatible with MLflow model serving
+- End with `response.completed` and `[DONE]`
+
+**Test verification:**
+```bash
+curl -X POST http://localhost:5001/invocations \
+  -H "Content-Type: application/json" \
+  -d '{"input":[{"role":"user","content":"Hello"}],"stream":true}'
+
+# Should return:
+# data: {"type":"response.output_text.delta","delta":"text"}
+# data: {"type":"response.completed","response":{...}}
+# data: [DONE]
+```
+
 ## Success Criteria
 
 - ✅ Developer clones agent-langchain-ts, runs `npm run dev`, everything works
 - ✅ Developer can modify `src/agent.ts` and see changes immediately
-- ✅ External clients can query `/invocations` endpoint
+- ✅ External clients can query `/invocations` endpoint (Responses API format)
+- ✅ UI can query `/api/chat` and render responses correctly (AI SDK format)
 - ✅ UI can be developed independently without breaking agent
 - ✅ Agent can be developed independently without breaking UI
 - ✅ Same developer experience as Python template

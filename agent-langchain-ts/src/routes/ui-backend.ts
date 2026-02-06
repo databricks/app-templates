@@ -48,73 +48,34 @@ uiBackendRouter.get("/config", (_req: Request, res: Response) => {
 });
 
 /**
- * Chat endpoint - proxies to /invocations and converts to AI SDK format
- * The UI expects this endpoint for chat interactions using Vercel AI SDK
+ * Chat endpoint - proxies to /invocations
+ * The UI expects this endpoint for chat interactions
  */
 uiBackendRouter.post("/chat", async (req: Request, res: Response) => {
   try {
-    console.log("[/api/chat] Received request:", JSON.stringify(req.body).slice(0, 200));
-
     // Convert UI chat format to invocations format
-    // UI sends: { message: {...}, previousMessages: [...] }
-    const { message, previousMessages = [] } = req.body;
-
-    // Build messages array: previous messages + new message
-    const messages = [...previousMessages];
-
-    if (message) {
-      // Convert message with parts to simple text format
-      const textContent = message.parts
-        ?.filter((part: any) => part.type === "text")
-        .map((part: any) => part.text)
-        .join("\n") || "";
-
-      messages.push({
-        role: message.role,
-        content: textContent,
-      });
-    }
-
-    if (messages.length === 0) {
-      return res.status(400).json({ error: "No messages provided" });
-    }
+    const messages = req.body.messages || [];
 
     // Call the agent's invocations endpoint
     const invocationsUrl = `http://localhost:${process.env.PORT || 8000}/invocations`;
-
-    const requestBody = {
-      input: messages,
-      stream: true,
-    };
-
-    console.log("[/api/chat] Calling invocations:", invocationsUrl);
-    console.log("[/api/chat] Converted messages:", JSON.stringify(messages, null, 2).slice(0, 500));
-    console.log("[/api/chat] Request body:", JSON.stringify(requestBody).slice(0, 300));
 
     const response = await fetch(invocationsUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(requestBody),
+      body: JSON.stringify({
+        input: messages,
+        stream: true,
+      }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[/api/chat] Invocations failed with ${response.status}:`, errorText);
-      throw new Error(`Invocations endpoint failed: ${response.status} - ${errorText}`);
-    }
-
-    // Set headers for AI SDK streaming (newline-delimited JSON)
-    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    // Set headers for SSE streaming
+    res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
-    res.setHeader("X-Vercel-AI-Data-Stream", "v1");
 
-    let fullText = "";
-    let messageId = `msg_${Date.now()}`;
-
-    // Stream the response and convert Responses API to AI SDK format
+    // Stream the response
     if (response.body) {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -124,47 +85,11 @@ uiBackendRouter.post("/chat", async (req: Request, res: Response) => {
         if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
-
-        // Parse SSE events
-        const lines = chunk.split('\n');
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            if (data === '[DONE]') {
-              // Send final message
-              const finalData = {
-                id: messageId,
-                role: "assistant",
-                content: fullText,
-                createdAt: new Date().toISOString(),
-              };
-              res.write(`0:${JSON.stringify(finalData)}\n`);
-              continue;
-            }
-
-            try {
-              const event = JSON.parse(data);
-
-              // Handle text deltas
-              if (event.type === 'response.output_text.delta') {
-                fullText += event.delta;
-                // Send text delta in AI SDK format
-                res.write(`0:"${event.delta.replace(/\n/g, '\\n').replace(/"/g, '\\"')}"\n`);
-              }
-              // Handle completion
-              else if (event.type === 'response.completed') {
-                // Completion handled by [DONE]
-              }
-            } catch (e) {
-              console.error("Error parsing event:", e);
-            }
-          }
-        }
+        res.write(chunk);
       }
     }
 
     res.end();
-    console.log("[/api/chat] Stream completed");
   } catch (error) {
     console.error("Error in chat endpoint:", error);
     res.status(500).json({

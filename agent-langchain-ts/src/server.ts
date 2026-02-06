@@ -102,8 +102,43 @@ export async function createServer(
 
   console.log("✅ Agent endpoints mounted");
 
+  // Check if UI build exists and mount it
+  const uiBuildPath = path.join(__dirname, "../../ui/server/dist");
+  const uiClientPath = path.join(__dirname, "../../ui/client/dist");
+
+  if (existsSync(uiBuildPath) && existsSync(uiClientPath)) {
+    console.log("📦 UI build found, mounting UI routes...");
+
+    try {
+      // Import and mount UI routes dynamically
+      const uiIndexModule = await import(path.join(uiBuildPath, "index.js"));
+
+      // Mount UI API routes
+      if (uiIndexModule.chatRouter) app.use("/api/chat", uiIndexModule.chatRouter);
+      if (uiIndexModule.historyRouter) app.use("/api/history", uiIndexModule.historyRouter);
+      if (uiIndexModule.sessionRouter) app.use("/api/session", uiIndexModule.sessionRouter);
+      if (uiIndexModule.messagesRouter) app.use("/api/messages", uiIndexModule.messagesRouter);
+      if (uiIndexModule.configRouter) app.use("/api/config", uiIndexModule.configRouter);
+
+      // Serve static UI files
+      app.use(express.static(uiClientPath));
+
+      // SPA fallback - serve index.html for all non-API routes
+      app.get(/^\/(?!api|invocations|health).*/, (_req: Request, res: Response) => {
+        res.sendFile(path.join(uiClientPath, "index.html"));
+      });
+
+      console.log("✅ UI routes mounted");
+    } catch (error) {
+      console.warn("⚠️  Failed to mount UI routes:", error);
+      console.log("   Agent will run without UI");
+    }
+  } else {
+    console.log("ℹ️  UI build not found, running agent-only mode");
+  }
+
   /**
-   * Root endpoint
+   * Root endpoint (if no UI)
    */
   app.get("/", (_req: Request, res: Response) => {
     res.json({

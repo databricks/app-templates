@@ -141,7 +141,7 @@ class AsyncProcessManager:
     async def start_backend(self, backend_args=None):
         """Start the backend process using python directly."""
         print("Starting backend...")
-        cmd = [sys.executable, "agent_server/start_server.py"]
+        cmd = [sys.executable, "-m", "agent_server.start_server"]
         if backend_args:
             cmd.extend(backend_args)
 

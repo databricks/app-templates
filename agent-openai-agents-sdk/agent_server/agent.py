@@ -11,10 +11,10 @@ from mlflow.types.responses import (
     ResponsesAgentResponse,
     ResponsesAgentStreamEvent,
 )
-
-from agent_server.utils import (
+from utils import (
+    build_mcp_url,
     get_user_workspace_client,
-    process_agent_stream_events, build_mcp_url,
+    process_agent_stream_events,
 )
 
 # NOTE: this will work for all databricks models OTHER than GPT-OSS, which uses a slightly different API

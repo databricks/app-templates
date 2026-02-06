@@ -38,9 +38,7 @@
     "dotenv": "^17.2.3",
     "drizzle-kit": "^0.31.5",
     "drizzle-orm": "^0.44.6",
-    "obug": "^2.1.1",
-    "tsx": "^4.19.1",
-    "unrun": "^0.2.26"
+    "tsx": "^4.19.1"
   },
   "devDependencies": {
     "@ai-sdk/provider": "^3.0.5",

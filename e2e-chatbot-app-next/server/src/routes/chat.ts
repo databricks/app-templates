@@ -36,7 +36,6 @@ import {
   requireChatAccess,
   getIdFromRequest,
 } from '../middleware/auth';
-import { z } from 'zod';
 import {
   deleteChatById,
   getMessagesByChatId,
@@ -60,53 +59,10 @@ import {
   CONTEXT_HEADER_USER_ID,
 } from '@chat-template/core';
 import { ChatSDKError } from '@chat-template/core/errors';
-import { createAgent, type AgentConfig } from '../agent/agent.js';
-import type { AgentExecutor } from 'langchain/agents';
 
 export const chatRouter: RouterType = Router();
 
 const streamCache = new StreamCache();
-
-// Cache the agent instance to avoid recreating it on every request
-let agentInstance: AgentExecutor | null = null;
-let agentInitPromise: Promise<AgentExecutor> | null = null;
-
-/**
- * Get or create the agent instance
- */
-export async function getAgent(): Promise<AgentExecutor> {
-  if (agentInstance) {
-    return agentInstance;
-  }
-
-  // If initialization is already in progress, wait for it
-  if (agentInitPromise) {
-    return agentInitPromise;
-  }
-
-  // Start initialization
-  agentInitPromise = (async () => {
-    console.log('🤖 Initializing LangChain agent...');
-
-    const config: AgentConfig = {
-      // Use a foundation model that supports tool calling
-      // "databricks-meta-llama-3-1-70b-instruct" supports tool calling
-      model: process.env.DATABRICKS_SERVING_ENDPOINT || "databricks-meta-llama-3-1-70b-instruct",
-      temperature: 0.1,
-      maxTokens: 2000,
-    };
-
-    const agent = await createAgent(config);
-    agentInstance = agent;
-    agentInitPromise = null;
-
-    console.log('✅ Agent initialized successfully');
-    return agent;
-  })();
-
-  return agentInitPromise;
-}
-
 // Apply auth middleware to all chat routes
 chatRouter.use(authMiddleware);
 
@@ -268,163 +224,43 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     let finalUsage: LanguageModelUsage | undefined;
     const streamId = generateUUID();
 
-    // Get the LangChain agent
-    const agent = await getAgent();
-
-    // Convert UI messages to agent format (simple string for latest message)
-    const userInput = message?.parts
-      ?.filter((p) => p.type === 'text')
-      .map((p) => (p as any).text)
-      .join('\n') || '';
-
-    // Extract chat history (previous messages)
-    const chatHistory = previousMessages
-      .filter((m) => m.role === 'user' || m.role === 'assistant')
-      .map((m) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.parts
-          ?.filter((p) => p.type === 'text')
-          .map((p) => (p as any).text)
-          .join('\n') || '',
-      }));
+    const model = await myProvider.languageModel(selectedChatModel);
+    const result = streamText({
+      model,
+      messages: await convertToModelMessages(uiMessages),
+      headers: {
+        [CONTEXT_HEADER_CONVERSATION_ID]: id,
+        [CONTEXT_HEADER_USER_ID]: session.user.email ?? session.user.id,
+      },
+      onFinish: ({ usage }) => {
+        finalUsage = usage;
+      },
+    });
 
     /**
-     * Create UI message stream from LangChain agent output
-     * This converts LangChain's streaming format to AI SDK's UIMessageChunk format
+     * We manually create the stream to have access to the stream writer.
+     * This allows us to inject custom stream parts like data-error.
      */
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
-        try {
-          const messageId = generateUUID();
+        writer.merge(
+          result.toUIMessageStream({
+            originalMessages: uiMessages,
+            generateMessageId: generateUUID,
+            sendReasoning: true,
+            sendSources: true,
+            onError: (error) => {
+              console.error('Stream error:', error);
 
-          // Start the message
-          writer.write({ type: 'start', messageId });
-          writer.write({ type: 'start-step' });
-          // Don't emit text-start yet - wait until we actually have text to send
-          // This ensures tool calls render before the final text response
+              const errorMessage =
+                error instanceof Error ? error.message : JSON.stringify(error);
 
-          // Use streamEvents for granular event-by-event streaming
-          const eventStream = agent.streamEvents(
-            {
-              input: userInput,
-              chat_history: chatHistory,
+              writer.write({ type: 'data-error', data: errorMessage });
+
+              return errorMessage;
             },
-            { version: 'v2' }
-          );
-
-          let toolCallId = 0;
-          const toolCallMap = new Map<string, string>(); // Map LangChain tool call IDs to our IDs
-          let fullOutput = '';
-          let hasEmittedTextStart = false;
-
-          for await (const event of eventStream) {
-            // Handle tool call start
-            if (event.event === 'on_tool_start') {
-              const toolName = event.name;
-              const toolInput = event.data?.input;
-              const currentToolCallId = `tool-${messageId}-${toolCallId++}`;
-
-              // Store mapping for when we get the result
-              toolCallMap.set(event.run_id, currentToolCallId);
-
-              console.log(`🔧 Tool call: ${toolName}`, toolInput);
-
-              // Emit tool-input-start to signal tool call began
-              writer.write({
-                type: 'tool-input-start',
-                toolCallId: currentToolCallId,
-                toolName: toolName,
-                dynamic: true,
-              });
-
-              // Emit tool-input-available with the tool input
-              writer.write({
-                type: 'tool-input-available',
-                toolCallId: currentToolCallId,
-                toolName: toolName,
-                input: toolInput,
-              });
-            }
-
-            // Handle tool call result
-            if (event.event === 'on_tool_end') {
-              const toolName = event.name;
-              const toolOutput = event.data?.output;
-              const currentToolCallId = toolCallMap.get(event.run_id);
-
-              if (currentToolCallId) {
-                console.log(`✅ Tool result: ${toolName}`, toolOutput);
-
-                // Emit tool-output-available with the tool output
-                writer.write({
-                  type: 'tool-output-available',
-                  toolCallId: currentToolCallId,
-                  output: toolOutput,
-                  dynamic: true,
-                });
-              }
-            }
-
-            // Handle streaming text from the model
-            if (event.event === 'on_chat_model_stream') {
-              const content = event.data?.chunk?.content;
-              if (typeof content === 'string' && content) {
-                // Emit text-start before the first text content
-                // This ensures tool calls are rendered before the text response
-                if (!hasEmittedTextStart) {
-                  writer.write({ type: 'text-start', id: messageId });
-                  hasEmittedTextStart = true;
-                }
-
-                writer.write({
-                  type: 'text-delta',
-                  id: messageId,
-                  delta: content,
-                });
-                fullOutput += content;
-              }
-            }
-
-            // Handle final agent output
-            if (event.event === 'on_chain_end' && event.name === 'AgentExecutor') {
-              const output = event.data?.output?.output;
-              if (output && output !== fullOutput) {
-                // If there's output we haven't streamed yet, send it
-                const newText = output.substring(fullOutput.length);
-                if (newText) {
-                  // Emit text-start if we haven't already
-                  if (!hasEmittedTextStart) {
-                    writer.write({ type: 'text-start', id: messageId });
-                    hasEmittedTextStart = true;
-                  }
-
-                  writer.write({
-                    type: 'text-delta',
-                    id: messageId,
-                    delta: newText,
-                  });
-                  fullOutput = output;
-                }
-              }
-            }
-          }
-
-          // Finish the stream
-          writer.write({
-            type: 'finish',
-            finishReason: 'stop',
-            usage: {
-              promptTokens: 0,
-              completionTokens: 0,
-            },
-          });
-
-        } catch (error) {
-          console.error('Agent streaming error:', error);
-          const errorMessage =
-            error instanceof Error ? error.message : JSON.stringify(error);
-          writer.write({ type: 'data-error', data: errorMessage });
-        }
+          }),
+        );
       },
       onFinish: async ({ responseMessage }) => {
         console.log(

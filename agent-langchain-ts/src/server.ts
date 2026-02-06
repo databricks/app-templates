@@ -29,6 +29,7 @@ import {
   setupTracingShutdownHandlers,
 } from "./tracing.js";
 import { createInvocationsRouter } from "./routes/invocations.js";
+import { uiBackendRouter } from "./routes/ui-backend.js";
 import type { AgentExecutor } from "langchain/agents";
 
 // Load environment variables
@@ -95,6 +96,10 @@ export async function createServer(
       service: "langchain-agent-ts",
     });
   });
+
+  // Mount UI backend routes (for chat UI)
+  app.use("/api", uiBackendRouter);
+  console.log("✅ UI backend routes mounted");
 
   // Mount /invocations endpoint (MLflow-compatible)
   const invocationsRouter = createInvocationsRouter(agent);

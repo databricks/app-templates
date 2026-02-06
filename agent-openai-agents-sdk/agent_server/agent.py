@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import AsyncGenerator
 
 import mlflow
@@ -6,12 +7,14 @@ from agents.tracing import set_trace_processors
 from databricks_openai import AsyncDatabricksOpenAI
 from databricks_openai.agents import McpServer
 from mlflow.genai.agent_server import invoke, stream
+from mlflow.genai.agent_server.utils import setup_mlflow_git_based_version_tracking
 from mlflow.types.responses import (
     ResponsesAgentRequest,
     ResponsesAgentResponse,
     ResponsesAgentStreamEvent,
 )
-from utils import (
+
+from agent_server.utils import (
     build_mcp_url,
     get_user_workspace_client,
     process_agent_stream_events,
@@ -40,10 +43,17 @@ def create_coding_agent(mcp_server: McpServer) -> Agent:
     )
 
 
+@lru_cache(maxsize=1)
+def init_once():
+    setup_mlflow_git_based_version_tracking()
+    return None
+
+
 @invoke()
 async def invoke(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
+    init_once()
     async with await init_mcp_server() as mcp_server:
         agent = create_coding_agent(mcp_server)
         messages = [i.model_dump() for i in request.input]
@@ -55,6 +65,7 @@ async def invoke(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
 async def stream(request: dict) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
+    init_once()
     async with await init_mcp_server() as mcp_server:
         agent = create_coding_agent(mcp_server)
         messages = [i.model_dump() for i in request.input]

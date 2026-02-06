@@ -1,22 +1,10 @@
-from dotenv import load_dotenv
-from mlflow.genai.agent_server import AgentServer, setup_mlflow_git_based_version_tracking
-
-# Load env vars from .env before importing the agent for proper auth
-load_dotenv(dotenv_path=".env", override=True)
-
-
-agent_server = AgentServer("ResponsesAgent", enable_chat_proxy=True)
-# Define the app as a module level variable to enable multiple workers
-app = agent_server.app  # noqa: F841
+import uvicorn
 
 
 def main():
-    agent_server.run(app_import_string="start_server:app")
+    uvicorn.run("app:app")
+    # agent_server.run(app_import_string="app:app")
 
-
-setup_mlflow_git_based_version_tracking()
-# Need to import the agent to register the functions with the server
-import agent  # noqa: E402
 
 if __name__ == "__main__":
     main()

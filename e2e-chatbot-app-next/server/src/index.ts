@@ -16,6 +16,7 @@ import { historyRouter } from './routes/history';
 import { sessionRouter } from './routes/session';
 import { messagesRouter } from './routes/messages';
 import { configRouter } from './routes/config';
+import { invocationsRouter } from './routes/invocations';
 import { ChatSDKError } from '@chat-template/core/errors';
 
 // ESM-compatible __dirname
@@ -54,6 +55,9 @@ app.use('/api/history', historyRouter);
 app.use('/api/session', sessionRouter);
 app.use('/api/messages', messagesRouter);
 app.use('/api/config', configRouter);
+
+// MLflow-compatible Responses API endpoint
+app.use('/invocations', invocationsRouter);
 
 // Serve static files in production
 if (!isDevelopment) {

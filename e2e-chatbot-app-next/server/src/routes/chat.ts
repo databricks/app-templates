@@ -74,7 +74,7 @@ let agentInitPromise: Promise<AgentExecutor> | null = null;
 /**
  * Get or create the agent instance
  */
-async function getAgent(): Promise<AgentExecutor> {
+export async function getAgent(): Promise<AgentExecutor> {
   if (agentInstance) {
     return agentInstance;
   }

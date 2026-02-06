@@ -4,8 +4,13 @@
  */
 
 import { Router, Request, Response } from "express";
+import { streamText } from "ai";
+import { createDatabricks } from "@databricks/ai-sdk-provider";
 
 export const uiBackendRouter = Router();
+
+// Initialize Databricks AI SDK provider
+const databricks = createDatabricks();
 
 /**
  * Session endpoint - returns user info from Databricks headers
@@ -61,19 +66,26 @@ uiBackendRouter.post("/chat", async (req: Request, res: Response) => {
     // Call the agent's invocations endpoint
     const invocationsUrl = `http://localhost:${process.env.PORT || 8000}/invocations`;
 
+    const requestBody = {
+      input: messages,
+      stream: true,
+    };
+
+    console.log("[/api/chat] Calling invocations:", invocationsUrl);
+    console.log("[/api/chat] Request body:", JSON.stringify(requestBody).slice(0, 300));
+
     const response = await fetch(invocationsUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        input: messages,
-        stream: true,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
-      throw new Error(`Invocations endpoint failed: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`[/api/chat] Invocations failed with ${response.status}:`, errorText);
+      throw new Error(`Invocations endpoint failed: ${response.status} - ${errorText}`);
     }
 
     // Set headers for AI SDK streaming (newline-delimited JSON)

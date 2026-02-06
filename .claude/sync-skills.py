@@ -38,6 +38,10 @@ TEMPLATES = {
         "sdk": "langgraph",
         "bundle_name": "agent_non_conversational",
     },
+    "agent-migration-from-model-serving": {
+        "sdk": "langgraph",  # Scaffold uses LangGraph (migration process itself is framework-agnostic)
+        "bundle_name": "agent_migration",
+    },
 }
 
 SOURCE = SCRIPT_DIR / "skills"
@@ -71,7 +75,7 @@ def sync_template(template: str, config: dict):
     dest.mkdir(parents=True)
 
     # Shared skills (no substitution needed)
-    for skill in ["quickstart", "run-locally", "discover-tools"]:
+    for skill in ["quickstart", "run-locally", "discover-tools", "migrate-from-model-serving"]:
         copy_skill(SOURCE / skill, dest / skill)
 
     # Deploy skill (with substitution)

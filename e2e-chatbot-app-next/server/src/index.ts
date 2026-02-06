@@ -34,7 +34,7 @@ const PORT =
 // CORS configuration
 app.use(
   cors({
-    origin: isDevelopment ? 'http://localhost:3000' : true,
+    origin: isDevelopment ? 'http://localhost:5000' : true,
     credentials: true,
   }),
 );

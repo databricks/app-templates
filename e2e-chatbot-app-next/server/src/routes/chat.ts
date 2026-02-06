@@ -302,55 +302,84 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           writer.write({ type: 'start-step' });
           writer.write({ type: 'text-start', id: messageId });
 
-          // Stream from agent
-          const agentStream = await agent.stream({
-            input: userInput,
-            chat_history: chatHistory,
-          });
+          // Use streamEvents for granular event-by-event streaming
+          const eventStream = agent.streamEvents(
+            {
+              input: userInput,
+              chat_history: chatHistory,
+            },
+            { version: 'v2' }
+          );
 
           let toolCallId = 0;
+          const toolCallMap = new Map<string, string>(); // Map LangChain tool call IDs to our IDs
           let fullOutput = '';
 
-          for await (const chunk of agentStream) {
-            console.log('Agent chunk:', JSON.stringify(chunk, null, 2));
+          for await (const event of eventStream) {
+            // Handle tool call start
+            if (event.event === 'on_tool_start') {
+              const toolName = event.name;
+              const toolInput = event.data?.input;
+              const currentToolCallId = `tool-${messageId}-${toolCallId++}`;
 
-            // Handle tool calls
-            if (chunk.actions && Array.isArray(chunk.actions)) {
-              for (const action of chunk.actions) {
-                const currentToolCallId = `tool-${messageId}-${toolCallId++}`;
+              // Store mapping for when we get the result
+              toolCallMap.set(event.run_id, currentToolCallId);
+
+              console.log(`🔧 Tool call: ${toolName}`, toolInput);
+
+              writer.write({
+                type: 'tool-call',
+                toolCallId: currentToolCallId,
+                toolName: toolName,
+                args: toolInput,
+              });
+            }
+
+            // Handle tool call result
+            if (event.event === 'on_tool_end') {
+              const toolName = event.name;
+              const toolOutput = event.data?.output;
+              const currentToolCallId = toolCallMap.get(event.run_id);
+
+              if (currentToolCallId) {
+                console.log(`✅ Tool result: ${toolName}`, toolOutput);
 
                 writer.write({
-                  type: 'tool-call',
+                  type: 'tool-result',
                   toolCallId: currentToolCallId,
-                  toolName: action.tool,
-                  args: action.toolInput,
+                  toolName: toolName,
+                  result: toolOutput,
                 });
-
-                // The observation is the tool result
-                if (chunk.steps) {
-                  const step = chunk.steps.find((s: any) => s.action?.tool === action.tool);
-                  if (step?.observation) {
-                    writer.write({
-                      type: 'tool-result',
-                      toolCallId: currentToolCallId,
-                      toolName: action.tool,
-                      result: step.observation,
-                    });
-                  }
-                }
               }
             }
 
-            // Handle text output
-            if (chunk.output) {
-              const newText = chunk.output.substring(fullOutput.length);
-              if (newText) {
+            // Handle streaming text from the model
+            if (event.event === 'on_chat_model_stream') {
+              const content = event.data?.chunk?.content;
+              if (typeof content === 'string' && content) {
                 writer.write({
                   type: 'text-delta',
                   id: messageId,
-                  delta: newText,
+                  delta: content,
                 });
-                fullOutput = chunk.output;
+                fullOutput += content;
+              }
+            }
+
+            // Handle final agent output
+            if (event.event === 'on_chain_end' && event.name === 'AgentExecutor') {
+              const output = event.data?.output?.output;
+              if (output && output !== fullOutput) {
+                // If there's output we haven't streamed yet, send it
+                const newText = output.substring(fullOutput.length);
+                if (newText) {
+                  writer.write({
+                    type: 'text-delta',
+                    id: messageId,
+                    delta: newText,
+                  });
+                  fullOutput = output;
+                }
               }
             }
           }

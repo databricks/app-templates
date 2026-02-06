@@ -56,7 +56,28 @@ uiBackendRouter.post("/chat", async (req: Request, res: Response) => {
     console.log("[/api/chat] Received request:", JSON.stringify(req.body).slice(0, 200));
 
     // Convert UI chat format to invocations format
-    const messages = req.body.messages || [];
+    // UI sends: { message: {...}, previousMessages: [...] }
+    const { message, previousMessages = [] } = req.body;
+
+    // Build messages array: previous messages + new message
+    const messages = [...previousMessages];
+
+    if (message) {
+      // Convert message with parts to simple text format
+      const textContent = message.parts
+        ?.filter((part: any) => part.type === "text")
+        .map((part: any) => part.text)
+        .join("\n") || "";
+
+      messages.push({
+        role: message.role,
+        content: textContent,
+      });
+    }
+
+    if (messages.length === 0) {
+      return res.status(400).json({ error: "No messages provided" });
+    }
 
     // Call the agent's invocations endpoint
     const invocationsUrl = `http://localhost:${process.env.PORT || 8000}/invocations`;
@@ -67,6 +88,7 @@ uiBackendRouter.post("/chat", async (req: Request, res: Response) => {
     };
 
     console.log("[/api/chat] Calling invocations:", invocationsUrl);
+    console.log("[/api/chat] Converted messages:", JSON.stringify(messages, null, 2).slice(0, 500));
     console.log("[/api/chat] Request body:", JSON.stringify(requestBody).slice(0, 300));
 
     const response = await fetch(invocationsUrl, {

@@ -19,8 +19,6 @@ import { dirname } from "node:path";
 import { existsSync } from "node:fs";
 import {
   createAgent,
-  invokeAgent,
-  streamAgent,
   type AgentConfig,
   type AgentMessage,
 } from "./agent.js";
@@ -37,15 +35,6 @@ config();
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-
-/**
- * Request body for agent invocation
- */
-interface AgentRequest {
-  messages: AgentMessage[];
-  stream?: boolean;
-  config?: Partial<AgentConfig>;
-}
 
 /**
  * Server configuration
@@ -103,7 +92,6 @@ export async function createServer(
   console.log("✅ Agent endpoints mounted");
 
   // Check if UI build exists and mount it
-  const uiBuildPath = path.join(__dirname, "../../ui/server/dist");
   const uiClientPath = path.join(__dirname, "../../ui/client/dist");
 
   if (existsSync(uiClientPath)) {

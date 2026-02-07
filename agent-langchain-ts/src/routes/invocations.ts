@@ -36,12 +36,25 @@ const responsesRequestSchema = z.object({
   custom_inputs: z.record(z.string(), z.any()).optional(),
 });
 
-type RouterType = ReturnType<typeof Router>;
+/**
+ * Helper function to emit SSE events
+ */
+function emitSSEEvent(res: Response, type: string, data: any) {
+  res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`);
+}
+
+/**
+ * Helper function to emit both .added and .done events for an output item
+ */
+function emitOutputItem(res: Response, itemType: string, item: any) {
+  emitSSEEvent(res, "response.output_item.added", { item: { ...item, type: itemType } });
+  emitSSEEvent(res, "response.output_item.done", { item: { ...item, type: itemType } });
+}
 
 /**
  * Create invocations router with the given agent
  */
-export function createInvocationsRouter(agent: AgentExecutor): RouterType {
+export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof Router> {
   const router = Router();
 
   router.post("/", async (req: Request, res: Response) => {
@@ -98,7 +111,6 @@ export function createInvocationsRouter(agent: AgentExecutor): RouterType {
           );
 
           let textOutputId = `text_${Date.now()}`;
-          let hasStartedText = false;
           const toolCallIds = new Map<string, string>(); // Map tool name to call_id
 
           for await (const event of eventStream) {
@@ -111,31 +123,13 @@ export function createInvocationsRouter(agent: AgentExecutor): RouterType {
               const toolKey = `${event.name}_${event.run_id}`;
               toolCallIds.set(toolKey, toolCallId);
 
-              // Emit .added event first (announces the tool call)
-              const toolAddedEvent = {
-                type: "response.output_item.added",
-                item: {
-                  type: "function_call",
-                  id: fcId,
-                  call_id: toolCallId,
-                  name: event.name,
-                  arguments: JSON.stringify(event.data?.input || {}),
-                },
-              };
-              res.write(`data: ${JSON.stringify(toolAddedEvent)}\n\n`);
-
-              // Then emit .done event (marks it complete)
-              const toolDoneEvent = {
-                type: "response.output_item.done",
-                item: {
-                  type: "function_call",
-                  id: fcId,
-                  call_id: toolCallId,
-                  name: event.name,
-                  arguments: JSON.stringify(event.data?.input || {}),
-                },
-              };
-              res.write(`data: ${JSON.stringify(toolDoneEvent)}\n\n`);
+              // Emit both .added and .done events for function_call
+              emitOutputItem(res, "function_call", {
+                id: fcId,
+                call_id: toolCallId,
+                name: event.name,
+                arguments: JSON.stringify(event.data?.input || {}),
+              });
             }
 
             // Handle tool results
@@ -143,31 +137,13 @@ export function createInvocationsRouter(agent: AgentExecutor): RouterType {
               // Look up the original call_id for this tool
               const toolKey = `${event.name}_${event.run_id}`;
               const toolCallId = toolCallIds.get(toolKey) || `call_${Date.now()}`;
-              const outputId = `fc_output_${Date.now()}`;
 
-              // Emit .added event first (announces the result)
-              const outputAddedEvent = {
-                type: "response.output_item.added",
-                item: {
-                  type: "function_call_output",
-                  id: outputId,
-                  call_id: toolCallId,
-                  output: JSON.stringify(event.data?.output || ""),
-                },
-              };
-              res.write(`data: ${JSON.stringify(outputAddedEvent)}\n\n`);
-
-              // Then emit .done event (marks result complete)
-              const outputDoneEvent = {
-                type: "response.output_item.done",
-                item: {
-                  type: "function_call_output",
-                  id: outputId,
-                  call_id: toolCallId,
-                  output: JSON.stringify(event.data?.output || ""),
-                },
-              };
-              res.write(`data: ${JSON.stringify(outputDoneEvent)}\n\n`);
+              // Emit both .added and .done events for function_call_output
+              emitOutputItem(res, "function_call_output", {
+                id: `fc_output_${Date.now()}`,
+                call_id: toolCallId,
+                output: JSON.stringify(event.data?.output || ""),
+              });
 
               // Clean up the stored call_id
               toolCallIds.delete(toolKey);
@@ -177,9 +153,6 @@ export function createInvocationsRouter(agent: AgentExecutor): RouterType {
             if (event.event === "on_chat_model_stream") {
               const content = event.data?.chunk?.content;
               if (content && typeof content === "string") {
-                if (!hasStartedText) {
-                  hasStartedText = true;
-                }
                 const textDelta = {
                   type: "response.output_text.delta",
                   item_id: textOutputId,

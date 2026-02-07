@@ -17,10 +17,11 @@
     "build:agent-only": "tsc",
     "build:ui": "cd ui && npm install && npm run build",
     "test": "jest",
-    "test:unit": "jest tests/*.test.ts --testPathIgnorePatterns=integration deployed",
+    "test:unit": "jest tests/*.test.ts --testPathIgnorePatterns=integration deployed error-handling",
     "test:integration": "jest tests/integration.test.ts",
+    "test:error-handling": "jest tests/error-handling.test.ts",
     "test:deployed": "jest tests/deployed.test.ts",
-    "test:all": "npm run test:unit && npm run test:integration && npm run test:deployed",
+    "test:all": "npm run test:unit && npm run test:integration && npm run test:error-handling && npm run test:deployed",
     "quickstart": "tsx scripts/quickstart.ts",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\""

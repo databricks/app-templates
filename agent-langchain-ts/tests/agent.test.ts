@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeAll } from "@jest/globals";
-import { createAgent, invokeAgent } from "../src/agent.js";
+import { createAgent } from "../src/agent.js";
 import type { AgentExecutor } from "langchain/agents";
 
 describe("Agent", () => {
@@ -22,78 +22,88 @@ describe("Agent", () => {
   });
 
   test("should respond to simple queries", async () => {
-    const response = await invokeAgent(agent, "Hello, how are you?");
+    const result = await agent.invoke({
+      input: "Hello, how are you?",
+    });
 
-    expect(response).toBeDefined();
-    expect(response.output).toBeTruthy();
-    expect(typeof response.output).toBe("string");
+    expect(result).toBeDefined();
+    expect(result.output).toBeTruthy();
+    expect(typeof result.output).toBe("string");
   }, 30000);
 
   test("should use calculator tool", async () => {
-    const response = await invokeAgent(agent, "Calculate 123 * 456");
+    const result = await agent.invoke({
+      input: "Calculate 123 * 456",
+    });
 
-    expect(response).toBeDefined();
-    expect(response.output).toBeTruthy();
+    expect(result).toBeDefined();
+    expect(result.output).toBeTruthy();
 
     // Should have used the calculator tool
-    expect(response.intermediateSteps?.length).toBeGreaterThan(0);
+    expect(result.intermediateSteps?.length).toBeGreaterThan(0);
 
-    const usedCalculator = response.intermediateSteps?.some(
-      (step) => step.action === "calculator"
+    // Check if calculator was used (tool name is in action.tool field)
+    const usedCalculator = result.intermediateSteps?.some(
+      (step: any) => {
+        const toolName = step.action?.tool || step.action;
+        return toolName === "calculator";
+      }
     );
     expect(usedCalculator).toBe(true);
   }, 30000);
 
   test("should use weather tool", async () => {
-    const response = await invokeAgent(
-      agent,
-      "What's the weather in New York?"
-    );
+    const result = await agent.invoke({
+      input: "What's the weather in New York?",
+    });
 
-    expect(response).toBeDefined();
-    expect(response.output).toBeTruthy();
+    expect(result).toBeDefined();
+    expect(result.output).toBeTruthy();
 
     // Should have used the weather tool
-    const usedWeather = response.intermediateSteps?.some(
-      (step) => step.action === "get_weather"
+    const usedWeather = result.intermediateSteps?.some(
+      (step: any) => {
+        const toolName = step.action?.tool || step.action;
+        return toolName === "get_weather";
+      }
     );
     expect(usedWeather).toBe(true);
   }, 30000);
 
   test("should use time tool", async () => {
-    const response = await invokeAgent(
-      agent,
-      "What time is it in Tokyo?"
-    );
+    const result = await agent.invoke({
+      input: "What time is it in Tokyo?",
+    });
 
-    expect(response).toBeDefined();
-    expect(response.output).toBeTruthy();
+    expect(result).toBeDefined();
+    expect(result.output).toBeTruthy();
 
     // Should have used the time tool
-    const usedTime = response.intermediateSteps?.some(
-      (step) => step.action === "get_current_time"
+    const usedTime = result.intermediateSteps?.some(
+      (step: any) => {
+        const toolName = step.action?.tool || step.action;
+        return toolName === "get_current_time";
+      }
     );
     expect(usedTime).toBe(true);
   }, 30000);
 
   test("should handle multi-turn conversations", async () => {
-    const firstResponse = await invokeAgent(
-      agent,
-      "What is 10 + 20?",
-      []
-    );
+    const firstResult = await agent.invoke({
+      input: "What is 10 + 20?",
+      chat_history: [],
+    });
 
-    expect(firstResponse.output).toBeTruthy();
+    expect(firstResult.output).toBeTruthy();
 
-    const secondResponse = await invokeAgent(
-      agent,
-      "Now multiply that by 3",
-      [
+    const secondResult = await agent.invoke({
+      input: "Now multiply that by 3",
+      chat_history: [
         { role: "user", content: "What is 10 + 20?" },
-        { role: "assistant", content: firstResponse.output },
-      ]
-    );
+        { role: "assistant", content: firstResult.output },
+      ],
+    });
 
-    expect(secondResponse.output).toBeTruthy();
+    expect(secondResult.output).toBeTruthy();
   }, 60000);
 });

@@ -91,11 +91,9 @@ export const timeTool = tool(
 );
 
 /**
- * Get basic function tools
+ * Basic function tools available to the agent
  */
-export function getBasicTools() {
-  return [weatherTool, calculatorTool, timeTool];
-}
+export const basicTools = [weatherTool, calculatorTool, timeTool];
 
 /**
  * Configuration for MCP servers
@@ -216,8 +214,6 @@ export async function getMCPTools(config: MCPConfig) {
  * Get all configured tools (basic + MCP)
  */
 export async function getAllTools(mcpConfig?: MCPConfig) {
-  const basicTools = getBasicTools();
-
   if (!mcpConfig) {
     return basicTools;
   }

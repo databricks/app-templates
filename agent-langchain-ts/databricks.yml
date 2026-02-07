@@ -1,0 +1,50 @@
+bundle:
+  name: agent-langchain-ts
+
+variables:
+  serving_endpoint_name:
+    description: "The name of the Databricks model serving endpoint to use"
+    default: "databricks-claude-sonnet-4-5"
+
+  resource_name_suffix:
+    description: "Suffix to add to resource names for uniqueness"
+    default: "dev"
+
+  mlflow_experiment_id:
+    description: "MLflow experiment ID for traces (optional - will be created if not provided)"
+    default: ""
+
+include:
+  - resources/*.yml
+
+resources:
+  apps:
+    agent_langchain_ts:
+      name: agent-lc-ts-${var.resource_name_suffix}
+      description: "TypeScript LangChain agent with MLflow tracing"
+      source_code_path: ./
+      resources:
+        - name: serving-endpoint
+          serving_endpoint:
+            name: ${var.serving_endpoint_name}
+            permission: CAN_QUERY
+        # Experiment resource - optional, set mlflow_experiment_id variable to use
+        # If not provided, traces will still be captured but won't link to a specific experiment
+        # To set: databricks bundle deploy --var="mlflow_experiment_id=YOUR_EXPERIMENT_ID"
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      profile: dogfood
+
+  prod:
+    mode: production
+    workspace:
+      profile: dogfood
+
+    # Production-specific configuration
+    variables:
+      resource_name_suffix:
+        default: "prod"

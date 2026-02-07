@@ -1,11 +1,20 @@
 /**
  * Custom exports for the agent-langchain-ts integration
  *
- * This file adds a proxy route for /invocations so external clients
- * can access the agent's Responses API endpoint through the exposed port 8000.
+ * This file adds:
+ * 1. Proxy route for /invocations (Responses API endpoint)
+ * 2. Static file serving for the UI frontend
  */
 
 import type { Express } from 'express';
+import express from 'express';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
+import { existsSync } from 'node:fs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 /**
  * Add custom routes to the UI server
@@ -13,6 +22,27 @@ import type { Express } from 'express';
  */
 export function addCustomRoutes(app: Express) {
   const agentUrl = process.env.AGENT_URL || 'http://localhost:8001';
+
+  // Serve UI static files from the client build
+  const uiClientPath = path.join(__dirname, '../../../client/dist');
+
+  if (existsSync(uiClientPath)) {
+    console.log('📦 Serving UI static files from:', uiClientPath);
+    app.use(express.static(uiClientPath));
+
+    // SPA fallback - serve index.html for all non-API routes
+    app.get(/^\/(?!api).*/, (req, res, next) => {
+      // Skip if this is an API route or already handled
+      if (req.path.startsWith('/api') || req.path === '/invocations') {
+        return next();
+      }
+      res.sendFile(path.join(uiClientPath, 'index.html'));
+    });
+
+    console.log('✅ UI static files served');
+  } else {
+    console.log('⚠️  UI client build not found at:', uiClientPath);
+  }
 
   // Proxy /invocations to the agent server
   app.all('/invocations', async (req, res) => {

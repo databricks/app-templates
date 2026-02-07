@@ -185,11 +185,49 @@ async function testToolCalling(token: string) {
   return hasResult;
 }
 
+async function testUIRoot(token: string) {
+  console.log("\n=== Testing UI Root (/) ===");
+
+  const response = await fetch(`${APP_URL}/`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    console.log(`❌ HTTP ${response.status}`);
+    console.log(`Response: ${text.substring(0, 200)}`);
+    return false;
+  }
+
+  const html = await response.text();
+  const hasHtml = html.includes("<!DOCTYPE html>") || html.includes("<html");
+  const hasTitle = html.includes("<title>");
+
+  console.log("✅ Response received");
+  console.log(`Has HTML: ${hasHtml}`);
+  console.log(`Has title tag: ${hasTitle}`);
+
+  if (hasHtml && hasTitle) {
+    console.log("✅ UI root test: PASS");
+    return true;
+  } else {
+    console.log("❌ UI root test: FAIL (not valid HTML)");
+    console.log(`First 500 chars: ${html.substring(0, 500)}`);
+    return false;
+  }
+}
+
 async function main() {
   console.log(`🚀 Testing deployed app at: ${APP_URL}\n`);
 
   try {
     const token = await getAuthToken();
+
+    // Test 0: UI root (/)
+    const test0 = await testUIRoot(token);
 
     // Test 1: /invocations endpoint
     const test1 = await testInvocations(token);
@@ -201,11 +239,12 @@ async function main() {
     const test3 = await testToolCalling(token);
 
     console.log("\n=== RESULTS ===");
+    console.log(`${test0 ? "✅" : "❌"} UI root (/): ${test0 ? "PASS" : "FAIL"}`);
     console.log(`${test1 ? "✅" : "❌"} /invocations (Responses API): ${test1 ? "PASS" : "FAIL"}`);
     console.log(`${test2 ? "✅" : "❌"} /api/chat (useChat format): ${test2 ? "PASS" : "FAIL"}`);
     console.log(`${test3 ? "✅" : "❌"} Tool calling: ${test3 ? "PASS" : "FAIL"}`);
 
-    if (test1 && test2 && test3) {
+    if (test0 && test1 && test2 && test3) {
       console.log("\n🎉 All deployed app tests passed!");
       process.exit(0);
     } else {

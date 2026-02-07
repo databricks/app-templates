@@ -24,7 +24,7 @@ if [ -d "ui/server/dist" ]; then
 
   # Start UI server on port 8000 (exposed port) with API_PROXY to agent
   cd ui/server
-  API_PROXY=http://localhost:8001/invocations PORT=8000 node dist/index.js &
+  API_PROXY=http://localhost:8001/invocations PORT=8000 node dist/index.mjs &
   UI_PID=$!
   echo "UI server started on port 8000 (PID: $UI_PID)"
   cd ../..

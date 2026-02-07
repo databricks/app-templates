@@ -19,7 +19,15 @@ const responsesRequestSchema = z.object({
     z.union([
       z.object({
         role: z.enum(["user", "assistant", "system"]),
-        content: z.string(),
+        content: z.union([
+          z.string(),
+          z.array(
+            z.object({
+              type: z.string(),
+              text: z.string(),
+            }).passthrough()
+          ),
+        ]),
       }),
       z.object({ type: z.string() }).passthrough(),
     ])
@@ -58,7 +66,19 @@ export function createInvocationsRouter(agent: AgentExecutor): RouterType {
       }
 
       const lastUserMessage = userMessages[userMessages.length - 1];
-      const userInput = lastUserMessage.content;
+
+      // Handle both string and array content formats
+      let userInput: string;
+      if (Array.isArray(lastUserMessage.content)) {
+        // Extract text from array format (multimodal content)
+        userInput = lastUserMessage.content
+          .filter((part: any) => part.type === "input_text" || part.type === "text")
+          .map((part: any) => part.text)
+          .join("\n");
+      } else {
+        userInput = lastUserMessage.content;
+      }
+
       const chatHistory = input.slice(0, -1);
 
       // Handle streaming response

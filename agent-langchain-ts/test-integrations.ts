@@ -146,10 +146,7 @@ async function testInvocationsTimeTool() {
 }
 
 async function testApiChatTimeTool() {
-  console.log("\n=== Testing /api/chat with Time Tool ===");
-  console.log("⚠️  Known issue: Databricks AI SDK provider doesn't support");
-  console.log("    server-side tool execution in fresh conversations.");
-  console.log("    This will fail but is expected behavior.");
+  console.log("\n=== Testing /api/chat with Time Tool (useChat format) ===");
 
   const response = await fetch("http://localhost:3001/api/chat", {
     method: "POST",
@@ -158,7 +155,7 @@ async function testApiChatTimeTool() {
       id: "550e8400-e29b-41d4-a716-446655440000",
       message: {
         role: "user",
-        parts: [{ type: "text", text: "What time is it in Tokyo?" }],
+        parts: [{ type: "text", text: "time in tokyo?" }],
         id: "550e8400-e29b-41d4-a716-446655440001",
       },
       selectedChatModel: "chat-model",
@@ -169,21 +166,28 @@ async function testApiChatTimeTool() {
 
   if (!response.ok) {
     const text = await response.text();
-    console.log(`❌ HTTP ${response.status} (expected)`);
-    return true; // Mark as pass since this is expected
+    console.log(`❌ HTTP ${response.status}`);
+    console.log(`Response: ${text.substring(0, 500)}`);
+    return false;
   }
 
   const text = await response.text();
-  const hasError = text.includes("No matching tool call");
+  console.log("Full stream output:");
+  console.log(text);
 
-  if (hasError) {
-    console.log("❌ Got expected error: 'No matching tool call found'");
-    console.log("✅ Test passed (error is expected)");
-    return true; // Expected error
+  const hasError = text.includes("No matching tool call");
+  const hasToolInput = text.includes('"type":"tool-input-available"');
+
+  console.log(`\nHas tool-input-available event: ${hasToolInput}`);
+  console.log(`Has "No matching tool call" error: ${hasError}`);
+
+  if (hasError && hasToolInput) {
+    console.log("\n⚠️  Error reproduced locally!");
+    console.log("This is the same error you're seeing on the deployed app.");
+    return false; // Mark as failure since this is the bug we need to fix
   }
 
-  console.log("⚠️  Unexpected: No error occurred");
-  return false;
+  return true;
 }
 
 async function main() {

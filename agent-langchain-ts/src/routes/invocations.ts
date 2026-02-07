@@ -99,36 +99,78 @@ export function createInvocationsRouter(agent: AgentExecutor): RouterType {
 
           let textOutputId = `text_${Date.now()}`;
           let hasStartedText = false;
+          const toolCallIds = new Map<string, string>(); // Map tool name to call_id
 
           for await (const event of eventStream) {
             // Handle tool calls
             if (event.event === "on_tool_start") {
               const toolCallId = `call_${Date.now()}`;
-              const toolEvent = {
-                type: "response.output_item.done",
+              const fcId = `fc_${Date.now()}`;
+
+              // Store the call_id for this tool so we can reference it in the output
+              const toolKey = `${event.name}_${event.run_id}`;
+              toolCallIds.set(toolKey, toolCallId);
+
+              // Emit .added event first (announces the tool call)
+              const toolAddedEvent = {
+                type: "response.output_item.added",
                 item: {
                   type: "function_call",
-                  id: `fc_${Date.now()}`,
+                  id: fcId,
                   call_id: toolCallId,
                   name: event.name,
                   arguments: JSON.stringify(event.data?.input || {}),
                 },
               };
-              res.write(`data: ${JSON.stringify(toolEvent)}\n\n`);
+              res.write(`data: ${JSON.stringify(toolAddedEvent)}\n\n`);
+
+              // Then emit .done event (marks it complete)
+              const toolDoneEvent = {
+                type: "response.output_item.done",
+                item: {
+                  type: "function_call",
+                  id: fcId,
+                  call_id: toolCallId,
+                  name: event.name,
+                  arguments: JSON.stringify(event.data?.input || {}),
+                },
+              };
+              res.write(`data: ${JSON.stringify(toolDoneEvent)}\n\n`);
             }
 
             // Handle tool results
             if (event.event === "on_tool_end") {
-              const toolCallId = `call_${Date.now()}`;
-              const toolOutputEvent = {
-                type: "response.output_item.done",
+              // Look up the original call_id for this tool
+              const toolKey = `${event.name}_${event.run_id}`;
+              const toolCallId = toolCallIds.get(toolKey) || `call_${Date.now()}`;
+              const outputId = `fc_output_${Date.now()}`;
+
+              // Emit .added event first (announces the result)
+              const outputAddedEvent = {
+                type: "response.output_item.added",
                 item: {
                   type: "function_call_output",
+                  id: outputId,
                   call_id: toolCallId,
                   output: JSON.stringify(event.data?.output || ""),
                 },
               };
-              res.write(`data: ${JSON.stringify(toolOutputEvent)}\n\n`);
+              res.write(`data: ${JSON.stringify(outputAddedEvent)}\n\n`);
+
+              // Then emit .done event (marks result complete)
+              const outputDoneEvent = {
+                type: "response.output_item.done",
+                item: {
+                  type: "function_call_output",
+                  id: outputId,
+                  call_id: toolCallId,
+                  output: JSON.stringify(event.data?.output || ""),
+                },
+              };
+              res.write(`data: ${JSON.stringify(outputDoneEvent)}\n\n`);
+
+              // Clean up the stored call_id
+              toolCallIds.delete(toolKey);
             }
 
             // Handle text streaming from LLM

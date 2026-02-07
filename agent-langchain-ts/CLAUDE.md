@@ -258,27 +258,50 @@ const response = await fetch("http://localhost:3001/api/chat", {
 
 This sends the wrong request format (Responses API instead of useChat format) and will result in 400 errors.
 
-## Known Issues and Limitations
+## Responses API Event Sequence
 
-### Server-Side Tool Execution with Databricks Provider
+When implementing server-side tool execution, you **must** emit events in the proper sequence for the Databricks AI SDK provider to track them correctly:
 
-**Issue**: When an agent executes tools server-side, the Databricks AI SDK provider may throw "No matching tool call found in previous message" error in fresh conversations when using `/api/chat`.
+### Correct Event Sequence for Tool Calls
 
-**Why this happens**:
-- The agent executes tools and streams both `function_call` and `function_call_output` events
-- The Databricks provider expects client-side tool execution
-- When it sees `tool-input-available` with `providerExecuted: true`, it tries to match it to a previous tool call in the conversation history
-- In fresh conversations, there's no history, so it fails
+```
+1. response.output_item.added (type: function_call)
+   - Announces the tool call
+   - Includes: id, call_id, name, arguments
 
-**Workarounds**:
-1. ✅ `/invocations` works fine - direct Responses API calls handle server-side tools correctly
-2. ⚠️ `/api/chat` has this issue - the backend uses Databricks provider which doesn't handle it
-3. 🔄 For multi-turn conversations, once there's history, it may work
+2. response.output_item.done (type: function_call)
+   - Marks the tool call as complete
+   - Same id and call_id as .added event
 
-**Testing approach**:
-- Always test tool calling via `/invocations` first
-- Document that `/api/chat` has limitations with server-side tools in fresh conversations
-- Consider implementing client-side tool execution if this is a blocker
+3. response.output_item.added (type: function_call_output)
+   - Announces the tool result
+   - MUST use the SAME call_id as the function_call
+   - Includes: id, call_id, output
+
+4. response.output_item.done (type: function_call_output)
+   - Marks the result as complete
+   - Same id and call_id as .added event
+```
+
+### Critical Requirements
+
+1. **Both `.added` and `.done` events required** - The Databricks provider uses `.added` to register items in its internal state, then matches `.done` events to them
+2. **Matching `call_id` values** - The `function_call` and `function_call_output` must share the same `call_id` so the provider can link them
+3. **Unique `id` values** - Each item (function_call and function_call_output) needs its own unique `id`
+
+### Why This Matters
+
+Without proper event sequences:
+- ❌ "No matching tool call found in previous message" errors
+- ❌ Provider can't track tool execution flow
+- ❌ `/api/chat` fails even though `/invocations` returns valid data
+
+With proper event sequences:
+- ✅ Provider tracks tool calls correctly
+- ✅ Both `/invocations` and `/api/chat` work
+- ✅ Server-side tool execution works in fresh conversations
+
+See `src/routes/invocations.ts` for the reference implementation using LangChain's `streamEvents`.
 
 ### Path Resolution in Production
 

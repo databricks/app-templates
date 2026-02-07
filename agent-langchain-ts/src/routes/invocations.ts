@@ -76,7 +76,7 @@ export function createInvocationsRouter(agent: AgentExecutor): RouterType {
           .map((part: any) => part.text)
           .join("\n");
       } else {
-        userInput = lastUserMessage.content;
+        userInput = lastUserMessage.content as string;
       }
 
       const chatHistory = input.slice(0, -1);

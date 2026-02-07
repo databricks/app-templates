@@ -135,7 +135,7 @@ async function testApiChat(token: string) {
 }
 
 async function testToolCalling(token: string) {
-  console.log("\n=== Testing Tool Calling via /invocations ===");
+  console.log("\n=== Testing Tool Calling via /invocations (Calculator) ===");
 
   const response = await fetch(`${APP_URL}/invocations`, {
     method: "POST",
@@ -181,8 +181,65 @@ async function testToolCalling(token: string) {
   console.log(`Response: ${fullOutput}`);
   const hasResult = fullOutput.includes("56088") || fullOutput.includes("56,088");
 
-  console.log(`✅ Tool calling test: ${hasResult ? "PASS" : "FAIL"}`);
+  console.log(`✅ Calculator tool test: ${hasResult ? "PASS" : "FAIL"}`);
   return hasResult;
+}
+
+async function testTimeToolCalling(token: string) {
+  console.log("\n=== Testing Time Tool via /invocations ===");
+
+  const response = await fetch(`${APP_URL}/invocations`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      input: [
+        {
+          role: "user",
+          content: "What time is it in Tokyo?",
+        },
+      ],
+      stream: true,
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`HTTP ${response.status}: ${text}`);
+  }
+
+  console.log("✅ Response received");
+  const text = await response.text();
+
+  // Parse SSE stream
+  let fullOutput = "";
+  let hasToolCall = false;
+  const lines = text.split("\n");
+  for (const line of lines) {
+    if (line.startsWith("data: ") && line !== "data: [DONE]") {
+      try {
+        const data = JSON.parse(line.slice(6));
+        if (data.type === "response.output_text.delta") {
+          fullOutput += data.delta;
+        }
+        if (data.type === "response.output_item.done" && data.item?.type === "function_call" && data.item?.name === "get_current_time") {
+          hasToolCall = true;
+        }
+      } catch {
+        // Skip invalid JSON
+      }
+    }
+  }
+
+  console.log(`Response: ${fullOutput}`);
+  console.log(`Tool call detected: ${hasToolCall}`);
+
+  const hasTime = (fullOutput.toLowerCase().includes("tokyo") || fullOutput.toLowerCase().includes("time")) && hasToolCall;
+
+  console.log(`✅ Time tool test: ${hasTime ? "PASS" : "FAIL"}`);
+  return hasTime;
 }
 
 async function testUIRoot(token: string) {
@@ -235,16 +292,20 @@ async function main() {
     // Test 2: /api/chat endpoint
     const test2 = await testApiChat(token);
 
-    // Test 3: Tool calling
+    // Test 3: Calculator tool calling
     const test3 = await testToolCalling(token);
+
+    // Test 4: Time tool calling
+    const test4 = await testTimeToolCalling(token);
 
     console.log("\n=== RESULTS ===");
     console.log(`${test0 ? "✅" : "❌"} UI root (/): ${test0 ? "PASS" : "FAIL"}`);
     console.log(`${test1 ? "✅" : "❌"} /invocations (Responses API): ${test1 ? "PASS" : "FAIL"}`);
     console.log(`${test2 ? "✅" : "❌"} /api/chat (useChat format): ${test2 ? "PASS" : "FAIL"}`);
-    console.log(`${test3 ? "✅" : "❌"} Tool calling: ${test3 ? "PASS" : "FAIL"}`);
+    console.log(`${test3 ? "✅" : "❌"} Calculator tool: ${test3 ? "PASS" : "FAIL"}`);
+    console.log(`${test4 ? "✅" : "❌"} Time tool: ${test4 ? "PASS" : "FAIL"}`);
 
-    if (test0 && test1 && test2 && test3) {
+    if (test0 && test1 && test2 && test3 && test4) {
       console.log("\n🎉 All deployed app tests passed!");
       process.exit(0);
     } else {

@@ -24,7 +24,8 @@ export function addCustomRoutes(app: Express) {
   const agentUrl = process.env.AGENT_URL || 'http://localhost:8001';
 
   // Serve UI static files from the client build
-  const uiClientPath = path.join(__dirname, '../../../client/dist');
+  // Path from server/src/exports.ts -> ui/client/dist
+  const uiClientPath = path.join(__dirname, '../../client/dist');
 
   if (existsSync(uiClientPath)) {
     console.log('📦 Serving UI static files from:', uiClientPath);

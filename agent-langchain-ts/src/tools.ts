@@ -9,6 +9,7 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
+import { evaluate } from "mathjs";
 import {
   DatabricksMCPServer,
   buildMCPServerConfig,
@@ -45,9 +46,8 @@ export const weatherTool = tool(
 export const calculatorTool = tool(
   async ({ expression }) => {
     try {
-      // Basic eval for demonstration - use mathjs or similar in production
-      // eslint-disable-next-line no-eval
-      const result = eval(expression);
+      // Use mathjs for safe mathematical expression evaluation
+      const result = evaluate(expression);
       return `Result: ${result}`;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);

@@ -36,7 +36,9 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^5.1.0",
+    "express-rate-limit": "^8.2.1",
     "langchain": "^0.3.20",
+    "mathjs": "^15.1.0",
     "zod": "^4.3.5"
   },
   "devDependencies": {

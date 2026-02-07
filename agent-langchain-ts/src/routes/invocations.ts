@@ -190,6 +190,9 @@ export function createInvocationsRouter(agent: AgentExecutor): RouterType {
             }
           }
 
+          // Clean up any remaining tool call tracking
+          toolCallIds.clear();
+
           // Send completion event
           res.write(
             `data: ${JSON.stringify({ type: "response.completed" })}\n\n`
@@ -199,9 +202,18 @@ export function createInvocationsRouter(agent: AgentExecutor): RouterType {
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : String(error);
           console.error("Streaming error:", error);
+
+          // Clean up tool call tracking on error
+          toolCallIds.clear();
+
+          // Send proper SSE completion events
           res.write(
             `data: ${JSON.stringify({ type: "error", error: message })}\n\n`
           );
+          res.write(
+            `data: ${JSON.stringify({ type: "response.failed" })}\n\n`
+          );
+          res.write("data: [DONE]\n\n");
           res.end();
         }
       } else {

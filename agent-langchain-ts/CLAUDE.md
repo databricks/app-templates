@@ -1,461 +1,383 @@
-# Agent LangChain TypeScript - Development Guide
+# TypeScript Agent Development Guide (For AI Agents)
 
-## Architecture Overview
-
-This is a **two-server architecture** with agent-first development:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ LOCAL DEVELOPMENT                                           │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  Agent Server (port 5001)          UI Server (port 3001)   │
-│  ┌──────────────────────┐          ┌──────────────────┐    │
-│  │ /invocations         │◄─────────│ /api/chat        │    │
-│  │ (Responses API)      │  proxy   │ (useChat format) │    │
-│  │                      │          │                  │    │
-│  │ - LangChain agent    │          │ - Express backend│    │
-│  │ - Tool execution     │          │ - Session mgmt   │    │
-│  │ - SSE streaming      │          │ - streamText()   │    │
-│  └──────────────────────┘          └──────────────────┘    │
-│                                             │               │
-│                                             ▼               │
-│                                     ┌──────────────────┐    │
-│                                     │ React Frontend   │    │
-│                                     │ (port 3000)      │    │
-│                                     │ - useChat hook   │    │
-│                                     └──────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│ PRODUCTION (Databricks Apps)                                │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  Single Server (port 8000)                                  │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │ Agent + UI Server                                    │   │
-│  │                                                      │   │
-│  │ ┌─────────────┐  ┌─────────────┐  ┌──────────────┐ │   │
-│  │ │ / (static)  │  │ /invocations│  │ /api/chat    │ │   │
-│  │ │ React UI    │  │ (Responses) │  │ (useChat)    │ │   │
-│  │ └─────────────┘  └─────────────┘  └──────────────┘ │   │
-│  │                         │                 │         │   │
-│  │                         └────proxy────────┘         │   │
-│  └──────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## Key Concepts
-
-### Two API Endpoints
-
-1. **`/invocations`** - Agent endpoint (Responses API format)
-   - MLflow-compatible streaming API
-   - Server-Sent Events (SSE) format
-   - Server-side tool execution
-   - Test with: `streamText` + Databricks provider
-
-2. **`/api/chat`** - UI backend endpoint (useChat format)
-   - Vercel AI SDK compatible
-   - Proxies to `/invocations` internally
-   - Session management, chat history
-   - Test with: `useChat` hook (React)
-
-### Development Philosophy
-
-**Agent-first development**: Build and test the agent (`/invocations`) first, then integrate with UI (`/api/chat`).
-
-The UI is a **standalone template** (`e2e-chatbot-app-next`) that can work with any Responses API backend via `API_PROXY` environment variable.
-
-## Development Workflow
-
-### 1. Local Development Setup
-
-Start both servers in separate terminals:
-
-```bash
-# Terminal 1: Agent server
-npm run dev:agent
-# Runs on http://localhost:5001
-
-# Terminal 2: UI server (with proxy to agent)
-cd ui
-API_PROXY=http://localhost:5001/invocations npm run dev
-# UI on http://localhost:3000
-# Backend on http://localhost:3001
-```
-
-### 2. Testing Workflow (Important!)
-
-Always test in this order:
-
-#### Step 1: Test `/invocations` directly
-Test the agent endpoint first with `streamText`:
-
-```typescript
-import { createDatabricksProvider } from "@databricks/ai-sdk-provider";
-import { streamText } from "ai";
-
-const databricks = createDatabricksProvider({
-  baseURL: "http://localhost:5001",
-  formatUrl: ({ baseUrl, path }) => {
-    if (path === "/responses") {
-      return `${baseUrl}/invocations`;
-    }
-    return `${baseUrl}${path}`;
-  },
-});
-
-const result = streamText({
-  model: databricks.responses("test-model"),
-  messages: [{ role: "user", content: "Hello" }],
-});
-
-for await (const chunk of result.textStream) {
-  process.stdout.write(chunk);
-}
-```
-
-**Why test this first?**
-- Simpler: No UI, session, or database complexity
-- Direct: Tests agent logic and tool execution
-- Faster: Quicker feedback loop
-
-#### Step 2: Test `/api/chat` via UI
-Once `/invocations` works, test through the UI:
-
-```typescript
-// In React component
-import { useChat } from "@ai-sdk/react";
-
-function ChatComponent() {
-  const { messages, input, handleInputChange, handleSubmit } = useChat({
-    api: "/api/chat",
-  });
-
-  // Use the chat UI...
-}
-```
-
-**Why test this second?**
-- Integration: Tests full stack (UI → backend → agent)
-- Real behavior: How users will interact with your agent
-- Edge cases: Session management, multi-turn conversations
-
-#### Step 3: Test deployed app
-After local tests pass, test on Databricks Apps:
-
-```bash
-# Deploy
-databricks bundle deploy
-databricks bundle run agent_langchain_ts
-
-# Get app URL
-databricks apps get agent-lc-ts-dev-<suffix> --output json | jq -r '.url'
-
-# Test with OAuth token
-TOKEN=$(databricks auth token --profile dogfood | jq -r '.access_token')
-curl -X POST <APP_URL>/invocations \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"input": [{"role": "user", "content": "hi"}], "stream": true}'
-```
-
-### 3. Test Scripts
-
-We provide two test scripts:
-
-```bash
-# Local integration tests
-npx tsx test-integrations.ts
-# Tests: /invocations with streamText, /api/chat with fetch, tool calling
-
-# Deployed app tests
-npx tsx test-deployed-app.ts
-# Tests: UI root, /invocations, /api/chat, tool calling on production
-```
-
-## API Testing Patterns
-
-### Testing `/invocations`
-
-**✅ Recommended: Use `streamText` with Databricks provider**
-
-```typescript
-const databricks = createDatabricksProvider({
-  baseURL: "http://localhost:5001",
-  formatUrl: ({ baseUrl, path }) => {
-    if (path === "/responses") return `${baseUrl}/invocations`;
-    return `${baseUrl}${path}`;
-  },
-});
-
-const result = streamText({
-  model: databricks.responses("model-name"),
-  messages: [{ role: "user", content: "test" }],
-});
-```
-
-**✅ Alternative: Direct fetch (for debugging)**
-
-```typescript
-const response = await fetch("http://localhost:5001/invocations", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    input: [{ role: "user", content: "test" }],
-    stream: true,
-  }),
-});
-
-// Parse SSE stream
-const text = await response.text();
-for (const line of text.split("\n")) {
-  if (line.startsWith("data: ")) {
-    const data = JSON.parse(line.slice(6));
-    if (data.type === "response.output_text.delta") {
-      console.log(data.delta);
-    }
-  }
-}
-```
-
-### Testing `/api/chat`
-
-**✅ Recommended: Use `useChat` in React UI**
-
-```typescript
-import { useChat } from "@ai-sdk/react";
-
-const { messages, input, handleInputChange, handleSubmit } = useChat({
-  api: "/api/chat",
-});
-```
-
-**⚠️ Alternative: Fetch (limited testing)**
-
-Fetch works for basic tests but doesn't exercise the full `useChat` flow:
-
-```typescript
-const response = await fetch("http://localhost:3001/api/chat", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    id: "uuid",
-    message: {
-      role: "user",
-      parts: [{ type: "text", text: "test" }],
-      id: "uuid",
-    },
-    selectedChatModel: "chat-model",
-    selectedVisibilityType: "private",
-    nextMessageId: "uuid",
-  }),
-});
-```
-
-**❌ Don't use `streamText` to call `/api/chat`**
-
-This sends the wrong request format (Responses API instead of useChat format) and will result in 400 errors.
-
-## Responses API Event Sequence
-
-When implementing server-side tool execution, you **must** emit events in the proper sequence for the Databricks AI SDK provider to track them correctly:
-
-### Correct Event Sequence for Tool Calls
-
-```
-1. response.output_item.added (type: function_call)
-   - Announces the tool call
-   - Includes: id, call_id, name, arguments
-
-2. response.output_item.done (type: function_call)
-   - Marks the tool call as complete
-   - Same id and call_id as .added event
-
-3. response.output_item.added (type: function_call_output)
-   - Announces the tool result
-   - MUST use the SAME call_id as the function_call
-   - Includes: id, call_id, output
-
-4. response.output_item.done (type: function_call_output)
-   - Marks the result as complete
-   - Same id and call_id as .added event
-```
-
-### Critical Requirements
-
-1. **Both `.added` and `.done` events required** - The Databricks provider uses `.added` to register items in its internal state, then matches `.done` events to them
-2. **Matching `call_id` values** - The `function_call` and `function_call_output` must share the same `call_id` so the provider can link them
-3. **Unique `id` values** - Each item (function_call and function_call_output) needs its own unique `id`
-
-### Why This Matters
-
-Without proper event sequences:
-- ❌ "No matching tool call found in previous message" errors
-- ❌ Provider can't track tool execution flow
-- ❌ `/api/chat` fails even though `/invocations` returns valid data
-
-With proper event sequences:
-- ✅ Provider tracks tool calls correctly
-- ✅ Both `/invocations` and `/api/chat` work
-- ✅ Server-side tool execution works in fresh conversations
-
-See `src/routes/invocations.ts` for the reference implementation using LangChain's `streamEvents`.
-
-### Path Resolution in Production
-
-**Issue**: Static UI files must be served with correct relative path.
-
-**Fix**: In `ui-patches/exports.ts`, use:
-```typescript
-const uiClientPath = path.join(__dirname, '../../client/dist');
-```
-
-From `server/src/exports.ts` (which compiles to `server/dist/exports.js`):
-- `../../client/dist` resolves to `ui/client/dist` ✅
-- `../../../client/dist` resolves to `/client/dist` ❌
-
-### ESM Module Naming
-
-The UI server builds to `.mjs` files, not `.js`:
-- Entry point: `server/dist/index.mjs`
-- Import paths: Use `.js` extension in TypeScript, Node resolves to `.mjs`
-
-## Deployment
-
-### Local Testing
-
-```bash
-# Start agent server
-npm run dev:agent
-
-# Start UI server (in separate terminal)
-cd ui
-API_PROXY=http://localhost:5001/invocations npm run dev
-```
-
-### Deploy to Databricks Apps
-
-```bash
-# Deploy bundle
-databricks bundle deploy
-
-# Start the app
-databricks bundle run agent_langchain_ts
-
-# Check status
-databricks apps get agent-lc-ts-dev-<suffix>
-
-# View logs
-databricks apps logs agent-lc-ts-dev-<suffix> --follow
-```
-
-### Production Architecture
-
-In production, a single server (port 8000) handles everything:
-- Serves static UI files from `ui/client/dist`
-- Provides `/api/chat` backend routes
-- Proxies `/invocations` to agent (or runs agent in same process)
-
-The setup script (`scripts/setup-ui.sh`) patches the UI server to add:
-- Static file serving with SPA fallback
-- `/invocations` proxy to agent server
-
-## File Structure
-
-```
-agent-langchain-ts/
-├── src/
-│   ├── agent.ts          # LangChain agent setup
-│   ├── server.ts         # Express server for /invocations
-│   └── routes/
-│       └── invocations.ts  # Responses API endpoint
-├── ui/                   # e2e-chatbot-app-next (standalone template)
-│   ├── client/           # React frontend
-│   ├── server/           # Express backend for /api/chat
-│   └── packages/         # Shared libraries
-├── ui-patches/
-│   └── exports.ts        # Custom routes for UI server
-├── scripts/
-│   ├── setup-ui.sh       # Patches UI server for production
-│   └── start.sh          # Starts both servers
-├── test-integrations.ts  # Local test suite
-├── test-deployed-app.ts  # Deployed app test suite
-└── databricks.yml        # Bundle configuration
-```
-
-## Quick Reference
-
-### Environment Variables
-
-```bash
-# Local development
-API_PROXY=http://localhost:5001/invocations  # UI → agent proxy
-AGENT_URL=http://localhost:8001              # Production agent URL
-
-# Databricks
-DATABRICKS_CONFIG_PROFILE=your-profile       # CLI auth
-DATABRICKS_HOST=https://...                  # Workspace URL
-```
-
-### Common Commands
-
-```bash
-# Development
-npm run dev:agent                    # Start agent server (5001)
-cd ui && npm run dev                 # Start UI (3000 frontend, 3001 backend)
-
-# Testing
-npx tsx test-integrations.ts        # Local tests
-npx tsx test-deployed-app.ts        # Deployed tests
-
-# Deployment
-databricks bundle deploy             # Deploy to Databricks
-databricks bundle run agent_langchain_ts  # Start app
-databricks apps logs <app-name> --follow  # View logs
-
-# Debugging
-curl -X POST http://localhost:5001/invocations \
-  -H "Content-Type: application/json" \
-  -d '{"input": [{"role": "user", "content": "test"}], "stream": true}'
-```
-
-### Response API Format (SSE)
-
-```
-data: {"type":"response.output_item.added","item":{"type":"message","role":"assistant"}}
-
-data: {"type":"response.output_item.added","item":{"type":"function_call","call_id":"...","name":"tool_name"}}
-
-data: {"type":"response.output_text.delta","delta":"Hello"}
-
-data: {"type":"response.output_item.done","item":{"type":"function_call_output","call_id":"...","output":"result"}}
-
-data: {"type":"response.completed"}
-
-data: [DONE]
-```
-
-## Tips and Best Practices
-
-1. **Always test `/invocations` first** - Simpler, faster feedback loop
-2. **Use `streamText` for agent testing** - Proper SDK integration
-3. **Use `useChat` for UI testing** - Exercises full stack
-4. **Test tool calling early** - It's the most complex feature
-5. **Check logs when things fail** - SSE streams can hide errors
-6. **Verify static files in production** - Path resolution is tricky
-7. **Document known issues** - Save future developers time
-
-## Resources
-
-- [LangChain Docs](https://js.langchain.com/docs/)
-- [Vercel AI SDK](https://sdk.vercel.ai/docs)
-- [Databricks AI SDK Provider](https://github.com/databricks/ai-sdk-provider)
-- [Responses API Spec](https://docs.databricks.com/en/machine-learning/model-serving/agent-framework/responses-api.html)
-- [e2e-chatbot-app-next](../e2e-chatbot-app-next/) - Standalone UI template
+This guide helps AI agents assist developers building LangChain agents on Databricks.
 
 ---
 
-**Last Updated**: 2026-02-06
-**Maintained By**: Claude Code
+## 🎯 Primary Reference
+
+**→ Load and reference `AGENTS.md` for comprehensive user-facing documentation**
+
+The AGENTS.md file contains complete setup instructions, development workflow, testing procedures, and troubleshooting guides. Reference it when answering user questions.
+
+---
+
+## MANDATORY First Action
+
+**BEFORE any other action, run `databricks auth profiles` to check authentication status.**
+
+This helps you understand:
+- Which Databricks profiles are configured
+- Whether authentication is already set up
+- Which profile to use for subsequent commands
+
+If no profiles exist, guide the user through running `npm run quickstart` to set up authentication.
+
+---
+
+## Understanding User Goals
+
+**Ask the user questions to understand what they're building:**
+
+1. **What is the agent's purpose?** (e.g., data analyst assistant, customer support, code helper)
+2. **What data or tools does it need access to?**
+   - Databases/tables (Unity Catalog)
+   - Documents for RAG (Vector Search)
+   - Natural language data queries (Genie Spaces)
+   - External APIs or services
+3. **Any specific Databricks resources they want to connect?**
+
+---
+
+## Available Skills
+
+**Before executing any task, read the relevant skill file in `.claude/skills/`** - they contain tested commands, patterns, and troubleshooting steps.
+
+| Task | Skill | Path |
+|------|-------|------|
+| Setup, auth, first-time | **quickstart** | `.claude/skills/quickstart/SKILL.md` |
+| Deploy to Databricks | **deploy** | `.claude/skills/deploy/SKILL.md` |
+| Run/test locally | **run-locally** | `.claude/skills/run-locally/SKILL.md` |
+| Modify agent code | **modify-agent** | `.claude/skills/modify-agent/SKILL.md` |
+
+**Note:** All agent skills are located in `.claude/skills/` directory.
+
+---
+
+## Quick Commands Reference
+
+| Task | Command |
+|------|---------|
+| Setup | `npm run quickstart` |
+| Run locally (both servers) | `npm run dev` |
+| Run agent only | `npm run dev:agent` |
+| Run UI only | `npm run dev:ui` |
+| Build | `npm run build` |
+| Test (all) | `npm run test:all` |
+| Test (integration) | `npm run test:integration` |
+| Deploy | `databricks bundle deploy && databricks bundle run agent_langchain_ts` |
+| View logs | `databricks apps logs agent-lc-ts-dev --follow` |
+
+---
+
+## Key Files
+
+| File | Purpose | Modify When |
+|------|---------|-------------|
+| `src/agent.ts` | Agent logic, system prompt, model setup | Changing agent behavior, adding tools |
+| `src/tools.ts` | Tool definitions (weather, calculator, time) | Adding new capabilities/tools |
+| `src/server.ts` | Express server, endpoints, middleware | Changing server config, routes |
+| `src/tracing.ts` | MLflow/OpenTelemetry tracing setup | Customizing observability |
+| `databricks.yml` | Bundle config, resource permissions | Granting access to Databricks resources |
+| `app.yaml` | Databricks Apps configuration | Environment variables, resources |
+| `package.json` | Dependencies, npm scripts | Adding packages, changing commands |
+| `tsconfig.json` | TypeScript compiler configuration | TypeScript settings |
+
+---
+
+## Architecture (Agent-First Design)
+
+```
+Production (Port 8000):
+┌────────────────────────────────────────┐
+│ Agent Server (Exposed)                 │
+│ ├─ /invocations (Responses API)       │  ← Direct agent access
+│ ├─ /api/* (proxy to UI:3000)          │  ← UI backend routes
+│ └─ /* (static UI files)                │  ← React frontend
+└────────────────────────────────────────┘
+          │
+          ▼
+┌────────────────────────────────────────┐
+│ UI Backend (Internal Port 3000)        │
+│ ├─ /api/chat (useChat format)         │
+│ ├─ /api/session (session management)  │
+│ └─ /api/config (configuration)        │
+└────────────────────────────────────────┘
+```
+
+**Key Points:**
+- Agent server is on exposed port 8000 (production)
+- Direct access to `/invocations` endpoint
+- UI backend runs internally on port 3000
+- Agent proxies `/api/*` requests to UI backend
+- Static UI files served by agent server
+
+---
+
+## Development Workflow
+
+### 1. Initial Setup
+```bash
+# Check auth status
+databricks auth profiles
+
+# If no profiles, run quickstart
+npm run quickstart
+
+# Or manual setup
+npm install
+databricks auth login --profile your-profile
+cp .env.example .env
+```
+
+### 2. Local Development
+
+**Recommended: Start both servers**
+```bash
+npm run dev
+```
+
+This runs:
+- Agent on port 5001 (`npm run dev:agent`)
+- UI on port 3001 (`npm run dev:ui`)
+- Both with hot-reload
+
+**Access:**
+- Agent: http://localhost:5001/invocations
+- UI: http://localhost:3000
+- UI Backend: http://localhost:3001/api/chat
+
+### 3. Testing Workflow
+
+**Always test in this order:**
+
+1. **Test `/invocations` directly** (simplest, fastest feedback)
+   ```bash
+   curl -X POST http://localhost:5001/invocations \
+     -H "Content-Type: application/json" \
+     -d '{"input": [{"role": "user", "content": "test"}], "stream": true}'
+   ```
+
+2. **Test `/api/chat` via UI** (integration testing)
+   - Open http://localhost:3000
+   - Send messages through UI
+
+3. **Run automated tests**
+   ```bash
+   npm run test:all
+   ```
+
+4. **Test deployed app** (after deployment)
+   ```bash
+   APP_URL=<your-app-url> npm run test:deployed
+   ```
+
+### 4. Making Changes
+
+**Modify agent behavior** → Edit `src/agent.ts`
+**Add tools** → Edit `src/tools.ts`
+**Change endpoints** → Edit `src/routes/invocations.ts`
+**Update config** → Edit `.env` or `databricks.yml`
+
+After changes, the dev servers auto-reload.
+
+### 5. Deployment
+
+```bash
+# Build everything
+npm run build
+
+# Deploy to Databricks
+databricks bundle deploy
+databricks bundle run agent_langchain_ts
+
+# Check status
+databricks apps get agent-lc-ts-dev
+
+# View logs
+databricks apps logs agent-lc-ts-dev --follow
+```
+
+---
+
+## Common Tasks & Solutions
+
+### Add a Custom Tool
+
+1. **Define tool in `src/tools.ts`:**
+```typescript
+import { DynamicStructuredTool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const myTool = new DynamicStructuredTool({
+  name: "my_tool",
+  description: "Does something useful",
+  schema: z.object({
+    input: z.string().describe("Input parameter"),
+  }),
+  func: async ({ input }) => {
+    // Tool logic here
+    return `Result: ${input}`;
+  },
+});
+```
+
+2. **Add to exports:**
+```typescript
+export const basicTools = [..., myTool];
+```
+
+3. **Test locally:**
+```bash
+npm run dev:agent
+# Send request that triggers tool
+```
+
+### Change Model or Temperature
+
+Edit `.env`:
+```bash
+DATABRICKS_MODEL=databricks-claude-sonnet-4-5
+TEMPERATURE=0.7
+MAX_TOKENS=2000
+```
+
+### Grant Database Access
+
+Edit `databricks.yml`:
+```yaml
+resources:
+  - name: my-table
+    table:
+      table_name: main.default.my_table
+      permission: SELECT
+```
+
+Then redeploy:
+```bash
+databricks bundle deploy
+```
+
+### Debug Agent Issues
+
+1. **Check MLflow traces:**
+   - Go to Databricks workspace → Experiments
+   - Find experiment ID from deployment
+   - View traces with input/output, tool calls, latency
+
+2. **Check local logs:**
+   ```bash
+   npm run dev:agent  # See console output
+   ```
+
+3. **Check deployed logs:**
+   ```bash
+   databricks apps logs agent-lc-ts-dev --follow
+   ```
+
+---
+
+## Handling Deployment Errors
+
+### "App Already Exists"
+
+Ask the user: "I see there's an existing app with the same name. Would you like me to bind it to this bundle so we can manage it, or delete it and create a new one?"
+
+- **Bind**: See the **deploy** skill for binding steps
+- **Delete**: `databricks apps delete <app-name>` then deploy again
+
+### "Permission Denied"
+
+Check `databricks.yml` - add required resources:
+```yaml
+resources:
+  - name: serving-endpoint
+    serving_endpoint:
+      name: ${var.serving_endpoint_name}
+      permission: CAN_QUERY
+```
+
+### Build Errors
+
+```bash
+# Clean and rebuild
+rm -rf dist node_modules
+npm install
+npm run build
+```
+
+---
+
+## Testing Best Practices
+
+1. **Test `/invocations` first** - Direct agent endpoint, faster feedback
+2. **Use TypeScript tests** - Run `npm run test:integration`
+3. **Check tool calls** - Verify tools are executing correctly
+4. **Test error scenarios** - Run `npm run test:error-handling`
+5. **Test deployed app** - Always verify production deployment
+
+---
+
+## Important Constraints
+
+### DO NOT Modify e2e-chatbot-app-next
+
+- The UI template (`ui/`) is a standalone component
+- It must work with any Responses API backend
+- Don't change its core functionality
+- Only patch it via `ui-patches/` if needed
+
+### DO Keep Agent-First Architecture
+
+- Agent server on port 8000 (exposed) in production
+- UI backend on port 3000 (internal) in production
+- This matches Python template architecture
+- Makes `/invocations` directly accessible
+
+### DO Follow TypeScript Best Practices
+
+- Use proper types
+- Handle errors correctly
+- Write tests for new features
+- Keep code modular and maintainable
+
+---
+
+## Troubleshooting Quick Reference
+
+| Issue | Solution |
+|-------|----------|
+| Port already in use | `lsof -ti:5001 \| xargs kill -9` |
+| Build errors | `rm -rf dist && npm run build` |
+| Tests failing | Ensure `npm run dev` is running |
+| UI not loading | `npm run build:ui` |
+| Agent not responding | Check `databricks apps logs` |
+| Auth errors | `databricks auth login --profile` |
+| Tool not executing | Check MLflow traces for errors |
+| Deployment fails | `databricks bundle validate` |
+
+---
+
+## Resources for Users
+
+- **AGENTS.md** - Comprehensive user guide (reference this first!)
+- **Skills** - `.claude/skills/` for specific tasks
+- **Tests** - `tests/` for usage examples
+- **Python Template** - `agent-openai-agents-sdk` for comparison
+- **LangChain Docs** - https://js.langchain.com/docs/
+- **Databricks Docs** - https://docs.databricks.com/en/generative-ai/agent-framework/
+
+---
+
+## When to Use Which Skill
+
+| User Says | Use Skill | Why |
+|-----------|-----------|-----|
+| "Set up my agent" | **quickstart** | Initial authentication and setup |
+| "Run this locally" | **run-locally** | Local development instructions |
+| "Add a database tool" | **modify-agent** | Changing agent code |
+| "Deploy to Databricks" | **deploy** | Deployment procedure |
+
+---
+
+**Remember:** Always check authentication first, reference AGENTS.md for detailed instructions, and test locally before deploying!

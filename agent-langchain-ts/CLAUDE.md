@@ -242,21 +242,46 @@ TEMPERATURE=0.7
 MAX_TOKENS=2000
 ```
 
-### Grant Database Access
+### Add Databricks MCP Tools
 
-Edit `databricks.yml`:
+**Reference**: See `docs/ADDING_TOOLS.md` for comprehensive guide
+
+The agent supports four types of Databricks MCP tools:
+1. **Databricks SQL** - Direct SQL queries on Unity Catalog tables
+2. **UC Functions** - Call Unity Catalog functions as agent tools
+3. **Vector Search** - Semantic search for RAG applications
+4. **Genie Spaces** - Natural language data queries
+
+**Quick steps:**
+
+1. Enable in `.env`:
+```bash
+ENABLE_SQL_MCP=true
+```
+
+2. Grant permissions in `databricks.yml`:
 ```yaml
 resources:
+  - name: catalog-schema
+    schema:
+      schema_name: main.default
+      permission: USE_SCHEMA
   - name: my-table
     table:
-      table_name: main.default.my_table
+      table_name: main.default.customers
       permission: SELECT
 ```
 
-Then redeploy:
+3. Redeploy:
 ```bash
 databricks bundle deploy
 ```
+
+**Important files**:
+- `.env.mcp-example` - Example MCP configurations
+- `databricks.mcp-example.yml` - Example permissions for all MCP types
+- `docs/ADDING_TOOLS.md` - Complete guide with examples
+- `tests/mcp-tools.test.ts` - MCP tool integration tests
 
 ### Debug Agent Issues
 

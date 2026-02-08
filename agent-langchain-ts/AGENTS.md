@@ -378,34 +378,60 @@ MLFLOW_EXPERIMENT_ID=your-experiment-id
 
 ## 🎯 Common Tasks
 
-### Add a Database Query Tool
+### Add Databricks MCP Tools
 
-1. **Grant UC table permission** (`databricks.yml`):
+The agent supports **Model Context Protocol (MCP)** tools that connect to Databricks resources. See [docs/ADDING_TOOLS.md](docs/ADDING_TOOLS.md) for the complete guide.
+
+**Available MCP Tools:**
+- **Databricks SQL** - Direct SQL queries on Unity Catalog tables
+- **UC Functions** - Call Unity Catalog functions as agent tools
+- **Vector Search** - Semantic search for RAG applications
+- **Genie Spaces** - Natural language data queries
+
+**Quick Example - Enable Databricks SQL:**
+
+1. **Enable in `.env`**:
+```bash
+ENABLE_SQL_MCP=true
+```
+
+2. **Grant permissions in `databricks.yml`**:
 ```yaml
 resources:
-  - name: my-table
-    schema:
-      schema_name: main.default
-    table:
-      table_name: main.default.my_table
-      permission: SELECT
+  apps:
+    agent_langchain_ts:
+      resources:
+        - name: catalog-schema
+          schema:
+            schema_name: main.default
+            permission: USE_SCHEMA
+        - name: my-table
+          table:
+            table_name: main.default.customers
+            permission: SELECT
 ```
 
-2. **Create tool** (`src/tools.ts`):
-```typescript
-const queryTool = new DynamicStructuredTool({
-  name: "query_database",
-  description: "Queries the database",
-  schema: z.object({
-    query: z.string().describe("SQL query to execute"),
-  }),
-  func: async ({ query }) => {
-    // Use Databricks SQL connector
-    const result = await executeQuery(query);
-    return JSON.stringify(result);
-  },
-});
+3. **Test**:
+```bash
+npm run dev:agent
+
+# In another terminal
+curl -X POST http://localhost:5001/invocations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": [{"role": "user", "content": "Query the customers table"}],
+    "stream": false
+  }'
 ```
+
+4. **Deploy**:
+```bash
+npm run build
+databricks bundle deploy
+databricks bundle run agent_langchain_ts
+```
+
+See [docs/ADDING_TOOLS.md](docs/ADDING_TOOLS.md) for more examples including Vector Search (RAG), UC Functions, and Genie Spaces.
 
 ### Add a REST API Tool
 

@@ -12,22 +12,23 @@ fi
 
 # Check if UI server build exists
 if [ -d "ui/server/dist" ]; then
-  echo "✅ UI backend found - running two-server architecture"
+  echo "✅ UI backend found - running agent-first two-server architecture"
 
-  # Start agent server on internal port 8001 (provides /invocations)
-  PORT=8001 node dist/src/server.js &
-  AGENT_PID=$!
-  echo "Agent server started on port 8001 (PID: $AGENT_PID)"
+  # Start UI server on internal port 3000 (provides /api/chat, /api/session, etc.)
+  cd ui/server
+  API_PROXY=http://localhost:8000/invocations AGENT_URL=http://localhost:8000 PORT=3000 node dist/index.mjs &
+  UI_PID=$!
+  echo "UI backend started on port 3000 (PID: $UI_PID)"
+  cd ../..
 
-  # Give agent a moment to start
+  # Give UI backend a moment to start
   sleep 2
 
-  # Start UI server on port 8000 (exposed port) with API_PROXY and AGENT_URL
-  cd ui/server
-  API_PROXY=http://localhost:8001/invocations AGENT_URL=http://localhost:8001 PORT=8000 node dist/index.mjs &
-  UI_PID=$!
-  echo "UI server started on port 8000 (PID: $UI_PID)"
-  cd ../..
+  # Start agent server on port 8000 (exposed port) - provides /invocations and proxies /api/*
+  PORT=8000 UI_BACKEND_URL=http://localhost:3000 node dist/src/server.js &
+  AGENT_PID=$!
+  echo "Agent server started on port 8000 (PID: $AGENT_PID)"
+  echo "🌐 Access the app at http://localhost:8000"
 
   # Wait for both processes
   wait $AGENT_PID $UI_PID

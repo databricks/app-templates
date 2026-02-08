@@ -25,6 +25,10 @@ env:
   - name: PORT
     value: "8000"
 
+  # UI Backend URL (for reverse proxy)
+  - name: UI_BACKEND_URL
+    value: "http://localhost:3000"
+
   # MCP configuration (optional - uncomment to enable)
   # - name: ENABLE_SQL_MCP
   #   value: "true"

@@ -91,6 +91,58 @@ export async function createServer(
 
   console.log("✅ Agent endpoints mounted");
 
+  // Reverse proxy for /api/* routes to UI backend
+  const uiBackendUrl = process.env.UI_BACKEND_URL;
+  if (uiBackendUrl) {
+    console.log(`🔗 Proxying /api/* to UI backend at ${uiBackendUrl}`);
+    app.use("/api", async (req: Request, res: Response) => {
+      try {
+        const targetUrl = `${uiBackendUrl}${req.url}`;
+
+        // Build headers from request
+        const headers: Record<string, string> = {};
+        Object.entries(req.headers).forEach(([key, value]) => {
+          if (typeof value === "string") {
+            headers[key] = value;
+          } else if (Array.isArray(value)) {
+            headers[key] = value.join(", ");
+          }
+        });
+        headers["host"] = new URL(uiBackendUrl).host;
+
+        // Forward the request to UI backend
+        const response = await fetch(targetUrl, {
+          method: req.method,
+          headers,
+          body: req.method !== "GET" && req.method !== "HEAD" ? JSON.stringify(req.body) : undefined,
+        });
+
+        // Copy status and headers
+        res.status(response.status);
+        response.headers.forEach((value, key) => {
+          res.setHeader(key, value);
+        });
+
+        // Stream the response body
+        if (response.body) {
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            res.write(decoder.decode(value, { stream: true }));
+          }
+        }
+
+        res.end();
+      } catch (error) {
+        console.error("Proxy error:", error);
+        res.status(502).json({ error: "Bad Gateway - UI backend unavailable" });
+      }
+    });
+  }
+
   // Check if UI build exists and mount it
   const uiClientPath = path.join(__dirname, "../../ui/client/dist");
 

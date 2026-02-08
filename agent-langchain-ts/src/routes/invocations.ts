@@ -100,6 +100,9 @@ export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof
         res.setHeader("Cache-Control", "no-cache");
         res.setHeader("Connection", "keep-alive");
 
+        let textOutputId = `text_${Date.now()}`;
+        const toolCallIds = new Map<string, string>(); // Map tool name to call_id
+
         try {
           // Stream events from agent
           const eventStream = agent.streamEvents(
@@ -109,9 +112,6 @@ export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof
             },
             { version: "v2" }
           );
-
-          let textOutputId = `text_${Date.now()}`;
-          const toolCallIds = new Map<string, string>(); // Map tool name to call_id
 
           for await (const event of eventStream) {
             // Handle tool calls

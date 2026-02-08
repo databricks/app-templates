@@ -24,7 +24,8 @@
     "test:deployed": "jest tests/deployed.test.ts",
     "test:all": "npm run test:unit && npm run test:integration && npm run test:error-handling && npm run test:deployed",
     "quickstart": "tsx scripts/quickstart.ts",
-    "discover-tools": "tsx scripts/discover-tools.ts",
+    "discover-tools": "tsx scripts/discover-tools-cli.ts",
+    "discover-tools-sdk": "tsx scripts/discover-tools.ts",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\""
   },

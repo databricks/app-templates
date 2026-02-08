@@ -107,8 +107,12 @@ export class AgentMCP {
     let currentResponse = await this.model.invoke(messages);
     let iteration = 0;
 
+    console.log(`[AgentMCP] Initial response has ${currentResponse.tool_calls?.length || 0} tool calls`);
+
     while (currentResponse.tool_calls && currentResponse.tool_calls.length > 0) {
       iteration++;
+      console.log(`[AgentMCP] Iteration ${iteration}: Processing ${currentResponse.tool_calls.length} tool calls`);
+
       if (iteration > this.maxIterations) {
         console.log(`Max iterations (${this.maxIterations}) reached`);
         break;

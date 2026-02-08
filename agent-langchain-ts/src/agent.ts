@@ -12,6 +12,7 @@ import { ChatDatabricks } from "@databricks/langchainjs";
 import { createToolCallingAgent, AgentExecutor } from "langchain/agents";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { getAllTools, type MCPConfig } from "./tools.js";
+import { AgentMCP } from "./agent-mcp-pattern.js";
 
 /**
  * Agent configuration
@@ -106,11 +107,34 @@ function createAgentPrompt(systemPrompt: string): ChatPromptTemplate {
 
 /**
  * Create a tool-calling agent with ChatDatabricks
+ *
+ * IMPORTANT: When MCP tools are configured, this uses AgentMCP (manual agentic loop)
+ * instead of AgentExecutor, because AgentExecutor doesn't properly handle MCP tool results.
+ *
+ * See MCP_CORRECT_PATTERN.md for details.
  */
 export async function createAgent(
   config: AgentConfig = {}
-): Promise<AgentExecutor> {
+): Promise<AgentExecutor | AgentMCP> {
   const systemPrompt = config.systemPrompt || DEFAULT_SYSTEM_PROMPT;
+
+  // If MCP tools are configured, use AgentMCP (manual agentic loop)
+  // AgentExecutor doesn't work with MCP tools - causes AI_MissingToolResultsError
+  if (config.mcpConfig && Object.values(config.mcpConfig).some((v) => v)) {
+    console.log("✅ Using AgentMCP (manual agentic loop) for MCP tools");
+    return AgentMCP.create({
+      model: config.model,
+      useResponsesApi: config.useResponsesApi,
+      temperature: config.temperature,
+      maxTokens: config.maxTokens,
+      systemPrompt,
+      mcpConfig: config.mcpConfig,
+      maxIterations: 10,
+    });
+  }
+
+  // Otherwise, use standard AgentExecutor for basic tools
+  console.log("✅ Using AgentExecutor for basic tools");
 
   // Create chat model
   const model = createChatModel(config);

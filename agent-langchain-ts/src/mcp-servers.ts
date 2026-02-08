@@ -19,9 +19,7 @@ export function getMCPServers(): DatabricksMCPServer[] {
   // Formula 1 Race Analytics Genie Space
   // Provides natural language interface to F1 race data
   servers.push(
-    DatabricksMCPServer.fromGenieSpace("01f1037ebc531bbdb27b875271b31bf4", {
-      name: "f1-analytics",
-    })
+    DatabricksMCPServer.fromGenieSpace("01f1037ebc531bbdb27b875271b31bf4")
   );
 
   // Add more MCP servers here as needed:

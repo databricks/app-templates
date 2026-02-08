@@ -29,19 +29,9 @@ resources:
             name: ${var.serving_endpoint_name}
             permission: CAN_QUERY
 
-        # MCP Tool Permissions - Databricks SQL
-        # Grant access to main.default schema for SQL queries
-        - name: main-default-schema
-          schema:
-            schema_name: main.default
-            permission: USE_SCHEMA
-
-        # MCP Tool Permissions - Genie Space
-        # Formula 1 Race Analytics - Natural language interface to F1 data
-        - name: f1-genie-space
-          genie_space:
-            space_id: "01f1037ebc531bbdb27b875271b31bf4"
-            permission: CAN_USE
+        # Note: Genie Space uses on-behalf-of authentication
+        # Formula 1 Genie Space (01f1037ebc531bbdb27b875271b31bf4) configured in src/mcp-servers.ts
+        # Permissions inherited from the logged-in user
 
         # Experiment resource - optional, set mlflow_experiment_id variable to use
         # If not provided, traces will still be captured but won't link to a specific experiment

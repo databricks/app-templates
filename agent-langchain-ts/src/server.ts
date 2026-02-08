@@ -66,7 +66,7 @@ export async function createServer(
   setupTracingShutdownHandlers(tracing);
 
   // Initialize agent
-  let agent: AgentExecutor;
+  let agent: AgentExecutor | any;
   try {
     agent = await createAgent(serverConfig.agentConfig);
     console.log("✅ Agent initialized successfully");

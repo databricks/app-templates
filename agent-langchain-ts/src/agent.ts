@@ -8,10 +8,10 @@
  * - Agent executor setup
  */
 
-import { ChatDatabricks } from "@databricks/langchainjs";
+import { ChatDatabricks, DatabricksMCPServer } from "@databricks/langchainjs";
 import { createToolCallingAgent, AgentExecutor } from "langchain/agents";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
-import { getAllTools, type MCPConfig } from "./tools.js";
+import { getAllTools } from "./tools.js";
 import { AgentMCP } from "./agent-mcp-pattern.js";
 
 /**
@@ -46,9 +46,9 @@ export interface AgentConfig {
   systemPrompt?: string;
 
   /**
-   * MCP configuration for additional tools
+   * MCP servers for additional tools
    */
-  mcpConfig?: MCPConfig;
+  mcpServers?: DatabricksMCPServer[];
 
   /**
    * Authentication configuration (optional, uses env vars by default)
@@ -118,9 +118,9 @@ export async function createAgent(
 ): Promise<AgentExecutor | AgentMCP> {
   const systemPrompt = config.systemPrompt || DEFAULT_SYSTEM_PROMPT;
 
-  // If MCP tools are configured, use AgentMCP (manual agentic loop)
+  // If MCP servers are configured, use AgentMCP (manual agentic loop)
   // AgentExecutor doesn't work with MCP tools - causes AI_MissingToolResultsError
-  if (config.mcpConfig && Object.values(config.mcpConfig).some((v) => v)) {
+  if (config.mcpServers && config.mcpServers.length > 0) {
     console.log("✅ Using AgentMCP (manual agentic loop) for MCP tools");
     return AgentMCP.create({
       model: config.model,
@@ -128,7 +128,7 @@ export async function createAgent(
       temperature: config.temperature,
       maxTokens: config.maxTokens,
       systemPrompt,
-      mcpConfig: config.mcpConfig,
+      mcpServers: config.mcpServers,
       maxIterations: 10,
     });
   }
@@ -140,7 +140,7 @@ export async function createAgent(
   const model = createChatModel(config);
 
   // Load tools (basic + MCP if configured)
-  const tools = await getAllTools(config.mcpConfig);
+  const tools = await getAllTools(config.mcpServers);
 
   console.log(`✅ Agent initialized with ${tools.length} tool(s)`);
   console.log(

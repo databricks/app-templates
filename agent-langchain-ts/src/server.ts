@@ -27,6 +27,7 @@ import {
   setupTracingShutdownHandlers,
 } from "./tracing.js";
 import { createInvocationsRouter } from "./routes/invocations.js";
+import { getMCPServers } from "./mcp-servers.js";
 import type { AgentExecutor } from "langchain/agents";
 
 // Load environment variables
@@ -191,28 +192,9 @@ export async function startServer(config: Partial<ServerConfig> = {}) {
       temperature: parseFloat(process.env.TEMPERATURE || "0.1"),
       maxTokens: parseInt(process.env.MAX_TOKENS || "2000", 10),
       useResponsesApi: process.env.USE_RESPONSES_API === "true",
-      mcpConfig: {
-        enableSql: process.env.ENABLE_SQL_MCP === "true",
-        ucFunction: process.env.UC_FUNCTION_CATALOG && process.env.UC_FUNCTION_SCHEMA
-          ? {
-              catalog: process.env.UC_FUNCTION_CATALOG,
-              schema: process.env.UC_FUNCTION_SCHEMA,
-              functionName: process.env.UC_FUNCTION_NAME,
-            }
-          : undefined,
-        vectorSearch: process.env.VECTOR_SEARCH_CATALOG && process.env.VECTOR_SEARCH_SCHEMA
-          ? {
-              catalog: process.env.VECTOR_SEARCH_CATALOG,
-              schema: process.env.VECTOR_SEARCH_SCHEMA,
-              indexName: process.env.VECTOR_SEARCH_INDEX,
-            }
-          : undefined,
-        genieSpace: process.env.GENIE_SPACE_ID
-          ? {
-              spaceId: process.env.GENIE_SPACE_ID,
-            }
-          : undefined,
-      },
+      // Load MCP servers from mcp-servers.ts
+      // Configure servers there, similar to Python template
+      mcpServers: getMCPServers(),
       ...config.agentConfig,
     },
     ...config,

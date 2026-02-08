@@ -36,6 +36,13 @@ resources:
             schema_name: main.default
             permission: USE_SCHEMA
 
+        # MCP Tool Permissions - Genie Space
+        # Formula 1 Race Analytics - Natural language interface to F1 data
+        - name: f1-genie-space
+          genie_space:
+            space_id: "01f1037ebc531bbdb27b875271b31bf4"
+            permission: CAN_USE
+
         # Experiment resource - optional, set mlflow_experiment_id variable to use
         # If not provided, traces will still be captured but won't link to a specific experiment
         # To set: databricks bundle deploy --var="mlflow_experiment_id=YOUR_EXPERIMENT_ID"

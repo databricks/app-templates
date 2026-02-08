@@ -7,9 +7,9 @@
  * - This works correctly with MCP tools from MultiServerMCPClient
  */
 
-import { ChatDatabricks } from "@databricks/langchainjs";
+import { ChatDatabricks, DatabricksMCPServer } from "@databricks/langchainjs";
 import { BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
-import { getAllTools, type MCPConfig } from "./tools.js";
+import { getAllTools } from "./tools.js";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 
 /**
@@ -21,7 +21,7 @@ export interface AgentConfigMCP {
   temperature?: number;
   maxTokens?: number;
   systemPrompt?: string;
-  mcpConfig?: MCPConfig;
+  mcpServers?: DatabricksMCPServer[];
   maxIterations?: number;
 }
 
@@ -66,7 +66,7 @@ export class AgentMCP {
       temperature = 0.1,
       maxTokens = 2000,
       systemPrompt = DEFAULT_SYSTEM_PROMPT,
-      mcpConfig,
+      mcpServers,
       maxIterations = 10,
     } = config;
 
@@ -79,7 +79,7 @@ export class AgentMCP {
     });
 
     // Load tools (basic + MCP if configured)
-    const tools = await getAllTools(mcpConfig);
+    const tools = await getAllTools(mcpServers);
 
     console.log(`✅ Agent initialized with ${tools.length} tool(s)`);
     console.log(`   Tools: ${tools.map((t) => t.name).join(", ")}`);

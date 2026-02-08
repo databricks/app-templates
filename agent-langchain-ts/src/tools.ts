@@ -95,95 +95,19 @@ export const timeTool = tool(
  */
 export const basicTools = [weatherTool, calculatorTool, timeTool];
 
-/**
- * Configuration for MCP servers
- */
-export interface MCPConfig {
-  /**
-   * Enable Databricks SQL MCP server
-   */
-  enableSql?: boolean;
-
-  /**
-   * Unity Catalog function configuration
-   */
-  ucFunction?: {
-    catalog: string;
-    schema: string;
-    functionName?: string;
-  };
-
-  /**
-   * Vector Search configuration
-   */
-  vectorSearch?: {
-    catalog: string;
-    schema: string;
-    indexName?: string;
-  };
-
-  /**
-   * Genie Space configuration
-   */
-  genieSpace?: {
-    spaceId: string;
-  };
-}
-
 // Global MCP client reference to keep it alive
 let globalMCPClient: MultiServerMCPClient | null = null;
 
 /**
- * Initialize MCP tools from Databricks services
+ * Initialize MCP tools from Databricks MCP servers
  *
- * @param config - MCP configuration
+ * @param servers - Array of DatabricksMCPServer instances
  * @returns Array of LangChain tools from MCP servers
  */
-export async function getMCPTools(config: MCPConfig) {
-  const servers: any[] = [];
-
-  // Add Databricks SQL server
-  if (config.enableSql) {
-    servers.push(
-      new DatabricksMCPServer({
-        name: "dbsql",
-        path: "/api/2.0/mcp/sql",
-      })
-    );
-  }
-
-  // Add Unity Catalog function server
-  if (config.ucFunction) {
-    servers.push(
-      DatabricksMCPServer.fromUCFunction(
-        config.ucFunction.catalog,
-        config.ucFunction.schema,
-        config.ucFunction.functionName
-      )
-    );
-  }
-
-  // Add Vector Search server
-  if (config.vectorSearch) {
-    servers.push(
-      DatabricksMCPServer.fromVectorSearch(
-        config.vectorSearch.catalog,
-        config.vectorSearch.schema,
-        config.vectorSearch.indexName
-      )
-    );
-  }
-
-  // Add Genie Space server
-  if (config.genieSpace) {
-    servers.push(
-      DatabricksMCPServer.fromGenieSpace(config.genieSpace.spaceId)
-    );
-  }
-
+export async function getMCPTools(servers: DatabricksMCPServer[]) {
   // No servers configured
   if (servers.length === 0) {
-    console.warn("No MCP servers configured");
+    console.log("ℹ️  No MCP servers configured, using basic tools only");
     return [];
   }
 
@@ -227,13 +151,13 @@ export async function closeMCPClient() {
 /**
  * Get all configured tools (basic + MCP)
  */
-export async function getAllTools(mcpConfig?: MCPConfig) {
-  if (!mcpConfig) {
+export async function getAllTools(mcpServers?: DatabricksMCPServer[]) {
+  if (!mcpServers || mcpServers.length === 0) {
     return basicTools;
   }
 
   try {
-    const mcpTools = await getMCPTools(mcpConfig);
+    const mcpTools = await getMCPTools(mcpServers);
     return [...basicTools, ...mcpTools];
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

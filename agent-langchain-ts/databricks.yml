@@ -28,6 +28,14 @@ resources:
           serving_endpoint:
             name: ${var.serving_endpoint_name}
             permission: CAN_QUERY
+
+        # MCP Tool Permissions - Databricks SQL
+        # Grant access to main.default schema for SQL queries
+        - name: main-default-schema
+          schema:
+            schema_name: main.default
+            permission: USE_SCHEMA
+
         # Experiment resource - optional, set mlflow_experiment_id variable to use
         # If not provided, traces will still be captured but won't link to a specific experiment
         # To set: databricks bundle deploy --var="mlflow_experiment_id=YOUR_EXPERIMENT_ID"

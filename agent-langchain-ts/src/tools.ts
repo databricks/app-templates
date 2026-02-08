@@ -130,6 +130,9 @@ export interface MCPConfig {
   };
 }
 
+// Global MCP client reference to keep it alive
+let globalMCPClient: MultiServerMCPClient | null = null;
+
 /**
  * Initialize MCP tools from Databricks services
  *
@@ -188,15 +191,15 @@ export async function getMCPTools(config: MCPConfig) {
     // Build MCP server configurations
     const mcpServers = await buildMCPServerConfig(servers);
 
-    // Create multi-server client
-    const client = new MultiServerMCPClient({
+    // Create multi-server client and keep it alive globally
+    globalMCPClient = new MultiServerMCPClient({
       mcpServers,
       throwOnLoadError: false,
       prefixToolNameWithServerName: true,
     });
 
     // Get tools from all servers
-    const tools = await client.getTools();
+    const tools = await globalMCPClient.getTools();
 
     console.log(
       `✅ Loaded ${tools.length} MCP tools from ${servers.length} server(s)`
@@ -207,6 +210,17 @@ export async function getMCPTools(config: MCPConfig) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("Error loading MCP tools:", message);
     throw error;
+  }
+}
+
+/**
+ * Close the global MCP client (call on shutdown)
+ */
+export async function closeMCPClient() {
+  if (globalMCPClient) {
+    await globalMCPClient.close();
+    globalMCPClient = null;
+    console.log("✅ MCP client closed");
   }
 }
 

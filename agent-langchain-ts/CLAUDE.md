@@ -46,6 +46,8 @@ If no profiles exist, guide the user through running `npm run quickstart` to set
 | Task | Skill | Path |
 |------|-------|------|
 | Setup, auth, first-time | **quickstart** | `.claude/skills/quickstart/SKILL.md` |
+| Find tools/resources | **discover-tools** | `.claude/skills/discover-tools/SKILL.md` |
+| Add tools & permissions | **add-tools** | `.claude/skills/add-tools/SKILL.md` |
 | Deploy to Databricks | **deploy** | `.claude/skills/deploy/SKILL.md` |
 | Run/test locally | **run-locally** | `.claude/skills/run-locally/SKILL.md` |
 | Modify agent code | **modify-agent** | `.claude/skills/modify-agent/SKILL.md` |
@@ -59,6 +61,7 @@ If no profiles exist, guide the user through running `npm run quickstart` to set
 | Task | Command |
 |------|---------|
 | Setup | `npm run quickstart` |
+| Discover tools | `npm run discover-tools` |
 | Run locally (both servers) | `npm run dev` |
 | Run agent only | `npm run dev:agent` |
 | Run UI only | `npm run dev:ui` |
@@ -75,6 +78,7 @@ If no profiles exist, guide the user through running `npm run quickstart` to set
 | File | Purpose | Modify When |
 |------|---------|-------------|
 | `src/agent.ts` | Agent logic, system prompt, model setup | Changing agent behavior, adding tools |
+| `src/mcp-servers.ts` | MCP server configuration (Genie, SQL, UC, Vector Search) | Adding MCP tools/data sources |
 | `src/tools.ts` | Tool definitions (weather, calculator, time) | Adding new capabilities/tools |
 | `src/server.ts` | Express server, endpoints, middleware | Changing server config, routes |
 | `src/tracing.ts` | MLflow/OpenTelemetry tracing setup | Customizing observability |
@@ -244,7 +248,7 @@ MAX_TOKENS=2000
 
 ### Add Databricks MCP Tools
 
-**Reference**: See `docs/ADDING_TOOLS.md` for comprehensive guide
+**Reference**: See `.claude/skills/add-tools/SKILL.md` for comprehensive guide
 
 The agent supports four types of Databricks MCP tools:
 1. **Databricks SQL** - Direct SQL queries on Unity Catalog tables
@@ -254,34 +258,37 @@ The agent supports four types of Databricks MCP tools:
 
 **Quick steps:**
 
-1. Enable in `.env`:
-```bash
-ENABLE_SQL_MCP=true
+1. Add MCP server in `src/mcp-servers.ts`:
+```typescript
+export function getMCPServers(): DatabricksMCPServer[] {
+  return [
+    DatabricksMCPServer.fromGenieSpace("01f1037ebc531bbdb27b875271b31bf4"),
+  ];
+}
 ```
 
 2. Grant permissions in `databricks.yml`:
 ```yaml
 resources:
-  - name: catalog-schema
-    schema:
-      schema_name: main.default
-      permission: USE_SCHEMA
-  - name: my-table
-    table:
-      table_name: main.default.customers
-      permission: SELECT
+  apps:
+    agent_langchain_ts:
+      resources:
+        - name: 'f1_genie_space'
+          genie_space:
+            name: 'Formula 1 Race Analytics'
+            space_id: '01f1037ebc531bbdb27b875271b31bf4'
+            permission: 'CAN_RUN'
 ```
 
 3. Redeploy:
 ```bash
-databricks bundle deploy
+databricks bundle deploy && databricks bundle run agent_langchain_ts
 ```
 
 **Important files**:
-- `.env.mcp-example` - Example MCP configurations
-- `databricks.mcp-example.yml` - Example permissions for all MCP types
-- `docs/ADDING_TOOLS.md` - Complete guide with examples
-- `tests/mcp-tools.test.ts` - MCP tool integration tests
+- `src/mcp-servers.ts` - Central MCP server configuration
+- `.claude/skills/add-tools/` - Complete guide with examples for all resource types
+- `tests/f1-genie.test.ts` - Genie space integration tests
 
 ### Debug Agent Issues
 

@@ -29,9 +29,13 @@ resources:
             name: ${var.serving_endpoint_name}
             permission: CAN_QUERY
 
-        # Note: Genie Space uses on-behalf-of authentication
-        # Formula 1 Genie Space (01f1037ebc531bbdb27b875271b31bf4) configured in src/mcp-servers.ts
-        # Permissions inherited from the logged-in user
+        # Formula 1 Genie Space - Natural language F1 race data
+        # Configured in src/mcp-servers.ts
+        - name: f1_genie_space
+          genie_space:
+            name: "Formula 1 Race Analytics"
+            space_id: "01f1037ebc531bbdb27b875271b31bf4"
+            permission: CAN_RUN
 
         # Experiment resource - optional, set mlflow_experiment_id variable to use
         # If not provided, traces will still be captured but won't link to a specific experiment

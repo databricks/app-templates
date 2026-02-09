@@ -211,11 +211,14 @@ sketch
 !.claude/skills/quickstart/
 !.claude/skills/discover-tools/
 !.claude/skills/deploy/
-!.claude/skills/add-tools/
+!.claude/skills/add-tools-langgraph/
+!.claude/skills/add-tools-openai/
 !.claude/skills/run-locally/
-!.claude/skills/modify-agent/
+!.claude/skills/modify-langgraph-agent/
+!.claude/skills/modify-openai-agent/
 !.claude/skills/lakebase-setup/
 !.claude/skills/agent-memory/
+!.claude/skills/migrate-from-model-serving/
 
 **/.env
 **/.env.local

@@ -216,6 +216,7 @@ sketch
 !.claude/skills/modify-agent/
 !.claude/skills/lakebase-setup/
 !.claude/skills/agent-memory/
+!.claude/skills/migrate-from-model-serving/
 
 **/.env
 **/.env.local

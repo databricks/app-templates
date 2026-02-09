@@ -214,6 +214,7 @@ sketch
 !.claude/skills/add-tools/
 !.claude/skills/run-locally/
 !.claude/skills/modify-agent/
+!.claude/skills/migrate-from-model-serving/
 
 **/.env
 **/.env.local

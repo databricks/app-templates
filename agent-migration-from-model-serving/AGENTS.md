@@ -7,7 +7,7 @@ This template helps migrate MLflow ResponsesAgent deployments from Databricks Mo
 When a user asks to migrate an agent, **use the `migrate-from-model-serving` skill** which contains the complete step-by-step migration guide.
 
 The skill will guide you through:
-1. Gathering user inputs (Databricks profile, app name)
+1. Gathering user inputs (Databricks profile, app name, sync vs async preference)
 2. Downloading the original agent artifacts from Model Serving
 3. Analyzing and understanding the agent code
 4. Migrating the code to the Apps format (`@invoke`/`@stream` decorators)
@@ -19,10 +19,10 @@ The skill will guide you through:
 
 **Key Transformation:**
 - **From:** `ResponsesAgent` class with `predict()`/`predict_stream()` methods
-- **To:** Async functions with `@invoke()` and `@stream()` decorators
+- **To:** Functions with `@invoke()` and `@stream()` decorators (sync or async, based on user preference)
 
 **Scaffold Files:**
-All template files (`agent_server/`, `scripts/`, `app.yaml`, `pyproject.toml`, etc.) are already in this directory. The migration skill will copy these to a new app directory.
+All scaffold template files are already in this directory. The migration skill will copy these to a new app directory.
 
 ## Available Skills
 

@@ -166,13 +166,135 @@ export class AgentMCP {
    * Stream events from the agent (for observability)
    */
   async *streamEvents(params: { input: string; chat_history?: any[] }, options: { version: string }) {
-    // For now, just invoke and yield the result
-    // Could be enhanced to stream actual events
-    const result = await this.invoke(params);
+    const { input, chat_history = [] } = params;
 
+    // Build messages array
+    const messages: BaseMessage[] = [
+      new SystemMessage(this.systemPrompt),
+      ...chat_history,
+      new HumanMessage(input),
+    ];
+
+    // Manual agentic loop with streaming
+    let iteration = 0;
+    let currentResponse: AIMessage | null = null;
+
+    while (iteration <= this.maxIterations) {
+      iteration++;
+
+      // Stream response from model
+      let fullContent = "";
+      let toolCalls: any[] = [];
+      const stream = await this.model.stream(messages);
+
+      for await (const chunk of stream) {
+        // Stream text content
+        if (chunk.content && typeof chunk.content === "string") {
+          fullContent += chunk.content;
+
+          // Yield streaming event compatible with LangChain's streamEvents format
+          yield {
+            event: "on_chat_model_stream",
+            data: {
+              chunk: {
+                content: chunk.content,
+              },
+            },
+            name: "ChatDatabricks",
+            run_id: `run_${Date.now()}`,
+          };
+        }
+
+        // Collect tool calls
+        if (chunk.tool_calls && chunk.tool_calls.length > 0) {
+          toolCalls.push(...chunk.tool_calls);
+        }
+      }
+
+      // Create complete response message
+      currentResponse = new AIMessage({
+        content: fullContent,
+        tool_calls: toolCalls,
+      });
+
+      // If no tool calls, we're done
+      if (!toolCalls || toolCalls.length === 0) {
+        break;
+      }
+
+      // Add AI message with tool calls
+      messages.push(currentResponse);
+
+      // Execute each tool call
+      for (const toolCall of toolCalls) {
+        const tool = this.tools.find((t) => t.name === toolCall.name);
+
+        if (tool) {
+          // Yield tool start event
+          yield {
+            event: "on_tool_start",
+            data: {
+              input: toolCall.args,
+            },
+            name: toolCall.name,
+            run_id: toolCall.id || `tool_${Date.now()}`,
+          };
+
+          try {
+            const result = await tool.invoke(toolCall.args);
+            const resultStr = typeof result === "string" ? result : JSON.stringify(result);
+
+            // Add tool result message
+            messages.push(
+              new ToolMessage({
+                content: resultStr,
+                tool_call_id: toolCall.id!,
+                name: toolCall.name,
+              })
+            );
+
+            // Yield tool end event
+            yield {
+              event: "on_tool_end",
+              data: {
+                output: resultStr,
+              },
+              name: toolCall.name,
+              run_id: toolCall.id || `tool_${Date.now()}`,
+            };
+          } catch (error: any) {
+            const errorMsg = `Error: ${error.message || error}`;
+
+            // Add error as tool message
+            messages.push(
+              new ToolMessage({
+                content: errorMsg,
+                tool_call_id: toolCall.id!,
+                name: toolCall.name,
+              })
+            );
+
+            // Yield tool error event
+            yield {
+              event: "on_tool_end",
+              data: {
+                output: errorMsg,
+              },
+              name: toolCall.name,
+              run_id: toolCall.id || `tool_${Date.now()}`,
+            };
+          }
+        }
+      }
+
+      // Continue loop to get next response
+    }
+
+    // Yield agent finish event
+    const finalOutput = currentResponse ? this.getTextContent(currentResponse.content) : "";
     yield {
       event: "on_agent_finish",
-      data: { output: result.output },
+      data: { output: finalOutput },
     };
   }
 

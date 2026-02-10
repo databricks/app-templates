@@ -125,7 +125,7 @@ describe("AgentMCP Streaming Bug", () => {
 
           if (data.type === "text-delta") {
             hasTextDelta = true;
-            fullContent += data.textDelta;
+            fullContent += data.delta || "";
           }
         } catch {
           // Skip invalid JSON

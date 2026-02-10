@@ -13,6 +13,33 @@ import { getAllTools } from "./tools.js";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 
 /**
+ * Convert plain message objects to LangChain BaseMessage objects
+ * Handles chat history from API requests which may be plain objects
+ */
+function convertToBaseMessages(messages: any[]): BaseMessage[] {
+  return messages.map((msg) => {
+    // Already a BaseMessage - return as-is
+    if (msg instanceof BaseMessage) {
+      return msg;
+    }
+
+    // Plain object with role/content - convert to appropriate message type
+    const content = msg.content || "";
+    switch (msg.role) {
+      case "user":
+        return new HumanMessage(content);
+      case "assistant":
+        return new AIMessage(content);
+      case "system":
+        return new SystemMessage(content);
+      default:
+        // Fallback to HumanMessage for unknown roles
+        return new HumanMessage(content);
+    }
+  });
+}
+
+/**
  * Agent configuration
  */
 export interface AgentConfigMCP {
@@ -102,10 +129,10 @@ export class AgentMCP {
   async invoke(params: { input: string; chat_history?: any[] }) {
     const { input, chat_history = [] } = params;
 
-    // Build messages array
+    // Build messages array - convert chat history to BaseMessages
     const messages: BaseMessage[] = [
       new SystemMessage(this.systemPrompt),
-      ...chat_history,
+      ...convertToBaseMessages(chat_history),
       new HumanMessage(input),
     ];
 
@@ -174,12 +201,21 @@ export class AgentMCP {
   async *streamEvents(params: { input: string; chat_history?: any[] }, options: { version: string }) {
     const { input, chat_history = [] } = params;
 
-    // Build messages array
+    console.log("[AgentMCP] streamEvents called with:");
+    console.log("  Input:", input);
+    console.log("  Chat history length:", chat_history.length);
+    if (chat_history.length > 0) {
+      console.log("  Chat history sample:", JSON.stringify(chat_history.slice(0, 2), null, 2));
+    }
+
+    // Build messages array - convert chat history to BaseMessages
     const messages: BaseMessage[] = [
       new SystemMessage(this.systemPrompt),
-      ...chat_history,
+      ...convertToBaseMessages(chat_history),
       new HumanMessage(input),
     ];
+
+    console.log(`[AgentMCP] Total messages to process: ${messages.length}`);
 
     // Manual agentic loop with streaming
     let iteration = 0;

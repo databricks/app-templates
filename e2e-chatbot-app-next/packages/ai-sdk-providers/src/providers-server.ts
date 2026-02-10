@@ -72,7 +72,6 @@ async function getWorkspaceHostname(): Promise<string> {
 const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true';
 
 const API_PROXY = process.env.API_PROXY;
-console.log(`[PROVIDER INIT] API_PROXY environment variable: ${API_PROXY || 'NOT SET'}`);
 
 // Cache for endpoint details to check task type
 const endpointDetailsCache = new Map<
@@ -245,7 +244,6 @@ const provider = createDatabricksProvider({
   baseURL: `${hostname}/serving-endpoints`,
   formatUrl: ({ baseUrl, path }) => {
     const url = API_PROXY ?? `${baseUrl}${path}`;
-    console.log(`[PROVIDER] formatUrl: API_PROXY=${API_PROXY}, baseUrl=${baseUrl}, path=${path} → ${url}`);
     return url;
   },
   fetch: async (...[input, init]: Parameters<typeof fetch>) => {
@@ -254,7 +252,6 @@ const provider = createDatabricksProvider({
     const headers = new Headers(init?.headers);
     headers.set('Authorization', `Bearer ${currentToken}`);
 
-    console.log(`[PROVIDER] fetch: url=${input}`);
     return databricksFetch(input, {
       ...init,
       headers,
@@ -327,7 +324,6 @@ export class OAuthAwareProvider implements SmartProvider {
         // For API proxy we always use the responses agent
         // Use the serving endpoint name, not the model ID
         const servingEndpoint = process.env.DATABRICKS_SERVING_ENDPOINT || 'databricks-claude-sonnet-4-5';
-        console.log(`[PROVIDER] Using API_PROXY for ${id}, endpoint: ${servingEndpoint}, proxy: ${API_PROXY}`);
         return provider.responses(servingEndpoint);
       }
       if (id === 'title-model' || id === 'artifact-model') {

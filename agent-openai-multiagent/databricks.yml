@@ -1,0 +1,74 @@
+bundle:
+  name: agent_openai_multiagent
+
+resources:
+  # MLflow experiment for agent tracing - automatically created by bundle
+  experiments:
+    agent_openai_multiagent_experiment:
+      name: /Users/${workspace.current_user.userName}/${bundle.name}-${bundle.target}
+
+  apps:
+    agent_openai_multiagent:
+      name: "${bundle.target}-agent-openai-multiagent"
+      description: "Multi-agent orchestrator that queries other agents, Genie spaces, and serving endpoints"
+      source_code_path: ./
+
+      # Resources which this app has access to
+      resources:
+        - name: 'experiment'
+          experiment:
+            experiment_id: "${resources.experiments.agent_openai_multiagent_experiment.id}"
+            permission: 'CAN_MANAGE'
+
+        # TODO: Set your Genie space ID
+        - name: 'genie_space'
+          genie_space:
+            name: 'Genie Space'
+            space_id: '<YOUR-GENIE-SPACE-ID>'
+            permission: 'CAN_RUN'
+
+        # TODO: Set your knowledge-assistant serving endpoint name
+        - name: 'knowledge_assistant'
+          serving_endpoint:
+            name: '<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>'
+            permission: 'CAN_QUERY'
+
+        # TODO: Set your serving endpoint name
+        - name: 'serving_endpoint'
+          serving_endpoint:
+            name: '<YOUR-SERVING-ENDPOINT>'
+            permission: 'CAN_QUERY'
+
+        # NOTE: App-to-app permissions are not yet supported as bundle resources.
+        # After deploying, you must manually grant this app's service principal
+        # CAN_USE permission on the target app. Steps:
+        #
+        # 1. Find this app's SP applicationId (UUID):
+        #    databricks service-principals list -o json | \
+        #      python3 -c "import sys,json; [print(sp['applicationId'], sp['displayName']) for sp in json.load(sys.stdin) if '<YOUR-APP-NAME>' in sp.get('displayName','')]"
+        #
+        # 2. Grant CAN_USE on the target app using the REST API:
+        #    curl -X PATCH "https://<workspace>/api/2.0/permissions/apps/<YOUR-APP-AGENT-NAME>" \
+        #      -H "Authorization: Bearer $(databricks auth token --profile <profile> | jq -r .access_token)" \
+        #      -H "Content-Type: application/json" \
+        #      -d '{"access_control_list": [{"service_principal_name": "<SP-APPLICATION-ID>", "permission_level": "CAN_USE"}]}'
+        #
+        # IMPORTANT: "service_principal_name" must be the SP's applicationId (UUID),
+        # not the display name. Using the display name silently succeeds but does NOT
+        # actually add the permission.
+
+targets:
+  dev:
+    mode: development
+    default: true
+    # workspace:
+    #   host: https://...
+
+  prod:
+    mode: production
+    # workspace:
+    #   host: https://...
+    resources:
+      apps:
+        agent_openai_multiagent:
+          name: agent-openai-multiagent

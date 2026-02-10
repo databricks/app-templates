@@ -34,6 +34,10 @@ TEMPLATES = {
         "sdk": "openai",
         "bundle_name": "agent_openai_agents_sdk",
     },
+    "agent-openai-multiagent": {
+        "sdk": "openai",
+        "bundle_name": "agent_openai_multiagent",
+    },
     "agent-non-conversational": {
         "sdk": "langgraph",
         "bundle_name": "agent_non_conversational",

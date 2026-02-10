@@ -6,19 +6,51 @@
  * - Agent server running on http://localhost:5001 OR deployed app URL in APP_URL env var
  * - Formula 1 Genie space configured in src/mcp-servers.ts
  * - Genie space permission granted in databricks.yml
+ * - For deployed apps: DATABRICKS_TOKEN env var with OAuth token
  *
  * Run with: npm run test:integration tests/f1-genie.test.ts
+ * For deployed app: APP_URL=<url> DATABRICKS_TOKEN=$(databricks auth token --profile dogfood | jq -r '.access_token') npm test tests/f1-genie.test.ts
  */
 
 import { describe, test, expect } from '@jest/globals';
+import { execSync } from 'child_process';
 
 const AGENT_URL = process.env.APP_URL || "http://localhost:5001";
+
+// Get auth token for deployed apps
+function getAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  // If testing deployed app, get OAuth token
+  if (AGENT_URL.includes("databricksapps.com")) {
+    let token = process.env.DATABRICKS_TOKEN;
+
+    // If token not provided, try to get it from databricks CLI
+    if (!token) {
+      try {
+        const tokenJson = execSync('databricks auth token --profile dogfood', { encoding: 'utf-8' });
+        const parsed = JSON.parse(tokenJson);
+        token = parsed.access_token;
+      } catch (error) {
+        console.warn("Warning: Could not get OAuth token. Set DATABRICKS_TOKEN env var.");
+      }
+    }
+
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+  }
+
+  return headers;
+}
 
 describe("Formula 1 Genie Space Integration", () => {
   test("should answer F1 race winner question using Genie space", async () => {
     const response = await fetch(`${AGENT_URL}/invocations`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       body: JSON.stringify({
         input: [{
           role: "user",
@@ -50,7 +82,7 @@ describe("Formula 1 Genie Space Integration", () => {
   test("should answer F1 team question using Genie space", async () => {
     const response = await fetch(`${AGENT_URL}/invocations`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       body: JSON.stringify({
         input: [{
           role: "user",
@@ -79,7 +111,7 @@ describe("Formula 1 Genie Space Integration", () => {
   test.skip("should detect Genie space tool in streaming response (TODO: AgentMCP streaming)", async () => {
     const response = await fetch(`${AGENT_URL}/invocations`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       body: JSON.stringify({
         input: [{
           role: "user",

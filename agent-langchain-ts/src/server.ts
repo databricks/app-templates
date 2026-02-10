@@ -59,13 +59,6 @@ export async function createServer(
 
   // Debug middleware to log incoming headers (helps debug auth issues)
   app.use((req, res, next) => {
-    const authHeaders = {
-      'x-forwarded-user': req.headers['x-forwarded-user'],
-      'x-forwarded-email': req.headers['x-forwarded-email'],
-      'x-forwarded-preferred-username': req.headers['x-forwarded-preferred-username'],
-      'authorization': req.headers['authorization'] ? '[present]' : undefined,
-    };
-    console.log(`[${req.method}] ${req.path}`, authHeaders);
     next();
   });
 
@@ -107,12 +100,10 @@ export async function createServer(
   // Reverse proxy for /api/* routes to UI backend
   const uiBackendUrl = process.env.UI_BACKEND_URL;
   if (uiBackendUrl) {
-    console.log(`🔗 Proxying /api/* to UI backend at ${uiBackendUrl}`);
     app.use("/api", async (req: Request, res: Response) => {
       try {
         // Add /api back to the URL since Express strips the mount path
         const targetUrl = `${uiBackendUrl}/api${req.url}`;
-        console.log(`[PROXY] ${req.method} /api${req.url} -> ${targetUrl}`);
 
         // Build headers from request
         const headers: Record<string, string> = {};
@@ -129,11 +120,6 @@ export async function createServer(
         headers["host"] = new URL(uiBackendUrl).host;
         headers["content-type"] = "application/json";
 
-        console.log(`[PROXY] Forwarding with headers:`, {
-          'x-forwarded-user': headers['x-forwarded-user'],
-          'x-forwarded-email': headers['x-forwarded-email'],
-        });
-
         // Forward the request to UI backend
         const bodyStr = req.method !== "GET" && req.method !== "HEAD" ? JSON.stringify(req.body) : undefined;
         const response = await fetch(targetUrl, {
@@ -141,8 +127,6 @@ export async function createServer(
           headers,
           body: bodyStr,
         });
-
-        console.log(`[PROXY] Response status: ${response.status}`);
 
         // Copy status and headers
         res.status(response.status);

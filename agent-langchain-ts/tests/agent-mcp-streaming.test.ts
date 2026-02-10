@@ -8,8 +8,14 @@
 
 import { describe, test, expect } from '@jest/globals';
 import { execSync } from 'child_process';
+import {
+  TEST_CONFIG,
+  callInvocations,
+  parseSSEStream,
+  parseAISDKStream,
+} from './helpers.js';
 
-const AGENT_URL = process.env.APP_URL || "http://localhost:5001";
+const AGENT_URL = process.env.APP_URL || TEST_CONFIG.AGENT_URL;
 
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
@@ -56,29 +62,10 @@ describe("AgentMCP Streaming Bug", () => {
     console.log(text);
     console.log("=== End Response ===\n");
 
-    // Parse SSE stream
-    let fullOutput = "";
-    let hasTextDelta = false;
-    let events: string[] = [];
+    const { events, fullOutput } = parseSSEStream(text);
+    const hasTextDelta = events.some(e => e.type === "response.output_text.delta");
 
-    const lines = text.split("\n");
-    for (const line of lines) {
-      if (line.startsWith("data: ") && line !== "data: [DONE]") {
-        try {
-          const data = JSON.parse(line.slice(6));
-          events.push(data.type);
-
-          if (data.type === "response.output_text.delta") {
-            hasTextDelta = true;
-            fullOutput += data.delta;
-          }
-        } catch {
-          // Skip invalid JSON
-        }
-      }
-    }
-
-    console.log("Events emitted:", events);
+    console.log("Events emitted:", events.map(e => e.type));
     console.log("Has text-delta events:", hasTextDelta);
     console.log("Full output:", fullOutput);
 
@@ -111,29 +98,8 @@ describe("AgentMCP Streaming Bug", () => {
     console.log(text);
     console.log("=== End Response ===\n");
 
-    // Parse events
-    let fullContent = "";
-    let hasTextDelta = false;
-    let events: string[] = [];
+    const { fullContent, hasTextDelta } = parseAISDKStream(text);
 
-    const lines = text.split("\n");
-    for (const line of lines) {
-      if (line.startsWith("data: ") && line !== "data: [DONE]") {
-        try {
-          const data = JSON.parse(line.slice(6));
-          events.push(data.type);
-
-          if (data.type === "text-delta") {
-            hasTextDelta = true;
-            fullContent += data.delta || "";
-          }
-        } catch {
-          // Skip invalid JSON
-        }
-      }
-    }
-
-    console.log("Events emitted:", events);
     console.log("Has text-delta events:", hasTextDelta);
     console.log("Full content:", fullContent);
 

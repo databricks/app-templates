@@ -400,4 +400,152 @@ describe("Error Handling Tests", () => {
       expect(successText.toLowerCase()).not.toContain("no matching tool call");
     }, 30000);
   });
+
+  describe("Tool Permission Errors", () => {
+    function getAuthHeaders(): Record<string, string> {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+
+      const deployedUrl = process.env.APP_URL;
+      if (deployedUrl && deployedUrl.includes("databricksapps.com")) {
+        let token = process.env.DATABRICKS_TOKEN;
+        if (!token) {
+          try {
+            const { execSync } = require('child_process');
+            const tokenJson = execSync('databricks auth token --profile dogfood', { encoding: 'utf-8' });
+            const parsed = JSON.parse(tokenJson);
+            token = parsed.access_token;
+          } catch (error) {
+            console.warn("Warning: Could not get OAuth token.");
+          }
+        }
+        if (token) {
+          headers["Authorization"] = `Bearer ${token}`;
+        }
+      }
+
+      return headers;
+    }
+
+    test("agent should respond when tool returns permission error", async () => {
+      const testUrl = process.env.APP_URL || AGENT_URL;
+      const response = await fetch(`${testUrl}/invocations`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          input: [{
+            role: "user",
+            content: "Tell me about F1 race data and answer an example question about it"
+          }],
+          stream: true,
+        }),
+      });
+
+      expect(response.ok).toBe(true);
+      const text = await response.text();
+
+      // Parse SSE stream
+      let fullOutput = "";
+      let hasTextDelta = false;
+      let toolCalls: any[] = [];
+      let toolErrors: any[] = [];
+
+      const lines = text.split("\n");
+      for (const line of lines) {
+        if (line.startsWith("data: ") && line !== "data: [DONE]") {
+          try {
+            const data = JSON.parse(line.slice(6));
+
+            if (data.type === "response.output_text.delta") {
+              hasTextDelta = true;
+              fullOutput += data.delta;
+            }
+
+            if (data.type === "response.output_item.done" && data.item?.type === "function_call") {
+              toolCalls.push(data.item);
+            }
+
+            if (data.type === "response.output_item.done" && data.item?.type === "function_call_output") {
+              const output = data.item.output;
+              if (output && (output.includes("Error") || output.includes("permission"))) {
+                toolErrors.push({ call_id: data.item.call_id, output });
+              }
+            }
+          } catch {
+            // Skip invalid JSON
+          }
+        }
+      }
+
+      // EXPECTED BEHAVIOR: Even with tool errors, agent should provide a text response
+      expect(hasTextDelta).toBe(true);
+      expect(fullOutput.length).toBeGreaterThan(0);
+    }, 60000);
+
+    test("agent should handle tool error in /api/chat", async () => {
+      const testUrl = process.env.APP_URL || AGENT_URL;
+      // Note: /api/chat might not be available on all deployments
+      // This test is primarily for local development
+
+      const response = await fetch(`${testUrl}/api/chat`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          id: "550e8400-e29b-41d4-a716-446655440000",
+          message: {
+            role: "user",
+            parts: [{
+              type: "text",
+              text: "What Formula 1 race had the most overtakes in 2023?"
+            }],
+            id: "550e8400-e29b-41d4-a716-446655440001",
+          },
+          selectedChatModel: "chat-model",
+          selectedVisibilityType: "private",
+        }),
+      });
+
+      if (!response.ok) {
+        // /api/chat might not be available on deployed apps
+        console.log("⏭️  Skipping /api/chat test (endpoint not available)");
+        return;
+      }
+
+      const text = await response.text();
+
+      // Parse events
+      let fullContent = "";
+      let hasTextDelta = false;
+
+      const lines = text.split("\n");
+      for (const line of lines) {
+        if (line.startsWith("data: ") && line !== "data: [DONE]") {
+          try {
+            const data = JSON.parse(line.slice(6));
+
+            if (data.type === "text-delta") {
+              hasTextDelta = true;
+              fullContent += data.delta || "";
+            }
+          } catch {
+            // Skip invalid JSON
+          }
+        }
+      }
+
+      // Agent should provide text response
+      expect(hasTextDelta).toBe(true);
+      expect(fullContent.length).toBeGreaterThan(0);
+
+      // Check if the agent mentioned querying or Formula 1
+      const lowerContent = fullContent.toLowerCase();
+      const mentionsQuery = lowerContent.includes("query") ||
+                           lowerContent.includes("formula") ||
+                           lowerContent.includes("race") ||
+                           lowerContent.includes("f1");
+
+      expect(mentionsQuery).toBe(true);
+    }, 60000);
+  });
 });

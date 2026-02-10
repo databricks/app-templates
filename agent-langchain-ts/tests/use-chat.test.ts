@@ -6,6 +6,7 @@
 import { describe, test, expect, beforeAll, afterAll } from "@jest/globals";
 import { spawn } from "child_process";
 import type { ChildProcess } from "child_process";
+import { parseAISDKStream } from './helpers.js';
 
 describe("useChat E2E Test", () => {
   let agentProcess: ChildProcess;
@@ -61,20 +62,10 @@ describe("useChat E2E Test", () => {
 
     expect(response.ok).toBe(true);
 
-    // Should return AI SDK streaming format
     const text = await response.text();
-    const lines = text.split("\n").filter((line) => line.trim());
+    const { fullContent, hasTextDelta } = parseAISDKStream(text);
 
-    // AI SDK format uses newline-delimited JSON
-    // Format: 0:"text chunk" or 0:{message object}
-    const hasTextChunks = lines.some((line) => {
-      return line.startsWith('0:"') || line.startsWith("0:{");
-    });
-
-    expect(hasTextChunks).toBe(true);
-
-    // Should contain the response text
-    const fullContent = lines.join("");
+    expect(hasTextDelta).toBe(true);
     expect(fullContent.length).toBeGreaterThan(0);
   }, 30000);
 
@@ -110,10 +101,11 @@ describe("useChat E2E Test", () => {
     expect(response.ok).toBe(true);
 
     const text = await response.text();
-    const fullContent = text.toLowerCase();
+    const { fullContent } = parseAISDKStream(text);
+    const lowerContent = fullContent.toLowerCase();
 
     // Should reference the previous context
-    expect(fullContent.includes("blue") || fullContent.includes("elephant")).toBe(true);
+    expect(lowerContent.includes("blue") || lowerContent.includes("elephant")).toBe(true);
   }, 30000);
 
   test("should handle tool calling through useChat", async () => {
@@ -136,9 +128,9 @@ describe("useChat E2E Test", () => {
     expect(response.ok).toBe(true);
 
     const text = await response.text();
-    const fullContent = text.toLowerCase();
+    const { fullContent, hasToolCall } = parseAISDKStream(text);
 
     // Should contain the result (63)
-    expect(fullContent.includes("63")).toBe(true);
+    expect(fullContent.toLowerCase().includes("63")).toBe(true);
   }, 30000);
 });

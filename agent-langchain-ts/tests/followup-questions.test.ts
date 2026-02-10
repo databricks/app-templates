@@ -209,6 +209,91 @@ describe("Followup Questions - /invocations", () => {
     expect(hasTextDelta).toBe(true);
     expect(fullOutput.length).toBeGreaterThan(0);
   }, 60000);
+
+  test("REGRESSION: should handle followup after tool call", async () => {
+    console.log("\n=== Test: Followup After Tool Call (Regression) ===");
+    console.log("This tests the fix for: tool call context being filtered out of chat history");
+
+    // Simulate a conversation where:
+    // 1. User asks for time in Tokyo
+    // 2. Agent calls get_current_time tool
+    // 3. User asks followup question referencing the tool result
+    const response = await fetch(`${APP_URL}/invocations`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        input: [
+          { role: "user", content: "What time is it in Tokyo?" },
+          {
+            role: "assistant",
+            content: [
+              {
+                type: "function_call",
+                name: "get_current_time",
+                arguments: "{\"timezone\":\"Asia/Tokyo\"}"
+              },
+              {
+                type: "function_call_output",
+                output: "\"Current time in Asia/Tokyo: 10/02/2026, 9:30:00 PM\""
+              },
+              {
+                type: "output_text",
+                text: "The current time in Tokyo is 9:30 PM on February 10, 2026."
+              }
+            ]
+          },
+          { role: "user", content: "What time did you just tell me?" }
+        ],
+        stream: true,
+      }),
+    });
+
+    expect(response.ok).toBe(true);
+    const text = await response.text();
+
+    console.log("\n=== Full SSE Response ===");
+    console.log(text);
+    console.log("...");
+
+    // Parse SSE stream
+    let fullOutput = "";
+    let hasTextDelta = false;
+
+    const lines = text.split("\n");
+    for (const line of lines) {
+      if (line.startsWith("data: ") && line !== "data: [DONE]") {
+        try {
+          const data = JSON.parse(line.slice(6));
+
+          if (data.type === "response.output_text.delta") {
+            hasTextDelta = true;
+            fullOutput += data.delta;
+          }
+        } catch (e) {
+          // Skip unparseable lines
+        }
+      }
+    }
+
+    console.log("\n=== Analysis ===");
+    console.log("Has text delta:", hasTextDelta);
+    console.log("Full output length:", fullOutput.length);
+    console.log("\nFull output:", fullOutput);
+
+    // ASSERTIONS
+    expect(hasTextDelta).toBe(true);
+    expect(fullOutput.length).toBeGreaterThan(0);
+
+    // The response should reference the time that was mentioned
+    // (agent should remember the tool call context)
+    const lowerOutput = fullOutput.toLowerCase();
+    const mentionedTime = lowerOutput.includes("9:30") ||
+                         lowerOutput.includes("930") ||
+                         lowerOutput.includes("tokyo");
+
+    expect(mentionedTime).toBe(true);
+    console.log("\n✅ Agent correctly remembered tool call context!");
+  }, 60000);
 });
 
 describe("Followup Questions - /api/chat", () => {

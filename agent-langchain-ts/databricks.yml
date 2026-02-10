@@ -29,13 +29,11 @@ resources:
             name: ${var.serving_endpoint_name}
             permission: CAN_QUERY
 
-        # Formula 1 Genie Space - Natural language F1 race data
-        # Configured in src/mcp-servers.ts
-        - name: f1_genie_space
-          genie_space:
-            name: "Formula 1 Race Analytics"
-            space_id: "01f1037ebc531bbdb27b875271b31bf4"
-            permission: CAN_RUN
+        # Add additional resources here as needed:
+        # - Unity Catalog tables, functions, or vector search indexes
+        # - Genie spaces for natural language data queries
+        # - External MCP servers
+        # See .claude/skills/add-tools/ for examples
 
         # Experiment resource - optional, set mlflow_experiment_id variable to use
         # If not provided, traces will still be captured but won't link to a specific experiment

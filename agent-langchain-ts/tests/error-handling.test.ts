@@ -368,103 +368,43 @@ describe("Error Handling Tests", () => {
     }, 30000);
   });
 
-  describe("Tool Permission Errors", () => {
-    function getAuthHeaders(): Record<string, string> {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-
-      const deployedUrl = process.env.APP_URL;
-      if (deployedUrl && deployedUrl.includes("databricksapps.com")) {
-        let token = process.env.DATABRICKS_TOKEN;
-        if (!token) {
-          try {
-            const { execSync } = require('child_process');
-            const tokenJson = execSync('databricks auth token --profile dogfood', { encoding: 'utf-8' });
-            const parsed = JSON.parse(tokenJson);
-            token = parsed.access_token;
-          } catch (error) {
-            console.warn("Warning: Could not get OAuth token.");
-          }
-        }
-        if (token) {
-          headers["Authorization"] = `Bearer ${token}`;
-        }
-      }
-
-      return headers;
-    }
-
-    test("agent should respond when tool returns permission error", async () => {
-      const testUrl = process.env.APP_URL || AGENT_URL;
-      const response = await fetch(`${testUrl}/invocations`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({
-          input: [{
-            role: "user",
-            content: "Tell me about F1 race data and answer an example question about it"
-          }],
-          stream: true,
-        }),
+  describe("Tool Error Handling", () => {
+    test("agent should gracefully handle tools and provide responses", async () => {
+      // Test that the agent can handle various tool scenarios
+      const response = await callInvocations({
+        input: [{
+          role: "user",
+          content: "What's the weather in Tokyo and what time is it there?"
+        }],
+        stream: true,
       });
 
       expect(response.ok).toBe(true);
       const text = await response.text();
+      const { fullOutput, hasTextDelta, hasToolCall } = parseSSEStream(text);
 
-      // Parse SSE stream
-      let fullOutput = "";
-      let hasTextDelta = false;
-      let toolCalls: any[] = [];
-      let toolErrors: any[] = [];
+      // Agent should attempt tool calls
+      expect(hasToolCall).toBe(true);
 
-      const lines = text.split("\n");
-      for (const line of lines) {
-        if (line.startsWith("data: ") && line !== "data: [DONE]") {
-          try {
-            const data = JSON.parse(line.slice(6));
-
-            if (data.type === "response.output_text.delta") {
-              hasTextDelta = true;
-              fullOutput += data.delta;
-            }
-
-            if (data.type === "response.output_item.done" && data.item?.type === "function_call") {
-              toolCalls.push(data.item);
-            }
-
-            if (data.type === "response.output_item.done" && data.item?.type === "function_call_output") {
-              const output = data.item.output;
-              if (output && (output.includes("Error") || output.includes("permission"))) {
-                toolErrors.push({ call_id: data.item.call_id, output });
-              }
-            }
-          } catch {
-            // Skip invalid JSON
-          }
-        }
-      }
-
-      // EXPECTED BEHAVIOR: Even with tool errors, agent should provide a text response
+      // Agent should provide a text response
       expect(hasTextDelta).toBe(true);
       expect(fullOutput.length).toBeGreaterThan(0);
-    }, 60000);
 
-    test("agent should handle tool error in /api/chat", async () => {
-      const testUrl = process.env.APP_URL || AGENT_URL;
-      // Note: /api/chat might not be available on all deployments
-      // This test is primarily for local development
+      // Stream should complete properly
+      expect(assertSSECompleted(text)).toBe(true);
+    }, 30000);
 
-      const response = await fetch(`${testUrl}/api/chat`, {
+    test("agent should handle tools correctly via /api/chat", async () => {
+      const response = await fetch(`${UI_URL}/api/chat`, {
         method: "POST",
-        headers: getAuthHeaders(),
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: "550e8400-e29b-41d4-a716-446655440000",
           message: {
             role: "user",
             parts: [{
               type: "text",
-              text: "What Formula 1 race had the most overtakes in 2023?"
+              text: "Calculate 25 * 4 and then tell me the time in New York"
             }],
             id: "550e8400-e29b-41d4-a716-446655440001",
           },
@@ -473,46 +413,23 @@ describe("Error Handling Tests", () => {
         }),
       });
 
-      if (!response.ok) {
-        // /api/chat might not be available on deployed apps
-        console.log("⏭️  Skipping /api/chat test (endpoint not available)");
-        return;
-      }
-
+      expect(response.ok).toBe(true);
       const text = await response.text();
 
-      // Parse events
-      let fullContent = "";
-      let hasTextDelta = false;
+      // Should have tool calls (calculator, time)
+      const hasToolInput = text.includes('"type":"tool-input-available"');
+      const hasToolOutput = text.includes('"type":"tool-output-available"');
 
-      const lines = text.split("\n");
-      for (const line of lines) {
-        if (line.startsWith("data: ") && line !== "data: [DONE]") {
-          try {
-            const data = JSON.parse(line.slice(6));
+      expect(hasToolInput).toBe(true);
+      expect(hasToolOutput).toBe(true);
 
-            if (data.type === "text-delta") {
-              hasTextDelta = true;
-              fullContent += data.delta || "";
-            }
-          } catch {
-            // Skip invalid JSON
-          }
-        }
-      }
-
-      // Agent should provide text response
+      // Should have text response
+      const hasTextDelta = text.includes('"type":"text-delta"');
       expect(hasTextDelta).toBe(true);
-      expect(fullContent.length).toBeGreaterThan(0);
 
-      // Check if the agent mentioned querying or Formula 1
-      const lowerContent = fullContent.toLowerCase();
-      const mentionsQuery = lowerContent.includes("query") ||
-                           lowerContent.includes("formula") ||
-                           lowerContent.includes("race") ||
-                           lowerContent.includes("f1");
-
-      expect(mentionsQuery).toBe(true);
-    }, 60000);
+      // Should not have errors
+      const hasError = text.includes('"type":"error"');
+      expect(hasError).toBe(false);
+    }, 30000);
   });
 });

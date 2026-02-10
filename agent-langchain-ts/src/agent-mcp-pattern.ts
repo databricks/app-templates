@@ -36,6 +36,12 @@ When using tools:
 - Provide clear explanations of your reasoning
 - Cite specific tool results in your responses
 
+When a tool returns an error or fails:
+- ALWAYS provide a helpful response to the user
+- Explain what went wrong (e.g., permission denied, data not available)
+- If possible, provide alternative approaches or general knowledge to help answer the question
+- Never leave the user with just an error message - always add context and next steps
+
 Be concise but informative in your responses.`;
 
 /**

@@ -10,49 +10,31 @@
  */
 
 import { describe, test, expect } from '@jest/globals';
+import {
+  TEST_CONFIG,
+  callInvocations,
+  parseSSEStream,
+  assertSSECompleted,
+  assertSSEHasCompletionEvent,
+} from './helpers.js';
 
-const AGENT_URL = "http://localhost:5001";
-const UI_URL = "http://localhost:3001";
+const AGENT_URL = TEST_CONFIG.AGENT_URL;
+const UI_URL = TEST_CONFIG.UI_URL;
 
 describe("Error Handling Tests", () => {
   describe("Security: Calculator Tool with mathjs", () => {
     test("should reject dangerous eval expressions", async () => {
-      const response = await fetch(`${AGENT_URL}/invocations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          input: [
-            {
-              role: "user",
-              content: "Calculate this: require('fs').readFileSync('/etc/passwd')"
-            }
-          ],
-          stream: true,
-        }),
+      const response = await callInvocations({
+        input: [{
+          role: "user",
+          content: "Calculate this: require('fs').readFileSync('/etc/passwd')"
+        }],
+        stream: true,
       });
 
       expect(response.ok).toBe(true);
       const text = await response.text();
-
-      // Parse SSE stream
-      let hasError = false;
-      let fullOutput = "";
-      const lines = text.split("\n");
-      for (const line of lines) {
-        if (line.startsWith("data: ") && line !== "data: [DONE]") {
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.type === "response.output_text.delta") {
-              fullOutput += data.delta;
-            }
-            if (data.type === "error" || data.type === "response.failed") {
-              hasError = true;
-            }
-          } catch {
-            // Skip invalid JSON
-          }
-        }
-      }
+      const { fullOutput, hasError } = parseSSEStream(text);
 
       // Should either error or return "undefined" (mathjs doesn't support require())
       // The key is it should NOT execute arbitrary code
@@ -61,32 +43,28 @@ describe("Error Handling Tests", () => {
     }, 30000);
 
     test("should handle invalid mathematical expressions safely", async () => {
-      const response = await fetch(`${AGENT_URL}/invocations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          input: [
-            {
-              role: "user",
-              content: "Calculate: sqrt(-1) + invalid_function(42)"
-            }
-          ],
-          stream: true,
-        }),
+      const response = await callInvocations({
+        input: [{
+          role: "user",
+          content: "Calculate: sqrt(-1) + invalid_function(42)"
+        }],
+        stream: true,
       });
 
       expect(response.ok).toBe(true);
       const text = await response.text();
+      const { fullOutput } = parseSSEStream(text);
 
       // Should complete the stream even if calculator fails
-      expect(text).toContain("data: [DONE]");
+      expect(assertSSECompleted(text)).toBe(true);
 
       // Should mention error or inability to calculate
+      const lowerOutput = fullOutput.toLowerCase();
       const hasReasonableResponse =
-        text.toLowerCase().includes("error") ||
-        text.toLowerCase().includes("invalid") ||
-        text.toLowerCase().includes("undefined") ||
-        text.toLowerCase().includes("cannot");
+        lowerOutput.includes("error") ||
+        lowerOutput.includes("invalid") ||
+        lowerOutput.includes("undefined") ||
+        lowerOutput.includes("cannot");
 
       expect(hasReasonableResponse).toBe(true);
     }, 30000);
@@ -94,21 +72,18 @@ describe("Error Handling Tests", () => {
 
   describe("SSE Stream Completion", () => {
     test("should send completion events on successful response", async () => {
-      const response = await fetch(`${AGENT_URL}/invocations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          input: [{ role: "user", content: "Say 'test'" }],
-          stream: true,
-        }),
+      const response = await callInvocations({
+        input: [{ role: "user", content: "Say 'test'" }],
+        stream: true,
       });
 
       expect(response.ok).toBe(true);
       const text = await response.text();
+      const { events } = parseSSEStream(text);
 
       // Verify proper SSE completion sequence
-      expect(text).toContain('"type":"response.completed"');
-      expect(text).toContain("data: [DONE]");
+      expect(assertSSECompleted(text)).toBe(true);
+      expect(assertSSEHasCompletionEvent(events)).toBe(true);
 
       // Ensure it ends with [DONE]
       const lines = text.trim().split("\n");
@@ -135,29 +110,21 @@ describe("Error Handling Tests", () => {
 
     test("should send [DONE] even when stream encounters errors", async () => {
       // Send a request that might cause tool execution issues
-      const response = await fetch(`${AGENT_URL}/invocations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          input: [
-            {
-              role: "user",
-              content: "Calculate: " + "x".repeat(10000) // Very long invalid expression
-            }
-          ],
-          stream: true,
-        }),
+      const response = await callInvocations({
+        input: [{
+          role: "user",
+          content: "Calculate: " + "x".repeat(10000) // Very long invalid expression
+        }],
+        stream: true,
       });
 
       expect(response.ok).toBe(true);
       const text = await response.text();
+      const { events } = parseSSEStream(text);
 
       // Even if there's an error, stream should complete properly
-      const hasCompletion =
-        text.includes('"type":"response.completed"') ||
-        text.includes('"type":"response.failed"');
-      expect(hasCompletion).toBe(true);
-      expect(text).toContain("data: [DONE]");
+      expect(assertSSEHasCompletionEvent(events)).toBe(true);
+      expect(assertSSECompleted(text)).toBe(true);
     }, 30000);
   });
 

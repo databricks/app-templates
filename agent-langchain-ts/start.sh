@@ -15,10 +15,11 @@ if [ -d "ui/server/dist" ]; then
   echo "✅ UI backend found - running agent-first two-server architecture"
 
   # Start UI server on internal port 3000 (provides /api/chat, /api/session, etc.)
+  # Run in development mode so it doesn't serve static files (agent server handles that)
   cd ui/server
-  API_PROXY=http://localhost:8000/invocations AGENT_URL=http://localhost:8000 PORT=3000 node dist/index.mjs &
+  NODE_ENV=development API_PROXY=http://localhost:8000/invocations AGENT_URL=http://localhost:8000 PORT=3000 node dist/index.mjs &
   UI_PID=$!
-  echo "UI backend started on port 3000 (PID: $UI_PID)"
+  echo "UI backend started on port 3000 (PID: $UI_PID) in development mode"
   cd ../..
 
   # Give UI backend a moment to start

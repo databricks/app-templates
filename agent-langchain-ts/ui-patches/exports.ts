@@ -19,31 +19,12 @@ const __dirname = dirname(__filename);
 /**
  * Add custom routes to the UI server
  * This is called by the UI server's index.ts if this file exists
+ *
+ * NOTE: Static file serving is handled by the agent server (port 8000).
+ * This UI backend (port 3000) should ONLY handle /api/* routes and proxy /invocations.
  */
 export function addCustomRoutes(app: Express) {
   const agentUrl = process.env.AGENT_URL || 'http://localhost:8001';
-
-  // Serve UI static files from the client build
-  // Path from server/src/exports.ts -> ui/client/dist
-  const uiClientPath = path.join(__dirname, '../../client/dist');
-
-  if (existsSync(uiClientPath)) {
-    console.log('📦 Serving UI static files from:', uiClientPath);
-    app.use(express.static(uiClientPath));
-
-    // SPA fallback - serve index.html for all non-API routes
-    app.get(/^\/(?!api).*/, (req, res, next) => {
-      // Skip if this is an API route or already handled
-      if (req.path.startsWith('/api') || req.path === '/invocations') {
-        return next();
-      }
-      res.sendFile(path.join(uiClientPath, 'index.html'));
-    });
-
-    console.log('✅ UI static files served');
-  } else {
-    console.log('⚠️  UI client build not found at:', uiClientPath);
-  }
 
   // Proxy /invocations to the agent server
   app.all('/invocations', async (req, res) => {

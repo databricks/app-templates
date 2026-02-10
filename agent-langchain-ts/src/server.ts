@@ -57,6 +57,18 @@ export async function createServer(
   app.use(cors());
   app.use(express.json({ limit: '10mb' })); // Protect against large payload DoS
 
+  // Debug middleware to log incoming headers (helps debug auth issues)
+  app.use((req, res, next) => {
+    const authHeaders = {
+      'x-forwarded-user': req.headers['x-forwarded-user'],
+      'x-forwarded-email': req.headers['x-forwarded-email'],
+      'x-forwarded-preferred-username': req.headers['x-forwarded-preferred-username'],
+      'authorization': req.headers['authorization'] ? '[present]' : undefined,
+    };
+    console.log(`[${req.method}] ${req.path}`, authHeaders);
+    next();
+  });
+
   // Initialize MLflow tracing
   const tracing = initializeMLflowTracing({
     serviceName: "langchain-agent-ts",
@@ -98,7 +110,9 @@ export async function createServer(
     console.log(`🔗 Proxying /api/* to UI backend at ${uiBackendUrl}`);
     app.use("/api", async (req: Request, res: Response) => {
       try {
-        const targetUrl = `${uiBackendUrl}${req.url}`;
+        // Add /api back to the URL since Express strips the mount path
+        const targetUrl = `${uiBackendUrl}/api${req.url}`;
+        console.log(`[PROXY] ${req.method} /api${req.url} -> ${targetUrl}`);
 
         // Build headers from request
         const headers: Record<string, string> = {};
@@ -111,12 +125,19 @@ export async function createServer(
         });
         headers["host"] = new URL(uiBackendUrl).host;
 
+        console.log(`[PROXY] Forwarding with headers:`, {
+          'x-forwarded-user': headers['x-forwarded-user'],
+          'x-forwarded-email': headers['x-forwarded-email'],
+        });
+
         // Forward the request to UI backend
         const response = await fetch(targetUrl, {
           method: req.method,
           headers,
           body: req.method !== "GET" && req.method !== "HEAD" ? JSON.stringify(req.body) : undefined,
         });
+
+        console.log(`[PROXY] Response status: ${response.status}`);
 
         // Copy status and headers
         res.status(response.status);

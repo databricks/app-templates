@@ -31,6 +31,12 @@ resources:
         #     securable_full_name: 'system.ai.python_exec'
         #     securable_type: 'FUNCTION'
         #     permission: 'EXECUTE'
+        # Example - Lakebase database (for stateful agents):
+        # - name: 'database'
+        #   database:
+        #     database_name: 'databricks_postgres'
+        #     instance_name: 'lakebase'
+        #     permission: 'CAN_CONNECT_AND_CREATE'
 
 targets:
   dev:

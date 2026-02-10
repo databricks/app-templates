@@ -717,7 +717,7 @@ The scaffold includes a `databricks.yml` with the experiment resource pre-config
 | MLmodel Resource | `databricks.yml` Resource | Key Fields |
 |------------------|--------------------------|------------|
 | `serving_endpoint` | `serving_endpoint` | `name`, `permission` (CAN_QUERY) |
-| `lakebase` | `database` | `instance_name`, `permission` (CAN_CONNECT_AND_CREATE) |
+| `lakebase` | `database` | `database_name: databricks_postgres`, `instance_name`, `permission` (CAN_CONNECT_AND_CREATE) |
 | `vector_search_index` | `uc_securable` | `securable_full_name`, `securable_type: TABLE`, `permission: SELECT` |
 | `function` | `uc_securable` | `securable_full_name`, `securable_type: FUNCTION`, `permission: EXECUTE` |
 | `table` | `uc_securable` | `securable_full_name`, `securable_type: TABLE`, `permission: SELECT` |
@@ -768,6 +768,7 @@ targets:
 ```yaml
         - name: 'database'
           database:
+            database_name: 'databricks_postgres'
             instance_name: 'lakebase'
             permission: 'CAN_CONNECT_AND_CREATE'
 ```

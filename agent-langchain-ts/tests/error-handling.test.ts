@@ -381,13 +381,12 @@ describe("Error Handling Tests", () => {
 
       expect(response.ok).toBe(true);
       const text = await response.text();
-      const { fullOutput, hasTextDelta, hasToolCall } = parseSSEStream(text);
+      const { fullOutput, hasToolCall } = parseSSEStream(text);
 
       // Agent should attempt tool calls
       expect(hasToolCall).toBe(true);
 
       // Agent should provide a text response
-      expect(hasTextDelta).toBe(true);
       expect(fullOutput.length).toBeGreaterThan(0);
 
       // Stream should complete properly

@@ -228,11 +228,24 @@ export class AgentMCP {
         break;
       }
 
+      // Check if this is the first iteration (initial response before any tools executed)
+      const isFirstIteration = iteration === 1;
+
+      // If we're about to execute tools, ensure we have at least some content
+      // This prevents the agent from calling tools without explaining what it's doing
+      if (isFirstIteration && !fullContent) {
+        console.warn("[AgentMCP] Model called tools without providing any explanatory text");
+      }
+
       // Add AI message with tool calls
       messages.push(currentResponse);
 
+      // Track if we executed any tools in this iteration
+      let executedTools = false;
+
       // Execute each tool call
       for (const toolCall of toolCalls) {
+        executedTools = true;
         const tool = this.tools.find((t) => t.name === toolCall.name);
 
         if (tool) {
@@ -290,6 +303,29 @@ export class AgentMCP {
               run_id: toolCall.id || `tool_${Date.now()}`,
             };
           }
+        }
+      }
+
+      // If we executed tools but the next iteration might return empty response,
+      // add a system message to prompt the model to provide feedback
+      if (executedTools) {
+        // Check if any tool returned an error
+        const hasToolError = messages.some(
+          (msg) => {
+            if (msg._getType() !== "tool") return false;
+            const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
+            return content.includes("Error") || content.includes("PERMISSION_DENIED");
+          }
+        );
+
+        if (hasToolError) {
+          console.log("[AgentMCP] Tool error detected, will ensure model provides response");
+          // Add a system reminder to ensure the model responds
+          messages.push(
+            new SystemMessage(
+              "The tool returned an error. You MUST provide a helpful response to the user explaining what happened and offering alternatives or context."
+            )
+          );
         }
       }
 

@@ -12,9 +12,15 @@
 import { describe, test, expect } from '@jest/globals';
 import { createDatabricksProvider } from "@databricks/ai-sdk-provider";
 import { streamText } from "ai";
+import {
+  TEST_CONFIG,
+  callInvocations,
+  parseSSEStream,
+  parseAISDKStream,
+} from './helpers.js';
 
-const AGENT_URL = "http://localhost:5001";
-const UI_URL = "http://localhost:3001";
+const AGENT_URL = TEST_CONFIG.AGENT_URL;
+const UI_URL = TEST_CONFIG.UI_URL;
 
 describe("Integration Tests - Local Endpoints", () => {
   describe("/invocations endpoint", () => {
@@ -46,37 +52,14 @@ describe("Integration Tests - Local Endpoints", () => {
     }, 30000);
 
     test("should handle tool calling (time tool)", async () => {
-      const response = await fetch(`${AGENT_URL}/invocations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          input: [{ role: "user", content: "What time is it in Tokyo?" }],
-          stream: true,
-        }),
+      const response = await callInvocations({
+        input: [{ role: "user", content: "What time is it in Tokyo?" }],
+        stream: true,
       });
 
       expect(response.ok).toBe(true);
       const text = await response.text();
-
-      // Parse SSE stream
-      let fullOutput = "";
-      let hasToolCall = false;
-      const lines = text.split("\n");
-      for (const line of lines) {
-        if (line.startsWith("data: ") && line !== "data: [DONE]") {
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.type === "response.output_text.delta") {
-              fullOutput += data.delta;
-            }
-            if (data.type === "response.output_item.done" && data.item?.type === "function_call") {
-              hasToolCall = true;
-            }
-          } catch {
-            // Skip invalid JSON
-          }
-        }
-      }
+      const { fullOutput, hasToolCall } = parseSSEStream(text);
 
       expect(hasToolCall).toBe(true);
       expect(fullOutput.toLowerCase()).toMatch(/tokyo|time/);
@@ -103,24 +86,9 @@ describe("Integration Tests - Local Endpoints", () => {
 
       expect(response.ok).toBe(true);
       const text = await response.text();
+      const { fullContent, hasTextDelta } = parseAISDKStream(text);
 
-      // Parse text deltas
-      const lines = text.split("\n");
-      let fullContent = "";
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.type === "text-delta") {
-              fullContent += data.delta;
-            }
-          } catch {
-            // Skip invalid JSON
-          }
-        }
-      }
-
-      expect(text).toContain('"type":"text-delta"');
+      expect(hasTextDelta).toBe(true);
       expect(fullContent.toLowerCase()).toContain("usechat");
       expect(fullContent.toLowerCase()).toContain("successful");
     }, 30000);
@@ -144,6 +112,7 @@ describe("Integration Tests - Local Endpoints", () => {
 
       expect(response.ok).toBe(true);
       const text = await response.text();
+      const { hasToolCall } = parseAISDKStream(text);
 
       const hasToolInput = text.includes('"type":"tool-input-available"');
       const hasToolOutput = text.includes('"type":"tool-output-available"');

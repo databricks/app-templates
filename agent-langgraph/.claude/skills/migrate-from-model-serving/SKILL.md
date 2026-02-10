@@ -15,7 +15,7 @@ This guide instructs LLM coding agents how to migrate an MLflow ResponsesAgent f
 
 **Key Transformation:**
 - Model Serving: Synchronous `predict()` and `predict_stream()` methods on a class
-- Apps: Asynchronous `@invoke` and `@stream` decorated functions
+- Apps: Functions with `@invoke` and `@stream` decorators (sync or async, based on user preference)
 
 **Deliverables:** After migration is complete, you will have:
 
@@ -33,6 +33,7 @@ This guide instructs LLM coding agents how to migrate an MLflow ResponsesAgent f
     │   ├── agent.py          # Migrated agent code
     │   └── ...
     ├── app.yaml
+    ├── databricks.yml        # Bundle config with resources
     ├── pyproject.toml
     ├── requirements.txt
     └── ...
@@ -44,16 +45,20 @@ This guide instructs LLM coding agents how to migrate an MLflow ResponsesAgent f
 
 ## Before You Begin: Gather User Inputs
 
-**Before doing anything else, ask the user two questions.** Use the `AskUserQuestion` tool to collect both answers at once so the user is only prompted once, then Claude can execute the rest of the migration autonomously.
+**Before doing anything else, ask the user three questions.** Use the `AskUserQuestion` tool to collect all answers at once so the user is only prompted once, then Claude can execute the rest of the migration autonomously.
 
 **Questions to ask:**
 
 1. **Databricks profile:** Which Databricks CLI profile should be used for the workspace where the Model Serving endpoint lives? (Run `databricks auth profiles` first to list available profiles and their workspaces, then present the options to the user.)
 2. **App name:** What should the new Databricks App be named? (Must be lowercase, can contain letters, numbers, and hyphens, and must be unique within the workspace.)
+3. **Async migration:** Would you like to migrate your agent code to be fully async?
+   - **Yes (Recommended):** Converts all I/O operations to async (`await`/`async for`), enabling higher concurrency on smaller compute — no more threads sitting idle while waiting for LLM responses or long-running tool calls.
+   - **No:** Keeps your existing synchronous code with minimal changes — just extracts the logic from the `ResponsesAgent` class and wraps it with `@invoke`/`@stream` decorators. Simpler migration, but each request blocks a thread while waiting for I/O.
 
 Store the answers as:
 - `<profile>` — used for ALL `databricks` CLI commands throughout the migration (via `--profile <profile>`)
-- `<app-name>` — used as both the directory name for the migrated app AND the app name when deploying with `databricks apps create`
+- `<app-name>` — used as both the directory name for the migrated app AND the app name when deploying with `databricks bundle deploy`
+- `<async>` — `yes` or `no`, determines whether to convert the agent code to async or keep it synchronous
 
 ### Validate Authentication
 
@@ -73,15 +78,7 @@ databricks auth login --profile <profile>
 
 ### Create the App Directory
 
-> **Important:** All scaffold template files (`agent_server/`, `scripts/`, `app.yaml`, `pyproject.toml`, etc.) already exist in the current working directory. Do NOT search for or copy these files from other directories or templates — everything you need is right here.
-
-Copy the scaffold files into a new directory named `<app-name>/`:
-
-```bash
-# Create the app directory and copy scaffold files
-mkdir <app-name>
-cp -r agent_server scripts app.yaml pyproject.toml requirements.txt .env.example README.md <app-name>/
-```
+Copy all scaffold files from the current working directory into a new directory named `<app-name>/`. Exclude instruction files (`AGENTS.md`, `CLAUDE.md`), hidden directories (`.claude/`, `.git/`), and any migration artifacts (e.g., `original_mlflow_model/`, `.migration-venv/`). Do NOT search for or copy scaffold files from other directories or templates — everything you need is right here.
 
 All subsequent migration steps operate inside the `<app-name>/` directory.
 
@@ -103,7 +100,7 @@ Create the following tasks using the `TaskCreate` tool:
 | **Migrate agent code to Apps format** | Transform ResponsesAgent class to @invoke/@stream decorated functions |
 | **Set up and configure the app** | Install dependencies, run quickstart, configure environment |
 | **Test agent locally** | Start local server and verify the agent works correctly |
-| **Deploy to Databricks Apps** | Create app with resources, sync files, and deploy |
+| **Deploy to Databricks Apps** | Configure databricks.yml resources and deploy with Databricks Asset Bundles |
 | **Test deployed app** | Verify the deployed app responds correctly |
 
 Update task status as you progress:
@@ -121,22 +118,7 @@ Update task status as you progress:
 
 Download the original agent code from the Model Serving endpoint. This requires setting up a virtual environment with MLflow to access the model artifacts.
 
-### 1.1 Set Up the Migration Environment
-
-Create and activate a virtual environment with the required dependencies:
-
-```bash
-# Create virtual environment
-python3 -m venv .migration-venv
-
-# Activate it
-source .migration-venv/bin/activate
-
-# Install dependencies (includes boto3 for S3/Unity Catalog access)
-pip install "mlflow[databricks]>=2.15.0" "databricks-sdk>=0.30.0"
-```
-
-### 1.2 Get Model Info from Endpoint
+### 1.1 Get Model Info from Endpoint
 
 If you have a serving endpoint name, extract the model details:
 
@@ -147,22 +129,20 @@ databricks serving-endpoints get <endpoint-name> --profile <profile> --output js
 
 Look for `served_entities[0].entity_name` (model name) and `entity_version` in the response. Find the entity with 100% traffic in `traffic_config.routes`.
 
-### 1.3 Download Model Artifacts
+### 1.2 Download Model Artifacts
 
-Use MLflow Python to download the artifacts:
+Use `uv run --with` to download artifacts without creating a separate virtual environment. The `mlflow[databricks]` extra includes `boto3` for Unity Catalog artifact access:
 
 ```bash
-python3 << 'EOF'
+DATABRICKS_CONFIG_PROFILE=<profile> uv run --no-project \
+  --with "mlflow[databricks]>=2.15.0" \
+  --with "databricks-sdk>=0.30.0" \
+  python3 << 'EOF'
 import mlflow
-import os
 
-# Set profile for authentication (change if using non-default profile)
-os.environ["DATABRICKS_CONFIG_PROFILE"] = "<profile>"
-
-# Configure MLflow for Databricks
 mlflow.set_tracking_uri("databricks")
 
-# Replace with actual values from step 1.2
+# Replace with actual values from step 1.1
 MODEL_NAME = "<model-name>"
 VERSION = "<version>"
 
@@ -175,7 +155,7 @@ print("Download complete! Artifacts saved to ./original_mlflow_model")
 EOF
 ```
 
-### 1.4 Verify Downloaded Artifacts
+### 1.3 Verify Downloaded Artifacts
 
 Check that the key files exist and understand the full structure:
 
@@ -212,14 +192,6 @@ find ./original_mlflow_model/artifacts -type f 2>/dev/null
 
 > **Important:** Take note of ALL files in `/code` and `/artifacts`. You will need to copy these to the migrated app and ensure imports still work correctly.
 
-### 1.5 Deactivate Virtual Environment
-
-After downloading, deactivate the migration environment:
-
-```bash
-deactivate
-```
-
 ### Expected Output Structure
 
 After successful download, you should have:
@@ -251,18 +223,8 @@ After successful download, you should have:
 
 ### Troubleshooting Model Download
 
-**"ModuleNotFoundError: No module named 'mlflow'"**
-Ensure you've activated the virtual environment and installed requirements:
-```bash
-source .migration-venv/bin/activate
-pip install "mlflow[databricks]>=2.15.0" "databricks-sdk>=0.30.0"
-```
-
 **"Unable to import necessary dependencies to access model version files in Unity Catalog"**
-This means boto3 is missing. The `mlflow[databricks]` extra includes boto3, but if you installed manually:
-```bash
-pip install boto3
-```
+This means `boto3` is missing. Ensure you're using `mlflow[databricks]` (not just `mlflow`) in the `--with` flag — the `[databricks]` extra includes `boto3`.
 
 **"INVALID_PARAMETER_VALUE" or authentication errors**
 Re-authenticate with Databricks (include profile if non-default):
@@ -292,6 +254,8 @@ databricks model-versions list --name "<model-name>" --profile <profile>
 
 ### Entry Point Transformation
 
+In both cases, the `ResponsesAgent` class is replaced with decorated functions. The difference is whether those functions are async or sync.
+
 **Model Serving (OLD):**
 ```python
 from mlflow.pyfunc import ResponsesAgent, ResponsesAgentRequest, ResponsesAgentResponse
@@ -308,7 +272,7 @@ class MyAgent(ResponsesAgent):
             yield ResponsesAgentStreamEvent(...)
 ```
 
-**Apps (NEW):**
+**Apps — Async (if `<async>` = yes):**
 ```python
 from mlflow.genai.agent_server import invoke, stream
 from mlflow.types.responses import (
@@ -334,19 +298,43 @@ async def streaming(request: ResponsesAgentRequest) -> AsyncGenerator[ResponsesA
         yield event
 ```
 
+**Apps — Sync (if `<async>` = no):**
+```python
+from mlflow.genai.agent_server import invoke, stream
+from mlflow.types.responses import (
+    ResponsesAgentRequest,
+    ResponsesAgentResponse,
+    ResponsesAgentStreamEvent,
+)
+
+@invoke()
+def non_streaming(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
+    # Same sync logic from original predict(), extracted from the class
+    ...
+    return ResponsesAgentResponse(output=outputs)
+
+@stream()
+def streaming(request: ResponsesAgentRequest):
+    # Same sync generator from original predict_stream(), extracted from the class
+    for chunk in ...:
+        yield ResponsesAgentStreamEvent(...)
+```
+
 ### Key Differences
 
-| Aspect | Model Serving | Apps |
-|--------|--------------|------|
-| Class vs Functions | `class MyAgent(ResponsesAgent)` | Decorated functions `@invoke()`, `@stream()` |
-| Sync vs Async | `def predict()` | `async def non_streaming()` |
-| Streaming | `def predict_stream()` (sync generator) | `async def streaming()` (async generator) |
-| Server | MLflow Model Server | MLflow GenAI Server (FastAPI) |
-| Deployment | `databricks_agents.deploy()` | `databricks apps deploy` |
+| Aspect | Model Serving | Apps (async) | Apps (sync) |
+|--------|--------------|------|------|
+| Structure | `class MyAgent(ResponsesAgent)` | Decorated functions | Decorated functions |
+| Functions | `def predict()` / `def predict_stream()` | `async def` with `await` | `def` (same as original) |
+| Streaming | Sync generator (`yield`) | Async generator (`async for` / `yield`) | Sync generator (`yield`) |
+| Server | MLflow Model Server | MLflow GenAI Server (FastAPI) | MLflow GenAI Server (FastAPI) |
+| Deployment | `databricks_agents.deploy()` | `databricks bundle deploy` + `bundle run` | `databricks bundle deploy` + `bundle run` |
 
-### Async Patterns
+### Async Patterns (only if `<async>` = yes)
 
-All I/O operations must be async:
+> **Skip this section if the user chose synchronous migration.** The sync path keeps all original I/O calls as-is.
+
+All I/O operations must be converted to async:
 
 ```python
 # OLD (sync)
@@ -432,6 +420,62 @@ From the original agent code, identify and preserve:
 
 ### 3.3 Update the Agent Entry Point
 
+The approach depends on whether the user chose async or sync migration.
+
+---
+
+#### Path A: Synchronous Migration (`<async>` = no)
+
+This is the minimal-changes path. Extract the logic from the `ResponsesAgent` class, wrap it with `@invoke`/`@stream` decorators, and keep all code synchronous.
+
+Edit `<app-name>/agent_server/agent.py`:
+
+1. **Replace the scaffold with the original agent logic.** The core transformation is extracting the class methods into decorated functions:
+
+```python
+from mlflow.genai.agent_server import invoke, stream
+from mlflow.types.responses import (
+    ResponsesAgentRequest,
+    ResponsesAgentResponse,
+    ResponsesAgentStreamEvent,
+)
+
+# Move any class __init__ or class-level setup to module level
+# e.g., client initialization, tool setup, etc.
+
+@invoke()
+def non_streaming(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
+    # Paste the body of the original predict() method here
+    # Remove 'self.' references — replace with module-level variables
+    # Remove 'params' parameter (not used in Apps)
+    ...
+    return ResponsesAgentResponse(output=outputs)
+
+@stream()
+def streaming(request: ResponsesAgentRequest):
+    # Paste the body of the original predict_stream() method here
+    # Remove 'self.' references — replace with module-level variables
+    # Remove 'params' parameter (not used in Apps)
+    for chunk in ...:
+        yield ResponsesAgentStreamEvent(...)
+```
+
+2. **Key changes from class to functions:**
+   - Remove the `class MyAgent(ResponsesAgent):` wrapper
+   - Remove `self` parameter from all methods
+   - Move `__init__` logic (client creation, tool setup) to module-level code
+   - Replace `self.some_attribute` with module-level variables
+   - Add `@invoke()` decorator to the non-streaming function
+   - Add `@stream()` decorator to the streaming function
+
+3. **Keep all other code as-is** — no need to convert sync calls to async, no need to change `for` to `async for`, no need to add `await`.
+
+---
+
+#### Path B: Async Migration (`<async>` = yes)
+
+This path converts all I/O operations to async for higher concurrency. More changes are required, but the result is a more efficient server.
+
 Edit `<app-name>/agent_server/agent.py`:
 
 1. **Update the LLM endpoint:**
@@ -456,18 +500,27 @@ Edit `<app-name>/agent_server/agent.py`:
        return result
    ```
 
-4. **Preserve any special logic:**
+4. **Convert all I/O to async:**
+   - `def predict()` → `async def non_streaming()`
+   - `def predict_stream()` → `async def streaming()`
+   - `client.chat()` → `await client.achat()`
+   - `for chunk in stream:` → `async for chunk in stream:`
+   - Sync HTTP calls → `await` async equivalents
+
+5. **Preserve any special logic:**
    Migrate any custom preprocessing, postprocessing, or business logic from the original agent.
+
+---
 
 ### 3.4 Handle Stateful Agents
 
 **If original uses checkpointer (short-term memory):**
-- Add `AsyncCheckpointSaver` with Lakebase integration
+- Add checkpointer with Lakebase integration (use `AsyncCheckpointSaver` if async, or sync equivalent if sync)
 - Configure `LAKEBASE_INSTANCE_NAME` in `.env`
 - Extract thread_id from `request.custom_inputs` or `request.context.conversation_id`
 
 **If original uses store (long-term memory):**
-- Add `AsyncDatabricksStore` with Lakebase integration
+- Add store with Lakebase integration (use `AsyncDatabricksStore` if async, or sync equivalent if sync)
 - Configure `LAKEBASE_INSTANCE_NAME` in `.env`
 - Extract user_id from `request.custom_inputs` or `request.context.user_id`
 
@@ -479,25 +532,7 @@ Edit `<app-name>/agent_server/agent.py`:
 
 ### 4.1 Verify Build Configuration
 
-Before installing dependencies, ensure the `pyproject.toml` has the correct hatchling configuration to find packages, and that a README file exists (hatchling requires this).
-
-**Check that `pyproject.toml` includes the hatch build configuration:**
-
-```toml
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["agent_server", "scripts"]
-```
-
-If the `[tool.hatch.build.targets.wheel]` section is missing, add it with the appropriate package directories.
-
-> **Note:** If you copied additional subdirectories from the original `/code` folder in Step 3.1, you may need to add them to the `packages` list. For example, if you copied a `utils/` module:
-> ```toml
-> packages = ["agent_server", "scripts", "utils"]
-> ```
+Before installing dependencies, ensure a README file exists (hatchling requires this):
 
 **Ensure a README file exists:**
 
@@ -654,6 +689,8 @@ Before proceeding to deployment, ensure:
 
 > **Task:** Mark "Test agent locally" as `completed`. Mark "Deploy to Databricks Apps" as `in_progress`.
 
+This step uses Databricks Asset Bundles (DAB) to deploy. The scaffold includes a `databricks.yml` that you need to update with the app name and resources from the original model.
+
 ### 6.1 Extract Resources from Original Model
 
 The original model's `MLmodel` file contains a `resources` section that lists all Databricks resources the agent needs access to. Check `../original_mlflow_model/MLmodel` (or `./original_mlflow_model/MLmodel` if you're in the parent directory) for content like:
@@ -668,133 +705,104 @@ resources:
     - name: databricks-claude-sonnet-4-5
 ```
 
-### 6.2 Create the App with Resources
+### 6.2 Update `databricks.yml` with Resources
 
-Use the `<app-name>` provided by the user at the start of the migration in the `databricks apps create` command below.
+The scaffold includes a `databricks.yml` with the experiment resource pre-configured. You need to:
 
-Convert the MLmodel resources to the Databricks Apps API format and pass them via `--json`.
+1. **Update the app name** to `<app-name>` (the name provided by the user) in both the `resources.apps.agent_migration.name` field and the `targets.prod.resources.apps.agent_migration.name` field.
+2. **Add resources** extracted from the original MLmodel file to the `resources.apps.agent_migration.resources` list.
 
-**Resource Type Mapping (MLmodel → Apps API):**
+**Resource Type Mapping (MLmodel → `databricks.yml`):**
 
-| MLmodel Resource | Apps API Resource Type | Key Fields |
-|------------------|------------------------|------------|
-| `serving_endpoint` | `serving_endpoint` | `name`, `permission` (CAN_MANAGE, CAN_QUERY, CAN_VIEW) |
-| `lakebase` | `database` | `instance_name`, `permission` (CAN_CONNECT_AND_CREATE) |
-| `vector_search_index` | `uc_securable` | `securable_full_name`, `securable_type`: TABLE, `permission`: SELECT |
-| `function` | `uc_securable` | `securable_full_name`, `securable_type`: FUNCTION, `permission`: EXECUTE |
-| `table` | `uc_securable` | `securable_full_name`, `securable_type`: TABLE, `permission`: SELECT |
-| `uc_connection` | `uc_securable` | `securable_full_name`, `securable_type`: CONNECTION, `permission`: USE_CONNECTION |
-| `sql_warehouse` | `sql_warehouse` | `id`, `permission` (CAN_MANAGE, CAN_USE, IS_OWNER) |
-| `genie_space` | `genie_space` | `space_id`, `permission` (CAN_MANAGE, CAN_EDIT, CAN_RUN, CAN_VIEW) |
-| `app` | `app` | `name`, `permission` (CAN_USE) |
-| *(required)* | `experiment` | `experiment_id`, `permission` (CAN_MANAGE, CAN_EDIT, CAN_READ) |
+| MLmodel Resource | `databricks.yml` Resource | Key Fields |
+|------------------|--------------------------|------------|
+| `serving_endpoint` | `serving_endpoint` | `name`, `permission` (CAN_QUERY) |
+| `lakebase` | `database` | `database_name: databricks_postgres`, `instance_name`, `permission` (CAN_CONNECT_AND_CREATE) |
+| `vector_search_index` | `uc_securable` | `securable_full_name`, `securable_type: TABLE`, `permission: SELECT` |
+| `function` | `uc_securable` | `securable_full_name`, `securable_type: FUNCTION`, `permission: EXECUTE` |
+| `table` | `uc_securable` | `securable_full_name`, `securable_type: TABLE`, `permission: SELECT` |
+| `uc_connection` | `uc_securable` | `securable_full_name`, `securable_type: CONNECTION`, `permission: USE_CONNECTION` |
+| `sql_warehouse` | `sql_warehouse` | `id`, `permission` (CAN_USE) |
+| `genie_space` | `genie_space` | `space_id`, `permission` (CAN_RUN) |
 
-> **Important:** The `experiment` resource is **required** for all Databricks Apps agents. The quickstart script creates this experiment and stores the ID in `.env`. You must include this experiment as a resource when creating the app.
+> **Note:** The `experiment` resource is already configured in the scaffold `databricks.yml` and is automatically created by the bundle. You do not need to add it manually.
 
-**Important:** When using `--json`, do NOT include the app name as a positional argument—put it inside the JSON only.
+**Example: `databricks.yml` for an agent with a serving endpoint and UC function:**
 
-**Example with serving endpoint and UC function (e.g., python_exec):**
+```yaml
+resources:
+  experiments:
+    agent_migration_experiment:
+      name: /Users/${workspace.current_user.userName}/${bundle.name}-${bundle.target}
 
-```bash
-# Get the experiment ID from .env (created by quickstart)
-EXPERIMENT_ID=$(grep MLFLOW_EXPERIMENT_ID .env | cut -d'=' -f2)
+  apps:
+    agent_migration:
+      name: "<app-name>"  # Update to user's app name
+      description: "Migrated agent from Model Serving to Databricks Apps"
+      source_code_path: ./
+      resources:
+        - name: 'experiment'
+          experiment:
+            experiment_id: "${resources.experiments.agent_migration_experiment.id}"
+            permission: 'CAN_MANAGE'
+        - name: 'serving-endpoint'
+          serving_endpoint:
+            name: 'databricks-claude-sonnet-4-5'
+            permission: 'CAN_QUERY'
+        - name: 'python-exec'
+          uc_securable:
+            securable_full_name: 'system.ai.python_exec'
+            securable_type: 'FUNCTION'
+            permission: 'EXECUTE'
 
-# Correct: app name is ONLY in the JSON when you pass resources in
-# Replace <app-name> with the name provided by the user
-databricks apps create --json '{
-  "name": "<app-name>",
-  "resources": [
-    {
-      "name": "serving-endpoint",
-      "serving_endpoint": {
-        "name": "databricks-claude-sonnet-4-5",
-        "permission": "CAN_QUERY"
-      }
-    },
-    {
-      "name": "python-exec",
-      "uc_securable": {
-        "securable_full_name": "system.ai.python_exec",
-        "securable_type": "FUNCTION",
-        "permission": "EXECUTE"
-      }
-    },
-    {
-      "name": "experiment",
-      "experiment": {
-        "experiment_id": "'$EXPERIMENT_ID'",
-        "permission": "CAN_MANAGE"
-      }
-    }
-  ]
-}'
+targets:
+  prod:
+    resources:
+      apps:
+        agent_migration:
+          name: "<app-name>"  # Same name for production
 ```
 
-**Example with Lakebase (for stateful agents):**
+**Example: Adding Lakebase resources (for stateful agents):**
 
-```bash
-# Replace <app-name> with the name provided by the user
-databricks apps create --json '{
-  "name": "<app-name>",
-  "resources": [
-    {
-      "name": "serving-endpoint",
-      "serving_endpoint": {
-        "name": "databricks-claude-sonnet-4-5",
-        "permission": "CAN_QUERY"
-      }
-    },
-    {
-      "name": "database",
-      "database": {
-        "instance_name": "lakebase",
-        "permission": "CAN_CONNECT_AND_CREATE"
-      }
-    },
-    {
-      "name": "experiment",
-      "experiment": {
-        "experiment_id": "1234567890",
-        "permission": "CAN_MANAGE"
-      }
-    }
-  ]
-}'
+```yaml
+        - name: 'database'
+          database:
+            database_name: 'databricks_postgres'
+            instance_name: 'lakebase'
+            permission: 'CAN_CONNECT_AND_CREATE'
 ```
 
-> **Note:** Always refer to [MLflow resources.py](https://github.com/mlflow/mlflow/blob/master/mlflow/models/resources.py) for the full list of MLmodel resource types and the [Apps API documentation](https://docs.databricks.com/api/workspace/apps/create) for the correct resource field names and permissions.
+### 6.3 Deploy with Databricks Asset Bundles
 
-### 6.3 Sync Files
-
-**IMPORTANT:** Run the sync command from INSIDE the `<app-name>` directory, using `.` as the source.
+From inside the `<app-name>` directory, validate, deploy, and run:
 
 ```bash
-# Get your username
-DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
+# 1. Validate bundle configuration (catches errors before deploy)
+databricks bundle validate --profile <profile>
 
-# Change into the app directory
-cd <app-name>
+# 2. Deploy the bundle (creates/updates resources, uploads files)
+databricks bundle deploy --profile <profile>
 
-# Sync current directory (.) to workspace
-databricks sync . "/Users/$DATABRICKS_USERNAME/<app-name>"
+# 3. Run the app (starts/restarts with uploaded source code) - REQUIRED!
+databricks bundle run agent_migration --profile <profile>
 ```
 
-### 6.4 Deploy
+> **Important:** `bundle deploy` only uploads files and configures resources. `bundle run` is **required** to actually start/restart the app with the new code. If you only run `deploy`, the app will continue running old code!
 
-```bash
-databricks apps deploy <app-name> --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/<app-name>
-```
-
-### 6.5 Test Deployed App
+### 6.4 Test Deployed App
 
 > **Task:** Mark "Deploy to Databricks Apps" as `completed`. Mark "Test deployed app" as `in_progress`.
 
 ```bash
+# Get the app URL
+APP_URL=$(databricks apps get <app-name> --profile <profile> --output json | jq -r '.url')
+
 # Get OAuth token
-TOKEN=$(databricks auth token | jq -r .access_token)
+TOKEN=$(databricks auth token --profile <profile> | jq -r .access_token)
 
 # Query the app
-curl -X POST <app-url>/invocations \
+curl -X POST ${APP_URL}/invocations \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"input": [{"role": "user", "content": "Hello!"}]}'
@@ -804,21 +812,27 @@ Once the deployed app responds successfully:
 
 > **Task:** Mark "Test deployed app" as `completed`. Migration complete!
 
-### 6.6 Deployment Troubleshooting
+### 6.5 Deployment Troubleshooting
 
-If you encounter issues during deployment, refer to the **deploy** skill for detailed guidance
+If you encounter issues during deployment, refer to the **deploy** skill for detailed guidance.
 
 **Debug commands:**
 ```bash
+# Validate bundle configuration
+databricks bundle validate --profile <profile>
+
 # View app logs
-databricks apps logs <app-name> --follow
+databricks apps logs <app-name> --profile <profile> --follow
 
 # Check app status
-databricks apps get <app-name> --output json | jq '{app_status, compute_status}'
+databricks apps get <app-name> --profile <profile> --output json | jq '{app_status, compute_status}'
 
 # Get app URL
-databricks apps get <app-name> --output json | jq -r '.url'
+databricks apps get <app-name> --profile <profile> --output json | jq -r '.url'
 ```
+
+**"App already exists" error:**
+If `databricks bundle deploy` fails because the app already exists, refer to the **deploy** skill for instructions on binding an existing app to the bundle.
 
 ---
 
@@ -837,6 +851,7 @@ databricks apps get <app-name> --output json | jq -r '.url'
 │   ├── quickstart.py     # Setup script
 │   └── start_app.py      # App startup
 ├── app.yaml              # Databricks Apps configuration
+├── databricks.yml        # Databricks Asset Bundle configuration (resources, targets)
 ├── pyproject.toml        # Dependencies (for local dev with uv)
 ├── requirements.txt      # REQUIRED: Must contain "uv" for Databricks Apps
 ├── .env.example          # Environment template
@@ -860,7 +875,23 @@ class ChatAgent(ResponsesAgent):
         return ResponsesAgentResponse(output=[...])
 ```
 
-**Migrated:**
+**Migrated (sync):**
+```python
+llm = ...  # Move class-level init to module level
+
+@invoke()
+def non_streaming(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
+    messages = to_chat_completions_input(request.input)
+    response = llm.invoke(messages)
+    return ResponsesAgentResponse(output=[...])
+
+@stream()
+def streaming(request: ResponsesAgentRequest):
+    # Original predict_stream() body, with self. removed
+    ...
+```
+
+**Migrated (async):**
 ```python
 @invoke()
 async def non_streaming(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
@@ -877,7 +908,9 @@ async def streaming(request: ResponsesAgentRequest) -> AsyncGenerator[ResponsesA
 
 ### Pattern 2: Agent with Custom Tools
 
-Migrate tools to async LangChain tools:
+**Sync:** Keep tools as-is from the original code.
+
+**Async:** Migrate tools to async LangChain tools:
 
 ```python
 from langchain_core.tools import tool
@@ -885,12 +918,11 @@ from langchain_core.tools import tool
 @tool
 async def search_docs(query: str) -> str:
     """Search the documentation."""
-    # Make async calls
     results = await vector_store.asimilarity_search(query)
     return format_results(results)
 ```
 
-### Pattern 3: Using LangGraph with create_agent
+### Pattern 3: Using LangGraph with create_agent (async only)
 
 ```python
 from langchain.agents import create_agent
@@ -929,6 +961,7 @@ databricks auth login  # Re-authenticate
 - Ensure the Lakebase instance is added as an app resource in Databricks UI
 - Grant appropriate permissions on the Lakebase instance
 
-### Async errors
+### Async errors (async migration only)
 - Ensure all I/O calls use async versions (e.g., `await client.achat()` not `client.chat()`)
 - Use `async for` instead of `for` when iterating async generators
+- If you chose sync migration, these errors should not occur — double-check that you're not mixing sync and async patterns

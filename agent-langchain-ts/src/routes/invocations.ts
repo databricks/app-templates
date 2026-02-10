@@ -13,6 +13,7 @@ import { z } from "zod";
 
 /**
  * Responses API request schema
+ * Supports both text content and tool calls in message history
  */
 const responsesRequestSchema = z.object({
   input: z.array(
@@ -22,10 +23,17 @@ const responsesRequestSchema = z.object({
         content: z.union([
           z.string(),
           z.array(
-            z.object({
-              type: z.string(),
-              text: z.string(),
-            }).passthrough()
+            z.union([
+              // Text content parts
+              z.object({
+                type: z.string(),
+                text: z.string(),
+              }).passthrough(),
+              // Tool call parts (no text field required)
+              z.object({
+                type: z.string(),
+              }).passthrough(),
+            ])
           ),
         ]),
       }),
@@ -95,14 +103,40 @@ export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof
       // Normalize chat history messages to have string content
       // This is required because Chat Completions API only accepts strings,
       // but Responses API sends array content format
+      //
+      // IMPORTANT: Include function call context for followup questions
       const chatHistory = input.slice(0, -1).map((msg: any) => {
         if (Array.isArray(msg.content)) {
+          // Extract text from text parts
+          const textParts = msg.content
+            .filter((part: any) =>
+              part.type === "input_text" ||
+              part.type === "output_text" ||
+              part.type === "text"
+            )
+            .map((part: any) => part.text);
+
+          // Extract tool call information
+          const toolParts = msg.content
+            .filter((part: any) =>
+              part.type === "function_call" ||
+              part.type === "function_call_output"
+            )
+            .map((part: any) => {
+              if (part.type === "function_call") {
+                return `[Tool Call: ${part.name}(${JSON.stringify(part.arguments)})]`;
+              } else if (part.type === "function_call_output") {
+                return `[Tool Result: ${part.output}]`;
+              }
+              return "";
+            });
+
+          // Combine text and tool context
+          const allParts = [...textParts, ...toolParts].filter(p => p.length > 0);
+
           return {
             ...msg,
-            content: msg.content
-              .filter((part: any) => part.type === "input_text" || part.type === "output_text" || part.type === "text")
-              .map((part: any) => part.text)
-              .join("\n"),
+            content: allParts.join("\n"),
           };
         }
         return msg;

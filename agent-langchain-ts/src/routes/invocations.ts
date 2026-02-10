@@ -92,7 +92,21 @@ export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof
         userInput = lastUserMessage.content as string;
       }
 
-      const chatHistory = input.slice(0, -1);
+      // Normalize chat history messages to have string content
+      // This is required because Chat Completions API only accepts strings,
+      // but Responses API sends array content format
+      const chatHistory = input.slice(0, -1).map((msg: any) => {
+        if (Array.isArray(msg.content)) {
+          return {
+            ...msg,
+            content: msg.content
+              .filter((part: any) => part.type === "input_text" || part.type === "output_text" || part.type === "text")
+              .map((part: any) => part.text)
+              .join("\n"),
+          };
+        }
+        return msg;
+      });
 
       // Handle streaming response
       if (stream) {

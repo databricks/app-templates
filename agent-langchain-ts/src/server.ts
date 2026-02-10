@@ -117,6 +117,9 @@ export async function createServer(
         // Build headers from request
         const headers: Record<string, string> = {};
         Object.entries(req.headers).forEach(([key, value]) => {
+          // Skip content-length as it will be recalculated by fetch
+          if (key.toLowerCase() === 'content-length') return;
+
           if (typeof value === "string") {
             headers[key] = value;
           } else if (Array.isArray(value)) {
@@ -124,6 +127,7 @@ export async function createServer(
           }
         });
         headers["host"] = new URL(uiBackendUrl).host;
+        headers["content-type"] = "application/json";
 
         console.log(`[PROXY] Forwarding with headers:`, {
           'x-forwarded-user': headers['x-forwarded-user'],
@@ -131,10 +135,11 @@ export async function createServer(
         });
 
         // Forward the request to UI backend
+        const bodyStr = req.method !== "GET" && req.method !== "HEAD" ? JSON.stringify(req.body) : undefined;
         const response = await fetch(targetUrl, {
           method: req.method,
           headers,
-          body: req.method !== "GET" && req.method !== "HEAD" ? JSON.stringify(req.body) : undefined,
+          body: bodyStr,
         });
 
         console.log(`[PROXY] Response status: ${response.status}`);

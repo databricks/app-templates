@@ -4,14 +4,19 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from "@jest/globals";
-import { createDatabricksProvider } from "@databricks/ai-sdk-provider";
-import { streamText } from "ai";
 import { spawn } from "child_process";
 import type { ChildProcess } from "child_process";
+import {
+  callInvocations,
+  parseSSEStream,
+  assertSSECompleted,
+  assertSSEHasCompletionEvent,
+} from "./helpers.js";
 
 describe("API Endpoints", () => {
   let agentProcess: ChildProcess;
   const PORT = 5555; // Use different port to avoid conflicts
+  const BASE_URL = `http://localhost:${PORT}`;
 
   beforeAll(async () => {
     // Start agent server as subprocess
@@ -32,102 +37,65 @@ describe("API Endpoints", () => {
 
   describe("/invocations endpoint", () => {
     test("should respond with Responses API format", async () => {
-      const response = await fetch(`http://localhost:${PORT}/invocations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const response = await callInvocations(
+        {
           input: [{ role: "user", content: "Say 'test' and nothing else" }],
           stream: true,
-        }),
-      });
+        },
+        BASE_URL
+      );
 
       expect(response.ok).toBe(true);
       expect(response.headers.get("content-type")).toContain("text/event-stream");
 
-      // Parse SSE stream
       const text = await response.text();
-      const lines = text.split("\n");
+      const { events, fullOutput } = parseSSEStream(text);
 
-      // Should have data lines with SSE format
-      const dataLines = lines.filter((line) => line.startsWith("data: "));
-      expect(dataLines.length).toBeGreaterThan(0);
+      expect(events.length).toBeGreaterThan(0);
+      expect(assertSSECompleted(text)).toBe(true);
+      expect(assertSSEHasCompletionEvent(events)).toBe(true);
 
-      // Should have output_text.delta events
-      const hasTextDelta = dataLines.some((line) => {
-        if (line === "data: [DONE]") return false;
-        try {
-          const data = JSON.parse(line.slice(6));
-          return data.type === "response.output_text.delta";
-        } catch {
-          return false;
-        }
-      });
+      // Should have text delta events
+      const hasTextDelta = events.some((e) => e.type === "response.output_text.delta");
       expect(hasTextDelta).toBe(true);
-
-      // Should end with [DONE]
-      expect(lines.some((line) => line === "data: [DONE]")).toBe(true);
     }, 30000);
 
     test("should work with Databricks AI SDK provider", async () => {
       // This tests that our /invocations endpoint returns the correct format
       // The Databricks AI SDK provider expects Responses API format
 
-      // Direct fetch test to verify compatibility
-      const response = await fetch(`http://localhost:${PORT}/invocations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "test-model",
+      const response = await callInvocations(
+        {
           input: [{ role: "user", content: "Say 'SDK test'" }],
           stream: true,
-        }),
-      });
+        },
+        BASE_URL
+      );
 
       expect(response.ok).toBe(true);
 
-      // Parse the SSE stream
       const text = await response.text();
 
       // Should have Responses API delta events
       expect(text).toContain("response.output_text.delta");
-      expect(text).toContain("[DONE]");
-
-      // This format is what the Databricks AI SDK provider expects
+      expect(assertSSECompleted(text)).toBe(true);
     }, 30000);
 
     test("should handle tool calling", async () => {
-      const response = await fetch(`http://localhost:${PORT}/invocations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const response = await callInvocations(
+        {
           input: [{ role: "user", content: "What is 7 * 8?" }],
           stream: true,
-        }),
-      });
+        },
+        BASE_URL
+      );
 
       expect(response.ok).toBe(true);
 
       const text = await response.text();
-      const lines = text.split("\n");
-      const dataLines = lines.filter((line) => line.startsWith("data: "));
+      const { fullOutput } = parseSSEStream(text);
 
-      // Should complete successfully
-      expect(lines.some((line) => line === "data: [DONE]")).toBe(true);
-
-      // Check if it mentions the result (56)
-      let fullOutput = "";
-      for (const line of dataLines) {
-        if (line === "data: [DONE]") continue;
-        try {
-          const data = JSON.parse(line.slice(6));
-          if (data.type === "response.output_text.delta") {
-            fullOutput += data.delta;
-          }
-        } catch {
-          // Skip parse errors
-        }
-      }
-
+      expect(assertSSECompleted(text)).toBe(true);
       expect(fullOutput).toContain("56");
     }, 30000);
   });

@@ -72,6 +72,7 @@ async function getWorkspaceHostname(): Promise<string> {
 const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true';
 
 const API_PROXY = process.env.API_PROXY;
+console.log(`[PROVIDER INIT] API_PROXY environment variable: ${API_PROXY || 'NOT SET'}`);
 
 // Cache for endpoint details to check task type
 const endpointDetailsCache = new Map<
@@ -242,13 +243,18 @@ const provider = createDatabricksProvider({
   // When using endpoints such as Agent Bricks or custom agents, we need to use remote tool calling to handle the tool calls
   useRemoteToolCalling: true,
   baseURL: `${hostname}/serving-endpoints`,
-  formatUrl: ({ baseUrl, path }) => API_PROXY ?? `${baseUrl}${path}`,
+  formatUrl: ({ baseUrl, path }) => {
+    const url = API_PROXY ?? `${baseUrl}${path}`;
+    console.log(`[PROVIDER] formatUrl: API_PROXY=${API_PROXY}, baseUrl=${baseUrl}, path=${path} → ${url}`);
+    return url;
+  },
   fetch: async (...[input, init]: Parameters<typeof fetch>) => {
     // Always get fresh token for each request (will use cache if valid)
     const currentToken = await getProviderToken();
     const headers = new Headers(init?.headers);
     headers.set('Authorization', `Bearer ${currentToken}`);
 
+    console.log(`[PROVIDER] fetch: url=${input}`);
     return databricksFetch(input, {
       ...init,
       headers,
@@ -319,7 +325,10 @@ export class OAuthAwareProvider implements SmartProvider {
     const model = await (async () => {
       if (API_PROXY) {
         // For API proxy we always use the responses agent
-        return provider.responses(id);
+        // Use the serving endpoint name, not the model ID
+        const servingEndpoint = process.env.DATABRICKS_SERVING_ENDPOINT || 'databricks-claude-sonnet-4-5';
+        console.log(`[PROVIDER] Using API_PROXY for ${id}, endpoint: ${servingEndpoint}, proxy: ${API_PROXY}`);
+        return provider.responses(servingEndpoint);
       }
       if (id === 'title-model' || id === 'artifact-model') {
         return provider.chatCompletions(
@@ -334,9 +343,12 @@ export class OAuthAwareProvider implements SmartProvider {
       }
 
       const servingEndpoint = process.env.DATABRICKS_SERVING_ENDPOINT;
+
+      // If DATABRICKS_MODEL_SERVING_ENDPOINT is a full agent endpoint (agent/v1/responses or agent/v2/responses),
+      // always use responses() method to ensure compatibility with our custom /invocations endpoint
       const endpointDetails = await getEndpointDetails(servingEndpoint);
 
-      console.log(`Creating fresh model for ${id}`);
+      console.log(`Creating fresh model for ${id}, task type: ${endpointDetails.task}`);
       switch (endpointDetails.task) {
         case 'agent/v2/chat':
           return provider.chatAgent(servingEndpoint);
@@ -346,6 +358,8 @@ export class OAuthAwareProvider implements SmartProvider {
         case 'llm/v1/chat':
           return provider.chatCompletions(servingEndpoint);
         default:
+          // Default to responses for unknown task types
+          console.log(`Unknown task type ${endpointDetails.task}, defaulting to responses()`);
           return provider.responses(servingEndpoint);
       }
     })();

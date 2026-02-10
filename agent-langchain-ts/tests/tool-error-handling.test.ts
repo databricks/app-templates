@@ -183,8 +183,25 @@ describe("Tool Error Handling", () => {
     console.log("Has tool error:", hasToolError);
     console.log("Full content:", fullContent);
 
-    // Agent should still provide a text response even with tool errors
+    // Agent should provide SOME text response (either before or after tool error)
+    // Due to model behavior variability, we accept either:
+    // 1. Initial text + follow-up after error (ideal)
+    // 2. Just initial text explaining what it will do (acceptable)
+    // What we DON'T want: complete silence or crash
     expect(hasTextDelta).toBe(true);
     expect(fullContent.length).toBeGreaterThan(0);
+
+    // Check if the agent at least mentioned querying or attempting to access data
+    const lowerContent = fullContent.toLowerCase();
+    const mentionsQuery = lowerContent.includes("query") ||
+                         lowerContent.includes("formula") ||
+                         lowerContent.includes("race") ||
+                         lowerContent.includes("f1");
+
+    expect(mentionsQuery).toBe(true);
+
+    console.log("\n✅ Agent handled tool error gracefully");
+    console.log("   Provided text response:", fullContent.length, "characters");
+    console.log("   Mentioned relevant context:", mentionsQuery);
   }, 60000);
 });

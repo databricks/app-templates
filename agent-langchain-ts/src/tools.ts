@@ -1,10 +1,20 @@
 /**
- * Example tools for the LangChain agent.
+ * Tool loading for LangChain agent following MCP (Model Context Protocol) pattern.
  *
- * Demonstrates:
- * - Simple function tools with Zod schemas
- * - MCP tool integration (Databricks SQL, UC Functions, Vector Search)
- * - Tool binding patterns
+ * MCP Pattern Overview:
+ * 1. Define basic tools using LangChain's tool() function
+ * 2. Connect to MCP servers (Databricks SQL, UC Functions, Vector Search, Genie)
+ * 3. Load MCP tools using MultiServerMCPClient from @langchain/mcp-adapters
+ * 4. Combine basic + MCP tools for agent use
+ *
+ * Key components:
+ * - @langchain/mcp-adapters: Standard LangChain MCP adapters
+ * - @databricks/langchainjs: Databricks-specific MCP server configurations
+ * - MultiServerMCPClient: Manages connections to multiple MCP servers
+ *
+ * References:
+ * - https://js.langchain.com/docs/integrations/tools/mcp
+ * - https://modelcontextprotocol.io/
  */
 
 import { tool } from "@langchain/core/tools";
@@ -95,34 +105,49 @@ export const timeTool = tool(
  */
 export const basicTools = [weatherTool, calculatorTool, timeTool];
 
-// Global MCP client reference to keep it alive
+/**
+ * Global MCP client reference
+ *
+ * Keep the client alive across agent invocations to maintain connections.
+ * MCP clients manage persistent connections to external tool servers.
+ */
 let globalMCPClient: MultiServerMCPClient | null = null;
 
 /**
- * Initialize MCP tools from Databricks MCP servers
+ * Load tools from MCP servers using standard MCP adapter pattern
+ *
+ * Pattern:
+ * 1. Build MCP server configurations (handles Databricks auth)
+ * 2. Create MultiServerMCPClient (connects to all servers)
+ * 3. Call getTools() to load tools from all connected servers
+ * 4. Returns LangChain StructuredTool[] ready for agent use
+ *
+ * The MultiServerMCPClient automatically:
+ * - Prefixes tool names with server name to avoid conflicts
+ * - Handles connection management and retries
+ * - Converts MCP tools to LangChain tool format
  *
  * @param servers - Array of DatabricksMCPServer instances
  * @returns Array of LangChain tools from MCP servers
  */
 export async function getMCPTools(servers: DatabricksMCPServer[]) {
-  // No servers configured
   if (servers.length === 0) {
     console.log("ℹ️  No MCP servers configured, using basic tools only");
     return [];
   }
 
   try {
-    // Build MCP server configurations
+    // Step 1: Build MCP server configurations (Databricks-specific)
     const mcpServers = await buildMCPServerConfig(servers);
 
-    // Create multi-server client and keep it alive globally
+    // Step 2: Create multi-server client from @langchain/mcp-adapters
     globalMCPClient = new MultiServerMCPClient({
       mcpServers,
       throwOnLoadError: false,
       prefixToolNameWithServerName: true,
     });
 
-    // Get tools from all servers
+    // Step 3: Load all tools from connected servers
     const tools = await globalMCPClient.getTools();
 
     console.log(

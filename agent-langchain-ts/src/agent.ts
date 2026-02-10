@@ -10,8 +10,6 @@
  */
 
 import { ChatDatabricks, DatabricksMCPServer } from "@databricks/langchainjs";
-import { createToolCallingAgent, AgentExecutor } from "langchain/agents";
-import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { getAllTools } from "./tools.js";
@@ -80,38 +78,6 @@ When a tool returns an error or fails:
 
 Be concise but informative in your responses.`;
 
-/**
- * Create a ChatDatabricks model instance
- */
-export function createChatModel(config: AgentConfig) {
-  const {
-    model = "databricks-claude-sonnet-4-5",
-    useResponsesApi = false,
-    temperature = 0.1,
-    maxTokens = 2000,
-    auth,
-  } = config;
-
-  return new ChatDatabricks({
-    model,
-    useResponsesApi,
-    temperature,
-    maxTokens,
-    auth,
-  });
-}
-
-/**
- * Create agent prompt template
- */
-function createAgentPrompt(systemPrompt: string): ChatPromptTemplate {
-  return ChatPromptTemplate.fromMessages([
-    ["system", systemPrompt],
-    ["placeholder", "{chat_history}"],
-    ["human", "{input}"],
-    ["placeholder", "{agent_scratchpad}"],
-  ]);
-}
 
 /**
  * Convert plain message objects to LangChain BaseMessage objects
@@ -469,56 +435,19 @@ export class AgentMCP {
 /**
  * Create a tool-calling agent with ChatDatabricks
  *
- * IMPORTANT: When MCP tools are configured, this uses AgentMCP (manual agentic loop)
- * instead of AgentExecutor, because AgentExecutor doesn't properly handle MCP tool results.
+ * Uses manual agentic loop pattern (model.bindTools) for reliable tool execution.
+ * This pattern works correctly with both basic tools and MCP tools.
  *
- * See MCP_CORRECT_PATTERN.md for details.
+ * Pattern based on @langchain/mcp-adapters best practices:
+ * 1. Load tools from MCP servers using MultiServerMCPClient
+ * 2. Bind tools to model with model.bindTools()
+ * 3. Manual agentic loop: invoke model, execute tools, add ToolMessages, repeat
  */
 export async function createAgent(
   config: AgentConfig = {}
-): Promise<AgentExecutor | AgentMCP> {
-  const systemPrompt = config.systemPrompt || DEFAULT_SYSTEM_PROMPT;
-
-  // If MCP servers are configured, use AgentMCP (manual agentic loop)
-  // AgentExecutor doesn't work with MCP tools - causes AI_MissingToolResultsError
-  if (config.mcpServers && config.mcpServers.length > 0) {
-    console.log("✅ Using AgentMCP (manual agentic loop) for MCP tools");
-    return AgentMCP.create(config);
-  }
-
-  // Otherwise, use standard AgentExecutor for basic tools
-  console.log("✅ Using AgentExecutor for basic tools");
-
-  // Create chat model
-  const model = createChatModel(config);
-
-  // Load tools (basic + MCP if configured)
-  const tools = await getAllTools(config.mcpServers);
-
-  console.log(`✅ Agent initialized with ${tools.length} tool(s)`);
-  console.log(
-    `   Tools: ${tools.map((t) => t.name).join(", ")}`
-  );
-
-  // Create prompt template
-  const prompt = createAgentPrompt(systemPrompt);
-
-  // Create tool-calling agent
-  const agent = await createToolCallingAgent({
-    llm: model,
-    tools,
-    prompt,
-  });
-
-  // Create agent executor
-  const executor = new AgentExecutor({
-    agent,
-    tools,
-    verbose: true,
-    maxIterations: 10,
-  });
-
-  return executor;
+): Promise<AgentMCP> {
+  console.log("✅ Using manual agentic loop pattern for tool execution");
+  return AgentMCP.create(config);
 }
 
 /**

@@ -120,6 +120,44 @@ if (config.mcpServers && config.mcpServers.length > 0) {
 }
 ```
 
+## MCP Tool Types
+
+| Tool Type | Use Case | MCP URL Pattern |
+|-----------|----------|-----------------|
+| **Databricks SQL** | Execute SQL queries on Unity Catalog tables | `/api/2.0/mcp/sql` |
+| **UC Functions** | Call Unity Catalog functions as tools | `/api/2.0/mcp/functions/{catalog}/{schema}` |
+| **Vector Search** | Semantic search over embeddings for RAG | `/api/2.0/mcp/vector-search/{catalog}/{schema}/{index}` |
+| **Genie Spaces** | Natural language data queries | `/api/2.0/mcp/genie/{space_id}` |
+
+## Troubleshooting
+
+### "Permission denied" errors
+
+Check `databricks.yml` has all required resource permissions:
+```bash
+databricks bundle validate
+databricks bundle deploy
+```
+
+### "Tool not found in agent"
+
+1. Verify `src/mcp-servers.ts` configuration
+2. Restart local server: `npm run dev:agent`
+3. Check agent logs for "Loaded X MCP tools" message
+
+### "MCP tools not working"
+
+See `mcp-known-issues.md` and `mcp-best-practices.md` in this directory for:
+- Known limitations and workarounds
+- Implementation patterns (AgentMCP vs AgentExecutor)
+- Manual agentic loop details
+
+## Additional Resources
+
+- **`mcp-known-issues.md`** - Known MCP integration issues and status
+- **`mcp-best-practices.md`** - Correct implementation patterns for MCP tools
+- **`examples/`** - YAML configuration examples for all resource types
+
 ## Important Notes
 
 - **MLflow experiment**: Already configured in template, no action needed

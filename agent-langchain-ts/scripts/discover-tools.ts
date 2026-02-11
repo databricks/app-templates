@@ -44,7 +44,7 @@ async function discoverUCFunctions(
   try {
     const catalogs = catalog ? [catalog] : [];
     if (!catalog) {
-      for await (const cat of w.catalogs.list()) {
+      for await (const cat of w.catalogs.list({})) {
         catalogs.push(cat.name!);
       }
     }
@@ -56,7 +56,7 @@ async function discoverUCFunctions(
 
       try {
         const allSchemas = [];
-        for await (const schema of w.schemas.list({ catalogName: cat })) {
+        for await (const schema of w.schemas.list({ catalog_name: cat })) {
           allSchemas.push(schema);
         }
 
@@ -64,11 +64,11 @@ async function discoverUCFunctions(
         const schemasToSearch = allSchemas.slice(0, maxSchemas - schemasSearched);
 
         for (const schema of schemasToSearch) {
-          const schemaName = `${cat}.${schema.name}`;
+          const schema_name = `${cat}.${schema.name}`;
           try {
             for await (const func of w.functions.list({
-              catalogName: cat,
-              schemaName: schema.name!,
+              catalog_name: cat,
+              schema_name: schema.name!,
             })) {
               functions.push({
                 type: "uc_function",
@@ -112,7 +112,7 @@ async function discoverUCTables(
   try {
     const catalogs = catalog ? [catalog] : [];
     if (!catalog) {
-      for await (const cat of w.catalogs.list()) {
+      for await (const cat of w.catalogs.list({})) {
         if (cat.name !== "__databricks_internal" && cat.name !== "system") {
           catalogs.push(cat.name!);
         }
@@ -129,7 +129,7 @@ async function discoverUCTables(
         if (schema) {
           schemasToSearch.push(schema);
         } else {
-          for await (const sch of w.schemas.list({ catalogName: cat })) {
+          for await (const sch of w.schemas.list({ catalog_name: cat })) {
             schemasToSearch.push(sch.name!);
           }
         }
@@ -145,8 +145,8 @@ async function discoverUCTables(
 
           try {
             for await (const tbl of w.tables.list({
-              catalogName: cat,
-              schemaName: sch,
+              catalog_name: cat,
+              schema_name: sch,
             })) {
               // Get column info
               const columns: any[] = [];
@@ -195,11 +195,11 @@ async function discoverVectorSearchIndexes(w: WorkspaceClient): Promise<any[]> {
 
   try {
     // List all vector search endpoints
-    for await (const endpoint of w.vectorSearchEndpoints.listEndpoints()) {
+    for await (const endpoint of w.vectorSearchEndpoints.listEndpoints({})) {
       try {
         // List indexes for each endpoint
         for await (const idx of w.vectorSearchIndexes.listIndexes({
-          endpointName: endpoint.name!,
+          endpoint_name: endpoint.name!,
         })) {
           indexes.push({
             type: "vector_search_index",
@@ -207,7 +207,6 @@ async function discoverVectorSearchIndexes(w: WorkspaceClient): Promise<any[]> {
             endpoint: endpoint.name,
             primary_key: idx.primary_key,
             index_type: idx.index_type,
-            status: idx.status?.state,
           });
         }
       } catch (error) {
@@ -229,7 +228,7 @@ async function discoverGenieSpaces(w: WorkspaceClient): Promise<any[]> {
 
   try {
     // Use SDK to list genie spaces
-    const response = await w.genie.listSpaces();
+    const response = await w.genie.listSpaces({});
     const genieSpaces = response.spaces || [];
     for (const space of genieSpaces) {
       spaces.push({
@@ -254,7 +253,7 @@ async function discoverCustomMCPServers(w: WorkspaceClient): Promise<any[]> {
 
   try {
     // List all apps and filter for those starting with mcp-
-    for await (const app of w.apps.list()) {
+    for await (const app of w.apps.list({})) {
       if (app.name && app.name.startsWith("mcp-")) {
         customServers.push({
           type: "custom_mcp_server",
@@ -280,7 +279,7 @@ async function discoverExternalMCPServers(w: WorkspaceClient): Promise<any[]> {
 
   try {
     // List all connections and filter for MCP connections
-    for await (const conn of w.connections.list()) {
+    for await (const conn of w.connections.list({})) {
       // Check if this is an MCP connection
       if (conn.options && (conn.options as any).is_mcp_connection === "true") {
         externalServers.push({

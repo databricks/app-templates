@@ -92,7 +92,7 @@ function convertToBaseMessages(messages: any[]): BaseMessage[] {
  * Wraps createReactAgent to provide a simpler interface compatible with
  * the previous manual implementation.
  */
-class StandardAgent {
+export class StandardAgent {
   private agent: Awaited<ReturnType<typeof createReactAgent>>;
   private systemPrompt: string;
 

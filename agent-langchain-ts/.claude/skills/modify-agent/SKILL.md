@@ -143,41 +143,38 @@ export function getBasicTools() {
 
 #### MCP Tool Integration
 
-**Enable Databricks SQL**:
+**MCP tools are configured in code, not environment variables.**
 
-`.env`:
-```bash
-ENABLE_SQL_MCP=true
+Edit `src/mcp-servers.ts`:
+
+```typescript
+import { DatabricksMCPServer } from "@databricks/langchainjs";
+
+export function getMCPServers(): DatabricksMCPServer[] {
+  return [
+    // SQL MCP - Direct SQL queries
+    new DatabricksMCPServer({
+      name: "dbsql",
+      path: "/api/2.0/mcp/sql",
+    }),
+
+    // UC Function
+    DatabricksMCPServer.fromUCFunction("main", "default", "my_function", {
+      name: "uc-functions",
+    }),
+
+    // Vector Search
+    DatabricksMCPServer.fromVectorSearch("main", "default", "my_index", {
+      name: "vector-search",
+    }),
+
+    // Genie Space
+    DatabricksMCPServer.fromGenieSpace("your-space-id"),
+  ];
+}
 ```
 
-`app.yaml`:
-```yaml
-env:
-  - name: ENABLE_SQL_MCP
-    value: "true"
-```
-
-**Add Unity Catalog Function**:
-
-`.env`:
-```bash
-UC_FUNCTION_CATALOG=main
-UC_FUNCTION_SCHEMA=default
-UC_FUNCTION_NAME=my_function
-```
-
-`app.yaml`:
-```yaml
-env:
-  - name: UC_FUNCTION_CATALOG
-    value: "main"
-  - name: UC_FUNCTION_SCHEMA
-    value: "default"
-  - name: UC_FUNCTION_NAME
-    value: "my_function"
-```
-
-`databricks.yml` (add permission):
+`databricks.yml` (add permissions):
 ```yaml
 resources:
   apps:
@@ -187,15 +184,10 @@ resources:
           function:
             name: "main.default.my_function"
             permission: EXECUTE
-```
-
-**Add Vector Search**:
-
-`.env`:
-```bash
-VECTOR_SEARCH_CATALOG=main
-VECTOR_SEARCH_SCHEMA=default
-VECTOR_SEARCH_INDEX=my_index
+        - name: vector-index
+          vector_search_index:
+            name: "main.default.my_index"
+            permission: CAN_VIEW
 ```
 
 **Add Genie Space**:
@@ -230,29 +222,38 @@ export function getBasicTools() {
 
 ### 6. Customize Agent Behavior
 
-The agent uses a manual agentic loop in `src/agent.ts`. Edit the `AgentMCP` class to customize:
+The agent uses standard LangGraph `createReactAgent` API in `src/agent.ts`:
 
 ```typescript
-export class AgentMCP {
-  private maxIterations: number; // Max tool call iterations (default: 10)
+import { createReactAgent } from "@langchain/langgraph/prebuilt";
 
-  // Customize in constructor or create() method
-  static async create(config: AgentConfig = {}): Promise<AgentMCP> {
-    // ...
-    return new AgentMCP(
-      modelWithTools,
-      tools,
-      systemPrompt,
-      15  // ← Increase maxIterations for complex tasks
-    );
-  }
+export async function createAgent(config: AgentConfig = {}) {
+  // Create chat model
+  const model = new ChatDatabricks({
+    model: modelName,
+    useResponsesApi,
+    temperature,
+    maxTokens,
+  });
+
+  // Load tools (basic + MCP if configured)
+  const tools = await getAllTools(mcpServers);
+
+  // Create agent using standard LangGraph API
+  const agent = createReactAgent({
+    llm: model,
+    tools,
+  });
+
+  return new StandardAgent(agent, systemPrompt);
 }
 ```
 
-The manual agentic loop handles:
-- Tool execution and result formatting
-- Error handling for failed tool calls
-- Iteration limits to prevent infinite loops
+The LangGraph agent automatically handles:
+- Tool calling and execution
+- Multi-turn reasoning with state management
+- Error handling and retries
+- Streaming support out of the box
 
 ### 7. Add API Endpoints
 

@@ -56,9 +56,8 @@ app.use('/api/messages', messagesRouter);
 app.use('/api/config', configRouter);
 
 // Agent backend proxy (optional)
-// If API_PROXY or AGENT_BACKEND_URL is set, proxy /invocations requests to the agent backend
-const agentBackendUrl =
-  process.env.API_PROXY || process.env.AGENT_BACKEND_URL;
+// If API_PROXY is set, proxy /invocations requests to the agent backend
+const agentBackendUrl = process.env.API_PROXY;
 if (agentBackendUrl) {
   console.log(`✅ Proxying /invocations to ${agentBackendUrl}`);
   app.all('/invocations', async (req: Request, res: Response) => {

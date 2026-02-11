@@ -1,8 +1,18 @@
-# Responses API Agent
+# Responses API Agent with Stateful Memory
 
-This template defines a conversational agent app. The app comes with a built-in chat UI, but also exposes an API endpoint for invoking the agent so that you can serve your UI elsewhere (e.g. on your website or in a mobile app).
+This template defines a **stateful** conversational agent app with persistent conversation history backed by [Databricks Lakebase](https://docs.databricks.com/aws/en/lakebase/). The app comes with a built-in chat UI, but also exposes an API endpoint for invoking the agent so that you can serve your UI elsewhere (e.g. on your website or in a mobile app).
 
 The agent in this template implements the [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses) interface. It has access to a single tool; the [built-in code interpreter tool](https://docs.databricks.com/aws/en/generative-ai/agent-framework/code-interpreter-tools#built-in-python-executor-tool) (`system.ai.python_exec`) on Databricks. You can customize agent code and test it via the API or UI.
+
+### Stateful Sessions
+
+This template uses OpenAI Agents SDK [Sessions](https://openai.github.io/openai-agents-python/sessions/) to automatically manage conversation history. Sessions store conversation history for a specific session, allowing agents to maintain context without requiring explicit manual memory management. This is particularly useful for building chat applications or multi-turn conversations where you want the agent to remember previous interactions.
+
+How it works:
+- **Before each run**: The session retrieves prior conversation history and prepends it to the input
+- **After each run**: New items (user messages, assistant responses, tool calls) are automatically stored in the session
+
+This template uses `AsyncDatabricksSession` from `databricks-openai`, which persists session data to a Databricks Lakebase instance.
 
 The agent input and output format are defined by MLflow's ResponsesAgent interface, which closely follows the [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses) interface. See [the MLflow docs](https://mlflow.org/docs/latest/genai/flavors/responses-agent-intro/) for input and output formats for streaming and non-streaming requests, tracing requirements, and other agent authoring details.
 

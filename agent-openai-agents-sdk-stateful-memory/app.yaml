@@ -14,3 +14,5 @@ env:
     value: "300"
   - name: MLFLOW_EXPERIMENT_ID
     valueFrom: "experiment"
+  - name: LAKEBASE_INSTANCE_NAME
+    valueFrom: "database"

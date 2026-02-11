@@ -19,10 +19,19 @@ from agent_server.utils import (
     get_databricks_host_from_env,
     get_user_workspace_client,
     process_agent_stream_events,
+    resolve_lakebase_instance_name,
 )
 
 # Lakebase instance name for persistent session storage
-LAKEBASE_INSTANCE_NAME = os.environ.get("LAKEBASE_INSTANCE_NAME", "lakebase")
+_LAKEBASE_INSTANCE_NAME_RAW = os.environ.get("LAKEBASE_INSTANCE_NAME")
+if not _LAKEBASE_INSTANCE_NAME_RAW:
+    raise ValueError(
+        "LAKEBASE_INSTANCE_NAME environment variable is required but not set. "
+        "Please set it in your environment:\n"
+        "  LAKEBASE_INSTANCE_NAME=<your-lakebase-instance-name>\n"
+    )
+# Resolve hostname to instance name if needed (if given hostname of lakebase instead of name)
+LAKEBASE_INSTANCE_NAME = resolve_lakebase_instance_name(_LAKEBASE_INSTANCE_NAME_RAW)
 
 
 def get_session_id(request: ResponsesAgentRequest) -> str:

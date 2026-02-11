@@ -135,9 +135,36 @@ export class MLflowTracing {
 
     // Add Databricks authentication token
     if (this.config.mlflowTrackingUri === "databricks") {
-      const token = process.env.DATABRICKS_TOKEN;
+      let token = process.env.DATABRICKS_TOKEN;
+
+      // For local development, try to get token from Databricks CLI if not set
+      if (!token && process.env.DATABRICKS_CONFIG_PROFILE) {
+        try {
+          const { execSync } = require("child_process");
+          const profile = process.env.DATABRICKS_CONFIG_PROFILE;
+          const tokenJson = execSync(
+            `databricks auth token --profile ${profile}`,
+            { encoding: "utf-8" }
+          );
+          const parsed = JSON.parse(tokenJson);
+          token = parsed.access_token;
+          console.log(`✅ Using auth token from Databricks CLI (profile: ${profile})`);
+        } catch (error) {
+          console.warn(
+            "⚠️  Could not get auth token from Databricks CLI. Tracing may not work properly."
+          );
+          console.warn(
+            "   Set DATABRICKS_TOKEN env var or ensure databricks CLI is configured."
+          );
+        }
+      }
+
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
+      } else {
+        console.warn(
+          "⚠️  No DATABRICKS_TOKEN found. Traces will not be exported to Databricks."
+        );
       }
     }
 

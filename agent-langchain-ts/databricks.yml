@@ -18,6 +18,10 @@ include:
   - resources/*.yml
 
 resources:
+  experiments:
+    agent_tracing_experiment:
+      name: /Users/${workspace.current_user.userName}/agent-langchain-ts
+
   apps:
     agent_langchain_ts:
       name: agent-lc-ts-${var.resource_name_suffix}
@@ -29,15 +33,17 @@ resources:
             name: ${var.serving_endpoint_name}
             permission: CAN_QUERY
 
+        # MLflow experiment for tracing (references experiment defined above)
+        - name: experiment
+          experiment:
+            experiment_id: ${resources.experiments.agent_tracing_experiment.id}
+            permission: CAN_MANAGE
+
         # Add additional resources here as needed:
         # - Unity Catalog tables, functions, or vector search indexes
         # - Genie spaces for natural language data queries
         # - External MCP servers
         # See .claude/skills/add-tools/ for examples
-
-        # Experiment resource - optional, set mlflow_experiment_id variable to use
-        # If not provided, traces will still be captured but won't link to a specific experiment
-        # To set: databricks bundle deploy --var="mlflow_experiment_id=YOUR_EXPERIMENT_ID"
 
 targets:
   dev:

@@ -11,10 +11,16 @@ sessionRouter.use(authMiddleware);
  * GET /api/session - Get current user session
  */
 sessionRouter.get('/', async (req: Request, res: Response) => {
-  console.log('GET /api/session', req.session);
+  console.log('[SESSION] Headers:', {
+    'x-forwarded-user': req.headers['x-forwarded-user'],
+    'x-forwarded-email': req.headers['x-forwarded-email'],
+    'x-forwarded-preferred-username': req.headers['x-forwarded-preferred-username'],
+  });
+  console.log('[SESSION] req.session:', JSON.stringify(req.session, null, 2));
   const session = req.session;
 
   if (!session?.user) {
+    console.log('[SESSION] No user in session, returning null');
     return res.json({ user: null } as ClientSession);
   }
 
@@ -27,5 +33,6 @@ sessionRouter.get('/', async (req: Request, res: Response) => {
     },
   };
 
+  console.log('[SESSION] Returning session:', JSON.stringify(clientSession, null, 2));
   res.json(clientSession);
 });

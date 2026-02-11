@@ -73,8 +73,7 @@ databricks apps get <your-agent-app-name> --output json | jq -r '.service_princi
 **Step 2:** Grant permission on the MCP server app:
 ```bash
 databricks apps update-permissions <mcp-server-app-name> \
-  --service-principal <agent-app-service-principal> \
-  --permission-level CAN_USE
+  --json '{"access_control_list": [{"service_principal_name": "<agent-app-service-principal>", "permission_level": "CAN_USE"}]}'
 ```
 
 See `examples/custom-mcp-server.md` for detailed steps.

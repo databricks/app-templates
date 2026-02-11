@@ -42,15 +42,13 @@ Example output: `sp-abc123-def456`
 
 ```bash
 databricks apps update-permissions <mcp-server-app-name> \
-  --service-principal <agent-app-service-principal> \
-  --permission-level CAN_USE
+  --json '{"access_control_list": [{"service_principal_name": "<agent-app-service-principal>", "permission_level": "CAN_USE"}]}'
 ```
 
 Example:
 ```bash
 databricks apps update-permissions mcp-my-server \
-  --service-principal sp-abc123-def456 \
-  --permission-level CAN_USE
+  --json '{"access_control_list": [{"service_principal_name": "sp-abc123-def456", "permission_level": "CAN_USE"}]}'
 ```
 
 ## Notes

@@ -57,15 +57,13 @@ def create_coding_agent(mcp_server: McpServer) -> Agent:
 
 
 @invoke()
-async def invoke(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
+async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
 
-    session_id = get_session_id(request)
-
     # Create session for persistent conversation history with your Databricks Lakebase instance
     session = AsyncDatabricksSession(
-        session_id=session_id,
+        session_id=get_session_id(request),
         instance_name=LAKEBASE_INSTANCE_NAME,
     )
 
@@ -75,12 +73,12 @@ async def invoke(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
         result = await Runner.run(agent, messages, session=session)
         return ResponsesAgentResponse(
             output=[item.to_input_item() for item in result.new_items],
-            custom_outputs={"session_id": session_id},
+            custom_outputs={"session_id": session.session_id},
         )
 
 
 @stream()
-async def stream(request: ResponsesAgentRequest) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
+async def stream_handler(request: ResponsesAgentRequest) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
 

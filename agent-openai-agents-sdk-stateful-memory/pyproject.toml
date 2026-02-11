@@ -14,17 +14,12 @@ dependencies = [
     "openai-agents>=0.4.1",
     "python-dotenv",
     "uuid-utils>=0.10.0",
-    # Note: Using git reference until official release
-    "databricks-openai[memory] @ git+https://github.com/databricks/databricks-ai-bridge@openai-lakebasesqlalchemysession#subdirectory=integrations/openai",
+    "databricks-openai[memory]>=0.11.1",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.hatch.metadata]
-# Note: Required for direct git references. Delete when official databricks-openai[memory] release is available
-allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["agent_server", "scripts"]

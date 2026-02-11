@@ -4,23 +4,14 @@
  */
 
 import { describe, test, expect, beforeAll } from '@jest/globals';
-import { exec } from "child_process";
-import { promisify } from "util";
-
-const execAsync = promisify(exec);
+import { getDeployedAuthToken, parseSSEStream, parseAISDKStream } from "./helpers.js";
 
 const APP_URL = process.env.APP_URL || "https://agent-lc-ts-dev-6051921418418893.staging.aws.databricksapps.com";
 let authToken: string;
 
 beforeAll(async () => {
   console.log("🔑 Getting OAuth token...");
-  try {
-    const { stdout } = await execAsync("databricks auth token --profile dogfood");
-    const tokenData = JSON.parse(stdout.trim());
-    authToken = tokenData.access_token;
-  } catch (error) {
-    throw new Error(`Failed to get auth token: ${error}`);
-  }
+  authToken = await getDeployedAuthToken();
 }, 30000);
 
 function getAuthHeaders(): Record<string, string> {
@@ -56,37 +47,14 @@ describe("Followup Questions - /invocations", () => {
     console.log("...\n");
 
     // Parse SSE events
-    let fullOutput = "";
-    let hasTextDelta = false;
-    let events: string[] = [];
-    let hasStart = false;
-    let hasFinish = false;
-
-    const lines = text.split("\n");
-    for (const line of lines) {
-      if (line.startsWith("data: ") && line !== "data: [DONE]") {
-        try {
-          const data = JSON.parse(line.slice(6));
-          events.push(data.type);
-
-          if (data.type === "response.output_text.delta") {
-            hasTextDelta = true;
-            fullOutput += data.delta;
-          }
-          if (data.type === "response.output_item.done" && data.item?.type === "text") {
-            hasFinish = true;
-          }
-          if (data.type === "response.output_item.added" && data.item?.type === "text") {
-            hasStart = true;
-          }
-        } catch (e) {
-          // Skip invalid JSON
-        }
-      }
-    }
+    const { fullOutput, events } = parseSSEStream(text);
+    const eventTypes = events.map((e) => e.type);
+    const hasTextDelta = eventTypes.some((t) => t === "response.output_text.delta");
+    const hasStart = eventTypes.some((t) => t === "response.output_item.added");
+    const hasFinish = eventTypes.some((t) => t === "response.output_item.done");
 
     console.log("\n=== Analysis ===");
-    console.log("Events emitted:", [...new Set(events)]);
+    console.log("Events emitted:", [...new Set(eventTypes)]);
     console.log("Has start event:", hasStart);
     console.log("Has text delta events:", hasTextDelta);
     console.log("Has finish event:", hasFinish);
@@ -122,33 +90,12 @@ describe("Followup Questions - /invocations", () => {
     console.log(text.substring(0, 2000));
     console.log("...\n");
 
-    let fullOutput = "";
-    let hasTextDelta = false;
-    let toolCalls: any[] = [];
-    let events: string[] = [];
-
-    const lines = text.split("\n");
-    for (const line of lines) {
-      if (line.startsWith("data: ") && line !== "data: [DONE]") {
-        try {
-          const data = JSON.parse(line.slice(6));
-          events.push(data.type);
-
-          if (data.type === "response.output_text.delta") {
-            hasTextDelta = true;
-            fullOutput += data.delta;
-          }
-          if (data.type === "response.output_item.done" && data.item?.type === "function_call") {
-            toolCalls.push(data.item);
-          }
-        } catch {
-          // Skip invalid JSON
-        }
-      }
-    }
+    const { fullOutput, events, toolCalls } = parseSSEStream(text);
+    const eventTypes = events.map((e) => e.type);
+    const hasTextDelta = eventTypes.some((t) => t === "response.output_text.delta");
 
     console.log("\n=== Analysis ===");
-    console.log("Events emitted:", [...new Set(events)]);
+    console.log("Events emitted:", [...new Set(eventTypes)]);
     console.log("Has text delta events:", hasTextDelta);
     console.log("Tool calls:", toolCalls.length);
     console.log("Full output length:", fullOutput.length);
@@ -183,23 +130,8 @@ describe("Followup Questions - /invocations", () => {
     expect(response.ok).toBe(true);
     const text = await response.text();
 
-    let fullOutput = "";
-    let hasTextDelta = false;
-
-    const lines = text.split("\n");
-    for (const line of lines) {
-      if (line.startsWith("data: ") && line !== "data: [DONE]") {
-        try {
-          const data = JSON.parse(line.slice(6));
-          if (data.type === "response.output_text.delta") {
-            hasTextDelta = true;
-            fullOutput += data.delta;
-          }
-        } catch {
-          // Skip
-        }
-      }
-    }
+    const { fullOutput, events } = parseSSEStream(text);
+    const hasTextDelta = events.some((e) => e.type === "response.output_text.delta");
 
     console.log("\nFull output:", fullOutput);
     console.log("Has text delta:", hasTextDelta);
@@ -256,24 +188,8 @@ describe("Followup Questions - /invocations", () => {
     console.log("...");
 
     // Parse SSE stream
-    let fullOutput = "";
-    let hasTextDelta = false;
-
-    const lines = text.split("\n");
-    for (const line of lines) {
-      if (line.startsWith("data: ") && line !== "data: [DONE]") {
-        try {
-          const data = JSON.parse(line.slice(6));
-
-          if (data.type === "response.output_text.delta") {
-            hasTextDelta = true;
-            fullOutput += data.delta;
-          }
-        } catch (e) {
-          // Skip unparseable lines
-        }
-      }
-    }
+    const { fullOutput, events } = parseSSEStream(text);
+    const hasTextDelta = events.some((e) => e.type === "response.output_text.delta");
 
     console.log("\n=== Analysis ===");
     console.log("Has text delta:", hasTextDelta);
@@ -338,29 +254,9 @@ describe("Followup Questions - /api/chat", () => {
     console.log(text.substring(0, 2000));
     console.log("...\n");
 
-    let fullContent = "";
-    let hasTextDelta = false;
-    let events: string[] = [];
-
-    const lines = text.split("\n");
-    for (const line of lines) {
-      if (line.startsWith("data: ") && line !== "data: [DONE]") {
-        try {
-          const data = JSON.parse(line.slice(6));
-          events.push(data.type);
-
-          if (data.type === "text-delta") {
-            hasTextDelta = true;
-            fullContent += data.delta || "";
-          }
-        } catch {
-          // Skip
-        }
-      }
-    }
+    const { fullContent, hasTextDelta } = parseAISDKStream(text);
 
     console.log("\n=== Analysis ===");
-    console.log("Events emitted:", [...new Set(events)]);
     console.log("Has text delta events:", hasTextDelta);
     console.log("Full content length:", fullContent.length);
     console.log("\nFull content:", fullContent);
@@ -426,28 +322,7 @@ describe("Followup Questions - /api/chat", () => {
     console.log(text.substring(0, 2000));
     console.log("...\n");
 
-    let fullContent = "";
-    let hasTextDelta = false;
-    let hasToolCall = false;
-
-    const lines = text.split("\n");
-    for (const line of lines) {
-      if (line.startsWith("data: ") && line !== "data: [DONE]") {
-        try {
-          const data = JSON.parse(line.slice(6));
-
-          if (data.type === "text-delta") {
-            hasTextDelta = true;
-            fullContent += data.delta || "";
-          }
-          if (data.type === "tool-call-delta" || data.type === "tool-output-available") {
-            hasToolCall = true;
-          }
-        } catch {
-          // Skip
-        }
-      }
-    }
+    const { fullContent, hasTextDelta, hasToolCall } = parseAISDKStream(text);
 
     console.log("\n=== Analysis ===");
     console.log("Has text delta events:", hasTextDelta);

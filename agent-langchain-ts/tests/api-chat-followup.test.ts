@@ -4,23 +4,14 @@
  */
 
 import { describe, test, expect, beforeAll } from '@jest/globals';
-import { exec } from "child_process";
-import { promisify } from "util";
-
-const execAsync = promisify(exec);
+import { getDeployedAuthToken } from "./helpers.js";
 
 const APP_URL = process.env.APP_URL || "https://agent-lc-ts-dev-6051921418418893.staging.aws.databricksapps.com";
 let authToken: string;
 
 beforeAll(async () => {
   console.log("🔑 Getting OAuth token...");
-  try {
-    const { stdout } = await execAsync("databricks auth token --profile dogfood");
-    const tokenData = JSON.parse(stdout.trim());
-    authToken = tokenData.access_token;
-  } catch (error) {
-    throw new Error(`Failed to get auth token: ${error}`);
-  }
+  authToken = await getDeployedAuthToken();
 }, 30000);
 
 function getAuthHeaders(): Record<string, string> {

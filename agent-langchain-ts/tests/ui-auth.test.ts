@@ -13,44 +13,15 @@
  */
 
 import { describe, test, expect } from '@jest/globals';
-import { execSync } from 'child_process';
+import { getDeployedAuthHeaders } from './helpers.js';
 
 const AGENT_URL = process.env.APP_URL || "http://localhost:8000";
-
-// Get auth token for deployed apps
-function getAuthHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-
-  // If testing deployed app, get OAuth token
-  if (AGENT_URL.includes("databricksapps.com")) {
-    let token = process.env.DATABRICKS_TOKEN;
-
-    // If token not provided, try to get it from databricks CLI
-    if (!token) {
-      try {
-        const tokenJson = execSync('databricks auth token --profile dogfood', { encoding: 'utf-8' });
-        const parsed = JSON.parse(tokenJson);
-        token = parsed.access_token;
-      } catch (error) {
-        console.warn("Warning: Could not get OAuth token. Set DATABRICKS_TOKEN env var.");
-      }
-    }
-
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-  }
-
-  return headers;
-}
 
 describe("UI Authentication", () => {
   test("should return valid user session JSON from /api/session", async () => {
     const response = await fetch(`${AGENT_URL}/api/session`, {
       method: "GET",
-      headers: getAuthHeaders(),
+      headers: getDeployedAuthHeaders(AGENT_URL),
     });
 
     expect(response.ok).toBe(true);
@@ -78,7 +49,7 @@ describe("UI Authentication", () => {
   test("should return valid config from /api/config", async () => {
     const response = await fetch(`${AGENT_URL}/api/config`, {
       method: "GET",
-      headers: getAuthHeaders(),
+      headers: getDeployedAuthHeaders(AGENT_URL),
     });
 
     expect(response.ok).toBe(true);
@@ -101,7 +72,7 @@ describe("UI Authentication", () => {
     // and authentication headers are preserved
     const response = await fetch(`${AGENT_URL}/api/session`, {
       method: "GET",
-      headers: getAuthHeaders(),
+      headers: getDeployedAuthHeaders(AGENT_URL),
     });
 
     expect(response.ok).toBe(true);
@@ -120,7 +91,7 @@ describe("UI Authentication", () => {
     // where /api/session was returning HTML instead of JSON
     const response = await fetch(`${AGENT_URL}/api/session`, {
       method: "GET",
-      headers: getAuthHeaders(),
+      headers: getDeployedAuthHeaders(AGENT_URL),
     });
 
     const contentType = response.headers.get("content-type");

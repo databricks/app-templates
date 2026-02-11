@@ -11,23 +11,14 @@
  */
 
 import { describe, test, expect, beforeAll } from '@jest/globals';
-import { exec } from "child_process";
-import { promisify } from "util";
-
-const execAsync = promisify(exec);
+import { getDeployedAuthToken, parseSSEStream, parseAISDKStream } from "./helpers.js";
 
 const APP_URL = process.env.APP_URL || "https://agent-lc-ts-dev-6051921418418893.staging.aws.databricksapps.com";
 let authToken: string;
 
 beforeAll(async () => {
   console.log("🔑 Getting OAuth token...");
-  try {
-    const { stdout } = await execAsync("databricks auth token --profile dogfood");
-    const tokenData = JSON.parse(stdout.trim());
-    authToken = tokenData.access_token;
-  } catch (error) {
-    throw new Error(`Failed to get auth token: ${error}`);
-  }
+  authToken = await getDeployedAuthToken();
 }, 30000);
 
 describe("Deployed App Tests", () => {
@@ -69,20 +60,7 @@ describe("Deployed App Tests", () => {
       expect(response.ok).toBe(true);
       const text = await response.text();
 
-      let fullOutput = "";
-      const lines = text.split("\n");
-      for (const line of lines) {
-        if (line.startsWith("data: ") && line !== "data: [DONE]") {
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.type === "response.output_text.delta") {
-              fullOutput += data.delta;
-            }
-          } catch {
-            // Skip invalid JSON
-          }
-        }
-      }
+      const { fullOutput } = parseSSEStream(text);
 
       expect(fullOutput.toLowerCase()).toContain("deployed");
       expect(fullOutput.toLowerCase()).toContain("successful");
@@ -109,20 +87,7 @@ describe("Deployed App Tests", () => {
       expect(response.ok).toBe(true);
       const text = await response.text();
 
-      let fullOutput = "";
-      const lines = text.split("\n");
-      for (const line of lines) {
-        if (line.startsWith("data: ") && line !== "data: [DONE]") {
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.type === "response.output_text.delta") {
-              fullOutput += data.delta;
-            }
-          } catch {
-            // Skip invalid JSON
-          }
-        }
-      }
+      const { fullOutput } = parseSSEStream(text);
 
       const hasResult = fullOutput.includes("56088") || fullOutput.includes("56,088");
       expect(hasResult).toBe(true);
@@ -149,28 +114,10 @@ describe("Deployed App Tests", () => {
       expect(response.ok).toBe(true);
       const text = await response.text();
 
-      let fullOutput = "";
-      let hasToolCall = false;
-      const lines = text.split("\n");
-      for (const line of lines) {
-        if (line.startsWith("data: ") && line !== "data: [DONE]") {
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.type === "response.output_text.delta") {
-              fullOutput += data.delta;
-            }
-            if (data.type === "response.output_item.done" &&
-                data.item?.type === "function_call" &&
-                data.item?.name === "get_current_time") {
-              hasToolCall = true;
-            }
-          } catch {
-            // Skip invalid JSON
-          }
-        }
-      }
+      const { fullOutput, hasToolCall, toolCalls } = parseSSEStream(text);
 
-      expect(hasToolCall).toBe(true);
+      const hasTimeToolCall = toolCalls.some((call) => call.name === "get_current_time");
+      expect(hasTimeToolCall).toBe(true);
       expect(fullOutput.toLowerCase()).toMatch(/tokyo|time/);
     }, 30000);
   });
@@ -204,20 +151,7 @@ describe("Deployed App Tests", () => {
       expect(response.ok).toBe(true);
       const text = await response.text();
 
-      let fullContent = "";
-      const lines = text.split("\n");
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.type === "text-delta") {
-              fullContent += data.delta;
-            }
-          } catch {
-            // Skip invalid JSON
-          }
-        }
-      }
+      const { fullContent } = parseAISDKStream(text);
 
       expect(fullContent.toLowerCase()).toContain("deployed");
       expect(fullContent.toLowerCase()).toContain("successful");

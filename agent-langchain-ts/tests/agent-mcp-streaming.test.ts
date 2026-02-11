@@ -7,45 +7,21 @@
  */
 
 import { describe, test, expect } from '@jest/globals';
-import { execSync } from 'child_process';
 import {
   TEST_CONFIG,
   callInvocations,
   parseSSEStream,
   parseAISDKStream,
+  getDeployedAuthHeaders,
 } from './helpers.js';
 
 const AGENT_URL = process.env.APP_URL || TEST_CONFIG.AGENT_URL;
-
-function getAuthHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-
-  if (AGENT_URL.includes("databricksapps.com")) {
-    let token = process.env.DATABRICKS_TOKEN;
-    if (!token) {
-      try {
-        const tokenJson = execSync('databricks auth token --profile dogfood', { encoding: 'utf-8' });
-        const parsed = JSON.parse(tokenJson);
-        token = parsed.access_token;
-      } catch (error) {
-        console.warn("Warning: Could not get OAuth token.");
-      }
-    }
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-  }
-
-  return headers;
-}
 
 describe("AgentMCP Streaming Bug", () => {
   test("REPRODUCER: /invocations should stream text deltas (currently fails)", async () => {
     const response = await fetch(`${AGENT_URL}/invocations`, {
       method: "POST",
-      headers: getAuthHeaders(),
+      headers: getDeployedAuthHeaders(AGENT_URL),
       body: JSON.stringify({
         input: [{
           role: "user",
@@ -78,7 +54,7 @@ describe("AgentMCP Streaming Bug", () => {
   test("REPRODUCER: /api/chat should have text-delta events (currently fails)", async () => {
     const response = await fetch(`${AGENT_URL}/api/chat`, {
       method: "POST",
-      headers: getAuthHeaders(),
+      headers: getDeployedAuthHeaders(AGENT_URL),
       body: JSON.stringify({
         id: "550e8400-e29b-41d4-a716-446655440000",
         message: {

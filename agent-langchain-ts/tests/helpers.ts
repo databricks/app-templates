@@ -304,6 +304,66 @@ export const MCP = {
 };
 
 // ============================================================================
+// Authentication Helpers
+// ============================================================================
+
+import { exec } from "child_process";
+import { execSync } from "child_process";
+import { promisify } from "util";
+
+const execAsync = promisify(exec);
+
+/**
+ * Get OAuth token for deployed app testing (async version)
+ * Use in beforeAll() hooks for test suites
+ */
+export async function getDeployedAuthToken(): Promise<string> {
+  try {
+    const { stdout } = await execAsync("databricks auth token --profile dogfood");
+    const tokenData = JSON.parse(stdout.trim());
+    return tokenData.access_token;
+  } catch (error) {
+    throw new Error(`Failed to get auth token: ${error}`);
+  }
+}
+
+/**
+ * Get auth headers for deployed app testing (sync version)
+ * Automatically detects if URL is deployed app and gets token
+ */
+export function getDeployedAuthHeaders(
+  agentUrl: string = TEST_CONFIG.AGENT_URL
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  // Only add auth for deployed apps
+  if (agentUrl.includes("databricksapps.com")) {
+    let token = process.env.DATABRICKS_TOKEN;
+
+    // Try to get token from CLI if not in env
+    if (!token) {
+      try {
+        const tokenJson = execSync("databricks auth token --profile dogfood", {
+          encoding: "utf-8",
+        });
+        const parsed = JSON.parse(tokenJson);
+        token = parsed.access_token;
+      } catch (error) {
+        console.warn("Warning: Could not get OAuth token.");
+      }
+    }
+
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+  }
+
+  return headers;
+}
+
+// ============================================================================
 // Assertion Helpers
 // ============================================================================
 

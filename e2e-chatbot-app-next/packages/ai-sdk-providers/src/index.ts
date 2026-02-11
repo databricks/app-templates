@@ -1,2 +1,2 @@
 export * from './providers-server';
-export * from './databricks-provider';
+export { shouldInjectContextForEndpoint } from './request-context';

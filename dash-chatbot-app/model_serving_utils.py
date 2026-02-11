@@ -1,5 +1,6 @@
 from mlflow.deployments import get_deploy_client
 from databricks.sdk import WorkspaceClient
+import os
 
 def _get_endpoint_task_type(endpoint_name: str) -> str:
     """Get the task type of a serving endpoint."""
@@ -27,7 +28,8 @@ def _query_endpoint(endpoint_name: str, messages: list[dict[str, str]], max_toke
     """Calls a model serving endpoint."""
     _validate_endpoint_task_type(endpoint_name)
     
-    res = get_deploy_client('databricks').predict(
+    mlflow_tracking_uri = os.getenv('MLFLOW_TRACKING_URI', 'databricks')
+    res = get_deploy_client(mlflow_tracking_uri).predict(
         endpoint=endpoint_name,
         inputs={'messages': messages, "max_tokens": max_tokens},
     )

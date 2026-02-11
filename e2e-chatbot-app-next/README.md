@@ -50,6 +50,9 @@ This project includes a [Databricks Asset Bundle (DAB)](https://docs.databricks.
    ```
 2. **Databricks authentication**: Ensure auth is configured as described in [Prerequisites](#prerequisites).
 3. **Specify serving endpoint and address TODOs in databricks.yml**: Address the TODOs in `databricks.yml`, setting the default value of `serving_endpoint_name` to the name of the custom code agent or Agent Bricks endpoint to chat with. The optional TODOs wil allow you to deploy a Lakebase database bound to your application, which will allow for chat history to be persisted.
+
+   **Tip:** To automatically configure and deploy with database support, run `./scripts/quickstart.sh` and select "Yes" when prompted about enabling persistent chat history. See [Database Configuration](#database-modes) for details.
+
    - NOTE: if using [Agent Bricks Multi-Agent Supervisor](https://docs.databricks.com/aws/en/generative-ai/agent-bricks/multi-agent-supervisor), you need to additionally grant the app service principal the `CAN_QUERY` permission on the underlying agent(s) that the MAS orchestrates. You can do this by adding those
      agent serving endpoints as resources in `databricks.yml` (see the NOTE in `databricks.yml` on this)
 4. **Validate the bundle configuration**:
@@ -96,11 +99,54 @@ databricks bundle deploy -t staging --var serving_endpoint_name="your-endpoint"
 
 ## Running Locally
 
-**Before running the app locally, you should first deploy the app to Databricks following the steps
-in [Deployment](#deployment)**. This is the simplest way to get the required database instance set up with the correct permissions,
-so that both you and your app service principal can connect to the database, with database migrations already applied.
+### Quick Start (Recommended)
 
-### Setup Steps
+Use our automated quickstart script for the fastest setup experience:
+
+1. **Clone the repository**:
+
+   ```bash
+   git clone https://github.com/databricks/app-templates
+   cd e2e-chatbot-app-next
+   ```
+
+2. **Run the quickstart script**:
+
+   ```bash
+   ./scripts/quickstart.sh
+   ```
+
+   The quickstart script will:
+   - **Install prerequisites** - Automatically installs jq, nvm, Node.js 20, and Databricks CLI
+   - **Configure authentication** - Helps you select or create a Databricks CLI profile
+   - **Set up serving endpoint** - Prompts for your endpoint name and validates it exists
+   - **Database setup (optional)** - Choose persistent chat history or ephemeral mode
+   - **Deploy to Databricks (optional)** - Optionally deploys resources and provisions database
+   - **Configure local environment** - Automatically creates and populates .env
+   - **Run migrations** - Sets up database schema if database is enabled
+
+   The script handles the entire setup process automatically, including waiting for database provisioning and configuring connection details.
+
+3. **Start the application**:
+
+   Use the convenience script:
+   ```bash
+   ./scripts/start-app.sh
+   ```
+
+   Or manually:
+   ```bash
+   npm install  # Install/update dependencies
+   npm run dev  # Start development server
+   ```
+
+   The app starts on [localhost:3000](http://localhost:3000) (frontend) and [localhost:3001](http://localhost:3001) (backend)
+
+   **Tip:** The `start-app.sh` script is useful for quickly starting the app after initial setup, as it ensures dependencies are up-to-date before starting the dev server.
+
+### Manual Setup (Alternative)
+
+If you prefer to configure the environment manually:
 
 1. **Clone and install**:
 
@@ -113,10 +159,10 @@ so that both you and your app service principal can connect to the database, wit
 2. **Set up environment variables**:
 
    ```bash
-   cp .env.example .env.local
+   cp .env.example .env
    ```
 
-   Address the TODOs in `.env.local`, specifying your Databricks CLI profile and database connection details.
+   Address the TODOs in `.env`, specifying your Databricks CLI profile and database connection details.
 
 3. **Run the application**:
 
@@ -168,6 +214,54 @@ PGHOST=...
 
 The app will detect the absence or precense of database configuration and automatically run in the correct mode.
 
+#### Enabling Database After Installation
+
+If you initially installed the template without database support (ephemeral mode) and want to add persistent chat history later, you can re-run the quickstart script:
+
+```bash
+./scripts/quickstart.sh
+```
+
+When prompted about enabling persistent chat history, select "Yes". The script will:
+- Uncomment the required database sections in `databricks.yml`
+- Optionally deploy the Lakebase database instance
+- Configure your `.env` file with database connection details
+- Run database migrations if the database is provisioned
+- Set up your local environment with the correct database settings
+
+The script handles all configuration automatically, including:
+- Detecting your Databricks workspace and authentication
+- Calculating the correct database instance name for your target environment
+- Retrieving the database host (PGHOST) after provisioning
+- Updating environment variables with the correct values
+
+**Manual Steps (Alternative):**
+
+If you prefer to enable the database manually:
+
+1. **Edit `databricks.yml`** - Uncomment both database sections:
+   - Database instance resource (`chatbot_lakebase`) around line 18
+   - Database resource binding (`- name: database`) around line 41
+
+2. **Deploy the database**:
+   ```bash
+   databricks bundle deploy
+   ```
+   (First deployment takes several minutes for provisioning)
+
+3. **Configure `.env`** with database variables:
+   ```bash
+   PGUSER=your-databricks-username
+   PGHOST=your-postgres-host  # Get with: ./scripts/get-pghost.sh
+   PGDATABASE=databricks_postgres
+   PGPORT=5432
+   ```
+
+4. **Run database migrations**:
+   ```bash
+   npm run db:migrate
+   ```
+
 ## Testing
 
 The project uses Playwright for end-to-end testing and supports dual-mode testing to verify behavior in both persistent and ephemeral modes.
@@ -178,7 +272,7 @@ Tests run in two separate modes to ensure both database and non-database functio
 
 #### With Database Mode
 
-- Uses database environment variables (either set in .env.local or declared elsewhere)
+- Uses database environment variables (either set in .env or declared elsewhere)
 - Includes full Postgres database
 - Tests chat history persistence, pagination, and deletion
 - Will throw a warning and stop if no database exists

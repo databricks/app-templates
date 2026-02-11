@@ -13,9 +13,8 @@ from mlflow.types.responses import (
 )
 
 from agent_server.utils import (
-    get_databricks_host_from_env,
     get_user_workspace_client,
-    process_agent_stream_events,
+    process_agent_stream_events, build_mcp_url,
 )
 
 # NOTE: this will work for all databricks models OTHER than GPT-OSS, which uses a slightly different API
@@ -27,16 +26,16 @@ mlflow.openai.autolog()
 
 async def init_mcp_server():
     return McpServer(
-        url=f"{get_databricks_host_from_env()}/api/2.0/mcp/functions/system/ai",
-        name="system.ai uc function mcp server",
+        url=build_mcp_url("/api/2.0/mcp/functions/system/ai"),
+        name="system.ai UC function MCP server",
     )
 
 
 def create_coding_agent(mcp_server: McpServer) -> Agent:
     return Agent(
-        name="code execution agent",
+        name="Code execution agent",
         instructions="You are a code execution agent. You can execute code and return the results.",
-        model="databricks-claude-3-7-sonnet",
+        model="databricks-gpt-5-2",
         mcp_servers=[mcp_server],
     )
 

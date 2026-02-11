@@ -1,10 +1,5 @@
 import { z } from 'zod';
-import type { InferUITool, LanguageModelUsage, UIMessage } from 'ai';
-
-import type {
-  DATABRICKS_TOOL_CALL_ID,
-  DATABRICKS_TOOL_DEFINITION,
-} from '@chat-template/ai-sdk-providers/tools';
+import type { LanguageModelUsage, UIMessage } from 'ai';
 
 const messageMetadataSchema = z.object({
   createdAt: z.string(),
@@ -12,11 +7,6 @@ const messageMetadataSchema = z.object({
 
 type MessageMetadata = z.infer<typeof messageMetadataSchema>;
 
-export type ChatTools = {
-  [K in typeof DATABRICKS_TOOL_CALL_ID]: InferUITool<
-    typeof DATABRICKS_TOOL_DEFINITION
-  >;
-};
 
 export type CustomUIDataTypes = {
   error: string;
@@ -25,8 +15,7 @@ export type CustomUIDataTypes = {
 
 export type ChatMessage = UIMessage<
   MessageMetadata,
-  CustomUIDataTypes,
-  ChatTools
+  CustomUIDataTypes
 >;
 
 export interface Attachment {

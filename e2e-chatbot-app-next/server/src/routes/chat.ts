@@ -12,10 +12,29 @@ import {
   type LanguageModelUsage,
   pipeUIMessageStreamToResponse,
 } from 'ai';
+import type { LanguageModelV3Usage } from '@ai-sdk/provider';
+
+// Convert ai's LanguageModelUsage to @ai-sdk/provider's LanguageModelV3Usage
+function toV3Usage(usage: LanguageModelUsage): LanguageModelV3Usage {
+  return {
+    inputTokens: {
+      total: usage.inputTokens,
+      noCache: undefined,
+      cacheRead: undefined,
+      cacheWrite: undefined,
+    },
+    outputTokens: {
+      total: usage.outputTokens,
+      text: undefined,
+      reasoning: undefined,
+    },
+  };
+}
 import {
   authMiddleware,
   requireAuth,
   requireChatAccess,
+  getIdFromRequest,
 } from '../middleware/auth';
 import {
   deleteChatById,
@@ -36,12 +55,9 @@ import {
   type PostRequestBody,
   StreamCache,
   type VisibilityType,
+  CONTEXT_HEADER_CONVERSATION_ID,
+  CONTEXT_HEADER_USER_ID,
 } from '@chat-template/core';
-import {
-  DATABRICKS_TOOL_CALL_ID,
-  DATABRICKS_TOOL_DEFINITION,
-} from '@chat-template/ai-sdk-providers/tools';
-import { extractApprovalStatus } from '@chat-template/ai-sdk-providers/mcp';
 import { ChatSDKError } from '@chat-template/core/errors';
 
 export const chatRouter: RouterType = Router();
@@ -179,16 +195,19 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           });
 
           // Check if this is an MCP denial - if so, we're done (no need to call LLM)
-          // Only check the last assistant message's last part for a fresh denial
-          const lastAssistantMessage = assistantMessages.at(-1);
-          const lastPart = lastAssistantMessage?.parts?.at(-1);
-
-          const approvalStatus =
-            lastPart?.type === 'tool-databricks-tool-call' && lastPart.output
-              ? extractApprovalStatus(lastPart.output)
-              : undefined;
-
-          const hasMcpDenial = approvalStatus === false;
+          // Denial is indicated by a dynamic-tool part with state 'output-denied'
+          // or with approval.approved === false
+          const hasMcpDenial = requestBody.previousMessages?.some(
+            (m: ChatMessage) =>
+              m.parts?.some(
+                (p) =>
+                  p.type === 'dynamic-tool' &&
+                  (p.state === 'output-denied' ||
+                    ('approval' in p &&
+                      (p.approval)?.approved ===
+                        false)),
+              ),
+          );
 
           if (hasMcpDenial) {
             // We don't need to call the LLM because the user has denied the tool call
@@ -208,12 +227,13 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     const model = await myProvider.languageModel(selectedChatModel);
     const result = streamText({
       model,
-      messages: convertToModelMessages(uiMessages),
+      messages: await convertToModelMessages(uiMessages),
+      headers: {
+        [CONTEXT_HEADER_CONVERSATION_ID]: id,
+        [CONTEXT_HEADER_USER_ID]: session.user.email ?? session.user.id,
+      },
       onFinish: ({ usage }) => {
         finalUsage = usage;
-      },
-      tools: {
-        [DATABRICKS_TOOL_CALL_ID]: DATABRICKS_TOOL_DEFINITION,
       },
     });
 
@@ -264,7 +284,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           try {
             await updateChatLastContextById({
               chatId: id,
-              context: finalUsage,
+              context: toV3Usage(finalUsage),
             });
           } catch (err) {
             console.warn('Unable to persist last usage for chat', id, err);
@@ -307,7 +327,8 @@ chatRouter.delete(
   '/:id',
   [requireAuth, requireChatAccess],
   async (req: Request, res: Response) => {
-    const { id } = req.params;
+    const id = getIdFromRequest(req);
+    if (!id) return;
 
     const deletedChat = await deleteChatById({ id });
     return res.status(200).json(deletedChat);
@@ -322,7 +343,8 @@ chatRouter.get(
   '/:id',
   [requireAuth, requireChatAccess],
   async (req: Request, res: Response) => {
-    const { id } = req.params;
+    const id = getIdFromRequest(req);
+    if (!id) return;
 
     const { chat } = await checkChatAccess(id, req.session?.user.id);
 
@@ -337,7 +359,8 @@ chatRouter.get(
   '/:id/stream',
   [requireAuth],
   async (req: Request, res: Response) => {
-    const { id: chatId } = req.params;
+    const chatId = getIdFromRequest(req);
+    if (!chatId) return;
     const cursor = req.headers['x-resume-stream-cursor'] as string;
 
     console.log(`[Stream Resume] Cursor: ${cursor}`);
@@ -427,7 +450,8 @@ chatRouter.patch(
   [requireAuth, requireChatAccess],
   async (req: Request, res: Response) => {
     try {
-      const { id } = req.params;
+      const id = getIdFromRequest(req);
+      if (!id) return;
       const { visibility } = req.body;
 
       if (!visibility || !['public', 'private'].includes(visibility)) {

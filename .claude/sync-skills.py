@@ -42,6 +42,10 @@ TEMPLATES = {
         "sdk": "langgraph",
         "bundle_name": "agent_non_conversational",
     },
+    "agent-migration-from-model-serving": {
+        "sdk": ["langgraph", "openai"],
+        "bundle_name": "agent_migration",
+    },
 }
 
 SOURCE = SCRIPT_DIR / "skills"
@@ -75,23 +79,30 @@ def sync_template(template: str, config: dict):
     dest.mkdir(parents=True)
 
     # Shared skills (no substitution needed)
-    for skill in ["quickstart", "run-locally", "discover-tools"]:
+    for skill in ["quickstart", "run-locally", "discover-tools", "migrate-from-model-serving"]:
         copy_skill(SOURCE / skill, dest / skill)
 
     # Deploy skill (with substitution)
     copy_skill(SOURCE / "deploy", dest / "deploy", subs)
 
-    # SDK-specific skills (renamed on copy)
-    copy_skill(SOURCE / f"add-tools-{sdk}", dest / "add-tools")
-    copy_skill(SOURCE / f"modify-{sdk}-agent", dest / "modify-agent")
-
-    # Memory skills - SDK-specific, renamed on copy (e.g., agent-langgraph-memory -> agent-memory)
-    if sdk == "langgraph":
+    # SDK-specific skills
+    if isinstance(sdk, list):
+        # Multiple SDKs: copy skills for each, keeping SDK suffix in name
+        for s in sdk:
+            copy_skill(SOURCE / f"add-tools-{s}", dest / f"add-tools-{s}")
+            copy_skill(SOURCE / f"modify-{s}-agent", dest / f"modify-{s}-agent")
+        # Include LangGraph memory skills if langgraph is in the list
+        if "langgraph" in sdk:
+            copy_skill(SOURCE / "lakebase-setup", dest / "lakebase-setup")
+            copy_skill(SOURCE / "agent-langgraph-memory", dest / "agent-memory")
+    else:
+        copy_skill(SOURCE / f"add-tools-{sdk}", dest / "add-tools")
+        copy_skill(SOURCE / f"modify-{sdk}-agent", dest / "modify-agent")
         copy_skill(SOURCE / "lakebase-setup", dest / "lakebase-setup")
-        copy_skill(SOURCE / "agent-langgraph-memory", dest / "agent-memory")
-    elif sdk == "openai":
-        copy_skill(SOURCE / "lakebase-setup", dest / "lakebase-setup")
-        copy_skill(SOURCE / "agent-openai-memory", dest / "agent-memory")
+        if sdk == "langgraph":
+            copy_skill(SOURCE / "agent-langgraph-memory", dest / "agent-memory")
+        elif sdk == "openai":
+            copy_skill(SOURCE / "agent-openai-memory", dest / "agent-memory")
 
 
 def main():

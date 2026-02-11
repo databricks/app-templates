@@ -1,0 +1,55 @@
+bundle:
+  name: agent_migration
+
+resources:
+  # MLflow experiment for agent tracing - automatically created by bundle
+  experiments:
+    agent_migration_experiment:
+      name: /Users/${workspace.current_user.userName}/${bundle.name}-${bundle.target}
+
+  apps:
+    agent_migration:
+      name: "agent-migration"
+      description: "Migrated agent from Model Serving to Databricks Apps"
+      source_code_path: ./
+
+      # Resources which this app has access to
+      resources:
+        - name: 'experiment'
+          experiment:
+            experiment_id: "${resources.experiments.agent_migration_experiment.id}"
+            permission: 'CAN_MANAGE'
+        # TODO: Add resources extracted from original MLmodel file (see migration skill Step 6)
+        # Example - serving endpoint:
+        # - name: 'serving-endpoint'
+        #   serving_endpoint:
+        #     name: 'your-endpoint-name'
+        #     permission: 'CAN_QUERY'
+        # Example - UC function:
+        # - name: 'python-exec'
+        #   uc_securable:
+        #     securable_full_name: 'system.ai.python_exec'
+        #     securable_type: 'FUNCTION'
+        #     permission: 'EXECUTE'
+        # Example - Lakebase database (for stateful agents):
+        # - name: 'database'
+        #   database:
+        #     database_name: 'databricks_postgres'
+        #     instance_name: 'lakebase'
+        #     permission: 'CAN_CONNECT_AND_CREATE'
+
+targets:
+  dev:
+    mode: development
+    default: true
+    # workspace:
+    #   host: https://...
+
+  prod:
+    mode: production
+    # workspace:
+    #   host: https://...
+    resources:
+      apps:
+        agent_migration:
+          name: agent-migration

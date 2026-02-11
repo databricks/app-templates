@@ -6,18 +6,18 @@
   "scripts": {
     "dev": "node ../node_modules/tsx/dist/cli.mjs watch --inspect src/index.ts",
     "build": "tsdown",
-    "start": "NODE_ENV=production node --env-file-if-exists ../.env.local dist/index.mjs"
+    "start": "NODE_ENV=production node --env-file-if-exists ../.env dist/index.mjs"
   },
   "dependencies": {
     "@chat-template/ai-sdk-providers": "*",
     "@chat-template/auth": "*",
     "@chat-template/core": "*",
     "@chat-template/db": "*",
-    "ai": "5.0.76",
+    "ai": "^6.0.57",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
-    "zod": "^3.25.76"
+    "zod": "^4.3.5"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

@@ -27,6 +27,8 @@ Before running, you **must** replace these placeholders in `agent_server/agent.p
 
 You must also update the matching placeholders in `databricks.yml` to grant the app permission to access these resources.
 
+After replacing placeholders, **update the orchestrator's instructions** in `create_orchestrator_agent()` to describe your specific tools and when each should be used. The more specific the instructions, the more accurately the agent will route requests.
+
 > **Important:** The serving endpoint tools use the **Responses API** exclusively. Your endpoints must appear as **"Agent (Responses)"** in the Task column on the Serving UI in Databricks. Endpoints that only support the Chat Completions API ("LLM" task type) will not work with this template as-is.
 
 > **Tip:** Search for `TODO:` across the project to find all values that need configuration.

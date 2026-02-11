@@ -27,7 +27,7 @@ agent = Agent(
 
 ```bash
 databricks bundle deploy
-databricks bundle run agent_openai_agents_sdk
+databricks bundle run <your-app-resource-name>  # from databricks.yml resources.apps.*
 ```
 
 ### 3. Get your agent app's service principal

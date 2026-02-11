@@ -45,7 +45,7 @@ resources:
         #
         # 1. Find this app's SP applicationId (UUID):
         #    databricks service-principals list -o json | \
-        #      python3 -c "import sys,json; [print(sp['applicationId'], sp['displayName']) for sp in json.load(sys.stdin) if '<YOUR-APP-NAME>' in sp.get('displayName','')]"
+        #      python3 -c "import sys,json; [print(sp['applicationId'], sp['displayName']) for sp in json.load(sys.stdin) if 'agent-openai-multiagent' in sp.get('displayName','')]"
         #
         # 2. Grant CAN_USE on the target app using the REST API:
         #    curl -X PATCH "https://<workspace>/api/2.0/permissions/apps/<YOUR-APP-AGENT-NAME>" \

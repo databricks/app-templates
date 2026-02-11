@@ -31,7 +31,7 @@ agent = Agent(
 ```yaml
 resources:
   apps:
-    agent_openai_agents_sdk:
+    agent_openai_multiagent:
       resources:
         - name: 'my_genie_space'
           genie_space:
@@ -48,7 +48,7 @@ See the `examples/` directory for complete YAML snippets:
 
 | File | Resource Type | When to Use |
 |------|--------------|-------------|
-| `uc-function.yaml` | Unity Catalog function | UC functions via MCP |
+| `uc-function.yaml` | Unity Catalog function | UC functions |
 | `uc-connection.yaml` | UC connection | External MCP servers |
 | `vector-search.yaml` | Vector search index | RAG applications |
 | `sql-warehouse.yaml` | SQL warehouse | SQL execution |

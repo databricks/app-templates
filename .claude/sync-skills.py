@@ -85,20 +85,20 @@ def sync_template(template: str, config: dict):
     # Deploy skill (with substitution)
     copy_skill(SOURCE / "deploy", dest / "deploy", subs)
 
-    # SDK-specific skills
+    # SDK-specific skills (with substitution for bundle name references)
     if isinstance(sdk, list):
         # Multiple SDKs: copy skills for each, keeping SDK suffix in name
         for s in sdk:
-            copy_skill(SOURCE / f"add-tools-{s}", dest / f"add-tools-{s}")
-            copy_skill(SOURCE / f"modify-{s}-agent", dest / f"modify-{s}-agent")
+            copy_skill(SOURCE / f"add-tools-{s}", dest / f"add-tools-{s}", subs)
+            copy_skill(SOURCE / f"modify-{s}-agent", dest / f"modify-{s}-agent", subs)
         # Include LangGraph memory skills if langgraph is in the list
         if "langgraph" in sdk:
             copy_skill(SOURCE / "lakebase-setup", dest / "lakebase-setup")
             copy_skill(SOURCE / "agent-langgraph-memory", dest / "agent-memory")
     else:
         # Single SDK: rename on copy (e.g., add-tools-langgraph -> add-tools)
-        copy_skill(SOURCE / f"add-tools-{sdk}", dest / "add-tools")
-        copy_skill(SOURCE / f"modify-{sdk}-agent", dest / "modify-agent")
+        copy_skill(SOURCE / f"add-tools-{sdk}", dest / "add-tools", subs)
+        copy_skill(SOURCE / f"modify-{sdk}-agent", dest / "modify-agent", subs)
 
         # Memory skills (LangGraph only)
         if sdk == "langgraph":

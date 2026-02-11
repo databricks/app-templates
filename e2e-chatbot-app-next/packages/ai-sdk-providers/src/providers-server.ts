@@ -322,9 +322,7 @@ export class OAuthAwareProvider implements SmartProvider {
     const model = await (async () => {
       if (API_PROXY) {
         // For API proxy we always use the responses agent
-        // Use the serving endpoint name, not the model ID
-        const servingEndpoint = process.env.DATABRICKS_SERVING_ENDPOINT || 'databricks-claude-sonnet-4-5';
-        return provider.responses(servingEndpoint);
+        return provider.responses(id);
       }
       if (id === 'title-model' || id === 'artifact-model') {
         return provider.chatCompletions(

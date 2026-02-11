@@ -105,10 +105,26 @@ export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof
       // but Responses API sends array content format
       //
       // IMPORTANT: Include function call context for followup questions
-      const chatHistory = input.slice(0, -1).map((msg: any) => {
-        if (Array.isArray(msg.content)) {
+      // Handle BOTH message objects AND top-level tool call objects
+      const chatHistory = input.slice(0, -1).map((item: any) => {
+        // Handle top-level function_call and function_call_output objects
+        // These are sent by the Databricks provider when using API_PROXY
+        if (item.type === "function_call") {
+          return {
+            role: "assistant",
+            content: `[Tool Call: ${item.name}(${item.arguments})]`,
+          };
+        } else if (item.type === "function_call_output") {
+          return {
+            role: "assistant",
+            content: `[Tool Result: ${item.output}]`,
+          };
+        }
+
+        // Handle regular message objects
+        if (Array.isArray(item.content)) {
           // Extract text from text parts
-          const textParts = msg.content
+          const textParts = item.content
             .filter((part: any) =>
               part.type === "input_text" ||
               part.type === "output_text" ||
@@ -116,17 +132,27 @@ export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof
             )
             .map((part: any) => part.text);
 
-          // Extract tool call information
-          const toolParts = msg.content
+          // Extract tool call information from content array
+          // (for formats that embed tool calls inside message content)
+          const toolParts = item.content
             .filter((part: any) =>
               part.type === "function_call" ||
-              part.type === "function_call_output"
+              part.type === "function_call_output" ||
+              part.type === "tool-call" ||
+              part.type === "tool-result"
             )
             .map((part: any) => {
+              // Responses API format
               if (part.type === "function_call") {
                 return `[Tool Call: ${part.name}(${JSON.stringify(part.arguments)})]`;
               } else if (part.type === "function_call_output") {
                 return `[Tool Result: ${part.output}]`;
+              }
+              // AI SDK ModelMessage format
+              else if (part.type === "tool-call") {
+                return `[Tool Call: ${part.toolName}(${JSON.stringify(part.input || part.args)})]`;
+              } else if (part.type === "tool-result") {
+                return `[Tool Result: ${typeof part.output === 'string' ? part.output : JSON.stringify(part.output)}]`;
               }
               return "";
             });
@@ -135,11 +161,11 @@ export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof
           const allParts = [...textParts, ...toolParts].filter(p => p.length > 0);
 
           return {
-            ...msg,
+            ...item,
             content: allParts.join("\n"),
           };
         }
-        return msg;
+        return item;
       });
 
       // Handle streaming response

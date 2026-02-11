@@ -62,21 +62,7 @@ export interface AgentConfig {
 /**
  * Default system prompt for the agent
  */
-const DEFAULT_SYSTEM_PROMPT = `You are a helpful AI assistant with access to various tools.
-
-When using tools:
-- Think step by step about which tools to use
-- Use multiple tools if needed to answer the question thoroughly
-- Provide clear explanations of your reasoning
-- Cite specific tool results in your responses
-
-When a tool returns an error or fails:
-- ALWAYS provide a helpful response to the user
-- Explain what went wrong (e.g., permission denied, data not available)
-- If possible, provide alternative approaches or general knowledge to help answer the question
-- Never leave the user with just an error message - always add context and next steps
-
-Be concise but informative in your responses.`;
+const DEFAULT_SYSTEM_PROMPT = `You are a helpful AI assistant with access to various tools`;
 
 
 /**

@@ -1,6 +1,7 @@
 import os
-import uuid
 from typing import AsyncGenerator
+
+from uuid_utils import uuid7
 
 import mlflow
 from agents import Agent, Runner, set_default_openai_api, set_default_openai_client
@@ -31,7 +32,7 @@ def get_session_id(request: ResponsesAgentRequest) -> str:
         if "session_id" in request.custom_inputs:
             return request.custom_inputs["session_id"]
     # Fall back to generating a new session_id
-    return str(uuid.uuid4())
+    return str(uuid7())
 
 # NOTE: this will work for all databricks models OTHER than GPT-OSS, which uses a slightly different API
 set_default_openai_client(AsyncDatabricksOpenAI())

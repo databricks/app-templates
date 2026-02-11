@@ -167,3 +167,20 @@ yarn-error.log*
 /blob-report/
 /playwright/*
 tsconfig.tsbuildinfo
+
+# Claude Code - track source of truth skills and sync script
+.claude/*
+!.claude/sync-skills.py
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/quickstart/
+!.claude/skills/run-locally/
+!.claude/skills/discover-tools/
+!.claude/skills/deploy/
+!.claude/skills/add-tools-langgraph/
+!.claude/skills/add-tools-openai/
+!.claude/skills/modify-langgraph-agent/
+!.claude/skills/modify-openai-agent/
+!.claude/skills/lakebase-setup/
+!.claude/skills/agent-langgraph-memory/
+!.claude/skills/agent-openai-memory/

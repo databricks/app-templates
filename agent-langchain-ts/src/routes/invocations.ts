@@ -100,15 +100,13 @@ export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof
         userInput = lastUserMessage.content as string;
       }
 
-      // Normalize chat history messages to have string content
-      // This is required because Chat Completions API only accepts strings,
-      // but Responses API sends array content format
+      // Convert Responses API input to LangChain format
+      // Responses API sends array content with typed parts (input_text, output_text, function_call, etc.)
+      // LangChain agent.invoke() expects simple {role, content} messages with string content
       //
-      // IMPORTANT: Include function call context for followup questions
-      // Handle BOTH message objects AND top-level tool call objects
+      // IMPORTANT: Preserve tool call context for followup questions
       const chatHistory = input.slice(0, -1).map((item: any) => {
-        // Handle top-level function_call and function_call_output objects
-        // These are sent by the Databricks provider when using API_PROXY
+        // Handle top-level tool call objects (sent by Databricks provider when using API_PROXY)
         if (item.type === "function_call") {
           return {
             role: "assistant",
@@ -121,9 +119,8 @@ export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof
           };
         }
 
-        // Handle regular message objects
+        // Handle message objects with array content
         if (Array.isArray(item.content)) {
-          // Extract text from text parts
           const textParts = item.content
             .filter((part: any) =>
               part.type === "input_text" ||
@@ -132,34 +129,22 @@ export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof
             )
             .map((part: any) => part.text);
 
-          // Extract tool call information from content array
-          // (for formats that embed tool calls inside message content)
+          // Extract tool calls from content array
           const toolParts = item.content
             .filter((part: any) =>
               part.type === "function_call" ||
-              part.type === "function_call_output" ||
-              part.type === "tool-call" ||
-              part.type === "tool-result"
+              part.type === "function_call_output"
             )
             .map((part: any) => {
-              // Responses API format
               if (part.type === "function_call") {
                 return `[Tool Call: ${part.name}(${JSON.stringify(part.arguments)})]`;
               } else if (part.type === "function_call_output") {
                 return `[Tool Result: ${part.output}]`;
               }
-              // AI SDK ModelMessage format
-              else if (part.type === "tool-call") {
-                return `[Tool Call: ${part.toolName}(${JSON.stringify(part.input || part.args)})]`;
-              } else if (part.type === "tool-result") {
-                return `[Tool Result: ${typeof part.output === 'string' ? part.output : JSON.stringify(part.output)}]`;
-              }
               return "";
             });
 
-          // Combine text and tool context
           const allParts = [...textParts, ...toolParts].filter(p => p.length > 0);
-
           return {
             ...item,
             content: allParts.join("\n"),

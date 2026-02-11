@@ -55,6 +55,49 @@ app.use('/api/session', sessionRouter);
 app.use('/api/messages', messagesRouter);
 app.use('/api/config', configRouter);
 
+// Agent backend proxy (optional)
+// If API_PROXY or AGENT_BACKEND_URL is set, proxy /invocations requests to the agent backend
+const agentBackendUrl =
+  process.env.API_PROXY || process.env.AGENT_BACKEND_URL;
+if (agentBackendUrl) {
+  console.log(`✅ Proxying /invocations to ${agentBackendUrl}`);
+  app.all('/invocations', async (req: Request, res: Response) => {
+    try {
+      const response = await fetch(agentBackendUrl, {
+        method: req.method,
+        headers: req.headers as HeadersInit,
+        body:
+          req.method !== 'GET' && req.method !== 'HEAD'
+            ? JSON.stringify(req.body)
+            : undefined,
+      });
+
+      // Copy status and headers
+      res.status(response.status);
+      response.headers.forEach((value, key) => {
+        res.setHeader(key, value);
+      });
+
+      // Stream the response body
+      if (response.body) {
+        const reader = response.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+      }
+      res.end();
+    } catch (error) {
+      console.error('[/invocations proxy] Error:', error);
+      res.status(502).json({
+        error: 'Proxy error',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+}
+
 // Serve static files in production
 if (!isDevelopment) {
   const clientBuildPath = path.join(__dirname, '../../client/dist');

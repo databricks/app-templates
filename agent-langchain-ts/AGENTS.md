@@ -189,29 +189,35 @@ for await (const chunk of result.textStream) {
 
 **Change agent configuration** (`src/agent.ts`):
 ```typescript
-export async function createAgent(config: AgentConfig = {}): Promise<AgentExecutor> {
-  const systemPrompt = config.systemPrompt || DEFAULT_SYSTEM_PROMPT;
-  const model = createChatModel(config);
-  const tools = await getAllTools(config.mcpConfig);
+// The agent uses standard LangChain.js APIs with manual agentic loop
+export async function createAgent(config: AgentConfig = {}) {
+  const {
+    model: modelName = "databricks-claude-sonnet-4-5",
+    temperature = 0.1,
+    maxTokens = 2000,
+    systemPrompt = DEFAULT_SYSTEM_PROMPT,
+    mcpServers,
+  } = config;
 
-  // Customize prompt, model, tools here
-  const prompt = ChatPromptTemplate.fromMessages([
-    ["system", systemPrompt],
-    ["placeholder", "{chat_history}"],
-    ["human", "{input}"],
-    ["placeholder", "{agent_scratchpad}"],
-  ]);
-
-  const agent = await createToolCallingAgent({ llm: model, tools, prompt });
-
-  return new AgentExecutor({
-    agent,
-    tools,
-    verbose: true,
-    maxIterations: 10,
+  // Create chat model
+  const model = new ChatDatabricks({
+    model: modelName,
+    temperature,
+    maxTokens,
   });
+
+  // Load tools (basic + MCP if configured)
+  const tools = await getAllTools(mcpServers);
+
+  // Bind tools to model using standard LangChain API
+  const modelWithTools = model.bindTools(tools);
+
+  // Return agent that uses manual agentic loop for tool execution
+  return AgentMCP.create(config);
 }
 ```
+
+Note: The agent uses `model.bindTools()` with a manual agentic loop - this is the standard LangChain.js pattern that works with both basic tools and MCP tools.
 
 **Add custom tools** (`src/tools.ts`):
 ```typescript

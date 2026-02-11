@@ -228,19 +228,31 @@ export function getBasicTools() {
 }
 ```
 
-### 6. Customize Agent Execution
+### 6. Customize Agent Behavior
 
-Edit `src/agent.ts`:
+The agent uses a manual agentic loop in `src/agent.ts`. Edit the `AgentMCP` class to customize:
 
 ```typescript
-const executor = new AgentExecutor({
-  agent,
-  tools,
-  verbose: true,        // Set to false for less logging
-  maxIterations: 15,    // Increase for complex tasks
-  returnIntermediateSteps: true,  // Show tool calls
-});
+export class AgentMCP {
+  private maxIterations: number; // Max tool call iterations (default: 10)
+
+  // Customize in constructor or create() method
+  static async create(config: AgentConfig = {}): Promise<AgentMCP> {
+    // ...
+    return new AgentMCP(
+      modelWithTools,
+      tools,
+      systemPrompt,
+      15  // ← Increase maxIterations for complex tasks
+    );
+  }
+}
 ```
+
+The manual agentic loop handles:
+- Tool execution and result formatting
+- Error handling for failed tool calls
+- Iteration limits to prevent infinite loops
 
 ### 7. Add API Endpoints
 
@@ -501,14 +513,19 @@ agent.invoke(input).then(result => {
 
 ## Debugging
 
-### Enable Verbose Logging
+### Enable Debug Logging
+
+The agent already includes comprehensive logging in `src/agent.ts`:
 
 ```typescript
-const executor = new AgentExecutor({
-  agent,
-  tools,
-  verbose: true,  // Enable detailed logs
-});
+// Tool execution logging (already included)
+console.log(`✅ Agent initialized with ${tools.length} tool(s)`);
+console.log(`   Tools: ${tools.map((t) => t.name).join(", ")}`);
+
+// Add more logging in streamEvents() method
+if (event.event === "on_tool_start") {
+  console.log(`[Tool] Calling ${event.name} with:`, event.data?.input);
+}
 ```
 
 ### Add Debug Logs

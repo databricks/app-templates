@@ -357,7 +357,7 @@ npm run build
 - The UI template (`ui/`) is a standalone component
 - It must work with any Responses API backend
 - Don't change its core functionality
-- Only patch it via `ui-patches/` if needed
+- The UI natively supports /invocations proxying via API_PROXY environment variable
 
 ### DO Keep Agent-First Architecture
 

@@ -109,14 +109,20 @@ export function getMCPServers(): DatabricksMCPServer[] {
 }
 ```
 
-### Automatic AgentMCP Pattern
+### LangChain Agent Pattern
 
-The agent automatically uses the manual agentic loop (AgentMCP) when MCP servers are configured:
+The agent uses standard LangChain.js APIs with a manual agentic loop for tool execution:
 ```typescript
-// In src/agent.ts - happens automatically
-if (config.mcpServers && config.mcpServers.length > 0) {
-  console.log("✅ Using AgentMCP (manual agentic loop) for MCP tools");
-  return AgentMCP.create({...});
+// In src/agent.ts - uses standard LangChain.js pattern
+export async function createAgent(config: AgentConfig = {}) {
+  // Load tools (basic + MCP if configured)
+  const tools = await getAllTools(config.mcpServers);
+
+  // Bind tools to model using standard LangChain API
+  const modelWithTools = model.bindTools(tools);
+
+  // Manual agentic loop: invoke model, execute tools, add ToolMessages, repeat
+  // This pattern works with both basic tools and MCP tools
 }
 ```
 
@@ -149,8 +155,8 @@ databricks bundle deploy
 
 See `mcp-known-issues.md` and `mcp-best-practices.md` in this directory for:
 - Known limitations and workarounds
-- Implementation patterns (AgentMCP vs AgentExecutor)
-- Manual agentic loop details
+- LangChain.js manual agentic loop pattern
+- MCP tool integration best practices
 
 ## Additional Resources
 

@@ -1,12 +1,12 @@
-# MCP Tools - Known Issues
+# MCP Tools - Implementation Notes
 
-## Issue: MCP Tools Fail with LangChain AgentExecutor
+## Status: ✅ RESOLVED
 
-### Status
-🔴 **BLOCKED** - Awaiting fix in `@databricks/langchainjs` or `@langchain/mcp-adapters`
+The agent now uses the standard LangChain.js manual agentic loop pattern, which works correctly with MCP tools.
 
-### Summary
-MCP tools (Databricks SQL, UC Functions, Vector Search, Genie) **can be loaded and called directly**, but **fail when used within LangChain's AgentExecutor**.
+## Previous Issue (RESOLVED)
+
+Previously, MCP tools failed when used with LangChain's `AgentExecutor`. This has been resolved by switching to the manual agentic loop pattern using `model.bindTools()`.
 
 ### Evidence
 
@@ -75,62 +75,45 @@ curl -X POST http://localhost:5001/invocations \
 # {"output":""}
 ```
 
-### Root Cause Analysis
+## Solution
 
-The issue appears to be in how LangChain's AgentExecutor integrates with MCP tools:
+✅ **Manual Agentic Loop Pattern** (implemented in `src/agent.ts`):
 
-1. **Tool Format Mismatch**: MCP tools might not conform to LangChain's expected tool interface
-2. **Result Serialization**: Tool results might not be properly serialized back to the model
-3. **Client Lifecycle**: MCP client might need special handling in agent context
-
-### Attempted Fixes
-
-❌ **Keep MCP Client Alive Globally**
-- Created `globalMCPClient` variable
-- Result: No change, still fails
-
-❌ **Enable Responses API**
-- Set `USE_RESPONSES_API=true`
-- Result: No change, still fails
-
-❌ **Different Model (Claude vs Llama)**
-- Tested with both `databricks-claude-sonnet-4-5` and `databricks-meta-llama-3-3-70b-instruct`
-- Result: Both fail with MCP tools
-
-### Workaround
-
-For now, **basic tools work fine**. Users can:
-
-1. Use the 3 built-in basic tools (weather, calculator, time)
-2. Add custom LangChain tools using `DynamicStructuredTool`
-3. Wait for MCP agent integration fix
-
-**Example - Custom SQL Tool (Workaround):**
 ```typescript
-import { tool } from "@langchain/core/tools";
-import { z } from "zod";
+// Standard LangChain.js pattern
+const model = new ChatDatabricks({ model: "databricks-claude-sonnet-4-5" });
+const tools = await getAllTools(mcpServers); // Loads basic + MCP tools
+const modelWithTools = model.bindTools(tools); // Bind tools to model
 
-const sqlTool = tool(
-  async ({ query }) => {
-    // Use Databricks SDK SQL execution directly
-    const result = await executeSQLDirectly(query);
-    return JSON.stringify(result);
-  },
-  {
-    name: "execute_sql",
-    description: "Execute SQL queries on Databricks",
-    schema: z.object({
-      query: z.string().describe("SQL query to execute"),
-    }),
+// Manual agentic loop
+const messages = [new SystemMessage(systemPrompt), new HumanMessage(input)];
+let response = await modelWithTools.invoke(messages);
+
+while (response.tool_calls && response.tool_calls.length > 0) {
+  messages.push(response); // Add AI message with tool calls
+
+  // Execute each tool call
+  for (const toolCall of response.tool_calls) {
+    const tool = tools.find(t => t.name === toolCall.name);
+    const result = await tool.invoke(toolCall.args);
+
+    // Add tool result as ToolMessage
+    messages.push(new ToolMessage({
+      content: JSON.stringify(result),
+      tool_call_id: toolCall.id,
+      name: toolCall.name,
+    }));
   }
-);
+
+  response = await modelWithTools.invoke(messages);
+}
 ```
 
-### Next Steps
-
-1. **File Issue**: Report to `@databricks/langchainjs` or `@langchain/mcp-adapters`
-2. **Monitor Updates**: Check for package updates that fix agent integration
-3. **Alternative Approach**: Consider using `model.bindTools(tools)` directly instead of AgentExecutor
+This pattern:
+- ✅ Works with both basic tools and MCP tools
+- ✅ Provides explicit control over tool execution
+- ✅ Handles errors transparently
+- ✅ Compatible with Responses API format
 
 ### Documentation Status
 
@@ -152,6 +135,6 @@ const sqlTool = tool(
 
 ---
 
-**Last Updated:** 2026-02-08
-**Issue Status:** Open - Awaiting upstream fix
-**Impact:** MCP tools unusable in agent, but direct invocation works
+**Last Updated:** 2026-02-10
+**Status:** ✅ RESOLVED - Using manual agentic loop pattern
+**Implementation:** `src/agent.ts` uses standard LangChain.js APIs

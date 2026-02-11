@@ -44,36 +44,7 @@ mv "$TEMP_DIR/e2e-chatbot-app-next" "$UI_WORKSPACE_PATH"
 rm -rf "$TEMP_DIR"
 
 echo -e "${GREEN}✓ UI cloned successfully${NC}"
-
-# Copy custom exports to UI server
-echo -e "${YELLOW}Adding custom routes to UI server...${NC}"
-EXPORTS_SOURCE="./ui-patches/exports.ts"
-EXPORTS_DEST="$UI_WORKSPACE_PATH/server/src/exports.ts"
-
-if [ -f "$EXPORTS_SOURCE" ]; then
-    cp "$EXPORTS_SOURCE" "$EXPORTS_DEST"
-    echo -e "${GREEN}✓ Custom exports copied${NC}"
-fi
-
-# Patch UI server to load custom exports
-UI_SERVER_INDEX="$UI_WORKSPACE_PATH/server/src/index.ts"
-
-if [ -f "$UI_SERVER_INDEX" ]; then
-    # Add import and call to exports at the end of the file, before server start
-    sed -i.bak '/^async function startServer()/i\
-// Load custom routes if exports file exists\
-try {\
-  const { addCustomRoutes } = await import(\"./exports.js\");\
-  addCustomRoutes(app);\
-} catch (error) {\
-  // exports.ts does not exist or failed to load, skip\
-}\
-' "$UI_SERVER_INDEX"
-
-    rm -f "${UI_SERVER_INDEX}.bak"
-    echo -e "${GREEN}✓ UI server patched to load custom routes${NC}"
-else
-    echo -e "${YELLOW}⚠️  UI server index.ts not found, skipping patch${NC}"
-fi
-
 echo -e "${GREEN}✓ Setup complete!${NC}"
+echo -e ""
+echo -e "${YELLOW}Note: The UI will proxy /invocations requests to the agent backend${NC}"
+echo -e "${YELLOW}Set API_PROXY environment variable to configure the agent URL${NC}"

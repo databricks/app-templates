@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# This script fetches the e2e-chatbot-app-next UI template if not already present.
+# No patching is needed - the UI natively supports proxying /invocations via API_PROXY.
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -10,7 +13,7 @@ NC='\033[0m' # No Color
 UI_DIR="../e2e-chatbot-app-next"
 UI_WORKSPACE_PATH="./ui"
 
-echo -e "${GREEN}🔧 Setting up Chat UI...${NC}"
+echo -e "${GREEN}🔧 Fetching Chat UI template...${NC}"
 
 # Check if UI exists at workspace location
 if [ -d "$UI_WORKSPACE_PATH" ]; then

@@ -242,10 +242,7 @@ const provider = createDatabricksProvider({
   // When using endpoints such as Agent Bricks or custom agents, we need to use remote tool calling to handle the tool calls
   useRemoteToolCalling: true,
   baseURL: `${hostname}/serving-endpoints`,
-  formatUrl: ({ baseUrl, path }) => {
-    const url = API_PROXY ?? `${baseUrl}${path}`;
-    return url;
-  },
+  formatUrl: ({ baseUrl, path }) => API_PROXY ?? `${baseUrl}${path}`,
   fetch: async (...[input, init]: Parameters<typeof fetch>) => {
     // Always get fresh token for each request (will use cache if valid)
     const currentToken = await getProviderToken();
@@ -337,12 +334,9 @@ export class OAuthAwareProvider implements SmartProvider {
       }
 
       const servingEndpoint = process.env.DATABRICKS_SERVING_ENDPOINT;
-
-      // If DATABRICKS_MODEL_SERVING_ENDPOINT is a full agent endpoint (agent/v1/responses or agent/v2/responses),
-      // always use responses() method to ensure compatibility with our custom /invocations endpoint
       const endpointDetails = await getEndpointDetails(servingEndpoint);
 
-      console.log(`Creating fresh model for ${id}, task type: ${endpointDetails.task}`);
+      console.log(`Creating fresh model for ${id}`);
       switch (endpointDetails.task) {
         case 'agent/v2/chat':
           return provider.chatAgent(servingEndpoint);
@@ -352,8 +346,6 @@ export class OAuthAwareProvider implements SmartProvider {
         case 'llm/v1/chat':
           return provider.chatCompletions(servingEndpoint);
         default:
-          // Default to responses for unknown task types
-          console.log(`Unknown task type ${endpointDetails.task}, defaulting to responses()`);
           return provider.responses(servingEndpoint);
       }
     })();

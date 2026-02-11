@@ -3,10 +3,10 @@
  */
 
 import { describe, test, expect, beforeAll } from "@jest/globals";
-import { createAgent, AgentMCP } from "../src/agent.js";
+import { createAgent } from "../src/agent.js";
 
 describe("Agent", () => {
-  let agent: AgentMCP;
+  let agent: Awaited<ReturnType<typeof createAgent>>;
 
   beforeAll(async () => {
     // Create agent with basic tools only (no MCP for tests)

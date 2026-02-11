@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "ES2022",
     "lib": ["ES2022"],
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "allowJs": true,
     "outDir": "./dist",
@@ -20,9 +20,6 @@
   "include": ["src/**/*", "scripts/**/*", "tests/**/*"],
   "exclude": [
     "node_modules",
-    "dist",
-    "tests/mcp-tools.test.ts",
-    "tests/agent.test.ts",
-    "scripts/discover-tools.ts"
+    "dist"
   ]
 }

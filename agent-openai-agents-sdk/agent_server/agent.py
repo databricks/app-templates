@@ -1,3 +1,4 @@
+from databricks.sdk import WorkspaceClient
 from typing import AsyncGenerator
 
 import mlflow
@@ -24,10 +25,11 @@ set_trace_processors([])  # only use mlflow for trace processing
 mlflow.openai.autolog()
 
 
-async def init_mcp_server():
+async def init_mcp_server(workspace_client: WorkspaceClient | None = None):
     return McpServer(
-        url=build_mcp_url("/api/2.0/mcp/functions/system/ai"),
+        url=build_mcp_url("/api/2.0/mcp/functions/system/ai", workspace_client=workspace_client),
         name="system.ai UC function MCP server",
+        workspace_client=workspace_client,
     )
 
 
@@ -41,10 +43,11 @@ def create_coding_agent(mcp_server: McpServer) -> Agent:
 
 
 @invoke()
-async def invoke(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
+async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
+    workspace_client = WorkspaceClient()
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
-    async with await init_mcp_server() as mcp_server:
+    async with await init_mcp_server(workspace_client) as mcp_server:
         agent = create_coding_agent(mcp_server)
         messages = [i.model_dump() for i in request.input]
         result = await Runner.run(agent, messages)
@@ -52,10 +55,11 @@ async def invoke(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
 
 
 @stream()
-async def stream(request: dict) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
+async def stream_handler(request: dict) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
+    workspace_client = WorkspaceClient()
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
-    async with await init_mcp_server() as mcp_server:
+    async with await init_mcp_server(workspace_client) as mcp_server:
         agent = create_coding_agent(mcp_server)
         messages = [i.model_dump() for i in request.input]
         result = Runner.run_streamed(agent, input=messages)

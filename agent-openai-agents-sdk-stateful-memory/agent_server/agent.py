@@ -36,11 +36,19 @@ LAKEBASE_INSTANCE_NAME = resolve_lakebase_instance_name(_LAKEBASE_INSTANCE_NAME_
 
 def get_session_id(request: ResponsesAgentRequest) -> str:
     """Extract session_id from request or generate a new one."""
-    # Try to get session_id from custom_inputs if provided
-    if hasattr(request, "custom_inputs") and request.custom_inputs:
-        if "session_id" in request.custom_inputs:
-            return request.custom_inputs["session_id"]
-    # Fall back to generating a new session_id
+    # Priority:
+    # 1. Use session_id from custom_inputs
+    # 2. Use conversation_id from ChatContext
+    #    https://mlflow.org/docs/latest/api_reference/python_api/mlflow.types.html#mlflow.types.agent.ChatContext
+    # 3. Generate a new UUID
+    ci = dict(request.custom_inputs or {})
+
+    if "session_id" in ci and ci["session_id"]:
+        return str(ci["session_id"])
+
+    if request.context and getattr(request.context, "conversation_id", None):
+        return str(request.context.conversation_id)
+
     return str(uuid7())
 
 # NOTE: this will work for all databricks models OTHER than GPT-OSS, which uses a slightly different API
@@ -71,7 +79,7 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
 
-    # Create session for persistent conversation history with your Databricks Lakebase instance
+    # Create session for stateful, short-term conversation history with your Databricks Lakebase instance
     session = AsyncDatabricksSession(
         session_id=get_session_id(request),
         instance_name=LAKEBASE_INSTANCE_NAME,

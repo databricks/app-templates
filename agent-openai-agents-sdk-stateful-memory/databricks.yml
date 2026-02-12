@@ -19,6 +19,12 @@ resources:
           experiment:
             experiment_id: "${resources.experiments.agent_openai_agents_sdk_stateful_memory_experiment.id}"
             permission: 'CAN_MANAGE'
+        # Lakebase instance for persistent session storage
+        - name: 'database'
+          database:
+            instance_name: '<your-lakebase-instance-name>'
+            database_name: 'postgres'
+            permission: 'CAN_CONNECT_AND_CREATE'
 
 targets:
   dev:

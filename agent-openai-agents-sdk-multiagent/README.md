@@ -18,16 +18,16 @@ The orchestrator agent decides which tool/backend to use based on the user's que
 
 Before running, you **must** replace these placeholders in `agent_server/agent.py`:
 
-| Placeholder | Description |
-|-------------|-------------|
-| `<YOUR-APP-AGENT-NAME>` | Name of another agent deployed as a Databricks App |
-| `<YOUR-GENIE-SPACE-ID>` | UUID of your Genie space (from the Genie URL) |
-| `<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>` | Serving endpoint name (flat name like `my-ka-endpoint`, NOT a Vector Search index) |
-| `<YOUR-SERVING-ENDPOINT>` | Serving endpoint name for another agent or model |
+| Placeholder | Where | Description |
+|-------------|-------|-------------|
+| `<YOUR-GENIE-SPACE-ID>` | `GENIE_SPACE_ID` | UUID of your Genie space (from the Genie URL) |
+| `<YOUR-APP-AGENT-NAME>` | `SUBAGENTS[0]["endpoint"]` | Name of another agent deployed as a Databricks App |
+| `<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>` | `SUBAGENTS[1]["endpoint"]` | Serving endpoint name (flat name like `my-ka-endpoint`, NOT a Vector Search index) |
+| `<YOUR-SERVING-ENDPOINT>` | `SUBAGENTS[2]["endpoint"]` | Serving endpoint name for another agent or model |
 
 You must also update the matching placeholders in `databricks.yml` to grant the app permission to access these resources.
 
-After replacing placeholders, **update the orchestrator's instructions** in `create_orchestrator_agent()` to describe your specific tools and when each should be used. The more specific the instructions, the more accurately the agent will route requests.
+To add or remove subagents, edit the `SUBAGENTS` list — each entry automatically becomes a separate tool for the orchestrator. After editing subagents, **update the orchestrator's instructions** in `create_orchestrator_agent()` to describe your specific tools and when each should be used. The more specific the instructions, the more accurately the agent will route requests.
 
 > **Important:** The serving endpoint tools use the **Responses API** exclusively. Your endpoints must appear as **"Agent (Responses)"** in the Task column on the Serving UI in Databricks. Endpoints that only support the Chat Completions API ("LLM" task type) will not work with this template as-is.
 

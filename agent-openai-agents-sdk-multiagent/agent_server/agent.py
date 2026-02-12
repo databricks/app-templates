@@ -41,30 +41,57 @@ from agent_server.utils import (
 )
 
 # ---------------------------------------------------------------------------
-# TODO: Configure these values for your environment
+# TODO: Configure the subagents and Genie space for your environment.
+#   - Add, remove, or modify entries in SUBAGENTS to change which backends
+#     the orchestrator can call.  Each entry becomes a separate tool.
+#   - "type" determines how the endpoint is called:
+#       "app"              → Responses API via apps/<endpoint>
+#       "serving_endpoint" → Responses API via <endpoint> (must be task type
+#                            agent/v1/responses, shown as "Agent (Responses)"
+#                            on the Serving UI)
 # ---------------------------------------------------------------------------
-
-# Name of another agent deployed as a Databricks App (e.g. "my-specialist-agent")
-APP_AGENT_NAME = "<YOUR-APP-AGENT-NAME>"  # TODO: set to your Databricks App name
 
 # Genie space ID (UUID from the Genie space URL, e.g. "01abc234def567890abc1234def56789")
 GENIE_SPACE_ID = "<YOUR-GENIE-SPACE-ID>"  # TODO: set to your Genie space ID
 
-# Serving endpoint name for a knowledge assistant — must be a Responses API endpoint
-# (shows as "Agent (Responses)" in the Task column on the Serving UI).
-# This is the flat endpoint name (e.g. "my-ka-endpoint"), NOT a Vector Search index
-# (catalog.schema.index) or other 3-part name.
-KNOWLEDGE_ASSISTANT_ENDPOINT = "<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>"  # TODO: set to your endpoint name
-
-# Serving endpoint name for another agent/model — must be a Responses API endpoint
-# (shows as "Agent (Responses)" in the Task column on the Serving UI).
-SERVING_ENDPOINT = "<YOUR-SERVING-ENDPOINT>"  # TODO: set to your endpoint name
+SUBAGENTS = [
+    {
+        "name": "app_agent",
+        "description": (
+            "Query a specialist agent deployed as a Databricks App. "
+            "Use this for questions the specialist app agent handles."
+        ),
+        "type": "app",
+        "endpoint": "<YOUR-APP-AGENT-NAME>",  # TODO: set to your Databricks App name
+    },
+    {
+        "name": "knowledge_assistant",
+        "description": (
+            "Query the knowledge-assistant endpoint on Model Serving. "
+            "Use this for knowledge-base / documentation lookups. "
+            "The endpoint must have task type agent/v1/responses."
+        ),
+        "type": "serving_endpoint",
+        "endpoint": "<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>",  # TODO: set to your endpoint name (flat name like "my-ka-endpoint", NOT a Vector Search index)
+    },
+    {
+        "name": "serving_endpoint",
+        "description": (
+            "Query a model hosted on a Databricks Model Serving endpoint. "
+            "Use this for questions best answered by the serving model. "
+            "The endpoint must have task type agent/v1/responses."
+        ),
+        "type": "serving_endpoint",
+        "endpoint": "<YOUR-SERVING-ENDPOINT>",  # TODO: set to your endpoint name
+    },
+]
 
 # Fail fast if placeholders haven't been replaced
-assert not APP_AGENT_NAME.startswith("<YOUR-"), "Set APP_AGENT_NAME in agent.py before running. See README.md."
 assert not GENIE_SPACE_ID.startswith("<YOUR-"), "Set GENIE_SPACE_ID in agent.py before running. See README.md."
-assert not KNOWLEDGE_ASSISTANT_ENDPOINT.startswith("<YOUR-"), "Set KNOWLEDGE_ASSISTANT_ENDPOINT in agent.py before running. See README.md."
-assert not SERVING_ENDPOINT.startswith("<YOUR-"), "Set SERVING_ENDPOINT in agent.py before running. See README.md."
+for _sa in SUBAGENTS:
+    assert not _sa["endpoint"].startswith("<YOUR-"), (
+        f"Set endpoint for subagent {_sa['name']!r} in agent.py before running. See README.md."
+    )
 
 # ---------------------------------------------------------------------------
 # Client setup
@@ -80,56 +107,30 @@ mlflow.openai.autolog()
 _tool_client = AsyncDatabricksOpenAI()
 
 # ---------------------------------------------------------------------------
-# Tool functions — each wraps a call to a different backend
+# Subagent tools — one tool is generated per SUBAGENTS entry above
 # ---------------------------------------------------------------------------
 
 
-@function_tool
-async def query_app_agent(question: str) -> str:
-    """Query a specialist agent deployed as a Databricks App.
+def _make_subagent_tool(subagent: dict):
+    """Create a function_tool for a single subagent definition."""
+    endpoint = subagent["endpoint"]
+    model = f"apps/{endpoint}" if subagent["type"] == "app" else endpoint
 
-    Use this tool when the user's question should be handled by the
-    specialist agent (e.g. a domain-specific assistant running on Apps).
-    """
-    response = await _tool_client.responses.create(
-        model=f"apps/{APP_AGENT_NAME}",
-        input=[{"role": "user", "content": question}],
-    )
-    return response.output_text
+    async def _call(question: str) -> str:
+        response = await _tool_client.responses.create(
+            model=model,
+            input=[{"role": "user", "content": question}],
+        )
+        return response.output_text
 
-
-@function_tool
-async def query_knowledge_assistant(question: str) -> str:
-    """Query the knowledge-assistant endpoint on Model Serving.
-
-    Use this tool for questions that require the knowledge assistant,
-    such as searching internal documentation or knowledge bases.
-
-    The endpoint must have task type ``agent/v1/responses`` (shown as
-    "Agent (Responses)" on the Serving UI).
-    """
-    response = await _tool_client.responses.create(
-        model=KNOWLEDGE_ASSISTANT_ENDPOINT,
-        input=[{"role": "user", "content": question}],
-    )
-    return response.output_text
+    # Give the function a unique name and docstring so the orchestrator
+    # sees it as a distinct, well-described tool.
+    _call.__name__ = f"query_{subagent['name']}"
+    _call.__doc__ = subagent["description"]
+    return function_tool(_call)
 
 
-@function_tool
-async def query_serving_endpoint(question: str) -> str:
-    """Query a model hosted on a Databricks Model Serving endpoint.
-
-    Use this tool for questions that should be answered by the model
-    on the serving endpoint (e.g. a fine-tuned or specialized model).
-
-    The endpoint must have task type ``agent/v1/responses`` (shown as
-    "Agent (Responses)" on the Serving UI).
-    """
-    response = await _tool_client.responses.create(
-        model=SERVING_ENDPOINT,
-        input=[{"role": "user", "content": question}],
-    )
-    return response.output_text
+subagent_tools = [_make_subagent_tool(sa) for sa in SUBAGENTS]
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +164,7 @@ def create_orchestrator_agent(mcp_server: McpServer) -> Agent:
         ),
         model="databricks-claude-sonnet-4-5",  # TODO: change model if desired
         mcp_servers=[mcp_server],
-        tools=[query_app_agent, query_knowledge_assistant, query_serving_endpoint],
+        tools=subagent_tools,
     )
 
 

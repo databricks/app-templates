@@ -60,6 +60,11 @@ KNOWLEDGE_ASSISTANT_ENDPOINT = "<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>"  # TODO: se
 # (shows as "Agent (Responses)" in the Task column on the Serving UI).
 SERVING_ENDPOINT = "<YOUR-SERVING-ENDPOINT>"  # TODO: set to your endpoint name
 
+# Fail fast if placeholders haven't been replaced
+assert not APP_AGENT_NAME.startswith("<YOUR-"), "Set APP_AGENT_NAME in agent.py before running. See README.md."
+assert not GENIE_SPACE_ID.startswith("<YOUR-"), "Set GENIE_SPACE_ID in agent.py before running. See README.md."
+assert not KNOWLEDGE_ASSISTANT_ENDPOINT.startswith("<YOUR-"), "Set KNOWLEDGE_ASSISTANT_ENDPOINT in agent.py before running. See README.md."
+assert not SERVING_ENDPOINT.startswith("<YOUR-"), "Set SERVING_ENDPOINT in agent.py before running. See README.md."
 
 # ---------------------------------------------------------------------------
 # Client setup
@@ -99,6 +104,9 @@ async def query_knowledge_assistant(question: str) -> str:
 
     Use this tool for questions that require the knowledge assistant,
     such as searching internal documentation or knowledge bases.
+
+    The endpoint must have task type ``agent/v1/responses`` (shown as
+    "Agent (Responses)" on the Serving UI).
     """
     response = await _tool_client.responses.create(
         model=KNOWLEDGE_ASSISTANT_ENDPOINT,
@@ -113,6 +121,9 @@ async def query_serving_endpoint(question: str) -> str:
 
     Use this tool for questions that should be answered by the model
     on the serving endpoint (e.g. a fine-tuned or specialized model).
+
+    The endpoint must have task type ``agent/v1/responses`` (shown as
+    "Agent (Responses)" on the Serving UI).
     """
     response = await _tool_client.responses.create(
         model=SERVING_ENDPOINT,

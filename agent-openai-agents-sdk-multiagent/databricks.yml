@@ -1,15 +1,15 @@
 bundle:
-  name: agent_openai_multiagent
+  name: agent_openai_agents_sdk_multiagent
 
 resources:
   # MLflow experiment for agent tracing - automatically created by bundle
   experiments:
-    agent_openai_multiagent_experiment:
+    agent_openai_agents_sdk_multiagent_experiment:
       name: /Users/${workspace.current_user.userName}/${bundle.name}-${bundle.target}
 
   apps:
-    agent_openai_multiagent:
-      name: "${bundle.target}-agent-openai-multiagent"
+    agent_openai_agents_sdk_multiagent:
+      name: "${bundle.target}-agent-openai-agents-sdk-multiagent"
       description: "Multi-agent orchestrator that queries other agents, Genie spaces, and serving endpoints"
       source_code_path: ./
 
@@ -17,7 +17,7 @@ resources:
       resources:
         - name: 'experiment'
           experiment:
-            experiment_id: "${resources.experiments.agent_openai_multiagent_experiment.id}"
+            experiment_id: "${resources.experiments.agent_openai_agents_sdk_multiagent_experiment.id}"
             permission: 'CAN_MANAGE'
 
         # TODO: Set your Genie space ID
@@ -45,7 +45,7 @@ resources:
         #
         # 1. Find this app's SP applicationId (UUID):
         #    databricks service-principals list -o json | \
-        #      python3 -c "import sys,json; [print(sp['applicationId'], sp['displayName']) for sp in json.load(sys.stdin) if 'agent-openai-multiagent' in sp.get('displayName','')]"
+        #      python3 -c "import sys,json; [print(sp['applicationId'], sp['displayName']) for sp in json.load(sys.stdin) if 'agent-openai-agents-sdk-multiagent' in sp.get('displayName','')]"
         #
         # 2. Grant CAN_USE on the target app using the REST API:
         #    curl -X PATCH "https://<workspace>/api/2.0/permissions/apps/<YOUR-APP-AGENT-NAME>" \
@@ -70,5 +70,5 @@ targets:
     #   host: https://...
     resources:
       apps:
-        agent_openai_multiagent:
-          name: agent-openai-multiagent
+        agent_openai_agents_sdk_multiagent:
+          name: agent-openai-agents-sdk-multiagent

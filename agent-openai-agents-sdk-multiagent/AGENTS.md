@@ -70,7 +70,7 @@ Ask the user: "I see there's an existing app with the same name. Would you like 
 | Setup | `uv run quickstart` |
 | Discover tools | `uv run discover-tools` |
 | Run locally | `uv run start-app` |
-| Deploy | `databricks bundle deploy && databricks bundle run agent_openai_multiagent` |
+| Deploy | `databricks bundle deploy && databricks bundle run agent_openai_agents_sdk_multiagent` |
 | View logs | `databricks apps logs <app-name> --follow` |
 
 ---

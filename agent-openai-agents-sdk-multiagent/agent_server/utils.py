@@ -30,24 +30,24 @@ def get_user_workspace_client() -> WorkspaceClient:
     return WorkspaceClient(token=token, auth_type="pat")
 
 
-def sanitize_output_items(items) -> list[dict]:
-    """Convert agent output items to dicts safe for ResponsesAgentResponse.
+def _sanitize_item(input_item: dict) -> dict:
+    """Sanitize a single output item dict for Pydantic validation.
 
-    MCP tool calls (e.g. Genie) can return output items where the ``output``
-    field is a *list* of content objects instead of a plain string.  The
-    ``ResponsesAgentResponse`` Pydantic model expects ``output`` to be a
-    string, so passing the list through directly causes a validation error.
+    MCP tool calls (e.g. Genie) can return items where the ``output`` field is
+    a *list* of content objects instead of a plain string. MLflow's Pydantic
+    models expect ``output`` to be a string, so this serialises any non-string
+    values to JSON.
 
-    This helper serialises any non-string ``output`` values to JSON strings
-    so the response always passes validation.
+    TODO: Remove once https://github.com/mlflow/mlflow/pull/20777 is released.
     """
-    sanitized = []
-    for item in items:
-        input_item = item.to_input_item()
-        if isinstance(input_item.get("output"), list):
-            input_item["output"] = json.dumps(input_item["output"])
-        sanitized.append(input_item)
-    return sanitized
+    if isinstance(input_item.get("output"), list):
+        input_item["output"] = json.dumps(input_item["output"])
+    return input_item
+
+
+def sanitize_output_items(items) -> list[dict]:
+    """Convert agent output items to dicts safe for ResponsesAgentResponse."""
+    return [_sanitize_item(item.to_input_item()) for item in items]
 
 
 async def process_agent_stream_events(
@@ -68,5 +68,5 @@ async def process_agent_stream_events(
         elif event.type == "run_item_stream_event" and event.item.type == "tool_call_output_item":
             yield ResponsesAgentStreamEvent(
                 type="response.output_item.done",
-                item=event.item.to_input_item(),
+                item=_sanitize_item(event.item.to_input_item()),
             )

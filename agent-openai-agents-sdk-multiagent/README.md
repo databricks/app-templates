@@ -201,7 +201,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
    Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/tutorial) installed and configured.
 
    ```bash
-   databricks apps create agent-openai-multiagent
+   databricks apps create agent-openai-agents-sdk-multiagent
    ```
 
 1. **Set up authentication to Databricks resources**
@@ -220,7 +220,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
    ```bash
    DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
-   databricks sync . "/Users/$DATABRICKS_USERNAME/agent-openai-multiagent"
+   databricks sync . "/Users/$DATABRICKS_USERNAME/agent-openai-agents-sdk-multiagent"
    ```
 
 3. **Deploy your Databricks App**
@@ -228,7 +228,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
    See the [Databricks Apps deploy documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy?language=Databricks+CLI#deploy-the-app).
 
    ```bash
-   databricks apps deploy agent-openai-multiagent --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/agent-openai-multiagent
+   databricks apps deploy agent-openai-agents-sdk-multiagent --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/agent-openai-agents-sdk-multiagent
    ```
 
 4. **Query your agent hosted on Databricks Apps**

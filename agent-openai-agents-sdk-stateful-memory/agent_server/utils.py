@@ -93,8 +93,11 @@ def _sanitize_item(input_item: dict) -> dict:
 
     TODO: Remove once https://github.com/mlflow/mlflow/pull/20777 is released.
     """
-    if isinstance(input_item.get("output"), list):
-        input_item["output"] = json.dumps(input_item["output"])
+    if not isinstance(input_item.get("output"), str):
+        try:
+            input_item["output"] = json.dumps(input_item.get("output"))
+        except (TypeError, ValueError):
+            input_item["output"] = str(input_item.get("output"))
     return input_item
 
 

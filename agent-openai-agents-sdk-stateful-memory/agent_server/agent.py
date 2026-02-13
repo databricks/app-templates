@@ -102,7 +102,7 @@ async def stream_handler(request: ResponsesAgentRequest) -> AsyncGenerator[Respo
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
 
-    # Create session for persistent conversation history with your Databricks Lakebase instance
+    # Create session for stateful, short-term conversation history with your Databricks Lakebase instance
     session = AsyncDatabricksSession(
         session_id=get_session_id(request),
         instance_name=LAKEBASE_INSTANCE_NAME,

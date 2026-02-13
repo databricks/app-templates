@@ -15,6 +15,7 @@ dependencies = [
     "python-dotenv",
     "uuid-utils>=0.10.0",
     "databricks-openai[memory]>=0.11.1",
+    "databricks-agents",
 ]
 
 [build-system]

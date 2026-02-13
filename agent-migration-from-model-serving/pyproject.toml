@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.115.12",
     "uvicorn>=0.34.2",
     "mlflow>=3.8.0rc0",
+    "databricks-agents",
     "python-dotenv",
 ]
 

@@ -51,8 +51,9 @@ export interface TracingConfig {
 
 export class MLflowTracing {
   private provider: NodeTracerProvider;
-  private exporter: OTLPTraceExporter;
+  private exporter!: OTLPTraceExporter;  // Will be initialized in initialize()
   private isInitialized = false;
+  private authToken?: string;
 
   constructor(private config: TracingConfig = {}) {
     // Set defaults
@@ -67,33 +68,17 @@ export class MLflowTracing {
       "langchain-agent-ts";
     this.config.useBatchProcessor = config.useBatchProcessor ?? true;
 
-    // Construct trace endpoint URL
-    const traceUrl = this.buildTraceUrl();
-    const headers = this.buildHeaders();
-
-    // Create OTLP exporter
-    this.exporter = new OTLPTraceExporter({
-      url: traceUrl,
-      headers,
-    });
-
-    // Create tracer provider with resource attributes
+    // Note: Exporter will be created in initialize() after fetching auth token
     this.provider = new NodeTracerProvider({
       resource: new Resource({
         [ATTR_SERVICE_NAME]: this.config.serviceName,
       }),
     });
-
-    // Add span processor
-    const processor = this.config.useBatchProcessor
-      ? new BatchSpanProcessor(this.exporter)
-      : new SimpleSpanProcessor(this.exporter);
-
-    this.provider.addSpanProcessor(processor);
   }
 
   /**
    * Build MLflow trace endpoint URL
+   * Uses Databricks OTel collector endpoints (preview feature)
    */
   private buildTraceUrl(): string {
     const baseUri = this.config.mlflowTrackingUri;
@@ -110,7 +95,9 @@ export class MLflowTracing {
       if (!host.startsWith("http://") && !host.startsWith("https://")) {
         host = `https://${host}`;
       }
-      return `${host.replace(/\/$/, "")}/api/2.0/mlflow/traces`;
+      // Databricks OTel collector endpoint (preview)
+      // https://docs.databricks.com/api/2.0/otel/v1/traces
+      return `${host.replace(/\/$/, "")}/api/2.0/otel/v1/traces`;
     }
 
     // Local or custom MLflow server
@@ -118,10 +105,74 @@ export class MLflowTracing {
   }
 
   /**
-   * Build headers for trace export
+   * Get OAuth2 access token using client credentials flow
    */
-  private buildHeaders(): Record<string, string> {
+  private async getOAuth2Token(): Promise<string | null> {
+    const clientId = process.env.DATABRICKS_CLIENT_ID;
+    const clientSecret = process.env.DATABRICKS_CLIENT_SECRET;
+    let host = process.env.DATABRICKS_HOST;
+
+    if (!clientId || !clientSecret || !host) {
+      return null;
+    }
+
+    // Ensure host has https:// prefix
+    if (!host.startsWith("http://") && !host.startsWith("https://")) {
+      host = `https://${host}`;
+    }
+
+    try {
+      const tokenUrl = `${host}/oidc/v1/token`;
+      const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+
+      const response = await fetch(tokenUrl, {
+        method: "POST",
+        headers: {
+          "Authorization": `Basic ${credentials}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "grant_type=client_credentials&scope=all-apis",
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.warn(`⚠️  OAuth2 token request failed: ${response.status} - ${errorText}`);
+        return null;
+      }
+
+      const data = await response.json() as { access_token: string };
+      return data.access_token;
+    } catch (error) {
+      console.warn("⚠️  Error getting OAuth2 token:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Build headers for trace export using stored auth token
+   * Includes required headers for Databricks OTel collector
+   */
+  private buildHeadersWithToken(): Record<string, string> {
     const headers: Record<string, string> = {};
+
+    // Required for Databricks OTel collector
+    if (this.config.mlflowTrackingUri === "databricks") {
+      headers["content-type"] = "application/x-protobuf";
+
+      // Unity Catalog table name for trace storage
+      const ucTableName = process.env.OTEL_UC_TABLE_NAME;
+      if (ucTableName) {
+        headers["X-Databricks-UC-Table-Name"] = ucTableName;
+        console.log(`📊 Traces will be stored in UC table: ${ucTableName}`);
+      } else {
+        console.warn(
+          "⚠️  OTEL_UC_TABLE_NAME not set. You need to:\n" +
+          "   1. Enable OTel collector preview in your workspace\n" +
+          "   2. Create UC tables for trace storage\n" +
+          "   3. Set OTEL_UC_TABLE_NAME=<catalog>.<schema>.<prefix>_otel_spans"
+        );
+      }
+    }
 
     // Add experiment ID if provided
     if (this.config.experimentId) {
@@ -133,39 +184,13 @@ export class MLflowTracing {
       headers["x-mlflow-run-id"] = this.config.runId;
     }
 
-    // Add Databricks authentication token
-    if (this.config.mlflowTrackingUri === "databricks") {
-      let token = process.env.DATABRICKS_TOKEN;
-
-      // For local development, try to get token from Databricks CLI if not set
-      if (!token && process.env.DATABRICKS_CONFIG_PROFILE) {
-        try {
-          const { execSync } = require("child_process");
-          const profile = process.env.DATABRICKS_CONFIG_PROFILE;
-          const tokenJson = execSync(
-            `databricks auth token --profile ${profile}`,
-            { encoding: "utf-8" }
-          );
-          const parsed = JSON.parse(tokenJson);
-          token = parsed.access_token;
-          console.log(`✅ Using auth token from Databricks CLI (profile: ${profile})`);
-        } catch (error) {
-          console.warn(
-            "⚠️  Could not get auth token from Databricks CLI. Tracing may not work properly."
-          );
-          console.warn(
-            "   Set DATABRICKS_TOKEN env var or ensure databricks CLI is configured."
-          );
-        }
-      }
-
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-      } else {
-        console.warn(
-          "⚠️  No DATABRICKS_TOKEN found. Traces will not be exported to Databricks."
-        );
-      }
+    // Add Databricks authentication token if available
+    if (this.authToken) {
+      headers["Authorization"] = `Bearer ${this.authToken}`;
+    } else if (this.config.mlflowTrackingUri === "databricks") {
+      console.warn(
+        "⚠️  No auth token available for trace export. Traces may not be exported."
+      );
     }
 
     return headers;
@@ -174,11 +199,79 @@ export class MLflowTracing {
   /**
    * Initialize tracing - registers the tracer provider and instruments LangChain
    */
-  initialize(): void {
+  async initialize(): Promise<void> {
     if (this.isInitialized) {
       console.warn("MLflow tracing already initialized");
       return;
     }
+
+    // Get authentication token (async for OAuth2)
+    if (this.config.mlflowTrackingUri === "databricks") {
+      // Try OAuth2 first (for Databricks Apps)
+      if (process.env.DATABRICKS_CLIENT_ID && process.env.DATABRICKS_CLIENT_SECRET) {
+        console.log("🔐 Getting OAuth2 access token for trace export...");
+        this.authToken = await this.getOAuth2Token() || undefined;
+        if (this.authToken) {
+          console.log("✅ OAuth2 token obtained for trace export");
+        }
+      }
+      // Fallback to direct token
+      else if (process.env.DATABRICKS_TOKEN) {
+        this.authToken = process.env.DATABRICKS_TOKEN;
+        console.log("✅ Using DATABRICKS_TOKEN for trace export");
+      }
+      // Try Databricks CLI
+      else if (process.env.DATABRICKS_CONFIG_PROFILE) {
+        try {
+          const { execSync } = require("child_process");
+          const profile = process.env.DATABRICKS_CONFIG_PROFILE;
+          const tokenJson = execSync(
+            `databricks auth token --profile ${profile}`,
+            { encoding: "utf-8" }
+          );
+          const parsed = JSON.parse(tokenJson);
+          this.authToken = parsed.access_token;
+          console.log(`✅ Using auth token from Databricks CLI (profile: ${profile})`);
+        } catch (error) {
+          console.warn("⚠️  Could not get auth token from Databricks CLI.");
+        }
+      }
+    }
+
+    // Build headers with auth token
+    const headers = this.buildHeadersWithToken();
+
+    // Construct trace endpoint URL
+    const traceUrl = this.buildTraceUrl();
+
+    console.log("📍 Trace export configuration:", {
+      url: traceUrl,
+      hasAuthHeader: !!headers["Authorization"],
+      experimentId: this.config.experimentId,
+    });
+
+    // Create OTLP exporter with headers
+    this.exporter = new OTLPTraceExporter({
+      url: traceUrl,
+      headers,
+    });
+
+    // Add span processor with error handling
+    const processor = this.config.useBatchProcessor
+      ? new BatchSpanProcessor(this.exporter, {
+          exportTimeoutMillis: 30000,
+          maxExportBatchSize: 512,
+          maxQueueSize: 2048,
+          scheduledDelayMillis: 5000,
+        })
+      : new SimpleSpanProcessor(this.exporter);
+
+    // Add event listeners for debugging
+    processor.onStart = (span: any) => {
+      console.log(`📝 Span started: ${span.name}`);
+    };
+
+    this.provider.addSpanProcessor(processor);
 
     // Register the tracer provider globally
     this.provider.register();
@@ -192,6 +285,7 @@ export class MLflowTracing {
       serviceName: this.config.serviceName,
       experimentId: this.config.experimentId,
       trackingUri: this.config.mlflowTrackingUri,
+      hasAuthToken: !!this.authToken,
     });
   }
 
@@ -233,9 +327,9 @@ export class MLflowTracing {
  * Initialize MLflow tracing with default configuration
  * Call this once at application startup
  */
-export function initializeMLflowTracing(config?: TracingConfig): MLflowTracing {
+export async function initializeMLflowTracing(config?: TracingConfig): Promise<MLflowTracing> {
   const tracing = new MLflowTracing(config);
-  tracing.initialize();
+  await tracing.initialize();
   return tracing;
 }
 

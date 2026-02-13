@@ -20,7 +20,7 @@ const APP_URL = process.env.APP_URL;
 
 describe('MLflow Tracing', () => {
   describe('Configuration', () => {
-    test('should initialize with default configuration', () => {
+    test('should initialize with default configuration', async () => {
       const originalEnv = { ...process.env };
 
       try {
@@ -29,18 +29,63 @@ describe('MLflow Tracing', () => {
         process.env.MLFLOW_TRACKING_URI = 'databricks';
         process.env.MLFLOW_EXPERIMENT_ID = '123456';
 
-        const tracing = initializeMLflowTracing();
+        const tracing = await initializeMLflowTracing();
 
         expect(tracing).toBeDefined();
 
         // Cleanup
-        tracing.shutdown();
+        await tracing.shutdown();
       } finally {
         process.env = originalEnv;
       }
     });
 
-    test('should use experiment ID from environment', () => {
+    test('should use Databricks OTel collector endpoint', async () => {
+      const originalEnv = { ...process.env };
+
+      try {
+        process.env.DATABRICKS_HOST = 'https://test.cloud.databricks.com';
+        process.env.MLFLOW_TRACKING_URI = 'databricks';
+        process.env.MLFLOW_EXPERIMENT_ID = '123456';
+        process.env.OTEL_UC_TABLE_NAME = 'main.traces.test_otel_spans';
+
+        // Capture console logs to verify endpoint URL
+        const logs: any[][] = [];
+        const originalLog = console.log;
+        console.log = (...args: any[]) => {
+          logs.push(args);
+          originalLog(...args);
+        };
+
+        const tracing = await initializeMLflowTracing();
+
+        // Verify endpoint uses /api/2.0/otel/v1/traces
+        const traceConfigLog = logs.find(log =>
+          log.length > 1 &&
+          typeof log[0] === 'string' &&
+          log[0].includes('Trace export configuration')
+        );
+        expect(traceConfigLog).toBeDefined();
+        // The config object is in the second argument
+        expect(traceConfigLog![1]).toHaveProperty('url');
+        expect(traceConfigLog![1].url).toContain('/api/2.0/otel/v1/traces');
+
+        // Verify UC table name is logged
+        const ucTableLog = logs.find(log =>
+          log[0]?.includes('Traces will be stored in UC table')
+        );
+        expect(ucTableLog).toBeDefined();
+        expect(ucTableLog![0]).toContain('main.traces.test_otel_spans');
+
+        // Cleanup
+        console.log = originalLog;
+        await tracing.shutdown();
+      } finally {
+        process.env = originalEnv;
+      }
+    });
+
+    test('should use experiment ID from environment', async () => {
       const originalEnv = { ...process.env };
 
       try {
@@ -48,25 +93,25 @@ describe('MLflow Tracing', () => {
         process.env.MLFLOW_TRACKING_URI = 'databricks';
         process.env.MLFLOW_EXPERIMENT_ID = '999888777';
 
-        const tracing = initializeMLflowTracing();
+        const tracing = await initializeMLflowTracing();
 
         expect(tracing).toBeDefined();
 
         // Cleanup
-        tracing.shutdown();
+        await tracing.shutdown();
       } finally {
         process.env = originalEnv;
       }
     });
 
-    test('should accept custom service name', () => {
+    test('should accept custom service name', async () => {
       const originalEnv = { ...process.env };
 
       try {
         process.env.DATABRICKS_HOST = 'https://test.cloud.databricks.com';
         process.env.MLFLOW_TRACKING_URI = 'databricks';
 
-        const tracing = initializeMLflowTracing({
+        const tracing = await initializeMLflowTracing({
           serviceName: 'custom-agent-service',
           experimentId: '111222333',
         });
@@ -74,22 +119,22 @@ describe('MLflow Tracing', () => {
         expect(tracing).toBeDefined();
 
         // Cleanup
-        tracing.shutdown();
+        await tracing.shutdown();
       } finally {
         process.env = originalEnv;
       }
     });
 
-    test('should throw error when DATABRICKS_HOST missing for databricks tracking URI', () => {
+    test('should throw error when DATABRICKS_HOST missing for databricks tracking URI', async () => {
       const originalEnv = { ...process.env };
 
       try {
         delete process.env.DATABRICKS_HOST;
         process.env.MLFLOW_TRACKING_URI = 'databricks';
 
-        expect(() => {
-          initializeMLflowTracing();
-        }).toThrow('DATABRICKS_HOST environment variable required');
+        await expect(async () => {
+          await initializeMLflowTracing();
+        }).rejects.toThrow('DATABRICKS_HOST environment variable required');
       } finally {
         process.env = originalEnv;
       }
@@ -211,7 +256,7 @@ describe('MLflow Tracing', () => {
   });
 
   describe('Local Development Tracing', () => {
-    test('should work with local MLFLOW_TRACKING_URI', () => {
+    test('should work with local MLFLOW_TRACKING_URI', async () => {
       const originalEnv = { ...process.env };
 
       try {
@@ -219,18 +264,18 @@ describe('MLflow Tracing', () => {
         process.env.MLFLOW_TRACKING_URI = 'http://localhost:5000';
         process.env.MLFLOW_EXPERIMENT_ID = '0';
 
-        const tracing = initializeMLflowTracing();
+        const tracing = await initializeMLflowTracing();
 
         expect(tracing).toBeDefined();
 
         // Cleanup
-        tracing.shutdown();
+        await tracing.shutdown();
       } finally {
         process.env = originalEnv;
       }
     });
 
-    test('should handle missing experiment ID gracefully', () => {
+    test('should handle missing experiment ID gracefully', async () => {
       const originalEnv = { ...process.env };
 
       try {
@@ -239,14 +284,14 @@ describe('MLflow Tracing', () => {
         delete process.env.MLFLOW_EXPERIMENT_ID;
 
         // Should initialize without experiment ID (traces won't link to experiment)
-        const tracing = initializeMLflowTracing();
+        const tracing = await initializeMLflowTracing();
 
         expect(tracing).toBeDefined();
 
         console.log('⚠️  Tracing initialized without experiment ID - traces will not link to an experiment');
 
         // Cleanup
-        tracing.shutdown();
+        await tracing.shutdown();
       } finally {
         process.env = originalEnv;
       }
@@ -262,7 +307,7 @@ describe('MLflow Tracing', () => {
         process.env.MLFLOW_TRACKING_URI = 'databricks';
         process.env.MLFLOW_EXPERIMENT_ID = '123';
 
-        const tracing = initializeMLflowTracing();
+        const tracing = await initializeMLflowTracing();
 
         // Should flush and shutdown without errors
         await expect(tracing.flush()).resolves.not.toThrow();
@@ -279,7 +324,7 @@ describe('MLflow Tracing', () => {
         process.env.DATABRICKS_HOST = 'https://test.cloud.databricks.com';
         process.env.MLFLOW_TRACKING_URI = 'databricks';
 
-        const tracing = initializeMLflowTracing();
+        const tracing = await initializeMLflowTracing();
 
         await tracing.shutdown();
 

@@ -16,7 +16,7 @@ Update the app name in `databricks.yml`:
 ```yaml
 resources:
   apps:
-    agent_openai_agents_sdk_stateful_memory:
+    agent_openai_agents_sdk_short_term_memory:
       name: "agent-your-app-name"  # Use agent-* prefix
 ```
 
@@ -32,12 +32,12 @@ databricks bundle validate
 databricks bundle deploy
 
 # 3. Run the app (starts/restarts with uploaded source code) - REQUIRED!
-databricks bundle run agent_openai_agents_sdk_stateful_memory
+databricks bundle run agent_openai_agents_sdk_short_term_memory
 ```
 
 > **Note:** `bundle deploy` only uploads files and configures resources. `bundle run` is **required** to actually start/restart the app with the new code. If you only run `deploy`, the app will continue running old code!
 
-The resource key `agent_openai_agents_sdk_stateful_memory` matches the app name in `databricks.yml` under `resources.apps`.
+The resource key `agent_openai_agents_sdk_short_term_memory` matches the app name in `databricks.yml` under `resources.apps`.
 
 ## Handling "App Already Exists" Error
 
@@ -61,7 +61,7 @@ databricks apps get <existing-app-name> --output json | jq '{name, budget_policy
 ```yaml
 resources:
   apps:
-    agent_openai_agents_sdk_stateful_memory:
+    agent_openai_agents_sdk_short_term_memory:
       name: "existing-app-name"  # Must match exactly
       budget_policy_id: "xxx-xxx-xxx"  # Copy from step 1 if present
 ```
@@ -86,7 +86,7 @@ databricks bundle summary --output json | jq '.resources.apps'
 
 # If the app appears in the summary, skip binding and go to Step 5
 # If NOT in summary, bind the resource:
-databricks bundle deployment bind agent_openai_agents_sdk_stateful_memory <existing-app-name> --auto-approve
+databricks bundle deployment bind agent_openai_agents_sdk_short_term_memory <existing-app-name> --auto-approve
 ```
 
 > **Note:** If bind fails with "Resource already managed by Terraform", the app is already bound to this bundle. Skip to Step 5 and deploy directly.
@@ -94,7 +94,7 @@ databricks bundle deployment bind agent_openai_agents_sdk_stateful_memory <exist
 **Step 5:** Deploy:
 ```bash
 databricks bundle deploy
-databricks bundle run agent_openai_agents_sdk_stateful_memory
+databricks bundle run agent_openai_agents_sdk_short_term_memory
 ```
 
 ### Option 2: Delete and Recreate
@@ -111,7 +111,7 @@ databricks bundle deploy
 To remove the link between bundle and deployed app:
 
 ```bash
-databricks bundle deployment unbind agent_openai_agents_sdk_stateful_memory
+databricks bundle deployment unbind agent_openai_agents_sdk_short_term_memory
 ```
 
 Use when:
@@ -218,5 +218,5 @@ uv add <package_name>
 | 302 redirect error | Use OAuth token, not PAT |
 | "Provider produced inconsistent result" | Sync app config to `databricks.yml` |
 | "should set workspace.root_path" | Add `root_path` to production target |
-| App running old code after deploy | Run `databricks bundle run agent_openai_agents_sdk_stateful_memory` after deploy |
+| App running old code after deploy | Run `databricks bundle run agent_openai_agents_sdk_short_term_memory` after deploy |
 | Env var is None in deployed app | Check `valueFrom` in app.yaml matches resource `name` in databricks.yml |

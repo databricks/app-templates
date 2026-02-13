@@ -1,5 +1,5 @@
 [project]
-name = "agent-server-stateful-memory"
+name = "agent-server-short-term-memory"
 version = "0.1.0"
 description = "MLflow-compatible agent server with FastAPI and persistent memory using Lakebase"
 readme = "README.md"

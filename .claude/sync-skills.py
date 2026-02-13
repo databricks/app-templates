@@ -34,6 +34,10 @@ TEMPLATES = {
         "sdk": "openai",
         "bundle_name": "agent_openai_agents_sdk",
     },
+    "agent-openai-agents-sdk-short-term-memory": {
+        "sdk": "openai",
+        "bundle_name": "agent_openai_agents_sdk_short_term_memory",
+    },
     "agent-non-conversational": {
         "sdk": "langgraph",
         "bundle_name": "agent_non_conversational",
@@ -92,14 +96,13 @@ def sync_template(template: str, config: dict):
             copy_skill(SOURCE / "lakebase-setup", dest / "lakebase-setup")
             copy_skill(SOURCE / "agent-langgraph-memory", dest / "agent-memory")
     else:
-        # Single SDK: rename on copy (e.g., add-tools-langgraph -> add-tools)
         copy_skill(SOURCE / f"add-tools-{sdk}", dest / "add-tools")
         copy_skill(SOURCE / f"modify-{sdk}-agent", dest / "modify-agent")
-
-        # Memory skills (LangGraph only)
+        copy_skill(SOURCE / "lakebase-setup", dest / "lakebase-setup")
         if sdk == "langgraph":
-            copy_skill(SOURCE / "lakebase-setup", dest / "lakebase-setup")
             copy_skill(SOURCE / "agent-langgraph-memory", dest / "agent-memory")
+        elif sdk == "openai":
+            copy_skill(SOURCE / "agent-openai-memory", dest / "agent-memory")
 
 
 def main():

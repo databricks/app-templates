@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import AsyncGenerator, AsyncIterator, Optional
 from uuid import uuid4
@@ -29,6 +30,29 @@ def get_user_workspace_client() -> WorkspaceClient:
     return WorkspaceClient(token=token, auth_type="pat")
 
 
+def _sanitize_item(input_item: dict) -> dict:
+    """Sanitize a single output item dict for Pydantic validation.
+
+    MCP tool calls (e.g. Genie) can return items where the ``output`` field is
+    a *list* of content objects instead of a plain string. MLflow's Pydantic
+    models expect ``output`` to be a string, so this serialises any non-string
+    values to JSON.
+
+    TODO: Remove once https://github.com/mlflow/mlflow/pull/20777 is released.
+    """
+    if not isinstance(input_item.get("output"), str):
+        try:
+            input_item["output"] = json.dumps(input_item.get("output"))
+        except (TypeError, ValueError):
+            input_item["output"] = str(input_item.get("output"))
+    return input_item
+
+
+def sanitize_output_items(items) -> list[dict]:
+    """Convert agent output items to dicts safe for ResponsesAgentResponse."""
+    return [_sanitize_item(item.to_input_item()) for item in items]
+
+
 async def process_agent_stream_events(
     async_stream: AsyncIterator[StreamEvent],
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
@@ -47,5 +71,5 @@ async def process_agent_stream_events(
         elif event.type == "run_item_stream_event" and event.item.type == "tool_call_output_item":
             yield ResponsesAgentStreamEvent(
                 type="response.output_item.done",
-                item=event.item.to_input_item(),
+                item=_sanitize_item(event.item.to_input_item()),
             )

@@ -19,6 +19,7 @@ that only support the Chat Completions API ("LLM" task type) will NOT work
 with this template as-is.
 """
 
+from contextlib import nullcontext
 from typing import AsyncGenerator
 
 import mlflow
@@ -41,57 +42,65 @@ from agent_server.utils import (
 )
 
 # ---------------------------------------------------------------------------
-# TODO: Configure the subagents and Genie space for your environment.
-#   - Add, remove, or modify entries in SUBAGENTS to change which backends
-#     the orchestrator can call.  Each entry becomes a separate tool.
-#   - "type" determines how the endpoint is called:
+# TODO: Configure the subagents for your environment.
+#   - Uncomment and configure entries in SUBAGENTS to add backends the
+#     orchestrator can call.  Each entry becomes a separate tool.
+#   - "type" determines how the backend is called:
 #       "app"              → Responses API via apps/<endpoint>
 #       "serving_endpoint" → Responses API via <endpoint> (must be task type
 #                            agent/v1/responses, shown as "Agent (Responses)"
 #                            on the Serving UI)
+#       "genie"            → Databricks MCP server for a Genie space
+#                            (requires "space_id" instead of "endpoint")
 # ---------------------------------------------------------------------------
 
-# Genie space ID (UUID from the Genie space URL, e.g. "01abc234def567890abc1234def56789")
-GENIE_SPACE_ID = "<YOUR-GENIE-SPACE-ID>"  # TODO: set to your Genie space ID
-
 SUBAGENTS = [
-    {
-        "name": "app_agent",
-        "description": (
-            "Query a specialist agent deployed as a Databricks App. "
-            "Use this for questions the specialist app agent handles."
-        ),
-        "type": "app",
-        "endpoint": "<YOUR-APP-AGENT-NAME>",  # TODO: set to your Databricks App name
-    },
-    {
-        "name": "knowledge_assistant",
-        "description": (
-            "Query the knowledge-assistant endpoint on Model Serving. "
-            "Use this for knowledge-base / documentation lookups. "
-            "The endpoint must have task type agent/v1/responses."
-        ),
-        "type": "serving_endpoint",
-        "endpoint": "<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>",  # TODO: set to your endpoint name (flat name like "my-ka-endpoint", NOT a Vector Search index)
-    },
-    {
-        "name": "serving_endpoint",
-        "description": (
-            "Query a model hosted on a Databricks Model Serving endpoint. "
-            "Use this for questions best answered by the serving model. "
-            "The endpoint must have task type agent/v1/responses."
-        ),
-        "type": "serving_endpoint",
-        "endpoint": "<YOUR-SERVING-ENDPOINT>",  # TODO: set to your endpoint name
-    },
+    # Uncomment and configure the subagents you need. You must enable at least one.
+    #
+    # {
+    #     "name": "genie",
+    #     "type": "genie",
+    #     "space_id": "<YOUR-GENIE-SPACE-ID>",  # UUID from the Genie space URL
+    #     "description": (
+    #         "Query a Genie space for structured data analysis. "
+    #         "Use this for questions about data, metrics, and tables."
+    #     ),
+    # },
+    # {
+    #     "name": "app_agent",
+    #     "type": "app",
+    #     "endpoint": "<YOUR-APP-AGENT-NAME>",  # TODO: set to your Databricks App name
+    #     "description": (
+    #         "Query a specialist agent deployed as a Databricks App. "
+    #         "Use this for questions the specialist app agent handles."
+    #     ),
+    # },
+    # {
+    #     "name": "knowledge_assistant",
+    #     "type": "serving_endpoint",
+    #     "endpoint": "<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>",  # flat name, NOT a Vector Search index
+    #     "description": (
+    #         "Query the knowledge-assistant endpoint on Model Serving. "
+    #         "Use this for knowledge-base / documentation lookups. "
+    #         "The endpoint must have task type agent/v1/responses."
+    #     ),
+    # },
+    # {
+    #     "name": "serving_endpoint",
+    #     "type": "serving_endpoint",
+    #     "endpoint": "<YOUR-SERVING-ENDPOINT>",
+    #     "description": (
+    #         "Query a model hosted on a Databricks Model Serving endpoint. "
+    #         "Use this for questions best answered by the serving model. "
+    #         "The endpoint must have task type agent/v1/responses."
+    #     ),
+    # },
 ]
 
-# Fail fast if placeholders haven't been replaced
-assert not GENIE_SPACE_ID.startswith("<YOUR-"), "Set GENIE_SPACE_ID in agent.py before running. See README.md."
-for _sa in SUBAGENTS:
-    assert not _sa["endpoint"].startswith("<YOUR-"), (
-        f"Set endpoint for subagent {_sa['name']!r} in agent.py before running. See README.md."
-    )
+assert SUBAGENTS, (
+    "Configure at least one subagent in SUBAGENTS above. "
+    "Uncomment an entry and replace placeholder values. See README.md."
+)
 
 # ---------------------------------------------------------------------------
 # Client setup
@@ -107,7 +116,7 @@ mlflow.openai.autolog()
 _tool_client = AsyncDatabricksOpenAI()
 
 # ---------------------------------------------------------------------------
-# Subagent tools — one tool is generated per SUBAGENTS entry above
+# Subagent tools — one tool per non-genie SUBAGENTS entry
 # ---------------------------------------------------------------------------
 
 
@@ -130,7 +139,7 @@ def _make_subagent_tool(subagent: dict):
     return function_tool(_call)
 
 
-subagent_tools = [_make_subagent_tool(sa) for sa in SUBAGENTS]
+subagent_tools = [_make_subagent_tool(sa) for sa in SUBAGENTS if sa["type"] != "genie"]
 
 
 # ---------------------------------------------------------------------------
@@ -139,10 +148,13 @@ subagent_tools = [_make_subagent_tool(sa) for sa in SUBAGENTS]
 
 
 async def init_mcp_server():
-    """Create a Genie MCP server for natural-language data queries."""
+    """Create a Genie MCP server if a genie subagent is configured."""
+    genie = next((sa for sa in SUBAGENTS if sa["type"] == "genie"), None)
+    if genie is None:
+        return nullcontext()
     return McpServer(
-        url=build_mcp_url(f"/api/2.0/mcp/genie/{GENIE_SPACE_ID}"),
-        name="Genie space",
+        url=build_mcp_url(f"/api/2.0/mcp/genie/{genie['space_id']}"),
+        name=genie["description"],
     )
 
 
@@ -163,7 +175,7 @@ def create_orchestrator_agent(mcp_server: McpServer) -> Agent:
             "If unsure, ask the user for clarification."
         ),
         model="databricks-claude-sonnet-4-5",  # TODO: change model if desired
-        mcp_servers=[mcp_server],
+        mcp_servers=[mcp_server] if mcp_server else [],
         tools=subagent_tools,
     )
 

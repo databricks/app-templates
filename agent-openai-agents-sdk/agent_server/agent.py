@@ -43,7 +43,7 @@ def create_coding_agent(mcp_server: McpServer) -> Agent:
 
 
 @invoke()
-async def invoke(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
+async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
     async with await init_mcp_server() as mcp_server:
@@ -54,7 +54,7 @@ async def invoke(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
 
 
 @stream()
-async def stream(request: dict) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
+async def stream_handler(request: dict) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
     async with await init_mcp_server() as mcp_server:

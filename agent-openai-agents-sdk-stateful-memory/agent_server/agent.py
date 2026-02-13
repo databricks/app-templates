@@ -16,6 +16,7 @@ from mlflow.types.responses import (
 )
 
 from agent_server.utils import (
+    deduplicate_input,
     get_databricks_host_from_env,
     get_user_workspace_client,
     process_agent_stream_events,
@@ -88,7 +89,7 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
 
     async with await init_mcp_server() as mcp_server:
         agent = create_coding_agent(mcp_server)
-        messages = [i.model_dump() for i in request.input]
+        messages = await deduplicate_input(request, session)
         result = await Runner.run(agent, messages, session=session)
         return ResponsesAgentResponse(
             output=sanitize_output_items(result.new_items),
@@ -109,7 +110,7 @@ async def stream_handler(request: ResponsesAgentRequest) -> AsyncGenerator[Respo
 
     async with await init_mcp_server() as mcp_server:
         agent = create_coding_agent(mcp_server)
-        messages = [i.model_dump() for i in request.input]
+        messages = await deduplicate_input(request, session)
         result = Runner.run_streamed(agent, input=messages, session=session)
 
         async for event in process_agent_stream_events(result.stream_events()):

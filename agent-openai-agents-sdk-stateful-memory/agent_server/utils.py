@@ -5,8 +5,9 @@ from uuid import uuid4
 
 from agents.result import StreamEvent
 from databricks.sdk import WorkspaceClient
+from databricks_openai.agents import AsyncDatabricksSession
 from mlflow.genai.agent_server import get_request_headers
-from mlflow.types.responses import ResponsesAgentStreamEvent
+from mlflow.types.responses import ResponsesAgentRequest, ResponsesAgentStreamEvent
 
 
 def _is_lakebase_hostname(value: str) -> bool:
@@ -65,6 +66,21 @@ def get_databricks_host_from_env() -> Optional[str]:
 def get_user_workspace_client() -> WorkspaceClient:
     token = get_request_headers().get("x-forwarded-access-token")
     return WorkspaceClient(token=token, auth_type="pat")
+
+
+async def deduplicate_input(request: ResponsesAgentRequest, session: AsyncDatabricksSession) -> list[dict]:
+    """Return the input messages to pass to the Runner, avoiding duplication with session history.
+
+    When a client sends the full conversation history AND the session already has
+    that history persisted, passing everything through would duplicate messages.
+    If the session already covers the prior turns, only the latest message is needed
+    since the session will prepend the full history automatically.
+    """
+    messages = [i.model_dump() for i in request.input]
+    session_items = await session.get_items()
+    if len(session_items) >= len(messages) - 1:
+        return [messages[-1]]
+    return messages
 
 
 def _sanitize_item(input_item: dict) -> dict:

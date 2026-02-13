@@ -20,6 +20,7 @@ from agent_server.utils import (
     get_user_workspace_client,
     process_agent_stream_events,
     resolve_lakebase_instance_name,
+    sanitize_output_items,
 )
 
 # Lakebase instance name for persistent session storage
@@ -90,7 +91,7 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
         messages = [i.model_dump() for i in request.input]
         result = await Runner.run(agent, messages, session=session)
         return ResponsesAgentResponse(
-            output=[item.to_input_item() for item in result.new_items],
+            output=sanitize_output_items(result.new_items),
             custom_outputs={"session_id": session.session_id},
         )
 

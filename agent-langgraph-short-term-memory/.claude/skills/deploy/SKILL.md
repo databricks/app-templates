@@ -127,7 +127,7 @@ Note: Unbinding doesn't delete the deployed app.
 
 **Get OAuth token:**
 ```bash
-databricks auth token
+databricks auth token | jq -r '.access_token'
 ```
 
 **Send request:**

@@ -1,0 +1,63 @@
+bundle:
+  name: databricks-chatbot
+
+variables:
+  serving_endpoint_name:
+    description: "Name of the model serving endpoint to be used by the app"
+    # TODO: uncomment the line below and specify a default value to avoid needing to specify it on each deployment
+    # default: "your-serving-endpoint-name-goes-here"
+  database_instance_name:
+    description: "Base name of the Lakebase database instance"
+    default: "chatbot-lakebase"
+  resource_name_suffix:
+    description: "Suffix for resource names (app/lakebase instance names etc). Helpful for avoiding name collisions if multiple users deploy this app to the same workspace"
+
+resources:
+  database_instances:
+    # TODO (optional): Uncomment the database resource below to deploy the app with a database
+    # chatbot_lakebase:
+    #   # NOTE: customize the Lakebase instance name here, if desired
+    #   name: ${var.database_instance_name}-${var.resource_name_suffix}
+    #   capacity: CU_1
+
+  apps:
+    databricks_chatbot:
+      # NOTE: customize the app name here, if desired
+      name: db-chatbot-${var.resource_name_suffix}
+      description: "Agentic Chat application for Foundation Models, Agent Bricks, and custom code agents"
+      source_code_path: .
+      resources:
+        - name: serving-endpoint
+          description: "Databricks serving endpoint name for the AI agent"
+          # NOTE: If chatting with an Agent Bricks Multi-Agent Supervisor (https://docs.databricks.com/aws/en/generative-ai/agent-bricks/multi-agent-supervisor),
+          # you need to additionally grant the app service principal the `CAN_QUERY` permission on the
+          # underlying agent(s) that the MAS orchestrates. You can do this by adding those
+          # agent serving endpoints as additional resources here.
+          serving_endpoint:
+            name: ${var.serving_endpoint_name}
+            permission: CAN_QUERY
+        # TODO (optional): Uncomment the database resource below to bind the app to the deployed database instance
+        # and to enable persistent chat history
+        # - name: database
+        #   description: "Lakebase database instance for the chat app"
+        #   database:
+        #     database_name: databricks_postgres
+        #     instance_name: ${resources.database_instances.chatbot_lakebase.name}
+        #     permission: CAN_CONNECT_AND_CREATE
+
+targets:
+  dev:
+    mode: development
+    default: true
+    variables:
+      resource_name_suffix: dev-${workspace.current_user.domain_friendly_name}
+
+  staging:
+    mode: production
+    variables:
+      resource_name_suffix: "staging"
+
+  prod:
+    mode: production
+    variables:
+      resource_name_suffix: "prod"

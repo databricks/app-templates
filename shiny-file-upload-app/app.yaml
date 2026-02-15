@@ -1,0 +1,1 @@
+command: ["shiny", "run", "--reload", "app.py:app"]

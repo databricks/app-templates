@@ -13,6 +13,7 @@ Usage:
 All options are passed through to the backend server (start-server).
 See 'uv run start-server --help' for available options.
 """
+from time import sleep
 
 import argparse
 import os
@@ -113,7 +114,7 @@ class ProcessManager:
     def start_process(self, cmd, name, log_file, patterns, cwd=None):
         print(f"Starting {name}...")
         process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, cwd=cwd
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=cwd
         )
 
         thread = threading.Thread(
@@ -153,19 +154,13 @@ class ProcessManager:
     def run(self, backend_args=None):
         load_dotenv(dotenv_path=".env", override=True)
 
-        if not self.clone_frontend_if_needed():
-            return 1
-
-        # Set API_PROXY environment variable for frontend to connect to backend
-        os.environ["API_PROXY"] = f"http://localhost:{self.port}/invocations"
-
         # Open log files
         self.backend_log = open("backend.log", "w", buffering=1)
         self.frontend_log = open("frontend.log", "w", buffering=1)
 
         try:
             # Build backend command, passing through all arguments
-            backend_cmd = ["uv", "run", "start-server"]
+            backend_cmd = ["uvicorn", "--factory", "agent_server.app:create_app"]
             if backend_args:
                 backend_cmd.extend(backend_args)
 
@@ -173,6 +168,15 @@ class ProcessManager:
             self.backend_process = self.start_process(
                 backend_cmd, "backend", self.backend_log, BACKEND_READY
             )
+
+            # Allow uvicorn server to start first
+            sleep(2)
+
+            if not self.clone_frontend_if_needed():
+                return 1
+
+            # Set API_PROXY environment variable for frontend to connect to backend
+            os.environ["API_PROXY"] = f"http://localhost:{self.port}/invocations"
 
             # Setup and start frontend
             frontend_dir = Path("e2e-chatbot-app-next")

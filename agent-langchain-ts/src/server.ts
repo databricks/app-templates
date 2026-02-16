@@ -63,7 +63,7 @@ export async function createServer(
   });
 
   // Initialize MLflow tracing
-  const tracing = initializeMLflowTracing({
+  const tracing = await initializeMLflowTracing({
     serviceName: "langchain-agent-ts",
     experimentId: process.env.MLFLOW_EXPERIMENT_ID,
   });

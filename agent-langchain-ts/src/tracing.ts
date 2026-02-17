@@ -18,6 +18,7 @@ import { LangChainInstrumentation } from "@arizeai/openinference-instrumentation
 import * as CallbackManagerModule from "@langchain/core/callbacks/manager";
 import { Resource } from "@opentelemetry/resources";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
+import { execSync } from "child_process";
 
 export interface TracingConfig {
   /**
@@ -149,6 +150,35 @@ export class MLflowTracing {
   }
 
   /**
+   * Get OAuth token from Databricks CLI
+   * Uses 'databricks auth token' command for local development
+   *
+   * IMPORTANT: The OTel collector requires OAuth tokens, not PAT tokens.
+   * PAT tokens will result in 401 errors.
+   */
+  private async getOAuthTokenFromCLI(): Promise<string | null> {
+    try {
+      const profile = process.env.DATABRICKS_CONFIG_PROFILE || "DEFAULT";
+      const command = `databricks auth token --profile ${profile}`;
+
+      const output = execSync(command, {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'] // Suppress stderr
+      });
+
+      const data = JSON.parse(output);
+      if (data.access_token) {
+        return data.access_token;
+      }
+
+      return null;
+    } catch (error) {
+      // Silent fail - this is expected if databricks CLI isn't installed
+      return null;
+    }
+  }
+
+  /**
    * Build headers for trace export using stored auth token
    * Includes required headers for Databricks OTel collector
    */
@@ -215,13 +245,27 @@ export class MLflowTracing {
           console.log("✅ OAuth2 token obtained for trace export");
         }
       }
-      // Fallback to direct token
-      else if (process.env.DATABRICKS_TOKEN) {
-        this.authToken = process.env.DATABRICKS_TOKEN;
-        console.log("✅ Using DATABRICKS_TOKEN for trace export");
+
+      // Try Databricks CLI (preferred for local development)
+      // IMPORTANT: OTel collector requires OAuth tokens, not PAT tokens
+      if (!this.authToken && process.env.DATABRICKS_CONFIG_PROFILE) {
+        console.log("🔐 Getting OAuth token from Databricks CLI...");
+        this.authToken = await this.getOAuthTokenFromCLI() || undefined;
+        if (this.authToken) {
+          const profile = process.env.DATABRICKS_CONFIG_PROFILE;
+          console.log(`✅ Using OAuth token from Databricks CLI (profile: ${profile})`);
+        }
       }
-      // Try Databricks CLI
-      else if (process.env.DATABRICKS_CONFIG_PROFILE) {
+
+      // Fallback to direct token (may not work with OTel collector)
+      if (!this.authToken && process.env.DATABRICKS_TOKEN) {
+        this.authToken = process.env.DATABRICKS_TOKEN;
+        console.log("⚠️  Using DATABRICKS_TOKEN (PAT token)");
+        console.log("   Note: OTel collector may require OAuth token instead");
+      }
+
+      // Legacy CLI fallback (if new method didn't work)
+      if (!this.authToken && process.env.DATABRICKS_CONFIG_PROFILE) {
         try {
           const { execSync } = require("child_process");
           const profile = process.env.DATABRICKS_CONFIG_PROFILE;

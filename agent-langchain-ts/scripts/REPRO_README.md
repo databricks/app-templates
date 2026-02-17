@@ -1,32 +1,68 @@
-# OTel Tracing Issue - Reproduction Script
+# OTel Tracing Issue - Reproduction Scripts
 
 ## Issue Summary
 
 Traces are **not being written to Unity Catalog** even with correct OTel configuration, authentication, and table schema.
 
-## Quick Repro
+## Two Reproduction Scripts
+
+We have **two scripts** that demonstrate **different aspects** of the problem:
+
+### 1. Manual Table Creation (Recommended First)
+**File:** `repro-otel-tracing-issue.py`
+
+Creates tables manually with SQL, demonstrates S3 storage issues.
 
 ```bash
-# Install dependencies
 pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http databricks-sdk
-
-# Authenticate
 databricks auth login --profile dogfood
-
-# Run repro script
 python scripts/repro-otel-tracing-issue.py
 ```
 
+**Shows:**
+- ✅ Tables are queryable
+- ❌ Traces don't appear (S3 "NOT_FOUND" errors)
+- ❌ Backend storage permission problem
+
+### 2. MLflow API Creation
+**File:** `repro-otel-with-mlflow-api.py`
+
+Uses official `set_experiment_trace_location()` API, demonstrates API issues.
+
+```bash
+pip install 'mlflow[databricks]>=3.9.0' opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http databricks-sdk
+databricks auth login --profile dogfood
+python scripts/repro-otel-with-mlflow-api.py
+```
+
+**Shows:**
+- ❌ API times out (60s)
+- ❌ Tables have "Incomplete complex type" errors
+- ❌ Tables not queryable despite correct schema
+
 ## Expected Output
 
+### Script 1 (Manual Tables):
 ```
 ✅ Got OAuth token (expires in 3600s)
 ✅ Table created: main.agent_traces.otel_repro_test
 ✅ OTel exporter configured
 ✅ Span created: otel-repro-test-span
 ✅ Flush completed (no client-side errors)
-⏳ Waiting 15 seconds for OTel collector to write to UC...
-❌ ISSUE REPRODUCED: Trace NOT found in UC table
+❌ Query failed: NOT_FOUND: Not Found () at file-scan-node-base.cc:455
+   → S3 storage permission issue
+```
+
+### Script 2 (MLflow API):
+```
+✅ Got OAuth token
+✅ Created experiment
+⚠️  API call timed out after 60s
+✅ Table exists despite timeout
+✅ All required fields present
+✅ Flush completed (no client-side errors)
+❌ Query failed: Incomplete complex type
+   → MLflow API creates broken tables
 ```
 
 ## What the Script Tests
@@ -87,12 +123,30 @@ token = subprocess.run(["databricks", "auth", "token", "--profile", "dogfood"])
 token = os.environ["DATABRICKS_TOKEN"]
 ```
 
+## Which Script to Use
+
+**For OTel Collector / Backend Team:**
+- Use **Script 1** (manual tables)
+- Shows S3 storage permission issues
+- Tables are queryable, easy to debug
+
+**For MLflow API Team:**
+- Use **Script 2** (MLflow API)
+- Shows API timeout and schema issues
+- Demonstrates `set_experiment_trace_location()` problems
+
+**For Complete Picture:**
+- Share **both scripts** + this README
+- Shows that multiple things are broken
+- Backend storage + MLflow API both have issues
+
 ## What to Share with Team
 
-Share this entire directory with:
-1. `repro-otel-tracing-issue.py` - The reproduction script
-2. `REPRO_README.md` - This file
-3. `../TRACING_STATUS.md` - Complete investigation report
+Share this entire directory:
+1. `repro-otel-tracing-issue.py` - Manual table creation (backend issue)
+2. `repro-otel-with-mlflow-api.py` - MLflow API (API issue)
+3. `REPRO_README.md` - This file
+4. `../TRACING_STATUS.md` - Complete investigation report
 
 ## Questions for OTel Team
 

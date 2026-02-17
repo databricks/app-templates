@@ -179,6 +179,99 @@ export class MLflowTracing {
   }
 
   /**
+   * Set up experiment trace location in Unity Catalog
+   * Creates UC storage location and links experiment to it
+   *
+   * This implements the MLflow set_experiment_trace_location() API in TypeScript
+   */
+  private async setupExperimentTraceLocation(): Promise<string | null> {
+    if (!this.config.experimentId) {
+      return null;
+    }
+
+    const catalogName = process.env.OTEL_UC_CATALOG || "main";
+    const schemaName = process.env.OTEL_UC_SCHEMA || "agent_traces";
+    const warehouseId = process.env.MLFLOW_TRACING_SQL_WAREHOUSE_ID;
+
+    if (!warehouseId) {
+      console.warn("⚠️  MLFLOW_TRACING_SQL_WAREHOUSE_ID not set, skipping UC setup");
+      return null;
+    }
+
+    let host = process.env.DATABRICKS_HOST;
+    if (!host) {
+      return null;
+    }
+
+    if (!host.startsWith("http://") && !host.startsWith("https://")) {
+      host = `https://${host}`;
+    }
+
+    try {
+      console.log(`🔗 Setting up trace location: ${catalogName}.${schemaName}`);
+
+      // Step 1: Create UC storage location
+      const createLocationUrl = `${host}/api/4.0/mlflow/traces/location`;
+      const createLocationBody = {
+        uc_schema: {
+          catalog_name: catalogName,
+          schema_name: schemaName,
+        },
+        sql_warehouse_id: warehouseId,
+      };
+
+      const createResponse = await fetch(createLocationUrl, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${this.authToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(createLocationBody),
+      });
+
+      if (!createResponse.ok && createResponse.status !== 409) {
+        // 409 means already exists, which is fine
+        const errorText = await createResponse.text();
+        console.warn(`⚠️  Failed to create UC location: ${createResponse.status} - ${errorText}`);
+        return null;
+      }
+
+      // Step 2: Link experiment to UC location
+      const linkUrl = `${host}/api/4.0/mlflow/traces/${this.config.experimentId}/link-location`;
+      const linkBody = {
+        experiment_id: this.config.experimentId,
+        uc_schema: {
+          catalog_name: catalogName,
+          schema_name: schemaName,
+        },
+      };
+
+      const linkResponse = await fetch(linkUrl, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${this.authToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(linkBody),
+      });
+
+      if (!linkResponse.ok) {
+        const errorText = await linkResponse.text();
+        console.warn(`⚠️  Failed to link experiment: ${linkResponse.status} - ${errorText}`);
+        return null;
+      }
+
+      const tableName = `${catalogName}.${schemaName}.mlflow_experiment_trace_otel_spans`;
+      console.log(`✅ Experiment linked to UC trace location: ${tableName}`);
+      return tableName;
+
+    } catch (error) {
+      console.warn(`⚠️  Error setting up trace location:`, error);
+      return null;
+    }
+  }
+
+  /**
    * Build headers for trace export using stored auth token
    * Includes required headers for Databricks OTel collector
    */
@@ -278,6 +371,15 @@ export class MLflowTracing {
           console.log(`✅ Using auth token from Databricks CLI (profile: ${profile})`);
         } catch (error) {
           console.warn("⚠️  Could not get auth token from Databricks CLI.");
+        }
+      }
+
+      // Set up experiment trace location in UC (if not already configured)
+      if (this.authToken && !process.env.OTEL_UC_TABLE_NAME) {
+        const tableName = await this.setupExperimentTraceLocation();
+        if (tableName) {
+          // Set environment variable so buildHeadersWithToken() can use it
+          process.env.OTEL_UC_TABLE_NAME = tableName;
         }
       }
     }

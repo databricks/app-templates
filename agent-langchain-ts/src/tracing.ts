@@ -179,10 +179,69 @@ export class MLflowTracing {
   }
 
   /**
+   * Link experiment to existing UC trace location
+   * This only requires the catalog/schema to exist, not a warehouse
+   */
+  private async linkExperimentToLocation(
+    catalogName: string,
+    schemaName: string,
+    tableName: string
+  ): Promise<string | null> {
+    if (!this.config.experimentId) {
+      return null;
+    }
+
+    let host = process.env.DATABRICKS_HOST;
+    if (!host) {
+      return null;
+    }
+
+    if (!host.startsWith("http://") && !host.startsWith("https://")) {
+      host = `https://${host}`;
+    }
+
+    try {
+      const linkUrl = `${host}/api/4.0/mlflow/traces/${this.config.experimentId}/link-location`;
+      const linkBody = {
+        experiment_id: this.config.experimentId,
+        uc_schema: {
+          catalog_name: catalogName,
+          schema_name: schemaName,
+        },
+      };
+
+      const linkResponse = await fetch(linkUrl, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${this.authToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(linkBody),
+      });
+
+      if (!linkResponse.ok) {
+        const errorText = await linkResponse.text();
+        console.warn(`⚠️  Failed to link experiment to ${tableName}: ${linkResponse.status} - ${errorText}`);
+        return null;
+      }
+
+      console.log(`✅ Experiment linked to UC trace location: ${tableName}`);
+      return tableName;
+
+    } catch (error) {
+      console.warn(`⚠️  Error linking experiment to trace location:`, error);
+      return null;
+    }
+  }
+
+  /**
    * Set up experiment trace location in Unity Catalog
    * Creates UC storage location and links experiment to it
    *
    * This implements the MLflow set_experiment_trace_location() API in TypeScript
+   *
+   * Note: The warehouse ID is only needed for creating the UC table initially.
+   * If the table already exists, the link-location API works without a warehouse.
    */
   private async setupExperimentTraceLocation(): Promise<string | null> {
     if (!this.config.experimentId) {
@@ -192,10 +251,13 @@ export class MLflowTracing {
     const catalogName = process.env.OTEL_UC_CATALOG || "main";
     const schemaName = process.env.OTEL_UC_SCHEMA || "agent_traces";
     const warehouseId = process.env.MLFLOW_TRACING_SQL_WAREHOUSE_ID;
+    const tableName = `${catalogName}.${schemaName}.mlflow_experiment_trace_otel_spans`;
 
+    // If no warehouse is specified, try to link directly (works if table already exists)
     if (!warehouseId) {
-      console.warn("⚠️  MLFLOW_TRACING_SQL_WAREHOUSE_ID not set, skipping UC setup");
-      return null;
+      console.log(`⚠️  MLFLOW_TRACING_SQL_WAREHOUSE_ID not set`);
+      console.log(`   Attempting to link to existing table: ${tableName}`);
+      return await this.linkExperimentToLocation(catalogName, schemaName, tableName);
     }
 
     let host = process.env.DATABRICKS_HOST;
@@ -237,33 +299,7 @@ export class MLflowTracing {
       }
 
       // Step 2: Link experiment to UC location
-      const linkUrl = `${host}/api/4.0/mlflow/traces/${this.config.experimentId}/link-location`;
-      const linkBody = {
-        experiment_id: this.config.experimentId,
-        uc_schema: {
-          catalog_name: catalogName,
-          schema_name: schemaName,
-        },
-      };
-
-      const linkResponse = await fetch(linkUrl, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${this.authToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(linkBody),
-      });
-
-      if (!linkResponse.ok) {
-        const errorText = await linkResponse.text();
-        console.warn(`⚠️  Failed to link experiment: ${linkResponse.status} - ${errorText}`);
-        return null;
-      }
-
-      const tableName = `${catalogName}.${schemaName}.mlflow_experiment_trace_otel_spans`;
-      console.log(`✅ Experiment linked to UC trace location: ${tableName}`);
-      return tableName;
+      return await this.linkExperimentToLocation(catalogName, schemaName, tableName);
 
     } catch (error) {
       console.warn(`⚠️  Error setting up trace location:`, error);
@@ -397,20 +433,38 @@ export class MLflowTracing {
     });
 
     // Create OTLP exporter with headers
-    this.exporter = new OTLPTraceExporter({
+    const baseExporter = new OTLPTraceExporter({
       url: traceUrl,
       headers,
     });
 
+    // Wrap exporter to add logging
+    const wrappedExporter = {
+      export: async (spans: any, resultCallback: any) => {
+        console.log(`📤 Exporting ${spans.length} span(s) to OTel collector...`);
+        try {
+          await baseExporter.export(spans, (result: any) => {
+            if (result.code === 0) {
+              console.log(`✅ Successfully exported ${spans.length} span(s)`);
+            } else {
+              console.error(`❌ Failed to export spans:`, result.error || result);
+            }
+            resultCallback(result);
+          });
+        } catch (error) {
+          console.error(`❌ Export error:`, error);
+          resultCallback({ code: 1, error });
+        }
+      },
+      shutdown: () => baseExporter.shutdown(),
+      forceFlush: () => baseExporter.forceFlush(),
+    };
+
+    this.exporter = wrappedExporter as any;
+
     // Add span processor with error handling
-    const processor = this.config.useBatchProcessor
-      ? new BatchSpanProcessor(this.exporter, {
-          exportTimeoutMillis: 30000,
-          maxExportBatchSize: 512,
-          maxQueueSize: 2048,
-          scheduledDelayMillis: 5000,
-        })
-      : new SimpleSpanProcessor(this.exporter);
+    // Use SimpleSpanProcessor for immediate export (better for debugging)
+    const processor = new SimpleSpanProcessor(this.exporter);
 
     // Add event listeners for debugging
     processor.onStart = (span: any) => {

@@ -20,6 +20,9 @@ env:
     value: "databricks"
   - name: MLFLOW_EXPERIMENT_ID
     valueFrom: "experiment"
+  # SQL Warehouse for automatic UC trace setup
+  - name: MLFLOW_TRACING_SQL_WAREHOUSE_ID
+    value: "02c6ce260d0e8ffe"
 
   # Server configuration
   - name: PORT

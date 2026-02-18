@@ -119,6 +119,7 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
                     value: feedbackType === 'thumbs_up',
                   },
                 },
+                update_mask: 'feedback,source',
               }),
             },
           );

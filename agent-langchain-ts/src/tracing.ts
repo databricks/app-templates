@@ -393,22 +393,6 @@ export class MLflowTracing {
         console.log("   Note: OTel collector may require OAuth token instead");
       }
 
-      // Legacy CLI fallback (if new method didn't work)
-      if (!this.authToken && process.env.DATABRICKS_CONFIG_PROFILE) {
-        try {
-          const { execSync } = require("child_process");
-          const profile = process.env.DATABRICKS_CONFIG_PROFILE;
-          const tokenJson = execSync(
-            `databricks auth token --profile ${profile}`,
-            { encoding: "utf-8" }
-          );
-          const parsed = JSON.parse(tokenJson);
-          this.authToken = parsed.access_token;
-          console.log(`✅ Using auth token from Databricks CLI (profile: ${profile})`);
-        } catch (error) {
-          console.warn("⚠️  Could not get auth token from Databricks CLI.");
-        }
-      }
 
       // Set up experiment trace location in UC (if not already configured)
       if (this.authToken && !process.env.OTEL_UC_TABLE_NAME) {
@@ -426,12 +410,6 @@ export class MLflowTracing {
     // Construct trace endpoint URL
     const traceUrl = this.buildTraceUrl();
 
-    console.log("📍 Trace export configuration:", {
-      url: traceUrl,
-      hasAuthHeader: !!headers["Authorization"],
-      experimentId: this.config.experimentId,
-    });
-
     // Log detailed export configuration for debugging
     console.log("🔍 OTel Export Configuration:");
     console.log("  URL:", traceUrl);
@@ -441,134 +419,17 @@ export class MLflowTracing {
     console.log("  UC Table:", headers["X-Databricks-UC-Table-Name"] || "Not set");
     console.log("  Experiment ID:", headers["x-mlflow-experiment-id"] || "Not set");
 
-    // Test connectivity to OTel endpoint with GET request
-    console.log("🔍 Testing connectivity to OTel endpoint...");
-    try {
-      const testResponse = await fetch(traceUrl.replace("/v1/traces", "/"), {
-        method: "GET",
-        headers: {
-          "Authorization": headers["Authorization"] || "",
-        },
-        signal: AbortSignal.timeout(5000),
-      });
-      console.log(`✅ Endpoint reachable: ${testResponse.status} ${testResponse.statusText}`);
-    } catch (testError: any) {
-      console.warn(`⚠️  Connectivity test failed: ${testError.message}`);
-      console.warn(`   This may indicate network restrictions from Databricks Apps`);
-    }
-
-    // Test with actual POST to see what error we get
-    console.log("🔍 Testing POST request to capture raw error response...");
-    try {
-      const testPostResponse = await fetch(traceUrl, {
-        method: "POST",
-        headers: headers,
-        body: new Uint8Array(0), // Empty protobuf for testing
-        signal: AbortSignal.timeout(15000),
-      });
-      const responseText = await testPostResponse.text();
-      console.log(`📋 POST Test Response: ${testPostResponse.status} ${testPostResponse.statusText}`);
-      console.log(`   Response body: ${responseText || '(empty)'}`);
-      console.log(`   Response headers:`, Object.fromEntries(testPostResponse.headers.entries()));
-    } catch (testPostError: any) {
-      console.error(`❌ POST Test Error: ${testPostError.message}`);
-      if (testPostError.response) {
-        console.error(`   Response status: ${testPostError.response.status}`);
-        console.error(`   Response body:`, await testPostError.response.text().catch(() => 'Could not read'));
-      }
-    }
-
     // Create OTLP exporter with headers
-    const baseExporter = new OTLPTraceExporter({
+    this.exporter = new OTLPTraceExporter({
       url: traceUrl,
       headers,
-      timeoutMillis: 60000, // Increase timeout to 60 seconds for debugging
+      timeoutMillis: 30000,
     });
 
-    // Wrap exporter to add detailed logging and capture raw HTTP responses
-    const wrappedExporter = {
-      export: async (spans: any, resultCallback: any) => {
-        const startTime = Date.now();
-        console.log(`📤 [${new Date().toISOString()}] Exporting ${spans.length} span(s) to OTel collector...`);
-        console.log(`   Endpoint: ${traceUrl}`);
-        console.log(`   Span names: ${spans.slice(0, 3).map((s: any) => s.name).join(", ")}...`);
-
-        // Intercept HTTP errors to capture raw backend response
-        const originalExport = baseExporter.export.bind(baseExporter);
-
-        // Monkey-patch the send method to capture raw HTTP response
-        const originalSend = (baseExporter as any)._otlpExporter?.send;
-        if (originalSend && typeof originalSend === 'function') {
-          (baseExporter as any)._otlpExporter.send = async function(this: any, ...args: any[]) {
-            try {
-              const result = await originalSend.apply(this, args);
-              return result;
-            } catch (httpError: any) {
-              // Capture raw HTTP error details
-              console.error(`🔍 RAW HTTP ERROR DETAILS:`);
-              console.error(`   Status: ${httpError.status || httpError.statusCode || 'unknown'}`);
-              console.error(`   Message: ${httpError.message}`);
-              console.error(`   Response body:`, httpError.body || httpError.response || httpError.data || 'No body');
-              console.error(`   Response headers:`, httpError.headers || 'No headers');
-              console.error(`   Full error object:`, JSON.stringify(httpError, Object.getOwnPropertyNames(httpError), 2).substring(0, 1000));
-              throw httpError;
-            }
-          };
-        }
-
-        try {
-          await baseExporter.export(spans, (result: any) => {
-            const duration = Date.now() - startTime;
-            if (result.code === 0) {
-              console.log(`✅ [${duration}ms] Successfully exported ${spans.length} span(s)`);
-            } else {
-              console.error(`❌ [${duration}ms] Failed to export spans:`);
-              console.error(`   Error code: ${result.code}`);
-              console.error(`   Error message:`, result.error?.message || result.error || result);
-              console.error(`   Error details:`, JSON.stringify(result, null, 2).substring(0, 1000));
-
-              // Try to extract more details from the error object
-              if (result.error) {
-                const err = result.error;
-                console.error(`   Error properties:`, Object.keys(err).join(", "));
-                if (err.message) console.error(`   Message: ${err.message}`);
-                if (err.code) console.error(`   Code: ${err.code}`);
-                if (err.details) console.error(`   Details:`, err.details);
-                if (err.metadata) console.error(`   Metadata:`, err.metadata);
-              }
-            }
-            resultCallback(result);
-          });
-        } catch (error: any) {
-          const duration = Date.now() - startTime;
-          console.error(`❌ [${duration}ms] Export exception:`, error?.message || error);
-          console.error(`   Error name: ${error?.name}`);
-          console.error(`   Error code: ${error?.code}`);
-          console.error(`   Error status: ${error?.status || error?.statusCode}`);
-          if (error?.response) {
-            console.error(`   Response status: ${error.response.status || error.response.statusCode}`);
-            console.error(`   Response body:`, error.response.body || error.response.data);
-          }
-          if (error?.stack) {
-            console.error(`   Stack trace: ${error.stack.split('\n').slice(0, 5).join('\n')}`);
-          }
-          resultCallback({ code: 1, error });
-        }
-      },
-      shutdown: () => baseExporter.shutdown(),
-      forceFlush: () => baseExporter.forceFlush(),
-    };
-
-    this.exporter = wrappedExporter as any;
-
     // Add span processor with error handling
-    // Use SimpleSpanProcessor for immediate export (better for debugging)
-    const processor = new SimpleSpanProcessor(this.exporter);
-
-    // Add event listeners for debugging
-    processor.onStart = (span: any) => {
-      console.log(`📝 Span started: ${span.name}`);
-    };
+    const processor = this.config.useBatchProcessor
+      ? new BatchSpanProcessor(this.exporter)
+      : new SimpleSpanProcessor(this.exporter);
 
     this.provider.addSpanProcessor(processor);
 

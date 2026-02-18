@@ -31,8 +31,6 @@ import {
   checkChatAccess,
   convertToUIMessages,
   generateUUID,
-  getLastTraceId,
-  getTraceIdForRequest,
   myProvider,
   postRequestBodySchema,
   type PostRequestBody,
@@ -225,13 +223,19 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     const result = streamText({
       model,
       messages: await convertToModelMessages(uiMessages),
-      includeRawChunks: true, // Include raw chunks so we can extract trace_id
+      providerOptions: {
+        databricks: { databricksOptions: { return_trace: true } },
+      },
+      includeRawChunks: true,
       onChunk: ({ chunk }) => {
         if (chunk.type === 'raw') {
-          const raw = (chunk as any).rawValue;
+          const raw = chunk.rawValue as any;
           if (raw?.type === 'response.output_item.done') {
-            traceId =
-              raw.databricks_output?.trace?.info?.trace_id ?? traceId;
+            const traceIdFromChunk =
+              raw?.databricks_output?.trace?.info?.trace_id;
+            if (typeof traceIdFromChunk === 'string') {
+              traceId = traceIdFromChunk;
+            }
           }
         }
       },
@@ -241,7 +245,6 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           console.log('[Chat] ⚠️  No trace ID found after stream finished');
         }
       },
-      // Temporarily disable tools to test trace ID
       // tools: {
       //   [DATABRICKS_TOOL_CALL_ID]: DATABRICKS_TOOL_DEFINITION,
       // },
@@ -265,23 +268,6 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           'Finished message stream! Saving message...',
           JSON.stringify(responseMessage, null, 2),
         );
-
-        // Try to get trace_id from the traceIdMap or use the last trace_id
-        if (!traceId) {
-          // First try with response message ID
-          let retrievedTraceId = getTraceIdForRequest(responseMessage.id);
-          // Fallback to last trace ID (works for single-user dev)
-          if (!retrievedTraceId) {
-            retrievedTraceId = getLastTraceId();
-          }
-
-          if (retrievedTraceId) {
-            traceId = retrievedTraceId;
-            console.log('[Chat] ✅ Retrieved trace_id:', traceId);
-          } else {
-            console.log('[Chat] ⚠️  No trace_id found for message:', responseMessage.id);
-          }
-        }
 
         // Store in-memory for ephemeral mode (also useful when DB is available)
         storeMessageMeta(responseMessage.id, id, traceId);

@@ -66,53 +66,12 @@ export async function getWorkspaceHostname(): Promise<string> {
 // Environment variable to enable SSE logging
 const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true';
 
-// Global map to store trace IDs by request ID
-const traceIdMap = new Map<string, string>();
-
-// Store the most recent trace ID (for single-user dev testing)
-let lastTraceId: string | null = null;
-
-// Export function to retrieve trace ID by request/chat ID
-export function getTraceIdForRequest(requestId: string): string | null {
-  return traceIdMap.get(requestId) || null;
-}
-
-// Export function to get the most recent trace ID (useful for chat streaming)
-export function getLastTraceId(): string | null {
-  return lastTraceId;
-}
-
-// Clean up old entries (older than 5 minutes)
-setInterval(() => {
-  const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
-  // Simple cleanup - in production you'd track timestamps
-  if (traceIdMap.size > 1000) {
-    traceIdMap.clear();
-  }
-}, 60000);
-
 // Custom fetch function to transform Databricks responses to OpenAI format
 export const databricksFetch: typeof fetch = async (input, init) => {
   const url = input.toString();
-  let modifiedInit = init;
+  const modifiedInit = init;
 
-  // Inject databricks_options for Responses API to get trace IDs.
-  // @databricks/ai-sdk-provider v0.4.1 does not forward providerOptions
-  // to the request body, so we inject here instead.
-  if (init?.body && url.includes('/responses')) {
-    try {
-      const requestBody =
-        typeof init.body === 'string' ? JSON.parse(init.body) : init.body;
-      if (!requestBody.databricks_options) {
-        requestBody.databricks_options = { return_trace: true };
-      }
-      modifiedInit = { ...init, body: JSON.stringify(requestBody) };
-    } catch (_e) {
-      // Keep original init if body can't be parsed
-    }
-  }
-
-  // Log the (possibly modified) request
+  // Log the request
   if (modifiedInit?.body) {
     try {
       const requestBody =
@@ -150,7 +109,6 @@ export const databricksFetch: typeof fetch = async (input, init) => {
       const reader = originalBody.getReader();
       const decoder = new TextDecoder();
       let eventCounter = 0;
-      let extractedTraceId: string | null = null;
 
       const loggingStream = new ReadableStream({
         async pull(controller) {
@@ -173,17 +131,6 @@ export const databricksFetch: typeof fetch = async (input, init) => {
               try {
                 const parsed = JSON.parse(data);
                 console.log(`[SSE #${eventCounter}]`, JSON.stringify(parsed));
-
-                // Extract trace_id from databricks_output if present
-                if (!extractedTraceId && parsed.databricks_output?.trace?.info?.trace_id) {
-                  extractedTraceId = parsed.databricks_output.trace.info.trace_id;
-                  lastTraceId = extractedTraceId; // Store as last trace ID
-                  const requestId = parsed.databricks_output.databricks_request_id || parsed.id;
-                  if (requestId) {
-                    traceIdMap.set(requestId, extractedTraceId);
-                    console.log(`[SSE] ✅ Stored trace_id ${extractedTraceId} for request ${requestId}`);
-                  }
-                }
               } catch {
                 console.log(`[SSE #${eventCounter}] (raw)`, data);
               }

@@ -2,11 +2,13 @@
  * Integration tests verifying the end-to-end trace ID capture pipeline.
  *
  * Flow under test:
- *  1. databricksFetch injects `databricks_options: { return_trace: true }` into
- *     every Responses API request body.
+ *  1. chat.ts passes `providerOptions.databricks.databricksOptions.return_trace: true`
+ *     to streamText(), which the provider forwards as `databricks_options.return_trace`
+ *     in the Responses API request body.
  *  2. The mock Databricks server detects return_trace and includes
  *     `databricks_output.trace.info.trace_id` in the response.output_item.done event.
- *  3. The chat.ts onChunk callback reads that field and stores the trace ID.
+ *  3. The provider captures the trace ID from the SSE event and exposes it in
+ *     response.body.trace_id, which chat.ts reads in onFinish.
  *  4. On feedback submission the trace ID is forwarded to the mock MLflow endpoint.
  *  5. The feedback response includes `mlflowAssessmentId` proving the full chain worked.
  *
@@ -37,14 +39,14 @@ function parseSSEPayloads(body: string): unknown[] {
     .filter(Boolean);
 }
 
-test.describe('/api/chat — trace ID capture via databricks_options injection', () => {
+test.describe('/api/chat — trace ID capture via providerOptions', () => {
   test('trace ID is captured and used in MLflow feedback submission', async ({
     adaContext,
   }) => {
     const chatId = generateUUID();
 
-    // Step 1: Send a chat message. databricksFetch will inject
-    // databricks_options.return_trace into the Responses API request, which
+    // Step 1: Send a chat message. providerOptions.databricks.databricksOptions
+    // forwards return_trace: true in the Responses API request body, which
     // causes the MSW mock to include a trace ID in the response stream.
     const chatResponse = await adaContext.request.post('/api/chat', {
       data: {

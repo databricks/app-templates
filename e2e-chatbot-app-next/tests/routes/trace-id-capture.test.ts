@@ -97,4 +97,51 @@ test.describe('/api/chat — trace ID capture via databricks_options injection',
     //  - MLflow submission succeeded using that trace ID
     expect(feedbackBody.mlflowAssessmentId).toBe(MOCK_ASSESSMENT_ID);
   });
+
+  test('second feedback submission PATCHes the existing assessment instead of creating a new one', async ({
+    adaContext,
+  }) => {
+    const chatId = generateUUID();
+
+    // Send a chat message to establish a trace ID
+    const chatResponse = await adaContext.request.post('/api/chat', {
+      data: {
+        id: chatId,
+        message: {
+          id: generateUUID(),
+          role: 'user',
+          parts: [{ type: 'text', text: 'Why is the sky blue?' }],
+        },
+        selectedChatModel: CHAT_MODEL,
+        selectedVisibilityType: 'private',
+      },
+    });
+    expect(chatResponse.status()).toBe(200);
+
+    const body = await chatResponse.text();
+    const payloads = parseSSEPayloads(body);
+    const startEvent = payloads.find(
+      (p) => (p as any)?.type === 'start' && (p as any)?.messageId,
+    ) as { type: string; messageId: string } | undefined;
+    expect(startEvent?.messageId).toBeTruthy();
+    const assistantMessageId = startEvent!.messageId;
+
+    // First feedback submission — should POST and return the mock assessment ID
+    const firstResponse = await adaContext.request.post('/api/feedback', {
+      data: { messageId: assistantMessageId, feedbackType: 'thumbs_up' },
+    });
+    expect(firstResponse.status()).toBe(200);
+    const firstBody = await firstResponse.json();
+    expect(firstBody.mlflowAssessmentId).toBe(MOCK_ASSESSMENT_ID);
+
+    // Second feedback submission — should PATCH the existing assessment.
+    // The PATCH mock returns the same assessment_id that was passed in the URL,
+    // so we expect the same ID back.
+    const secondResponse = await adaContext.request.post('/api/feedback', {
+      data: { messageId: assistantMessageId, feedbackType: 'thumbs_down' },
+    });
+    expect(secondResponse.status()).toBe(200);
+    const secondBody = await secondResponse.json();
+    expect(secondBody.mlflowAssessmentId).toBe(MOCK_ASSESSMENT_ID);
+  });
 });

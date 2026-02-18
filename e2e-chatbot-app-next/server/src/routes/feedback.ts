@@ -15,7 +15,11 @@ import {
 import { ChatSDKError } from '@chat-template/core/errors';
 import { getDatabricksToken } from '@chat-template/auth';
 import { getWorkspaceHostname } from '@chat-template/ai-sdk-providers';
-import { getMessageMeta } from '../lib/message-meta-store';
+import {
+  getMessageMeta,
+  getAssessmentId,
+  storeAssessmentId,
+} from '../lib/message-meta-store';
 
 export const feedbackRouter: RouterType = Router();
 
@@ -72,6 +76,11 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       chatId = dbMessage.chatId;
     }
 
+    // Look up any existing feedback row for deduplication (DB mode).
+    const existingFeedback = isDatabaseAvailable()
+      ? await getFeedbackByMessageId({ messageId })
+      : null;
+
     let mlflowAssessmentId: string | undefined;
 
     // Submit to MLflow if we have a trace ID
@@ -80,32 +89,65 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
         const token = await getDatabricksToken();
         const hostUrl = await getWorkspaceHostname();
 
-        // MLflow Assessments REST API v3.0:
-        //   POST /api/3.0/mlflow/traces/{trace_id}/assessments
-        //   Body: { assessment: { trace_id, assessment_name, source, feedback } }
-        const mlflowResponse = await fetch(
-          `${hostUrl}/api/3.0/mlflow/traces/${traceId}/assessments`,
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              assessment: {
-                trace_id: traceId,
-                assessment_name: 'user_feedback',
-                source: {
-                  source_type: 'HUMAN',
-                  source_id: session.user.id,
-                },
-                feedback: {
-                  value: feedbackType === 'thumbs_up',
-                },
+        // Check for an existing assessment to update (deduplication).
+        // DB mode: look at the stored mlflowAssessmentId from the existing feedback row.
+        // Ephemeral mode: look up the in-memory assessment store.
+        const existingAssessmentId =
+          existingFeedback?.mlflowAssessmentId ??
+          getAssessmentId(messageId, session.user.id);
+
+        let mlflowResponse: Response;
+        if (existingAssessmentId) {
+          // PATCH to update the existing assessment
+          mlflowResponse = await fetch(
+            `${hostUrl}/api/3.0/mlflow/traces/${traceId}/assessments/${existingAssessmentId}`,
+            {
+              method: 'PATCH',
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
               },
-            }),
-          },
-        );
+              body: JSON.stringify({
+                assessment: {
+                  trace_id: traceId,
+                  assessment_name: 'user_feedback',
+                  source: {
+                    source_type: 'HUMAN',
+                    source_id: session.user.email ?? session.user.id,
+                  },
+                  feedback: {
+                    value: feedbackType === 'thumbs_up',
+                  },
+                },
+              }),
+            },
+          );
+        } else {
+          // POST to create a new assessment
+          mlflowResponse = await fetch(
+            `${hostUrl}/api/3.0/mlflow/traces/${traceId}/assessments`,
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                assessment: {
+                  trace_id: traceId,
+                  assessment_name: 'user_feedback',
+                  source: {
+                    source_type: 'HUMAN',
+                    source_id: session.user.email ?? session.user.id,
+                  },
+                  feedback: {
+                    value: feedbackType === 'thumbs_up',
+                  },
+                },
+              }),
+            },
+          );
+        }
 
         if (!mlflowResponse.ok) {
           const errorText = await mlflowResponse.text();
@@ -114,6 +156,10 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           const mlflowResult = await mlflowResponse.json();
           mlflowAssessmentId = mlflowResult.assessment?.assessment_id;
           console.log('Successfully submitted feedback to MLflow:', mlflowAssessmentId);
+          // Store assessment ID for ephemeral-mode deduplication on subsequent submissions
+          if (mlflowAssessmentId) {
+            storeAssessmentId(messageId, session.user.id, mlflowAssessmentId);
+          }
         }
       } catch (error) {
         console.error('Error submitting feedback to MLflow:', error);
@@ -126,7 +172,6 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     // Save feedback to DB when available
     let feedbackResult;
     if (isDatabaseAvailable()) {
-      const existingFeedback = await getFeedbackByMessageId({ messageId });
       if (existingFeedback) {
         feedbackResult = await updateFeedback({
           id: existingFeedback.id,

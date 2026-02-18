@@ -224,4 +224,49 @@ export const handlers = [
       },
     });
   }),
+
+  // Mock MLflow assessments PATCH endpoint (update existing assessment).
+  // URL: PATCH /api/3.0/mlflow/traces/{trace_id}/assessments/{assessment_id}
+  http.patch(
+    /\/api\/3\.0\/mlflow\/traces\/([^/]+)\/assessments\/([^/]+)$/,
+    async (req) => {
+      const url = req.request.url;
+      const match = url.match(/\/traces\/([^/]+)\/assessments\/([^/]+)/);
+      const traceId = match?.[1] ?? 'unknown';
+      const assessmentId = match?.[2] ?? 'unknown';
+
+      const body = (await req.request.json()) as {
+        assessment?: {
+          trace_id?: string;
+          assessment_name?: string;
+          feedback?: { value?: unknown };
+        };
+      };
+
+      const assessment = body?.assessment;
+      const feedbackValue = assessment?.feedback?.value;
+      if (
+        !assessment ||
+        assessment.trace_id !== traceId ||
+        !assessment.assessment_name ||
+        typeof feedbackValue !== 'boolean'
+      ) {
+        return HttpResponse.json(
+          {
+            error_code: 'INVALID_PARAMETER_VALUE',
+            message: `Mock: invalid PATCH assessment body. Got feedback.value=${JSON.stringify(feedbackValue)} (expected boolean)`,
+          },
+          { status: 400 },
+        );
+      }
+
+      return HttpResponse.json({
+        assessment: {
+          assessment_id: assessmentId,
+          trace_id: traceId,
+          assessment_name: assessment.assessment_name,
+        },
+      });
+    },
+  ),
 ];

@@ -1,4 +1,9 @@
-import type { DataUIPart, LanguageModelUsage, UIMessageChunk } from 'ai';
+import type {
+  DataUIPart,
+  LanguageModelUsage,
+  UIMessage,
+  UIMessageChunk,
+} from 'ai';
 import { useChat } from '@ai-sdk/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSWRConfig } from 'swr';
@@ -24,6 +29,66 @@ import { ChatTransport, type StreamingPartIds } from '../lib/ChatTransport';
 import type { ClientSession } from '@chat-template/auth';
 import { softNavigateToChatId } from '@/lib/navigation';
 import { useAppConfig } from '@/contexts/AppConfigContext';
+
+/**
+ * Merges duplicate parts in a message by combining their content.
+ *
+ * When a stream is interrupted and resumed with synthetic start events,
+ * the AI SDK may create duplicate parts with the same ID. This function
+ * merges them by concatenating content from later occurrences into the first.
+ *
+ * @returns A new parts array with duplicates merged, or the original if no duplicates
+ */
+function mergeDuplicateParts(
+  parts: UIMessage['parts'],
+): UIMessage['parts'] {
+  const seenIds = new Map<string, number>(); // id -> index in result
+  const result: UIMessage['parts'] = [];
+
+  for (const part of parts) {
+    // Only merge parts that have an 'id' field (reasoning, text, tool-call, etc.)
+    const partId = 'id' in part ? (part as { id?: string }).id : undefined;
+
+    if (partId && seenIds.has(partId)) {
+      // Duplicate found - merge content into existing part
+      const existingIndex = seenIds.get(partId);
+      if (existingIndex === undefined) continue;
+      const existingPart = result[existingIndex];
+
+      // Merge based on part type
+      if (
+        existingPart.type === 'reasoning' &&
+        part.type === 'reasoning' &&
+        'reasoning' in existingPart &&
+        'reasoning' in part
+      ) {
+        // Concatenate reasoning text
+        (existingPart as { reasoning: string }).reasoning =
+          ((existingPart as { reasoning: string }).reasoning || '') +
+          ((part as { reasoning: string }).reasoning || '');
+      } else if (
+        existingPart.type === 'text' &&
+        part.type === 'text' &&
+        'text' in existingPart &&
+        'text' in part
+      ) {
+        // Concatenate text
+        (existingPart as { text: string }).text =
+          ((existingPart as { text: string }).text || '') +
+          ((part as { text: string }).text || '');
+      }
+      // For other types, just keep the first occurrence (don't merge)
+    } else {
+      // First occurrence - add to result
+      if (partId) {
+        seenIds.set(partId, result.length);
+      }
+      result.push(part);
+    }
+  }
+
+  return result;
+}
 
 export function Chat({
   id,
@@ -65,6 +130,11 @@ export function Chat({
   // Track IDs of parts that are currently streaming (haven't received end event)
   // Used to restore AI SDK trackers on stream resumption
   const streamingPartIdsRef = useRef<StreamingPartIds>({});
+
+  // Track if we're currently resuming a stream (to know when to merge duplicate parts)
+  const isResumingRef = useRef(false);
+  // Track if we've already merged duplicates for the current resume (only need to do it once)
+  const hasMergedDuringResumeRef = useRef(false);
 
   // Single counter for resume attempts - reset when stream parts are received
   const resumeAttemptCountRef = useRef(0);
@@ -226,6 +296,8 @@ export function Chat({
         console.log('[Chat onFinish] Stream was aborted by user, not resuming');
         setStreamCursor(0);
         streamingPartIdsRef.current = {};
+        isResumingRef.current = false;
+        hasMergedDuringResumeRef.current = false;
         fetchChatHistory();
         return;
       }
@@ -246,6 +318,8 @@ export function Chat({
         );
         setStreamCursor(0);
         streamingPartIdsRef.current = {};
+        isResumingRef.current = false;
+        hasMergedDuringResumeRef.current = false;
         fetchChatHistory();
         clearError();
         return;
@@ -266,14 +340,19 @@ export function Chat({
           resumeAttemptCountRef.current + 1,
         );
         resumeAttemptCountRef.current++;
+        isResumingRef.current = true;
+        hasMergedDuringResumeRef.current = false;
         resumeStream();
       } else {
         // Stream completed normally or we've exhausted resume attempts
         if (resumeAttemptCountRef.current >= maxResumeAttempts) {
           console.warn('[Chat onFinish] Max resume attempts reached');
         }
+
         setStreamCursor(0);
         streamingPartIdsRef.current = {};
+        isResumingRef.current = false;
+        hasMergedDuringResumeRef.current = false;
         fetchChatHistory();
       }
     },
@@ -297,6 +376,31 @@ export function Chat({
       // Resume logic is handled exclusively in onFinish.
     },
   });
+
+  // Merge duplicate parts once when resuming a stream
+  // This runs after the synthetic start event creates a duplicate, keeping the UI clean
+  useEffect(() => {
+    if (!isResumingRef.current || hasMergedDuringResumeRef.current) return;
+
+    const lastMessage = messages.at(-1);
+    if (lastMessage?.role !== 'assistant' || !lastMessage.parts) return;
+
+    const mergedParts = mergeDuplicateParts(lastMessage.parts);
+    if (mergedParts.length !== lastMessage.parts.length) {
+      console.log(
+        '[Chat] Merging duplicate parts during resume:',
+        lastMessage.parts.length,
+        '->',
+        mergedParts.length,
+      );
+      hasMergedDuringResumeRef.current = true;
+      setMessages(
+        messages.map((msg, idx) =>
+          idx === messages.length - 1 ? { ...msg, parts: mergedParts } : msg,
+        ),
+      );
+    }
+  }, [messages, setMessages]);
 
   const [searchParams] = useSearchParams();
   const query = searchParams.get('query');

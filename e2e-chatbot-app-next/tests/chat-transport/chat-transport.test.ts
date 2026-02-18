@@ -37,6 +37,108 @@ function createMockStream(chunks: UIMessageChunk[]): ReadableStream<UIMessageChu
   });
 }
 
+/**
+ * Simulates what the AI SDK does when processing stream chunks.
+ * This helps us understand if synthetic start events cause duplicates.
+ */
+interface SimulatedMessagePart {
+  type: string;
+  id: string;
+  content?: string;
+  state: 'streaming' | 'complete';
+}
+
+function simulateAISDKChunkProcessing(chunks: UIMessageChunk[]): {
+  parts: SimulatedMessagePart[];
+  trackers: { reasoning?: string; text?: string; toolInput?: string };
+} {
+  const parts: SimulatedMessagePart[] = [];
+  const trackers: { reasoning?: string; text?: string; toolInput?: string } = {};
+
+  for (const chunk of chunks) {
+    switch (chunk.type) {
+      case 'reasoning-start': {
+        // SDK creates new tracker entry AND pushes new part
+        trackers.reasoning = (chunk as any).id;
+        parts.push({
+          type: 'reasoning',
+          id: (chunk as any).id,
+          content: '',
+          state: 'streaming',
+        });
+        break;
+      }
+      case 'reasoning-delta': {
+        // SDK appends to existing part via tracker
+        const part = parts.find(
+          (p) => p.type === 'reasoning' && p.id === (chunk as any).id,
+        );
+        if (part) {
+          part.content = (part.content || '') + (chunk as any).delta;
+        }
+        break;
+      }
+      case 'reasoning-end': {
+        // SDK marks part complete and clears tracker
+        const part = parts.find(
+          (p) => p.type === 'reasoning' && p.id === (chunk as any).id,
+        );
+        if (part) {
+          part.state = 'complete';
+        }
+        trackers.reasoning = undefined;
+        break;
+      }
+      case 'text-start': {
+        trackers.text = (chunk as any).id;
+        parts.push({
+          type: 'text',
+          id: (chunk as any).id,
+          content: '',
+          state: 'streaming',
+        });
+        break;
+      }
+      case 'text-delta': {
+        const part = parts.find(
+          (p) => p.type === 'text' && p.id === (chunk as any).id,
+        );
+        if (part) {
+          part.content = (part.content || '') + (chunk as any).delta;
+        }
+        break;
+      }
+      case 'text-end': {
+        const part = parts.find(
+          (p) => p.type === 'text' && p.id === (chunk as any).id,
+        );
+        if (part) {
+          part.state = 'complete';
+        }
+        trackers.text = undefined;
+        break;
+      }
+    }
+  }
+
+  return { parts, trackers };
+}
+
+/**
+ * Deduplicates parts by ID, keeping the first occurrence.
+ * This is what we need to do in chat.tsx after resume.
+ */
+function deduplicateParts(parts: SimulatedMessagePart[]): SimulatedMessagePart[] {
+  const seen = new Set<string>();
+  return parts.filter((part) => {
+    if (seen.has(part.id)) {
+      return false;
+    }
+    seen.add(part.id);
+    return true;
+  });
+}
+
 test.describe('ChatTransport', () => {
   test.describe('processResponseStream', () => {
     test('calls onStreamPart for each chunk', async () => {
@@ -416,6 +518,188 @@ test.describe('ChatTransport', () => {
       }
 
       expect(syntheticChunks).toHaveLength(0);
+    });
+  });
+
+  test.describe('stream resume simulation - verifying message.parts behavior', () => {
+    test('WITHOUT synthetic start: resumed stream causes tracker lookup failure', () => {
+      // Simulate: stream interrupted mid-reasoning, then resumed WITHOUT synthetic start
+      // This demonstrates the original bug
+
+      // Phase 1: Initial stream (before disconnect)
+      const initialChunks: UIMessageChunk[] = [
+        { type: 'reasoning-start', id: 'r-1' } as UIMessageChunk,
+        { type: 'reasoning-delta', id: 'r-1', delta: 'thinking about ' } as UIMessageChunk,
+        // DISCONNECT happens here - no reasoning-end received
+      ];
+
+      const { parts: partsAfterDisconnect, trackers: trackersAfterDisconnect } =
+        simulateAISDKChunkProcessing(initialChunks);
+
+      expect(partsAfterDisconnect).toHaveLength(1);
+      expect(partsAfterDisconnect[0].content).toBe('thinking about ');
+      expect(partsAfterDisconnect[0].state).toBe('streaming');
+      expect(trackersAfterDisconnect.reasoning).toBe('r-1');
+
+      // Phase 2: SDK resets trackers on reconnect (this is what happens in AI SDK)
+      const resetTrackers = { reasoning: undefined, text: undefined, toolInput: undefined };
+
+      // Phase 3: Resumed stream arrives (without synthetic start)
+      const _resumedChunks: UIMessageChunk[] = [
+        { type: 'reasoning-delta', id: 'r-1', delta: 'the problem' } as UIMessageChunk,
+        { type: 'reasoning-end', id: 'r-1' } as UIMessageChunk,
+        { type: 'text-start', id: 't-1' } as UIMessageChunk,
+        { type: 'text-delta', id: 't-1', delta: 'Here is my answer' } as UIMessageChunk,
+        { type: 'text-end', id: 't-1' } as UIMessageChunk,
+      ];
+
+      // When SDK processes resumed chunks with reset trackers, the delta has no tracker to append to
+      // In real SDK this throws: "Received reasoning-delta for missing reasoning part"
+      // Here we simulate by checking if tracker exists before processing delta
+      const canProcessDelta = resetTrackers.reasoning === 'r-1';
+      expect(canProcessDelta).toBe(false); // This is the bug!
+    });
+
+    test('WITH synthetic start: resumed stream works but creates DUPLICATE part', () => {
+      // Phase 1: Initial stream (before disconnect)
+      const initialChunks: UIMessageChunk[] = [
+        { type: 'reasoning-start', id: 'r-1' } as UIMessageChunk,
+        { type: 'reasoning-delta', id: 'r-1', delta: 'thinking about ' } as UIMessageChunk,
+      ];
+
+      const { parts: partsAfterDisconnect } =
+        simulateAISDKChunkProcessing(initialChunks);
+
+      expect(partsAfterDisconnect).toHaveLength(1);
+      expect(partsAfterDisconnect[0].content).toBe('thinking about ');
+
+      // Phase 2: Simulate resume with synthetic start prepended
+      const syntheticAndResumedChunks: UIMessageChunk[] = [
+        // Synthetic start (injected by our ChatTransport)
+        { type: 'reasoning-start', id: 'r-1' } as UIMessageChunk,
+        // Actual resumed chunks
+        { type: 'reasoning-delta', id: 'r-1', delta: 'the problem' } as UIMessageChunk,
+        { type: 'reasoning-end', id: 'r-1' } as UIMessageChunk,
+        { type: 'text-start', id: 't-1' } as UIMessageChunk,
+        { type: 'text-delta', id: 't-1', delta: 'Here is my answer' } as UIMessageChunk,
+        { type: 'text-end', id: 't-1' } as UIMessageChunk,
+      ];
+
+      // Process the resumed chunks (SDK starts fresh, so it creates new parts)
+      const { parts: partsFromResume } = simulateAISDKChunkProcessing(
+        syntheticAndResumedChunks,
+      );
+
+      // The synthetic start creates a NEW part (this is the duplicate!)
+      expect(partsFromResume).toHaveLength(2); // reasoning + text
+      expect(partsFromResume[0].id).toBe('r-1');
+      expect(partsFromResume[0].content).toBe('the problem'); // Only has resumed content
+
+      // Combined parts from both phases shows the DUPLICATE
+      const allParts = [...partsAfterDisconnect, ...partsFromResume];
+      expect(allParts).toHaveLength(3); // 2 reasoning (duplicate!) + 1 text
+
+      const reasoningParts = allParts.filter((p) => p.type === 'reasoning');
+      expect(reasoningParts).toHaveLength(2); // DUPLICATE!
+      expect(reasoningParts[0].content).toBe('thinking about '); // Original
+      expect(reasoningParts[1].content).toBe('the problem'); // From resume
+    });
+
+    test('WITH synthetic start + deduplication: message.parts is clean', () => {
+      // Phase 1: Initial stream (before disconnect)
+      const initialChunks: UIMessageChunk[] = [
+        { type: 'reasoning-start', id: 'r-1' } as UIMessageChunk,
+        { type: 'reasoning-delta', id: 'r-1', delta: 'thinking about ' } as UIMessageChunk,
+      ];
+
+      const { parts: partsAfterDisconnect } =
+        simulateAISDKChunkProcessing(initialChunks);
+
+      // Phase 2: Simulate resume with synthetic start
+      const syntheticAndResumedChunks: UIMessageChunk[] = [
+        { type: 'reasoning-start', id: 'r-1' } as UIMessageChunk,
+        { type: 'reasoning-delta', id: 'r-1', delta: 'the problem' } as UIMessageChunk,
+        { type: 'reasoning-end', id: 'r-1' } as UIMessageChunk,
+        { type: 'text-start', id: 't-1' } as UIMessageChunk,
+        { type: 'text-delta', id: 't-1', delta: 'Here is my answer' } as UIMessageChunk,
+        { type: 'text-end', id: 't-1' } as UIMessageChunk,
+      ];
+
+      const { parts: partsFromResume } = simulateAISDKChunkProcessing(
+        syntheticAndResumedChunks,
+      );
+
+      // Combine and deduplicate (keeping first occurrence)
+      const allParts = [...partsAfterDisconnect, ...partsFromResume];
+      const cleanParts = deduplicateParts(allParts);
+
+      // After deduplication, we have unique parts only
+      expect(cleanParts).toHaveLength(2); // 1 reasoning + 1 text
+
+      const reasoningParts = cleanParts.filter((p) => p.type === 'reasoning');
+      expect(reasoningParts).toHaveLength(1);
+      // First occurrence is kept (with original content)
+      expect(reasoningParts[0].content).toBe('thinking about ');
+
+      // Note: This means we lose the resumed content!
+      // The correct approach is to MERGE content, not just dedupe.
+    });
+
+    test('CORRECT approach: merge content from duplicate parts', () => {
+      // Phase 1: Initial stream (before disconnect)
+      const initialChunks: UIMessageChunk[] = [
+        { type: 'reasoning-start', id: 'r-1' } as UIMessageChunk,
+        { type: 'reasoning-delta', id: 'r-1', delta: 'thinking about ' } as UIMessageChunk,
+      ];
+
+      const { parts: partsAfterDisconnect } =
+        simulateAISDKChunkProcessing(initialChunks);
+
+      // Phase 2: Simulate resume with synthetic start
+      const syntheticAndResumedChunks: UIMessageChunk[] = [
+        { type: 'reasoning-start', id: 'r-1' } as UIMessageChunk,
+        { type: 'reasoning-delta', id: 'r-1', delta: 'the problem' } as UIMessageChunk,
+        { type: 'reasoning-end', id: 'r-1' } as UIMessageChunk,
+        { type: 'text-start', id: 't-1' } as UIMessageChunk,
+        { type: 'text-delta', id: 't-1', delta: 'Here is my answer' } as UIMessageChunk,
+        { type: 'text-end', id: 't-1' } as UIMessageChunk,
+      ];
+
+      const { parts: partsFromResume } = simulateAISDKChunkProcessing(
+        syntheticAndResumedChunks,
+      );
+
+      // Merge duplicate parts by combining content
+      const allParts = [...partsAfterDisconnect, ...partsFromResume];
+      const mergedParts: SimulatedMessagePart[] = [];
+      const seenIds = new Map<string, number>(); // id -> index in mergedParts
+
+      for (const part of allParts) {
+        if (seenIds.has(part.id)) {
+          // Merge content into existing part
+          const existingIndex = seenIds.get(part.id);
+          if (existingIndex === undefined) continue;
+          mergedParts[existingIndex].content =
+            (mergedParts[existingIndex].content || '') + (part.content || '');
+          // Update state to the latest
+          mergedParts[existingIndex].state = part.state;
+        } else {
+          seenIds.set(part.id, mergedParts.length);
+          mergedParts.push({ ...part });
+        }
+      }
+
+      // After merging, we have correct content
+      expect(mergedParts).toHaveLength(2); // 1 reasoning + 1 text
+
+      const reasoningParts = mergedParts.filter((p) => p.type === 'reasoning');
+      expect(reasoningParts).toHaveLength(1);
+      expect(reasoningParts[0].content).toBe('thinking about the problem'); // Combined!
+      expect(reasoningParts[0].state).toBe('complete');
+
+      const textParts = mergedParts.filter((p) => p.type === 'text');
+      expect(textParts).toHaveLength(1);
+      expect(textParts[0].content).toBe('Here is my answer');
     });
   });
 });

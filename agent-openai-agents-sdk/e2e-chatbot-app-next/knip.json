@@ -1,8 +1,0 @@
-{
-    "ignore": [
-        "scripts/**",
-        "databricks/**",
-        "tests/**"
-    ],
-    "ignoreDependencies": ["tailwindcss", "tailwindcss-animate", "@tailwindcss/postcss", "@tailwindcss/typography"]
-}

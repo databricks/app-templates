@@ -6,14 +6,14 @@ test.describe("Request Context Utils", () => {
     const originalEnv = process.env.API_PROXY;
 
     test.beforeEach(() => {
-      delete process.env.API_PROXY;
+      process.env.API_PROXY = undefined;
     });
 
     test.afterEach(() => {
       if (originalEnv !== undefined) {
         process.env.API_PROXY = originalEnv;
       } else {
-        delete process.env.API_PROXY;
+        process.env.API_PROXY = undefined;
       }
     });
 

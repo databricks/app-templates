@@ -20,7 +20,7 @@ import { useChatVisibility } from '@/hooks/use-chat-visibility';
 import { ChatSDKError } from '@chat-template/core/errors';
 import { useDataStream } from './data-stream-provider';
 import { isCredentialErrorMessage } from '@/lib/oauth-error-utils';
-import { ChatTransport } from '../lib/ChatTransport';
+import { ChatTransport, type StreamingPartIds } from '../lib/ChatTransport';
 import type { ClientSession } from '@chat-template/auth';
 import { softNavigateToChatId } from '@/lib/navigation';
 import { useAppConfig } from '@/contexts/AppConfigContext';
@@ -61,6 +61,10 @@ export function Chat({
   const [lastPart, setLastPart] = useState<UIMessageChunk | undefined>();
   const lastPartRef = useRef<UIMessageChunk | undefined>(lastPart);
   lastPartRef.current = lastPart;
+
+  // Track IDs of parts that are currently streaming (haven't received end event)
+  // Used to restore AI SDK trackers on stream resumption
+  const streamingPartIdsRef = useRef<StreamingPartIds>({});
 
   // Single counter for resume attempts - reset when stream parts are received
   const resumeAttemptCountRef = useRef(0);
@@ -116,10 +120,45 @@ export function Chat({
         // Reset resume attempts when we successfully receive stream parts
         resumeAttemptCountRef.current = 0;
 
+        // Track streaming part IDs for stream resumption
+        // When we receive a start event, store the ID; when we receive end, clear it
+        if (part.type === 'reasoning-start') {
+          streamingPartIdsRef.current = {
+            ...streamingPartIdsRef.current,
+            reasoning: part.id,
+          };
+        } else if (part.type === 'reasoning-end') {
+          streamingPartIdsRef.current = {
+            ...streamingPartIdsRef.current,
+            reasoning: undefined,
+          };
+        } else if (part.type === 'text-start') {
+          streamingPartIdsRef.current = {
+            ...streamingPartIdsRef.current,
+            text: part.id,
+          };
+        } else if (part.type === 'text-end') {
+          streamingPartIdsRef.current = {
+            ...streamingPartIdsRef.current,
+            text: undefined,
+          };
+        } else if (part.type === 'tool-input-start') {
+          streamingPartIdsRef.current = {
+            ...streamingPartIdsRef.current,
+            toolInput: part.id,
+          };
+        } else if (part.type === 'tool-input-end') {
+          streamingPartIdsRef.current = {
+            ...streamingPartIdsRef.current,
+            toolInput: undefined,
+          };
+        }
+
         // Keep track of the number of stream parts received
         setStreamCursor((cursor) => cursor + 1);
         setLastPart(part);
       },
+      getStreamingPartIds: () => streamingPartIdsRef.current,
       api: '/api/chat',
       fetch: fetchWithAbort,
       prepareSendMessagesRequest({ messages, id, body }) {
@@ -186,6 +225,7 @@ export function Chat({
       if (isAbort) {
         console.log('[Chat onFinish] Stream was aborted by user, not resuming');
         setStreamCursor(0);
+        streamingPartIdsRef.current = {};
         fetchChatHistory();
         return;
       }
@@ -205,6 +245,7 @@ export function Chat({
           '[Chat onFinish] OAuth credential error detected, not resuming',
         );
         setStreamCursor(0);
+        streamingPartIdsRef.current = {};
         fetchChatHistory();
         clearError();
         return;
@@ -232,6 +273,7 @@ export function Chat({
           console.warn('[Chat onFinish] Max resume attempts reached');
         }
         setStreamCursor(0);
+        streamingPartIdsRef.current = {};
         fetchChatHistory();
       }
     },

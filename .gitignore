@@ -168,3 +168,4 @@ yarn-error.log*
 /blob-report/
 /playwright/*
 tsconfig.tsbuildinfo
+mlflow.db

@@ -172,6 +172,7 @@ tsconfig.tsbuildinfo
 # Claude Code - track source of truth skills and sync script
 .claude/*
 !.claude/sync-skills.py
+!.claude/install-skills.sh
 !.claude/skills/
 .claude/skills/*
 !.claude/skills/quickstart/

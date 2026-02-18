@@ -39,7 +39,7 @@ export const chat = createTable('Chat', {
 
 export type Chat = InferSelectModel<typeof chat>;
 
-export const message = createTable('Message_v2', {
+export const message = createTable('Message', {
   id: uuid('id').primaryKey().notNull().defaultRandom(),
   chatId: uuid('chatId')
     .notNull()
@@ -48,6 +48,7 @@ export const message = createTable('Message_v2', {
   parts: json('parts').notNull(),
   attachments: json('attachments').notNull(),
   createdAt: timestamp('createdAt').notNull(),
+  traceId: text('traceId'), // MLflow trace ID for feedback submission
 });
 
 export type DBMessage = InferSelectModel<typeof message>;

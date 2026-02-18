@@ -15,6 +15,13 @@
       "when": 1737239000000,
       "tag": "0001_add_feedback_table",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1770054012813,
+      "tag": "0002_hard_red_ghost",
+      "breakpoints": true
     }
   ]
 }

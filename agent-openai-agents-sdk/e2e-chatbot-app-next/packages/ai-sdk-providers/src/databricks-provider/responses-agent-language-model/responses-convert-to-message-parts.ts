@@ -14,6 +14,9 @@ import {
   createApprovalStatusOutput,
 } from '../../mcp-approval-utils';
 
+// Track active text items to emit text-start before first delta
+const activeTextItems = new Set<string>();
+
 export const convertResponsesAgentChunkToMessagePart = (
   chunk: z.infer<typeof responsesAgentChunkSchema>,
 ): LanguageModelV2StreamPart[] => {
@@ -21,6 +24,20 @@ export const convertResponsesAgentChunkToMessagePart = (
 
   switch (chunk.type) {
     case 'response.output_text.delta':
+      // Emit text-start for new text items before first delta
+      if (!activeTextItems.has(chunk.item_id)) {
+        activeTextItems.add(chunk.item_id);
+        parts.push({
+          type: 'text-start',
+          id: chunk.item_id,
+          providerMetadata: {
+            databricks: {
+              itemId: chunk.item_id,
+            },
+          },
+        });
+      }
+
       parts.push({
         type: 'text-delta',
         id: chunk.item_id,
@@ -57,17 +74,52 @@ export const convertResponsesAgentChunkToMessagePart = (
 
     case 'response.output_item.done':
       if (chunk.item.type === 'message') {
-        parts.push({
-          type: 'text-delta',
-          id: chunk.item.id,
-          delta: chunk.item.content[0].text,
-          providerMetadata: {
-            databricks: {
-              itemId: chunk.item.id,
-              itemType: 'response.output_item.done',
+        // If we were tracking this text item, emit text-end and clean up
+        if (activeTextItems.has(chunk.item.id)) {
+          parts.push({
+            type: 'text-end',
+            id: chunk.item.id,
+            providerMetadata: {
+              databricks: {
+                itemId: chunk.item.id,
+              },
             },
-          },
-        });
+          });
+          activeTextItems.delete(chunk.item.id);
+        } else {
+          // Non-streaming case: emit complete text at once
+          parts.push(
+            {
+              type: 'text-start',
+              id: chunk.item.id,
+              providerMetadata: {
+                databricks: {
+                  itemId: chunk.item.id,
+                },
+              },
+            },
+            {
+              type: 'text-delta',
+              id: chunk.item.id,
+              delta: chunk.item.content[0].text,
+              providerMetadata: {
+                databricks: {
+                  itemId: chunk.item.id,
+                  itemType: 'response.output_item.done',
+                },
+              },
+            },
+            {
+              type: 'text-end',
+              id: chunk.item.id,
+              providerMetadata: {
+                databricks: {
+                  itemId: chunk.item.id,
+                },
+              },
+            },
+          );
+        }
       } else if (chunk.item.type === 'function_call') {
         parts.push({
           type: 'tool-call',

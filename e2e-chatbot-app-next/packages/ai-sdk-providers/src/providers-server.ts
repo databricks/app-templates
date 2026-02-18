@@ -1,4 +1,4 @@
-import type { LanguageModelV2 } from '@ai-sdk/provider';
+import type { LanguageModelV3 } from '@ai-sdk/provider';
 
 import { getHostUrl } from '@chat-template/utils';
 // Import auth module directly
@@ -27,7 +27,7 @@ async function getProviderToken(): Promise<string> {
 let cachedWorkspaceHostname: string | null = null;
 
 // Get workspace hostname with one-time resolution and caching
-async function getWorkspaceHostname(): Promise<string> {
+export async function getWorkspaceHostname(): Promise<string> {
   if (cachedWorkspaceHostname) {
     return cachedWorkspaceHostname;
   }
@@ -66,33 +66,77 @@ async function getWorkspaceHostname(): Promise<string> {
 // Environment variable to enable SSE logging
 const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true';
 
+// Global map to store trace IDs by request ID
+const traceIdMap = new Map<string, string>();
+
+// Store the most recent trace ID (for single-user dev testing)
+let lastTraceId: string | null = null;
+
+// Export function to retrieve trace ID by request/chat ID
+export function getTraceIdForRequest(requestId: string): string | null {
+  return traceIdMap.get(requestId) || null;
+}
+
+// Export function to get the most recent trace ID (useful for chat streaming)
+export function getLastTraceId(): string | null {
+  return lastTraceId;
+}
+
+// Clean up old entries (older than 5 minutes)
+setInterval(() => {
+  const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+  // Simple cleanup - in production you'd track timestamps
+  if (traceIdMap.size > 1000) {
+    traceIdMap.clear();
+  }
+}, 60000);
+
 // Custom fetch function to transform Databricks responses to OpenAI format
 export const databricksFetch: typeof fetch = async (input, init) => {
   const url = input.toString();
+  let modifiedInit = init;
 
-  // Log the request being sent to Databricks
-  if (init?.body) {
+  // Inject databricks_options for Responses API to get trace IDs.
+  // @databricks/ai-sdk-provider v0.4.1 does not forward providerOptions
+  // to the request body, so we inject here instead.
+  if (init?.body && url.includes('/responses')) {
     try {
       const requestBody =
         typeof init.body === 'string' ? JSON.parse(init.body) : init.body;
+      if (!requestBody.databricks_options) {
+        requestBody.databricks_options = { return_trace: true };
+      }
+      modifiedInit = { ...init, body: JSON.stringify(requestBody) };
+    } catch (_e) {
+      // Keep original init if body can't be parsed
+    }
+  }
+
+  // Log the (possibly modified) request
+  if (modifiedInit?.body) {
+    try {
+      const requestBody =
+        typeof modifiedInit.body === 'string'
+          ? JSON.parse(modifiedInit.body)
+          : modifiedInit.body;
       console.log(
         'Databricks request:',
-        JSON.stringify({
-          url,
-          method: init.method || 'POST',
-          body: requestBody,
-        }),
+        JSON.stringify(
+          { url, method: modifiedInit.method || 'POST', body: requestBody },
+          null,
+          2,
+        ),
       );
     } catch (_e) {
       console.log('Databricks request (raw):', {
         url,
-        method: init.method || 'POST',
-        body: init.body,
+        method: modifiedInit.method || 'POST',
+        body: modifiedInit.body,
       });
     }
   }
 
-  const response = await fetch(url, init);
+  const response = await fetch(url, modifiedInit);
 
   // If SSE logging is enabled and this is a streaming response, wrap the body to log events
   if (LOG_SSE_EVENTS && response.body) {
@@ -106,6 +150,7 @@ export const databricksFetch: typeof fetch = async (input, init) => {
       const reader = originalBody.getReader();
       const decoder = new TextDecoder();
       let eventCounter = 0;
+      let extractedTraceId: string | null = null;
 
       const loggingStream = new ReadableStream({
         async pull(controller) {
@@ -128,6 +173,17 @@ export const databricksFetch: typeof fetch = async (input, init) => {
               try {
                 const parsed = JSON.parse(data);
                 console.log(`[SSE #${eventCounter}]`, JSON.stringify(parsed));
+
+                // Extract trace_id from databricks_output if present
+                if (!extractedTraceId && parsed.databricks_output?.trace?.info?.trace_id) {
+                  extractedTraceId = parsed.databricks_output.trace.info.trace_id;
+                  lastTraceId = extractedTraceId; // Store as last trace ID
+                  const requestId = parsed.databricks_output.databricks_request_id || parsed.id;
+                  if (requestId) {
+                    traceIdMap.set(requestId, extractedTraceId);
+                    console.log(`[SSE] ✅ Stored trace_id ${extractedTraceId} for request ${requestId}`);
+                  }
+                }
               } catch {
                 console.log(`[SSE #${eventCounter}] (raw)`, data);
               }
@@ -241,17 +297,17 @@ const getEndpointDetails = async (servingEndpoint: string) => {
 
 // Create a smart provider wrapper that handles OAuth initialization
 interface SmartProvider {
-  languageModel(id: string): Promise<LanguageModelV2>;
+  languageModel(id: string): Promise<LanguageModelV3>;
 }
 
 export class OAuthAwareProvider implements SmartProvider {
   private modelCache = new Map<
     string,
-    { model: LanguageModelV2; timestamp: number }
+    { model: LanguageModelV3; timestamp: number }
   >();
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-  async languageModel(id: string): Promise<LanguageModelV2> {
+  async languageModel(id: string): Promise<LanguageModelV3> {
     // Check cache first
     const cached = this.modelCache.get(id);
     if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {

@@ -126,6 +126,151 @@ export function mockFmapiResponseObject(content: string) {
 // ============================================================================
 
 /**
+ * Generate a Responses API stream that sends the text as multiple small deltas.
+ * This replicates real Databricks streaming behavior (one chunk per word/token)
+ * and is necessary to reproduce the delta-boundary bug where interleaved raw+text-delta
+ * chunks cause premature text-end injection and subsequent text-deltas to be dropped.
+ */
+export function mockResponsesApiMultiDeltaTextStream(
+  chunks: string[],
+  traceId?: string,
+): string[] {
+  const responseId = generateUUID();
+  const textItemId = generateUUID();
+  const fullText = chunks.join('');
+
+  const events: string[] = [
+    // Response created
+    mockSSE({
+      response: {
+        id: responseId,
+        created_at: Date.now() / 1000,
+        error: null,
+        model: 'databricks-claude-3-7-sonnet',
+        object: 'response',
+        output: [],
+      },
+      sequence_number: 0,
+      type: 'response.created',
+    }),
+    // Message item added
+    mockSSE({
+      item: {
+        id: textItemId,
+        content: [],
+        role: 'assistant',
+        status: 'in_progress',
+        type: 'message',
+      },
+      output_index: 0,
+      sequence_number: 1,
+      type: 'response.output_item.added',
+    }),
+    // Content part added (empty)
+    mockSSE({
+      content_index: 0,
+      item_id: textItemId,
+      output_index: 0,
+      part: { annotations: [], text: '', type: 'output_text', logprobs: null },
+      sequence_number: 2,
+      type: 'response.content_part.added',
+    }),
+  ];
+
+  // One text-delta per chunk (simulates real streaming)
+  chunks.forEach((chunk, i) => {
+    events.push(
+      mockSSE({
+        content_index: 0,
+        delta: chunk,
+        item_id: textItemId,
+        logprobs: [],
+        output_index: 0,
+        sequence_number: 3 + i,
+        type: 'response.output_text.delta',
+      }),
+    );
+  });
+
+  const afterSeq = 3 + chunks.length;
+
+  events.push(
+    // Content part done
+    mockSSE({
+      content_index: 0,
+      item_id: textItemId,
+      output_index: 0,
+      part: {
+        annotations: [],
+        text: fullText,
+        type: 'output_text',
+        logprobs: null,
+      },
+      sequence_number: afterSeq,
+      type: 'response.content_part.done',
+    }),
+    // Message item done (includes trace ID when return_trace was requested)
+    mockSSE({
+      item: {
+        id: textItemId,
+        content: [
+          {
+            annotations: [],
+            text: fullText,
+            type: 'output_text',
+            logprobs: null,
+          },
+        ],
+        role: 'assistant',
+        status: 'completed',
+        type: 'message',
+      },
+      output_index: 0,
+      sequence_number: afterSeq + 1,
+      type: 'response.output_item.done',
+      ...(traceId
+        ? { databricks_output: { trace: { info: { trace_id: traceId } } } }
+        : {}),
+    }),
+    // Response completed
+    mockSSE({
+      response: {
+        id: responseId,
+        created_at: Date.now() / 1000,
+        error: null,
+        model: 'databricks-claude-3-7-sonnet',
+        object: 'response',
+        output: [
+          {
+            id: textItemId,
+            content: [
+              {
+                annotations: [],
+                text: fullText,
+                type: 'output_text',
+                logprobs: null,
+              },
+            ],
+            role: 'assistant',
+            status: 'completed',
+            type: 'message',
+          },
+        ],
+        usage: {
+          input_tokens: 100,
+          output_tokens: fullText.length,
+          total_tokens: 100 + fullText.length,
+        },
+      },
+      sequence_number: afterSeq + 2,
+      type: 'response.completed',
+    }),
+  );
+
+  return events;
+}
+
+/**
  * Generate a default mock Responses API stream for a text response.
  * This is used when no special handling (like MCP approval) is needed.
  */

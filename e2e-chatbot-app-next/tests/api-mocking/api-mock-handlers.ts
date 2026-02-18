@@ -4,7 +4,7 @@ import {
   mockMcpApprovalRequestStream,
   mockMcpApprovalApprovedStream,
   mockMcpApprovalDeniedStream,
-  mockResponsesApiTextStream,
+  mockResponsesApiMultiDeltaTextStream,
 } from '../helpers';
 import { TEST_PROMPTS } from '../prompts/routes';
 
@@ -106,6 +106,10 @@ export const handlers = [
   http.post(/\/serving-endpoints\/responses$/, async (req) => {
     const body = await req.request.clone().json();
     const isStreaming = (body as { stream?: boolean })?.stream;
+    // Detect if the request wants trace data (injected by databricksFetch)
+    const returnTrace =
+      (body as any)?.databricks_options?.return_trace === true;
+    const streamTraceId = returnTrace ? 'mock-trace-id-from-databricks' : undefined;
 
     // Check for MCP approval response in the request
     const { found: hasApprovalResponse, approved } =
@@ -134,10 +138,17 @@ export const handlers = [
       }
     }
 
-    // Default response for non-MCP requests
+    // Default response: split text into per-word chunks to replicate real streaming
+    // (one response.output_text.delta per token). This is necessary to reproduce
+    // the delta-boundary bug where interleaved raw+text-delta chunks break streaming.
+    // Pass streamTraceId so the response.output_item.done event includes trace data
+    // when the request contained databricks_options.return_trace === true.
     if (isStreaming) {
       return createMockStreamResponse(
-        mockResponsesApiTextStream("It's just blue duh!"),
+        mockResponsesApiMultiDeltaTextStream(
+          ["It's", ' just', ' blue', ' duh!'],
+          streamTraceId,
+        ),
       );
     } else {
       return HttpResponse.json(TEST_PROMPTS.SKY.OUTPUT_TITLE.response);
@@ -167,6 +178,50 @@ export const handlers = [
   http.post(/\/oidc\/v1\/token$/, () => {
     return HttpResponse.json({
       access_token: 'test-token',
+    });
+  }),
+
+  // Mock MLflow assessments endpoint (api/3.0, trace_id in URL path).
+  // Validates the request body has the correct structure:
+  //   { assessment: { trace_id, assessment_name, source, feedback: { value: boolean } } }
+  http.post(/\/api\/3\.0\/mlflow\/traces\/([^/]+)\/assessments$/, async (req) => {
+    const url = req.request.url;
+    const traceIdMatch = url.match(/\/traces\/([^/]+)\/assessments/);
+    const traceId = traceIdMatch?.[1] ?? 'unknown';
+
+    const body = (await req.request.json()) as {
+      assessment?: {
+        trace_id?: string;
+        assessment_name?: string;
+        source?: { source_type?: string };
+        feedback?: { value?: unknown };
+      };
+    };
+
+    // Validate required fields — return 400 if malformed so tests catch wrong body format
+    const assessment = body?.assessment;
+    const feedbackValue = assessment?.feedback?.value;
+    if (
+      !assessment ||
+      assessment.trace_id !== traceId ||
+      !assessment.assessment_name ||
+      typeof feedbackValue !== 'boolean'
+    ) {
+      return HttpResponse.json(
+        {
+          error_code: 'INVALID_PARAMETER_VALUE',
+          message: `Mock: invalid assessment body. Got feedback.value=${JSON.stringify(feedbackValue)} (expected boolean)`,
+        },
+        { status: 400 },
+      );
+    }
+
+    return HttpResponse.json({
+      assessment: {
+        assessment_id: `mock-assessment-${traceId}`,
+        trace_id: traceId,
+        assessment_name: assessment.assessment_name,
+      },
     });
   }),
 ];

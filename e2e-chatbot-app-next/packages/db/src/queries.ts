@@ -292,6 +292,7 @@ export async function saveMessages({
         set: {
           parts: sql`excluded.parts`,
           attachments: sql`excluded.attachments`,
+          traceId: sql`excluded."traceId"`,
         },
       });
   } catch (_error) {

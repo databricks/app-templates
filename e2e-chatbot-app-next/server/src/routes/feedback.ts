@@ -4,302 +4,191 @@ import {
   type Response,
   type Router as RouterType,
 } from 'express';
-import { z } from 'zod';
+import { authMiddleware, requireAuth } from '../middleware/auth';
 import {
-  authMiddleware,
-  requireAuth,
-  requireChatAccess,
-} from '../middleware/auth';
-import {
+  getMessageById,
   createFeedback,
   getFeedbackByMessageId,
-  getFeedbackByChatId,
   updateFeedback,
-  deleteFeedback,
-  getMessageById,
   isDatabaseAvailable,
-  ensureUserExists,
 } from '@chat-template/db';
-import { ChatSDKError, checkChatAccess } from '@chat-template/core';
-import { submitToMLflow } from '../utils/mlflow-client';
+import { ChatSDKError } from '@chat-template/core/errors';
+import { getDatabricksToken } from '@chat-template/auth';
+import { getWorkspaceHostname } from '@chat-template/ai-sdk-providers';
+import { getMessageMeta } from '../lib/message-meta-store';
 
 export const feedbackRouter: RouterType = Router();
 
-// Apply auth middleware
 feedbackRouter.use(authMiddleware);
 
-// Request validation schemas
-const createFeedbackSchema = z.object({
-  messageId: z.string().uuid(),
-  chatId: z.string().uuid(),
-  feedbackType: z.enum(['thumbs_up', 'thumbs_down']),
-});
-
-const updateFeedbackSchema = z.object({
-  feedbackType: z.enum(['thumbs_up', 'thumbs_down']).optional(),
-});
-
 /**
- * POST /api/feedback - Create new feedback
+ * POST /api/feedback - Submit feedback for a message
+ *
+ * Body:
+ * - messageId: string - The ID of the message to provide feedback for
+ * - feedbackType: 'thumbs_up' | 'thumbs_down' - The type of feedback
  */
-feedbackRouter.post(
-  '/',
-  [requireAuth],
-  async (req: Request, res: Response) => {
-    console.log('[Feedback POST] Request received:', {
-      body: req.body,
-      headers: req.headers,
-      session: req.session,
-    });
+feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { messageId, feedbackType } = req.body;
 
-    try {
-      // Validate request body
-      const validationResult = createFeedbackSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        console.log('[Feedback POST] Validation failed:', validationResult.error);
-        return res.status(400).json({
-          error: 'Invalid request body',
-          details: validationResult.error.format(),
-        });
-      }
+    if (!messageId || !feedbackType) {
+      const error = new ChatSDKError('bad_request:api');
+      const response = error.toResponse();
+      return res.status(response.status).json(response.json);
+    }
 
-      const { messageId, chatId, feedbackType } = validationResult.data;
-      const userId = req.session?.user.id;
+    if (feedbackType !== 'thumbs_up' && feedbackType !== 'thumbs_down') {
+      const error = new ChatSDKError('bad_request:api');
+      const response = error.toResponse();
+      return res.status(response.status).json(response.json);
+    }
 
-      if (!userId) {
-        const error = new ChatSDKError('unauthorized:auth');
+    const session = req.session;
+    if (!session) {
+      const error = new ChatSDKError('unauthorized:chat');
+      const response = error.toResponse();
+      return res.status(response.status).json(response.json);
+    }
+
+    // Get the message to retrieve traceId and chatId
+    const messages = await getMessageById({ id: messageId });
+    let traceId: string | null;
+    let chatId: string;
+
+    if (!messages || messages.length === 0) {
+      // Fall back to in-memory store (ephemeral mode or DB unavailable)
+      const meta = getMessageMeta(messageId);
+      if (!meta) {
+        const error = new ChatSDKError('not_found:database');
         const response = error.toResponse();
         return res.status(response.status).json(response.json);
       }
+      traceId = meta.traceId;
+      chatId = meta.chatId;
+    } else {
+      const dbMessage = messages[0];
+      traceId = dbMessage.traceId;
+      chatId = dbMessage.chatId;
+    }
 
-      // Verify chat access manually (requireChatAccess expects :id param)
-      const { allowed } = await checkChatAccess(chatId, userId);
-      if (!allowed) {
-        const error = new ChatSDKError('forbidden:chat');
-        const response = error.toResponse();
-        return res.status(response.status).json(response.json);
+    let mlflowAssessmentId: string | undefined;
+
+    // Submit to MLflow if we have a trace ID
+    if (traceId) {
+      try {
+        const token = await getDatabricksToken();
+        const hostUrl = await getWorkspaceHostname();
+
+        // MLflow Assessments REST API v3.0:
+        //   POST /api/3.0/mlflow/traces/{trace_id}/assessments
+        //   Body: { assessment: { trace_id, assessment_name, source, feedback } }
+        const mlflowResponse = await fetch(
+          `${hostUrl}/api/3.0/mlflow/traces/${traceId}/assessments`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              assessment: {
+                trace_id: traceId,
+                assessment_name: 'user_feedback',
+                source: {
+                  source_type: 'HUMAN',
+                  source_id: session.user.id,
+                },
+                feedback: {
+                  value: feedbackType === 'thumbs_up',
+                },
+              },
+            }),
+          },
+        );
+
+        if (!mlflowResponse.ok) {
+          const errorText = await mlflowResponse.text();
+          console.error('Failed to submit feedback to MLflow:', errorText);
+        } else {
+          const mlflowResult = await mlflowResponse.json();
+          mlflowAssessmentId = mlflowResult.assessment?.assessment_id;
+          console.log('Successfully submitted feedback to MLflow:', mlflowAssessmentId);
+        }
+      } catch (error) {
+        console.error('Error submitting feedback to MLflow:', error);
+        // Continue to save feedback in database even if MLflow submission fails
       }
+    } else {
+      console.warn('Message does not have a trace ID, skipping MLflow submission');
+    }
 
-      // Ensure user exists in database (for foreign key constraint)
-      await ensureUserExists({
-        id: userId,
-        email: req.session.user.email || `${userId}@databricks.com`,
-      });
-
-      // Check if feedback already exists for this message
+    // Save feedback to DB when available
+    let feedbackResult;
+    if (isDatabaseAvailable()) {
       const existingFeedback = await getFeedbackByMessageId({ messageId });
-
       if (existingFeedback) {
-        // Update existing feedback
-        const updated = await updateFeedback({
+        feedbackResult = await updateFeedback({
           id: existingFeedback.id,
           feedbackType,
+          mlflowAssessmentId,
         });
-
-        // Submit to MLflow asynchronously (don't wait for response)
-        if (updated) {
-          submitToMLflow({
-            messageId,
-            chatId,
-            userId,
-            feedbackType,
-            assessmentId: updated.mlflowAssessmentId || undefined,
-          }).catch((error) => {
-            console.error('[Feedback] Failed to submit to MLflow:', error);
-          });
-        }
-
-        return res.status(200).json(updated);
-      }
-
-      // Create new feedback
-      const feedback = await createFeedback({
-        messageId,
-        chatId,
-        userId,
-        feedbackType,
-      });
-
-      // Submit to MLflow asynchronously (don't wait for response)
-      if (feedback) {
-        submitToMLflow({
+      } else {
+        feedbackResult = await createFeedback({
           messageId,
           chatId,
-          userId,
+          userId: session.user.id,
           feedbackType,
-        }).catch((error) => {
-          console.error('[Feedback] Failed to submit to MLflow:', error);
+          mlflowAssessmentId,
         });
       }
-
-      return res.status(201).json(feedback);
-    } catch (error) {
-      console.error('[Feedback] Error creating feedback:', error);
-      if (error instanceof ChatSDKError) {
-        const response = error.toResponse();
-        return res.status(response.status).json(response.json);
-      }
-      return res.status(500).json({ error: 'Failed to create feedback' });
     }
-  },
-);
+
+    return res.status(200).json({
+      success: true,
+      feedback: feedbackResult ?? null,
+      mlflowAssessmentId,
+    });
+  } catch (error) {
+    console.error('[Feedback] Error submitting feedback:', error);
+
+    if (error instanceof ChatSDKError) {
+      const response = error.toResponse();
+      return res.status(response.status).json(response.json);
+    }
+
+    const chatError = new ChatSDKError('offline:chat');
+    const response = chatError.toResponse();
+    return res.status(response.status).json(response.json);
+  }
+});
 
 /**
- * GET /api/feedback/message/:messageId - Get feedback by message ID
+ * GET /api/feedback/:messageId - Get feedback for a message
  */
 feedbackRouter.get(
-  '/message/:messageId',
-  [requireAuth],
+  '/:messageId',
+  requireAuth,
   async (req: Request, res: Response) => {
     try {
       const { messageId } = req.params;
 
-      if (!messageId) {
-        return res.status(400).json({ error: 'Message ID is required' });
-      }
-
-      // Get the message to verify chat access
-      const [message] = await getMessageById({ id: messageId });
-      if (!message) {
-        const error = new ChatSDKError('not_found:message');
-        const response = error.toResponse();
-        return res.status(response.status).json(response.json);
-      }
-
       const feedback = await getFeedbackByMessageId({ messageId });
 
-      if (!feedback) {
-        return res.status(404).json({ error: 'Feedback not found' });
-      }
-
-      return res.status(200).json(feedback);
+      return res.status(200).json({
+        feedback: feedback || null,
+      });
     } catch (error) {
       console.error('[Feedback] Error getting feedback:', error);
+
       if (error instanceof ChatSDKError) {
         const response = error.toResponse();
         return res.status(response.status).json(response.json);
       }
-      return res.status(500).json({ error: 'Failed to get feedback' });
-    }
-  },
-);
 
-/**
- * GET /api/feedback/chat/:chatId - Get all feedback for a chat
- */
-feedbackRouter.get(
-  '/chat/:chatId',
-  [requireAuth],
-  async (req: Request, res: Response) => {
-    try {
-      const { chatId } = req.params;
-
-      if (!chatId) {
-        return res.status(400).json({ error: 'Chat ID is required' });
-      }
-
-      // Verify chat access manually (requireChatAccess expects :id param)
-      const { allowed } = await checkChatAccess(chatId, req.session?.user.id);
-      if (!allowed) {
-        const error = new ChatSDKError('forbidden:chat');
-        const response = error.toResponse();
-        return res.status(response.status).json(response.json);
-      }
-
-      const feedbackList = await getFeedbackByChatId({ chatId });
-
-      // Return empty array if no feedback found (not 404)
-      return res.status(200).json(feedbackList || []);
-    } catch (error) {
-      console.error('[Feedback] Error getting feedback for chat:', error);
-      if (error instanceof ChatSDKError) {
-        const response = error.toResponse();
-        return res.status(response.status).json(response.json);
-      }
-      return res.status(500).json({ error: 'Failed to get feedback' });
-    }
-  },
-);
-
-/**
- * PUT /api/feedback/:id - Update feedback
- */
-feedbackRouter.put(
-  '/:id',
-  [requireAuth],
-  async (req: Request, res: Response) => {
-    try {
-      const { id } = req.params;
-
-      if (!id) {
-        return res.status(400).json({ error: 'Feedback ID is required' });
-      }
-
-      // Validate request body
-      const validationResult = updateFeedbackSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({
-          error: 'Invalid request body',
-          details: validationResult.error.format(),
-        });
-      }
-
-      const { feedbackType } = validationResult.data;
-
-      const updated = await updateFeedback({
-        id,
-        feedbackType,
-      });
-
-      if (!updated) {
-        return res.status(404).json({ error: 'Feedback not found' });
-      }
-
-      return res.status(200).json(updated);
-    } catch (error) {
-      console.error('[Feedback] Error updating feedback:', error);
-      if (error instanceof ChatSDKError) {
-        const response = error.toResponse();
-        return res.status(response.status).json(response.json);
-      }
-      return res.status(500).json({ error: 'Failed to update feedback' });
-    }
-  },
-);
-
-/**
- * DELETE /api/feedback/:id - Delete feedback
- */
-feedbackRouter.delete(
-  '/:id',
-  [requireAuth],
-  async (req: Request, res: Response) => {
-    try {
-      const { id } = req.params;
-
-      if (!id) {
-        return res.status(400).json({ error: 'Feedback ID is required' });
-      }
-
-      // If database is not available, return 204
-      if (!isDatabaseAvailable()) {
-        return res.status(204).end();
-      }
-
-      const deleted = await deleteFeedback({ id });
-
-      if (!deleted) {
-        return res.status(404).json({ error: 'Feedback not found' });
-      }
-
-      return res.status(204).end();
-    } catch (error) {
-      console.error('[Feedback] Error deleting feedback:', error);
-      if (error instanceof ChatSDKError) {
-        const response = error.toResponse();
-        return res.status(response.status).json(response.json);
-      }
-      return res.status(500).json({ error: 'Failed to delete feedback' });
+      const chatError = new ChatSDKError('offline:chat');
+      const response = chatError.toResponse();
+      return res.status(response.status).json(response.json);
     }
   },
 );

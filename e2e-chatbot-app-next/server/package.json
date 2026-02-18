@@ -14,7 +14,7 @@
     "@chat-template/core": "*",
     "@chat-template/db": "*",
     "@databricks/ai-sdk-provider": "^0.2.0",
-    "ai": "5.0.76",
+    "ai": "^6.0.70",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",

@@ -31,6 +31,8 @@ import {
   checkChatAccess,
   convertToUIMessages,
   generateUUID,
+  getLastTraceId,
+  getTraceIdForRequest,
   myProvider,
   postRequestBodySchema,
   type PostRequestBody,
@@ -43,6 +45,7 @@ import {
   extractApprovalStatus,
 } from '@databricks/ai-sdk-provider';
 import { ChatSDKError } from '@chat-template/core/errors';
+import { storeMessageMeta } from '../lib/message-meta-store';
 
 export const chatRouter: RouterType = Router();
 
@@ -151,6 +154,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
             parts: message.parts,
             attachments: [],
             createdAt: new Date(),
+            traceId: null,
           },
         ],
       });
@@ -175,6 +179,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
               createdAt: m.metadata?.createdAt
                 ? new Date(m.metadata.createdAt)
                 : new Date(),
+              traceId: null,
             })),
           });
 
@@ -203,6 +208,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     streamCache.clearActiveStream(id);
 
     let finalUsage: LanguageModelUsage | undefined;
+    let traceId: string | null = null;
     const streamId = generateUUID();
 
     console.log(
@@ -218,13 +224,27 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     }
     const result = streamText({
       model,
-      messages: convertToModelMessages(uiMessages),
-      onFinish: ({ usage }) => {
-        finalUsage = usage;
+      messages: await convertToModelMessages(uiMessages),
+      includeRawChunks: true, // Include raw chunks so we can extract trace_id
+      onChunk: ({ chunk }) => {
+        if (chunk.type === 'raw') {
+          const raw = (chunk as any).rawValue;
+          if (raw?.type === 'response.output_item.done') {
+            traceId =
+              raw.databricks_output?.trace?.info?.trace_id ?? traceId;
+          }
+        }
       },
-      tools: {
-        [DATABRICKS_TOOL_CALL_ID]: DATABRICKS_TOOL_DEFINITION,
+      onFinish: (finishData) => {
+        finalUsage = finishData.usage;
+        if (!traceId) {
+          console.log('[Chat] ⚠️  No trace ID found after stream finished');
+        }
       },
+      // Temporarily disable tools to test trace ID
+      // tools: {
+      //   [DATABRICKS_TOOL_CALL_ID]: DATABRICKS_TOOL_DEFINITION,
+      // },
     });
 
     /**
@@ -233,30 +253,39 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
      */
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
-        writer.merge(
-          result.toUIMessageStream({
-            originalMessages: uiMessages,
-            generateMessageId: generateUUID,
-            sendReasoning: true,
-            sendSources: true,
-            onError: (error) => {
-              console.error('Stream error:', error);
-
-              const errorMessage =
-                error instanceof Error ? error.message : JSON.stringify(error);
-
-              writer.write({ type: 'data-error', data: errorMessage });
-
-              return errorMessage;
-            },
-          }),
-        );
+        // result.toUIMessageStream() properly converts TextStreamPart → UIMessageChunk:
+        // - text-delta: maps TextStreamPart.text → UIMessageChunk.delta
+        // - start-step/finish-step: strips extra fields
+        // - finish: strips rawFinishReason/totalUsage
+        // - raw: dropped (trace_id captured via onChunk above)
+        writer.merge(result.toUIMessageStream());
       },
       onFinish: async ({ responseMessage }) => {
         console.log(
           'Finished message stream! Saving message...',
           JSON.stringify(responseMessage, null, 2),
         );
+
+        // Try to get trace_id from the traceIdMap or use the last trace_id
+        if (!traceId) {
+          // First try with response message ID
+          let retrievedTraceId = getTraceIdForRequest(responseMessage.id);
+          // Fallback to last trace ID (works for single-user dev)
+          if (!retrievedTraceId) {
+            retrievedTraceId = getLastTraceId();
+          }
+
+          if (retrievedTraceId) {
+            traceId = retrievedTraceId;
+            console.log('[Chat] ✅ Retrieved trace_id:', traceId);
+          } else {
+            console.log('[Chat] ⚠️  No trace_id found for message:', responseMessage.id);
+          }
+        }
+
+        // Store in-memory for ephemeral mode (also useful when DB is available)
+        storeMessageMeta(responseMessage.id, id, traceId);
+
         await saveMessages({
           messages: [
             {
@@ -266,6 +295,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
               createdAt: new Date(),
               attachments: [],
               chatId: id,
+              traceId, // Store trace ID for feedback
             },
           ],
         });

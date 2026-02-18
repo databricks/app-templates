@@ -114,7 +114,7 @@ const responseOutputItemDoneSchema = z.object({
   type: z.literal('response.output_item.done'),
   output_index: z.number(),
   item: responsesAgentOutputItem,
-});
+}).passthrough(); // Allow databricks_output and other fields to pass through
 
 const responseAnnotationAddedSchema = z.object({
   type: z.literal('response.output_text.annotation.added'),

@@ -105,6 +105,10 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
 
     const allParts: LanguageModelV2StreamPart[] = [];
 
+    // Create a mutable object to capture trace_id and span_id from streaming events
+    // This object will be mutated as the stream is consumed
+    const responseBody: Record<string, unknown> = {};
+
     return {
       stream: response
         .pipeThrough(
@@ -126,6 +130,34 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
                 finishReason = 'error';
                 controller.enqueue({ type: 'error', error: chunk.error });
                 return;
+              }
+
+              // Extract trace info from response.output_item.done event
+              // The endpoint returns trace info in databricks_output.trace.info
+              if (chunk.value.type === 'response.output_item.done') {
+                const databricksOutput: unknown = (
+                  chunk.value as { databricks_output?: unknown }
+                ).databricks_output;
+                if (
+                  databricksOutput &&
+                  typeof databricksOutput === 'object' &&
+                  'trace' in databricksOutput
+                ) {
+                  const trace = (databricksOutput as { trace?: unknown }).trace;
+                  if (trace && typeof trace === 'object' && 'info' in trace) {
+                    const info = (trace as { info?: unknown }).info;
+                    if (info && typeof info === 'object' && 'trace_id' in info) {
+                      const traceId = (info as { trace_id?: unknown }).trace_id;
+                      if (typeof traceId === 'string') {
+                        // Normalize trace_id at root level for easier access
+                        responseBody.trace_id = traceId;
+                        // Store full databricks_output structure for complete trace data
+                        responseBody.databricks_output = databricksOutput;
+                        console.log('[ResponsesAgent] ✅ Extracted trace_id from response.output_item.done:', traceId);
+                      }
+                    }
+                  }
+                }
               }
 
               const parts = convertResponsesAgentChunkToMessagePart(
@@ -209,7 +241,10 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
         )
         .pipeThrough(getDatabricksLanguageModelTransformStream()),
       request: { body: networkArgs.body },
-      response: { headers: responseHeaders },
+      response: {
+        headers: responseHeaders,
+        body: responseBody, // Include mutable responseBody with trace_id
+      },
     };
   }
 
@@ -228,16 +263,32 @@ export class DatabricksResponsesAgentLanguageModel implements LanguageModelV2 {
       prompt: options.prompt,
       systemMessageMode: 'system',
     });
+
+    // Extract databricks_options from providerOptions
+    const databricksOptions =
+      options.providerOptions?.databricks?.databricksOptions;
+
+    console.log('[DEBUG] providerOptions:', JSON.stringify(options.providerOptions));
+    console.log('[DEBUG] databricksOptions extracted:', databricksOptions);
+
+    const body: Record<string, unknown> = {
+      model: modelId,
+      input,
+      stream,
+    };
+
+    // Add databricks_options if provided
+    if (databricksOptions) {
+      body.databricks_options = databricksOptions;
+      console.log('[DEBUG] Added databricks_options to request body');
+    }
+
     return {
       url: config.url({
         path: '/responses',
       }),
       headers: combineHeaders(config.headers(), options.headers),
-      body: {
-        model: modelId,
-        input,
-        stream,
-      },
+      body,
       fetch: config.fetch,
     };
   }

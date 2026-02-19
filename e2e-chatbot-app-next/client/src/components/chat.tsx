@@ -165,6 +165,14 @@ export function Chat({
     mutate(unstable_serialize(getChatHistoryPaginationKey));
   }, [mutate]);
 
+  // Reset all stream-related state to initial values
+  const resetStreamState = useCallback(() => {
+    setStreamCursor(0);
+    streamingPartIdsRef.current = {};
+    isResumingRef.current = false;
+    hasMergedDuringResumeRef.current = false;
+  }, []);
+
   const {
     messages,
     setMessages,
@@ -192,36 +200,26 @@ export function Chat({
 
         // Track streaming part IDs for stream resumption
         // When we receive a start event, store the ID; when we receive end, clear it
-        if (part.type === 'reasoning-start') {
-          streamingPartIdsRef.current = {
-            ...streamingPartIdsRef.current,
-            reasoning: part.id,
-          };
-        } else if (part.type === 'reasoning-end') {
-          streamingPartIdsRef.current = {
-            ...streamingPartIdsRef.current,
-            reasoning: undefined,
-          };
-        } else if (part.type === 'text-start') {
-          streamingPartIdsRef.current = {
-            ...streamingPartIdsRef.current,
-            text: part.id,
-          };
-        } else if (part.type === 'text-end') {
-          streamingPartIdsRef.current = {
-            ...streamingPartIdsRef.current,
-            text: undefined,
-          };
-        } else if (part.type === 'tool-input-start') {
-          streamingPartIdsRef.current = {
-            ...streamingPartIdsRef.current,
-            toolInput: part.id,
-          };
-        } else if (part.type === 'tool-input-end') {
-          streamingPartIdsRef.current = {
-            ...streamingPartIdsRef.current,
-            toolInput: undefined,
-          };
+        // Mutate ref directly to avoid allocating new objects on every event
+        switch (part.type) {
+          case 'reasoning-start':
+            streamingPartIdsRef.current.reasoning = part.id;
+            break;
+          case 'reasoning-end':
+            streamingPartIdsRef.current.reasoning = undefined;
+            break;
+          case 'text-start':
+            streamingPartIdsRef.current.text = part.id;
+            break;
+          case 'text-end':
+            streamingPartIdsRef.current.text = undefined;
+            break;
+          case 'tool-input-start':
+            streamingPartIdsRef.current.toolInput = part.id;
+            break;
+          case 'tool-input-end':
+            streamingPartIdsRef.current.toolInput = undefined;
+            break;
         }
 
         // Keep track of the number of stream parts received
@@ -294,10 +292,7 @@ export function Chat({
       // If user aborted, don't try to resume
       if (isAbort) {
         console.log('[Chat onFinish] Stream was aborted by user, not resuming');
-        setStreamCursor(0);
-        streamingPartIdsRef.current = {};
-        isResumingRef.current = false;
-        hasMergedDuringResumeRef.current = false;
+        resetStreamState();
         fetchChatHistory();
         return;
       }
@@ -316,10 +311,7 @@ export function Chat({
         console.log(
           '[Chat onFinish] OAuth credential error detected, not resuming',
         );
-        setStreamCursor(0);
-        streamingPartIdsRef.current = {};
-        isResumingRef.current = false;
-        hasMergedDuringResumeRef.current = false;
+        resetStreamState();
         fetchChatHistory();
         clearError();
         return;
@@ -349,10 +341,7 @@ export function Chat({
           console.warn('[Chat onFinish] Max resume attempts reached');
         }
 
-        setStreamCursor(0);
-        streamingPartIdsRef.current = {};
-        isResumingRef.current = false;
-        hasMergedDuringResumeRef.current = false;
+        resetStreamState();
         fetchChatHistory();
       }
     },

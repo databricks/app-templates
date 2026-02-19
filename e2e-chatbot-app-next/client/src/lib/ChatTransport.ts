@@ -51,12 +51,18 @@ export class ChatTransport<
   protected processResponseStream(
     stream: ReadableStream<Uint8Array<ArrayBufferLike>>
   ): ReadableStream<UIMessageChunk> {
-    const onStreamPart = this.onStreamPart;
     const processedStream = super.processResponseStream(stream);
+
+    // Only create TransformStream if we have a callback to invoke
+    if (!this.onStreamPart) {
+      return processedStream;
+    }
+
+    const onStreamPart = this.onStreamPart;
     return processedStream.pipeThrough(
       new TransformStream<UIMessageChunk, UIMessageChunk>({
         transform(chunk, controller) {
-          onStreamPart?.(chunk);
+          onStreamPart(chunk);
           controller.enqueue(chunk);
         },
       })

@@ -374,6 +374,9 @@ export function Chat({
     const lastMessage = messages.at(-1);
     if (lastMessage?.role !== 'assistant' || !lastMessage.parts) return;
 
+    // Always mark as attempted to avoid calling mergeDuplicateParts on every message update
+    hasMergedDuringResumeRef.current = true;
+
     const mergedParts = mergeDuplicateParts(lastMessage.parts);
     if (mergedParts.length !== lastMessage.parts.length) {
       console.log(
@@ -382,7 +385,6 @@ export function Chat({
         '->',
         mergedParts.length,
       );
-      hasMergedDuringResumeRef.current = true;
       setMessages(
         messages.map((msg, idx) =>
           idx === messages.length - 1 ? { ...msg, parts: mergedParts } : msg,

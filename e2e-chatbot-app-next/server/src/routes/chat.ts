@@ -57,8 +57,11 @@ import {
   type VisibilityType,
   CONTEXT_HEADER_CONVERSATION_ID,
   CONTEXT_HEADER_USER_ID,
+  callAgentApp,
+  parseOpenResponsesStream,
 } from '@chat-template/core';
 import { ChatSDKError } from '@chat-template/core/errors';
+import { getDatabricksToken } from '@chat-template/auth';
 
 export const chatRouter: RouterType = Router();
 
@@ -224,6 +227,111 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     let finalUsage: LanguageModelUsage | undefined;
     const streamId = generateUUID();
 
+    // Detect if calling an agent app (via API_PROXY)
+    const isAgentApp = process.env.API_PROXY !== undefined;
+
+    if (isAgentApp) {
+      // Direct agent app integration - bypass Databricks provider
+      console.log('[Chat] Using direct agent app integration');
+
+      try {
+        // Use service principal OAuth token for agent app authentication
+        console.log('[Chat] Using service principal token for agent app auth');
+        const agentToken = await getDatabricksToken();
+
+        const agentResponse = await callAgentApp({
+          url: process.env.API_PROXY!,
+          messages: uiMessages,
+          conversationId: id,
+          userId: session.user.email ?? session.user.id,
+          token: agentToken,
+        });
+
+        // Parse OpenResponses stream and convert to UIMessageStream
+        const stream = createUIMessageStream({
+          execute: async ({ writer }) => {
+            const messageId = generateUUID();
+            const textChunks: string[] = [];
+
+            try {
+              console.log('[Chat] Starting to parse OpenResponses stream...');
+
+              // Generate ID for the text part
+              const textPartId = generateUUID();
+
+              // Send text-start with ID before any text-delta
+              writer.write({
+                type: 'text-start',
+                id: textPartId,
+              });
+
+              // Stream text chunks from agent
+              let chunkCount = 0;
+              for await (const textDelta of parseOpenResponsesStream(agentResponse)) {
+                chunkCount++;
+                textChunks.push(textDelta);
+                console.log(`[Chat] Text chunk ${chunkCount}: "${textDelta}"`);
+                writer.write({
+                  type: 'text-delta',
+                  id: textPartId,
+                  delta: textDelta,  // Use 'delta' not 'textDelta'
+                });
+              }
+
+              console.log(`[Chat] OpenResponses stream complete, received ${chunkCount} chunks`);
+
+              console.log('[Chat] Agent app stream complete, total text:', textChunks.join('').length);
+            } catch (error) {
+              console.error('[Chat] Agent app streaming error:', error);
+              const errorMessage =
+                error instanceof Error ? error.message : JSON.stringify(error);
+              writer.write({ type: 'data-error', data: errorMessage });
+            }
+          },
+          onFinish: async ({ responseMessage }) => {
+            console.log(
+              'Finished agent app stream! Saving message...',
+              JSON.stringify(responseMessage, null, 2),
+            );
+            await saveMessages({
+              messages: [
+                {
+                  id: responseMessage.id,
+                  role: responseMessage.role,
+                  parts: responseMessage.parts,
+                  createdAt: new Date(),
+                  attachments: [],
+                  chatId: id,
+                },
+              ],
+            });
+
+            streamCache.clearActiveStream(id);
+          },
+        });
+
+        pipeUIMessageStreamToResponse({
+          stream,
+          response: res,
+          consumeSseStream({ stream }) {
+            streamCache.storeStream({
+              streamId,
+              chatId: id,
+              stream,
+            });
+          },
+        });
+        return;
+      } catch (error) {
+        console.error('[Chat] Agent app error:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        const chatError = new ChatSDKError('offline:chat');
+        const response = chatError.toResponse();
+        return res.status(response.status).json(response.json);
+      }
+    }
+
+    // Standard Databricks provider flow
     const model = await myProvider.languageModel(selectedChatModel);
     const result = streamText({
       model,

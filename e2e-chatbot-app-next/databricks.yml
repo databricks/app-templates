@@ -36,6 +36,10 @@ resources:
           serving_endpoint:
             name: ${var.serving_endpoint_name}
             permission: CAN_QUERY
+        # NOTE: If using API_PROXY to call an agent app (configured in app.yaml),
+        # you can comment out the serving-endpoint resource above since permissions
+        # are handled directly between the apps. App-to-app permissions must be
+        # granted manually via the Databricks UI or CLI.
         # TODO (optional): Uncomment the database resource below to bind the app to the deployed database instance
         # and to enable persistent chat history
         # - name: database

@@ -9,6 +9,8 @@ import {
   getCachedCliHost,
 } from '@chat-template/auth';
 import { createDatabricksProvider } from '@databricks/ai-sdk-provider';
+import { createOpenResponsesAwareFetch } from './openresponses-adapter';
+import { wrapProviderWithOpenResponsesSupport } from './openresponses-provider-wrapper';
 import { extractReasoningMiddleware, wrapLanguageModel } from 'ai';
 import { shouldInjectContextForEndpoint } from './request-context';
 
@@ -97,7 +99,7 @@ function shouldInjectContext(): boolean {
 }
 
 // Custom fetch function to transform Databricks responses to OpenAI format
-export const databricksFetch: typeof fetch = async (input, init) => {
+const baseDatabricksFetch: typeof fetch = async (input, init) => {
   const url = input.toString();
   let requestInit = init;
 
@@ -216,6 +218,9 @@ export const databricksFetch: typeof fetch = async (input, init) => {
   return response;
 };
 
+// Export databricksFetch with OpenResponses format support
+export const databricksFetch = createOpenResponsesAwareFetch(baseDatabricksFetch);
+
 type CachedProvider = ReturnType<typeof createDatabricksProvider>;
 let oauthProviderCache: CachedProvider | null = null;
 let oauthProviderCacheTime = 0;
@@ -238,7 +243,7 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
   const hostname = await getWorkspaceHostname();
 
   // Create provider with fetch that always uses fresh token
-const provider = createDatabricksProvider({
+const baseProvider = createDatabricksProvider({
   // When using endpoints such as Agent Bricks or custom agents, we need to use remote tool calling to handle the tool calls
   useRemoteToolCalling: true,
   baseURL: `${hostname}/serving-endpoints`,
@@ -255,6 +260,8 @@ const provider = createDatabricksProvider({
     });
   },
 });
+
+const provider = wrapProviderWithOpenResponsesSupport(baseProvider);
 
   oauthProviderCache = provider;
   oauthProviderCacheTime = Date.now();

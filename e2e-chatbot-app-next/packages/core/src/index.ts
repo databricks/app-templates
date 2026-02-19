@@ -5,3 +5,4 @@ export * from './chat-acl';
 export * from './stream-cache';
 export * from './schemas/chat';
 export * from './ai/providers';
+export * from './agent-client';

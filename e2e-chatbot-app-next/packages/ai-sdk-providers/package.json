@@ -39,6 +39,7 @@
     "@chat-template/auth": "*",
     "@chat-template/utils": "*",
     "@databricks/ai-sdk-provider": "^0.4.1",
-    "ai": "^6.0.57"
+    "ai": "^6.0.57",
+    "zod": "^4.3.5"
   }
 }

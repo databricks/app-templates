@@ -4,3 +4,10 @@ runtime: nodejs20
 env:
   - name: DATABRICKS_SERVING_ENDPOINT
     valueFrom: serving-endpoint
+  # Optional: Configure API_PROXY to call an agent app that returns OpenResponses format
+  # instead of using the standard Databricks provider. Uncomment the lines below to enable.
+  # - name: API_PROXY
+  #   value: "https://YOUR-AGENT-APP-NAME.databricksapps.com/invocations"
+  # Optional: Enable SSE event logging for debugging streaming responses
+  # - name: LOG_SSE_EVENTS
+  #   value: "true"

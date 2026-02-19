@@ -189,7 +189,7 @@ for await (const chunk of result.textStream) {
 
 **Change agent configuration** (`src/agent.ts`):
 ```typescript
-// The agent uses standard LangChain.js APIs with manual agentic loop
+// The agent uses standard LangGraph createReactAgent API
 export async function createAgent(config: AgentConfig = {}) {
   const {
     model: modelName = "databricks-claude-sonnet-4-5",
@@ -209,15 +209,17 @@ export async function createAgent(config: AgentConfig = {}) {
   // Load tools (basic + MCP if configured)
   const tools = await getAllTools(mcpServers);
 
-  // Bind tools to model using standard LangChain API
-  const modelWithTools = model.bindTools(tools);
+  // Create agent using standard LangGraph API
+  const agent = createReactAgent({
+    llm: model,
+    tools,
+  });
 
-  // Return agent that uses manual agentic loop for tool execution
-  return AgentMCP.create(config);
+  return new StandardAgent(agent, systemPrompt);
 }
 ```
 
-Note: The agent uses `model.bindTools()` with a manual agentic loop - this is the standard LangChain.js pattern that works with both basic tools and MCP tools.
+Note: The agent uses LangGraph's `createReactAgent()` which provides automatic tool calling, built-in agentic loop with reasoning, and streaming support out of the box.
 
 **Add custom tools** (`src/tools.ts`):
 ```typescript

@@ -49,6 +49,16 @@ export async function callInvocations(
 }
 
 /**
+ * Create authorization headers with Bearer token
+ */
+export function makeAuthHeaders(token: string): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${token}`,
+  };
+}
+
+/**
  * Call /api/chat endpoint with useChat format
  */
 export async function callApiChat(

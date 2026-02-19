@@ -393,7 +393,6 @@ export class MLflowTracing {
         console.log("   Note: OTel collector may require OAuth token instead");
       }
 
-
       // Set up experiment trace location in UC (if not already configured)
       if (this.authToken && !process.env.OTEL_UC_TABLE_NAME) {
         const tableName = await this.setupExperimentTraceLocation();

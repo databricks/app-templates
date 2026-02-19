@@ -4,7 +4,7 @@
  */
 
 import { describe, test, expect, beforeAll } from '@jest/globals';
-import { getDeployedAuthToken } from "./helpers.js";
+import { getDeployedAuthToken, makeAuthHeaders } from "./helpers.js";
 
 const APP_URL = process.env.APP_URL || "https://agent-lc-ts-dev-6051921418418893.staging.aws.databricksapps.com";
 let authToken: string;
@@ -14,12 +14,7 @@ beforeAll(async () => {
   authToken = await getDeployedAuthToken();
 }, 30000);
 
-function getAuthHeaders(): Record<string, string> {
-  return {
-    "Content-Type": "application/json",
-    "Authorization": `Bearer ${authToken}`,
-  };
-}
+const getAuthHeaders = () => makeAuthHeaders(authToken);
 
 describe("/api/chat - Followup Questions After Tool Calls", () => {
   test("should handle followup question after tool call (via UI)", async () => {

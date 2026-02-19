@@ -6,6 +6,7 @@ test.describe("Request Context Utils", () => {
     const originalEnv = process.env.API_PROXY;
 
     test.beforeEach(() => {
+      // biome-ignore lint/performance/noDelete: process.env.X = undefined sets it to the string "undefined", must use delete
       delete process.env.API_PROXY;
     });
 
@@ -13,6 +14,7 @@ test.describe("Request Context Utils", () => {
       if (originalEnv !== undefined) {
         process.env.API_PROXY = originalEnv;
       } else {
+        // biome-ignore lint/performance/noDelete: process.env.X = undefined sets it to the string "undefined", must use delete
         delete process.env.API_PROXY;
       }
     });

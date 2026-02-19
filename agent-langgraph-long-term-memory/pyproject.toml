@@ -12,11 +12,14 @@ dependencies = [
     "uvicorn>=0.34.2",
     "databricks-langchain[memory]>=0.13.0",
     "databricks-agents",
-    "mlflow>=3.9.0",
+    "mlflow @ git+https://github.com/mlflow/mlflow.git@refs/pull/20980/merge",
     "langgraph>=1.0.1",
     "langchain-mcp-adapters>=0.1.11",
     "python-dotenv",
 ]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [build-system]
 requires = ["hatchling"]

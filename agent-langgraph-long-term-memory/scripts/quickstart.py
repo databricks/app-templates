@@ -146,6 +146,65 @@ def check_missing_prerequisites(prereqs: dict[str, bool]) -> list[str]:
     return missing
 
 
+def check_node_version() -> str | None:
+    """Check if the installed Node.js version meets Vite's requirements.
+
+    Vite requires Node.js >=20.19, >=22.12, or >=23.
+    Node 21.x is an odd-numbered release and not supported.
+
+    Returns None if the version is OK, or an error string if not.
+    """
+    if not command_exists("node"):
+        return None  # Missing node is handled by check_missing_prerequisites
+
+    try:
+        version_str = get_command_output(["node", "--version"])
+    except Exception:
+        return None
+
+    match = re.match(r"v(\d+)\.(\d+)\.(\d+)", version_str)
+    if not match:
+        return None
+
+    major, minor, patch = int(match.group(1)), int(match.group(2)), int(match.group(3))
+
+    # Node 21.x is odd-numbered and not a Vite target
+    if major == 21:
+        return (
+            f"Node.js {version_str} is not supported by Vite (odd-numbered release).\n"
+            "  Please install Node.js 20.19+, 22.12+, or 23+.\n"
+            "  Run: nvm install 22"
+        )
+
+    # Check supported version ranges
+    if major == 20 and minor >= 19:
+        return None
+    if major == 22 and minor >= 12:
+        return None
+    if major >= 23:
+        return None
+
+    # Version is too old or unsupported
+    if major == 20:
+        return (
+            f"Node.js {version_str} is too old for Vite (requires 20.19+).\n"
+            f"  Your version: {version_str}\n"
+            "  Run: nvm install 20  (to get latest 20.x)"
+        )
+    if major == 22:
+        return (
+            f"Node.js {version_str} is too old for Vite (requires 22.12+).\n"
+            f"  Your version: {version_str}\n"
+            "  Run: nvm install 22  (to get latest 22.x)"
+        )
+
+    return (
+        f"Node.js {version_str} is not supported by Vite.\n"
+        "  Vite requires Node.js 20.19+, 22.12+, or 23+.\n"
+        "  Run: nvm install 22"
+    )
+
+
 def setup_env_file() -> None:
     """Copy .env.example to .env if it doesn't exist."""
     print_step("Setting up configuration files...")
@@ -541,6 +600,12 @@ Examples:
             for item in missing:
                 print(f"  • {item}")
             print("\nPlease install the missing prerequisites and run this script again.")
+            sys.exit(1)
+
+        # Check Node.js version meets Vite requirements
+        node_error = check_node_version()
+        if node_error:
+            print_error(f"Node.js version check failed:\n  {node_error}")
             sys.exit(1)
 
         # Step 2: Set up .env

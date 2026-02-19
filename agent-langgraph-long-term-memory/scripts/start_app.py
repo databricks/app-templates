@@ -8,8 +8,10 @@ Requirements:
 3. Printing error logs if either process fails
 """
 
+import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -23,6 +25,16 @@ BACKEND_READY = [r"Uvicorn running on", r"Application startup complete", r"Start
 FRONTEND_READY = [r"Server is running on http://localhost"]
 
 
+def check_port_available(port: int) -> bool:
+    """Check if a port is available by attempting to bind to it."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("localhost", port))
+        return True
+    except OSError:
+        return False
+
+
 class ProcessManager:
     def __init__(self):
         self.backend_process = None
@@ -32,6 +44,40 @@ class ProcessManager:
         self.failed = threading.Event()
         self.backend_log = None
         self.frontend_log = None
+
+    def check_ports(self):
+        """Check that required ports are available before starting processes."""
+        backend_port = 8000
+        frontend_port = int(os.environ.get("CHAT_APP_PORT", os.environ.get("PORT", "3000")))
+
+        if backend_port == frontend_port:
+            print(f"ERROR: Backend and frontend are both configured to use port {backend_port}.")
+            print(f"  Set CHAT_APP_PORT in .env to a different port (e.g., CHAT_APP_PORT=3000).")
+            sys.exit(1)
+
+        errors = []
+        if not check_port_available(backend_port):
+            errors.append(
+                f"Port {backend_port} (backend) is already in use.\n"
+                f"  To free it: lsof -ti :{backend_port} | xargs kill -9"
+            )
+        if not check_port_available(frontend_port):
+            port_source = (
+                "CHAT_APP_PORT" if os.environ.get("CHAT_APP_PORT")
+                else "PORT" if os.environ.get("PORT")
+                else "default"
+            )
+            errors.append(
+                f"Port {frontend_port} (frontend, source: {port_source}) is already in use.\n"
+                f"  To free it: lsof -ti :{frontend_port} | xargs kill -9\n"
+                f"  Or set a different port: CHAT_APP_PORT=<port> in .env"
+            )
+
+        if errors:
+            print("ERROR: Port(s) already in use:\n")
+            for error in errors:
+                print(f"  {error}\n")
+            sys.exit(1)
 
     def monitor_process(self, process, name, log_file, patterns):
         is_ready = False
@@ -143,6 +189,7 @@ class ProcessManager:
 
     def run(self):
         load_dotenv(dotenv_path=".env", override=True)
+        self.check_ports()
 
         if not self.clone_frontend_if_needed():
             return 1

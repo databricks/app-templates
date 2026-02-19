@@ -21,19 +21,20 @@ from mlflow.types.responses import (
     to_chat_completions_input,
 )
 
+from agent_server.utils import (
+    get_databricks_host_from_env,
+    get_user_workspace_client,
+    process_agent_astream_events,
+)
 from agent_server.utils_memory import (
     get_lakebase_access_error_message,
     get_user_id,
     memory_tools,
     resolve_lakebase_instance_name,
 )
-from agent_server.utils import (
-    get_databricks_host_from_env,
-    get_user_workspace_client,
-    process_agent_astream_events,
-)
 
 logger = logging.getLogger(__name__)
+logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
 mlflow.langchain.autolog()
 sp_workspace_client = WorkspaceClient()
 
@@ -131,7 +132,6 @@ async def streaming(
                 config["configurable"]["user_id"] = user_id
 
             agent = await init_agent(store=store)
-
             async for event in process_agent_astream_events(
                 agent.astream(messages, config, stream_mode=["updates", "messages"])
             ):
@@ -139,10 +139,9 @@ async def streaming(
     except Exception as e:
         error_msg = str(e).lower()
         # Check for Lakebase access/connection errors
-        if any(
-            keyword in error_msg
-            for keyword in ["permission"]
-        ):
+        if any(keyword in error_msg for keyword in ["permission"]):
             logger.error(f"Lakebase access error: {e}")
-            raise HTTPException(status_code=503, detail=get_lakebase_access_error_message(LAKEBASE_INSTANCE_NAME)) from e
+            raise HTTPException(
+                status_code=503, detail=get_lakebase_access_error_message(LAKEBASE_INSTANCE_NAME)
+            ) from e
         raise

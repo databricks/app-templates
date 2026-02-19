@@ -415,8 +415,11 @@ def get_env_value(key: str) -> str:
     return ""
 
 
-def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> bool:
-    """Validate that the Lakebase instance exists and user has access."""
+def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> dict | None:
+    """Validate that the Lakebase instance exists and user has access.
+
+    Returns the instance info dict on success, None on failure.
+    """
     print(f"Validating Lakebase instance '{lakebase_name}'...")
 
     result = run_command(
@@ -427,13 +430,13 @@ def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> bool:
 
     if result.returncode == 0:
         print_success(f"Lakebase instance '{lakebase_name}' validated")
-        return True
+        return json.loads(result.stdout)
 
     # Check if database command is not recognized (old CLI version)
     if 'unknown command "database" for "databricks"' in (result.stderr or ""):
         print_error("The 'databricks database' command requires a newer version of the Databricks CLI.")
         print("  Please upgrade: https://docs.databricks.com/dev-tools/cli/install.html")
-        return False
+        return None
 
     error_msg = result.stderr.lower() if result.stderr else ""
     if "not found" in error_msg:
@@ -442,10 +445,10 @@ def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> bool:
         print_error(f"No permission to access Lakebase instance '{lakebase_name}'")
     else:
         print_error(f"Failed to validate Lakebase instance: {result.stderr.strip() if result.stderr else 'Unknown error'}")
-    return False
+    return None
 
 
-def setup_lakebase(profile_name: str, lakebase_arg: str = None) -> str:
+def setup_lakebase(profile_name: str, username: str, lakebase_arg: str = None) -> str:
     """Set up Lakebase instance for memory features."""
     print_step("Setting up Lakebase instance for memory...")
 
@@ -471,12 +474,27 @@ def setup_lakebase(profile_name: str, lakebase_arg: str = None) -> str:
                 sys.exit(1)
 
     # Validate that the Lakebase instance exists and user has access
-    if not validate_lakebase_instance(profile_name, lakebase_name):
+    instance_info = validate_lakebase_instance(profile_name, lakebase_name)
+    if not instance_info:
         sys.exit(1)
 
     # Update .env with the Lakebase instance name
     update_env_file("LAKEBASE_INSTANCE_NAME", lakebase_name)
     print_success(f"Lakebase instance name '{lakebase_name}' saved to .env")
+
+    # Set up PostgreSQL connection environment variables
+    pg_host = instance_info.get("read_write_dns", "")
+    if pg_host:
+        update_env_file("PGHOST", pg_host)
+        print_success(f"PGHOST set to '{pg_host}'")
+    else:
+        print_error("Could not get read_write_dns from Lakebase instance")
+
+    update_env_file("PGUSER", username)
+    print_success(f"PGUSER set to '{username}'")
+
+    update_env_file("PGDATABASE", "databricks_postgres")
+    print_success("PGDATABASE set to 'databricks_postgres'")
 
     return lakebase_name
 
@@ -546,7 +564,7 @@ Examples:
         lakebase_name = None
         lakebase_required = args.lakebase or check_lakebase_required()
         if lakebase_required:
-            lakebase_name = setup_lakebase(profile_name, args.lakebase)
+            lakebase_name = setup_lakebase(profile_name, username, args.lakebase)
 
         # Final summary
         print_header("Setup Complete!")
@@ -559,6 +577,7 @@ Examples:
 
         if lakebase_name:
             summary += f"\n✓ Lakebase instance: {lakebase_name}"
+            summary += "\n✓ PostgreSQL variables set (PGHOST, PGUSER, PGDATABASE)"
 
         summary += """
 

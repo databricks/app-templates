@@ -46,6 +46,9 @@ else:
 
 
 def evaluate():
+    # Disable autologging before importing agent to avoid ContextVar conflicts
+    # when using asyncio.run() multiple times during evaluation
+    mlflow.langchain.autolog(disable=True)
     mlflow.genai.evaluate(
         data=eval_dataset,
         predict_fn=sync_invoke_fn,

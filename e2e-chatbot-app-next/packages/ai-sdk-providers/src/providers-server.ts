@@ -9,8 +9,6 @@ import {
   getCachedCliHost,
 } from '@chat-template/auth';
 import { createDatabricksProvider } from '@databricks/ai-sdk-provider';
-import { createOpenResponsesAwareFetch } from './openresponses-adapter';
-import { wrapProviderWithOpenResponsesSupport } from './openresponses-provider-wrapper';
 import { extractReasoningMiddleware, wrapLanguageModel } from 'ai';
 import { shouldInjectContextForEndpoint } from './request-context';
 
@@ -218,8 +216,8 @@ const baseDatabricksFetch: typeof fetch = async (input, init) => {
   return response;
 };
 
-// Export databricksFetch with OpenResponses format support
-export const databricksFetch = createOpenResponsesAwareFetch(baseDatabricksFetch);
+// Export databricksFetch directly (OpenResponses support now in provider)
+export const databricksFetch = baseDatabricksFetch;
 
 type CachedProvider = ReturnType<typeof createDatabricksProvider>;
 let oauthProviderCache: CachedProvider | null = null;
@@ -243,25 +241,23 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
   const hostname = await getWorkspaceHostname();
 
   // Create provider with fetch that always uses fresh token
-const baseProvider = createDatabricksProvider({
-  // When using endpoints such as Agent Bricks or custom agents, we need to use remote tool calling to handle the tool calls
-  useRemoteToolCalling: true,
-  baseURL: `${hostname}/serving-endpoints`,
-  formatUrl: ({ baseUrl, path }) => API_PROXY ?? `${baseUrl}${path}`,
-  fetch: async (...[input, init]: Parameters<typeof fetch>) => {
-    // Always get fresh token for each request (will use cache if valid)
-    const currentToken = await getProviderToken();
-    const headers = new Headers(init?.headers);
-    headers.set('Authorization', `Bearer ${currentToken}`);
+  const provider = createDatabricksProvider({
+    // When using endpoints such as Agent Bricks or custom agents, we need to use remote tool calling to handle the tool calls
+    useRemoteToolCalling: true,
+    baseURL: `${hostname}/serving-endpoints`,
+    formatUrl: ({ baseUrl, path }) => API_PROXY ?? `${baseUrl}${path}`,
+    fetch: async (...[input, init]: Parameters<typeof fetch>) => {
+      // Always get fresh token for each request (will use cache if valid)
+      const currentToken = await getProviderToken();
+      const headers = new Headers(init?.headers);
+      headers.set('Authorization', `Bearer ${currentToken}`);
 
-    return databricksFetch(input, {
-      ...init,
-      headers,
-    });
-  },
-});
-
-const provider = wrapProviderWithOpenResponsesSupport(baseProvider);
+      return databricksFetch(input, {
+        ...init,
+        headers,
+      });
+    },
+  });
 
   oauthProviderCache = provider;
   oauthProviderCacheTime = Date.now();
@@ -325,8 +321,8 @@ export class OAuthAwareProvider implements SmartProvider {
 
     const model = await (async () => {
       if (API_PROXY) {
-        // For API proxy we always use the responses agent
-        return provider.responses(id);
+        // For API proxy (OpenResponses format), use openResponses model
+        return provider.openResponses(id);
       }
       if (id === 'title-model' || id === 'artifact-model') {
         return provider.chatCompletions(

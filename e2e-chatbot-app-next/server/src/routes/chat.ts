@@ -38,8 +38,6 @@ import {
   type VisibilityType,
 } from '@chat-template/core';
 import {
-  DATABRICKS_TOOL_CALL_ID,
-  DATABRICKS_TOOL_DEFINITION,
   extractApprovalStatus,
 } from '@databricks/ai-sdk-provider';
 import { ChatSDKError } from '@chat-template/core/errors';
@@ -230,12 +228,17 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       onChunk: ({ chunk }) => {
         if (chunk.type === 'raw') {
           const raw = chunk.rawValue as any;
+          // Existing: Databricks serving endpoint
           if (raw?.type === 'response.output_item.done') {
             const traceIdFromChunk =
               raw?.databricks_output?.trace?.info?.trace_id;
             if (typeof traceIdFromChunk === 'string') {
               traceId = traceIdFromChunk;
             }
+          }
+          // New: MLflow AgentServer x-mlflow-return-trace-id response
+          if (!traceId && typeof raw?.trace_id === 'string') {
+            traceId = raw.trace_id;
           }
         }
       },

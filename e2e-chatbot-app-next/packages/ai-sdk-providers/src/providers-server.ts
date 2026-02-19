@@ -191,6 +191,9 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
       const currentToken = await getProviderToken();
       const headers = new Headers(init?.headers);
       headers.set('Authorization', `Bearer ${currentToken}`);
+      if (API_PROXY) {
+        headers.set('x-mlflow-return-trace-id', 'true');
+      }
 
       return databricksFetch(input, {
         ...init,

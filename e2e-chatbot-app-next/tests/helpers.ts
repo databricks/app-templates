@@ -812,6 +812,24 @@ export function mockMcpApprovalDeniedStream(options?: {
   ];
 }
 
+/**
+ * Mock stream for a local MLflow AgentServer (API_PROXY mode).
+ * Same Responses API SSE format as mockResponsesApiMultiDeltaTextStream, but
+ * when returnTrace is true, appends the standalone trace-ID event emitted by
+ * the AgentServer when the x-mlflow-return-trace-id request header is present.
+ */
+export function mockMlflowAgentServerStream(
+  chunks: string[],
+  returnTrace: boolean,
+  traceId = 'mock-mlflow-trace-id',
+): string[] {
+  const events = mockResponsesApiMultiDeltaTextStream(chunks);
+  if (returnTrace) {
+    events.push(mockSSE({ trace_id: traceId }));
+  }
+  return events;
+}
+
 // Skips
 export function skipInEphemeralMode(test: TestType<any, any>) {
   test.skip(

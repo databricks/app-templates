@@ -143,7 +143,7 @@ test.describe('/api/chat — text streaming (Responses API multi-delta)', () => 
 
     const textStart = parts.find((p) => (p.json as any)?.type === 'text-start');
     expect(textStart).toBeDefined();
-    const startId = (textStart!.json as any).id;
+    const startId = (textStart?.json as any).id;
 
     const textDeltas = parts.filter((p) => (p.json as any)?.type === 'text-delta');
     for (const delta of textDeltas) {

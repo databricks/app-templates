@@ -1,27 +1,25 @@
 /**
- * Integration tests verifying the end-to-end trace ID capture pipeline.
+ * Integration tests verifying the end-to-end trace ID capture pipeline
+ * when the server runs in API_PROXY mode against a local MLflow AgentServer.
  *
  * Flow under test:
- *  1. chat.ts passes `providerOptions.databricks.databricksOptions.return_trace: true`
- *     to streamText(), which the provider forwards as `databricks_options.return_trace`
- *     in the Responses API request body.
- *  2. The mock Databricks server detects return_trace and includes
- *     `databricks_output.trace.info.trace_id` in the response.output_item.done event.
- *  3. The provider captures the trace ID from the SSE event and exposes it in
- *     response.body.trace_id, which chat.ts reads in onFinish.
+ *  1. The provider detects API_PROXY is set and adds `x-mlflow-return-trace-id: true`
+ *     to the request headers sent to the AgentServer.
+ *  2. The MSW mock for mlflow-agent-server-mock/invocations detects the header
+ *     and appends a standalone `data: {"trace_id":"mock-mlflow-trace-id"}` SSE event.
+ *  3. onChunk in chat.ts captures the trace ID from the raw?.trace_id branch.
  *  4. On feedback submission the trace ID is forwarded to the mock MLflow endpoint.
  *  5. The feedback response includes `mlflowAssessmentId` proving the full chain worked.
  *
- * These tests run in both ephemeral and with-db modes:
- * - Ephemeral: trace ID lives in the in-memory message-meta-store.
- * - With-db:   trace ID is persisted to the database alongside the message.
+ * These tests always run in ephemeral mode (no database), so the trace ID lives
+ * in the in-memory message-meta-store only.
  */
 
 import { generateUUID } from '@chat-template/core';
 import { expect, test } from '../fixtures';
 
 const CHAT_MODEL = 'chat-model';
-const MOCK_TRACE_ID = 'mock-trace-id-from-databricks';
+const MOCK_TRACE_ID = 'mock-mlflow-trace-id';
 const MOCK_ASSESSMENT_ID = `mock-assessment-${MOCK_TRACE_ID}`;
 
 /** Parse SSE lines and return only the `data:` payloads as parsed objects. */
@@ -39,15 +37,15 @@ function parseSSEPayloads(body: string): unknown[] {
     .filter(Boolean);
 }
 
-test.describe('/api/chat — trace ID capture via providerOptions', () => {
-  test('trace ID is captured and used in MLflow feedback submission', async ({
+test.describe('/api/chat — trace ID capture via x-mlflow-return-trace-id header (API_PROXY mode)', () => {
+  test('trace ID is captured from MLflow AgentServer and used in feedback submission', async ({
     adaContext,
   }) => {
     const chatId = generateUUID();
 
-    // Step 1: Send a chat message. providerOptions.databricks.databricksOptions
-    // forwards return_trace: true in the Responses API request body, which
-    // causes the MSW mock to include a trace ID in the response stream.
+    // Step 1: Send a chat message. The provider detects API_PROXY and sets
+    // x-mlflow-return-trace-id: true on the request to the AgentServer.
+    // The MSW mock returns a stream ending with data: {"trace_id":"mock-mlflow-trace-id"}.
     const chatResponse = await adaContext.request.post('/api/chat', {
       data: {
         id: chatId,
@@ -64,7 +62,6 @@ test.describe('/api/chat — trace ID capture via providerOptions', () => {
     expect(chatResponse.status()).toBe(200);
 
     // Step 2: Parse the SSE stream to extract the assistant message ID.
-    // The 'start' event includes `messageId`, available in all modes.
     const body = await chatResponse.text();
     const payloads = parseSSEPayloads(body);
 
@@ -79,8 +76,8 @@ test.describe('/api/chat — trace ID capture via providerOptions', () => {
 
     const assistantMessageId = startEvent?.messageId;
 
-    // Step 3: Submit feedback. The server should look up the trace ID that was
-    // captured during streaming and forward it to the MLflow assessments endpoint.
+    // Step 3: Submit feedback. The server should look up the trace ID captured
+    // from the MLflow AgentServer standalone trace-ID event.
     const feedbackResponse = await adaContext.request.post('/api/feedback', {
       data: {
         messageId: assistantMessageId,
@@ -92,11 +89,8 @@ test.describe('/api/chat — trace ID capture via providerOptions', () => {
     const feedbackBody = await feedbackResponse.json();
     expect(feedbackBody.success).toBe(true);
 
-    // mlflowAssessmentId is only non-null when:
-    //  - databricks_options.return_trace was present in the Databricks request
-    //    (injected by databricksFetch — the thing we are testing)
-    //  - The trace ID from the response was captured by onChunk in chat.ts
-    //  - MLflow submission succeeded using that trace ID
+    // mlflowAssessmentId is only non-null when the trace ID was captured via
+    // the x-mlflow-return-trace-id path and MLflow submission succeeded.
     expect(feedbackBody.mlflowAssessmentId).toBe(MOCK_ASSESSMENT_ID);
   });
 

@@ -4,6 +4,7 @@ import {
   mockMcpApprovalRequestStream,
   mockMcpApprovalApprovedStream,
   mockMcpApprovalDeniedStream,
+  mockMlflowAgentServerStream,
   mockResponsesApiMultiDeltaTextStream,
 } from '../helpers';
 import { TEST_PROMPTS } from '../prompts/routes';
@@ -179,6 +180,20 @@ export const handlers = [
     return HttpResponse.json({
       access_token: 'test-token',
     });
+  }),
+
+  // Mock MLflow AgentServer invocations endpoint (API_PROXY mode).
+  // Checks for x-mlflow-return-trace-id header and appends standalone trace-ID event.
+  http.post(/mlflow-agent-server-mock\/invocations$/, async (req) => {
+    const returnTrace =
+      req.request.headers.get('x-mlflow-return-trace-id')?.toLowerCase() ===
+      'true';
+    return createMockStreamResponse(
+      mockMlflowAgentServerStream(
+        ["It's", ' just', ' blue', ' duh!'],
+        returnTrace,
+      ),
+    );
   }),
 
   // Mock MLflow assessments endpoint (api/3.0, trace_id in URL path).

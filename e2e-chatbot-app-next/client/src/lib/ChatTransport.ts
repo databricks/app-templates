@@ -86,28 +86,14 @@ export class ChatTransport<
     const openParts = this.getStreamingPartIds?.() ?? {};
     const syntheticChunks: UIMessageChunk[] = [];
 
-    // Create synthetic start events for each open part type
-    // Order matters: reasoning -> text -> tool-input (typical stream order)
-    if (openParts.reasoning) {
-      syntheticChunks.push({
-        type: "reasoning-start",
-        id: openParts.reasoning,
-      } as UIMessageChunk);
-    }
-    if (openParts.text) {
-      syntheticChunks.push({
-        type: "text-start",
-        id: openParts.text,
-      } as UIMessageChunk);
-    }
-    if (openParts.toolInput) {
-      syntheticChunks.push({
-        type: "tool-input-start",
-        id: openParts.toolInput,
-        // tool-input-start requires toolName, but we don't have it stored
-        // The AI SDK should handle this gracefully since the part already exists
-        toolName: "",
-      } as UIMessageChunk);
+    // Create synthetic start events for each open part type (order: reasoning → text → tool-input)
+    const partTypes: Array<[keyof StreamingPartIds, string]> = [
+      ["reasoning", "reasoning-start"], ["text", "text-start"], ["toolInput", "tool-input-start"],
+    ];
+    for (const [key, type] of partTypes) {
+      if (openParts[key]) {
+        syntheticChunks.push({ type, id: openParts[key], ...(key === "toolInput" ? { toolName: "" } : {}) } as UIMessageChunk);
+      }
     }
 
     // If no open parts, return the stream as-is

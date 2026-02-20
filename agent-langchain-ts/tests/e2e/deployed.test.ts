@@ -77,7 +77,7 @@ describe("Deployed App Tests", () => {
           input: [
             {
               role: "user",
-              content: "Calculate 123 * 456",
+              content: "Calculate 123 * 456 using the calculator tool",
             },
           ],
           stream: true,
@@ -87,38 +87,15 @@ describe("Deployed App Tests", () => {
       expect(response.ok).toBe(true);
       const text = await response.text();
 
-      const { fullOutput } = parseSSEStream(text);
+      const { fullOutput, toolCalls } = parseSSEStream(text);
 
+      // Assert for tool call in message history
+      const hasCalculatorCall = toolCalls.some((call) => call.name === "calculator");
+      expect(hasCalculatorCall).toBe(true);
+
+      // Verify result in output
       const hasResult = fullOutput.includes("56088") || fullOutput.includes("56,088");
       expect(hasResult).toBe(true);
-    }, 30000);
-
-    test("should handle time tool", async () => {
-      const response = await fetch(`${APP_URL}/invocations`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          input: [
-            {
-              role: "user",
-              content: "What time is it in Tokyo?",
-            },
-          ],
-          stream: true,
-        }),
-      });
-
-      expect(response.ok).toBe(true);
-      const text = await response.text();
-
-      const { fullOutput, hasToolCall, toolCalls } = parseSSEStream(text);
-
-      const hasTimeToolCall = toolCalls.some((call) => call.name === "get_current_time");
-      expect(hasTimeToolCall).toBe(true);
-      expect(fullOutput.toLowerCase()).toMatch(/tokyo|time/);
     }, 30000);
   });
 

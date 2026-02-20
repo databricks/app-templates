@@ -36,6 +36,7 @@ from agent_server.utils_memory import (
 
 logger = logging.getLogger(__name__)
 logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
+logging.getLogger("LiteLLM").setLevel(logging.WARNING)
 mlflow.langchain.autolog()
 sp_workspace_client = WorkspaceClient()
 

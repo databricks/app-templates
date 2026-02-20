@@ -398,6 +398,23 @@ def setup_databricks_auth(profile_arg: str = None, host_arg: str = None) -> str:
     return profile_name
 
 
+def get_databricks_host(profile_name: str) -> str:
+    """Get the Databricks workspace host URL from the profile."""
+    try:
+        result = run_command(
+            ["databricks", "auth", "env", "--profile", profile_name, "--output", "json"],
+            check=False,
+        )
+        if result.returncode == 0:
+            env_data = json.loads(result.stdout)
+            env_vars = env_data.get("env", {})
+            host = env_vars.get("DATABRICKS_HOST", "")
+            return host.rstrip("/")
+    except Exception:
+        pass
+    return ""
+
+
 def get_databricks_username(profile_name: str) -> str:
     """Get the current Databricks username."""
     try:
@@ -632,6 +649,8 @@ Examples:
             lakebase_name = setup_lakebase(profile_name, username, args.lakebase)
 
         # Final summary
+        host = get_databricks_host(profile_name)
+
         print_header("Setup Complete!")
         summary = f"""
 ✓ Prerequisites verified (uv, Node.js, Databricks CLI)
@@ -640,9 +659,14 @@ Examples:
 ✓ MLflow experiment created: {experiment_name}
 ✓ Experiment ID: {experiment_id}"""
 
+        if host and experiment_id:
+            summary += f"\n  {host}/ml/experiments/{experiment_id}\n"
+
         if lakebase_name:
             summary += f"\n✓ Lakebase instance: {lakebase_name}"
             summary += "\n✓ PostgreSQL variables set (PGHOST, PGUSER, PGDATABASE)"
+            if host:
+                summary += f"\n  {host}/lakebase/provisioned/{lakebase_name}\n"
 
         summary += """
 

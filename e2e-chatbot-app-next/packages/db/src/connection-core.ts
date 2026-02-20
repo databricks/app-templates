@@ -58,10 +58,7 @@ export function isDatabaseAvailable(): boolean {
 /**
  * Build PostgreSQL connection URL from config and credentials
  */
-export function buildConnectionUrl(
-  config: DatabaseConfig,
-  credentials: DatabaseCredentials,
-): string {
+export function buildConnectionUrl(config: DatabaseConfig, credentials: DatabaseCredentials): string {
   const encodedUser = encodeURIComponent(credentials.username);
   const encodedPassword = encodeURIComponent(credentials.password);
 

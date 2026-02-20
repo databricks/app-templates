@@ -17,7 +17,6 @@ import {
   chat,
   message,
   feedback,
-  user,
   type DBMessage,
   type Chat,
 } from './schema';
@@ -573,48 +572,3 @@ export async function updateFeedback({
   }
 }
 
-export async function deleteFeedback({ id }: { id: string }) {
-  if (!isDatabaseAvailable()) {
-    console.log('[deleteFeedback] Database not available, skipping deletion');
-    return null;
-  }
-
-  try {
-    const [result] = await (await ensureDb())
-      .delete(feedback)
-      .where(eq(feedback.id, id))
-      .returning();
-
-    return result;
-  } catch (error) {
-    console.error('[deleteFeedback] Error deleting feedback:', error);
-    throw new ChatSDKError('bad_request:database', 'Failed to delete feedback');
-  }
-}
-
-/**
- * Ensure a user exists in the database.
- * Creates the user if they don't exist (idempotent).
- */
-export async function ensureUserExists({
-  id,
-  email,
-}: {
-  id: string;
-  email: string;
-}) {
-  if (!isDatabaseAvailable()) {
-    console.log('[ensureUserExists] Database not available, skipping');
-    return;
-  }
-
-  try {
-    await (await ensureDb())
-      .insert(user)
-      .values({ id, email })
-      .onConflictDoNothing();
-  } catch (error) {
-    console.error('[ensureUserExists] Error ensuring user exists:', error);
-    // Don't throw - this is a best-effort operation
-  }
-}

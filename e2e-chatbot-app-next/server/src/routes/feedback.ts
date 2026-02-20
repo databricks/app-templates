@@ -9,6 +9,7 @@ import {
   getMessageById,
   createFeedback,
   getFeedbackByMessageId,
+  getFeedbackByChatId,
   updateFeedback,
   isDatabaseAvailable,
 } from '@chat-template/db';
@@ -208,6 +209,30 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     return res.status(response.status).json(response.json);
   }
 });
+
+/**
+ * GET /api/feedback/chat/:chatId - Get all feedback for a chat
+ */
+feedbackRouter.get(
+  '/chat/:chatId',
+  requireAuth,
+  async (req: Request, res: Response) => {
+    try {
+      const { chatId } = req.params;
+      const feedbackList = await getFeedbackByChatId({ chatId });
+      return res.status(200).json(feedbackList);
+    } catch (error) {
+      console.error('[Feedback] Error getting feedback by chat:', error);
+      if (error instanceof ChatSDKError) {
+        const response = error.toResponse();
+        return res.status(response.status).json(response.json);
+      }
+      const chatError = new ChatSDKError('offline:chat');
+      const response = chatError.toResponse();
+      return res.status(response.status).json(response.json);
+    }
+  },
+);
 
 /**
  * GET /api/feedback/:messageId - Get feedback for a message

@@ -111,7 +111,7 @@ export function Chat({
   } = useChat<ChatMessage>({
     id,
     messages: initialMessages,
-    experimental_throttle: 50, // Reduced from 100ms for smoother streaming display
+    experimental_throttle: 100,
     generateId: generateUUID,
     resume: id !== undefined && initialMessages.length > 0, // Enable automatic stream resumption
     transport: new ChatTransport({
@@ -215,15 +215,6 @@ export function Chat({
         setStreamCursor(0);
         fetchChatHistory();
         clearError();
-        return;
-      }
-
-      // Don't try to resume if we haven't received any stream parts in this session
-      // This happens on page reload when there's no active stream to resume
-      if (streamCursorRef.current === 0) {
-        console.log('[Chat onFinish] No stream parts received, skipping resume');
-        setStreamCursor(0);
-        fetchChatHistory();
         return;
       }
 

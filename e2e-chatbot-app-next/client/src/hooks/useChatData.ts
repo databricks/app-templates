@@ -64,9 +64,7 @@ async function fetchChatData(url: string): Promise<ChatData | null> {
   // Fetch feedback for this chat
   let feedbackMap: Record<string, Feedback> = {};
   try {
-    const feedbackResponse = await fetch(`/api/feedback/chat/${chatId}`, {
-      credentials: 'include',
-    });
+    const feedbackResponse = await fetch(`/api/feedback/chat/${chatId}`);
 
     if (feedbackResponse.ok) {
       const feedbackList: Feedback[] = await feedbackResponse.json();

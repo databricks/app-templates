@@ -5,18 +5,31 @@ description: "Run and test the TypeScript LangChain agent locally. Use when: (1)
 
 # Run Locally
 
-## Start Development Server
+## Start Development Servers
 
+**Start both agent and UI servers:**
 ```bash
 npm run dev
 ```
 
-This starts the server with hot-reload enabled (watches for file changes).
+This starts:
+- **Agent server** on port 5001 (provides `/invocations`)
+- **UI server** on port 3001 (provides `/api/chat` and React frontend)
+- Hot-reload enabled for both
 
-**Server will be available at:**
-- Base URL: `http://localhost:8000`
-- Health check: `http://localhost:8000/health`
-- Chat API: `http://localhost:8000/api/chat`
+**Or start individually:**
+```bash
+# Terminal 1: Agent only
+npm run dev:agent
+
+# Terminal 2: UI only
+npm run dev:ui
+```
+
+**Servers will be available at:**
+- Agent: `http://localhost:5001/invocations`
+- UI frontend: `http://localhost:3000`
+- UI backend: `http://localhost:3001/api/chat`
 
 ## Start Production Build
 
@@ -30,57 +43,14 @@ npm start
 
 ## Testing the Agent
 
-### 1. Health Check
+### 1. Test /invocations Endpoint (Responses API)
 
 ```bash
-curl http://localhost:8000/health
-```
-
-Expected response:
-```json
-{
-  "status": "healthy",
-  "timestamp": "2024-01-30T...",
-  "service": "langchain-agent-ts"
-}
-```
-
-### 2. Non-Streaming Chat
-
-```bash
-curl -X POST http://localhost:8000/api/chat \
+curl -X POST http://localhost:5001/invocations \
   -H "Content-Type: application/json" \
   -d '{
-    "messages": [
+    "input": [
       {"role": "user", "content": "What is the weather in San Francisco?"}
-    ]
-  }'
-```
-
-Expected response:
-```json
-{
-  "message": {
-    "role": "assistant",
-    "content": "The weather in San Francisco is..."
-  },
-  "intermediateSteps": [
-    {
-      "action": "get_weather",
-      "observation": "The weather in San Francisco is sunny with a temperature of 70°F"
-    }
-  ]
-}
-```
-
-### 3. Streaming Chat
-
-```bash
-curl -X POST http://localhost:8000/api/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "messages": [
-      {"role": "user", "content": "Calculate 15 * 32"}
     ],
     "stream": true
   }'
@@ -88,26 +58,46 @@ curl -X POST http://localhost:8000/api/chat \
 
 Expected response (Server-Sent Events):
 ```
-data: {"chunk":"Let"}
-data: {"chunk":" me"}
-data: {"chunk":" calculate"}
+data: {"type":"response.output_item.added","item":{"type":"message",...}}
+data: {"type":"response.output_text.delta","delta":"The weather..."}
 ...
-data: {"done":true}
+data: {"type":"response.completed"}
+data: [DONE]
 ```
 
-### 4. Multi-Turn Conversation
+### 2. Test /api/chat Endpoint (useChat Format)
+
+**Requires both servers running** (`npm run dev`)
 
 ```bash
-curl -X POST http://localhost:8000/api/chat \
+curl -X POST http://localhost:3001/api/chat \
   -H "Content-Type: application/json" \
   -d '{
-    "messages": [
-      {"role": "user", "content": "What is 10 + 20?"},
-      {"role": "assistant", "content": "10 + 20 = 30"},
-      {"role": "user", "content": "Now multiply that by 3"}
-    ]
+    "message": {
+      "role": "user",
+      "parts": [{"type": "text", "text": "Calculate 15 * 32"}]
+    },
+    "selectedChatModel": "chat-model"
   }'
 ```
+
+Expected response (AI SDK format):
+```
+data: {"type":"text-delta","delta":"Let me calculate..."}
+data: {"type":"tool-call",...}
+...
+data: [DONE]
+```
+
+### 3. Test UI Frontend
+
+Open browser: `http://localhost:3000`
+
+Should see chat interface with:
+- Message input
+- Send button
+- Chat history
+- Tool call indicators
 
 ## Environment Variables
 
@@ -184,55 +174,102 @@ For deeper debugging, use VS Code debugger:
 
 ```bash
 # Weather tool
-curl -X POST http://localhost:8000/api/chat \
+curl -X POST http://localhost:5001/invocations \
   -H "Content-Type: application/json" \
-  -d '{"messages": [{"role": "user", "content": "What is the weather in Tokyo?"}]}'
+  -d '{"input": [{"role": "user", "content": "What is the weather in Tokyo?"}], "stream": false}'
 
 # Calculator tool
-curl -X POST http://localhost:8000/api/chat \
+curl -X POST http://localhost:5001/invocations \
   -H "Content-Type: application/json" \
-  -d '{"messages": [{"role": "user", "content": "Calculate 123 * 456"}]}'
+  -d '{"input": [{"role": "user", "content": "Calculate 123 * 456"}], "stream": false}'
 
 # Time tool
-curl -X POST http://localhost:8000/api/chat \
+curl -X POST http://localhost:5001/invocations \
   -H "Content-Type: application/json" \
-  -d '{"messages": [{"role": "user", "content": "What time is it in London?"}]}'
+  -d '{"input": [{"role": "user", "content": "What time is it in London?"}], "stream": false}'
 ```
 
 ### Test MCP Tools
 
-First enable MCP tools in `.env`:
-```bash
-ENABLE_SQL_MCP=true
-```
+MCP tools are configured in `src/mcp-servers.ts`. See **add-tools** skill for details.
 
-Then restart server and test:
+Example test:
 ```bash
-curl -X POST http://localhost:8000/api/chat \
+curl -X POST http://localhost:5001/invocations \
   -H "Content-Type: application/json" \
-  -d '{"messages": [{"role": "user", "content": "Show me the tables in the main catalog"}]}'
+  -d '{"input": [{"role": "user", "content": "Query my database"}], "stream": false}'
 ```
 
 ## Running Tests
 
+### Unit Tests (No Server Required)
+
+Pure tests with no dependencies:
 ```bash
-npm test
+npm run test:unit
 ```
 
-This runs Jest tests in `tests/` directory.
+Runs `tests/agent.test.ts` - tests agent initialization, tool usage, multi-turn conversations.
+
+### Integration Tests (Requires Local Servers)
+
+Tests that need local servers running:
+```bash
+# Terminal 1: Start servers
+npm run dev
+
+# Terminal 2: Run tests
+npm run test:integration
+```
+
+Tests: `/invocations`, `/api/chat`, streaming, error handling.
+
+### E2E Tests (Requires Deployed App)
+
+Tests that need a deployed Databricks app:
+```bash
+# 1. Deploy app
+npm run build
+databricks bundle deploy --profile your-profile
+databricks bundle run agent_langchain_ts --profile your-profile
+
+# 2. Set APP_URL
+export APP_URL=$(databricks apps get agent-lc-ts-dev --profile your-profile --output json | jq -r '.url')
+
+# 3. Run E2E tests
+npm run test:e2e
+```
+
+See `tests/e2e/README.md` for detailed setup instructions.
+
+### All Non-E2E Tests
+
+```bash
+npm run test:all
+```
+
+Runs unit + integration tests (not E2E).
 
 ## Troubleshooting
 
-### "Port 8000 is already in use"
+### "Port 5001 or 3001 is already in use"
 
-Kill existing process:
+Kill existing processes:
 ```bash
-lsof -ti:8000 | xargs kill -9
+# Agent server (port 5001)
+lsof -ti:5001 | xargs kill -9
+
+# UI server (port 3001)
+lsof -ti:3001 | xargs kill -9
+
+# UI frontend (port 3000)
+lsof -ti:3000 | xargs kill -9
 ```
 
-Or change port in `.env`:
+Or change ports:
 ```bash
-PORT=8001
+# Agent: PORT=5002 npm run dev:agent
+# UI: CHAT_APP_PORT=3002 npm run dev:ui
 ```
 
 ### "Authentication failed"

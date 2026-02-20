@@ -115,6 +115,7 @@ async def streaming(
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
     
     # Optionally use the user's workspace client for on-behalf-of authentication
+    # NEEDS to be initialized during query time, not on agent initialization to have user creds.
     # user_workspace_client = get_user_workspace_client()
     user_id = get_user_id(request)
 

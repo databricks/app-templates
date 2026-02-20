@@ -300,16 +300,7 @@ npm run build
 
 ## Deploying Changes
 
-```bash
-# Redeploy
-databricks bundle deploy -t dev
-
-# Restart app
-databricks apps restart db-agent-langchain-ts-<username>
-
-# View logs
-databricks apps logs db-agent-langchain-ts-<username> --follow
-```
+See the [deploy skill](../deploy/SKILL.md) for complete deployment instructions.
 
 ## Advanced Modifications
 
@@ -319,46 +310,7 @@ For advanced LangChain patterns (custom chains, stateful agents, RAG), see:
 
 ### Add RAG with Vector Search
 
-```typescript
-import { DatabricksVectorSearch } from "@databricks/langchainjs";
-
-const vectorStore = new DatabricksVectorSearch({
-  index: "catalog.schema.index_name",
-  textColumn: "text",
-  columns: ["id", "text", "metadata"],
-});
-
-// Use in retrieval chain
-const retriever = vectorStore.asRetriever({
-  k: 5,
-});
-```
-
-### Custom Authentication
-
-Edit `src/server.ts`:
-
-```typescript
-// Add auth middleware
-app.use((req, res, next) => {
-  const token = req.headers.authorization?.replace("Bearer ", "");
-
-  if (!token) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-
-  // Validate token
-  if (!isValidToken(token)) {
-    return res.status(403).json({ error: "Forbidden" });
-  }
-
-  next();
-});
-```
-
-### Error Handling
-
-Add custom error handling middleware in `src/server.ts`. See Express.js documentation for error handling patterns.
+Use `DatabricksVectorSearch` from `@databricks/langchainjs`. See [LangChain Vector Store docs](https://js.langchain.com/docs/modules/data_connection/vectorstores/).
 
 ## TypeScript Best Practices
 

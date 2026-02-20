@@ -272,7 +272,7 @@ export const MCP = {
    */
   skipIfNotConfigured(condition: boolean, message: string): boolean {
     if (!condition) {
-      console.log(`⏭️  ${message}`);
+      console.log(`[SKIP] ${message}`);
       return true;
     }
     return false;
@@ -376,26 +376,4 @@ export function getDeployedAuthHeaders(
 // ============================================================================
 // Assertion Helpers
 // ============================================================================
-
-/**
- * Assert that response contains expected text (case-insensitive)
- */
-export function assertContains(text: string, expected: string): boolean {
-  return text.toLowerCase().includes(expected.toLowerCase());
-}
-
-/**
- * Assert that SSE stream completed successfully
- */
-export function assertSSECompleted(text: string): boolean {
-  return text.includes("data: [DONE]");
-}
-
-/**
- * Assert that SSE stream has completion event
- */
-export function assertSSEHasCompletionEvent(events: SSEEvent[]): boolean {
-  return events.some(
-    (e) => e.type === "response.completed" || e.type === "response.failed"
-  );
-}
+// (Removed trivial wrappers - use Jest assertions directly)

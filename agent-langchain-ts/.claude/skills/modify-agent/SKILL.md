@@ -143,59 +143,9 @@ export function getBasicTools() {
 
 #### MCP Tool Integration
 
-**MCP tools are configured in code, not environment variables.**
+**For adding MCP tools (SQL, Vector Search, Genie, UC Functions), see the [add-tools skill](../add-tools/SKILL.md).**
 
-Edit `src/mcp-servers.ts`:
-
-```typescript
-import { DatabricksMCPServer } from "@databricks/langchainjs";
-
-export function getMCPServers(): DatabricksMCPServer[] {
-  return [
-    // SQL MCP - Direct SQL queries
-    new DatabricksMCPServer({
-      name: "dbsql",
-      path: "/api/2.0/mcp/sql",
-    }),
-
-    // UC Function
-    DatabricksMCPServer.fromUCFunction("main", "default", "my_function", {
-      name: "uc-functions",
-    }),
-
-    // Vector Search
-    DatabricksMCPServer.fromVectorSearch("main", "default", "my_index", {
-      name: "vector-search",
-    }),
-
-    // Genie Space
-    DatabricksMCPServer.fromGenieSpace("your-space-id"),
-  ];
-}
-```
-
-`databricks.yml` (add permissions):
-```yaml
-resources:
-  apps:
-    agent_langchain_ts:
-      resources:
-        - name: uc-function
-          function:
-            name: "main.default.my_function"
-            permission: EXECUTE
-        - name: vector-index
-          vector_search_index:
-            name: "main.default.my_index"
-            permission: CAN_VIEW
-```
-
-**Add Genie Space**:
-
-`.env`:
-```bash
-GENIE_SPACE_ID=01234567-89ab-cdef-0123-456789abcdef
-```
+MCP tools are configured in `src/mcp-servers.ts` with required permissions in `databricks.yml`.
 
 ### 5. Remove Tools
 
@@ -363,48 +313,9 @@ databricks apps logs db-agent-langchain-ts-<username> --follow
 
 ## Advanced Modifications
 
-### Custom LangChain Chain
-
-Create custom chain in `src/agent.ts`:
-
-```typescript
-import { RunnableSequence } from "@langchain/core/runnables";
-
-const customChain = RunnableSequence.from([
-  // Add custom processing steps
-  promptTemplate,
-  model,
-  outputParser,
-]);
-```
-
-### Add Memory/State
-
-Install LangGraph for stateful agents:
-
-```bash
-npm install @langchain/langgraph
-```
-
-Implement stateful agent:
-
-```typescript
-import { StateGraph } from "@langchain/langgraph";
-
-// Define state
-interface AgentState {
-  messages: AgentMessage[];
-  context: Record<string, any>;
-}
-
-// Create graph
-const workflow = new StateGraph<AgentState>({
-  channels: {
-    messages: { value: (x, y) => x.concat(y) },
-    context: { value: (x, y) => ({ ...x, ...y }) },
-  },
-});
-```
+For advanced LangChain patterns (custom chains, stateful agents, RAG), see:
+- [LangChain.js Documentation](https://js.langchain.com/docs/)
+- [LangGraph Documentation](https://langchain-ai.github.io/langgraphjs/)
 
 ### Add RAG with Vector Search
 
@@ -447,23 +358,7 @@ app.use((req, res, next) => {
 
 ### Error Handling
 
-Add custom error handling in `src/server.ts`:
-
-```typescript
-// Global error handler
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-  console.error("Error:", err);
-
-  // Log to MLflow
-  // ...
-
-  res.status(500).json({
-    error: "Internal server error",
-    message: err.message,
-    timestamp: new Date().toISOString(),
-  });
-});
-```
+Add custom error handling middleware in `src/server.ts`. See Express.js documentation for error handling patterns.
 
 ## TypeScript Best Practices
 

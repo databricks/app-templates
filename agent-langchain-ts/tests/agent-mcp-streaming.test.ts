@@ -34,10 +34,6 @@ describe("AgentMCP Streaming Bug", () => {
     expect(response.ok).toBe(true);
     const text = await response.text();
 
-    console.log("\n=== Raw SSE Response ===");
-    console.log(text);
-    console.log("=== End Response ===\n");
-
     const { events, fullOutput } = parseSSEStream(text);
     const hasTextDelta = events.some(e => e.type === "response.output_text.delta");
 
@@ -69,10 +65,6 @@ describe("AgentMCP Streaming Bug", () => {
 
     expect(response.ok).toBe(true);
     const text = await response.text();
-
-    console.log("\n=== Raw /api/chat Response ===");
-    console.log(text);
-    console.log("=== End Response ===\n");
 
     const { fullContent, hasTextDelta } = parseAISDKStream(text);
 

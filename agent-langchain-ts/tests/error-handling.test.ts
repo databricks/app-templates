@@ -14,8 +14,6 @@ import {
   TEST_CONFIG,
   callInvocations,
   parseSSEStream,
-  assertSSECompleted,
-  assertSSEHasCompletionEvent,
 } from './helpers.js';
 
 const AGENT_URL = TEST_CONFIG.AGENT_URL;
@@ -55,7 +53,7 @@ describe("Error Handling Tests", () => {
       const text = await response.text();
 
       // Critical behavior: stream completes even with invalid expressions
-      expect(assertSSECompleted(text)).toBe(true);
+      expect(text.includes("data: [DONE]")).toBe(true);
 
       // No dangerous output (already covered by other test)
       // Model may or may not provide text output - that's ok
@@ -74,8 +72,8 @@ describe("Error Handling Tests", () => {
       const { events } = parseSSEStream(text);
 
       // Verify proper SSE completion sequence
-      expect(assertSSECompleted(text)).toBe(true);
-      expect(assertSSEHasCompletionEvent(events)).toBe(true);
+      expect(text.includes("data: [DONE]")).toBe(true);
+      expect(events.some(e => e.type === "response.completed" || e.type === "response.failed")).toBe(true);
 
       // Ensure it ends with [DONE]
       const lines = text.trim().split("\n");
@@ -115,8 +113,8 @@ describe("Error Handling Tests", () => {
       const { events } = parseSSEStream(text);
 
       // Even if there's an error, stream should complete properly
-      expect(assertSSEHasCompletionEvent(events)).toBe(true);
-      expect(assertSSECompleted(text)).toBe(true);
+      expect(events.some(e => e.type === "response.completed" || e.type === "response.failed")).toBe(true);
+      expect(text.includes("data: [DONE]")).toBe(true);
     }, 30000);
   });
 
@@ -177,7 +175,7 @@ describe("Error Handling Tests", () => {
       const text = await response.text();
 
       // Stream must complete - this is the critical behavior
-      expect(assertSSECompleted(text)).toBe(true);
+      expect(text.includes("data: [DONE]")).toBe(true);
 
       // Must end with [DONE]
       expect(text).toContain("data: [DONE]");

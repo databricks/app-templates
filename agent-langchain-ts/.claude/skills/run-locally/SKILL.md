@@ -120,21 +120,7 @@ ENABLE_SQL_MCP=false
 
 ## View MLflow Traces
 
-Traces are automatically exported to MLflow:
-
-1. **In Databricks Workspace:**
-   - Navigate to `/Users/<username>/agent-langchain-ts`
-   - View experiment runs
-   - Click on traces to see:
-     - LLM calls with latency
-     - Tool invocations
-     - Input/output data
-     - Token usage
-
-2. **Using CLI:**
-   ```bash
-   databricks experiments get --experiment-id $MLFLOW_EXPERIMENT_ID
-   ```
+See [MLflow Tracing Guide](../_shared/MLFLOW.md) for viewing traces in your workspace.
 
 ## Development Tips
 
@@ -252,27 +238,18 @@ Runs unit + integration tests (not E2E).
 
 ## Troubleshooting
 
-### "Port 5001 or 3001 is already in use"
+See [Troubleshooting Guide](../_shared/TROUBLESHOOTING.md) for common issues.
 
-Kill existing processes:
+### Quick Fixes
+
+**Port already in use:**
 ```bash
-# Agent server (port 5001)
-lsof -ti:5001 | xargs kill -9
-
-# UI server (port 3001)
-lsof -ti:3001 | xargs kill -9
-
-# UI frontend (port 3000)
-lsof -ti:3000 | xargs kill -9
+lsof -ti:5001 | xargs kill -9  # Agent
+lsof -ti:3001 | xargs kill -9  # UI backend
+lsof -ti:3000 | xargs kill -9  # UI frontend
 ```
 
-Or change ports:
-```bash
-# Agent: PORT=5002 npm run dev:agent
-# UI: CHAT_APP_PORT=3002 npm run dev:ui
-```
-
-### "Authentication failed"
+**Authentication failed:**
 
 Verify credentials:
 ```bash

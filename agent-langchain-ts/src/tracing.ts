@@ -21,16 +21,10 @@ import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import { execSync } from "child_process";
 
 export interface TracingConfig {
-  /**
-   * MLflow tracking URI (e.g., "http://localhost:5000" or "databricks")
-   * Defaults to "databricks" for deployed apps
-   */
+  /** MLflow tracking URI (defaults to "databricks") */
   mlflowTrackingUri?: string;
 
-  /**
-   * MLflow experiment ID to associate traces with
-   * Can also be set via MLFLOW_EXPERIMENT_ID env var
-   */
+  /** MLflow experiment ID to associate traces with */
   experimentId?: string;
 
   /**
@@ -78,6 +72,16 @@ export class MLflowTracing {
   }
 
   /**
+   * Normalize host URL by adding https:// if needed
+   */
+  private normalizeHost(host: string): string {
+    if (!host.startsWith("http://") && !host.startsWith("https://")) {
+      return `https://${host}`;
+    }
+    return host;
+  }
+
+  /**
    * Build MLflow trace endpoint URL
    * Uses Databricks OTel collector endpoints (preview feature)
    */
@@ -86,18 +90,13 @@ export class MLflowTracing {
 
     // Databricks workspace tracking
     if (baseUri === "databricks") {
-      let host = process.env.DATABRICKS_HOST;
-      if (!host) {
+      const rawHost = process.env.DATABRICKS_HOST;
+      if (!rawHost) {
         throw new Error(
           "DATABRICKS_HOST environment variable required when using 'databricks' tracking URI"
         );
       }
-      // Ensure host has https:// prefix
-      if (!host.startsWith("http://") && !host.startsWith("https://")) {
-        host = `https://${host}`;
-      }
-      // Databricks OTel collector endpoint (preview)
-      // https://docs.databricks.com/api/2.0/otel/v1/traces
+      const host = this.normalizeHost(rawHost);
       return `${host.replace(/\/$/, "")}/api/2.0/otel/v1/traces`;
     }
 
@@ -111,16 +110,13 @@ export class MLflowTracing {
   private async getOAuth2Token(): Promise<string | null> {
     const clientId = process.env.DATABRICKS_CLIENT_ID;
     const clientSecret = process.env.DATABRICKS_CLIENT_SECRET;
-    let host = process.env.DATABRICKS_HOST;
+    const rawHost = process.env.DATABRICKS_HOST;
 
-    if (!clientId || !clientSecret || !host) {
+    if (!clientId || !clientSecret || !rawHost) {
       return null;
     }
 
-    // Ensure host has https:// prefix
-    if (!host.startsWith("http://") && !host.startsWith("https://")) {
-      host = `https://${host}`;
-    }
+    const host = this.normalizeHost(rawHost);
 
     try {
       const tokenUrl = `${host}/oidc/v1/token`;
@@ -151,10 +147,7 @@ export class MLflowTracing {
 
   /**
    * Get OAuth token from Databricks CLI
-   * Uses 'databricks auth token' command for local development
-   *
-   * IMPORTANT: The OTel collector requires OAuth tokens, not PAT tokens.
-   * PAT tokens will result in 401 errors.
+   * IMPORTANT: OTel collector requires OAuth tokens, not PAT tokens
    */
   private async getOAuthTokenFromCLI(): Promise<string | null> {
     try {
@@ -163,7 +156,7 @@ export class MLflowTracing {
 
       const output = execSync(command, {
         encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'pipe'] // Suppress stderr
+        stdio: ['pipe', 'pipe', 'pipe']
       });
 
       const data = JSON.parse(output);
@@ -191,14 +184,12 @@ export class MLflowTracing {
       return null;
     }
 
-    let host = process.env.DATABRICKS_HOST;
-    if (!host) {
+    const rawHost = process.env.DATABRICKS_HOST;
+    if (!rawHost) {
       return null;
     }
 
-    if (!host.startsWith("http://") && !host.startsWith("https://")) {
-      host = `https://${host}`;
-    }
+    const host = this.normalizeHost(rawHost);
 
     try {
       const linkUrl = `${host}/api/4.0/mlflow/traces/${this.config.experimentId}/link-location`;
@@ -239,9 +230,6 @@ export class MLflowTracing {
    * Creates UC storage location and links experiment to it
    *
    * This implements the MLflow set_experiment_trace_location() API in TypeScript
-   *
-   * Note: The warehouse ID is only needed for creating the UC table initially.
-   * If the table already exists, the link-location API works without a warehouse.
    */
   private async setupExperimentTraceLocation(): Promise<string | null> {
     if (!this.config.experimentId) {
@@ -255,19 +243,16 @@ export class MLflowTracing {
 
     // If no warehouse is specified, try to link directly (works if table already exists)
     if (!warehouseId) {
-      console.log(`⚠️  MLFLOW_TRACING_SQL_WAREHOUSE_ID not set`);
-      console.log(`   Attempting to link to existing table: ${tableName}`);
+      console.log(`⚠️  MLFLOW_TRACING_SQL_WAREHOUSE_ID not set, attempting to link to existing table: ${tableName}`);
       return await this.linkExperimentToLocation(catalogName, schemaName, tableName);
     }
 
-    let host = process.env.DATABRICKS_HOST;
-    if (!host) {
+    const rawHost = process.env.DATABRICKS_HOST;
+    if (!rawHost) {
       return null;
     }
 
-    if (!host.startsWith("http://") && !host.startsWith("https://")) {
-      host = `https://${host}`;
-    }
+    const host = this.normalizeHost(rawHost);
 
     try {
       console.log(`🔗 Setting up trace location: ${catalogName}.${schemaName}`);
@@ -292,13 +277,11 @@ export class MLflowTracing {
       });
 
       if (!createResponse.ok && createResponse.status !== 409) {
-        // 409 means already exists, which is fine
         const errorText = await createResponse.text();
         console.warn(`⚠️  Failed to create UC location: ${createResponse.status} - ${errorText}`);
         return null;
       }
 
-      // Step 2: Link experiment to UC location
       return await this.linkExperimentToLocation(catalogName, schemaName, tableName);
 
     } catch (error) {
@@ -389,8 +372,7 @@ export class MLflowTracing {
       // Fallback to direct token (may not work with OTel collector)
       if (!this.authToken && process.env.DATABRICKS_TOKEN) {
         this.authToken = process.env.DATABRICKS_TOKEN;
-        console.log("⚠️  Using DATABRICKS_TOKEN (PAT token)");
-        console.log("   Note: OTel collector may require OAuth token instead");
+        console.log("⚠️  Using DATABRICKS_TOKEN (PAT token) - OTel collector may require OAuth token instead");
       }
 
       // Set up experiment trace location in UC (if not already configured)

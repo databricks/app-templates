@@ -234,16 +234,7 @@ databricks apps logs db-agent-langchain-ts-<username> | grep ERROR
 
 ### View MLflow Traces
 
-1. Navigate to experiment in workspace:
-   ```
-   /Users/<username>/agent-langchain-ts
-   ```
-
-2. View traces for each request:
-   - LLM latency
-   - Tool calls
-   - Token usage
-   - Errors
+See [MLflow Tracing Guide](../_shared/MLFLOW.md) for viewing traces in your workspace.
 
 ### App Metrics
 

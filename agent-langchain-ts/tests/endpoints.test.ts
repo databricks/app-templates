@@ -9,8 +9,6 @@ import type { ChildProcess } from "child_process";
 import {
   callInvocations,
   parseSSEStream,
-  assertSSECompleted,
-  assertSSEHasCompletionEvent,
 } from "./helpers.js";
 
 describe("API Endpoints", () => {
@@ -52,8 +50,8 @@ describe("API Endpoints", () => {
       const { events, fullOutput } = parseSSEStream(text);
 
       expect(events.length).toBeGreaterThan(0);
-      expect(assertSSECompleted(text)).toBe(true);
-      expect(assertSSEHasCompletionEvent(events)).toBe(true);
+      expect(text.includes("data: [DONE]")).toBe(true);
+      expect(events.some(e => e.type === "response.completed" || e.type === "response.failed")).toBe(true);
 
       // Should have text delta events
       const hasTextDelta = events.some((e) => e.type === "response.output_text.delta");
@@ -78,7 +76,7 @@ describe("API Endpoints", () => {
 
       // Should have Responses API delta events
       expect(text).toContain("response.output_text.delta");
-      expect(assertSSECompleted(text)).toBe(true);
+      expect(text.includes("data: [DONE]")).toBe(true);
     }, 30000);
 
     test("should handle tool calling", async () => {
@@ -95,7 +93,7 @@ describe("API Endpoints", () => {
       const text = await response.text();
       const { fullOutput } = parseSSEStream(text);
 
-      expect(assertSSECompleted(text)).toBe(true);
+      expect(text.includes("data: [DONE]")).toBe(true);
       expect(fullOutput).toContain("56");
     }, 30000);
   });

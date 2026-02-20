@@ -142,26 +142,12 @@ export async function createAgent(config: AgentConfig = {}) {
 
 ## Troubleshooting
 
-### "Permission denied" errors
+See [Troubleshooting Guide](../_shared/TROUBLESHOOTING.md) for common issues.
 
-Check `databricks.yml` has all required resource permissions:
-```bash
-databricks bundle validate
-databricks bundle deploy
-```
-
-### "Tool not found in agent"
-
-1. Verify `src/mcp-servers.ts` configuration
-2. Restart local server: `npm run dev:agent`
-3. Check agent logs for "Loaded X MCP tools" message
-
-### "MCP tools not working"
-
-See `mcp-known-issues.md` and `mcp-best-practices.md` in this directory for:
-- Known limitations and workarounds
-- LangGraph agent integration patterns
-- MCP tool integration best practices
+**Quick tips:**
+- Permission errors: Check `databricks.yml` and redeploy
+- Tool not found: Verify `src/mcp-servers.ts` and restart server
+- MCP issues: See `mcp-known-issues.md` and `mcp-best-practices.md` in this directory
 
 ## Additional Resources
 

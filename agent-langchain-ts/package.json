@@ -4,7 +4,7 @@
   "description": "TypeScript LangChain agent with MLflow tracing on Databricks",
   "type": "module",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   },
   "scripts": {
     "predev": "bash scripts/setup-ui.sh",
@@ -31,7 +31,7 @@
     "@arizeai/openinference-instrumentation-langchain": "^4.0.0",
     "@databricks/ai-sdk-provider": "^0.3.0",
     "@databricks/langchainjs": "^0.1.0",
-    "@databricks/sdk-experimental": "^0.15.0",
+    "@databricks/sdk-experimental": "0.15.0",
     "@langchain/core": "^1.1.8",
     "@langchain/langgraph": "^1.1.2",
     "@langchain/mcp-adapters": "^1.1.1",

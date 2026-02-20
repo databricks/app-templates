@@ -1,10 +1,31 @@
 # Testing Workflow
 
-Always test in this order for best results:
+**Always run automated tests first.** Manual testing is only for debugging specific issues.
 
-## 1. Test Agent Endpoint Directly
+## 1. Run Automated Tests
 
-Test `/invocations` endpoint (simplest, fastest feedback):
+```bash
+npm run test:all              # All tests (unit + integration)
+npm run test:unit             # Agent unit tests (no server needed)
+npm run test:integration      # Local endpoint tests (requires servers)
+npm run test:error-handling   # Error scenarios
+```
+
+## 2. Test Deployed App
+
+```bash
+# Get app URL
+databricks apps get <app-name> --output json | jq -r '.url'
+
+# Run deployed tests
+APP_URL=<app-url> npm run test:deployed
+```
+
+## Manual Testing (Debugging Only)
+
+Only use manual testing when debugging specific issues:
+
+### Quick Agent Test (curl)
 
 ```bash
 # Start agent
@@ -19,9 +40,7 @@ curl -X POST http://localhost:5001/invocations \
   }'
 ```
 
-## 2. Test UI Integration
-
-Test `/api/chat` via UI:
+### UI Integration Test
 
 ```bash
 # Start both servers
@@ -31,16 +50,7 @@ npm run dev
 open http://localhost:3000
 ```
 
-## 3. Run Automated Tests
-
-```bash
-npm run test:all              # All tests
-npm run test:unit             # Agent unit tests
-npm run test:integration      # Local endpoint tests
-npm run test:error-handling   # Error scenarios
-```
-
-## 4. Test Deployed App
+## Advanced: Test with TypeScript
 
 ```bash
 # Get app URL
@@ -50,7 +60,7 @@ databricks apps get <app-name> --output json | jq -r '.url'
 APP_URL=<app-url> npm run test:deployed
 ```
 
-## Test with TypeScript
+## Programmatic Testing
 
 ```typescript
 import { createDatabricksProvider } from "@databricks/ai-sdk-provider";

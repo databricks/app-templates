@@ -6,136 +6,35 @@ import {
 } from "ai";
 
 /**
- * IDs of parts that are currently streaming and haven't received their end event.
- * Used to restore AI SDK internal trackers on stream resumption.
- */
-export interface StreamingPartIds {
-  reasoning?: string;
-  text?: string;
-  toolInput?: string;
-}
-
-/**
- * Extends the DefaultChatTransport to:
- * 1. Allow a callback when stream parts are received (for cursor tracking)
- * 2. Inject synthetic start events on stream resumption for open streaming parts
- *
- * When a stream is interrupted mid-reasoning/text/tool-input, the AI SDK's internal
- * trackers are reset on reconnect. This causes errors when delta chunks arrive
- * without their corresponding start events. We solve this by:
- * - Tracking which parts are currently streaming via onStreamPart
- * - On reconnect, injecting synthetic *-start events before the resumed stream
+ * Extends the DefaultChatTransport to allow for a callback to be called when a stream part is received.
+ * This is used to create a cursor that can be used to resume the stream from a specific point.
  */
 export class ChatTransport<
   T extends UIMessage
 > extends DefaultChatTransport<T> {
   private onStreamPart: ((part: UIMessageChunk) => void) | undefined;
-  private getStreamingPartIds: (() => StreamingPartIds) | undefined;
-
   constructor(
     options?: HttpChatTransportInitOptions<T> & {
-      onStreamPart?: (part: UIMessageChunk) => void;
-      /**
-       * Returns the IDs of parts that are currently streaming.
-       * Called before processing resumed stream to inject synthetic start events.
-       */
-      getStreamingPartIds?: () => StreamingPartIds;
+      onStreamPart: (part: UIMessageChunk) => void;
     }
   ) {
-    const { onStreamPart, getStreamingPartIds, ...rest } = options ?? {};
+    const { onStreamPart, ...rest } = options ?? {};
     super(rest);
     this.onStreamPart = onStreamPart;
-    this.getStreamingPartIds = getStreamingPartIds;
   }
 
   protected processResponseStream(
     stream: ReadableStream<Uint8Array<ArrayBufferLike>>
   ): ReadableStream<UIMessageChunk> {
-    const processedStream = super.processResponseStream(stream);
-
-    // Only create TransformStream if we have a callback to invoke
-    if (!this.onStreamPart) {
-      return processedStream;
-    }
-
     const onStreamPart = this.onStreamPart;
+    const processedStream = super.processResponseStream(stream);
     return processedStream.pipeThrough(
       new TransformStream<UIMessageChunk, UIMessageChunk>({
         transform(chunk, controller) {
-          onStreamPart(chunk);
+          onStreamPart?.(chunk);
           controller.enqueue(chunk);
         },
       })
     );
-  }
-
-  /**
-   * Override reconnectToStream to inject synthetic start events for open streaming parts.
-   * This restores the AI SDK's internal trackers so delta chunks work correctly.
-   */
-  async reconnectToStream(
-    options: Parameters<DefaultChatTransport<T>["reconnectToStream"]>[0]
-  ): Promise<ReadableStream<UIMessageChunk> | null> {
-    const resumedStream = await super.reconnectToStream(options);
-
-    if (!resumedStream) {
-      return null;
-    }
-
-    // Get IDs of parts that were streaming when we disconnected
-    const openParts = this.getStreamingPartIds?.() ?? {};
-    const syntheticChunks: UIMessageChunk[] = [];
-
-    // Create synthetic start events for each open part type (order: reasoning → text → tool-input)
-    const partTypes: Array<[keyof StreamingPartIds, string]> = [
-      ["reasoning", "reasoning-start"], ["text", "text-start"], ["toolInput", "tool-input-start"],
-    ];
-    for (const [key, type] of partTypes) {
-      if (openParts[key]) {
-        syntheticChunks.push({ type, id: openParts[key], ...(key === "toolInput" ? { toolName: "" } : {}) } as UIMessageChunk);
-      }
-    }
-
-    // If no open parts, return the stream as-is
-    if (syntheticChunks.length === 0) {
-      return resumedStream;
-    }
-
-    // Prepend synthetic chunks to the resumed stream
-    return this.prependChunksToStream(syntheticChunks, resumedStream);
-  }
-
-  /**
-   * Creates a new stream that emits the given chunks before the original stream.
-   */
-  private prependChunksToStream(
-    chunks: UIMessageChunk[],
-    stream: ReadableStream<UIMessageChunk>
-  ): ReadableStream<UIMessageChunk> {
-    const reader = stream.getReader();
-    let syntheticIndex = 0;
-    const onStreamPart = this.onStreamPart;
-
-    return new ReadableStream<UIMessageChunk>({
-      async pull(controller) {
-        // First emit all synthetic chunks
-        while (syntheticIndex < chunks.length) {
-          const chunk = chunks[syntheticIndex++];
-          onStreamPart?.(chunk);
-          controller.enqueue(chunk);
-        }
-
-        // Then read from the original stream
-        const { value, done } = await reader.read();
-        if (done) {
-          controller.close();
-        } else {
-          controller.enqueue(value);
-        }
-      },
-      cancel(reason) {
-        reader.cancel(reason);
-      },
-    });
   }
 }

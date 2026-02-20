@@ -14,9 +14,8 @@ export default {
       },
     ],
   },
-  testMatch: ['**/tests/**/*.test.ts'],
-  testPathIgnorePatterns: ['/node_modules/', '/tests/e2e/'], // Exclude e2e tests by default
+  testMatch: ['**/tests/e2e/**/*.test.ts'], // Only run e2e tests
   collectCoverageFrom: ['src/**/*.ts'],
   coveragePathIgnorePatterns: ['/node_modules/', '/dist/'],
-  testTimeout: 30000,
+  testTimeout: 120000, // Longer timeout for deployed app tests
 };

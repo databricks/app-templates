@@ -22,7 +22,8 @@ import { resetMcpApprovalState } from '../api-mocking/api-mock-handlers';
  * - MCP approval responses to continue with approved/denied stream
  */
 
-test.describe('MCP Approval Flow', () => {
+// Run tests serially to avoid race conditions with shared mock state
+test.describe.serial('MCP Approval Flow', () => {
   let chatPage: ChatPage;
 
   test.beforeEach(async ({ page }) => {

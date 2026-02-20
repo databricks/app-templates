@@ -16,7 +16,6 @@ import {
   ToolStatusBadge,
   type ToolState,
 } from './tool';
-import type { McpApprovalState } from '@databricks/ai-sdk-provider';
 
 // MCP-specific container with distinct styling
 type McpToolProps = Parameters<typeof ToolContainer>[0];
@@ -40,13 +39,22 @@ type McpToolHeaderProps = {
   serverName?: string;
   toolName: string;
   state: ToolState;
-  approvalStatus?: McpApprovalState;
+  // Used when state is 'approval-responded' to determine approval outcome
+  approved?: boolean;
   className?: string;
 };
 
 // Badge component for approval status in the banner
-const ApprovalStatusBadge = ({ status }: { status: McpApprovalState }) => {
-  if (status === 'awaiting-approval') {
+// Uses AI SDK native tool states directly
+type ApprovalStatusBadgeProps = {
+  state: ToolState;
+  // Used when state is 'approval-responded' to determine approval outcome
+  approved?: boolean;
+};
+
+const ApprovalStatusBadge = ({ state, approved }: ApprovalStatusBadgeProps) => {
+  // Pending: waiting for user approval
+  if (state === 'approval-requested') {
     return (
       <span
         className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
@@ -57,7 +65,12 @@ const ApprovalStatusBadge = ({ status }: { status: McpApprovalState }) => {
       </span>
     );
   }
-  if (status === 'approved') {
+
+  // Allowed: tool executed successfully or user approved (waiting for execution)
+  if (
+    state === 'output-available' ||
+    (state === 'approval-responded' && approved === true)
+  ) {
     return (
       <span
         className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-green-700 dark:bg-green-900/50 dark:text-green-300"
@@ -68,13 +81,31 @@ const ApprovalStatusBadge = ({ status }: { status: McpApprovalState }) => {
       </span>
     );
   }
+
+  // Denied: user explicitly denied the tool
+  if (
+    state === 'output-denied' ||
+    (state === 'approval-responded' && approved === false)
+  ) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-red-700 dark:bg-red-900/50 dark:text-red-300"
+        data-testid="mcp-approval-status-denied"
+      >
+        <ShieldXIcon className="size-3" />
+        <span>Denied</span>
+      </span>
+    );
+  }
+
+  // Fallback for any other state - show as pending
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-red-700 dark:bg-red-900/50 dark:text-red-300"
-      data-testid="mcp-approval-status-denied"
+      className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
+      data-testid="mcp-approval-status-pending"
     >
-      <ShieldXIcon className="size-3" />
-      <span>Denied</span>
+      <ShieldAlertIcon className="size-3" />
+      <span>Pending</span>
     </span>
   );
 };
@@ -84,7 +115,7 @@ export const McpToolHeader = ({
   serverName,
   toolName,
   state,
-  approvalStatus = 'awaiting-approval',
+  approved,
 }: McpToolHeaderProps) => (
   <div className="border-border border-b bg-muted/50">
     {/* MCP Banner */}
@@ -100,7 +131,7 @@ export const McpToolHeader = ({
         </>
       )}
       <span className="text-muted-foreground/50">•</span>
-      <ApprovalStatusBadge status={approvalStatus} />
+      <ApprovalStatusBadge state={state} approved={approved} />
     </div>
     {/* Tool header */}
     <CollapsibleTrigger
@@ -113,8 +144,11 @@ export const McpToolHeader = ({
         <span className="truncate font-mono text-sm">{toolName}</span>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        {/* Only show tool status badge when approved (tool is actually running/completed) */}
-        {approvalStatus === 'approved' && <ToolStatusBadge state={state} />}
+        {/* Only show tool status badge when tool is running/completed (approved) */}
+        {(state === 'output-available' ||
+          (state === 'approval-responded' && approved === true)) && (
+          <ToolStatusBadge state={state} />
+        )}
         <ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
       </div>
     </CollapsibleTrigger>

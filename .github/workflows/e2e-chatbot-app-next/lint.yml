@@ -1,0 +1,31 @@
+name: Lint (e2e-chatbot-app-next)
+on:
+  push:
+    paths:
+      - 'e2e-chatbot-app-next/**'
+      - '.github/workflows/e2e-chatbot-app-next/**'
+  pull_request:
+    paths:
+      - 'e2e-chatbot-app-next/**'
+      - '.github/workflows/e2e-chatbot-app-next/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        node-version: [20]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: e2e-chatbot-app-next/package-lock.json
+      - name: Install dependencies
+        working-directory: e2e-chatbot-app-next
+        run: npm ci
+      - name: Run lint
+        working-directory: e2e-chatbot-app-next
+        run: npm run lint

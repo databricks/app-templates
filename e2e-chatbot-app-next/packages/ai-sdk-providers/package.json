@@ -38,6 +38,7 @@
     "@ai-sdk/provider": "^3.0.7",
     "@chat-template/auth": "*",
     "@chat-template/utils": "*",
+    "@databricks/ai-sdk-provider": "file:../../../../databricks-ai-bridge/integrations/ai-sdk-provider",
     "ai": "^6.0.70"
   }
 }

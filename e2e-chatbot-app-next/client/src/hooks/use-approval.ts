@@ -1,10 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { UseChatHelpers } from '@ai-sdk/react';
 import type { ChatMessage } from '@chat-template/core';
-import {
-  DATABRICKS_TOOL_CALL_ID,
-  createApprovalStatusOutput,
-} from '@databricks/ai-sdk-provider';
 
 interface ApprovalSubmission {
   approvalRequestId: string;
@@ -12,7 +8,7 @@ interface ApprovalSubmission {
 }
 
 interface UseApprovalOptions {
-  addToolResult: UseChatHelpers<ChatMessage>['addToolResult'];
+  addToolApprovalResponse: UseChatHelpers<ChatMessage>['addToolApprovalResponse'];
   sendMessage: UseChatHelpers<ChatMessage>['sendMessage'];
 }
 
@@ -20,11 +16,11 @@ interface UseApprovalOptions {
  * Hook for handling MCP approval requests.
  *
  * When user approves/denies, this hook:
- * 1. Adds the tool result with approval status via addToolResult()
- * 2. Calls sendMessage() without arguments to trigger continuation
+ * 1. Adds the tool approval response via addToolApprovalResponse()
+ * 2. Calls sendMessage() without arguments to trigger continuation (for approvals only)
  */
 export function useApproval({
-  addToolResult,
+  addToolApprovalResponse,
   sendMessage,
 }: UseApprovalOptions) {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -38,17 +34,19 @@ export function useApproval({
       setPendingApprovalId(approvalRequestId);
 
       try {
-        // Add tool result with approval status
-        await addToolResult({
-          tool: DATABRICKS_TOOL_CALL_ID,
-          toolCallId: approvalRequestId,
-          state: 'output-available',
-          output: createApprovalStatusOutput(approve),
+        // Add tool approval response - this updates the AI SDK state
+        await addToolApprovalResponse({
+          id: approvalRequestId,
+          approved: approve,
         });
 
-        // Trigger continuation by calling sendMessage without arguments
-        // This will submit the current messages (including tool result) without adding a new user message
-        await sendMessage();
+        // Only trigger continuation for approvals
+        // For denials, the AI SDK state is updated and we don't need server response
+        if (approve) {
+          // Trigger continuation by calling sendMessage without arguments
+          // This will submit the current messages (including tool approval) without adding a new user message
+          await sendMessage();
+        }
       } catch (error) {
         console.error('Approval submission failed:', error);
       } finally {
@@ -56,8 +54,12 @@ export function useApproval({
         setPendingApprovalId(null);
       }
     },
-    [addToolResult, sendMessage],
+    [addToolApprovalResponse, sendMessage],
   );
 
-  return { submitApproval, isSubmitting, pendingApprovalId };
+  return {
+    submitApproval,
+    isSubmitting,
+    pendingApprovalId,
+  };
 }

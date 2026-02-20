@@ -81,7 +81,7 @@ e2e-chatbot-app-next/
 
 This automated script handles:
 - Prerequisites installation (jq, nvm, Node 20, Databricks CLI)
-- Configuration file setup (.env.local)
+- Configuration file setup (.env)
 - Databricks authentication
 - Serving endpoint configuration
 - App/bundle name customization
@@ -377,7 +377,7 @@ req.session = {
 
 When running locally (`npm run dev`), the application uses **Databricks CLI authentication**:
 
-- Set `DATABRICKS_CONFIG_PROFILE` in `.env.local`
+- Set `DATABRICKS_CONFIG_PROFILE` in `.env`
 - Run `databricks auth login --profile <name>` first
 
 ## Environment Variables
@@ -572,7 +572,7 @@ resources:
 - `playwright.config.ts` - Test configuration
 - `tsconfig.json` - Root TypeScript config
 - `.env.example` - Environment variable template
-- `.env.local` - Local environment (gitignored)
+- `.env` - Local environment (gitignored)
 
 ### Important Code Paths
 

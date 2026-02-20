@@ -10,7 +10,7 @@ const __dirname = dirname(__filename);
 // Load environment variables from project root
 // When running with tsx, __dirname is scripts
 const projectRoot = join(__dirname, '..');
-const envPath = join(projectRoot, '.env.local');
+const envPath = join(projectRoot, '.env');
 config({
   path: envPath,
 });

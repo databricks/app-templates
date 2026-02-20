@@ -11,7 +11,8 @@ dependencies = [
     "fastapi>=0.115.12",
     "uvicorn>=0.34.2",
     "databricks-openai>=0.9.0",
-    "mlflow>=3.8.0rc0",
+    "databricks-agents",
+    "mlflow>=3.9.0",
     "openai-agents>=0.4.1",
     "python-dotenv",
 ]
@@ -19,9 +20,6 @@ dependencies = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.uv]
-prerelease = "allow"
 
 [dependency-groups]
 dev = [

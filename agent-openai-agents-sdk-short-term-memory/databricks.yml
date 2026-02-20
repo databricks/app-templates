@@ -1,0 +1,43 @@
+bundle:
+  name: agent_openai_agents_sdk_short_term_memory
+
+resources:
+  # MLflow experiment for agent tracing - automatically created by bundle
+  experiments:
+    agent_openai_agents_sdk_short_term_memory_experiment:
+      name: /Users/${workspace.current_user.userName}/${bundle.name}-${bundle.target}
+
+  apps:
+    agent_openai_agents_sdk_short_term_memory:
+      name: "${bundle.target}-agent-openai-agents-sdk-short-term-memory"
+      description: "OpenAI Agents SDK agent application with short-term memory"
+      source_code_path: ./
+
+      # Resources which this app has access to
+      resources:
+        - name: 'experiment'
+          experiment:
+            experiment_id: "${resources.experiments.agent_openai_agents_sdk_short_term_memory_experiment.id}"
+            permission: 'CAN_MANAGE'
+        # Lakebase instance for persistent session storage
+        - name: 'database'
+          database:
+            instance_name: '<your-lakebase-instance-name>'
+            database_name: 'postgres'
+            permission: 'CAN_CONNECT_AND_CREATE'
+
+targets:
+  dev:
+    mode: development
+    default: true
+    # workspace:
+    #   host: https://...
+
+  prod:
+    mode: production
+    # workspace:
+    #   host: https://...
+    resources:
+      apps:
+        agent_openai_agents_sdk_short_term_memory:
+          name: agent-openai-agents-sdk-short-term-memory

@@ -20,12 +20,8 @@ import {
 import type { ComponentProps, ReactNode } from 'react';
 import { CodeBlock } from './code-block';
 
-// Shared types
-export type ToolState =
-  | ToolUIPart['state']
-  | 'awaiting-approval'
-  | 'approved'
-  | 'denied';
+// Shared types - uses AI SDK's native tool states
+export type ToolState = ToolUIPart['state'];
 
 // Shared status badge component
 type ToolStatusBadgeProps = {
@@ -39,9 +35,9 @@ export const ToolStatusBadge = ({ state, className }: ToolStatusBadgeProps) => {
     'input-available': 'Running',
     'output-available': 'Completed',
     'output-error': 'Error',
-    'awaiting-approval': 'Approval Required',
-    approved: 'Approved',
-    denied: 'Denied',
+    'output-denied': 'Denied',
+    'approval-requested': 'Approval Requested',
+    'approval-responded': 'Processing',
   };
 
   const icons: Record<ToolState, ReactNode> = {
@@ -49,9 +45,9 @@ export const ToolStatusBadge = ({ state, className }: ToolStatusBadgeProps) => {
     'input-available': <ClockIcon className="size-3 animate-pulse" />,
     'output-available': <CheckCircleIcon className="size-3" />,
     'output-error': <XCircleIcon className="size-3" />,
-    'awaiting-approval': <ShieldAlertIcon className="size-3" />,
-    approved: <ShieldCheckIcon className="size-3" />,
-    denied: <ShieldXIcon className="size-3" />,
+    'output-denied': <ShieldXIcon className="size-3" />,
+    'approval-requested': <ShieldAlertIcon className="size-3" />,
+    'approval-responded': <ShieldCheckIcon className="size-3" />,
   };
 
   const variants: Record<ToolState, string> = {
@@ -62,11 +58,11 @@ export const ToolStatusBadge = ({ state, className }: ToolStatusBadgeProps) => {
     'output-available':
       'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300',
     'output-error': 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
-    'awaiting-approval':
+    'output-denied': 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
+    'approval-requested':
       'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300',
-    approved:
+    'approval-responded':
       'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300',
-    denied: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
   };
 
   return (

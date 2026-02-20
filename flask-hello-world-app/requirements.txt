@@ -1,0 +1,4 @@
+databricks-sdk~=0.33.0
+pandas~=2.2.3
+flask~=3.0.3
+python-dotenv~=1.2.1

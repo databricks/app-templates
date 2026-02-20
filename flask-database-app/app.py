@@ -179,4 +179,8 @@ def delete_todo_route(todo_id):
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=int(os.getenv('PORT', 8080))) 
+    host = os.getenv('FLASK_RUN_HOST', '0.0.0.0')
+    port = int(os.getenv('FLASK_RUN_PORT', 8000))
+
+    app.run(debug=True, host=host, port=port)
+    print(f"Flask app running on http://{host}:{port}")

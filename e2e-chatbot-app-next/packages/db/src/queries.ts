@@ -23,7 +23,7 @@ import {
 } from './schema';
 import type { VisibilityType } from '@chat-template/utils';
 import { ChatSDKError } from '@chat-template/core/errors';
-import type { LanguageModelV2Usage } from '@ai-sdk/provider';
+import type { LanguageModelV3Usage } from '@ai-sdk/provider';
 import { isDatabaseAvailable } from './connection';
 import { getAuthMethod, getAuthMethodDescription } from '@chat-template/auth';
 
@@ -414,7 +414,7 @@ export async function updateChatLastContextById({
 }: {
   chatId: string;
   // Store raw LanguageModelUsage to keep it simple
-  context: LanguageModelV2Usage;
+  context: LanguageModelV3Usage;
 }) {
   if (!isDatabaseAvailable()) {
     console.log(

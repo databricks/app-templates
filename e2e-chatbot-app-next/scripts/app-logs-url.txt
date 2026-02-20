@@ -1,1 +1,0 @@
-https://vercel-chatbot-dev-6051921418418893.staging.aws.databricksapps.com/logz

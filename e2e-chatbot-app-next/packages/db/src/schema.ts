@@ -8,7 +8,7 @@ import {
   text,
   pgSchema,
 } from 'drizzle-orm/pg-core';
-import type { LanguageModelV2Usage } from '@ai-sdk/provider';
+import type { LanguageModelV3Usage } from '@ai-sdk/provider';
 import type { User as SharedUser } from '@chat-template/utils';
 
 const schemaName = 'ai_chatbot';
@@ -34,7 +34,7 @@ export const chat = createTable('Chat', {
   visibility: varchar('visibility', { enum: ['public', 'private'] })
     .notNull()
     .default('private'),
-  lastContext: jsonb('lastContext').$type<LanguageModelV2Usage | null>(),
+  lastContext: jsonb('lastContext').$type<LanguageModelV3Usage | null>(),
 });
 
 export type Chat = InferSelectModel<typeof chat>;

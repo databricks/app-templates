@@ -3,6 +3,27 @@ import { useState, useEffect } from 'react';
 import { Chat } from '@/components/chat';
 import { useSession } from '@/contexts/SessionContext';
 import { useChatData } from '@/hooks/useChatData';
+import type { LanguageModelUsage } from 'ai';
+import type { LanguageModelV3Usage } from '@ai-sdk/provider';
+
+// Convert V3 usage format (from db) to flat usage format (for ai package)
+function fromV3Usage(usage: LanguageModelV3Usage | null | undefined): LanguageModelUsage | undefined {
+  if (!usage) return undefined;
+  return {
+    inputTokens: usage.inputTokens?.total,
+    outputTokens: usage.outputTokens?.total,
+    totalTokens: (usage.inputTokens?.total ?? 0) + (usage.outputTokens?.total ?? 0),
+    inputTokenDetails: {
+      noCacheTokens: usage.inputTokens?.noCache,
+      cacheReadTokens: usage.inputTokens?.cacheRead,
+      cacheWriteTokens: usage.inputTokens?.cacheWrite,
+    },
+    outputTokenDetails: {
+      textTokens: usage.outputTokens?.text,
+      reasoningTokens: usage.outputTokens?.reasoning,
+    },
+  };
+}
 
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>();
@@ -60,7 +81,7 @@ export default function ChatPage() {
       initialVisibilityType={chat.visibility}
       isReadonly={isReadonly}
       session={session}
-      initialLastContext={chat.lastContext ?? undefined}
+      initialLastContext={fromV3Usage(chat.lastContext)}
       feedback={feedback}
     />
   );

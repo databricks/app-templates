@@ -1,13 +1,15 @@
 import asyncio
+import logging
 
 import mlflow
 from dotenv import load_dotenv
 from mlflow.genai.agent_server import get_invoke_function
-from mlflow.genai.scorers import RelevanceToQuery, Safety
+from mlflow.genai.scorers import Completeness, Correctness, Fluency, RelevanceToQuery, Safety, ToolCallCorrectness
 from mlflow.types.responses import ResponsesAgentRequest, ResponsesAgentResponse
 
 # Load environment variables from .env if it exists
 load_dotenv(dotenv_path=".env", override=True)
+logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
 
 # need to import agent for our @invoke-registered function to be found
 from agent_server import agent  # noqa: F401
@@ -24,8 +26,17 @@ eval_dataset = [
                 "input": [{"role": "user", "content": "Calculate the 15th Fibonacci number"}]
             }
         },
-        "expected_response": "The 15th Fibonacci number is 610.",
-    }
+        "expectations": {
+            "expected_response": "The 15th Fibonacci number is 610.",
+        },
+    },
+    {
+        "inputs": {
+            "request": {
+                "input": [{"role": "user", "content": "Compute the sum of all even numbers from 1 to 100"}]
+            }
+        },
+    },
 ]
 
 # Get the invoke function that was registered via @invoke decorator in your agent
@@ -46,11 +57,8 @@ else:
 
 
 def evaluate():
-    # Disable autologging before importing agent to avoid ContextVar conflicts
-    # when using asyncio.run() multiple times during evaluation
-    mlflow.langchain.autolog(disable=True)
     mlflow.genai.evaluate(
         data=eval_dataset,
         predict_fn=sync_invoke_fn,
-        scorers=[RelevanceToQuery(), Safety()],
+        scorers=[Completeness(), Correctness(), Fluency(), RelevanceToQuery(), Safety(), ToolCallCorrectness()],
     )

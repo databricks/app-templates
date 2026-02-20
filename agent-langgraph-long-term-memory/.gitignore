@@ -1,8 +1,6 @@
 # Created by https://www.toptal.com/developers/gitignore/api/python
 # Edit at https://www.toptal.com/developers/gitignore?templates=python
 
-databricks.yml
-
 ### Python ###
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -204,5 +202,19 @@ sketch
 **/mlruns/
 **/.vite/
 **/.databricks
-**/.claude
 **/.env
+**/.env.local
+
+# Claude Code - track skills only
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/quickstart/
+!.claude/skills/discover-tools/
+!.claude/skills/deploy/
+!.claude/skills/add-tools/
+!.claude/skills/run-locally/
+!.claude/skills/modify-agent/
+!.claude/skills/lakebase-setup/
+!.claude/skills/agent-memory/
+!.claude/skills/migrate-from-model-serving/

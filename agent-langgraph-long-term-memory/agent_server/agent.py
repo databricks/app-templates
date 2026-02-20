@@ -72,6 +72,7 @@ def init_mcp_client(workspace_client: WorkspaceClient) -> DatabricksMultiServerM
             DatabricksMCPServer(
                 name="system-ai",
                 url=f"{host_name}/api/2.0/mcp/functions/system/ai",
+                workspace_client=workspace_client,
             ),
         ]
     )
@@ -107,6 +108,8 @@ async def non_streaming(request: ResponsesAgentRequest) -> ResponsesAgentRespons
 async def streaming(
     request: ResponsesAgentRequest,
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
+    # Optionally use the user's workspace client for on-behalf-of authentication
+    # user_workspace_client = get_user_workspace_client()
     user_id = get_user_id(request)
 
     if not user_id:

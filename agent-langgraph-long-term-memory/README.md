@@ -1,6 +1,20 @@
-# Responses API Agent
+# Responses API Agent (Long-Term Memory)
 
-This template defines a conversational agent app. The app comes with a built-in chat UI, but also exposes an API endpoint for invoking the agent so that you can serve your UI elsewhere (e.g. on your website or in a mobile app).
+## Build with AI Assistance
+
+This template includes Claude Code skills in `.claude/skills/` for AI-assisted development. Use [Claude Code](https://docs.anthropic.com/en/docs/claude-code) to:
+
+- **Set up your environment**: "Run quickstart to configure authentication"
+- **Add tools**: "Connect my agent to a Genie space"
+- **Configure memory**: "Set up Lakebase for user memories"
+- **Deploy**: "Deploy my agent to Databricks Apps"
+- **Debug**: "Why am I getting a permission error?"
+
+The skills contain tested commands, code patterns, and troubleshooting steps.
+
+---
+
+This template defines a conversational agent app with long-term memory. The app comes with a built-in chat UI, but also exposes an API endpoint for invoking the agent so that you can serve your UI elsewhere (e.g. on your website or in a mobile app).
 
 The agent in this template implements the [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses) interface. It has access to a single tool; the [built-in code interpreter tool](https://docs.databricks.com/aws/en/generative-ai/agent-framework/code-interpreter-tools#built-in-python-executor-tool) (`system.ai.python_exec`) on Databricks. You can customize agent code and test it via the API or UI.
 

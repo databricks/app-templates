@@ -137,7 +137,7 @@ async def streaming(
             if user_id:
                 config["configurable"]["user_id"] = user_id
 
-            agent = await init_agent(store=store)
+            agent = await init_agent(workspace_client=sp_workspace_client, store=store)
             async for event in process_agent_astream_events(
                 agent.astream(messages, config, stream_mode=["updates", "messages"])
             ):

@@ -23,6 +23,7 @@ from mlflow.types.responses import (
 
 from agent_server.utils import (
     get_databricks_host_from_env,
+    get_session_id,
     get_user_workspace_client,
     process_agent_astream_events,
 )
@@ -45,6 +46,8 @@ LLM_ENDPOINT_NAME = "databricks-claude-sonnet-4-5"
 _LAKEBASE_INSTANCE_NAME_RAW = os.getenv("LAKEBASE_INSTANCE_NAME", "")
 EMBEDDING_ENDPOINT = "databricks-gte-large-en"
 EMBEDDING_DIMS = 1024
+
+############################################
 
 if not _LAKEBASE_INSTANCE_NAME_RAW:
     raise ValueError(
@@ -93,14 +96,13 @@ async def init_agent(store: BaseStore, workspace_client: Optional[WorkspaceClien
 
 @invoke()
 async def non_streaming(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
-    user_id = get_user_id(request)
-
     outputs = [
         event.item
         async for event in streaming(request)
         if event.type == "response.output_item.done"
     ]
 
+    user_id = get_user_id(request)
     custom_outputs = {"user_id": user_id} if user_id else None
     return ResponsesAgentResponse(output=outputs, custom_outputs=custom_outputs)
 
@@ -109,6 +111,9 @@ async def non_streaming(request: ResponsesAgentRequest) -> ResponsesAgentRespons
 async def streaming(
     request: ResponsesAgentRequest,
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
+    if session_id := get_session_id(request):
+        mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
+    
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
     user_id = get_user_id(request)

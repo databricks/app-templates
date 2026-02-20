@@ -3,20 +3,16 @@
  *
  * Provides:
  * - /invocations endpoint (MLflow-compatible Responses API)
- * - /api/chat endpoint (legacy streaming)
- * - UI routes (from workspace, if available)
- * - Static file serving for UI
  * - Health check endpoint
  * - MLflow trace export via OpenTelemetry
+ *
+ * Note: This server is UI-agnostic. The UI (e2e-chatbot-app-next) runs separately
+ * and proxies to /invocations via the API_PROXY environment variable.
  */
 
 import express, { Request, Response } from "express";
 import cors from "cors";
 import { config } from "dotenv";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { dirname } from "node:path";
-import { existsSync } from "node:fs";
 import {
   createAgent,
   type AgentConfig,
@@ -32,10 +28,6 @@ import type { AgentExecutor } from "langchain/agents";
 
 // Load environment variables
 config();
-
-// ESM-compatible __dirname
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 /**
  * Server configuration
@@ -97,85 +89,8 @@ export async function createServer(
 
   console.log("✅ Agent endpoints mounted");
 
-  // Reverse proxy for /api/* routes to UI backend
-  const uiBackendUrl = process.env.UI_BACKEND_URL;
-  if (uiBackendUrl) {
-    app.use("/api", async (req: Request, res: Response) => {
-      try {
-        // Add /api back to the URL since Express strips the mount path
-        const targetUrl = `${uiBackendUrl}/api${req.url}`;
-
-        // Build headers from request
-        const headers: Record<string, string> = {};
-        Object.entries(req.headers).forEach(([key, value]) => {
-          // Skip content-length as it will be recalculated by fetch
-          if (key.toLowerCase() === 'content-length') return;
-
-          if (typeof value === "string") {
-            headers[key] = value;
-          } else if (Array.isArray(value)) {
-            headers[key] = value.join(", ");
-          }
-        });
-        headers["host"] = new URL(uiBackendUrl).host;
-        headers["content-type"] = "application/json";
-
-        // Forward the request to UI backend
-        const bodyStr = req.method !== "GET" && req.method !== "HEAD" ? JSON.stringify(req.body) : undefined;
-        const response = await fetch(targetUrl, {
-          method: req.method,
-          headers,
-          body: bodyStr,
-        });
-
-        // Copy status and headers
-        res.status(response.status);
-        response.headers.forEach((value, key) => {
-          res.setHeader(key, value);
-        });
-
-        // Stream the response body
-        if (response.body) {
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            res.write(decoder.decode(value, { stream: true }));
-          }
-        }
-
-        res.end();
-      } catch (error) {
-        console.error("Proxy error:", error);
-        res.status(502).json({ error: "Bad Gateway - UI backend unavailable" });
-      }
-    });
-  }
-
-  // Check if UI build exists and mount it
-  const uiClientPath = path.join(__dirname, "../../ui/client/dist");
-
-  if (existsSync(uiClientPath)) {
-    console.log("📦 UI client found, serving static files...");
-
-    // Serve static UI files
-    app.use(express.static(uiClientPath));
-
-    // SPA fallback - serve index.html for all non-API routes
-    // This must come AFTER API routes are mounted
-    app.get(/^\/(?!api|invocations|health).*/, (_req: Request, res: Response) => {
-      res.sendFile(path.join(uiClientPath, "index.html"));
-    });
-
-    console.log("✅ UI static files served");
-  } else {
-    console.log("ℹ️  UI build not found, running agent-only mode");
-  }
-
   /**
-   * Root endpoint (if no UI)
+   * Root endpoint - Service info
    */
   app.get("/", (_req: Request, res: Response) => {
     res.json({

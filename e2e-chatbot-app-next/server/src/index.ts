@@ -62,9 +62,12 @@ if (agentBackendUrl) {
   console.log(`✅ Proxying /invocations to ${agentBackendUrl}`);
   app.all('/invocations', async (req: Request, res: Response) => {
     try {
+      const forwardHeaders = { ...req.headers } as Record<string, string>;
+      delete forwardHeaders['content-length'];
+
       const response = await fetch(agentBackendUrl, {
         method: req.method,
-        headers: req.headers as HeadersInit,
+        headers: forwardHeaders,
         body:
           req.method !== 'GET' && req.method !== 'HEAD'
             ? JSON.stringify(req.body)

@@ -103,7 +103,7 @@ export async function createServer(
         const targetUrl = `${uiBackendUrl}${req.originalUrl}`;
         const response = await fetch(targetUrl, {
           method: req.method,
-          headers: req.headers as HeadersInit,
+          headers: req.headers as Record<string, string>,
           body: req.method !== "GET" && req.method !== "HEAD" ? JSON.stringify(req.body) : undefined,
         });
 

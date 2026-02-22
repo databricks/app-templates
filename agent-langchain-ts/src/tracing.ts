@@ -303,7 +303,9 @@ export class MLflowTracing {
     console.log("🔍 OTel Export Configuration:");
     console.log("  URL:", traceUrl);
     console.log("  Headers:", Object.keys(headers).join(", "));
-    console.log("  Auth:", headers["Authorization"] ? "Present (Bearer token)" : "Missing");
+    // Check for both lowercase and capitalized Authorization header
+    const hasAuth = headers["Authorization"] || headers["authorization"];
+    console.log("  Auth:", hasAuth ? "Present (Bearer token)" : "Missing");
     console.log("  Content-Type:", headers["content-type"]);
     console.log("  UC Table:", headers["X-Databricks-UC-Table-Name"] || "Not set");
     console.log("  Experiment ID:", headers["x-mlflow-experiment-id"] || "Not set");

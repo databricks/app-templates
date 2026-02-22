@@ -36,11 +36,14 @@ echo -e "${YELLOW}UI not found. Cloning app-templates...${NC}"
 # Clone the repo with the feature branch
 TEMP_DIR=$(mktemp -d)
 UI_BRANCH="${UI_BRANCH:-feature/plugin-system}"  # Allow override via env var
+UI_REPO="${UI_REPO:-https://github.com/smurching/app-templates.git}"  # Use fork for feature branch
+
 echo -e "${YELLOW}Using branch: $UI_BRANCH${NC}"
+echo -e "${YELLOW}Using repo: $UI_REPO${NC}"
 
 git clone --depth 1 --filter=blob:none --sparse \
     --branch "$UI_BRANCH" \
-    https://github.com/databricks/app-templates.git "$TEMP_DIR"
+    "$UI_REPO" "$TEMP_DIR"
 
 cd "$TEMP_DIR"
 git sparse-checkout set e2e-chatbot-app-next

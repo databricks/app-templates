@@ -13,6 +13,9 @@
 import express, { Request, Response } from "express";
 import cors from "cors";
 import { config } from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+import { existsSync } from "fs";
 import {
   createAgent,
   type AgentConfig,
@@ -89,19 +92,84 @@ export async function createServer(
 
   console.log("✅ Agent endpoints mounted");
 
-  /**
-   * Root endpoint - Service info
-   */
-  app.get("/", (_req: Request, res: Response) => {
-    res.json({
-      service: "LangChain Agent TypeScript",
-      version: "1.0.0",
-      endpoints: {
-        health: "GET /health",
-        invocations: "POST /invocations (Responses API)",
-      },
+  // Production UI serving (optional - only if UI is deployed)
+  const uiBackendUrl = process.env.UI_BACKEND_URL;
+  if (uiBackendUrl) {
+    console.log(`🔗 Proxying /api/* to UI backend: ${uiBackendUrl}`);
+
+    // Proxy /api/* routes to UI backend server
+    app.use("/api/*", async (req, res) => {
+      try {
+        const targetUrl = `${uiBackendUrl}${req.originalUrl}`;
+        const response = await fetch(targetUrl, {
+          method: req.method,
+          headers: req.headers as HeadersInit,
+          body: req.method !== "GET" && req.method !== "HEAD" ? JSON.stringify(req.body) : undefined,
+        });
+
+        // Copy response headers
+        response.headers.forEach((value, key) => {
+          res.setHeader(key, value);
+        });
+
+        res.status(response.status);
+
+        // Stream response body
+        if (response.body) {
+          const reader = response.body.getReader();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            res.write(value);
+          }
+        }
+        res.end();
+      } catch (error) {
+        console.error("Error proxying to UI backend:", error);
+        res.status(502).json({ error: "Bad Gateway" });
+      }
     });
-  });
+
+    // Serve UI static files from ui/client/dist
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const uiDistPath = path.join(__dirname, "..", "ui", "client", "dist");
+
+    if (existsSync(uiDistPath)) {
+      console.log(`📂 Serving UI static files from: ${uiDistPath}`);
+      app.use(express.static(uiDistPath));
+
+      // SPA fallback - serve index.html for all non-API routes
+      app.get("*", (_req: Request, res: Response) => {
+        res.sendFile(path.join(uiDistPath, "index.html"));
+      });
+    } else {
+      console.warn(`⚠️  UI dist path not found: ${uiDistPath}`);
+      // Fallback: service info
+      app.get("/", (_req: Request, res: Response) => {
+        res.json({
+          service: "LangChain Agent TypeScript",
+          version: "1.0.0",
+          endpoints: {
+            health: "GET /health",
+            invocations: "POST /invocations (Responses API)",
+          },
+        });
+      });
+    }
+  } else {
+    // Agent-only mode: service info at root
+    app.get("/", (_req: Request, res: Response) => {
+      res.json({
+        service: "LangChain Agent TypeScript",
+        version: "1.0.0",
+        endpoints: {
+          health: "GET /health",
+          invocations: "POST /invocations (Responses API)",
+        },
+      });
+    });
+  }
 
   return app;
 }

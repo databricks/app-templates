@@ -20,6 +20,7 @@
   "include": ["src/**/*", "scripts/**/*", "tests/**/*"],
   "exclude": [
     "node_modules",
-    "dist"
+    "dist",
+    "tests/e2e/**/*"
   ]
 }

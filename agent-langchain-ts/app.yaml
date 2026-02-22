@@ -30,9 +30,10 @@ env:
   - name: NODE_ENV
     value: "production"
 
-  # UI Backend URL (for reverse proxy - not needed in unified mode)
-  - name: UI_BACKEND_URL
-    value: "http://localhost:3000"
+  # UI Backend Configuration
+  # API_PROXY tells the UI backend to call the agent's /invocations endpoint
+  - name: API_PROXY
+    value: "http://localhost:8000/invocations"
 
   # MCP configuration (optional - uncomment to enable)
   # - name: ENABLE_SQL_MCP

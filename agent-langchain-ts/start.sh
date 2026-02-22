@@ -16,8 +16,7 @@ if [ ! -f "dist/src/main.js" ]; then
   exit 1
 fi
 
-# Start unified server on port 8000
-# Mode is determined by SERVER_MODE env var (default: in-process)
+# Start unified server on port 8000 in in-process mode (both agent and UI)
 PORT=8000 node dist/src/main.js
 
 echo "✅ Server stopped gracefully"

@@ -13,15 +13,10 @@ import { PluginManager, type PluginContext } from './plugins/index.js';
 import { AgentPlugin, type AgentPluginConfig } from './plugins/agent/index.js';
 import { UIPlugin, type UIPluginConfig } from './plugins/ui/index.js';
 import { getMCPServers } from './mcp-servers.js';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { getDefaultUIStaticPath, getDefaultUIRoutesPath, isMainModule } from './utils/paths.js';
 
 // Load environment variables
 loadEnv();
-
-// ESM-compatible __dirname
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 /**
  * Server configuration options
@@ -76,6 +71,11 @@ export async function createUnifiedServer(
   // Create Express app
   const app = express();
 
+  // Add body parsing middleware BEFORE plugin routes
+  // This ensures all routes (including AgentPlugin) can parse JSON bodies
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true }));
+
   // Create plugin context
   const context: PluginContext = {
     environment,
@@ -87,6 +87,8 @@ export async function createUnifiedServer(
   const pluginManager = new PluginManager(app, context);
 
   // Register AgentPlugin if enabled
+  // IMPORTANT: AgentPlugin must be registered BEFORE UIPlugin
+  // to ensure /invocations and /health routes take precedence
   if (agentEnabled) {
     const agentPluginConfig: AgentPluginConfig = {
       agentConfig: {
@@ -106,12 +108,15 @@ export async function createUnifiedServer(
   }
 
   // Register UIPlugin if enabled
+  // IMPORTANT: UIPlugin must be registered AFTER AgentPlugin
+  // to ensure agent routes take precedence over UI routes
   if (uiEnabled) {
     const isDevelopment = environment === 'development';
 
     const uiPluginConfig: UIPluginConfig = {
       isDevelopment,
-      staticFilesPath: path.join(__dirname, '..', 'ui', 'client', 'dist'),
+      staticFilesPath: getDefaultUIStaticPath(),
+      uiRoutesPath: getDefaultUIRoutesPath(),
       agentInvocationsUrl: uiConfig.agentInvocationsUrl,
       ...uiConfig,
     };
@@ -204,25 +209,27 @@ export const DeploymentModes = {
 };
 
 // Start server if running directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule()) {
   // Determine mode from environment or default to in-process
   const mode = process.env.SERVER_MODE || 'in-process';
+  const port = parseInt(process.env.PORT || '8000', 10);
 
   let options: UnifiedServerOptions;
 
   switch (mode) {
     case 'agent-only':
-      options = DeploymentModes.agentOnly();
+      options = DeploymentModes.agentOnly(port);
       break;
     case 'ui-only':
       options = DeploymentModes.uiOnly(
-        undefined,
+        port,
         process.env.AGENT_INVOCATIONS_URL
       );
       break;
     case 'in-process':
     default:
       options = DeploymentModes.inProcess();
+      options.port = port;
       break;
   }
 

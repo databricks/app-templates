@@ -27,6 +27,8 @@ env:
   # Server configuration
   - name: PORT
     value: "8000"
+  # Note: NODE_ENV not set - defaults to development
+  # Static files need to be handled separately from agent deployment
 
   # UI Backend URL (for reverse proxy)
   - name: UI_BACKEND_URL

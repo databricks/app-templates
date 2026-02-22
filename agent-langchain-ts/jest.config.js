@@ -10,7 +10,23 @@ export default {
       'ts-jest',
       {
         useESM: true,
-        tsconfig: './tsconfig.json',
+        tsconfig: {
+          target: 'ES2022',
+          module: 'esnext',
+          lib: ['ES2022'],
+          moduleResolution: 'nodenext',
+          resolveJsonModule: true,
+          allowJs: true,
+          strict: false,
+          esModuleInterop: true,
+          skipLibCheck: true,
+          forceConsistentCasingInFileNames: true,
+          types: ['node', 'jest'],
+          isolatedModules: true,
+        },
+        diagnostics: {
+          ignoreCodes: [1343, 151002], // Ignore import.meta errors in tests
+        },
       },
     ],
   },

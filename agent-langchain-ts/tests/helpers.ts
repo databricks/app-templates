@@ -8,11 +8,37 @@
 // ============================================================================
 
 export const TEST_CONFIG = {
+  // Unified mode (single server with both agent and UI)
+  UNIFIED_URL: process.env.UNIFIED_URL || "http://localhost:8000",
+  UNIFIED_MODE: process.env.UNIFIED_MODE === "true",
+
+  // Separate server mode (legacy)
   AGENT_URL: process.env.AGENT_URL || "http://localhost:5001",
   UI_URL: process.env.UI_URL || "http://localhost:3001",
+
   DEFAULT_MODEL: process.env.DATABRICKS_MODEL || "databricks-claude-sonnet-4-5",
   DEFAULT_TIMEOUT: 30000,
 } as const;
+
+/**
+ * Get agent URL based on deployment mode
+ * In unified mode, both agent and UI are on same server
+ */
+export function getAgentUrl(): string {
+  return TEST_CONFIG.UNIFIED_MODE
+    ? TEST_CONFIG.UNIFIED_URL
+    : TEST_CONFIG.AGENT_URL;
+}
+
+/**
+ * Get UI URL based on deployment mode
+ * In unified mode, both agent and UI are on same server
+ */
+export function getUIUrl(): string {
+  return TEST_CONFIG.UNIFIED_MODE
+    ? TEST_CONFIG.UNIFIED_URL
+    : TEST_CONFIG.UI_URL;
+}
 
 // ============================================================================
 // Request Helpers
@@ -32,9 +58,10 @@ export interface InvocationsRequest {
  */
 export async function callInvocations(
   body: InvocationsRequest,
-  baseUrl = TEST_CONFIG.AGENT_URL
+  baseUrl?: string
 ): Promise<Response> {
-  const response = await fetch(`${baseUrl}/invocations`, {
+  const url = baseUrl || getAgentUrl();
+  const response = await fetch(`${url}/invocations`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -72,10 +99,11 @@ export async function callApiChat(
   const {
     previousMessages = [],
     chatModel = "test-model",
-    baseUrl = TEST_CONFIG.UI_URL,
+    baseUrl,
   } = options;
 
-  const response = await fetch(`${baseUrl}/api/chat`, {
+  const url = baseUrl || getUIUrl();
+  const response = await fetch(`${url}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -342,14 +370,15 @@ export async function getDeployedAuthToken(): Promise<string> {
  * Automatically detects if URL is deployed app and gets token
  */
 export function getDeployedAuthHeaders(
-  agentUrl: string = TEST_CONFIG.AGENT_URL
+  agentUrl?: string
 ): Record<string, string> {
+  const url = agentUrl || getAgentUrl();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
 
   // Only add auth for deployed apps
-  if (agentUrl.includes("databricksapps.com")) {
+  if (url.includes("databricksapps.com")) {
     let token = process.env.DATABRICKS_TOKEN;
 
     // Try to get token from CLI if not in env

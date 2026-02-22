@@ -206,6 +206,8 @@ async function startServer() {
   });
 }
 
-startServer();
+// DO NOT auto-start server - it will be started by the unified server or explicitly
+// If you need to run the UI server standalone, uncomment the line below:
+// startServer();
 
 export default app;

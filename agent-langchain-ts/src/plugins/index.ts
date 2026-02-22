@@ -5,5 +5,5 @@
  * Allows the server to be composed of independent, reusable plugins.
  */
 
-export { Plugin, PluginContext, PluginConfig, PluginMetadata } from './Plugin';
-export { PluginManager } from './PluginManager';
+export { Plugin, PluginContext, PluginConfig, PluginMetadata } from './Plugin.js';
+export { PluginManager } from './PluginManager.js';

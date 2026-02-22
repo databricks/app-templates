@@ -1,5 +1,5 @@
 import { Application } from 'express';
-import { Plugin, PluginContext, PluginMetadata } from './Plugin';
+import { Plugin, PluginContext, PluginMetadata } from './Plugin.js';
 
 /**
  * Manages the lifecycle of plugins in the application.

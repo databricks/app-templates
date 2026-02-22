@@ -9,7 +9,7 @@
  */
 
 import { Application, Request, Response } from 'express';
-import { Plugin, PluginConfig } from '../Plugin';
+import { Plugin, PluginConfig } from '../Plugin.js';
 import { createAgent, type AgentConfig } from '../../agent.js';
 import {
   initializeMLflowTracing,

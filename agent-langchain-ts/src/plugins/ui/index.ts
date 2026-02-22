@@ -1,1 +1,1 @@
-export { UIPlugin, type UIPluginConfig } from './UIPlugin';
+export { UIPlugin, type UIPluginConfig } from './UIPlugin.js';

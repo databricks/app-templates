@@ -13,7 +13,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
-import { Plugin, PluginConfig } from '../Plugin';
+import { Plugin, PluginConfig } from '../Plugin.js';
 
 export interface UIPluginConfig extends PluginConfig {
   /** Path to static files (client/dist) */

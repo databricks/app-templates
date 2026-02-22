@@ -1,1 +1,1 @@
-export { AgentPlugin, type AgentPluginConfig } from './AgentPlugin';
+export { AgentPlugin, type AgentPluginConfig } from './AgentPlugin.js';

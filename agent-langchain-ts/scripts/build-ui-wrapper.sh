@@ -7,4 +7,6 @@ if [ -d "ui/client/dist" ] && [ -d "ui/server/dist" ]; then
 fi
 
 echo "Building UI from source..."
-cd ui && npm install && npm run build
+# Install with --include=dev to ensure build tools (like vite) are installed
+# even when NODE_ENV=production
+cd ui && npm install --include=dev && npm run build

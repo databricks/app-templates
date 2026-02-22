@@ -27,10 +27,10 @@ env:
   # Server configuration
   - name: PORT
     value: "8000"
-  # Note: NODE_ENV not set - defaults to development
-  # Static files need to be handled separately from agent deployment
+  - name: NODE_ENV
+    value: "production"
 
-  # UI Backend URL (for reverse proxy)
+  # UI Backend URL (for reverse proxy - not needed in unified mode)
   - name: UI_BACKEND_URL
     value: "http://localhost:3000"
 

@@ -33,9 +33,13 @@ fi
 # UI not found - clone it
 echo -e "${YELLOW}UI not found. Cloning app-templates...${NC}"
 
-# Clone the repo
+# Clone the repo with the feature branch
 TEMP_DIR=$(mktemp -d)
+UI_BRANCH="${UI_BRANCH:-feature/plugin-system}"  # Allow override via env var
+echo -e "${YELLOW}Using branch: $UI_BRANCH${NC}"
+
 git clone --depth 1 --filter=blob:none --sparse \
+    --branch "$UI_BRANCH" \
     https://github.com/databricks/app-templates.git "$TEMP_DIR"
 
 cd "$TEMP_DIR"

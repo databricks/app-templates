@@ -106,7 +106,8 @@ if (!isDevelopment) {
   app.use(express.static(clientBuildPath));
 
   // SPA fallback - serve index.html for all non-API routes
-  app.get(/^\/(?!api).*/, (_req, res) => {
+  // Exclude: /api, /health, /invocations (agent endpoints)
+  app.get(/^\/(?!api|health|invocations).*/, (_req, res) => {
     res.sendFile(path.join(clientBuildPath, 'index.html'));
   });
 }

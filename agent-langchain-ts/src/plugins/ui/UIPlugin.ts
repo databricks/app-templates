@@ -60,58 +60,62 @@ export class UIPlugin implements Plugin {
   injectRoutes(app: Application): void {
     console.log('[UIPlugin] Injecting routes...');
 
-    // Optional: Proxy to external agent (for UI-only mode)
-    if (this.config.agentInvocationsUrl) {
-      console.log(`[UIPlugin] Proxying /invocations to ${this.config.agentInvocationsUrl}`);
+    // IMPORTANT: Mount UI app AFTER agent routes have been registered
+    // The UI app's catch-all route should not intercept agent endpoints
 
-      app.all('/invocations', async (req: Request, res: Response) => {
-        try {
-          const forwardHeaders = { ...req.headers } as Record<string, string>;
-          delete forwardHeaders['content-length'];
-
-          const response = await fetch(this.config.agentInvocationsUrl!, {
-            method: req.method,
-            headers: forwardHeaders,
-            body:
-              req.method !== 'GET' && req.method !== 'HEAD'
-                ? JSON.stringify(req.body)
-                : undefined,
-          });
-
-          // Copy status and headers
-          res.status(response.status);
-          response.headers.forEach((value, key) => {
-            res.setHeader(key, value);
-          });
-
-          // Stream the response body
-          if (response.body) {
-            const reader = response.body.getReader();
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              res.write(value);
-            }
-          }
-          res.end();
-        } catch (error) {
-          console.error('[UIPlugin] /invocations proxy error:', error);
-          res.status(502).json({
-            error: 'Proxy error',
-            message: error instanceof Error ? error.message : String(error),
-          });
-        }
-      });
-
-      console.log('[UIPlugin] ✓ Agent proxy configured');
-    }
-
-    // Mount UI app as sub-application
     if (this.uiApp) {
+      // Mount the UI app
+      // Note: This is done at the end to ensure agent routes take precedence
       app.use(this.uiApp);
       console.log('[UIPlugin] ✓ UI app mounted');
     } else {
       console.log('[UIPlugin] ⚠️  UI app not available');
+
+      // Fallback: Proxy to external agent if UI is not available
+      if (this.config.agentInvocationsUrl) {
+        console.log(`[UIPlugin] Proxying /invocations to ${this.config.agentInvocationsUrl}`);
+
+        app.all('/invocations', async (req: Request, res: Response) => {
+          try {
+            const forwardHeaders = { ...req.headers } as Record<string, string>;
+            delete forwardHeaders['content-length'];
+
+            const response = await fetch(this.config.agentInvocationsUrl!, {
+              method: req.method,
+              headers: forwardHeaders,
+              body:
+                req.method !== 'GET' && req.method !== 'HEAD'
+                  ? JSON.stringify(req.body)
+                  : undefined,
+            });
+
+            // Copy status and headers
+            res.status(response.status);
+            response.headers.forEach((value, key) => {
+              res.setHeader(key, value);
+            });
+
+            // Stream the response body
+            if (response.body) {
+              const reader = response.body.getReader();
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                res.write(value);
+              }
+            }
+            res.end();
+          } catch (error) {
+            console.error('[UIPlugin] /invocations proxy error:', error);
+            res.status(502).json({
+              error: 'Proxy error',
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+        });
+
+        console.log('[UIPlugin] ✓ Agent proxy configured');
+      }
     }
 
     console.log('[UIPlugin] ✓ Routes injected');

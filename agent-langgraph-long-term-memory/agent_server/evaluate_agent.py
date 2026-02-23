@@ -4,7 +4,18 @@ import logging
 import mlflow
 from dotenv import load_dotenv
 from mlflow.genai.agent_server import get_invoke_function
-from mlflow.genai.scorers import Completeness, Correctness, Fluency, RelevanceToQuery, Safety, ToolCallCorrectness
+from mlflow.genai.scorers import (
+    Completeness,
+    ConversationCompleteness,
+    ConversationalSafety,
+    KnowledgeRetention,
+    UserFrustration,
+    Fluency,
+    RelevanceToQuery,
+    Safety,
+    ToolCallCorrectness,
+)
+from mlflow.genai.simulators import ConversationSimulator
 from mlflow.types.responses import ResponsesAgentRequest, ResponsesAgentResponse
 
 # Load environment variables from .env if it exists
@@ -19,25 +30,29 @@ from agent_server import agent  # noqa: F401
 # Scorers: https://docs.databricks.com/aws/en/mlflow3/genai/eval-monitor/concepts/scorers
 # Predefined LLM scorers: https://mlflow.org/docs/latest/genai/eval-monitor/scorers/llm-judge/predefined
 # Defining custom scorers: https://docs.databricks.com/aws/en/mlflow3/genai/eval-monitor/custom-scorers
-eval_dataset = [
+test_cases = [
     {
-        "inputs": {
-            "request": {
-                "input": [{"role": "user", "content": "Calculate the 15th Fibonacci number"}]
-            }
-        },
-        "expectations": {
-            "expected_response": "The 15th Fibonacci number is 610.",
-        },
+        "goal": "Learn about the main dishes of Vietnamese cuisine",
+        "persona": "An impatient foodie who knows doesn't know much about Vietnamese cuisine.",
+        "simulation_guidelines": [
+            "Initially explore the main influences of Vietnamese cuisine before the main dishes.",
+        ],
     },
     {
-        "inputs": {
-            "request": {
-                "input": [{"role": "user", "content": "Compute the sum of all even numbers from 1 to 100"}]
-            }
-        },
+        "goal": "Figure out which prime numbers between 1 and 50 are also Fibonacci numbers",
+        "persona": "You are a math novice who has heard of prime numbers but doesn't know what Fibonacci numbers are.",
+        "simulation_guidelines": [
+            "Initially ask questions to understand the Fibonacci sequence before exploring which ones are prime.",
+            "Prefer short messsages",
+        ],
     },
 ]
+
+simulator = ConversationSimulator(
+    test_cases=test_cases,
+    max_turns=5,
+    user_model="databricks:/databricks-claude-sonnet-4-5",
+)
 
 # Get the invoke function that was registered via @invoke decorator in your agent
 invoke_fn = get_invoke_function()
@@ -49,16 +64,31 @@ assert invoke_fn is not None, (
 # if invoke function is async, then we need to wrap it in a sync function
 if asyncio.iscoroutinefunction(invoke_fn):
 
-    def sync_invoke_fn(request: dict) -> ResponsesAgentResponse:
-        req = ResponsesAgentRequest(**request)
-        return asyncio.run(invoke_fn(req))
+    def predict_fn(input: list[dict], **kwargs) -> dict:
+        req = ResponsesAgentRequest(input=input)
+        response = asyncio.run(invoke_fn(req))
+        return response.model_dump()
 else:
-    sync_invoke_fn = invoke_fn
+
+    def predict_fn(input: list[dict], **kwargs) -> dict:
+        req = ResponsesAgentRequest(input=input)
+        response = invoke_fn(req)
+        return response.model_dump()
 
 
 def evaluate():
     mlflow.genai.evaluate(
-        data=eval_dataset,
-        predict_fn=sync_invoke_fn,
-        scorers=[Completeness(), Correctness(), Fluency(), RelevanceToQuery(), Safety(), ToolCallCorrectness()],
+        data=simulator,
+        predict_fn=predict_fn,
+        scorers=[
+            Completeness(),
+            ConversationCompleteness(),
+            ConversationalSafety(),
+            KnowledgeRetention(),
+            UserFrustration(),
+            Fluency(),
+            RelevanceToQuery(),
+            Safety(),
+            ToolCallCorrectness(),
+        ],
     )

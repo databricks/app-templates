@@ -4,10 +4,18 @@ set -e
 echo "🚀 Starting TypeScript Agent..."
 echo "Current directory: $(pwd)"
 
-# Check if dist exists
+# Build agent if dist is missing (first deploy — dist is gitignored)
 if [ ! -d "dist" ]; then
-  echo "ERROR: Agent dist directory not found!"
-  exit 1
+  echo "📦 Building agent (dist not found)..."
+  npm install
+  npm run build:agent
+fi
+
+# Set up and build UI if missing
+if [ ! -d "ui/server/dist" ]; then
+  echo "📦 Setting up and building UI..."
+  bash scripts/setup-ui.sh
+  npm run build:ui
 fi
 
 # Check if UI server build exists

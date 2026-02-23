@@ -133,14 +133,14 @@ export async function createServer(
     // Serve UI static files from ui/client/dist
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
-    const uiDistPath = path.join(__dirname, "..", "ui", "client", "dist");
+    const uiDistPath = path.join(__dirname, "..", "..", "..", "ui", "client", "dist");
 
     if (existsSync(uiDistPath)) {
       console.log(`📂 Serving UI static files from: ${uiDistPath}`);
       app.use(express.static(uiDistPath));
 
       // SPA fallback - serve index.html for all non-API routes
-      app.get("*", (_req: Request, res: Response) => {
+      app.get("*path", (_req: Request, res: Response) => {
         res.sendFile(path.join(uiDistPath, "index.html"));
       });
     } else {

@@ -52,6 +52,10 @@ export class UIPlugin implements Plugin {
       console.log('[UIPlugin] ✓ UI app loaded');
     } catch (error) {
       console.warn(`[UIPlugin] ⚠️  Could not load UI app from ${appPath}`);
+      console.warn('[UIPlugin] Error:', error instanceof Error ? error.message : String(error));
+      if (error instanceof Error && error.stack) {
+        console.warn('[UIPlugin] Stack:', error.stack.slice(0, 600));
+      }
       console.warn('[UIPlugin] UI will run in proxy-only mode');
       this.uiApp = null;
     }

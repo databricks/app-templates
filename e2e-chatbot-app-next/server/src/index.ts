@@ -211,8 +211,9 @@ async function startServer() {
 
 // Only auto-start when this file is the direct entry point
 // When imported as a module (e.g., by UIPlugin), this will be skipped
+// Note: process.argv[1] is a file path (not a URL), so compare directly to fileURLToPath result
 const currentFilePath = fileURLToPath(import.meta.url);
-const isMainModule = process.argv[1] && fileURLToPath(process.argv[1]) === currentFilePath;
+const isMainModule = process.argv[1] === currentFilePath;
 
 if (process.env.UI_AUTO_START !== 'false' && isMainModule) {
   startServer();

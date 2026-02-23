@@ -2,10 +2,10 @@ import logging
 import os
 import streamlit as st
 from model_serving_utils import (
-    endpoint_supports_feedback, 
     query_endpoint, 
     query_endpoint_stream, 
     _get_endpoint_task_type,
+    _extract_trace_id,
 )
 from collections import OrderedDict
 from messages import UserMessage, AssistantResponse, render_message
@@ -21,7 +21,6 @@ assert SERVING_ENDPOINT, \
      "'serving_endpoint' with CAN_QUERY permissions, as described in "
      "https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app#deploy-the-databricks-app")
 
-ENDPOINT_SUPPORTS_FEEDBACK = endpoint_supports_feedback(SERVING_ENDPOINT)
 
 def reduce_chat_agent_chunks(chunks):
     """
@@ -120,12 +119,13 @@ def query_chat_completions_endpoint_and_render(input_messages):
         
         accumulated_content = ""
         request_id = None
+        trace_id = None
         
         try:
             for chunk in query_endpoint_stream(
                 endpoint_name=SERVING_ENDPOINT,
                 messages=input_messages,
-                return_traces=ENDPOINT_SUPPORTS_FEEDBACK
+                return_traces=True
             ):
                 if "choices" in chunk and chunk["choices"]:
                     delta = chunk["choices"][0].get("delta", {})
@@ -138,23 +138,27 @@ def query_chat_completions_endpoint_and_render(input_messages):
                     req_id = chunk["databricks_output"].get("databricks_request_id")
                     if req_id:
                         request_id = req_id
+                    chunk_trace_id = _extract_trace_id(chunk)
+                    if chunk_trace_id:
+                        trace_id = chunk_trace_id
             
             return AssistantResponse(
                 messages=[{"role": "assistant", "content": accumulated_content}],
-                request_id=request_id
+                request_id=request_id,
+                trace_id=trace_id
             )
         except Exception:
             response_area.markdown("_Ran into an error. Retrying without streaming..._")
-            messages, request_id = query_endpoint(
+            messages, request_id, trace_id = query_endpoint(
                 endpoint_name=SERVING_ENDPOINT,
                 messages=input_messages,
-                return_traces=ENDPOINT_SUPPORTS_FEEDBACK
+                return_traces=True
             )
             response_area.empty()
             with response_area.container():
                 for message in messages:
                     render_message(message)
-            return AssistantResponse(messages=messages, request_id=request_id)
+            return AssistantResponse(messages=messages, request_id=request_id, trace_id=trace_id)
 
 
 def query_chat_agent_endpoint_and_render(input_messages):
@@ -167,21 +171,32 @@ def query_chat_agent_endpoint_and_render(input_messages):
         
         message_buffers = OrderedDict()
         request_id = None
+        trace_id = None
         
         try:
             for raw_chunk in query_endpoint_stream(
                 endpoint_name=SERVING_ENDPOINT,
                 messages=input_messages,
-                return_traces=ENDPOINT_SUPPORTS_FEEDBACK
+                return_traces=True
             ):
+                # Extract trace metadata from databricks_output before parsing as ChatAgentChunk
+                if "databricks_output" in raw_chunk:
+                    req_id = raw_chunk["databricks_output"].get("databricks_request_id")
+                    if req_id:
+                        request_id = req_id
+                    chunk_trace_id = _extract_trace_id(raw_chunk)
+                    if chunk_trace_id:
+                        trace_id = chunk_trace_id
+
+                # Skip chunks that only carry databricks_output (no agent message data)
+                if "delta" not in raw_chunk and "choices" not in raw_chunk and "type" not in raw_chunk:
+                    continue
+
                 response_area.empty()
                 chunk = ChatAgentChunk.model_validate(raw_chunk)
                 delta = chunk.delta
                 message_id = delta.id
 
-                req_id = raw_chunk.get("databricks_output", {}).get("databricks_request_id")
-                if req_id:
-                    request_id = req_id
                 if message_id not in message_buffers:
                     message_buffers[message_id] = {
                         "chunks": [],
@@ -201,20 +216,21 @@ def query_chat_agent_endpoint_and_render(input_messages):
             
             return AssistantResponse(
                 messages=[message.model_dump_compat(exclude_none=True) for message in messages],
-                request_id=request_id
+                request_id=request_id,
+                trace_id=trace_id
             )
         except Exception:
             response_area.markdown("_Ran into an error. Retrying without streaming..._")
-            messages, request_id = query_endpoint(
+            messages, request_id, trace_id = query_endpoint(
                 endpoint_name=SERVING_ENDPOINT,
                 messages=input_messages,
-                return_traces=ENDPOINT_SUPPORTS_FEEDBACK
+                return_traces=True
             )
             response_area.empty()
             with response_area.container():
                 for message in messages:
                     render_message(message)
-            return AssistantResponse(messages=messages, request_id=request_id)
+            return AssistantResponse(messages=messages, request_id=request_id, trace_id=trace_id)
 
 
 def query_responses_endpoint_and_render(input_messages):
@@ -225,31 +241,31 @@ def query_responses_endpoint_and_render(input_messages):
         response_area = st.empty()
         response_area.markdown("_Thinking..._")
         
-        # Track all the messages that need to be rendered in order
         all_messages = []
         request_id = None
+        trace_id = None
 
         try:
             for raw_event in query_endpoint_stream(
                 endpoint_name=SERVING_ENDPOINT,
                 messages=input_messages,
-                return_traces=ENDPOINT_SUPPORTS_FEEDBACK
+                return_traces=True
             ):
-                # Extract databricks_output for request_id
                 if "databricks_output" in raw_event:
                     req_id = raw_event["databricks_output"].get("databricks_request_id")
                     if req_id:
                         request_id = req_id
+                    event_trace_id = _extract_trace_id(raw_event)
+                    if event_trace_id:
+                        trace_id = event_trace_id
                 
-                # Parse using MLflow streaming event types, similar to ChatAgentChunk
                 if "type" in raw_event:
                     event = ResponsesAgentStreamEvent.model_validate(raw_event)
                     
                     if hasattr(event, 'item') and event.item:
-                        item = event.item  # This is a dict, not a parsed object
+                        item = event.item
                         
                         if item.get("type") == "message":
-                            # Extract text content from message if present
                             content_parts = item.get("content", [])
                             for content_part in content_parts:
                                 if content_part.get("type") == "output_text":
@@ -261,12 +277,10 @@ def query_responses_endpoint_and_render(input_messages):
                                         })
                             
                         elif item.get("type") == "function_call":
-                            # Tool call
                             call_id = item.get("call_id")
                             function_name = item.get("name")
                             arguments = item.get("arguments", "")
                             
-                            # Add to messages for history
                             all_messages.append({
                                 "role": "assistant",
                                 "content": "",
@@ -281,36 +295,33 @@ def query_responses_endpoint_and_render(input_messages):
                             })
                             
                         elif item.get("type") == "function_call_output":
-                            # Tool call output/result
                             call_id = item.get("call_id")
                             output = item.get("output", "")
                             
-                            # Add to messages for history
                             all_messages.append({
                                 "role": "tool",
                                 "content": output,
                                 "tool_call_id": call_id
                             })
                 
-                # Update the display by rendering all accumulated messages
                 if all_messages:
                     with response_area.container():
                         for msg in all_messages:
                             render_message(msg)
 
-            return AssistantResponse(messages=all_messages, request_id=request_id)
+            return AssistantResponse(messages=all_messages, request_id=request_id, trace_id=trace_id)
         except Exception:
             response_area.markdown("_Ran into an error. Retrying without streaming..._")
-            messages, request_id = query_endpoint(
+            messages, request_id, trace_id = query_endpoint(
                 endpoint_name=SERVING_ENDPOINT,
                 messages=input_messages,
-                return_traces=ENDPOINT_SUPPORTS_FEEDBACK
+                return_traces=True
             )
             response_area.empty()
             with response_area.container():
                 for message in messages:
                     render_message(message)
-            return AssistantResponse(messages=messages, request_id=request_id)
+            return AssistantResponse(messages=messages, request_id=request_id, trace_id=trace_id)
 
 
 

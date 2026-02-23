@@ -656,22 +656,20 @@ Examples:
 ✓ Prerequisites verified (uv, Node.js, Databricks CLI)
 ✓ Databricks authenticated with profile: {profile_name}
 ✓ Configuration files created (.env)
-✓ MLflow experiment created: {experiment_name}
+
+✓ MLflow experiment created for tracing and evaluation: {experiment_name}
 ✓ Experiment ID: {experiment_id}"""
 
         if host and experiment_id:
-            summary += f"\n  {host}/ml/experiments/{experiment_id}\n"
+            summary += f"\n  {host}/ml/experiments/{experiment_id}"
 
         if lakebase_name:
-            summary += f"\n✓ Lakebase instance: {lakebase_name}"
+            summary += f"\n\n✓ Lakebase instance: {lakebase_name}"
             summary += "\n✓ PostgreSQL variables set (PGHOST, PGUSER, PGDATABASE)"
             if host:
-                summary += f"\n  {host}/lakebase/provisioned/{lakebase_name}\n"
+                summary += f"\n  {host}/lakebase/provisioned/{lakebase_name}"
 
-        summary += """
-
-Next step: Run 'uv run start-app' to start the agent locally
-"""
+        summary += "\n"
         print(summary)
 
     except KeyboardInterrupt:

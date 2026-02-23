@@ -4,7 +4,7 @@
  */
 
 import { describe, test, expect, beforeAll } from '@jest/globals';
-import { getDeployedAuthToken, parseSSEStream, parseAISDKStream, makeAuthHeaders } from "./helpers.js";
+import { getDeployedAuthToken, parseSSEStream, parseAISDKStream, makeAuthHeaders } from "../helpers.js";
 
 const APP_URL = process.env.APP_URL || "https://agent-lc-ts-dev-6051921418418893.staging.aws.databricksapps.com";
 let authToken: string;

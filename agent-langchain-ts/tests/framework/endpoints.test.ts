@@ -9,7 +9,7 @@ import type { ChildProcess } from "child_process";
 import {
   callInvocations,
   parseSSEStream,
-} from "./helpers.js";
+} from "../helpers.js";
 
 describe("API Endpoints", () => {
   let agentProcess: ChildProcess;

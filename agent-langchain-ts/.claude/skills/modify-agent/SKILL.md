@@ -7,15 +7,30 @@ description: "Modify TypeScript LangChain agent configuration and behavior. Use 
 
 ## Key Files
 
+### Customize These Files
 | File | Purpose | When to Edit |
 |------|---------|--------------|
 | `src/agent.ts` | Agent logic, tools, prompt | Change agent behavior |
 | `src/tools.ts` | Tool definitions | Add/remove tools |
-| `src/server.ts` | API server, endpoints | Change API behavior |
-| `src/tracing.ts` | MLflow tracing config | Adjust tracing |
+| `src/mcp-servers.ts` | MCP server connections | Add Databricks resources |
 | `app.yaml` | Runtime configuration | Env vars, resources |
 | `databricks.yml` | Bundle resources | Permissions, targets |
 | `.env` | Local environment | Local development |
+
+### Framework Files (leave alone)
+| File | Purpose |
+|------|---------|
+| `src/framework/server.ts` | Express server, request routing |
+| `src/framework/tracing.ts` | MLflow/OTel tracing setup |
+| `src/framework/routes/invocations.ts` | Responses API SSE streaming |
+
+### Tests
+| Directory | Contents |
+|-----------|---------|
+| `tests/` | ✏️ Agent unit & integration tests — add yours here |
+| `tests/e2e/` | ✏️ End-to-end tests against deployed app |
+| `tests/framework/` | Framework tests — no need to modify |
+| `tests/e2e/framework/` | Framework e2e tests — no need to modify |
 
 ## Common Modifications
 
@@ -207,7 +222,7 @@ The LangGraph agent automatically handles:
 
 ### 7. Add API Endpoints
 
-Edit `src/server.ts`:
+Edit `src/framework/server.ts`:
 
 ```typescript
 // New endpoint example
@@ -230,7 +245,7 @@ app.post("/api/evaluate", async (req: Request, res: Response) => {
 
 ### 8. Modify MLflow Tracing
 
-Edit `src/tracing.ts` or initialize with custom config in `src/server.ts`:
+Edit `src/framework/tracing.ts` or initialize with custom config in `src/framework/server.ts`:
 
 ```typescript
 const tracing = initializeMLflowTracing({
@@ -334,10 +349,10 @@ interface AgentOutput {
 ### Module Organization
 
 Keep modules focused:
-- `agent.ts`: Agent logic only
-- `tools.ts`: Tool definitions only
-- `server.ts`: API routes only
-- `tracing.ts`: Tracing setup only
+- `src/agent.ts`: Agent logic only
+- `src/tools.ts`: Tool definitions only
+- `src/framework/server.ts`: API routes only
+- `src/framework/tracing.ts`: Tracing setup only
 
 ### Async/Await
 

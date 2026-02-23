@@ -13,7 +13,7 @@ import { describe, test, expect, beforeAll, afterAll } from '@jest/globals';
 import {
   initializeMLflowTracing,
   type MLflowTracing,
-} from '../src/tracing.js';
+} from '../src/framework/tracing.js';
 import { getDeployedAuthToken, TEST_CONFIG } from './helpers.js';
 
 const APP_URL = process.env.APP_URL;

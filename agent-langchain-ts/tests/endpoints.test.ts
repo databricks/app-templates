@@ -18,7 +18,7 @@ describe("API Endpoints", () => {
 
   beforeAll(async () => {
     // Start agent server as subprocess
-    agentProcess = spawn("tsx", ["src/server.ts"], {
+    agentProcess = spawn("tsx", ["src/framework/server.ts"], {
       env: { ...process.env, PORT: PORT.toString() },
       stdio: ["ignore", "pipe", "pipe"],
     });

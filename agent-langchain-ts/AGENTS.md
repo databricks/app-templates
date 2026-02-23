@@ -29,12 +29,14 @@ This will:
 ```
 agent-langchain-ts/
 ├── src/
-│   ├── agent.ts              # LangChain agent setup
-│   ├── tools.ts              # Tool definitions (weather, calculator, time)
-│   ├── server.ts             # Express server + agent integration
-│   ├── tracing.ts            # MLflow/OpenTelemetry tracing
-│   └── routes/
-│       └── invocations.ts    # Responses API endpoint
+│   ├── agent.ts              # ✏️  EDIT: LangChain agent setup, system prompt
+│   ├── tools.ts              # ✏️  EDIT: Tool definitions (add your own here)
+│   ├── mcp-servers.ts        # ✏️  EDIT: Connect to Databricks resources via MCP
+│   └── framework/            # Infrastructure — no need to modify
+│       ├── server.ts         #   Express server, agent init, health endpoint
+│       ├── tracing.ts        #   MLflow/OpenTelemetry tracing
+│       └── routes/
+│           └── invocations.ts #  Responses API endpoint, SSE streaming
 ├── ui/                       # e2e-chatbot-app-next (auto-fetched)
 ├── tests/                    # Jest test suites
 ├── databricks.yml            # Bundle config & permissions
@@ -336,13 +338,10 @@ export const basicTools = [
 ];
 ```
 
-### Server Configuration (`src/server.ts`)
+### Server Configuration (`src/framework/server.ts`)
 **What**: HTTP server setup, endpoints, middleware
 **When**: Adding routes, changing ports, modifying request handling
-
-### Tracing (`src/tracing.ts`)
-**What**: MLflow/OpenTelemetry integration for observability
-**When**: Customizing trace metadata, sampling, exporters
+**Note**: Most users don't need to touch this — it lives under `src/framework/` intentionally
 
 ### Deployment (`databricks.yml`)
 **What**: Databricks bundle configuration, resources, permissions

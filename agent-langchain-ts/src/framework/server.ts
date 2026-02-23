@@ -20,13 +20,13 @@ import {
   createAgent,
   type AgentConfig,
   type AgentMessage,
-} from "./agent.js";
+} from "../agent.js";
 import {
   initializeMLflowTracing,
   setupTracingShutdownHandlers,
 } from "./tracing.js";
 import { createInvocationsRouter } from "./routes/invocations.js";
-import { getMCPServers } from "./mcp-servers.js";
+import { getMCPServers } from "../mcp-servers.js";
 import type { AgentExecutor } from "langchain/agents";
 
 // Load environment variables

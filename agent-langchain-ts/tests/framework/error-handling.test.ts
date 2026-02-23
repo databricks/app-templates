@@ -14,7 +14,7 @@ import {
   TEST_CONFIG,
   callInvocations,
   parseSSEStream,
-} from './helpers.js';
+} from '../helpers.js';
 
 const AGENT_URL = TEST_CONFIG.AGENT_URL;
 const UI_URL = TEST_CONFIG.UI_URL;

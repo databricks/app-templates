@@ -13,7 +13,7 @@ import {
   parseSSEStream,
   parseAISDKStream,
   getDeployedAuthHeaders,
-} from './helpers.js';
+} from '../helpers.js';
 
 const AGENT_URL = process.env.APP_URL || TEST_CONFIG.AGENT_URL;
 

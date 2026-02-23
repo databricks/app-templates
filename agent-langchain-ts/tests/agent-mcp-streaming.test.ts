@@ -13,9 +13,10 @@ import {
   parseSSEStream,
   parseAISDKStream,
   getDeployedAuthHeaders,
+  getAgentUrl,
 } from './helpers.js';
 
-const AGENT_URL = process.env.APP_URL || TEST_CONFIG.AGENT_URL;
+const AGENT_URL = process.env.APP_URL || getAgentUrl();
 
 describe("AgentMCP Streaming Bug", () => {
   test("REPRODUCER: /invocations should stream text deltas (currently fails)", async () => {
@@ -50,7 +51,11 @@ describe("AgentMCP Streaming Bug", () => {
   test("REPRODUCER: /api/chat should have text-delta events (currently fails)", async () => {
     const response = await fetch(`${AGENT_URL}/api/chat`, {
       method: "POST",
-      headers: getDeployedAuthHeaders(AGENT_URL),
+      headers: {
+        ...getDeployedAuthHeaders(AGENT_URL),
+        "X-Forwarded-User": "test-user",
+        "X-Forwarded-Email": "test@example.com"
+      },
       body: JSON.stringify({
         id: "550e8400-e29b-41d4-a716-446655440000",
         message: {

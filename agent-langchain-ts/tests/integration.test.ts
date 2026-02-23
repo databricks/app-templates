@@ -17,10 +17,12 @@ import {
   callInvocations,
   parseSSEStream,
   parseAISDKStream,
+  getAgentUrl,
+  getUIUrl,
 } from './helpers.js';
 
-const AGENT_URL = TEST_CONFIG.AGENT_URL;
-const UI_URL = TEST_CONFIG.UI_URL;
+const AGENT_URL = getAgentUrl();
+const UI_URL = getUIUrl();
 
 describe("Integration Tests - Local Endpoints", () => {
   describe("/invocations endpoint", () => {
@@ -70,7 +72,11 @@ describe("Integration Tests - Local Endpoints", () => {
     test("should respond with useChat format", async () => {
       const response = await fetch(`${UI_URL}/api/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Forwarded-User": "test-user",
+          "X-Forwarded-Email": "test@example.com"
+        },
         body: JSON.stringify({
           id: "550e8400-e29b-41d4-a716-446655440000",
           message: {
@@ -96,7 +102,11 @@ describe("Integration Tests - Local Endpoints", () => {
     test("should handle tool calling without errors", async () => {
       const response = await fetch(`${UI_URL}/api/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Forwarded-User": "test-user",
+          "X-Forwarded-Email": "test@example.com"
+        },
         body: JSON.stringify({
           id: "550e8400-e29b-41d4-a716-446655440000",
           message: {

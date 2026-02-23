@@ -3,35 +3,16 @@
  * Tests both /invocations (Responses API) and /api/chat (AI SDK + useChat)
  */
 
-import { describe, test, expect, beforeAll, afterAll } from "@jest/globals";
-import { spawn } from "child_process";
-import type { ChildProcess } from "child_process";
+import { describe, test, expect } from "@jest/globals";
 import {
   callInvocations,
   parseSSEStream,
+  getAgentUrl,
 } from "./helpers.js";
 
 describe("API Endpoints", () => {
-  let agentProcess: ChildProcess;
-  const PORT = 5555; // Use different port to avoid conflicts
-  const BASE_URL = `http://localhost:${PORT}`;
-
-  beforeAll(async () => {
-    // Start agent server as subprocess
-    agentProcess = spawn("tsx", ["src/server.ts"], {
-      env: { ...process.env, PORT: PORT.toString() },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    // Wait for server to start
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-  }, 30000);
-
-  afterAll(async () => {
-    if (agentProcess) {
-      agentProcess.kill();
-    }
-  });
+  // Use the already-running unified server
+  const BASE_URL = getAgentUrl();
 
   describe("/invocations endpoint", () => {
     test("should respond with Responses API format", async () => {

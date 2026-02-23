@@ -11,7 +11,8 @@ description: "Modify TypeScript LangChain agent configuration and behavior. Use 
 |------|---------|--------------|
 | `src/agent.ts` | Agent logic, tools, prompt | Change agent behavior |
 | `src/tools.ts` | Tool definitions | Add/remove tools |
-| `src/server.ts` | API server, endpoints | Change API behavior |
+| `src/main.ts` | Unified server entry point | Change server config |
+| `src/plugins/agent/AgentPlugin.ts` | Agent routes, initialization | Modify agent endpoints |
 | `src/tracing.ts` | MLflow tracing config | Adjust tracing |
 | `app.yaml` | Runtime configuration | Env vars, resources |
 | `databricks.yml` | Bundle resources | Permissions, targets |
@@ -207,37 +208,45 @@ The LangGraph agent automatically handles:
 
 ### 7. Add API Endpoints
 
-Edit `src/server.ts`:
+Edit `src/plugins/agent/AgentPlugin.ts` in the `injectRoutes()` method:
 
 ```typescript
-// New endpoint example
-app.post("/api/evaluate", async (req: Request, res: Response) => {
-  const { input, expected } = req.body;
+injectRoutes(app: Application): void {
+  // Existing routes
+  app.get('/health', ...);
+  app.use('/invocations', ...);
 
-  const response = await invokeAgent(agent, input);
+  // Add custom endpoint
+  app.post("/api/evaluate", async (req: Request, res: Response) => {
+    const { input, expected } = req.body;
 
-  // Custom evaluation logic
-  const score = calculateScore(response.output, expected);
+    const response = await this.agent.invoke(input);
 
-  res.json({
-    input,
-    output: response.output,
-    expected,
-    score,
+    // Custom evaluation logic
+    const score = calculateScore(response.output, expected);
+
+    res.json({
+      input,
+      output: response.output,
+      expected,
+      score,
+    });
   });
-});
+}
 ```
 
 ### 8. Modify MLflow Tracing
 
-Edit `src/tracing.ts` or initialize with custom config in `src/server.ts`:
+Edit `src/tracing.ts` or pass custom config to AgentPlugin in `src/main.ts`:
 
 ```typescript
-const tracing = initializeMLflowTracing({
-  serviceName: "my-custom-service",
+const agentPluginConfig: AgentPluginConfig = {
+  agentConfig: { /* ... */ },
   experimentId: process.env.MLFLOW_EXPERIMENT_ID,
-  useBatchProcessor: false,  // Use simple processor for debugging
-});
+  serviceName: 'my-custom-service',
+};
+
+pluginManager.register(new AgentPlugin(agentPluginConfig));
 ```
 
 ### 9. Change Port
@@ -256,32 +265,9 @@ env:
 
 ### 10. Add Streaming Configuration
 
-Edit `src/server.ts` to customize streaming behavior:
+Streaming is handled by `src/routes/invocations.ts`. To customize, edit that file or create a custom router in your plugin.
 
-```typescript
-if (stream) {
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");  // Disable buffering
-
-  // Custom streaming logic
-  try {
-    for await (const chunk of streamAgent(agent, userInput, chatHistory)) {
-      // Add custom formatting
-      const formatted = {
-        chunk,
-        timestamp: Date.now(),
-      };
-      res.write(`data: ${JSON.stringify(formatted)}\n\n`);
-    }
-    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-    res.end();
-  } catch (error) {
-    // Handle errors
-  }
-}
-```
+The default implementation uses the Responses API format with Server-Sent Events (SSE).
 
 ## Testing Changes
 
@@ -336,7 +322,8 @@ interface AgentOutput {
 Keep modules focused:
 - `agent.ts`: Agent logic only
 - `tools.ts`: Tool definitions only
-- `server.ts`: API routes only
+- `plugins/agent/AgentPlugin.ts`: Agent routes and initialization
+- `routes/invocations.ts`: /invocations endpoint logic
 - `tracing.ts`: Tracing setup only
 
 ### Async/Await

@@ -179,12 +179,13 @@ export async function createAgent(
     mcpServers,
   } = config;
 
-  // Create chat model
+  // Create chat model with retry configuration
   const model = new ChatDatabricks({
     model: modelName,
     useResponsesApi,
     temperature,
     maxTokens,
+    maxRetries: 3,  // Retry on rate limits
   });
 
   // Load tools (basic + MCP if configured)

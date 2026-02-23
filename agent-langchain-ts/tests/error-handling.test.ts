@@ -14,10 +14,12 @@ import {
   TEST_CONFIG,
   callInvocations,
   parseSSEStream,
+  getAgentUrl,
+  getUIUrl,
 } from './helpers.js';
 
-const AGENT_URL = TEST_CONFIG.AGENT_URL;
-const UI_URL = TEST_CONFIG.UI_URL;
+const AGENT_URL = getAgentUrl();
+const UI_URL = getUIUrl();
 
 describe("Error Handling Tests", () => {
   describe("Security: Calculator Tool with mathjs", () => {
@@ -186,7 +188,11 @@ describe("Error Handling Tests", () => {
     test("should handle errors in useChat format", async () => {
       const response = await fetch(`${UI_URL}/api/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Forwarded-User": "test-user",
+          "X-Forwarded-Email": "test@example.com"
+        },
         body: JSON.stringify({
           id: "550e8400-e29b-41d4-a716-446655440000",
           message: {
@@ -224,7 +230,11 @@ describe("Error Handling Tests", () => {
     test("should reject malformed useChat requests", async () => {
       const response = await fetch(`${UI_URL}/api/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Forwarded-User": "test-user",
+          "X-Forwarded-Email": "test@example.com"
+        },
         body: JSON.stringify({
           // Missing required fields
           id: "550e8400-e29b-41d4-a716-446655440000",

@@ -81,9 +81,9 @@ ls -la ui/server/dist
 ```
 
 **API errors:**
-- Check `API_PROXY` environment variable points to agent
+- Check `API_PROXY` environment variable points to agent (if using separate servers)
 - Verify agent is running on expected port
-- Check CORS configuration in `src/server.ts`
+- Check plugin configuration in `src/main.ts`
 
 ## Permission Errors
 

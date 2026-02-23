@@ -84,16 +84,25 @@ curl -X POST http://localhost:8000/api/chat \
 ```
 agent-langchain-ts/
 ├── src/
-│   ├── agent.ts        # Agent setup and execution
-│   ├── server.ts       # Express API server
-│   ├── tracing.ts      # OpenTelemetry MLflow tracing
-│   └── tools.ts        # Tool definitions (basic + MCP)
+│   ├── main.ts                # Unified server entry point
+│   ├── agent.ts               # Agent setup and execution
+│   ├── tracing.ts             # OpenTelemetry MLflow tracing
+│   ├── tools.ts               # Tool definitions (basic + MCP)
+│   ├── plugins/
+│   │   ├── Plugin.ts          # Plugin interface
+│   │   ├── PluginManager.ts   # Plugin orchestration
+│   │   ├── agent/
+│   │   │   └── AgentPlugin.ts # Agent plugin (routes, tracing)
+│   │   └── ui/
+│   │       └── UIPlugin.ts    # UI plugin
+│   └── routes/
+│       └── invocations.ts     # Responses API endpoint
 ├── scripts/
-│   └── quickstart.ts   # Setup wizard
+│   └── quickstart.ts          # Setup wizard
 ├── tests/
-│   └── agent.test.ts   # Unit tests
-├── app.yaml            # Databricks App runtime config
-├── databricks.yml      # Databricks Asset Bundle config
+│   └── agent.test.ts          # Unit tests
+├── app.yaml                   # Databricks App runtime config
+├── databricks.yml             # Databricks Asset Bundle config
 ├── package.json
 ├── tsconfig.json
 └── README.md
@@ -143,11 +152,24 @@ All LangChain operations (LLM calls, tool invocations, chain executions) are aut
 - Vector Search
 - Genie Spaces
 
-#### 4. **Express Server** (`src/server.ts`)
+#### 4. **Plugin Architecture** (`src/plugins/`)
 
-REST API with:
-- `GET /health`: Health check
-- `POST /api/chat`: Agent invocation (streaming or non-streaming)
+The server uses a plugin-based architecture for flexibility:
+
+**AgentPlugin** (`src/plugins/agent/AgentPlugin.ts`):
+- Initializes MLflow tracing
+- Creates LangChain agent with tools
+- Provides `/health` and `/invocations` endpoints
+
+**UIPlugin** (`src/plugins/ui/UIPlugin.ts`):
+- Mounts UI backend routes (`/api/chat`, `/api/session`, etc.)
+- Serves static UI files in production
+- Supports external agent proxy mode
+
+**Deployment Modes:**
+1. **In-Process** (Production): Both agent and UI in single server
+2. **Agent-Only**: Just `/invocations` endpoint
+3. **UI-Only**: UI server proxying to external agent
 
 ## Tool Configuration
 

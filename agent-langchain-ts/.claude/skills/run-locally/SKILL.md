@@ -7,29 +7,31 @@ description: "Run and test the TypeScript LangChain agent locally. Use when: (1)
 
 ## Start Development Servers
 
-**Start both agent and UI servers:**
+**Start unified server (recommended):**
 ```bash
 npm run dev
 ```
 
-This starts:
-- **Agent server** on port 5001 (provides `/invocations`)
-- **UI server** on port 3001 (provides `/api/chat` and React frontend)
-- Hot-reload enabled for both
+This starts a unified server on port 8000 with:
+- **Agent endpoints**: `/invocations`, `/health`
+- **UI backend endpoints**: `/api/chat`, `/api/session`, `/api/config`
+- **UI frontend**: React app served at `/`
+- Hot-reload enabled
 
-**Or start individually:**
+**Or start agent-only mode:**
 ```bash
-# Terminal 1: Agent only
 npm run dev:agent
-
-# Terminal 2: UI only
-npm run dev:ui
 ```
 
-**Servers will be available at:**
+Starts agent server on port 5001 with just `/invocations` and `/health`.
+
+**Unified server endpoints:**
+- Agent: `http://localhost:8000/invocations`
+- UI frontend: `http://localhost:8000/`
+- UI backend: `http://localhost:8000/api/chat`
+
+**Agent-only server:**
 - Agent: `http://localhost:5001/invocations`
-- UI frontend: `http://localhost:3000`
-- UI backend: `http://localhost:3001/api/chat`
 
 ## Start Production Build
 
@@ -45,6 +47,19 @@ npm start
 
 ### 1. Test /invocations Endpoint (Responses API)
 
+**With unified server (port 8000):**
+```bash
+curl -X POST http://localhost:8000/invocations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": [
+      {"role": "user", "content": "What is the weather in San Francisco?"}
+    ],
+    "stream": true
+  }'
+```
+
+**With agent-only server (port 5001):**
 ```bash
 curl -X POST http://localhost:5001/invocations \
   -H "Content-Type: application/json" \
@@ -67,10 +82,10 @@ data: [DONE]
 
 ### 2. Test /api/chat Endpoint (useChat Format)
 
-**Requires both servers running** (`npm run dev`)
+**Requires unified server running** (`npm run dev`)
 
 ```bash
-curl -X POST http://localhost:3001/api/chat \
+curl -X POST http://localhost:8000/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "message": {
@@ -91,7 +106,7 @@ data: [DONE]
 
 ### 3. Test UI Frontend
 
-Open browser: `http://localhost:3000`
+Open browser: `http://localhost:8000`
 
 Should see chat interface with:
 - Message input
@@ -160,17 +175,17 @@ For deeper debugging, use VS Code debugger:
 
 ```bash
 # Weather tool
-curl -X POST http://localhost:5001/invocations \
+curl -X POST http://localhost:8000/invocations \
   -H "Content-Type: application/json" \
   -d '{"input": [{"role": "user", "content": "What is the weather in Tokyo?"}], "stream": false}'
 
 # Calculator tool
-curl -X POST http://localhost:5001/invocations \
+curl -X POST http://localhost:8000/invocations \
   -H "Content-Type: application/json" \
   -d '{"input": [{"role": "user", "content": "Calculate 123 * 456"}], "stream": false}'
 
 # Time tool
-curl -X POST http://localhost:5001/invocations \
+curl -X POST http://localhost:8000/invocations \
   -H "Content-Type: application/json" \
   -d '{"input": [{"role": "user", "content": "What time is it in London?"}], "stream": false}'
 ```
@@ -181,7 +196,7 @@ MCP tools are configured in `src/mcp-servers.ts`. See **add-tools** skill for de
 
 Example test:
 ```bash
-curl -X POST http://localhost:5001/invocations \
+curl -X POST http://localhost:8000/invocations \
   -H "Content-Type: application/json" \
   -d '{"input": [{"role": "user", "content": "Query my database"}], "stream": false}'
 ```
@@ -244,9 +259,8 @@ See [Troubleshooting Guide](../_shared/TROUBLESHOOTING.md) for common issues.
 
 **Port already in use:**
 ```bash
-lsof -ti:5001 | xargs kill -9  # Agent
-lsof -ti:3001 | xargs kill -9  # UI backend
-lsof -ti:3000 | xargs kill -9  # UI frontend
+lsof -ti:8000 | xargs kill -9  # Unified server
+lsof -ti:5001 | xargs kill -9  # Agent-only server (if running separately)
 ```
 
 **Authentication failed:**

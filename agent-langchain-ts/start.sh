@@ -4,16 +4,18 @@ set -e
 echo "🚀 Starting Unified TypeScript Agent + UI Server..."
 echo "Current directory: $(pwd)"
 
-# Check if dist exists
-if [ ! -d "dist" ]; then
-  echo "ERROR: Build directory not found! Run 'npm run build' first."
-  exit 1
+# Build agent if dist is missing (first deploy — dist is gitignored)
+if [ ! -f "dist/src/main.js" ]; then
+  echo "📦 Building agent (dist not found)..."
+  npm install
+  npm run build:agent
 fi
 
-# Check if main.js exists
-if [ ! -f "dist/src/main.js" ]; then
-  echo "ERROR: Unified server entry point (dist/src/main.js) not found!"
-  exit 1
+# Set up and build UI if missing
+if [ ! -d "ui/server/dist" ]; then
+  echo "📦 Setting up and building UI..."
+  bash scripts/setup-ui.sh
+  npm run build:ui
 fi
 
 # Start unified server on port 8000 in in-process mode (both agent and UI)

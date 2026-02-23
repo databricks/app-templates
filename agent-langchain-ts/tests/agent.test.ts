@@ -30,37 +30,6 @@ describe("Agent", () => {
     expect(typeof result.output).toBe("string");
   }, 30000);
 
-  test("should use calculator tool", async () => {
-    const result = await agent.invoke({
-      input: "Calculate 123 * 456",
-    });
-
-    expect(result).toBeDefined();
-    expect(result.output).toBeTruthy();
-
-    // Verify calculator was used by checking for correct answer in output
-    const hasResult = result.output.includes("56088") || result.output.includes("56,088");
-    expect(hasResult).toBe(true);
-  }, 30000);
-
-  test("should use weather tool", async () => {
-    const result = await agent.invoke({
-      input: "What's the weather in New York?",
-    });
-
-    expect(result).toBeDefined();
-    expect(result.output).toBeTruthy();
-
-    // Verify weather tool was used by checking output mentions weather/temperature
-    const mentionsWeather =
-      result.output.toLowerCase().includes("weather") ||
-      result.output.toLowerCase().includes("temperature") ||
-      result.output.toLowerCase().includes("°") ||
-      result.output.toLowerCase().includes("sunny") ||
-      result.output.toLowerCase().includes("cloudy");
-    expect(mentionsWeather).toBe(true);
-  }, 30000);
-
   test("should use time tool", async () => {
     const result = await agent.invoke({
       input: "What time is it in Tokyo?",
@@ -79,16 +48,16 @@ describe("Agent", () => {
 
   test("should handle multi-turn conversations", async () => {
     const firstResult = await agent.invoke({
-      input: "What is 10 + 20?",
+      input: "What time is it in London?",
       chat_history: [],
     });
 
     expect(firstResult.output).toBeTruthy();
 
     const secondResult = await agent.invoke({
-      input: "Now multiply that by 3",
+      input: "And what about in Tokyo?",
       chat_history: [
-        { role: "user", content: "What is 10 + 20?" },
+        { role: "user", content: "What time is it in London?" },
         { role: "assistant", content: firstResult.output },
       ],
     });

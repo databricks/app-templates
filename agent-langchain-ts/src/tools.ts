@@ -19,62 +19,11 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { evaluate } from "mathjs";
 import {
   DatabricksMCPServer,
   buildMCPServerConfig,
 } from "@databricks/langchainjs";
 import { MultiServerMCPClient } from "@langchain/mcp-adapters";
-
-/**
- * Example: Weather lookup tool
- */
-export const weatherTool = tool(
-  async ({ location }) => {
-    // In production, this would call a real weather API
-    const conditions = ["sunny", "cloudy", "rainy", "snowy"];
-    const temps = [65, 70, 75, 80];
-    const condition = conditions[Math.floor(Math.random() * conditions.length)];
-    const temp = temps[Math.floor(Math.random() * temps.length)];
-
-    return `The weather in ${location} is ${condition} with a temperature of ${temp}°F`;
-  },
-  {
-    name: "get_weather",
-    description: "Get the current weather conditions for a specific location (mock - returns random data)",
-    schema: z.object({
-      location: z
-        .string()
-        .describe("The city and state, e.g. 'San Francisco, CA'"),
-    }),
-  }
-);
-
-/**
- * Example: Calculator tool
- */
-export const calculatorTool = tool(
-  async ({ expression }) => {
-    try {
-      // Use mathjs for safe mathematical expression evaluation
-      const result = evaluate(expression);
-      return `Result: ${result}`;
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      return `Error evaluating expression: ${message}`;
-    }
-  },
-  {
-    name: "calculator",
-    description:
-      "Evaluate a mathematical expression. Supports basic arithmetic operations.",
-    schema: z.object({
-      expression: z
-        .string()
-        .describe("Mathematical expression to evaluate, e.g. '2 + 2 * 3'"),
-    }),
-  }
-);
 
 /**
  * Example: Time tool
@@ -103,7 +52,7 @@ export const timeTool = tool(
 /**
  * Basic function tools available to the agent
  */
-export const basicTools = [weatherTool, calculatorTool, timeTool];
+export const basicTools = [timeTool];
 
 /**
  * Global MCP client reference (singleton pattern)

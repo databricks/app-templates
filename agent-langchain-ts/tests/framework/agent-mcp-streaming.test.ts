@@ -14,7 +14,7 @@ import {
   parseAISDKStream,
   getDeployedAuthHeaders,
   getAgentUrl,
-} from './helpers.js';
+} from '../helpers.js';
 
 const AGENT_URL = process.env.APP_URL || getAgentUrl();
 

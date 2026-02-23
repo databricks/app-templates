@@ -47,7 +47,6 @@ agent-langchain-ts/
 ├── ui/                       # e2e-chatbot-app-next (auto-fetched by npm run setup)
 ├── tests/
 │   ├── agent.test.ts         # ✏️  EDIT: Tests for your agent logic
-│   ├── integration.test.ts   # ✏️  EDIT: Tests for agent behavior
 │   ├── e2e/                  # End-to-end tests (deployed app)
 │   │   ├── deployed.test.ts  # ✏️  EDIT: Tests for deployed agent
 │   │   └── framework/        # Framework e2e tests — no need to modify

@@ -16,7 +16,7 @@ import {
   parseSSEStream,
   getAgentUrl,
   getUIUrl,
-} from './helpers.js';
+} from '../helpers.js';
 
 const AGENT_URL = getAgentUrl();
 const UI_URL = getUIUrl();

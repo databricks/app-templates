@@ -1,11 +1,4 @@
 /**
- * CUSTOMIZE THIS FILE to add, remove, or modify the agent's tools.
- *
- * Key customization points:
- * - basicTools array: Add your own DynamicStructuredTool definitions
- * - getBasicTools(): Filter or reorder the default tools
- * - For Databricks resources (SQL, Vector Search, Genie), edit src/mcp-servers.ts instead
- *
  * Tool loading for LangChain agent following MCP (Model Context Protocol) pattern.
  *
  * MCP Pattern Overview:

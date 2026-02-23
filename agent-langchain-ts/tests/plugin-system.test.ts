@@ -4,10 +4,10 @@
  */
 
 import express, { Application } from 'express';
-import { Plugin, PluginContext } from '../src/plugins/Plugin.js';
-import { PluginManager } from '../src/plugins/PluginManager.js';
-import { AgentPlugin } from '../src/plugins/agent/AgentPlugin.js';
-import { UIPlugin } from '../src/plugins/ui/UIPlugin.js';
+import { Plugin, PluginContext } from '../src/framework/plugins/Plugin.js';
+import { PluginManager } from '../src/framework/plugins/PluginManager.js';
+import { AgentPlugin } from '../src/framework/plugins/agent/AgentPlugin.js';
+import { UIPlugin } from '../src/framework/plugins/ui/UIPlugin.js';
 
 // ============================================================================
 // Mock Plugin for Testing

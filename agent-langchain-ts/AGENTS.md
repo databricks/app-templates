@@ -29,20 +29,22 @@ This will:
 ```
 agent-langchain-ts/
 ├── src/
+│   ├── agent.ts              # ✏️  EDIT: LangChain agent setup, system prompt
+│   ├── tools.ts              # ✏️  EDIT: Tool definitions (add your own here)
+│   ├── mcp-servers.ts        # ✏️  EDIT: Connect to Databricks resources via MCP
 │   ├── main.ts               # Unified server entry point
-│   ├── agent.ts              # LangChain agent setup
-│   ├── tools.ts              # Tool definitions (weather, calculator, time)
-│   ├── tracing.ts            # MLflow/OpenTelemetry tracing
-│   ├── plugins/
-│   │   ├── Plugin.ts         # Plugin interface
-│   │   ├── PluginManager.ts  # Plugin lifecycle management
-│   │   ├── agent/            # Agent plugin
-│   │   │   └── AgentPlugin.ts
-│   │   └── ui/               # UI plugin
-│   │       └── UIPlugin.ts
-│   └── routes/
-│       └── invocations.ts    # Responses API endpoint
-├── ui/                       # e2e-chatbot-app-next (auto-fetched)
+│   └── framework/            # Infrastructure — no need to modify
+│       ├── tracing.ts        #   MLflow/OpenTelemetry tracing
+│       ├── plugins/
+│       │   ├── Plugin.ts     #   Plugin interface
+│       │   ├── PluginManager.ts #  Plugin lifecycle management
+│       │   ├── agent/        #   Agent plugin (wires agent.ts to Express)
+│       │   │   └── AgentPlugin.ts
+│       │   └── ui/           #   UI plugin (mounts chat UI)
+│       │       └── UIPlugin.ts
+│       └── routes/
+│           └── invocations.ts #  Responses API endpoint
+├── ui/                       # e2e-chatbot-app-next (auto-fetched by npm run setup)
 ├── tests/                    # Jest test suites
 ├── databricks.yml            # Bundle config & permissions
 ├── app.yaml                  # Databricks Apps config
@@ -343,9 +345,10 @@ export const basicTools = [
 ];
 ```
 
-### Server Configuration (`src/main.ts` and `src/plugins/`)
+### Server Configuration (`src/main.ts` and `src/framework/`)
 **What**: Plugin-based server architecture, unified server entry point
 **When**: Configuring deployment modes (agent-only, in-process, UI-only), adding plugins, changing server behavior
+**Note**: Most users never need to touch these — they live under `src/framework/` intentionally
 
 ### Tracing (`src/tracing.ts`)
 **What**: MLflow/OpenTelemetry integration for observability

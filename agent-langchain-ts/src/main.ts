@@ -9,11 +9,11 @@
 
 import express, { type Application } from 'express';
 import { config as loadEnv } from 'dotenv';
-import { PluginManager } from './plugins/index.js';
-import { AgentPlugin, type AgentPluginConfig } from './plugins/agent/index.js';
-import { UIPlugin, type UIPluginConfig } from './plugins/ui/index.js';
+import { PluginManager } from './framework/plugins/index.js';
+import { AgentPlugin, type AgentPluginConfig } from './framework/plugins/agent/index.js';
+import { UIPlugin, type UIPluginConfig } from './framework/plugins/ui/index.js';
 import { getMCPServers } from './mcp-servers.js';
-import { getDefaultUIStaticPath, getDefaultUIRoutesPath, isMainModule } from './utils/paths.js';
+import { getDefaultUIStaticPath, getDefaultUIRoutesPath, isMainModule } from './framework/utils/paths.js';
 
 // Load environment variables
 loadEnv();

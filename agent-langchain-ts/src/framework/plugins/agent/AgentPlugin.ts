@@ -1,9 +1,4 @@
 /**
- * FRAMEWORK FILE - You do not need to modify this file.
- *
- * Wires up the agent (from src/agent.ts) and tracing to Express routes.
- * To change agent behavior, modify src/agent.ts, src/tools.ts, or src/mcp-servers.ts.
- *
  * AgentPlugin - Wraps LangChain agent functionality as a plugin
  *
  * Responsibilities:
@@ -15,7 +10,7 @@
 
 import { Application, Request, Response } from 'express';
 import { Plugin, PluginConfig } from '../Plugin.js';
-import { createAgent, type AgentConfig, type StandardAgent } from '../../agent.js';
+import { createAgent, type AgentConfig, type StandardAgent } from '../../../agent.js';
 import {
   initializeMLflowTracing,
   MLflowTracing,

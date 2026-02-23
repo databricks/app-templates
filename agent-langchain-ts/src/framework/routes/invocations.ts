@@ -1,9 +1,4 @@
 /**
- * FRAMEWORK FILE - You do not need to modify this file.
- *
- * Implements the /invocations Responses API endpoint and SSE streaming.
- * To change agent behavior, modify src/agent.ts, src/tools.ts, or src/mcp-servers.ts.
- *
  * MLflow-compatible /invocations endpoint for the LangChain agent.
  *
  * This endpoint provides a standard Responses API interface that:
@@ -13,7 +8,7 @@
  */
 
 import { Router, type Request, type Response } from "express";
-import type { StandardAgent } from "../agent.js";
+import type { StandardAgent } from "../../agent.js";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 

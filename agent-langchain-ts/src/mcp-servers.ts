@@ -1,14 +1,4 @@
 /**
- * CUSTOMIZE THIS FILE to connect the agent to Databricks resources.
- *
- * Add MCP servers here to give the agent access to:
- * - Databricks SQL (query Unity Catalog tables)
- * - UC Functions (call Unity Catalog functions)
- * - Vector Search indexes (RAG / semantic search)
- * - Genie Spaces (natural language data queries)
- *
- * After adding a server, grant permissions in databricks.yml (see add-tools skill).
- *
  * MCP Server configuration for the agent
  */
 

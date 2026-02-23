@@ -1,11 +1,4 @@
 /**
- * CUSTOMIZE THIS FILE to change your agent's behavior.
- *
- * Key customization points:
- * - DEFAULT_SYSTEM_PROMPT: Change the agent's instructions/persona
- * - createAgent() config: Adjust model, temperature, maxTokens
- * - AgentConfig: Add new configuration options
- *
  * Uses createReactAgent from @langchain/langgraph/prebuilt for:
  * - Automatic tool calling and execution
  * - Built-in agentic loop

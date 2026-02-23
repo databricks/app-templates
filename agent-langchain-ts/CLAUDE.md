@@ -56,15 +56,18 @@ The agent uses standard LangGraph `createReactAgent` API:
 - Streaming support out of the box
 - Compatible with MCP tools
 
-**Main files:**
-- `src/agent.ts` - Agent creation using `createReactAgent`
-- `src/tools.ts` - Basic tool definitions (weather, calculator, time)
-- `src/mcp-servers.ts` - MCP server configuration (code-based, not env vars)
-- `src/main.ts` - Unified server entry point with plugin architecture
-- `src/plugins/` - Plugin system (AgentPlugin, UIPlugin, PluginManager)
-- `src/routes/invocations.ts` - Responses API endpoint
+**Files to customize (edit these):**
+- `src/agent.ts` - Agent creation, system prompt, model config
+- `src/tools.ts` - Tool definitions (weather, calculator, time — add yours here)
+- `src/mcp-servers.ts` - MCP server configuration (Databricks SQL, Vector Search, etc.)
 - `databricks.yml` - Resource permissions
 - `app.yaml` - Databricks Apps configuration
+
+**Framework files (do not modify — under `src/framework/`):**
+- `src/main.ts` - Unified server entry point
+- `src/framework/plugins/` - Plugin system (AgentPlugin, UIPlugin, PluginManager)
+- `src/framework/routes/invocations.ts` - Responses API endpoint
+- `src/framework/tracing.ts` - MLflow/OTel tracing
 
 ### MCP Tool Configuration
 

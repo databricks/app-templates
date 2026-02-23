@@ -1,11 +1,6 @@
 import { Application } from 'express';
 
 /**
- * FRAMEWORK FILE - You do not need to modify this file.
- *
- * Defines the Plugin interface and types used by PluginManager.
- * Modify src/agent.ts, src/tools.ts, or src/mcp-servers.ts instead.
- *
  * Core plugin interface that all plugins must implement.
  * Inspired by AppKit's plugin-based architecture.
  */

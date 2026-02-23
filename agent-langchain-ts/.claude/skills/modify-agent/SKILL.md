@@ -9,6 +9,8 @@ description: "Modify TypeScript LangChain agent configuration and behavior. Use 
 
 ### Customize These Files (your agent code)
 
+These live at the top level of `src/` — easy to find, safe to edit.
+
 | File | Purpose | When to Edit |
 |------|---------|--------------|
 | `src/agent.ts` | System prompt, model config | Change agent behavior or persona |
@@ -18,19 +20,19 @@ description: "Modify TypeScript LangChain agent configuration and behavior. Use 
 | `databricks.yml` | Bundle resources | Permissions, targets |
 | `.env` | Local environment | Local development settings |
 
-### Framework Files (leave alone unless you know what you're doing)
+### Framework Files (leave alone)
 
-These handle the server infrastructure. Each file has a `FRAMEWORK FILE` comment at the top.
+These live under `src/framework/` — the directory name signals "infrastructure, don't touch".
 
 | File | Purpose |
 |------|---------|
 | `src/main.ts` | Server entry point, plugin wiring |
-| `src/plugins/Plugin.ts` | Plugin interface definition |
-| `src/plugins/PluginManager.ts` | Plugin lifecycle orchestration |
-| `src/plugins/agent/AgentPlugin.ts` | Wires agent to Express routes |
-| `src/plugins/ui/UIPlugin.ts` | Mounts UI app |
-| `src/routes/invocations.ts` | Responses API + SSE streaming |
-| `src/tracing.ts` | MLflow/OTel tracing setup |
+| `src/framework/plugins/Plugin.ts` | Plugin interface definition |
+| `src/framework/plugins/PluginManager.ts` | Plugin lifecycle orchestration |
+| `src/framework/plugins/agent/AgentPlugin.ts` | Wires agent to Express routes |
+| `src/framework/plugins/ui/UIPlugin.ts` | Mounts UI app |
+| `src/framework/routes/invocations.ts` | Responses API + SSE streaming |
+| `src/framework/tracing.ts` | MLflow/OTel tracing setup |
 
 ## Common Modifications
 

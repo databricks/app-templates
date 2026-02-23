@@ -13,19 +13,18 @@ import { fileURLToPath } from 'url';
  */
 export function getProjectRoot(): string {
   const filename = fileURLToPath(import.meta.url);
-  // From dist/src/utils/paths.js -> dist/src/utils -> dist/src -> dist -> root
-  // Or from src/utils/paths.ts -> src/utils -> src -> root
-  const utilsDir = path.dirname(filename);
-  const srcDir = path.dirname(utilsDir);
-  const distOrRootDir = path.dirname(srcDir);
+  // From dist/src/framework/utils/paths.js -> up 4 levels to root
+  let dir = path.dirname(filename); // utils/
+  dir = path.dirname(dir);          // framework/
+  dir = path.dirname(dir);          // src/ (dev) or dist/src/ (prod, going through dist)
+  dir = path.dirname(dir);          // root (dev) or dist/ (prod)
 
   // If we're in dist/, go up one more level to get to project root
-  if (distOrRootDir.endsWith('dist')) {
-    return path.dirname(distOrRootDir);
+  if (path.basename(dir) === 'dist') {
+    return path.dirname(dir);
   }
 
-  // Otherwise we're already at root
-  return distOrRootDir;
+  return dir;
 }
 
 /**

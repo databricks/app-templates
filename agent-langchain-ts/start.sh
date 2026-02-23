@@ -26,7 +26,7 @@ if [ -d "ui/server/dist" ]; then
   sleep 2
 
   # Start agent server on port 8000 (exposed port) - provides /invocations and proxies /api/*
-  PORT=8000 UI_BACKEND_URL=http://localhost:3000 node dist/src/server.js &
+  PORT=8000 UI_BACKEND_URL=http://localhost:3000 node dist/src/framework/server.js &
   AGENT_PID=$!
   echo "Agent server started on port 8000 (PID: $AGENT_PID)"
   echo "🌐 Access the app at http://localhost:8000"
@@ -35,5 +35,5 @@ if [ -d "ui/server/dist" ]; then
   wait $AGENT_PID $UI_PID
 else
   echo "ℹ️  UI backend not found - running agent-only mode on port 8000"
-  PORT=8000 node dist/src/server.js
+  PORT=8000 node dist/src/framework/server.js
 fi

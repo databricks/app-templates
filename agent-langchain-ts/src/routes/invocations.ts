@@ -1,4 +1,9 @@
 /**
+ * FRAMEWORK FILE - You do not need to modify this file.
+ *
+ * Implements the /invocations Responses API endpoint and SSE streaming.
+ * To change agent behavior, modify src/agent.ts, src/tools.ts, or src/mcp-servers.ts.
+ *
  * MLflow-compatible /invocations endpoint for the LangChain agent.
  *
  * This endpoint provides a standard Responses API interface that:

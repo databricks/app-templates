@@ -2,6 +2,11 @@ import { Application } from 'express';
 import { Plugin, PluginMetadata } from './Plugin.js';
 
 /**
+ * FRAMEWORK FILE - You do not need to modify this file.
+ *
+ * Orchestrates plugin lifecycle: registration → initialize() → injectRoutes() → shutdown().
+ * Modify src/agent.ts, src/tools.ts, or src/mcp-servers.ts instead.
+ *
  * Manages the lifecycle of plugins in the application.
  * Handles plugin registration, initialization, route injection, and shutdown.
  */

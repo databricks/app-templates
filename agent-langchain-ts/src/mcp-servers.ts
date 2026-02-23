@@ -1,8 +1,15 @@
 /**
- * MCP Server configuration for the agent
+ * CUSTOMIZE THIS FILE to connect the agent to Databricks resources.
  *
- * Define MCP servers here, similar to Python template's init_mcp_server()
- * Each server provides tools/data sources for the agent
+ * Add MCP servers here to give the agent access to:
+ * - Databricks SQL (query Unity Catalog tables)
+ * - UC Functions (call Unity Catalog functions)
+ * - Vector Search indexes (RAG / semantic search)
+ * - Genie Spaces (natural language data queries)
+ *
+ * After adding a server, grant permissions in databricks.yml (see add-tools skill).
+ *
+ * MCP Server configuration for the agent
  */
 
 import { DatabricksMCPServer } from "@databricks/langchainjs";

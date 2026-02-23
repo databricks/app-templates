@@ -84,6 +84,14 @@ ENABLE_SQL_MCP=false
 npm install
 ```
 
+### Set Up UI (first time only)
+
+```bash
+npm run setup
+```
+
+This clones `e2e-chatbot-app-next` into the `ui/` directory. Required before starting the full server.
+
 ### Build
 
 ```bash
@@ -95,7 +103,7 @@ This compiles TypeScript to JavaScript in the `dist/` directory.
 ## Next Steps
 
 After quickstart completes:
-1. Run `npm run dev` to start the development server (see **run-locally** skill)
+1. Run `npm run dev:agent` or `npm run build && npm start` (see **run-locally** skill)
 2. Test the agent with `curl http://localhost:8000/health`
 3. Deploy to Databricks with `databricks bundle deploy -t dev` (see **deploy** skill)
 

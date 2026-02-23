@@ -5,18 +5,32 @@ description: "Modify TypeScript LangChain agent configuration and behavior. Use 
 
 # Modify Agent
 
-## Key Files
+## What to Modify vs. Leave Alone
+
+### Customize These Files (your agent code)
 
 | File | Purpose | When to Edit |
 |------|---------|--------------|
-| `src/agent.ts` | Agent logic, tools, prompt | Change agent behavior |
-| `src/tools.ts` | Tool definitions | Add/remove tools |
-| `src/main.ts` | Unified server entry point | Change server config |
-| `src/plugins/agent/AgentPlugin.ts` | Agent routes, initialization | Modify agent endpoints |
-| `src/tracing.ts` | MLflow tracing config | Adjust tracing |
+| `src/agent.ts` | System prompt, model config | Change agent behavior or persona |
+| `src/tools.ts` | Tool definitions | Add/remove/modify custom tools |
+| `src/mcp-servers.ts` | MCP server list | Connect to Databricks resources |
 | `app.yaml` | Runtime configuration | Env vars, resources |
 | `databricks.yml` | Bundle resources | Permissions, targets |
-| `.env` | Local environment | Local development |
+| `.env` | Local environment | Local development settings |
+
+### Framework Files (leave alone unless you know what you're doing)
+
+These handle the server infrastructure. Each file has a `FRAMEWORK FILE` comment at the top.
+
+| File | Purpose |
+|------|---------|
+| `src/main.ts` | Server entry point, plugin wiring |
+| `src/plugins/Plugin.ts` | Plugin interface definition |
+| `src/plugins/PluginManager.ts` | Plugin lifecycle orchestration |
+| `src/plugins/agent/AgentPlugin.ts` | Wires agent to Express routes |
+| `src/plugins/ui/UIPlugin.ts` | Mounts UI app |
+| `src/routes/invocations.ts` | Responses API + SSE streaming |
+| `src/tracing.ts` | MLflow/OTel tracing setup |
 
 ## Common Modifications
 

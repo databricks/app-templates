@@ -1,4 +1,9 @@
 /**
+ * FRAMEWORK FILE - You do not need to modify this file.
+ *
+ * Wires up the agent (from src/agent.ts) and tracing to Express routes.
+ * To change agent behavior, modify src/agent.ts, src/tools.ts, or src/mcp-servers.ts.
+ *
  * AgentPlugin - Wraps LangChain agent functionality as a plugin
  *
  * Responsibilities:

@@ -5,49 +5,52 @@ description: "Run and test the TypeScript LangChain agent locally. Use when: (1)
 
 # Run Locally
 
-## Start Development Servers
+## First-Time Setup
 
-**Start unified server (recommended):**
+Before starting the server, set up the UI (needed once, or after UI changes):
 ```bash
-npm run dev
+npm run setup
 ```
 
-This starts a unified server on port 8000 with:
-- **Agent endpoints**: `/invocations`, `/health`
-- **UI backend endpoints**: `/api/chat`, `/api/session`, `/api/config`
-- **UI frontend**: React app served at `/`
-- Hot-reload enabled
+This clones/updates `e2e-chatbot-app-next` into the `ui/` directory.
 
-**Or start agent-only mode:**
+## Start Development Servers
+
+**Agent-only dev (recommended for iterating on agent code):**
 ```bash
 npm run dev:agent
 ```
 
-Starts agent server on port 5001 with just `/invocations` and `/health`.
+Starts agent server on port 5001 with hot-reload. Just `/invocations` and `/health`.
 
-**Unified server endpoints:**
-- Agent: `http://localhost:8000/invocations`
-- UI frontend: `http://localhost:8000/`
-- UI backend: `http://localhost:8000/api/chat`
-
-**Agent-only server:**
-- Agent: `http://localhost:5001/invocations`
-
-## Start Production Build
-
+**Full stack legacy dev (agent + UI, both with hot-reload):**
 ```bash
-# Build first
-npm run build
+npm run dev:legacy
+```
 
-# Then start
+Runs agent on port 5001 + UI dev server on port 3001. Open `http://localhost:3001` for the UI.
+
+**Production build (agent + UI served together):**
+```bash
+npm run build
 npm start
 ```
+
+Starts unified server on port 8000 with agent + UI frontend both served. Use this to test the full in-process integration.
+
+**Endpoints by mode:**
+
+| Mode | Agent | UI frontend | UI backend |
+|------|-------|-------------|------------|
+| `dev:agent` | `localhost:5001/invocations` | — | — |
+| `dev:legacy` | `localhost:5001/invocations` | `localhost:3001/` | `localhost:3001/api/chat` |
+| `npm start` | `localhost:8000/invocations` | `localhost:8000/` | `localhost:8000/api/chat` |
 
 ## Testing the Agent
 
 ### 1. Test /invocations Endpoint (Responses API)
 
-**With unified server (port 8000):**
+**With production build (port 8000):**
 ```bash
 curl -X POST http://localhost:8000/invocations \
   -H "Content-Type: application/json" \
@@ -82,7 +85,7 @@ data: [DONE]
 
 ### 2. Test /api/chat Endpoint (useChat Format)
 
-**Requires unified server running** (`npm run dev`)
+**Requires full stack running** (`npm start` or `npm run dev:legacy`)
 
 ```bash
 curl -X POST http://localhost:8000/api/chat \
@@ -106,7 +109,7 @@ data: [DONE]
 
 ### 3. Test UI Frontend
 
-Open browser: `http://localhost:8000`
+Open browser: `http://localhost:8000` (production build) or `http://localhost:3001` (legacy dev)
 
 Should see chat interface with:
 - Message input
@@ -141,7 +144,7 @@ See [MLflow Tracing Guide](../_shared/MLFLOW.md) for viewing traces in your work
 
 ### Watch Mode
 
-`npm run dev` uses `tsx watch` which:
+`npm run dev:agent` uses `tsx watch` which:
 - Auto-restarts on file changes
 - Preserves type checking
 - Fast compilation
@@ -216,8 +219,8 @@ Runs `tests/agent.test.ts` - tests agent initialization, tool usage, multi-turn 
 
 Tests that need local servers running:
 ```bash
-# Terminal 1: Start servers
-npm run dev
+# Terminal 1: Start servers (agent + UI)
+npm run dev:legacy  # or: npm run build && npm start
 
 # Terminal 2: Run tests
 npm run test:integration
@@ -299,14 +302,14 @@ databricks experiments create \
 
 ### "Tool not working"
 
-Check tool invocation in response `intermediateSteps`:
+Test tool invocation via `/invocations`:
 ```bash
-curl -s http://localhost:8000/api/chat \
+curl -s -X POST http://localhost:5001/invocations \
   -H "Content-Type: application/json" \
-  -d '{"messages": [{"role": "user", "content": "What is 2+2?"}]}' | jq '.intermediateSteps'
+  -d '{"input": [{"role": "user", "content": "What is 2+2?"}], "stream": false}'
 ```
 
-Should show tool name and observation.
+Should include tool call events in the SSE response.
 
 ## Performance Monitoring
 
@@ -316,7 +319,7 @@ Monitor server logs for:
 - Error rates
 - Token usage
 
-Add logging in `src/server.ts`:
+Add logging in `src/plugins/agent/AgentPlugin.ts` or `src/routes/invocations.ts`:
 ```typescript
 console.log(`Request completed in ${duration}ms`);
 ```

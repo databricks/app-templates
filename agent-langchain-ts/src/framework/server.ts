@@ -98,7 +98,7 @@ export async function createServer(
     console.log(`🔗 Proxying /api/* to UI backend: ${uiBackendUrl}`);
 
     // Proxy /api/* routes to UI backend server
-    app.use("/api/*", async (req, res) => {
+    app.use("/api/*path", async (req, res) => {
       try {
         const targetUrl = `${uiBackendUrl}${req.originalUrl}`;
         const response = await fetch(targetUrl, {

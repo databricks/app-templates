@@ -8,7 +8,7 @@ from model_serving_utils import (
     _extract_trace_id,
 )
 from collections import OrderedDict
-from messages import UserMessage, AssistantResponse, render_message
+from messages import UserMessage, AssistantResponse, render_message, render_assistant_message_feedback
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -142,6 +142,9 @@ def query_chat_completions_endpoint_and_render(input_messages):
                     if chunk_trace_id:
                         trace_id = chunk_trace_id
             
+            if trace_id is not None:
+                render_assistant_message_feedback(len(st.session_state.history), trace_id)
+
             return AssistantResponse(
                 messages=[{"role": "assistant", "content": accumulated_content}],
                 request_id=request_id,
@@ -158,6 +161,8 @@ def query_chat_completions_endpoint_and_render(input_messages):
             with response_area.container():
                 for message in messages:
                     render_message(message)
+            if trace_id is not None:
+                render_assistant_message_feedback(len(st.session_state.history), trace_id)
             return AssistantResponse(messages=messages, request_id=request_id, trace_id=trace_id)
 
 
@@ -214,6 +219,9 @@ def query_chat_agent_endpoint_and_render(input_messages):
             for msg_id, msg_info in message_buffers.items():
                 messages.append(reduce_chat_agent_chunks(msg_info["chunks"]))
             
+            if trace_id is not None:
+                render_assistant_message_feedback(len(st.session_state.history), trace_id)
+
             return AssistantResponse(
                 messages=[message.model_dump_compat(exclude_none=True) for message in messages],
                 request_id=request_id,
@@ -230,6 +238,8 @@ def query_chat_agent_endpoint_and_render(input_messages):
             with response_area.container():
                 for message in messages:
                     render_message(message)
+            if trace_id is not None:
+                render_assistant_message_feedback(len(st.session_state.history), trace_id)
             return AssistantResponse(messages=messages, request_id=request_id, trace_id=trace_id)
 
 
@@ -309,6 +319,9 @@ def query_responses_endpoint_and_render(input_messages):
                         for msg in all_messages:
                             render_message(msg)
 
+            if trace_id is not None:
+                render_assistant_message_feedback(len(st.session_state.history), trace_id)
+
             return AssistantResponse(messages=all_messages, request_id=request_id, trace_id=trace_id)
         except Exception:
             response_area.markdown("_Ran into an error. Retrying without streaming..._")
@@ -321,6 +334,8 @@ def query_responses_endpoint_and_render(input_messages):
             with response_area.container():
                 for message in messages:
                     render_message(message)
+            if trace_id is not None:
+                render_assistant_message_feedback(len(st.session_state.history), trace_id)
             return AssistantResponse(messages=messages, request_id=request_id, trace_id=trace_id)
 
 

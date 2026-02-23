@@ -30,21 +30,6 @@ export interface Plugin {
 }
 
 /**
- * Context provided to plugins during initialization.
- * Contains shared configuration and utilities.
- */
-export interface PluginContext {
-  /** Environment (development, production, test) */
-  environment: string;
-
-  /** Server port */
-  port: number;
-
-  /** Additional configuration from environment or config files */
-  config: Record<string, any>;
-}
-
-/**
  * Configuration passed when creating a plugin.
  */
 export interface PluginConfig {

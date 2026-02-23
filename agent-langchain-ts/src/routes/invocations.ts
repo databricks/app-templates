@@ -8,8 +8,9 @@
  */
 
 import { Router, type Request, type Response } from "express";
-import type { AgentExecutor } from "langchain/agents";
+import type { StandardAgent } from "../agent.js";
 import { z } from "zod";
+import { randomUUID } from "crypto";
 
 /**
  * Responses API request schema
@@ -62,7 +63,7 @@ function emitOutputItem(res: Response, itemType: string, item: any) {
 /**
  * Create invocations router with the given agent
  */
-export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof Router> {
+export function createInvocationsRouter(agent: StandardAgent): ReturnType<typeof Router> {
   const router = Router();
 
   router.post("/", async (req: Request, res: Response) => {
@@ -159,7 +160,7 @@ export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof
         res.setHeader("Cache-Control", "no-cache");
         res.setHeader("Connection", "keep-alive");
 
-        let textOutputId = `text_${Date.now()}`;
+        let textOutputId = `text_${randomUUID()}`;
         const toolCallIds = new Map<string, string>(); // Map tool name to call_id
 
         try {
@@ -175,8 +176,8 @@ export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof
           for await (const event of eventStream) {
             // Handle tool calls
             if (event.event === "on_tool_start") {
-              const toolCallId = `call_${Date.now()}`;
-              const fcId = `fc_${Date.now()}`;
+              const toolCallId = `call_${randomUUID()}`;
+              const fcId = `fc_${randomUUID()}`;
 
               // Store the call_id for this tool so we can reference it in the output
               const toolKey = `${event.name}_${event.run_id}`;
@@ -195,11 +196,11 @@ export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof
             if (event.event === "on_tool_end") {
               // Look up the original call_id for this tool
               const toolKey = `${event.name}_${event.run_id}`;
-              const toolCallId = toolCallIds.get(toolKey) || `call_${Date.now()}`;
+              const toolCallId = toolCallIds.get(toolKey) || `call_${randomUUID()}`;
 
               // Emit both .added and .done events for function_call_output
               emitOutputItem(res, "function_call_output", {
-                id: `fc_output_${Date.now()}`,
+                id: `fc_output_${randomUUID()}`,
                 call_id: toolCallId,
                 output: JSON.stringify(event.data?.output || ""),
               });

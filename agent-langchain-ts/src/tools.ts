@@ -41,7 +41,7 @@ export const weatherTool = tool(
   },
   {
     name: "get_weather",
-    description: "Get the current weather conditions for a specific location",
+    description: "Get the current weather conditions for a specific location (mock - returns random data)",
     schema: z.object({
       location: z
         .string()
@@ -106,10 +106,19 @@ export const timeTool = tool(
 export const basicTools = [weatherTool, calculatorTool, timeTool];
 
 /**
- * Global MCP client reference
+ * Global MCP client reference (singleton pattern)
  *
  * Keep the client alive across agent invocations to maintain connections.
  * MCP clients manage persistent connections to external tool servers.
+ *
+ * IMPORTANT for testing:
+ * - This singleton persists across test cases in the same Jest process
+ * - Unit tests should mock getMCPTools() to avoid stale connections:
+ *   jest.mock('./tools.js', () => ({
+ *     ...jest.requireActual('./tools.js'),
+ *     getMCPTools: jest.fn().mockResolvedValue([])
+ *   }))
+ * - Integration tests can safely call getMCPTools() as connections are reusable
  */
 let globalMCPClient: MultiServerMCPClient | null = null;
 

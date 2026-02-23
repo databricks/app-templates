@@ -35,8 +35,12 @@ echo -e "${YELLOW}UI not found. Cloning app-templates...${NC}"
 
 # Clone the repo with the feature branch
 TEMP_DIR=$(mktemp -d)
+# TODO: Before merging to main, switch these to:
+#   UI_BRANCH="${UI_BRANCH:-main}"
+#   UI_REPO="${UI_REPO:-https://github.com/databricks/app-templates.git}"
+# Currently using fork because e2e-chatbot-app-next changes are in feature branch
 UI_BRANCH="${UI_BRANCH:-feature/plugin-system}"  # Allow override via env var
-UI_REPO="${UI_REPO:-https://github.com/smurching/app-templates.git}"  # Use fork for feature branch
+UI_REPO="${UI_REPO:-https://github.com/smurching/app-templates.git}"  # Temporary fork
 
 echo -e "${YELLOW}Using branch: $UI_BRANCH${NC}"
 echo -e "${YELLOW}Using repo: $UI_REPO${NC}"

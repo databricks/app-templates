@@ -58,8 +58,9 @@ export function isMainModule(): boolean {
     return true;
   }
 
-  // Also check if script path ends with the module filename (handles compiled JS)
+  // Also check if script path ends with the full module path suffix (handles compiled JS)
   // e.g., dist/src/main.js should match when running "node dist/src/main.js"
+  // Be specific to avoid matching any random main.js in node_modules
   const modulePath = fileURLToPath(currentModuleUrl);
-  return modulePath === scriptPath || scriptPath.endsWith('main.js');
+  return modulePath === scriptPath || scriptPath.endsWith('dist/src/main.js');
 }

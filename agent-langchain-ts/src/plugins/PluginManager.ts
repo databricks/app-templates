@@ -1,5 +1,5 @@
 import { Application } from 'express';
-import { Plugin, PluginContext, PluginMetadata } from './Plugin.js';
+import { Plugin, PluginMetadata } from './Plugin.js';
 
 /**
  * Manages the lifecycle of plugins in the application.
@@ -8,12 +8,10 @@ import { Plugin, PluginContext, PluginMetadata } from './Plugin.js';
 export class PluginManager {
   private plugins: Map<string, PluginMetadata> = new Map();
   private app: Application;
-  private context: PluginContext;
   private shutdownHandlersRegistered = false;
 
-  constructor(app: Application, context: PluginContext) {
+  constructor(app: Application) {
     this.app = app;
-    this.context = context;
   }
 
   /**
@@ -59,6 +57,13 @@ export class PluginManager {
     }
 
     console.log('[PluginManager] All plugins initialized');
+
+    // Register shutdown handlers after successful initialization
+    // This ensures clean shutdown even if route injection fails later
+    if (!this.shutdownHandlersRegistered) {
+      this.registerShutdownHandlers();
+      this.shutdownHandlersRegistered = true;
+    }
   }
 
   /**
@@ -90,12 +95,6 @@ export class PluginManager {
     }
 
     console.log('[PluginManager] All routes injected');
-
-    // Register shutdown handlers after successful route injection
-    if (!this.shutdownHandlersRegistered) {
-      this.registerShutdownHandlers();
-      this.shutdownHandlersRegistered = true;
-    }
   }
 
   /**

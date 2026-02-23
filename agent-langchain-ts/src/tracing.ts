@@ -49,6 +49,7 @@ export class MLflowTracing {
   private exporter!: OTLPTraceExporter;  // Will be initialized in initialize()
   private isInitialized = false;
   private databricksClient?: WorkspaceClient;
+  private ucTableName?: string;
 
   constructor(private config: TracingConfig = {}) {
     // Set defaults
@@ -221,7 +222,7 @@ export class MLflowTracing {
       headers["content-type"] = "application/x-protobuf";
 
       // Unity Catalog table name for trace storage
-      const ucTableName = process.env.OTEL_UC_TABLE_NAME;
+      const ucTableName = this.ucTableName || process.env.OTEL_UC_TABLE_NAME;
       if (ucTableName) {
         headers["X-Databricks-UC-Table-Name"] = ucTableName;
         console.log(`📊 Traces will be stored in UC table: ${ucTableName}`);
@@ -283,9 +284,12 @@ export class MLflowTracing {
         if (!process.env.OTEL_UC_TABLE_NAME) {
           const tableName = await this.setupExperimentTraceLocation();
           if (tableName) {
-            // Set environment variable so buildHeadersWithToken() can use it
-            process.env.OTEL_UC_TABLE_NAME = tableName;
+            // Store table name in instance (not process.env to avoid test pollution)
+            this.ucTableName = tableName;
           }
+        } else {
+          // Use existing env var if set
+          this.ucTableName = process.env.OTEL_UC_TABLE_NAME;
         }
       } catch (error) {
         console.warn("⚠️  Failed to initialize Databricks SDK authentication:", error);

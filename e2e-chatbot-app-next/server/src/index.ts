@@ -56,7 +56,9 @@ app.use('/api/messages', messagesRouter);
 app.use('/api/config', configRouter);
 
 // Agent backend proxy (optional)
-// If API_PROXY is set, proxy /invocations requests to the agent backend
+// If API_PROXY is set, proxy /invocations requests to the agent backend.
+// NOTE: This proxy logic is also duplicated in agent-langchain-ts/src/plugins/ui/UIPlugin.ts
+// as a fallback for when the UI app module cannot be loaded. Keep both in sync if either changes.
 const agentBackendUrl = process.env.API_PROXY;
 if (agentBackendUrl) {
   console.log(`✅ Proxying /invocations to ${agentBackendUrl}`);
@@ -207,8 +209,13 @@ async function startServer() {
   });
 }
 
-// DO NOT auto-start server - it will be started by the unified server or explicitly
-// If you need to run the UI server standalone, uncomment the line below:
-// startServer();
+// Only auto-start when this file is the direct entry point
+// When imported as a module (e.g., by UIPlugin), this will be skipped
+const currentFilePath = fileURLToPath(import.meta.url);
+const isMainModule = process.argv[1] && fileURLToPath(process.argv[1]) === currentFilePath;
+
+if (process.env.UI_AUTO_START !== 'false' && isMainModule) {
+  startServer();
+}
 
 export default app;

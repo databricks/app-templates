@@ -10,14 +10,12 @@
 
 import { Application, Request, Response } from 'express';
 import { Plugin, PluginConfig } from '../Plugin.js';
-import { createAgent, type AgentConfig } from '../../agent.js';
+import { createAgent, type AgentConfig, type StandardAgent } from '../../agent.js';
 import {
   initializeMLflowTracing,
-  setupTracingShutdownHandlers,
   MLflowTracing,
 } from '../../tracing.js';
 import { createInvocationsRouter } from '../../routes/invocations.js';
-import type { AgentExecutor } from 'langchain/agents';
 
 export interface AgentPluginConfig extends PluginConfig {
   /** Agent configuration */
@@ -35,7 +33,7 @@ export class AgentPlugin implements Plugin {
   version = '1.0.0';
 
   private config: AgentPluginConfig;
-  private agent: AgentExecutor | any;
+  private agent!: StandardAgent;
   private tracing?: MLflowTracing;
 
   constructor(config: AgentPluginConfig) {
@@ -52,7 +50,6 @@ export class AgentPlugin implements Plugin {
         experimentId: this.config.experimentId || process.env.MLFLOW_EXPERIMENT_ID,
       });
 
-      setupTracingShutdownHandlers(this.tracing);
       console.log('[AgentPlugin] ✓ MLflow tracing initialized');
     } catch (error) {
       console.error('[AgentPlugin] Failed to initialize tracing:', error);
@@ -92,12 +89,12 @@ export class AgentPlugin implements Plugin {
   async shutdown(): Promise<void> {
     console.log('[AgentPlugin] Shutting down...');
 
-    // Cleanup tracing
+    // Flush and shutdown tracing
     if (this.tracing) {
       try {
-        // The tracing shutdown handlers are already registered
-        // Just log that we're cleaning up
-        console.log('[AgentPlugin] ✓ Tracing cleanup completed');
+        await this.tracing.flush();
+        await this.tracing.shutdown();
+        console.log('[AgentPlugin] ✓ Tracing flushed and shut down');
       } catch (error) {
         console.error('[AgentPlugin] Error during tracing cleanup:', error);
       }

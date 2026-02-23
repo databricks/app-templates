@@ -9,6 +9,7 @@
 
 import { Application, Request, Response } from 'express';
 import { Plugin, PluginConfig } from '../Plugin.js';
+import { getDefaultUIRoutesPath } from '../../utils/paths.js';
 
 export interface UIPluginConfig extends PluginConfig {
   /** Path to static files (client/dist) */
@@ -39,7 +40,8 @@ export class UIPlugin implements Plugin {
     console.log('[UIPlugin] Initializing...');
 
     // Dynamically import UI app (Express application)
-    const appPath = this.config.uiRoutesPath || '../../../ui/server/dist/index.mjs';
+    // Use absolute path from paths.ts for consistency
+    const appPath = this.config.uiRoutesPath || getDefaultUIRoutesPath();
 
     try {
       // Prevent UI server from auto-starting when imported
@@ -72,6 +74,10 @@ export class UIPlugin implements Plugin {
       console.log('[UIPlugin] ⚠️  UI app not available');
 
       // Fallback: Proxy to external agent if UI is not available
+      // NOTE: This proxy logic is also duplicated in e2e-chatbot-app-next/server/src/index.ts
+      // When the UI app IS loaded (normal case), it handles proxying itself via API_PROXY env var.
+      // This fallback is only used when UIPlugin cannot load the UI app module.
+      // Keep these two implementations in sync if either changes.
       if (this.config.agentInvocationsUrl) {
         console.log(`[UIPlugin] Proxying /invocations to ${this.config.agentInvocationsUrl}`);
 

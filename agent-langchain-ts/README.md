@@ -341,8 +341,8 @@ npm run format
 ### Model Options
 
 Available Databricks foundation models:
-- `databricks-claude-sonnet-4-5`
-- `databricks-gpt-5-2`
+- `databricks-claude-sonnet-4-5` (default)
+- `databricks-dbrx-instruct`
 - `databricks-meta-llama-3-3-70b-instruct`
 
 Or use your own custom model serving endpoint.

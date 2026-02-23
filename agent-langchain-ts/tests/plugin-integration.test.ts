@@ -252,6 +252,9 @@ describe('Mode 2: Agent-Only', () => {
 // Mode 3: UI-Only with External Agent Proxy
 // ============================================================================
 
+// Mode 3 tests are skipped because they require manual server orchestration
+// and are tested in E2E deployed tests instead. The proxy logic in UIPlugin
+// is straightforward (fetch + stream forwarding) and covered by production testing.
 describe.skip('Mode 3: UI-Only with Proxy', () => {
   let agentServer: Server;
   let uiServer: Server;

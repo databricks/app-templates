@@ -60,7 +60,9 @@ The agent uses standard LangGraph `createReactAgent` API:
 - `src/agent.ts` - Agent creation using `createReactAgent`
 - `src/tools.ts` - Basic tool definitions (weather, calculator, time)
 - `src/mcp-servers.ts` - MCP server configuration (code-based, not env vars)
-- `src/server.ts` - Express server with /invocations endpoint
+- `src/main.ts` - Unified server entry point with plugin architecture
+- `src/plugins/` - Plugin system (AgentPlugin, UIPlugin, PluginManager)
+- `src/routes/invocations.ts` - Responses API endpoint
 - `databricks.yml` - Resource permissions
 - `app.yaml` - Databricks Apps configuration
 

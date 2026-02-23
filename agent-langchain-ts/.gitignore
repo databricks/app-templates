@@ -24,6 +24,10 @@ Thumbs.db
 *.log
 npm-debug.log*
 
+# Working notes / debugging artifacts
+*_RESULTS.md
+*_ISSUE.md
+
 # Coverage
 coverage/
 .nyc_output/

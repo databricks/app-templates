@@ -29,10 +29,17 @@ This will:
 ```
 agent-langchain-ts/
 ├── src/
+│   ├── main.ts               # Unified server entry point
 │   ├── agent.ts              # LangChain agent setup
 │   ├── tools.ts              # Tool definitions (weather, calculator, time)
-│   ├── server.ts             # Express server + agent integration
 │   ├── tracing.ts            # MLflow/OpenTelemetry tracing
+│   ├── plugins/
+│   │   ├── Plugin.ts         # Plugin interface
+│   │   ├── PluginManager.ts  # Plugin lifecycle management
+│   │   ├── agent/            # Agent plugin
+│   │   │   └── AgentPlugin.ts
+│   │   └── ui/               # UI plugin
+│   │       └── UIPlugin.ts
 │   └── routes/
 │       └── invocations.ts    # Responses API endpoint
 ├── ui/                       # e2e-chatbot-app-next (auto-fetched)
@@ -336,9 +343,9 @@ export const basicTools = [
 ];
 ```
 
-### Server Configuration (`src/server.ts`)
-**What**: HTTP server setup, endpoints, middleware
-**When**: Adding routes, changing ports, modifying request handling
+### Server Configuration (`src/main.ts` and `src/plugins/`)
+**What**: Plugin-based server architecture, unified server entry point
+**When**: Configuring deployment modes (agent-only, in-process, UI-only), adding plugins, changing server behavior
 
 ### Tracing (`src/tracing.ts`)
 **What**: MLflow/OpenTelemetry integration for observability

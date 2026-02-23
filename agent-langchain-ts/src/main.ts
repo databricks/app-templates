@@ -9,7 +9,7 @@
 
 import express, { type Application } from 'express';
 import { config as loadEnv } from 'dotenv';
-import { PluginManager, type PluginContext } from './plugins/index.js';
+import { PluginManager } from './plugins/index.js';
 import { AgentPlugin, type AgentPluginConfig } from './plugins/agent/index.js';
 import { UIPlugin, type UIPluginConfig } from './plugins/ui/index.js';
 import { getMCPServers } from './mcp-servers.js';
@@ -76,15 +76,8 @@ export async function createUnifiedServer(
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 
-  // Create plugin context
-  const context: PluginContext = {
-    environment,
-    port,
-    config: {},
-  };
-
   // Create plugin manager
-  const pluginManager = new PluginManager(app, context);
+  const pluginManager = new PluginManager(app);
 
   // Register AgentPlugin if enabled
   // IMPORTANT: AgentPlugin must be registered BEFORE UIPlugin

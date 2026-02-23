@@ -8,7 +8,7 @@ import {
   callInvocations,
   parseSSEStream,
   getAgentUrl,
-} from "./helpers.js";
+} from "../helpers.js";
 
 describe("API Endpoints", () => {
   // Use the already-running unified server

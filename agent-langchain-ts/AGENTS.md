@@ -45,7 +45,13 @@ agent-langchain-ts/
 │       └── routes/
 │           └── invocations.ts #  Responses API endpoint
 ├── ui/                       # e2e-chatbot-app-next (auto-fetched by npm run setup)
-├── tests/                    # Jest test suites
+├── tests/
+│   ├── agent.test.ts         # ✏️  EDIT: Tests for your agent logic
+│   ├── integration.test.ts   # ✏️  EDIT: Tests for agent behavior
+│   ├── e2e/                  # End-to-end tests (deployed app)
+│   │   ├── deployed.test.ts  # ✏️  EDIT: Tests for deployed agent
+│   │   └── framework/        # Framework e2e tests — no need to modify
+│   └── framework/            # Framework unit tests — no need to modify
 ├── databricks.yml            # Bundle config & permissions
 ├── app.yaml                  # Databricks Apps config
 ├── package.json              # Dependencies & scripts

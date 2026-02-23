@@ -13,7 +13,7 @@
  */
 
 import { describe, test, expect } from '@jest/globals';
-import { getDeployedAuthHeaders } from './helpers.js';
+import { getDeployedAuthHeaders } from '../helpers.js';
 
 const AGENT_URL = process.env.APP_URL || "http://localhost:8000";
 

@@ -34,6 +34,15 @@ These live under `src/framework/` — the directory name signals "infrastructure
 | `src/framework/routes/invocations.ts` | Responses API + SSE streaming |
 | `src/framework/tracing.ts` | MLflow/OTel tracing setup |
 
+### Tests
+
+| Directory | Contents |
+|-----------|---------|
+| `tests/` | ✏️ Agent unit & integration tests — add yours here |
+| `tests/e2e/` | ✏️ End-to-end tests against deployed app |
+| `tests/framework/` | Framework tests — no need to modify |
+| `tests/e2e/framework/` | Framework e2e tests — no need to modify |
+
 ## Common Modifications
 
 ### 1. Change Model

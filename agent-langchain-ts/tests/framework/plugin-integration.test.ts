@@ -4,11 +4,11 @@
  */
 
 // Mock the paths utility to avoid import.meta issues in Jest
-jest.mock('../src/utils/paths.js');
+jest.mock('../../src/framework/utils/paths.js');
 
 import { Server } from 'http';
-import { createUnifiedServer, DeploymentModes } from '../src/main.js';
-import { callInvocations, callApiChat, parseSSEStream, parseAISDKStream } from './helpers.js';
+import { createUnifiedServer, DeploymentModes } from '../../src/main.js';
+import { callInvocations, callApiChat, parseSSEStream, parseAISDKStream } from '../helpers.js';
 
 // ============================================================================
 // Mode 1: In-Process (Both Plugins)

@@ -5,7 +5,7 @@
  * It handles context injection (conversation_id, user_id) into request bodies.
  *
  * Note: `databricks_options.return_trace` is injected by the AI SDK provider
- * via providerOptions.databricks.databricksOptions in chat.ts, NOT here.
+ * via providerOptions.databricks.includeTrace in chat.ts, NOT here.
  */
 
 import { expect, test } from '@playwright/test';

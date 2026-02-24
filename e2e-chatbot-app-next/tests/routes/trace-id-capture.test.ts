@@ -2,9 +2,9 @@
  * Integration tests verifying the end-to-end trace ID capture pipeline.
  *
  * Flow under test:
- *  1. chat.ts passes `providerOptions.databricks.databricksOptions.return_trace: true`
- *     to streamText(), which the provider forwards as `databricks_options.return_trace`
- *     in the Responses API request body.
+ *  1. chat.ts passes `providerOptions.databricks.includeTrace: true`
+ *     to streamText(). The AI SDK provider converts this to
+ *     `databricks_options.return_trace: true` in the Responses API request body.
  *  2. The mock Databricks server detects return_trace and includes
  *     `databricks_output.trace.info.trace_id` in the response.output_item.done event.
  *  3. chat.ts captures the trace ID directly from the raw SSE event in onChunk.
@@ -39,7 +39,7 @@ test.describe('/api/chat — trace ID capture via providerOptions', () => {
   }) => {
     const chatId = generateUUID();
 
-    // Step 1: Send a chat message. providerOptions.databricks.databricksOptions
+    // Step 1: Send a chat message. providerOptions.databricks.includeTrace: true
     // forwards return_trace: true in the Responses API request body, which
     // causes the MSW mock to include a trace ID in the response stream.
     const assistantMessageId = await sendChatAndGetMessageId(

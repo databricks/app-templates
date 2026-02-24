@@ -231,7 +231,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       model,
       messages: await convertToModelMessages(uiMessages),
       providerOptions: {
-        databricks: { databricksOptions: { return_trace: true } },
+        databricks: { includeTrace: true },
       },
       includeRawChunks: true,
       headers: {

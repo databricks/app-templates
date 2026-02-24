@@ -2,6 +2,7 @@ import logging
 import os
 from typing import Any, AsyncGenerator, Optional, Sequence, TypedDict
 
+import litellm
 import uuid_utils
 
 import mlflow
@@ -30,6 +31,8 @@ from agent_server.utils import (
     get_databricks_host_from_env,
     process_agent_astream_events,
 )
+
+litellm.suppress_debug_info = True
 
 logger = logging.getLogger(__name__)
 mlflow.langchain.autolog()

@@ -1,6 +1,9 @@
 import os
 from typing import AsyncGenerator
 
+import litellm
+litellm.suppress_debug_info = True
+
 from uuid_utils import uuid7
 
 import mlflow

@@ -9,6 +9,9 @@ original Model Serving agent.
 
 from typing import AsyncGenerator
 
+import litellm
+litellm.suppress_debug_info = True
+
 from mlflow.genai.agent_server import invoke, stream
 from mlflow.types.responses import (
     ResponsesAgentRequest,

@@ -1,6 +1,9 @@
 from databricks.sdk import WorkspaceClient
 from typing import AsyncGenerator
 
+import litellm
+litellm.suppress_debug_info = True
+
 import mlflow
 from agents import Agent, Runner, set_default_openai_api, set_default_openai_client
 from agents.tracing import set_trace_processors

@@ -1,5 +1,6 @@
 from typing import AsyncGenerator, Optional
 
+import litellm
 import mlflow
 from databricks.sdk import WorkspaceClient
 from databricks_langchain import ChatDatabricks, DatabricksMCPServer, DatabricksMultiServerMCPClient
@@ -17,6 +18,8 @@ from agent_server.utils import (
     get_user_workspace_client,
     process_agent_astream_events,
 )
+
+litellm.suppress_debug_info = True
 
 mlflow.langchain.autolog()
 sp_workspace_client = WorkspaceClient()

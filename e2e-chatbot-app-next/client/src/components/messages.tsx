@@ -10,9 +10,9 @@ import { Conversation, ConversationContent } from './elements/conversation';
 import { ArrowDownIcon } from 'lucide-react';
 
 interface FeedbackData {
-  id: string;
   messageId: string;
   feedbackType: 'thumbs_up' | 'thumbs_down';
+  assessmentId: string | null;
 }
 
 interface MessagesProps {

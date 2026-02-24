@@ -5,14 +5,7 @@ import {
   type Router as RouterType,
 } from 'express';
 import { authMiddleware, requireAuth } from '../middleware/auth';
-import {
-  getMessageById,
-  createFeedback,
-  getFeedbackByMessageId,
-  getFeedbackByChatId,
-  updateFeedback,
-  isDatabaseAvailable,
-} from '@chat-template/db';
+import { getMessageById, getMessagesByChatId } from '@chat-template/db';
 import { ChatSDKError } from '@chat-template/core/errors';
 import { getDatabricksToken } from '@chat-template/auth';
 import { getWorkspaceHostname } from '@chat-template/ai-sdk-providers';
@@ -25,6 +18,37 @@ import {
 export const feedbackRouter: RouterType = Router();
 
 feedbackRouter.use(authMiddleware);
+
+/**
+ * Fetch the user's assessment for a specific trace from MLflow.
+ * Returns null if no matching assessment is found or if MLflow is unavailable.
+ */
+async function getUserAssessmentForTrace(
+  hostUrl: string,
+  token: string,
+  traceId: string,
+  userId: string,
+): Promise<{ assessmentId: string; feedbackType: 'thumbs_up' | 'thumbs_down' } | null> {
+  const response = await fetch(
+    `${hostUrl}/api/3.0/mlflow/traces/${traceId}/assessments`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+  if (!response.ok) return null;
+  const data = await response.json();
+  const assessment = (data.assessments ?? []).find(
+    (a: any) =>
+      a.assessment_name === 'user_feedback' && a.source?.source_id === userId,
+  );
+  if (!assessment) return null;
+  return {
+    assessmentId: assessment.assessment_id,
+    feedbackType: assessment.feedback?.value === true ? 'thumbs_up' : 'thumbs_down',
+  };
+}
 
 /**
  * POST /api/feedback - Submit feedback for a message
@@ -56,10 +80,9 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       return res.status(response.status).json(response.json);
     }
 
-    // Get the message to retrieve traceId and chatId
+    // Get the message to retrieve traceId
     const messages = await getMessageById({ id: messageId });
     let traceId: string | null;
-    let chatId: string;
 
     if (!messages || messages.length === 0) {
       // Fall back to in-memory store (ephemeral mode or DB unavailable)
@@ -70,17 +93,10 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
         return res.status(response.status).json(response.json);
       }
       traceId = meta.traceId;
-      chatId = meta.chatId;
     } else {
       const dbMessage = messages[0];
       traceId = dbMessage.traceId;
-      chatId = dbMessage.chatId;
     }
-
-    // Look up any existing feedback row for deduplication (DB mode).
-    const existingFeedback = isDatabaseAvailable()
-      ? await getFeedbackByMessageId({ messageId })
-      : null;
 
     let mlflowAssessmentId: string | undefined;
 
@@ -89,13 +105,16 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       try {
         const token = await getDatabricksToken();
         const hostUrl = await getWorkspaceHostname();
+        const userId = session.user.email ?? session.user.id;
 
         // Check for an existing assessment to update (deduplication).
-        // DB mode: look at the stored mlflowAssessmentId from the existing feedback row.
-        // Ephemeral mode: look up the in-memory assessment store.
-        const existingAssessmentId =
-          existingFeedback?.mlflowAssessmentId ??
-          getAssessmentId(messageId, session.user.id);
+        // Memory-first: check the in-memory assessment store.
+        // If not in memory, call MLflow to check for an existing assessment.
+        let existingAssessmentId = getAssessmentId(messageId, session.user.id);
+        if (!existingAssessmentId) {
+          const existing = await getUserAssessmentForTrace(hostUrl, token, traceId, userId);
+          existingAssessmentId = existing?.assessmentId ?? null;
+        }
 
         let mlflowResponse: Response;
         if (existingAssessmentId) {
@@ -114,7 +133,7 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
                   assessment_name: 'user_feedback',
                   source: {
                     source_type: 'HUMAN',
-                    source_id: session.user.email ?? session.user.id,
+                    source_id: userId,
                   },
                   feedback: {
                     value: feedbackType === 'thumbs_up',
@@ -140,7 +159,7 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
                   assessment_name: 'user_feedback',
                   source: {
                     source_type: 'HUMAN',
-                    source_id: session.user.email ?? session.user.id,
+                    source_id: userId,
                   },
                   feedback: {
                     value: feedbackType === 'thumbs_up',
@@ -158,42 +177,21 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           const mlflowResult = await mlflowResponse.json();
           mlflowAssessmentId = mlflowResult.assessment?.assessment_id;
           console.log('Successfully submitted feedback to MLflow:', mlflowAssessmentId);
-          // Store assessment ID for ephemeral-mode deduplication on subsequent submissions
+          // Store assessment ID for deduplication on subsequent submissions
           if (mlflowAssessmentId) {
             storeAssessmentId(messageId, session.user.id, mlflowAssessmentId);
           }
         }
       } catch (error) {
         console.error('Error submitting feedback to MLflow:', error);
-        // Continue to save feedback in database even if MLflow submission fails
+        // Continue even if MLflow submission fails
       }
     } else {
       console.warn('Message does not have a trace ID, skipping MLflow submission');
     }
 
-    // Save feedback to DB when available
-    let feedbackResult;
-    if (isDatabaseAvailable()) {
-      if (existingFeedback) {
-        feedbackResult = await updateFeedback({
-          id: existingFeedback.id,
-          feedbackType,
-          mlflowAssessmentId,
-        });
-      } else {
-        feedbackResult = await createFeedback({
-          messageId,
-          chatId,
-          userId: session.user.id,
-          feedbackType,
-          mlflowAssessmentId,
-        });
-      }
-    }
-
     return res.status(200).json({
       success: true,
-      feedback: feedbackResult ?? null,
       mlflowAssessmentId,
     });
   } catch (error) {
@@ -212,6 +210,10 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
 
 /**
  * GET /api/feedback/chat/:chatId - Get all feedback for a chat
+ *
+ * Fetches messages for the chat, then queries MLflow assessments for each
+ * message that has a traceId. Returns a map of messageId -> feedback.
+ * Returns empty map if MLflow is unavailable (graceful degradation).
  */
 feedbackRouter.get(
   '/chat/:chatId',
@@ -219,8 +221,60 @@ feedbackRouter.get(
   async (req: Request, res: Response) => {
     try {
       const { chatId } = req.params;
-      const feedbackList = await getFeedbackByChatId({ chatId });
-      return res.status(200).json(feedbackList);
+      const session = req.session;
+      if (!session) {
+        return res.status(200).json({});
+      }
+
+      const userId = session.user.email ?? session.user.id;
+
+      // Get all messages for this chat that have trace IDs
+      const messages = await getMessagesByChatId({ id: chatId });
+      const messagesWithTrace = messages.filter((msg) => msg.traceId != null);
+
+      if (messagesWithTrace.length === 0) {
+        return res.status(200).json({});
+      }
+
+      try {
+        const token = await getDatabricksToken();
+        const hostUrl = await getWorkspaceHostname();
+
+        // Fetch assessments for all messages in parallel
+        const results = await Promise.allSettled(
+          messagesWithTrace.map(async (msg) => {
+            const assessment = await getUserAssessmentForTrace(
+              hostUrl,
+              token,
+              msg.traceId!,
+              userId,
+            );
+            return { messageId: msg.id, assessment };
+          }),
+        );
+
+        // Build messageId -> feedback map
+        const feedbackMap: Record<
+          string,
+          { messageId: string; feedbackType: 'thumbs_up' | 'thumbs_down'; assessmentId: string | null }
+        > = {};
+        for (const result of results) {
+          if (result.status === 'fulfilled' && result.value.assessment) {
+            const { messageId, assessment } = result.value;
+            feedbackMap[messageId] = {
+              messageId,
+              feedbackType: assessment.feedbackType,
+              assessmentId: assessment.assessmentId,
+            };
+          }
+        }
+
+        return res.status(200).json(feedbackMap);
+      } catch (error) {
+        // If MLflow is unavailable, return empty map (graceful degradation)
+        console.warn('[Feedback] MLflow unavailable for chat feedback:', error);
+        return res.status(200).json({});
+      }
     } catch (error) {
       console.error('[Feedback] Error getting feedback by chat:', error);
       if (error instanceof ChatSDKError) {
@@ -243,12 +297,48 @@ feedbackRouter.get(
   async (req: Request, res: Response) => {
     try {
       const { messageId } = req.params;
+      const session = req.session;
+      if (!session) {
+        return res.status(200).json({ feedback: null });
+      }
 
-      const feedback = await getFeedbackByMessageId({ messageId });
+      const userId = session.user.email ?? session.user.id;
 
-      return res.status(200).json({
-        feedback: feedback || null,
-      });
+      // Get the message to retrieve traceId
+      const messages = await getMessageById({ id: messageId });
+      let traceId: string | null;
+
+      if (!messages || messages.length === 0) {
+        const meta = getMessageMeta(messageId);
+        traceId = meta?.traceId ?? null;
+      } else {
+        traceId = messages[0].traceId;
+      }
+
+      if (!traceId) {
+        return res.status(200).json({ feedback: null });
+      }
+
+      try {
+        const token = await getDatabricksToken();
+        const hostUrl = await getWorkspaceHostname();
+        const assessment = await getUserAssessmentForTrace(hostUrl, token, traceId, userId);
+
+        if (!assessment) {
+          return res.status(200).json({ feedback: null });
+        }
+
+        return res.status(200).json({
+          feedback: {
+            messageId,
+            feedbackType: assessment.feedbackType,
+            assessmentId: assessment.assessmentId,
+          },
+        });
+      } catch (error) {
+        console.warn('[Feedback] MLflow unavailable for message feedback:', error);
+        return res.status(200).json({ feedback: null });
+      }
     } catch (error) {
       console.error('[Feedback] Error getting feedback:', error);
 

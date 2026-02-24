@@ -26,9 +26,9 @@ import { softNavigateToChatId } from '@/lib/navigation';
 import { useAppConfig } from '@/contexts/AppConfigContext';
 
 interface FeedbackData {
-  id: string;
   messageId: string;
   feedbackType: 'thumbs_up' | 'thumbs_down';
+  assessmentId: string | null;
 }
 
 export function Chat({

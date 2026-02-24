@@ -14,9 +14,9 @@ import {
 } from 'lucide-react';
 
 interface InitialFeedback {
-  id: string;
   messageId: string;
   feedbackType: 'thumbs_up' | 'thumbs_down';
+  assessmentId: string | null;
 }
 
 function PureMessageActions({

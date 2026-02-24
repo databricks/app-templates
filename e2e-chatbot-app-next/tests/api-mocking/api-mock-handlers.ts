@@ -10,6 +10,21 @@ import {
 import { TEST_PROMPTS } from '../prompts/routes';
 
 // ============================================================================
+// MLflow Assessment State Management
+// ============================================================================
+
+interface StoredAssessment {
+  assessment_id: string;
+  assessment_name: string;
+  trace_id: string;
+  source: { source_type: string; source_id: string };
+  feedback: { value: boolean };
+}
+
+/** In-memory store: traceId -> list of assessments. Populated by POST/PATCH handlers. */
+const mlflowAssessmentStore: Record<string, StoredAssessment[]> = {};
+
+// ============================================================================
 // MCP Approval State Management
 // ============================================================================
 
@@ -279,9 +294,23 @@ export const handlers = [
     );
   }),
 
-  // Mock MLflow assessments endpoint (api/3.0, trace_id in URL path).
+  // Mock MLflow GET assessments endpoint.
+  // Returns stored assessments for the given trace ID.
+  // URL: GET /api/3.0/mlflow/traces/{trace_id}/assessments
+  http.get(/\/api\/3\.0\/mlflow\/traces\/([^/]+)\/assessments$/, (req) => {
+    const url = req.request.url;
+    const traceIdMatch = url.match(/\/traces\/([^/]+)\/assessments/);
+    const traceId = traceIdMatch?.[1] ?? 'unknown';
+
+    return HttpResponse.json({
+      assessments: mlflowAssessmentStore[traceId] ?? [],
+    });
+  }),
+
+  // Mock MLflow assessments POST endpoint (api/3.0, trace_id in URL path).
   // Validates the request body has the correct structure:
   //   { assessment: { trace_id, assessment_name, source, feedback: { value: boolean } } }
+  // Stores the assessment in mlflowAssessmentStore for GET to return.
   http.post(/\/api\/3\.0\/mlflow\/traces\/([^/]+)\/assessments$/, async (req) => {
     const url = req.request.url;
     const traceIdMatch = url.match(/\/traces\/([^/]+)\/assessments/);
@@ -291,7 +320,7 @@ export const handlers = [
       assessment?: {
         trace_id?: string;
         assessment_name?: string;
-        source?: { source_type?: string };
+        source?: { source_type?: string; source_id?: string };
         feedback?: { value?: unknown };
       };
     };
@@ -314,9 +343,33 @@ export const handlers = [
       );
     }
 
+    const assessmentId = `mock-assessment-${traceId}`;
+    const stored: StoredAssessment = {
+      assessment_id: assessmentId,
+      assessment_name: assessment.assessment_name,
+      trace_id: traceId,
+      source: {
+        source_type: assessment.source?.source_type ?? 'HUMAN',
+        source_id: assessment.source?.source_id ?? '',
+      },
+      feedback: { value: feedbackValue },
+    };
+
+    // Store (replace any existing assessment for this trace+source)
+    const existing = mlflowAssessmentStore[traceId] ?? [];
+    const idx = existing.findIndex(
+      (a) => a.source.source_id === stored.source.source_id,
+    );
+    if (idx >= 0) {
+      existing[idx] = stored;
+    } else {
+      existing.push(stored);
+    }
+    mlflowAssessmentStore[traceId] = existing;
+
     return HttpResponse.json({
       assessment: {
-        assessment_id: `mock-assessment-${traceId}`,
+        assessment_id: assessmentId,
         trace_id: traceId,
         assessment_name: assessment.assessment_name,
       },
@@ -325,6 +378,7 @@ export const handlers = [
 
   // Mock MLflow assessments PATCH endpoint (update existing assessment).
   // URL: PATCH /api/3.0/mlflow/traces/{trace_id}/assessments/{assessment_id}
+  // Updates the stored assessment's feedback value.
   http.patch(
     /\/api\/3\.0\/mlflow\/traces\/([^/]+)\/assessments\/([^/]+)$/,
     async (req) => {
@@ -337,6 +391,7 @@ export const handlers = [
         assessment?: {
           trace_id?: string;
           assessment_name?: string;
+          source?: { source_type?: string; source_id?: string };
           feedback?: { value?: unknown };
         };
       };
@@ -356,6 +411,21 @@ export const handlers = [
           },
           { status: 400 },
         );
+      }
+
+      // Update the stored assessment's feedback value
+      const existing = mlflowAssessmentStore[traceId] ?? [];
+      const idx = existing.findIndex((a) => a.assessment_id === assessmentId);
+      if (idx >= 0) {
+        existing[idx] = {
+          ...existing[idx],
+          feedback: { value: feedbackValue },
+          source: {
+            source_type: assessment.source?.source_type ?? existing[idx].source.source_type,
+            source_id: assessment.source?.source_id ?? existing[idx].source.source_id,
+          },
+        };
+        mlflowAssessmentStore[traceId] = existing;
       }
 
       return HttpResponse.json({

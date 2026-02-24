@@ -40,9 +40,9 @@ import { Streamdown } from 'streamdown';
 import { useApproval } from '@/hooks/use-approval';
 
 interface InitialFeedback {
-  id: string;
   messageId: string;
   feedbackType: 'thumbs_up' | 'thumbs_down';
+  assessmentId: string | null;
 }
 
 const PurePreviewMessage = ({

@@ -7,8 +7,7 @@
  *     in the Responses API request body.
  *  2. The mock Databricks server detects return_trace and includes
  *     `databricks_output.trace.info.trace_id` in the response.output_item.done event.
- *  3. The provider captures the trace ID from the SSE event and exposes it in
- *     response.body.trace_id, which chat.ts reads in onFinish.
+ *  3. chat.ts captures the trace ID directly from the raw SSE event in onChunk.
  *  4. On feedback submission the trace ID is forwarded to the mock MLflow endpoint.
  *  5. The feedback response includes `mlflowAssessmentId` proving the full chain worked.
  *

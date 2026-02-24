@@ -7,6 +7,8 @@ the actual agent initialization, tool setup, and streaming logic from the
 original Model Serving agent.
 """
 
+import litellm
+import logging
 from typing import AsyncGenerator
 
 from mlflow.genai.agent_server import invoke, stream
@@ -30,6 +32,15 @@ from mlflow.types.responses import (
 #     from agents import Agent, Runner
 #     from databricks_openai import AsyncDatabricksOpenAI
 #     import mlflow; mlflow.openai.autolog()
+#
+# After enabling autolog, suppress noisy loggers:
+#   logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
+#   litellm.suppress_debug_info = True
+#
+# For session tracking in your streaming handler:
+#   from agent_server.utils import get_session_id
+#   if session_id := get_session_id(request):
+#       mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
 #
 # ──────────────────────────────────────────────
 

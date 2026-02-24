@@ -1,9 +1,11 @@
-from databricks.sdk import WorkspaceClient
+import litellm
+import logging
 from typing import AsyncGenerator
 
 import mlflow
 from agents import Agent, Runner, set_default_openai_api, set_default_openai_client
 from agents.tracing import set_trace_processors
+from databricks.sdk import WorkspaceClient
 from databricks_openai import AsyncDatabricksOpenAI
 from databricks_openai.agents import McpServer
 from mlflow.genai.agent_server import invoke, stream
@@ -15,6 +17,7 @@ from mlflow.types.responses import (
 
 from agent_server.utils import (
     build_mcp_url,
+    get_session_id,
     get_user_workspace_client,
     process_agent_stream_events,
     sanitize_output_items,
@@ -25,6 +28,8 @@ set_default_openai_client(AsyncDatabricksOpenAI())
 set_default_openai_api("chat_completions")
 set_trace_processors([])  # only use mlflow for trace processing
 mlflow.openai.autolog()
+logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
+litellm.suppress_debug_info = True
 
 
 async def init_mcp_server(workspace_client: WorkspaceClient | None = None):
@@ -58,6 +63,8 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
 
 @stream()
 async def stream_handler(request: dict) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
+    if session_id := get_session_id(request):
+        mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
     workspace_client = WorkspaceClient()
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()

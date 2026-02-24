@@ -4,19 +4,12 @@ import { memo, useEffect } from 'react';
 import equal from 'fast-deep-equal';
 import type { UseChatHelpers } from '@ai-sdk/react';
 import { useMessages } from '@/hooks/use-messages';
-import type { ChatMessage } from '@chat-template/core';
+import type { ChatMessage, FeedbackMap } from '@chat-template/core';
 import { useDataStream } from './data-stream-provider';
 import { Conversation, ConversationContent } from './elements/conversation';
 import { ArrowDownIcon } from 'lucide-react';
 
-interface FeedbackData {
-  messageId: string;
-  feedbackType: 'thumbs_up' | 'thumbs_down';
-  assessmentId: string | null;
-}
-
 interface MessagesProps {
-  chatId: string;
   status: UseChatHelpers<ChatMessage>['status'];
   messages: ChatMessage[];
   setMessages: UseChatHelpers<ChatMessage>['setMessages'];
@@ -25,11 +18,10 @@ interface MessagesProps {
   regenerate: UseChatHelpers<ChatMessage>['regenerate'];
   isReadonly: boolean;
   selectedModelId: string;
-  feedback?: Record<string, FeedbackData>;
+  feedback?: FeedbackMap;
 }
 
 function PureMessages({
-  chatId,
   status,
   messages,
   setMessages,
@@ -79,7 +71,6 @@ function PureMessages({
           {messages.map((message, index) => (
             <PreviewMessage
               key={message.id}
-              chatId={chatId}
               message={message}
               allMessages={messages}
               isLoading={

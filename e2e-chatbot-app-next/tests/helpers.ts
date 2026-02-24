@@ -7,6 +7,67 @@ import type {
   TestType,
 } from '@playwright/test';
 
+// ============================================================================
+// SSE Parsing Helpers
+// ============================================================================
+
+/**
+ * Parse SSE lines and return only the `data:` payloads as parsed objects.
+ * Shared across route test files to avoid duplication.
+ */
+export function parseSSEPayloads(body: string): unknown[] {
+  return body
+    .split('\n')
+    .filter((l) => l.startsWith('data: ') && l !== 'data: [DONE]')
+    .map((l) => {
+      try {
+        return JSON.parse(l.slice(6));
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+/**
+ * Send a chat message via POST /api/chat and return the assistant message ID
+ * from the `start` SSE event. Throws if the request fails or the event is missing.
+ */
+export async function sendChatAndGetMessageId(
+  request: APIRequestContext,
+  chatId: string,
+  message: unknown,
+): Promise<string> {
+  const chatResponse = await request.post('/api/chat', {
+    data: {
+      id: chatId,
+      message,
+      selectedChatModel: 'chat-model',
+      selectedVisibilityType: 'private',
+    },
+  });
+
+  if (chatResponse.status() !== 200) {
+    throw new Error(
+      `Expected 200 from /api/chat, got ${chatResponse.status()}`,
+    );
+  }
+
+  const body = await chatResponse.text();
+  const payloads = parseSSEPayloads(body);
+  const startEvent = payloads.find(
+    (p) => (p as any)?.type === 'start' && (p as any)?.messageId,
+  ) as { type: string; messageId: string } | undefined;
+
+  if (!startEvent?.messageId) {
+    throw new Error(
+      `Expected a 'start' SSE event with messageId. Got payloads: ${JSON.stringify(payloads.map((p) => (p as any)?.type))}`,
+    );
+  }
+
+  return startEvent.messageId;
+}
+
 export type UserContext = {
   context: BrowserContext;
   page: Page;

@@ -25,7 +25,7 @@ import { cn, sanitizeText } from '@/lib/utils';
 import { MessageEditor } from './message-editor';
 import { MessageReasoning } from './message-reasoning';
 import type { UseChatHelpers } from '@ai-sdk/react';
-import type { ChatMessage } from '@chat-template/core';
+import type { ChatMessage, Feedback } from '@chat-template/core';
 import { useDataStream } from './data-stream-provider';
 import {
   createMessagePartSegments,
@@ -39,14 +39,7 @@ import { isCredentialErrorMessage } from '@/lib/oauth-error-utils';
 import { Streamdown } from 'streamdown';
 import { useApproval } from '@/hooks/use-approval';
 
-interface InitialFeedback {
-  messageId: string;
-  feedbackType: 'thumbs_up' | 'thumbs_down';
-  assessmentId: string | null;
-}
-
 const PurePreviewMessage = ({
-  chatId,
   message,
   allMessages,
   isLoading,
@@ -58,7 +51,6 @@ const PurePreviewMessage = ({
   requiresScrollPadding,
   initialFeedback,
 }: {
-  chatId: string;
   message: ChatMessage;
   allMessages: ChatMessage[];
   isLoading: boolean;
@@ -68,7 +60,7 @@ const PurePreviewMessage = ({
   regenerate: UseChatHelpers<ChatMessage>['regenerate'];
   isReadonly: boolean;
   requiresScrollPadding: boolean;
-  initialFeedback?: InitialFeedback;
+  initialFeedback?: Feedback;
 }) => {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [showErrors, setShowErrors] = useState(false);
@@ -376,7 +368,6 @@ const PurePreviewMessage = ({
           {!isReadonly && !hasOnlyErrors && (
             <MessageActions
               key={`action-${message.id}`}
-              chatId={chatId}
               message={message}
               isLoading={isLoading}
               setMode={setMode}

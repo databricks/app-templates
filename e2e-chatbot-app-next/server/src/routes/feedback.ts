@@ -6,6 +6,7 @@ import {
 } from 'express';
 import { authMiddleware, requireAuth } from '../middleware/auth';
 import { getMessageById, getMessagesByChatId } from '@chat-template/db';
+import { checkChatAccess } from '@chat-template/core';
 import { ChatSDKError } from '@chat-template/core/errors';
 import { getDatabricksToken } from '@chat-template/auth';
 import { getWorkspaceHostname } from '@chat-template/ai-sdk-providers';
@@ -116,7 +117,7 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           existingAssessmentId = existing?.assessmentId ?? null;
         }
 
-        let mlflowResponse: Response;
+        let mlflowResponse: globalThis.Response;
         if (existingAssessmentId) {
           // PATCH to update the existing assessment
           mlflowResponse = await fetch(
@@ -226,11 +227,19 @@ feedbackRouter.get(
         return res.status(200).json({});
       }
 
+      // Ownership check: verify the chat belongs to the requesting user
+      const { allowed, reason } = await checkChatAccess(chatId as string, session.user.id);
+      if (reason !== 'not_found' && !allowed) {
+        return res.status(200).json({});
+      }
+
       const userId = session.user.email ?? session.user.id;
 
       // Get all messages for this chat that have trace IDs
-      const messages = await getMessagesByChatId({ id: chatId });
-      const messagesWithTrace = messages.filter((msg) => msg.traceId != null);
+      const messages = await getMessagesByChatId({ id: chatId as string });
+      const messagesWithTrace = messages.filter(
+        (msg): msg is typeof msg & { traceId: string } => msg.traceId != null,
+      );
 
       if (messagesWithTrace.length === 0) {
         return res.status(200).json({});
@@ -246,7 +255,7 @@ feedbackRouter.get(
             const assessment = await getUserAssessmentForTrace(
               hostUrl,
               token,
-              msg.traceId!,
+              msg.traceId,
               userId,
             );
             return { messageId: msg.id, assessment };
@@ -288,68 +297,3 @@ feedbackRouter.get(
   },
 );
 
-/**
- * GET /api/feedback/:messageId - Get feedback for a message
- */
-feedbackRouter.get(
-  '/:messageId',
-  requireAuth,
-  async (req: Request, res: Response) => {
-    try {
-      const { messageId } = req.params;
-      const session = req.session;
-      if (!session) {
-        return res.status(200).json({ feedback: null });
-      }
-
-      const userId = session.user.email ?? session.user.id;
-
-      // Get the message to retrieve traceId
-      const messages = await getMessageById({ id: messageId });
-      let traceId: string | null;
-
-      if (!messages || messages.length === 0) {
-        const meta = getMessageMeta(messageId);
-        traceId = meta?.traceId ?? null;
-      } else {
-        traceId = messages[0].traceId;
-      }
-
-      if (!traceId) {
-        return res.status(200).json({ feedback: null });
-      }
-
-      try {
-        const token = await getDatabricksToken();
-        const hostUrl = await getWorkspaceHostname();
-        const assessment = await getUserAssessmentForTrace(hostUrl, token, traceId, userId);
-
-        if (!assessment) {
-          return res.status(200).json({ feedback: null });
-        }
-
-        return res.status(200).json({
-          feedback: {
-            messageId,
-            feedbackType: assessment.feedbackType,
-            assessmentId: assessment.assessmentId,
-          },
-        });
-      } catch (error) {
-        console.warn('[Feedback] MLflow unavailable for message feedback:', error);
-        return res.status(200).json({ feedback: null });
-      }
-    } catch (error) {
-      console.error('[Feedback] Error getting feedback:', error);
-
-      if (error instanceof ChatSDKError) {
-        const response = error.toResponse();
-        return res.status(response.status).json(response.json);
-      }
-
-      const chatError = new ChatSDKError('offline:chat');
-      const response = chatError.toResponse();
-      return res.status(response.status).json(response.json);
-    }
-  },
-);

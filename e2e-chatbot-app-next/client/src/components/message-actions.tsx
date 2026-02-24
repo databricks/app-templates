@@ -1,9 +1,9 @@
 import { useCopyToClipboard } from 'usehooks-ts';
 
 import { Actions, Action } from './elements/actions';
-import { memo, useState, useCallback, useEffect, useMemo } from 'react';
+import { memo, useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
-import type { ChatMessage } from '@chat-template/core';
+import type { ChatMessage, Feedback } from '@chat-template/core';
 import {
   ChevronDown,
   ChevronUp,
@@ -13,15 +13,8 @@ import {
   ThumbsDown,
 } from 'lucide-react';
 
-interface InitialFeedback {
-  messageId: string;
-  feedbackType: 'thumbs_up' | 'thumbs_down';
-  assessmentId: string | null;
-}
-
 function PureMessageActions({
   message,
-  chatId,
   isLoading,
   setMode,
   errorCount = 0,
@@ -30,42 +23,30 @@ function PureMessageActions({
   initialFeedback,
 }: {
   message: ChatMessage;
-  chatId: string;
   isLoading: boolean;
   setMode?: (mode: 'view' | 'edit') => void;
   errorCount?: number;
   showErrors?: boolean;
   onToggleErrors?: () => void;
-  initialFeedback?: InitialFeedback;
+  initialFeedback?: Feedback;
 }) {
   // All hooks MUST be called before any early returns
   const [_, copyToClipboard] = useCopyToClipboard();
   const [feedback, setFeedback] = useState<'thumbs_up' | 'thumbs_down' | null>(
     initialFeedback?.feedbackType || null,
   );
-  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const isSubmittingRef = useRef(false);
 
-  // Memoize text extraction from message parts
-  const textFromParts = useMemo(
-    () =>
-      message.parts
-        ?.filter((part) => part.type === 'text')
-        .map((part) => part.text)
-        .join('\n')
-        .trim(),
-    [message.parts],
-  );
-
-  // Update feedback state when initialFeedback changes (e.g., when switching chats)
-  useEffect(() => {
-    setFeedback(initialFeedback?.feedbackType || null);
-  }, [initialFeedback]);
+  const textFromParts = message.parts
+    ?.filter((part) => part.type === 'text')
+    .map((part) => part.text)
+    .join('\n')
+    .trim();
 
   const handleFeedback = useCallback(
     async (feedbackType: 'thumbs_up' | 'thumbs_down') => {
-      if (isSubmittingFeedback) return;
-
-      setIsSubmittingFeedback(true);
+      if (isSubmittingRef.current) return;
+      isSubmittingRef.current = true;
 
       try {
         const response = await fetch('/api/feedback', {
@@ -75,7 +56,6 @@ function PureMessageActions({
           },
           body: JSON.stringify({
             messageId: message.id,
-            chatId,
             feedbackType,
           }),
         });
@@ -89,10 +69,10 @@ function PureMessageActions({
         console.error('Error submitting feedback:', error);
         toast.error('Failed to submit feedback. Please try again.');
       } finally {
-        setIsSubmittingFeedback(false);
+        isSubmittingRef.current = false;
       }
     },
-    [message.id, chatId, isSubmittingFeedback],
+    [message.id],
   );
 
   const handleCopy = useCallback(async () => {

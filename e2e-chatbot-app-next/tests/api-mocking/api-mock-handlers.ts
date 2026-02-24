@@ -38,6 +38,16 @@ let mcpApprovalState: McpApprovalState = 'idle';
 const MCP_REQUEST_ID = '__fake_mcp_request_id__';
 
 /**
+ * Reset MLflow assessment store. Call this in beforeEach for tests that
+ * use fixed trace IDs, to prevent state from bleeding between test runs.
+ */
+export function resetMlflowAssessmentStore() {
+  for (const key of Object.keys(mlflowAssessmentStore)) {
+    delete mlflowAssessmentStore[key];
+  }
+}
+
+/**
  * Reset MCP approval state. Call this in test beforeEach.
  */
 export function resetMcpApprovalState() {

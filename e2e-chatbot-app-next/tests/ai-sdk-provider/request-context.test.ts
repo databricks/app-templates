@@ -6,15 +6,13 @@ test.describe("Request Context Utils", () => {
     const originalEnv = process.env.API_PROXY;
 
     test.beforeEach(() => {
-      delete process.env.API_PROXY;
+      // Use empty string (falsy) to unset API_PROXY without using delete
+      // (Biome's performance/noDelete rule prevents delete on object properties)
+      process.env.API_PROXY = '';
     });
 
     test.afterEach(() => {
-      if (originalEnv !== undefined) {
-        process.env.API_PROXY = originalEnv;
-      } else {
-        delete process.env.API_PROXY;
-      }
+      process.env.API_PROXY = originalEnv ?? '';
     });
 
     test("returns true when API_PROXY is set", () => {

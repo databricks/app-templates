@@ -10,6 +10,7 @@ import type {
   Attachment,
   ChatMessage,
   CustomUIDataTypes,
+  FeedbackMap,
   VisibilityType,
 } from '@chat-template/core';
 import { unstable_serialize } from 'swr/infinite';
@@ -24,12 +25,6 @@ import { ChatTransport } from '../lib/ChatTransport';
 import type { ClientSession } from '@chat-template/auth';
 import { softNavigateToChatId } from '@/lib/navigation';
 import { useAppConfig } from '@/contexts/AppConfigContext';
-
-interface FeedbackData {
-  messageId: string;
-  feedbackType: 'thumbs_up' | 'thumbs_down';
-  assessmentId: string | null;
-}
 
 export function Chat({
   id,
@@ -47,7 +42,7 @@ export function Chat({
   isReadonly: boolean;
   session: ClientSession;
   initialLastContext?: LanguageModelUsage;
-  feedback?: Record<string, FeedbackData>;
+  feedback?: FeedbackMap;
 }) {
   const { visibilityType } = useChatVisibility({
     chatId: id,
@@ -289,7 +284,6 @@ export function Chat({
         <ChatHeader />
 
         <Messages
-          chatId={id}
           status={status}
           messages={messages}
           setMessages={setMessages}

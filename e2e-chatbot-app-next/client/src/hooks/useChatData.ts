@@ -1,18 +1,12 @@
 import useSWR from 'swr';
 import type { Chat } from '@chat-template/db';
-import type { ChatMessage } from '@chat-template/core';
+import type { ChatMessage, FeedbackMap } from '@chat-template/core';
 import { convertToUIMessages } from '@/lib/utils';
-
-interface Feedback {
-  messageId: string;
-  feedbackType: 'thumbs_up' | 'thumbs_down';
-  assessmentId: string | null;
-}
 
 interface ChatData {
   chat: Chat;
   messages: ChatMessage[];
-  feedback: Record<string, Feedback>; // Map of messageId -> feedback
+  feedback: FeedbackMap;
 }
 
 /**
@@ -57,7 +51,7 @@ async function fetchChatData(url: string): Promise<ChatData | null> {
   const messages = convertToUIMessages(messagesFromDb);
 
   // Fetch feedback for this chat (returned as messageId -> feedback map from MLflow)
-  let feedbackMap: Record<string, Feedback> = {};
+  let feedbackMap: FeedbackMap = {};
   try {
     const feedbackResponse = await fetch(`/api/feedback/chat/${chatId}`);
 

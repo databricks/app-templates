@@ -1,13 +1,11 @@
 /**
- * Unit tests for the databricks_options injection in databricksFetch.
+ * Unit tests for databricksFetch.
  *
- * The injection ensures every Responses API request includes
- * `databricks_options: { return_trace: true }`, which causes Databricks to
- * include a trace ID in the response. This trace ID is later used to submit
- * feedback to MLflow.
+ * databricksFetch is the custom fetch layer used for all Databricks API calls.
+ * It handles context injection (conversation_id, user_id) into request bodies.
  *
- * @databricks/ai-sdk-provider v0.4.1 does not forward providerOptions to the
- * request body, so the injection is done at the custom fetch layer instead.
+ * Note: `databricks_options.return_trace` is injected by the AI SDK provider
+ * via providerOptions.databricks.databricksOptions in chat.ts, NOT here.
  */
 
 import { expect, test } from '@playwright/test';
@@ -45,7 +43,7 @@ test.describe('databricksFetch — databricks_options injection', () => {
     (globalThis as any).fetch = savedFetch;
   });
 
-  test('injects { return_trace: true } when URL contains /responses and body has no databricks_options', async () => {
+  test('does not inject databricks_options (handled via providerOptions in chat.ts)', async () => {
     await databricksFetch(RESPONSES_URL, {
       method: 'POST',
       body: JSON.stringify({ model: 'claude-3', input: [] }),
@@ -53,7 +51,9 @@ test.describe('databricksFetch — databricks_options injection', () => {
 
     expect(captured).toHaveLength(1);
     const sentBody = JSON.parse(captured[0].body as string);
-    expect(sentBody.databricks_options).toEqual({ return_trace: true });
+    // databricksFetch does not inject databricks_options; return_trace is
+    // forwarded by the AI SDK provider via providerOptions.databricks.
+    expect(sentBody.databricks_options).toBeUndefined();
     // Original fields must be preserved
     expect(sentBody.model).toBe('claude-3');
     expect(sentBody.input).toEqual([]);

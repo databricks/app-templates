@@ -124,6 +124,7 @@ async function startServer() {
         getCapturedRequests,
         resetCapturedRequests,
         getLastCapturedRequest,
+        resetMlflowAssessmentStore,
       } = await import(handlersPath);
 
       // Test-only endpoint to get captured requests (for context injection testing)
@@ -144,6 +145,12 @@ async function startServer() {
       // Test-only endpoint to reset captured requests
       app.post('/api/test/reset-captured-requests', (_req, res) => {
         resetCapturedRequests();
+        res.json({ success: true });
+      });
+
+      // Test-only endpoint to reset MLflow assessment store
+      app.post('/api/test/reset-mlflow-store', (_req, res) => {
+        resetMlflowAssessmentStore();
         res.json({ success: true });
       });
 

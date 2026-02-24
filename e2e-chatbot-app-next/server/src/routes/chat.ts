@@ -79,8 +79,6 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     console.log('[Chat] Running in ephemeral mode - no persistence');
   }
 
-  console.log(`CHAT POST REQUEST ${Date.now()}`);
-
   let requestBody: PostRequestBody;
 
   try {
@@ -228,17 +226,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     let traceId: string | null = null;
     const streamId = generateUUID();
 
-    console.log(
-      `[Chat] Attempting to get language model: ${selectedChatModel}`,
-    );
-    let model;
-    try {
-      model = await myProvider.languageModel(selectedChatModel);
-      console.log(`[Chat] Successfully got language model: ${selectedChatModel}`);
-    } catch (modelError) {
-      console.error('[Chat] Failed to get language model:', modelError);
-      throw modelError;
-    }
+    const model = await myProvider.languageModel(selectedChatModel);
     const result = streamText({
       model,
       messages: await convertToModelMessages(uiMessages),
@@ -270,7 +258,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       onFinish: (finishData) => {
         finalUsage = finishData.usage;
         if (!traceId) {
-          console.log('[Chat] ⚠️  No trace ID found after stream finished');
+          console.warn('[Chat] ⚠️  No trace ID found after stream finished');
         }
       },
     });
@@ -346,12 +334,10 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     });
 
     if (error instanceof ChatSDKError) {
-      console.log('[Chat] Error is ChatSDKError, returning structured response');
       const response = error.toResponse();
       return res.status(response.status).json(response.json);
     }
 
-    console.error('[Chat] Unhandled error, returning offline:chat');
     const chatError = new ChatSDKError('offline:chat');
     const response = chatError.toResponse();
     return res.status(response.status).json(response.json);

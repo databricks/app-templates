@@ -2,6 +2,7 @@ import logging
 import os
 from typing import Any, AsyncGenerator, Optional
 
+import litellm
 import mlflow
 from databricks.sdk import WorkspaceClient
 from databricks_langchain import (
@@ -33,6 +34,8 @@ from agent_server.utils_memory import (
     memory_tools,
     resolve_lakebase_instance_name,
 )
+
+litellm.suppress_debug_info = True
 
 logger = logging.getLogger(__name__)
 logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
@@ -114,7 +117,7 @@ async def streaming(
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
     if session_id := get_session_id(request):
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
-    
+
     # Optionally use the user's workspace client for on-behalf-of authentication
     # NEEDS to be initialized during query time, not on agent initialization to have user creds.
     # user_workspace_client = get_user_workspace_client()

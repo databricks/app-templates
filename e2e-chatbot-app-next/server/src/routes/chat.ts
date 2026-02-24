@@ -44,6 +44,7 @@ import {
   updateChatLastContextById,
   updateChatVisiblityById,
   isDatabaseAvailable,
+  updateChatTitleById,
 } from '@chat-template/db';
 import {
   type ChatMessage,
@@ -125,14 +126,20 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     if (!chat) {
       // Only create new chat if we have a message (not a continuation)
       if (isDatabaseAvailable() && message) {
-        const title = await generateTitleFromUserMessage({ message });
-
         await saveChat({
           id,
           userId: session.user.id,
-          title,
+          title: 'New chat',
           visibility: selectedVisibilityType,
         });
+
+        generateTitleFromUserMessage({ message }).then((title) =>
+          updateChatTitleById({
+            chatId: id,
+            title,
+          })).catch((error) => {
+            console.error('Error generating title:', error);
+          });
       }
     } else {
       if (chat.userId !== session.user.id) {
@@ -470,10 +477,16 @@ chatRouter.patch(
 // Helper function to generate title from user message
 async function generateTitleFromUserMessage({
   message,
+  maxMessageLength = 256,
 }: {
   message: ChatMessage;
+  maxMessageLength?: number;
 }) {
   const model = await myProvider.languageModel('title-model');
+
+  // Truncate each text part to the maxMessageLength
+  const truncatedMessage = { ...message, parts: message.parts.map((part) => part.type === 'text' ? { ...part, text: part.text.slice(0, maxMessageLength) } : part) }
+
   const { text: title } = await generateText({
     model,
     system: `\n
@@ -481,7 +494,7 @@ async function generateTitleFromUserMessage({
     - ensure it is not more than 80 characters long
     - the title should be a summary of the user's message
     - do not use quotes or colons. do not include other expository content ("I'll help...")`,
-    prompt: JSON.stringify(message),
+    prompt: JSON.stringify(truncatedMessage),
   });
 
   return title;

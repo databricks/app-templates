@@ -154,7 +154,9 @@ async function startServer() {
         res.json({ success: true });
       });
 
-      console.log('[Test Mode] Test endpoints for context injection registered');
+      console.log(
+        '[Test Mode] Test endpoints for context injection registered',
+      );
     } catch (error) {
       console.error('[Test Mode] Failed to start MSW:', error);
       console.error(

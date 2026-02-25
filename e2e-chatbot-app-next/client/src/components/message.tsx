@@ -228,12 +228,16 @@ const PurePreviewMessage = ({
 
             // Render Databricks tool calls and results
             if (part.type === `dynamic-tool`) {
-              const { toolCallId, input, state, errorText, output, toolName } = part;
+              const { toolCallId, input, state, errorText, output, toolName } =
+                part;
 
               // Check if this is an MCP tool call by looking for approvalRequestId in metadata
               // This works across all states (approval-requested, approval-denied, output-available)
-              const isMcpApproval = part.callProviderMetadata?.databricks?.approvalRequestId != null;
-              const mcpServerName = part.callProviderMetadata?.databricks?.mcpServerName?.toString();
+              const isMcpApproval =
+                part.callProviderMetadata?.databricks?.approvalRequestId !=
+                null;
+              const mcpServerName =
+                part.callProviderMetadata?.databricks?.mcpServerName?.toString();
 
               // Extract approval outcome for 'approval-responded' state
               // When addToolApprovalResponse is called, AI SDK sets the `approval` property
@@ -241,14 +245,17 @@ const PurePreviewMessage = ({
               const approved: boolean | undefined =
                 'approval' in part ? part.approval?.approved : undefined;
 
-
               // When approved but only have approval status (not actual output), show as input-available
               const effectiveState: ToolState = (() => {
-                  if (part.providerExecuted && !isLoading && state === 'input-available') {
-                    return 'output-available'
-                  }
+                if (
+                  part.providerExecuted &&
+                  !isLoading &&
+                  state === 'input-available'
+                ) {
+                  return 'output-available';
+                }
                 return state;
-              })()
+              })();
 
               // Render MCP tool calls with special styling
               if (isMcpApproval) {
@@ -307,10 +314,7 @@ const PurePreviewMessage = ({
               // Render regular tool calls
               return (
                 <Tool key={toolCallId} defaultOpen={true}>
-                  <ToolHeader
-                    type={toolName}
-                    state={effectiveState}
-                  />
+                  <ToolHeader type={toolName} state={effectiveState} />
                   <ToolContent>
                     <ToolInput input={input} />
                     {state === 'output-available' && (

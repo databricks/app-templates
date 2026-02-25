@@ -7,16 +7,12 @@ const messageMetadataSchema = z.object({
 
 type MessageMetadata = z.infer<typeof messageMetadataSchema>;
 
-
 export type CustomUIDataTypes = {
   error: string;
   usage: LanguageModelUsage;
 };
 
-export type ChatMessage = UIMessage<
-  MessageMetadata,
-  CustomUIDataTypes
->;
+export type ChatMessage = UIMessage<MessageMetadata, CustomUIDataTypes>;
 
 export interface Attachment {
   name: string;

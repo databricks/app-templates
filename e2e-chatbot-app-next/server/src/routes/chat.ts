@@ -204,9 +204,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
                 (p) =>
                   p.type === 'dynamic-tool' &&
                   (p.state === 'output-denied' ||
-                    ('approval' in p &&
-                      (p.approval)?.approved ===
-                        false)),
+                    ('approval' in p && p.approval?.approved === false)),
               ),
           );
 

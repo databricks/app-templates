@@ -111,7 +111,12 @@ export const databricksFetch: typeof fetch = async (input, init) => {
   requestInit = { ...requestInit, headers };
 
   // Inject context into request body if appropriate
-  if (conversationId && userId && requestInit?.body && typeof requestInit.body === 'string') {
+  if (
+    conversationId &&
+    userId &&
+    requestInit?.body &&
+    typeof requestInit.body === 'string'
+  ) {
     if (shouldInjectContext()) {
       try {
         const body = JSON.parse(requestInit.body);
@@ -134,7 +139,9 @@ export const databricksFetch: typeof fetch = async (input, init) => {
   if (requestInit?.body) {
     try {
       const requestBody =
-        typeof requestInit.body === 'string' ? JSON.parse(requestInit.body) : requestInit.body;
+        typeof requestInit.body === 'string'
+          ? JSON.parse(requestInit.body)
+          : requestInit.body;
       console.log(
         'Databricks request:',
         JSON.stringify({

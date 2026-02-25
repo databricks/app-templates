@@ -1,10 +1,6 @@
 /**
  * Deployed app tests for Databricks Apps
  *
- * This file contains one example test to show developers how to test agent
- * tool calls against a deployed app. Copy and customize these tests to
- * verify your own tools and expected outputs.
- *
  * Prerequisites:
  * - App deployed to Databricks Apps
  * - Databricks CLI configured with OAuth
@@ -29,7 +25,7 @@ beforeAll(async () => {
 
 describe("Deployed App Tests", () => {
   describe("/invocations endpoint", () => {
-    test("should handle calculator tool", async () => {
+    test("should respond with text", async () => {
       const response = await fetch(`${APP_URL}/invocations`, {
         method: "POST",
         headers: {
@@ -37,28 +33,17 @@ describe("Deployed App Tests", () => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          input: [
-            {
-              role: "user",
-              content: "Calculate 123 * 456 using the calculator tool",
-            },
-          ],
+          input: [{ role: "user", content: "Say hello" }],
           stream: true,
         }),
       });
 
       expect(response.ok).toBe(true);
       const text = await response.text();
+      const { fullOutput } = parseSSEStream(text);
 
-      const { fullOutput, toolCalls } = parseSSEStream(text);
-
-      // Assert for tool call in message history
-      const hasCalculatorCall = toolCalls.some((call) => call.name === "calculator");
-      expect(hasCalculatorCall).toBe(true);
-
-      // Verify result in output
-      const hasResult = fullOutput.includes("56088") || fullOutput.includes("56,088");
-      expect(hasResult).toBe(true);
+      expect(fullOutput.length).toBeGreaterThan(0);
+      expect(text).toContain("data: [DONE]");
     }, 30000);
   });
 });

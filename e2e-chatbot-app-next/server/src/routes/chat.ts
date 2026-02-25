@@ -133,12 +133,24 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           visibility: selectedVisibilityType,
         });
 
-        generateTitleFromUserMessage({ message }).then((title) =>
-          updateChatTitleById({
-            chatId: id,
-            title,
-          })).catch((error) => {
+        generateTitleFromUserMessage({ message })
+          .then((title) =>
+            updateChatTitleById({
+              chatId: id,
+              title,
+            }),
+          )
+          .catch((error) => {
             console.error('Error generating title:', error);
+            const textFromUserMessage = message?.parts.find(
+              (part) => part.type === 'text',
+            )?.text;
+            if (textFromUserMessage) {
+              updateChatTitleById({
+                chatId: id,
+                title: truncatePreserveWords(textFromUserMessage, 128),
+              });
+            }
           });
       }
     } else {
@@ -210,9 +222,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
                 (p) =>
                   p.type === 'dynamic-tool' &&
                   (p.state === 'output-denied' ||
-                    ('approval' in p &&
-                      (p.approval)?.approved ===
-                        false)),
+                    ('approval' in p && p.approval?.approved === false)),
               ),
           );
 
@@ -485,7 +495,14 @@ async function generateTitleFromUserMessage({
   const model = await myProvider.languageModel('title-model');
 
   // Truncate each text part to the maxMessageLength
-  const truncatedMessage = { ...message, parts: message.parts.map((part) => part.type === 'text' ? { ...part, text: part.text.slice(0, maxMessageLength) } : part) }
+  const truncatedMessage = {
+    ...message,
+    parts: message.parts.map((part) =>
+      part.type === 'text'
+        ? { ...part, text: part.text.slice(0, maxMessageLength) }
+        : part,
+    ),
+  };
 
   const { text: title } = await generateText({
     model,
@@ -498,4 +515,28 @@ async function generateTitleFromUserMessage({
   });
 
   return title;
+}
+
+function truncatePreserveWords(input: string, maxLength: number): string {
+  if (maxLength <= 0) return '';
+  if (input.length <= maxLength) return input;
+
+  // Take the raw slice first
+  const slice = input.slice(0, maxLength);
+
+  // Find the last whitespace within the slice
+  const lastSpaceIndex = slice.lastIndexOf(' ');
+
+  // If no whitespace found, we must break mid-word
+  if (lastSpaceIndex === -1) {
+    return slice;
+  }
+
+  // If the whitespace is too close to the start (e.g., leading space),
+  // fallback to mid-word break to avoid returning an empty string
+  if (lastSpaceIndex === 0) {
+    return slice;
+  }
+
+  return slice.slice(0, lastSpaceIndex);
 }

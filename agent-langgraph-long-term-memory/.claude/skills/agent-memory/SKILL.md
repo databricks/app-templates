@@ -41,8 +41,7 @@ Adding memory requires changes to **4 files**:
 |------|-------------|
 | `pyproject.toml` | Memory dependency |
 | `.env` | Lakebase env vars (for local dev) |
-| `databricks.yml` | Lakebase database resource |
-| `app.yaml` | Environment variables for Lakebase |
+| `databricks.yml` | Lakebase database resource + env vars in config block |
 | `agent_server/agent.py` | Memory tools and AsyncDatabricksStore |
 
 ---
@@ -174,28 +173,30 @@ resources:
             permission: 'CAN_CONNECT_AND_CREATE'
 ```
 
-**Important:** The `name: 'database'` must match the `valueFrom` reference in `app.yaml`.
+**Important:** The `name: 'database'` must match the `valueFrom` reference in the `databricks.yml` `config.env` block.
 
-### Step 2: app.yaml (Environment Variables)
+### Step 2: databricks.yml config block (Environment Variables)
+
+Add the Lakebase environment variables to your app's `config.env` in `databricks.yml`:
 
 ```yaml
-command: ["uv", "run", "start-app"]
+      config:
+        command: ["uv", "run", "start-app"]
+        env:
+          # ... other env vars ...
 
-env:
-  # ... other env vars ...
+          # Lakebase instance name (resolved from database resource)
+          - name: LAKEBASE_INSTANCE_NAME
+            valueFrom: "database"
 
-  # Lakebase instance name
-  - name: LAKEBASE_INSTANCE_NAME
-    value: "<your-lakebase-instance-name>"
-
-  # Embedding configuration
-  - name: EMBEDDING_ENDPOINT
-    value: "databricks-gte-large-en"
-  - name: EMBEDDING_DIMS
-    value: "1024"
+          # Embedding configuration
+          - name: EMBEDDING_ENDPOINT
+            value: "databricks-gte-large-en"
+          - name: EMBEDDING_DIMS
+            value: "1024"
 ```
 
-**Important:** `LAKEBASE_INSTANCE_NAME` must match `instance_name` in databricks.yml.
+**Important:** `LAKEBASE_INSTANCE_NAME` uses `valueFrom: "database"` to resolve from the database resource at deploy time.
 
 ### Step 3: .env (Local Development)
 
@@ -348,7 +349,7 @@ curl -X POST https://<app-url>/invocations \
 - [ ] Created or identified Lakebase instance
 - [ ] Added Lakebase env vars to `.env` (for local dev)
 - [ ] Added `database` resource to `databricks.yml`
-- [ ] Added `LAKEBASE_INSTANCE_NAME` to `app.yaml`
+- [ ] Added `LAKEBASE_INSTANCE_NAME` to `databricks.yml` `config.env`
 - [ ] **Initialized tables locally** by running `await store.setup()`
 - [ ] Deployed with `databricks bundle deploy && databricks bundle run`
 
@@ -360,7 +361,7 @@ curl -X POST https://<app-url>/invocations \
 |-------|-------|----------|
 | **"embedding_dims is required"** | Missing parameter | Add `embedding_dims=1024` to AsyncDatabricksStore |
 | **"relation 'store' does not exist"** | Tables not created | Run `await store.setup()` locally first |
-| **"Unable to resolve Lakebase instance 'None'"** | Missing env var | Check `LAKEBASE_INSTANCE_NAME` in app.yaml |
+| **"Unable to resolve Lakebase instance 'None'"** | Missing env var | Check `LAKEBASE_INSTANCE_NAME` in databricks.yml `config.env` |
 | **"permission denied for table store"** | Missing grants | Add `database` resource to databricks.yml |
 | **"Memory not available - no user_id"** | Missing user_id | Pass `custom_inputs.user_id` in request |
 | **Memory not persisting** | Different user_ids | Use consistent user_id across requests |

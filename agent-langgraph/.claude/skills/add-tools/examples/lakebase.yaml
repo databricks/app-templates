@@ -1,6 +1,6 @@
 # Lakebase Database (for agent memory)
 # Use for: Long-term memory storage via AsyncDatabricksStore
-# Requires: valueFrom reference in app.yaml
+# Requires: valueFrom reference in databricks.yml config block
 
 # In databricks.yml - add to resources.apps.<app>.resources:
 - name: 'database'
@@ -9,7 +9,7 @@
     database_name: 'postgres'
     permission: 'CAN_CONNECT_AND_CREATE'
 
-# In app.yaml - add to env:
+# In databricks.yml config block - add to env:
 # - name: LAKEBASE_INSTANCE_NAME
 #   valueFrom: "database"
 # - name: EMBEDDING_ENDPOINT

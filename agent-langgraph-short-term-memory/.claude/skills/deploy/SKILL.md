@@ -219,4 +219,4 @@ uv add <package_name>
 | "Provider produced inconsistent result" | Sync app config to `databricks.yml` |
 | "should set workspace.root_path" | Add `root_path` to production target |
 | App running old code after deploy | Run `databricks bundle run agent_langgraph_short_term_memory` after deploy |
-| Env var is None in deployed app | Check `valueFrom` in app.yaml matches resource `name` in databricks.yml |
+| Env var is None in deployed app | Check `valueFrom` in databricks.yml `config.env` matches resource `name` |

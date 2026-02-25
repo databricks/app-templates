@@ -78,13 +78,13 @@ databricks apps update-permissions <mcp-server-app-name> \
 
 See `examples/custom-mcp-server.md` for detailed steps.
 
-## valueFrom Pattern (for app.yaml)
+## valueFrom Pattern
 
-**IMPORTANT**: Make sure all `valueFrom` references in `app.yaml` reference an existing key in the `databricks.yml` file. 
-Some resources need environment variables in your app. Use `valueFrom` in `app.yaml` to reference resources defined in `databricks.yml`:
+**IMPORTANT**: Make sure all `valueFrom` references in `databricks.yml` `config.env` reference an existing key in the `databricks.yml` `resources` list.
+Some resources need environment variables in your app. Use `valueFrom` in `databricks.yml` `config.env` to reference resources defined in `databricks.yml`:
 
 ```yaml
-# app.yaml
+# In databricks.yml, under apps.<app>.config.env:
 env:
   - name: MLFLOW_EXPERIMENT_ID
     valueFrom: "experiment"        # References resources.apps.<app>.resources[name='experiment']
@@ -100,4 +100,4 @@ env:
 - **Multiple resources**: Add multiple entries under `resources:` list
 - **Permission types vary**: Each resource type has specific permission values
 - **Deploy + Run after changes**: Run both `databricks bundle deploy` AND `databricks bundle run agent_langgraph`
-- **valueFrom matching**: Ensure `app.yaml` `valueFrom` values match `databricks.yml` resource `name` values
+- **valueFrom matching**: Ensure `config.env` `valueFrom` values match `databricks.yml` resource `name` values

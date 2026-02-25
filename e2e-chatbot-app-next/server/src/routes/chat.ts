@@ -44,6 +44,7 @@ import {
   updateChatLastContextById,
   updateChatVisiblityById,
   isDatabaseAvailable,
+  updateChatTitleById,
 } from '@chat-template/db';
 import {
   type ChatMessage,
@@ -125,14 +126,32 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     if (!chat) {
       // Only create new chat if we have a message (not a continuation)
       if (isDatabaseAvailable() && message) {
-        const title = await generateTitleFromUserMessage({ message });
-
         await saveChat({
           id,
           userId: session.user.id,
-          title,
+          title: 'New chat',
           visibility: selectedVisibilityType,
         });
+
+        generateTitleFromUserMessage({ message })
+          .then((title) =>
+            updateChatTitleById({
+              chatId: id,
+              title,
+            }),
+          )
+          .catch((error) => {
+            console.error('Error generating title:', error);
+            const textFromUserMessage = message?.parts.find(
+              (part) => part.type === 'text',
+            )?.text;
+            if (textFromUserMessage) {
+              updateChatTitleById({
+                chatId: id,
+                title: truncatePreserveWords(textFromUserMessage, 128),
+              });
+            }
+          });
       }
     } else {
       if (chat.userId !== session.user.id) {
@@ -468,10 +487,23 @@ chatRouter.patch(
 // Helper function to generate title from user message
 async function generateTitleFromUserMessage({
   message,
+  maxMessageLength = 256,
 }: {
   message: ChatMessage;
+  maxMessageLength?: number;
 }) {
   const model = await myProvider.languageModel('title-model');
+
+  // Truncate each text part to the maxMessageLength
+  const truncatedMessage = {
+    ...message,
+    parts: message.parts.map((part) =>
+      part.type === 'text'
+        ? { ...part, text: part.text.slice(0, maxMessageLength) }
+        : part,
+    ),
+  };
+
   const { text: title } = await generateText({
     model,
     system: `\n
@@ -479,8 +511,32 @@ async function generateTitleFromUserMessage({
     - ensure it is not more than 80 characters long
     - the title should be a summary of the user's message
     - do not use quotes or colons. do not include other expository content ("I'll help...")`,
-    prompt: JSON.stringify(message),
+    prompt: JSON.stringify(truncatedMessage),
   });
 
   return title;
+}
+
+function truncatePreserveWords(input: string, maxLength: number): string {
+  if (maxLength <= 0) return '';
+  if (input.length <= maxLength) return input;
+
+  // Take the raw slice first
+  const slice = input.slice(0, maxLength);
+
+  // Find the last whitespace within the slice
+  const lastSpaceIndex = slice.lastIndexOf(' ');
+
+  // If no whitespace found, we must break mid-word
+  if (lastSpaceIndex === -1) {
+    return slice;
+  }
+
+  // If the whitespace is too close to the start (e.g., leading space),
+  // fallback to mid-word break to avoid returning an empty string
+  if (lastSpaceIndex === 0) {
+    return slice;
+  }
+
+  return slice.slice(0, lastSpaceIndex);
 }

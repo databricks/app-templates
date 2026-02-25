@@ -645,20 +645,8 @@ export function mockMcpApprovalApprovedStream(options?: {
       sequence_number: 0,
       type: 'response.created',
     }),
-    // MCP approval response
-    mockSSE({
-      item: {
-        type: 'mcp_approval_response',
-        id: approvalResponseId,
-        approval_request_id: requestId,
-        approve: true,
-        reason: null,
-      },
-      output_index: 0,
-      sequence_number: 1,
-      type: 'response.output_item.done',
-    }),
     // Message item added
+    // (mcp_approval_response is sent as INPUT by the client, not echoed in the output)
     mockSSE({
       item: {
         id: textItemId,
@@ -667,8 +655,8 @@ export function mockMcpApprovalApprovedStream(options?: {
         status: 'in_progress',
         type: 'message',
       },
-      output_index: 1,
-      sequence_number: 2,
+      output_index: 0,
+      sequence_number: 1,
       type: 'response.output_item.added',
     }),
     // Text delta
@@ -677,8 +665,8 @@ export function mockMcpApprovalApprovedStream(options?: {
       delta: continuationText,
       item_id: textItemId,
       logprobs: [],
-      output_index: 1,
-      sequence_number: 3,
+      output_index: 0,
+      sequence_number: 2,
       type: 'response.output_text.delta',
     }),
     // Message item done
@@ -697,8 +685,8 @@ export function mockMcpApprovalApprovedStream(options?: {
         status: 'completed',
         type: 'message',
       },
-      output_index: 1,
-      sequence_number: 4,
+      output_index: 0,
+      sequence_number: 3,
       type: 'response.output_item.done',
     }),
     // Response completed
@@ -710,13 +698,6 @@ export function mockMcpApprovalApprovedStream(options?: {
         model: 'databricks-claude-3-7-sonnet',
         object: 'response',
         output: [
-          {
-            type: 'mcp_approval_response',
-            id: approvalResponseId,
-            approval_request_id: requestId,
-            approve: true,
-            reason: null,
-          },
           {
             id: textItemId,
             content: [
@@ -738,7 +719,7 @@ export function mockMcpApprovalApprovedStream(options?: {
           total_tokens: 180,
         },
       },
-      sequence_number: 5,
+      sequence_number: 4,
       type: 'response.completed',
     }),
   ];
@@ -774,20 +755,8 @@ export function mockMcpApprovalDeniedStream(options?: {
       sequence_number: 0,
       type: 'response.created',
     }),
-    // MCP approval response (denied)
-    mockSSE({
-      item: {
-        type: 'mcp_approval_response',
-        id: approvalResponseId,
-        approval_request_id: requestId,
-        approve: false,
-        reason: 'User denied the request',
-      },
-      output_index: 0,
-      sequence_number: 1,
-      type: 'response.output_item.done',
-    }),
     // Message item added
+    // (mcp_approval_response is sent as INPUT by the client, not echoed in the output)
     mockSSE({
       item: {
         id: textItemId,
@@ -796,8 +765,8 @@ export function mockMcpApprovalDeniedStream(options?: {
         status: 'in_progress',
         type: 'message',
       },
-      output_index: 1,
-      sequence_number: 2,
+      output_index: 0,
+      sequence_number: 1,
       type: 'response.output_item.added',
     }),
     // Text delta
@@ -806,8 +775,8 @@ export function mockMcpApprovalDeniedStream(options?: {
       delta: continuationText,
       item_id: textItemId,
       logprobs: [],
-      output_index: 1,
-      sequence_number: 3,
+      output_index: 0,
+      sequence_number: 2,
       type: 'response.output_text.delta',
     }),
     // Message item done
@@ -826,8 +795,8 @@ export function mockMcpApprovalDeniedStream(options?: {
         status: 'completed',
         type: 'message',
       },
-      output_index: 1,
-      sequence_number: 4,
+      output_index: 0,
+      sequence_number: 3,
       type: 'response.output_item.done',
     }),
     // Response completed
@@ -839,13 +808,6 @@ export function mockMcpApprovalDeniedStream(options?: {
         model: 'databricks-claude-3-7-sonnet',
         object: 'response',
         output: [
-          {
-            type: 'mcp_approval_response',
-            id: approvalResponseId,
-            approval_request_id: requestId,
-            approve: false,
-            reason: 'User denied the request',
-          },
           {
             id: textItemId,
             content: [
@@ -867,7 +829,7 @@ export function mockMcpApprovalDeniedStream(options?: {
           total_tokens: 175,
         },
       },
-      sequence_number: 5,
+      sequence_number: 4,
       type: 'response.completed',
     }),
   ];

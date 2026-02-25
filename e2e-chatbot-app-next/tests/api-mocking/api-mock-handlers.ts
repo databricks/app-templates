@@ -215,7 +215,10 @@ export const handlers = [
     const body = await req.request.clone().json();
     captureRequestContext(req.request.url, body);
     const isStreaming = (body as { stream?: boolean })?.stream;
-    // Detect if the request wants trace data (injected by databricksFetch)
+    // Detect if the request wants trace data.
+    // chat.ts passes providerOptions.databricks.includeTrace: true to streamText(),
+    // which the AI SDK provider converts to databricks_options.return_trace: true
+    // in the request body before sending to the Databricks API.
     const returnTrace =
       (body as any)?.databricks_options?.return_trace === true;
     const streamTraceId = returnTrace ? 'mock-trace-id-from-databricks' : undefined;
@@ -251,7 +254,8 @@ export const handlers = [
     // (one response.output_text.delta per token). This is necessary to reproduce
     // the delta-boundary bug where interleaved raw+text-delta chunks break streaming.
     // Pass streamTraceId so the response.output_item.done event includes trace data
-    // when the request contained databricks_options.return_trace === true.
+    // when the request contained databricks_options.return_trace === true
+    // (set by the AI SDK provider when providerOptions.databricks.includeTrace is true).
     if (isStreaming) {
       return createMockStreamResponse(
         mockResponsesApiMultiDeltaTextStream(
@@ -418,6 +422,17 @@ export const handlers = [
           {
             error_code: 'INVALID_PARAMETER_VALUE',
             message: `Mock: invalid PATCH assessment body. Got feedback.value=${JSON.stringify(feedbackValue)} (expected boolean)`,
+          },
+          { status: 400 },
+        );
+      }
+
+      // Reject source updates — matches real MLflow behavior
+      if ((assessment as { source?: unknown }).source !== undefined) {
+        return HttpResponse.json(
+          {
+            error_code: 'INVALID_PARAMETER_VALUE',
+            message: "The field `source` may not be updated.",
           },
           { status: 400 },
         );

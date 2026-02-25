@@ -268,6 +268,11 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
      * This allows us to inject custom stream parts like data-error.
      */
     const stream = createUIMessageStream({
+      // Pass originalMessages so that continuation responses reuse the existing
+      // assistant message ID. Without this, handleUIMessageStreamFinish generates
+      // a fresh ID, causing the client to push a second assistant message instead
+      // of replacing the existing one.
+      originalMessages: uiMessages,
       execute: async ({ writer }) => {
         // result.toUIMessageStream() properly converts TextStreamPart → UIMessageChunk:
         // - text-delta: maps TextStreamPart.text → UIMessageChunk.delta

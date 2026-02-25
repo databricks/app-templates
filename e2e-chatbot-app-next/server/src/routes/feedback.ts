@@ -132,15 +132,11 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
                 assessment: {
                   trace_id: traceId,
                   assessment_name: 'user_feedback',
-                  source: {
-                    source_type: 'HUMAN',
-                    source_id: userId,
-                  },
                   feedback: {
                     value: feedbackType === 'thumbs_up',
                   },
                 },
-                update_mask: 'feedback,source',
+                update_mask: 'feedback',
               }),
             },
           );

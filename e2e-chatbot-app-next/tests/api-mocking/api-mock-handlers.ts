@@ -251,8 +251,8 @@ export const handlers = [
     }
 
     // Default response: split text into per-word chunks to replicate real streaming
-    // (one response.output_text.delta per token). This is necessary to reproduce
-    // the delta-boundary bug where interleaved raw+text-delta chunks break streaming.
+    // (one response.output_text.delta per token). This validates that interleaved
+    // raw and text-delta chunks produced by streamText are parsed correctly by the client.
     // Pass streamTraceId so the response.output_item.done event includes trace data
     // when the request contained databricks_options.return_trace === true
     // (set by the AI SDK provider when providerOptions.databricks.includeTrace is true).

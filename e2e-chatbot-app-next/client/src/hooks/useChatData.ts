@@ -17,9 +17,7 @@ async function fetchChatData(url: string): Promise<ChatData | null> {
   const chatId = url.split('/').pop();
 
   // Fetch chat details
-  const chatResponse = await fetch(`/api/chat/${chatId}`, {
-    credentials: 'include',
-  });
+  const chatResponse = await fetch(`/api/chat/${chatId}`);
 
   if (!chatResponse.ok) {
     if (chatResponse.status === 404 || chatResponse.status === 403) {
@@ -31,9 +29,7 @@ async function fetchChatData(url: string): Promise<ChatData | null> {
   const chat = await chatResponse.json();
 
   // Fetch messages
-  const messagesResponse = await fetch(`/api/messages/${chatId}`, {
-    credentials: 'include',
-  });
+  const messagesResponse = await fetch(`/api/messages/${chatId}`);
 
   if (!messagesResponse.ok) {
     // If messages endpoint returns 404 (e.g., database disabled), return empty messages

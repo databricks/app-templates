@@ -239,7 +239,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       onChunk: ({ chunk }) => {
         if (chunk.type === 'raw') {
           const raw = chunk.rawValue as any;
-          // Existing: Databricks serving endpoint
+          // Extract trace in Databricks serving endpoint output format, if present
           if (raw?.type === 'response.output_item.done') {
             const traceIdFromChunk =
               raw?.databricks_output?.trace?.info?.trace_id;
@@ -247,7 +247,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
               traceId = traceIdFromChunk;
             }
           }
-          // New: MLflow AgentServer x-mlflow-return-trace-id response
+          // Extract trace from MLflow AgentServer output format, if present
           if (!traceId && typeof raw?.trace_id === 'string') {
             traceId = raw.trace_id;
           }
@@ -255,9 +255,6 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       },
       onFinish: (finishData) => {
         finalUsage = finishData.usage;
-        if (!traceId) {
-          console.warn('[Chat] ⚠️  No trace ID found after stream finished');
-        }
       },
     });
 
@@ -280,11 +277,6 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
         writer.merge(result.toUIMessageStream());
       },
       onFinish: async ({ responseMessage }) => {
-        console.log(
-          'Finished message stream! Saving message...',
-          JSON.stringify(responseMessage, null, 2),
-        );
-
         // Store in-memory for ephemeral mode (also useful when DB is available)
         storeMessageMeta(responseMessage.id, id, traceId);
 

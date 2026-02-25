@@ -401,8 +401,7 @@ const PurePreviewMessage = ({
 export const PreviewMessage = memo(
   PurePreviewMessage,
   (prevProps, nextProps) => {
-    // Always re-render when message is loading (streaming)
-    if (prevProps.isLoading || nextProps.isLoading) return false;
+    if (prevProps.isLoading !== nextProps.isLoading) return false;
 
     if (prevProps.message.id !== nextProps.message.id) return false;
     if (prevProps.requiresScrollPadding !== nextProps.requiresScrollPadding)

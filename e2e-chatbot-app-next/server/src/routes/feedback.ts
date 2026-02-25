@@ -11,7 +11,7 @@ import { ChatSDKError } from '@chat-template/core/errors';
 import { getDatabricksToken } from '@chat-template/auth';
 import { getWorkspaceHostname } from '@chat-template/ai-sdk-providers';
 import {
-  getMessageMeta,
+  getMessageMetadata,
   getAssessmentId,
   storeAssessmentId,
 } from '../lib/message-meta-store';
@@ -87,13 +87,13 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
 
     if (!messages || messages.length === 0) {
       // Fall back to in-memory store (ephemeral mode or DB unavailable)
-      const meta = getMessageMeta(messageId);
-      if (!meta) {
+      const metadata = getMessageMetadata(messageId);
+      if (!metadata) {
         const error = new ChatSDKError('not_found:database');
         const response = error.toResponse();
         return res.status(response.status).json(response.json);
       }
-      traceId = meta.traceId;
+      traceId = metadata.traceId;
     } else {
       const dbMessage = messages[0];
       traceId = dbMessage.traceId;
@@ -173,7 +173,6 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
         } else {
           const mlflowResult = await mlflowResponse.json();
           mlflowAssessmentId = mlflowResult.assessment?.assessment_id;
-          console.log('Successfully submitted feedback to MLflow:', mlflowAssessmentId);
           // Store assessment ID for deduplication on subsequent submissions
           if (mlflowAssessmentId) {
             storeAssessmentId(messageId, session.user.id, mlflowAssessmentId);

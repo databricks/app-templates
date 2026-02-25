@@ -8,8 +8,13 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from '@jest/globals';
+import { config as loadEnv } from "dotenv";
 import { spawn } from "child_process";
 import type { ChildProcess } from "child_process";
+import { resolve } from "path";
+
+// Load agent .env so credentials flow through to the UI server subprocess
+loadEnv({ path: resolve(process.cwd(), ".env") });
 import { createDatabricksProvider } from "@databricks/ai-sdk-provider";
 import { streamText } from "ai";
 import {
@@ -28,14 +33,14 @@ describe("Integration Tests - Local Endpoints", () => {
 
   beforeAll(async () => {
     // Start agent server
-    agentProcess = spawn("tsx", ["src/framework/server.ts"], {
+    agentProcess = spawn("node_modules/.bin/tsx", ["src/framework/server.ts"], {
       env: { ...process.env, PORT: AGENT_PORT.toString() },
       stdio: ["ignore", "pipe", "pipe"],
     });
 
     // Start UI server with API_PROXY pointing to agent
     uiProcess = spawn(
-      "../node_modules/tsx/dist/cli.mjs",
+      `${process.cwd()}/node_modules/.bin/tsx`,
       ["server/src/index.ts"],
       {
         cwd: `${process.cwd()}/../e2e-chatbot-app-next`,
@@ -125,7 +130,11 @@ describe("Integration Tests - Local Endpoints", () => {
     test("should respond with useChat format", async () => {
       const response = await fetch(`${UI_URL}/api/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Forwarded-User": "test-user",
+          "X-Forwarded-Email": "test@example.com",
+        },
         body: JSON.stringify({
           id: "550e8400-e29b-41d4-a716-446655440000",
           message: {

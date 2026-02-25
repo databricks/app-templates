@@ -402,6 +402,12 @@ export const PreviewMessage = memo(
   PurePreviewMessage,
   (prevProps, nextProps) => {
     if (prevProps.isLoading !== nextProps.isLoading) return false;
+    // While streaming, re-render whenever the AI SDK produces a new message
+    // object (each throttled update). We use reference equality rather than
+    // deep-equal on parts because fast-deep-equal short-circuits on identical
+    // references — and the SDK may mutate parts in place during streaming.
+    if (nextProps.isLoading && prevProps.message !== nextProps.message)
+      return false;
 
     if (prevProps.message.id !== nextProps.message.id) return false;
     if (prevProps.requiresScrollPadding !== nextProps.requiresScrollPadding)

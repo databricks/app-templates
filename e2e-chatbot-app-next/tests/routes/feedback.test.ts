@@ -42,6 +42,48 @@ test.describe('/api/feedback', () => {
     // (depends on endpoint type; present when using the Responses API mock)
   });
 
+  test.describe('deduplication', () => {
+    test.beforeEach(async ({ adaContext }) => {
+      // The mock trace ID is fixed ('mock-trace-id-from-databricks'), so reset
+      // the MLflow store before each test to prevent stale assessments from a
+      // previous test causing the server to PATCH rather than POST on the first
+      // submission.
+      await adaContext.request.post('/api/test/reset-mlflow-store');
+    });
+
+    test('second submission PATCHes the existing assessment instead of creating a duplicate', async ({
+      adaContext,
+    }) => {
+      const chatId = generateUUID();
+      const assistantMessageId = await sendChatAndGetMessageId(
+        adaContext.request,
+        chatId,
+        TEST_PROMPTS.SKY.MESSAGE,
+      );
+
+      // First submission — creates a new MLflow assessment via POST
+      const firstResponse = await adaContext.request.post('/api/feedback', {
+        data: { messageId: assistantMessageId, feedbackType: 'thumbs_up' },
+      });
+      expect(firstResponse.status()).toBe(200);
+      const firstResult = await firstResponse.json();
+      expect(firstResult.success).toBe(true);
+      // mlflowAssessmentId is set when a trace ID was captured (present with Responses API mock)
+      const firstAssessmentId = firstResult.mlflowAssessmentId;
+      expect(firstAssessmentId).toBeTruthy();
+
+      // Second submission (different feedback type) — should PATCH the existing assessment
+      const secondResponse = await adaContext.request.post('/api/feedback', {
+        data: { messageId: assistantMessageId, feedbackType: 'thumbs_down' },
+      });
+      expect(secondResponse.status()).toBe(200);
+      const secondResult = await secondResponse.json();
+      expect(secondResult.success).toBe(true);
+      // Same assessment ID confirms PATCH was used, not a second POST
+      expect(secondResult.mlflowAssessmentId).toBe(firstAssessmentId);
+    });
+  });
+
   test('GET /api/feedback/chat/:chatId returns MLflow-backed feedback map', async ({
     adaContext,
   }) => {

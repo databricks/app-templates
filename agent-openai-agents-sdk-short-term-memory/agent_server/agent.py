@@ -19,7 +19,6 @@ from mlflow.types.responses import (
 from agent_server.utils import (
     deduplicate_input,
     get_databricks_host_from_env,
-    get_user_workspace_client,
     process_agent_stream_events,
     resolve_lakebase_instance_name,
     sanitize_output_items,

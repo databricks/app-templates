@@ -16,7 +16,6 @@ from mlflow.types.responses import (
 
 from agent_server.utils import (
     build_mcp_url,
-    get_user_workspace_client,
     process_agent_stream_events,
     sanitize_output_items,
 )

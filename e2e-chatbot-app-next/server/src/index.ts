@@ -55,13 +55,61 @@ app.use('/api/session', sessionRouter);
 app.use('/api/messages', messagesRouter);
 app.use('/api/config', configRouter);
 
+// Agent backend proxy (optional)
+// If API_PROXY is set, proxy /invocations requests to the agent backend.
+// NOTE: This proxy logic is also duplicated in agent-langchain-ts/src/plugins/ui/UIPlugin.ts
+// as a fallback for when the UI app module cannot be loaded. Keep both in sync if either changes.
+const agentBackendUrl = process.env.API_PROXY;
+if (agentBackendUrl) {
+  console.log(`✅ Proxying /invocations to ${agentBackendUrl}`);
+  app.all('/invocations', async (req: Request, res: Response) => {
+    try {
+      const forwardHeaders = { ...req.headers } as Record<string, string>;
+      delete forwardHeaders['content-length'];
+
+      const response = await fetch(agentBackendUrl, {
+        method: req.method,
+        headers: forwardHeaders,
+        body:
+          req.method !== 'GET' && req.method !== 'HEAD'
+            ? JSON.stringify(req.body)
+            : undefined,
+      });
+
+      // Copy status and headers
+      res.status(response.status);
+      response.headers.forEach((value, key) => {
+        res.setHeader(key, value);
+      });
+
+      // Stream the response body
+      if (response.body) {
+        const reader = response.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+      }
+      res.end();
+    } catch (error) {
+      console.error('[/invocations proxy] Error:', error);
+      res.status(502).json({
+        error: 'Proxy error',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+}
+
 // Serve static files in production
 if (!isDevelopment) {
   const clientBuildPath = path.join(__dirname, '../../client/dist');
   app.use(express.static(clientBuildPath));
 
   // SPA fallback - serve index.html for all non-API routes
-  app.get(/^\/(?!api).*/, (_req, res) => {
+  // Exclude: /api, /health, /invocations (agent endpoints)
+  app.get(/^\/(?!api|health|invocations).*/, (_req, res) => {
     res.sendFile(path.join(clientBuildPath, 'index.html'));
   });
 }
@@ -163,6 +211,14 @@ async function startServer() {
   });
 }
 
-startServer();
+// Only auto-start when this file is the direct entry point
+// When imported as a module (e.g., by UIPlugin), this will be skipped
+// Note: process.argv[1] is a file path (not a URL), so compare directly to fileURLToPath result
+const currentFilePath = fileURLToPath(import.meta.url);
+const isMainModule = process.argv[1] === currentFilePath;
+
+if (process.env.UI_AUTO_START !== 'false' && isMainModule) {
+  startServer();
+}
 
 export default app;

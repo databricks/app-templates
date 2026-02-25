@@ -16,7 +16,6 @@ sessionRouter.use(authMiddleware);
  * GET /api/session - Get current user session
  */
 sessionRouter.get('/', async (req: Request, res: Response) => {
-  console.log('GET /api/session', req.session);
   const session = req.session;
 
   if (!session?.user) {

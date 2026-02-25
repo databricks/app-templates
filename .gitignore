@@ -168,6 +168,7 @@ yarn-error.log*
 /blob-report/
 /playwright/*
 tsconfig.tsbuildinfo
+mlflow.db
 
 # Claude Code - track source of truth skills and sync script
 .claude/*

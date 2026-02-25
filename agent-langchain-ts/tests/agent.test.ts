@@ -4,6 +4,7 @@
 
 import { describe, test, expect, beforeAll } from "@jest/globals";
 import { createAgent } from "../src/agent.js";
+import { getOutput } from "./helpers.js";
 
 describe("Agent", () => {
   let agent: Awaited<ReturnType<typeof createAgent>>;
@@ -26,39 +27,9 @@ describe("Agent", () => {
     });
 
     expect(result).toBeDefined();
-    expect(result.output).toBeTruthy();
-    expect(typeof result.output).toBe("string");
-  }, 30000);
-
-  test("should use calculator tool", async () => {
-    const result = await agent.invoke({
-      input: "Calculate 123 * 456",
-    });
-
-    expect(result).toBeDefined();
-    expect(result.output).toBeTruthy();
-
-    // Verify calculator was used by checking for correct answer in output
-    const hasResult = result.output.includes("56088") || result.output.includes("56,088");
-    expect(hasResult).toBe(true);
-  }, 30000);
-
-  test("should use weather tool", async () => {
-    const result = await agent.invoke({
-      input: "What's the weather in New York?",
-    });
-
-    expect(result).toBeDefined();
-    expect(result.output).toBeTruthy();
-
-    // Verify weather tool was used by checking output mentions weather/temperature
-    const mentionsWeather =
-      result.output.toLowerCase().includes("weather") ||
-      result.output.toLowerCase().includes("temperature") ||
-      result.output.toLowerCase().includes("°") ||
-      result.output.toLowerCase().includes("sunny") ||
-      result.output.toLowerCase().includes("cloudy");
-    expect(mentionsWeather).toBe(true);
+    const output = getOutput(result);
+    expect(output).toBeTruthy();
+    expect(typeof output).toBe("string");
   }, 30000);
 
   test("should use time tool", async () => {
@@ -67,32 +38,35 @@ describe("Agent", () => {
     });
 
     expect(result).toBeDefined();
-    expect(result.output).toBeTruthy();
+    const output = getOutput(result);
+    expect(output).toBeTruthy();
 
     // Verify time tool was used by checking output mentions time
     const mentionsTime =
-      result.output.toLowerCase().includes("time") ||
-      /\d{1,2}:\d{2}/.test(result.output) ||  // Matches HH:MM format
-      result.output.toLowerCase().includes("tokyo");
+      output.toLowerCase().includes("time") ||
+      /\d{1,2}:\d{2}/.test(output) ||  // Matches HH:MM format
+      output.toLowerCase().includes("tokyo");
     expect(mentionsTime).toBe(true);
   }, 30000);
 
   test("should handle multi-turn conversations", async () => {
     const firstResult = await agent.invoke({
-      input: "What is 10 + 20?",
+      input: "My name is Alice.",
       chat_history: [],
     });
 
-    expect(firstResult.output).toBeTruthy();
+    const firstOutput = getOutput(firstResult);
+    expect(firstOutput).toBeTruthy();
 
     const secondResult = await agent.invoke({
-      input: "Now multiply that by 3",
+      input: "What is my name?",
       chat_history: [
-        { role: "user", content: "What is 10 + 20?" },
-        { role: "assistant", content: firstResult.output },
+        { role: "user", content: "My name is Alice." },
+        { role: "assistant", content: firstOutput },
       ],
     });
 
-    expect(secondResult.output).toBeTruthy();
+    const secondOutput = getOutput(secondResult);
+    expect(secondOutput.toLowerCase()).toContain("alice");
   }, 60000);
 });

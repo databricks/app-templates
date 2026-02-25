@@ -294,7 +294,9 @@ export async function saveMessages({
 
 export async function getMessagesByChatId({ id }: { id: string }) {
   if (!isDatabaseAvailable()) {
-    console.log('[getMessagesByChatId] Database not available, returning empty');
+    console.log(
+      '[getMessagesByChatId] Database not available, returning empty',
+    );
     return [];
   }
 
@@ -339,7 +341,9 @@ export async function deleteMessagesByChatIdAfterTimestamp({
   timestamp: Date;
 }) {
   if (!isDatabaseAvailable()) {
-    console.log('[deleteMessagesByChatIdAfterTimestamp] Database not available, skipping deletion');
+    console.log(
+      '[deleteMessagesByChatIdAfterTimestamp] Database not available, skipping deletion',
+    );
     return;
   }
 
@@ -376,7 +380,9 @@ export async function updateChatVisiblityById({
   visibility: 'private' | 'public';
 }) {
   if (!isDatabaseAvailable()) {
-    console.log('[updateChatVisiblityById] Database not available, skipping update');
+    console.log(
+      '[updateChatVisiblityById] Database not available, skipping update',
+    );
     return;
   }
 
@@ -402,7 +408,9 @@ export async function updateChatLastContextById({
   context: LanguageModelV3Usage;
 }) {
   if (!isDatabaseAvailable()) {
-    console.log('[updateChatLastContextById] Database not available, skipping update');
+    console.log(
+      '[updateChatLastContextById] Database not available, skipping update',
+    );
     return;
   }
 

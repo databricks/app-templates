@@ -57,12 +57,12 @@ test.describe('OAuth Error Utils', () => {
     });
 
     test('returns false for similar but non-OAuth errors', () => {
-      expect(
-        isCredentialErrorMessage('Your credentials have expired'),
-      ).toBe(false);
-      expect(
-        isCredentialErrorMessage('Invalid connection credentials'),
-      ).toBe(false);
+      expect(isCredentialErrorMessage('Your credentials have expired')).toBe(
+        false,
+      );
+      expect(isCredentialErrorMessage('Invalid connection credentials')).toBe(
+        false,
+      );
     });
   });
 
@@ -91,7 +91,9 @@ test.describe('OAuth Error Utils', () => {
     test('returns undefined when no URL is present', () => {
       const noUrlError =
         "Credential for user identity('test@test.com') is not found for the connection 'test'";
-      expect(findLoginURLFromCredentialErrorMessage(noUrlError)).toBeUndefined();
+      expect(
+        findLoginURLFromCredentialErrorMessage(noUrlError),
+      ).toBeUndefined();
     });
 
     test('returns undefined for non-OAuth errors', () => {
@@ -112,7 +114,7 @@ test.describe('OAuth Error Utils', () => {
 
     test('is case insensitive for the pattern', () => {
       const upperCaseError =
-        "Error. PLEASE LOGIN FIRST TO THE CONNECTION BY VISITING https://example.com/login";
+        'Error. PLEASE LOGIN FIRST TO THE CONNECTION BY VISITING https://example.com/login';
       const url = findLoginURLFromCredentialErrorMessage(upperCaseError);
       expect(url).toBe('https://example.com/login');
     });
@@ -152,9 +154,7 @@ test.describe('OAuth Error Utils', () => {
       expect(
         findConnectionNameFromCredentialErrorMessage('Something went wrong'),
       ).toBeUndefined();
-      expect(
-        findConnectionNameFromCredentialErrorMessage(''),
-      ).toBeUndefined();
+      expect(findConnectionNameFromCredentialErrorMessage('')).toBeUndefined();
     });
 
     test('is case insensitive for the pattern', () => {
@@ -178,9 +178,9 @@ test.describe('OAuth Error Utils', () => {
   test.describe('Integration - parsing full error messages', () => {
     test('extracts all components from a complete OAuth error', () => {
       expect(isCredentialErrorMessage(SAMPLE_OAUTH_ERROR)).toBe(true);
-      expect(findConnectionNameFromCredentialErrorMessage(SAMPLE_OAUTH_ERROR)).toBe(
-        'slack_no_auth_per_user',
-      );
+      expect(
+        findConnectionNameFromCredentialErrorMessage(SAMPLE_OAUTH_ERROR),
+      ).toBe('slack_no_auth_per_user');
       expect(findLoginURLFromCredentialErrorMessage(SAMPLE_OAUTH_ERROR)).toBe(
         'https://example.databricks.com/oauth/connect?connection_name=slack_no_auth_per_user',
       );

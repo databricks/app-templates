@@ -1,4 +1,9 @@
-import { Router, type Request, type Response, type Router as RouterType } from 'express';
+import {
+  Router,
+  type Request,
+  type Response,
+  type Router as RouterType,
+} from 'express';
 import { authMiddleware } from '../middleware/auth';
 import type { ClientSession } from '@chat-template/auth';
 

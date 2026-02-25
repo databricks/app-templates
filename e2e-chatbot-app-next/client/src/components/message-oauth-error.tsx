@@ -47,7 +47,7 @@ export const MessageOAuthError = ({
     const lastMessage = allMessages.at(-1);
     if (lastMessage) {
       const updatedLastMessageParts = lastMessage.parts.filter(
-        (p) => p.type !== 'data-error'
+        (p) => p.type !== 'data-error',
       );
       setMessages([
         ...allMessages.slice(0, -1),

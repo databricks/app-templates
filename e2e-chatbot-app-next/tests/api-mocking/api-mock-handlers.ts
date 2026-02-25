@@ -16,11 +16,7 @@ import { TEST_PROMPTS } from '../prompts/routes';
  * State machine for MCP approval flow.
  * This tracks the state of approval requests across multiple API calls.
  */
-type McpApprovalState =
-  | 'idle'
-  | 'awaiting-approval'
-  | 'approved'
-  | 'denied';
+type McpApprovalState = 'idle' | 'awaiting-approval' | 'approved' | 'denied';
 
 let mcpApprovalState: McpApprovalState = 'idle';
 const MCP_REQUEST_ID = '__fake_mcp_request_id__';

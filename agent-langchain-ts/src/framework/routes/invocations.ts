@@ -1,68 +1,56 @@
 /**
- * MLflow-compatible /invocations endpoint for the LangChain agent.
+ * MLflow-compatible /invocations endpoint (also aliased as /responses).
  *
  * This endpoint provides a standard Responses API interface that:
- * - Accepts Responses API request format
- * - Runs the LangChain agent
- * - Streams events in Responses API format (SSE)
+ * - Accepts Responses API request format (including the OpenAI SDK wire format)
+ * - Parses the request into simplified InvokeParams for the agent
+ * - Streams/returns events produced by AgentInterface.stream() / AgentInterface.invoke()
+ *
+ * The agent owns the translation from its SDK's format → ResponseStreamEvent.
+ * This file is purely a pass-through layer.
  */
 
 import { Router, type Request, type Response } from "express";
-import type { AgentExecutor } from "langchain/agents";
+import type { AgentInterface } from "../agent-interface.js";
 import { z } from "zod";
 
 /**
- * Responses API request schema
- * Supports both text content and tool calls in message history
+ * Responses API request schema.
+ *
+ * Accepts both the MLflow format (input as array of messages) and the
+ * OpenAI SDK wire format (input as string or array, optional model field).
  */
 const responsesRequestSchema = z.object({
-  input: z.array(
-    z.union([
-      z.object({
-        role: z.enum(["user", "assistant", "system"]),
-        content: z.union([
-          z.string(),
-          z.array(
-            z.union([
-              // Text content parts
-              z.object({
-                type: z.string(),
-                text: z.string(),
-              }).passthrough(),
-              // Tool call parts (no text field required)
-              z.object({
-                type: z.string(),
-              }).passthrough(),
-            ])
-          ),
-        ]),
-      }),
-      z.object({ type: z.string() }).passthrough(),
-    ])
-  ),
+  input: z.union([
+    z.string(),
+    z.array(
+      z.union([
+        z.object({
+          role: z.enum(["user", "assistant", "system"]),
+          content: z.union([
+            z.string(),
+            z.array(
+              z.union([
+                z.object({ type: z.string(), text: z.string() }).passthrough(),
+                z.object({ type: z.string() }).passthrough(),
+              ])
+            ),
+          ]),
+        }),
+        z.object({ type: z.string() }).passthrough(),
+      ])
+    ),
+  ]),
   stream: z.boolean().optional().default(true),
-  custom_inputs: z.record(z.string(), z.any()).optional(),
+  // Accept (and ignore) model field sent by the OpenAI SDK
+  model: z.string().optional(),
 });
 
 /**
- * Helper function to emit SSE events
+ * Create invocations router with the given agent.
+ * Mount at both /invocations (MLflow) and /responses (OpenAI SDK compatibility).
  */
-function emitSSEEvent(res: Response, type: string, data: any) {
-  res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`);
-}
-
-/**
- * Helper function to emit both .added and .done events for an output item
- */
-function emitOutputItem(res: Response, itemType: string, item: any) {
-  emitSSEEvent(res, "response.output_item.added", { item: { ...item, type: itemType } });
-  emitSSEEvent(res, "response.output_item.done", { item: { ...item, type: itemType } });
-}
-
-/**
- * Create invocations router with the given agent
- */
-export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof Router> {
+export function createInvocationsRouter(agent: AgentInterface): ReturnType<typeof Router> {
   const router = Router();
 
   router.post("/", async (req: Request, res: Response) => {
@@ -76,9 +64,15 @@ export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof
         });
       }
 
-      const { input, stream } = parsed.data;
+      const { stream } = parsed.data;
 
-      // Extract user input and chat history from Responses API format
+      // Normalise input: string → single user message
+      const input =
+        typeof parsed.data.input === "string"
+          ? [{ role: "user" as const, content: parsed.data.input }]
+          : parsed.data.input;
+
+      // Extract the latest user message
       const userMessages = input.filter((msg: any) => msg.role === "user");
       if (userMessages.length === 0) {
         return res.status(400).json({
@@ -91,7 +85,6 @@ export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof
       // Handle both string and array content formats
       let userInput: string;
       if (Array.isArray(lastUserMessage.content)) {
-        // Extract text from array format (multimodal content)
         userInput = lastUserMessage.content
           .filter((part: any) => part.type === "input_text" || part.type === "text")
           .map((part: any) => part.text)
@@ -100,13 +93,9 @@ export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof
         userInput = lastUserMessage.content as string;
       }
 
-      // Convert Responses API input to LangChain format
-      // Responses API sends array content with typed parts (input_text, output_text, function_call, etc.)
-      // LangChain agent.invoke() expects simple {role, content} messages with string content
-      //
-      // IMPORTANT: Preserve tool call context for followup questions
+      // Convert Responses API input to simple chat history for the agent.
+      // Preserve tool call context for followup questions.
       const chatHistory = input.slice(0, -1).map((item: any) => {
-        // Handle top-level tool call objects (sent by Databricks provider when using API_PROXY)
         if (item.type === "function_call") {
           return {
             role: "assistant",
@@ -119,7 +108,6 @@ export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof
           };
         }
 
-        // Handle message objects with array content
         if (Array.isArray(item.content)) {
           const textParts = item.content
             .filter((part: any) =>
@@ -129,7 +117,6 @@ export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof
             )
             .map((part: any) => part.text);
 
-          // Extract tool calls from content array
           const toolParts = item.content
             .filter((part: any) =>
               part.type === "function_call" ||
@@ -144,121 +131,38 @@ export function createInvocationsRouter(agent: AgentExecutor): ReturnType<typeof
               return "";
             });
 
-          const allParts = [...textParts, ...toolParts].filter(p => p.length > 0);
-          return {
-            ...item,
-            content: allParts.join("\n"),
-          };
+          const allParts = [...textParts, ...toolParts].filter((p) => p.length > 0);
+          return { ...item, content: allParts.join("\n") };
         }
         return item;
       });
 
-      // Handle streaming response
+      const agentParams = { input: userInput, chat_history: chatHistory };
+
+      // Streaming response: write each ResponseStreamEvent directly as SSE
       if (stream) {
         res.setHeader("Content-Type", "text/event-stream");
         res.setHeader("Cache-Control", "no-cache");
         res.setHeader("Connection", "keep-alive");
 
-        let textOutputId = `text_${Date.now()}`;
-        const toolCallIds = new Map<string, string>(); // Map tool name to call_id
-
         try {
-          // Stream events from agent
-          const eventStream = agent.streamEvents(
-            {
-              input: userInput,
-              chat_history: chatHistory,
-            },
-            { version: "v2" }
-          );
-
-          for await (const event of eventStream) {
-            // Handle tool calls
-            if (event.event === "on_tool_start") {
-              const toolCallId = `call_${Date.now()}`;
-              const fcId = `fc_${Date.now()}`;
-
-              // Store the call_id for this tool so we can reference it in the output
-              const toolKey = `${event.name}_${event.run_id}`;
-              toolCallIds.set(toolKey, toolCallId);
-
-              // Emit both .added and .done events for function_call
-              emitOutputItem(res, "function_call", {
-                id: fcId,
-                call_id: toolCallId,
-                name: event.name,
-                arguments: JSON.stringify(event.data?.input || {}),
-              });
-            }
-
-            // Handle tool results
-            if (event.event === "on_tool_end") {
-              // Look up the original call_id for this tool
-              const toolKey = `${event.name}_${event.run_id}`;
-              const toolCallId = toolCallIds.get(toolKey) || `call_${Date.now()}`;
-
-              // Emit both .added and .done events for function_call_output
-              emitOutputItem(res, "function_call_output", {
-                id: `fc_output_${Date.now()}`,
-                call_id: toolCallId,
-                output: JSON.stringify(event.data?.output || ""),
-              });
-
-              // Clean up the stored call_id
-              toolCallIds.delete(toolKey);
-            }
-
-            // Handle text streaming from LLM
-            if (event.event === "on_chat_model_stream") {
-              const content = event.data?.chunk?.content;
-              if (content && typeof content === "string") {
-                const textDelta = {
-                  type: "response.output_text.delta",
-                  item_id: textOutputId,
-                  delta: content,
-                };
-                res.write(`data: ${JSON.stringify(textDelta)}\n\n`);
-              }
-            }
+          for await (const event of agent.stream(agentParams)) {
+            res.write(`data: ${JSON.stringify(event)}\n\n`);
           }
-
-          // Clean up any remaining tool call tracking
-          toolCallIds.clear();
-
-          // Send completion event
-          res.write(
-            `data: ${JSON.stringify({ type: "response.completed" })}\n\n`
-          );
           res.write("data: [DONE]\n\n");
           res.end();
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : String(error);
           console.error("Streaming error:", error);
-
-          // Clean up tool call tracking on error
-          toolCallIds.clear();
-
-          // Send proper SSE completion events
-          res.write(
-            `data: ${JSON.stringify({ type: "error", error: message })}\n\n`
-          );
-          res.write(
-            `data: ${JSON.stringify({ type: "response.failed" })}\n\n`
-          );
+          res.write(`data: ${JSON.stringify({ type: "error", error: message })}\n\n`);
+          res.write(`data: ${JSON.stringify({ type: "response.failed" })}\n\n`);
           res.write("data: [DONE]\n\n");
           res.end();
         }
       } else {
-        // Non-streaming response
-        const result = await agent.invoke({
-          input: userInput,
-          chat_history: chatHistory,
-        });
-
-        res.json({
-          output: result.output,
-          intermediate_steps: result.intermediateSteps,
-        });
+        // Non-streaming response: return output items directly
+        const items = await agent.invoke(agentParams);
+        res.json({ output: items });
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);

@@ -19,15 +19,15 @@ import { existsSync } from "fs";
 import {
   createAgent,
   type AgentConfig,
-  type AgentMessage,
 } from "../agent.js";
 import {
   initializeMLflowTracing,
-  setupTracingShutdownHandlers,
+  type MLflowTracing,
 } from "./tracing.js";
 import { createInvocationsRouter } from "./routes/invocations.js";
 import { getMCPServers } from "../mcp-servers.js";
-import type { AgentExecutor } from "langchain/agents";
+import { closeMCPClient } from "../tools.js";
+import type { AgentInterface } from "./agent-interface.js";
 
 // Load environment variables
 config();
@@ -38,6 +38,37 @@ config();
 interface ServerConfig {
   port: number;
   agentConfig: AgentConfig;
+}
+
+const SERVICE_INFO = {
+  service: "LangChain Agent TypeScript",
+  version: "1.0.0",
+  endpoints: {
+    health: "GET /health",
+    invocations: "POST /invocations (Responses API)",
+  },
+};
+
+/**
+ * Register SIGINT/SIGTERM handlers that flush tracing and close MCP connections.
+ */
+function setupShutdownHandlers(tracing: MLflowTracing): void {
+  const shutdown = async (signal: string) => {
+    console.log(`\nReceived ${signal}, shutting down...`);
+    try {
+      await closeMCPClient();
+      await tracing.flush();
+      await tracing.shutdown();
+      process.exit(0);
+    } catch (error) {
+      console.error("Error during shutdown:", error);
+      process.exit(1);
+    }
+  };
+
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("beforeExit", () => tracing.flush());
 }
 
 /**
@@ -52,24 +83,18 @@ export async function createServer(
   app.use(cors());
   app.use(express.json({ limit: '10mb' })); // Protect against large payload DoS
 
-  // Debug middleware to log incoming headers (helps debug auth issues)
-  app.use((req, res, next) => {
-    next();
-  });
-
   // Initialize MLflow tracing
   const tracing = await initializeMLflowTracing({
     serviceName: "langchain-agent-ts",
     experimentId: process.env.MLFLOW_EXPERIMENT_ID,
   });
 
-  setupTracingShutdownHandlers(tracing);
+  setupShutdownHandlers(tracing);
 
   // Initialize agent
-  let agent: AgentExecutor | any;
+  let agent: AgentInterface;
   try {
     agent = await createAgent(serverConfig.agentConfig);
-    console.log("✅ Agent initialized successfully");
   } catch (error) {
     console.error("❌ Failed to initialize agent:", error);
     throw error;
@@ -86,11 +111,12 @@ export async function createServer(
     });
   });
 
-  // Mount /invocations endpoint (MLflow-compatible)
+  // Mount handler at /invocations (MLflow) and /responses (OpenAI SDK compatibility)
   const invocationsRouter = createInvocationsRouter(agent);
   app.use("/invocations", invocationsRouter);
+  app.use("/responses", invocationsRouter);
 
-  console.log("✅ Agent endpoints mounted");
+  console.log("✅ Agent endpoints mounted (/invocations, /responses)");
 
   // Production UI serving (optional - only if UI is deployed)
   const uiBackendUrl = process.env.UI_BACKEND_URL;
@@ -145,30 +171,11 @@ export async function createServer(
       });
     } else {
       console.warn(`⚠️  UI dist path not found: ${uiDistPath}`);
-      // Fallback: service info
-      app.get("/", (_req: Request, res: Response) => {
-        res.json({
-          service: "LangChain Agent TypeScript",
-          version: "1.0.0",
-          endpoints: {
-            health: "GET /health",
-            invocations: "POST /invocations (Responses API)",
-          },
-        });
-      });
+      app.get("/", (_req: Request, res: Response) => { res.json(SERVICE_INFO); });
     }
   } else {
     // Agent-only mode: service info at root
-    app.get("/", (_req: Request, res: Response) => {
-      res.json({
-        service: "LangChain Agent TypeScript",
-        version: "1.0.0",
-        endpoints: {
-          health: "GET /health",
-          invocations: "POST /invocations (Responses API)",
-        },
-      });
-    });
+    app.get("/", (_req: Request, res: Response) => { res.json(SERVICE_INFO); });
   }
 
   return app;

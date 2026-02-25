@@ -24,7 +24,6 @@ export interface InvocationsRequest {
     content: string | any[];
   }>;
   stream?: boolean;
-  custom_inputs?: Record<string, any>;
 }
 
 /**
@@ -56,48 +55,6 @@ export function makeAuthHeaders(token: string): Record<string, string> {
     "Content-Type": "application/json",
     "Authorization": `Bearer ${token}`,
   };
-}
-
-/**
- * Call /api/chat endpoint with useChat format
- */
-export async function callApiChat(
-  message: string,
-  options: {
-    previousMessages?: any[];
-    chatModel?: string;
-    baseUrl?: string;
-  } = {}
-): Promise<Response> {
-  const {
-    previousMessages = [],
-    chatModel = "test-model",
-    baseUrl = TEST_CONFIG.UI_URL,
-  } = options;
-
-  const response = await fetch(`${baseUrl}/api/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      id: `test-${Date.now()}`,
-      message: {
-        role: "user",
-        parts: [{ type: "text", text: message }],
-        id: `msg-${Date.now()}`,
-      },
-      previousMessages,
-      selectedChatModel: chatModel,
-      selectedVisibilityType: "private",
-      nextMessageId: `next-${Date.now()}`,
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`HTTP ${response.status}: ${text}`);
-  }
-
-  return response;
 }
 
 // ============================================================================
@@ -199,126 +156,10 @@ export function parseAISDKStream(text: string): {
 }
 
 // ============================================================================
-// Agent Creation Helpers
-// ============================================================================
-
-/**
- * Create test agent with default configuration
- */
-export async function createTestAgent(config: {
-  temperature?: number;
-  model?: string;
-  mcpServers?: any[];
-} = {}) {
-  const { createAgent } = await import("../src/agent.js");
-  return createAgent({
-    model: config.model || TEST_CONFIG.DEFAULT_MODEL,
-    temperature: config.temperature ?? 0,
-    mcpServers: config.mcpServers,
-  });
-}
-
-// ============================================================================
-// MCP Configuration Helpers
-// ============================================================================
-
-export const MCP = {
-  /**
-   * Check if SQL MCP is configured
-   */
-  isSqlConfigured: (): boolean => {
-    return process.env.ENABLE_SQL_MCP === "true";
-  },
-
-  /**
-   * Check if UC Function is configured
-   */
-  isUCFunctionConfigured: (): boolean => {
-    return !!(
-      process.env.UC_FUNCTION_CATALOG && process.env.UC_FUNCTION_SCHEMA
-    );
-  },
-
-  /**
-   * Check if Vector Search is configured
-   */
-  isVectorSearchConfigured: (): boolean => {
-    return !!(
-      process.env.VECTOR_SEARCH_CATALOG && process.env.VECTOR_SEARCH_SCHEMA
-    );
-  },
-
-  /**
-   * Check if Genie Space is configured
-   */
-  isGenieConfigured: (): boolean => {
-    return !!process.env.GENIE_SPACE_ID;
-  },
-
-  /**
-   * Check if any MCP tool is configured
-   */
-  isAnyConfigured(): boolean {
-    return (
-      this.isSqlConfigured() ||
-      this.isUCFunctionConfigured() ||
-      this.isVectorSearchConfigured() ||
-      this.isGenieConfigured()
-    );
-  },
-
-  /**
-   * Skip test if MCP not configured
-   */
-  skipIfNotConfigured(condition: boolean, message: string): boolean {
-    if (!condition) {
-      console.log(`[SKIP] ${message}`);
-      return true;
-    }
-    return false;
-  },
-
-  /**
-   * Get UC Function config from environment
-   */
-  getUCFunctionConfig() {
-    if (!this.isUCFunctionConfigured()) return undefined;
-    return {
-      catalog: process.env.UC_FUNCTION_CATALOG!,
-      schema: process.env.UC_FUNCTION_SCHEMA!,
-      functionName: process.env.UC_FUNCTION_NAME,
-    };
-  },
-
-  /**
-   * Get Vector Search config from environment
-   */
-  getVectorSearchConfig() {
-    if (!this.isVectorSearchConfigured()) return undefined;
-    return {
-      catalog: process.env.VECTOR_SEARCH_CATALOG!,
-      schema: process.env.VECTOR_SEARCH_SCHEMA!,
-      indexName: process.env.VECTOR_SEARCH_INDEX,
-    };
-  },
-
-  /**
-   * Get Genie Space config from environment
-   */
-  getGenieConfig() {
-    if (!this.isGenieConfigured()) return undefined;
-    return {
-      spaceId: process.env.GENIE_SPACE_ID!,
-    };
-  },
-};
-
-// ============================================================================
 // Authentication Helpers
 // ============================================================================
 
 import { exec } from "child_process";
-import { execSync } from "child_process";
 import { promisify } from "util";
 
 const execAsync = promisify(exec);
@@ -337,43 +178,31 @@ export async function getDeployedAuthToken(): Promise<string> {
   }
 }
 
-/**
- * Get auth headers for deployed app testing (sync version)
- * Automatically detects if URL is deployed app and gets token
- */
-export function getDeployedAuthHeaders(
-  agentUrl: string = TEST_CONFIG.AGENT_URL
-): Record<string, string> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-
-  // Only add auth for deployed apps
-  if (agentUrl.includes("databricksapps.com")) {
-    let token = process.env.DATABRICKS_TOKEN;
-
-    // Try to get token from CLI if not in env
-    if (!token) {
-      try {
-        const tokenJson = execSync("databricks auth token --profile dogfood", {
-          encoding: "utf-8",
-        });
-        const parsed = JSON.parse(tokenJson);
-        token = parsed.access_token;
-      } catch (error) {
-        console.warn("Warning: Could not get OAuth token.");
-      }
-    }
-
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-  }
-
-  return headers;
-}
 
 // ============================================================================
 // Assertion Helpers
 // ============================================================================
-// (Removed trivial wrappers - use Jest assertions directly)
+
+/**
+ * Assert that an SSE stream completed (contains "data: [DONE]")
+ */
+export function assertStreamComplete(text: string): void {
+  expect(text).toContain("data: [DONE]");
+}
+
+/**
+ * Extract the first text output from a ResponseOutputItem array.
+ * Use this in tests that call agent.invoke() directly.
+ */
+export function getOutput(items: Awaited<ReturnType<import("../src/framework/agent-interface.js").AgentInterface["invoke"]>>): string {
+  for (const item of items) {
+    if (item.type === "message") {
+      for (const content of (item as any).content) {
+        if (content.type === "output_text") {
+          return content.text as string;
+        }
+      }
+    }
+  }
+  return "";
+}

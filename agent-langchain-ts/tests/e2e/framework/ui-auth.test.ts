@@ -12,16 +12,25 @@
  * For deployed app: APP_URL=<url> DATABRICKS_TOKEN=$(databricks auth token --profile dogfood | jq -r '.access_token') npm test tests/ui-auth.test.ts
  */
 
-import { describe, test, expect } from '@jest/globals';
-import { getDeployedAuthHeaders } from '../../helpers.js';
+import { describe, test, expect, beforeAll } from '@jest/globals';
+import { getDeployedAuthToken, makeAuthHeaders } from '../../helpers.js';
 
-const AGENT_URL = process.env.APP_URL || "http://localhost:8000";
+if (!process.env.APP_URL) {
+  throw new Error("APP_URL environment variable is required to run deployed e2e tests");
+}
+
+const AGENT_URL = process.env.APP_URL;
+let authToken: string;
+
+beforeAll(async () => {
+  authToken = await getDeployedAuthToken();
+}, 30000);
 
 describe("UI Authentication", () => {
   test("should return valid user session JSON from /api/session", async () => {
     const response = await fetch(`${AGENT_URL}/api/session`, {
       method: "GET",
-      headers: getDeployedAuthHeaders(AGENT_URL),
+      headers: makeAuthHeaders(authToken),
     });
 
     expect(response.ok).toBe(true);
@@ -36,20 +45,15 @@ describe("UI Authentication", () => {
     // For deployed apps, should have user data
     if (AGENT_URL.includes("databricksapps.com")) {
       expect(result.user).toBeDefined();
-      expect(result.user.email).toBeDefined();
+      expect(result.user.email).toMatch(/@/); // Valid email format
       expect(result.user.name).toBeDefined();
-
-      console.log("✅ User session:", result.user);
-    } else {
-      // Local development may not have user session
-      console.log("ℹ️  Local session:", result);
     }
   }, 10000);
 
   test("should return valid config from /api/config", async () => {
     const response = await fetch(`${AGENT_URL}/api/config`, {
       method: "GET",
-      headers: getDeployedAuthHeaders(AGENT_URL),
+      headers: makeAuthHeaders(authToken),
     });
 
     expect(response.ok).toBe(true);
@@ -63,27 +67,6 @@ describe("UI Authentication", () => {
 
     // Should have feature flags
     expect(result.features).toBeDefined();
-
-    console.log("✅ Config:", result);
-  }, 10000);
-
-  test("should proxy to UI backend and preserve auth headers", async () => {
-    // Test that /api/* routes are properly proxied to UI backend
-    // and authentication headers are preserved
-    const response = await fetch(`${AGENT_URL}/api/session`, {
-      method: "GET",
-      headers: getDeployedAuthHeaders(AGENT_URL),
-    });
-
-    expect(response.ok).toBe(true);
-    const result: any = await response.json();
-
-    // Verify the proxy worked and auth was preserved
-    if (AGENT_URL.includes("databricksapps.com")) {
-      expect(result.user).toBeDefined();
-      expect(result.user.email).toMatch(/@/); // Valid email format
-      console.log("✅ Proxy preserves authentication");
-    }
   }, 10000);
 
   test("should return JSON from /api/session (not HTML)", async () => {
@@ -91,7 +74,7 @@ describe("UI Authentication", () => {
     // where /api/session was returning HTML instead of JSON
     const response = await fetch(`${AGENT_URL}/api/session`, {
       method: "GET",
-      headers: getDeployedAuthHeaders(AGENT_URL),
+      headers: makeAuthHeaders(authToken),
     });
 
     const contentType = response.headers.get("content-type");
@@ -105,7 +88,5 @@ describe("UI Authentication", () => {
     expect(contentType).toContain("application/json");
     const parsed = JSON.parse(responseText);
     expect(parsed).toBeDefined();
-
-    console.log("✅ /api/session returns JSON, not HTML");
   }, 10000);
 });

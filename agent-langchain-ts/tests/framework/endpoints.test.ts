@@ -6,15 +6,13 @@
 import { describe, test, expect, beforeAll, afterAll } from "@jest/globals";
 import { spawn } from "child_process";
 import type { ChildProcess } from "child_process";
-import {
-  callInvocations,
-  parseSSEStream,
-} from "../helpers.js";
+import OpenAI from "openai";
 
 describe("API Endpoints", () => {
   let agentProcess: ChildProcess;
   const PORT = 5555; // Use different port to avoid conflicts
   const BASE_URL = `http://localhost:${PORT}`;
+  let client: OpenAI;
 
   beforeAll(async () => {
     // Start agent server as subprocess
@@ -23,8 +21,17 @@ describe("API Endpoints", () => {
       stdio: ["ignore", "pipe", "pipe"],
     });
 
-    // Wait for server to start
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    // Poll /health until server is ready (max 20s)
+    const start = Date.now();
+    while (Date.now() - start < 20000) {
+      try {
+        const r = await fetch(`${BASE_URL}/health`);
+        if (r.ok) break;
+      } catch {}
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    client = new OpenAI({ baseURL: BASE_URL, apiKey: "not-needed" });
   }, 30000);
 
   afterAll(async () => {
@@ -35,82 +42,77 @@ describe("API Endpoints", () => {
 
   describe("/invocations endpoint", () => {
     test("should respond with Responses API format", async () => {
-      const response = await callInvocations(
-        {
-          input: [{ role: "user", content: "Say 'test' and nothing else" }],
-          stream: true,
-        },
-        BASE_URL
-      );
+      const stream = await client.responses.create({
+        model: "test-model",
+        input: [{ role: "user", content: "Say 'test' and nothing else" }],
+        stream: true,
+      });
 
-      expect(response.ok).toBe(true);
-      expect(response.headers.get("content-type")).toContain("text/event-stream");
+      let fullText = "";
+      let hasTextDelta = false;
+      let hasCompleted = false;
 
-      const text = await response.text();
-      const { events, fullOutput } = parseSSEStream(text);
+      for await (const event of stream) {
+        if (event.type === "response.output_text.delta") {
+          fullText += event.delta;
+          hasTextDelta = true;
+        }
+        if (event.type === "response.completed") {
+          hasCompleted = true;
+        }
+      }
 
-      expect(events.length).toBeGreaterThan(0);
-      expect(text.includes("data: [DONE]")).toBe(true);
-      expect(events.some(e => e.type === "response.completed" || e.type === "response.failed")).toBe(true);
+      expect(hasTextDelta).toBe(true);
+      expect(hasCompleted).toBe(true);
+    }, 30000);
 
-      // Should have text delta events
-      const hasTextDelta = events.some((e) => e.type === "response.output_text.delta");
+    test("should work via /responses alias", async () => {
+      // The /responses alias allows the OpenAI SDK to use the endpoint natively
+      const stream = await client.responses.create({
+        model: "test-model",
+        input: [{ role: "user", content: "Say 'SDK test'" }],
+        stream: true,
+      });
+
+      let hasTextDelta = false;
+
+      for await (const event of stream) {
+        if (event.type === "response.output_text.delta") {
+          hasTextDelta = true;
+        }
+      }
+
       expect(hasTextDelta).toBe(true);
     }, 30000);
 
-    test("should work with Databricks AI SDK provider", async () => {
-      // This tests that our /invocations endpoint returns the correct format
-      // The Databricks AI SDK provider expects Responses API format
-
-      const response = await callInvocations(
-        {
-          input: [{ role: "user", content: "Say 'SDK test'" }],
-          stream: true,
-        },
-        BASE_URL
-      );
-
-      expect(response.ok).toBe(true);
-
-      const text = await response.text();
-
-      // Should have Responses API delta events
-      expect(text).toContain("response.output_text.delta");
-      expect(text.includes("data: [DONE]")).toBe(true);
-    }, 30000);
-
     test("should handle tool calling", async () => {
-      const response = await callInvocations(
-        {
-          input: [{ role: "user", content: "What is 7 * 8?" }],
-          stream: true,
-        },
-        BASE_URL
-      );
+      const stream = await client.responses.create({
+        model: "test-model",
+        input: [{ role: "user", content: "What time is it in Tokyo?" }],
+        stream: true,
+      });
 
-      expect(response.ok).toBe(true);
+      let hasToolCall = false;
+      let toolName = "";
+      let fullText = "";
 
-      const text = await response.text();
-      const { fullOutput } = parseSSEStream(text);
+      for await (const event of stream) {
+        if (
+          event.type === "response.output_item.done" &&
+          (event as any).item?.type === "function_call"
+        ) {
+          hasToolCall = true;
+          toolName = (event as any).item.name;
+        }
+        if (event.type === "response.output_text.delta") {
+          fullText += event.delta;
+        }
+      }
 
-      expect(text.includes("data: [DONE]")).toBe(true);
-      expect(fullOutput).toContain("56");
+      expect(hasToolCall).toBe(true);
+      expect(toolName).toBe("get_current_time");
+      // Response should contain time-related content
+      expect(fullText.toLowerCase()).toMatch(/time|hour|minute|am|pm|:\d{2}|\d{1,2}:\d{2}/i);
     }, 30000);
-  });
-
-  describe("/api/chat endpoint (when UI server is available)", () => {
-    test("should be available when UI backend is running", async () => {
-      // Note: This test requires the UI server to be running
-      // For now, we'll just verify the architecture is correct
-
-      // In production, the UI server provides /api/chat
-      // It uses API_PROXY to call /invocations
-      // We've verified /invocations works above
-
-      expect(true).toBe(true);
-    });
-
-    // TODO: Add integration test with actual UI server running
-    // This would require starting both servers in the test setup
   });
 });

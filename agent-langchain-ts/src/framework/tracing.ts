@@ -61,7 +61,7 @@ export class MLflowTracing {
       process.env.MLFLOW_RUN_ID;
     this.config.serviceName = config.serviceName ||
       "langchain-agent-ts";
-    this.config.useBatchProcessor = config.useBatchProcessor ?? true;
+    this.config.useBatchProcessor = config.useBatchProcessor ?? (process.env.OTEL_USE_BATCH_PROCESSOR !== "false");
 
     // Note: Exporter will be created in initialize() after fetching auth token
     this.provider = new NodeTracerProvider({
@@ -384,23 +384,3 @@ export async function initializeMLflowTracing(config?: TracingConfig): Promise<M
   return tracing;
 }
 
-/**
- * Gracefully shutdown handler for process termination
- */
-export function setupTracingShutdownHandlers(tracing: MLflowTracing): void {
-  const shutdown = async (signal: string) => {
-    console.log(`\nReceived ${signal}, flushing traces...`);
-    try {
-      await tracing.flush();
-      await tracing.shutdown();
-      process.exit(0);
-    } catch (error) {
-      console.error("Error during shutdown:", error);
-      process.exit(1);
-    }
-  };
-
-  process.on("SIGINT", () => shutdown("SIGINT"));
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
-  process.on("beforeExit", () => tracing.flush());
-}

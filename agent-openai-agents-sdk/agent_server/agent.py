@@ -2,8 +2,6 @@ from databricks.sdk import WorkspaceClient
 from typing import AsyncGenerator
 
 import litellm
-litellm.suppress_debug_info = True
-
 import mlflow
 from agents import Agent, Runner, set_default_openai_api, set_default_openai_client
 from agents.tracing import set_trace_processors
@@ -22,6 +20,8 @@ from agent_server.utils import (
     process_agent_stream_events,
     sanitize_output_items,
 )
+
+litellm.suppress_debug_info = True
 
 # NOTE: this will work for all databricks models OTHER than GPT-OSS, which uses a slightly different API
 set_default_openai_client(AsyncDatabricksOpenAI())

@@ -4,11 +4,11 @@ import json
 import os
 
 import litellm
-litellm.suppress_debug_info = True
-
 from databricks.sdk import WorkspaceClient
 from mlflow.genai.agent_server import invoke
 from pydantic import BaseModel, Field
+
+litellm.suppress_debug_info = True
 
 w = WorkspaceClient()
 openai_client = w.serving_endpoints.get_open_ai_client()

@@ -2,8 +2,6 @@ import os
 from typing import AsyncGenerator
 
 import litellm
-litellm.suppress_debug_info = True
-
 from uuid_utils import uuid7
 
 import mlflow
@@ -26,6 +24,8 @@ from agent_server.utils import (
     resolve_lakebase_instance_name,
     sanitize_output_items,
 )
+
+litellm.suppress_debug_info = True
 
 # Lakebase instance name for persistent session storage
 _LAKEBASE_INSTANCE_NAME_RAW = os.environ.get("LAKEBASE_INSTANCE_NAME")

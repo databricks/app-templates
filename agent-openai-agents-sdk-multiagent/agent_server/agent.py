@@ -23,8 +23,6 @@ from contextlib import nullcontext
 from typing import AsyncGenerator
 
 import litellm
-litellm.suppress_debug_info = True
-
 import mlflow
 from agents import Agent, Runner, function_tool, set_default_openai_api, set_default_openai_client
 from agents.tracing import set_trace_processors
@@ -43,6 +41,8 @@ from agent_server.utils import (
     process_agent_stream_events,
     sanitize_output_items,
 )
+
+litellm.suppress_debug_info = True
 
 # ---------------------------------------------------------------------------
 # TODO: Configure the subagents for your environment.

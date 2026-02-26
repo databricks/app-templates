@@ -1,19 +1,13 @@
 /**
- * UI Authentication integration test
- * Tests that the /api/session endpoint returns valid user session data
+ * UI Authentication tests for deployed Databricks Apps
+ * Verifies that the Databricks Apps proxy correctly injects user headers
+ * and that /api/session and /api/config return valid responses.
  *
- * Prerequisites:
- * - Agent server running on http://localhost:8000 (production mode)
- *   OR deployed app URL in APP_URL env var
- * - UI backend running on http://localhost:3000 (internal)
- * - For deployed apps: DATABRICKS_TOKEN env var with OAuth token
- *
- * Run with: npm run test:integration tests/ui-auth.test.ts
- * For deployed app: APP_URL=<url> DATABRICKS_TOKEN=$(databricks auth token --profile dogfood | jq -r '.access_token') npm test tests/ui-auth.test.ts
+ * Run with: APP_URL=<your-app-url> npm run test:e2e
  */
 
-import { describe, test, expect, beforeAll } from '@jest/globals';
-import { getDeployedAuthToken, makeAuthHeaders } from '../../helpers.js';
+import { describe, test, expect, beforeAll } from "@jest/globals";
+import { getDeployedAuthToken, makeAuthHeaders } from "../helpers.js";
 
 if (!process.env.APP_URL) {
   throw new Error("APP_URL environment variable is required to run deployed e2e tests");
@@ -36,16 +30,14 @@ describe("UI Authentication", () => {
     expect(response.ok).toBe(true);
     expect(response.status).toBe(200);
 
-    // Should return JSON, not HTML
     const contentType = response.headers.get("content-type");
     expect(contentType).toContain("application/json");
 
     const result: any = await response.json();
 
-    // For deployed apps, should have user data
     if (AGENT_URL.includes("databricksapps.com")) {
       expect(result.user).toBeDefined();
-      expect(result.user.email).toMatch(/@/); // Valid email format
+      expect(result.user.email).toMatch(/@/);
       expect(result.user.name).toBeDefined();
     }
   }, 10000);
@@ -59,19 +51,14 @@ describe("UI Authentication", () => {
     expect(response.ok).toBe(true);
     expect(response.status).toBe(200);
 
-    // Should return JSON, not HTML
     const contentType = response.headers.get("content-type");
     expect(contentType).toContain("application/json");
 
     const result: any = await response.json();
-
-    // Should have feature flags
     expect(result.features).toBeDefined();
   }, 10000);
 
   test("should return JSON from /api/session (not HTML)", async () => {
-    // This test specifically validates the fix for the authentication issue
-    // where /api/session was returning HTML instead of JSON
     const response = await fetch(`${AGENT_URL}/api/session`, {
       method: "GET",
       headers: makeAuthHeaders(authToken),
@@ -80,13 +67,9 @@ describe("UI Authentication", () => {
     const contentType = response.headers.get("content-type");
     const responseText = await response.text();
 
-    // Should NOT be HTML
     expect(responseText).not.toMatch(/^<!DOCTYPE html>/i);
     expect(responseText).not.toMatch(/<html/i);
-
-    // Should be valid JSON
     expect(contentType).toContain("application/json");
-    const parsed = JSON.parse(responseText);
-    expect(parsed).toBeDefined();
+    JSON.parse(responseText); // throws if not valid JSON
   }, 10000);
 });

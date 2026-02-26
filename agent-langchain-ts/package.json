@@ -18,7 +18,7 @@
     "build:ui": "cd ui && npm install && npm run build",
     "test": "jest --testPathIgnorePatterns=examples",
     "test:unit": "jest tests/agent.test.ts",
-    "test:integration": "jest --runInBand tests/framework/integration.test.ts tests/framework/endpoints.test.ts tests/framework/error-handling.test.ts",
+    "test:integration": "jest --runInBand tests/framework/integration.test.ts tests/framework/endpoints.test.ts tests/framework/error-handling.test.ts tests/framework/followup-questions.test.ts",
     "test:e2e": "jest --config jest.e2e.config.js",
     "test:all": "npm run test:unit && npm run test:integration",
     "quickstart": "tsx scripts/quickstart.ts",

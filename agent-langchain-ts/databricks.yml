@@ -61,3 +61,11 @@ targets:
     variables:
       resource_name_suffix:
         default: "prod"
+
+  default-workspace:
+    mode: development
+    workspace:
+      profile: DEFAULT
+    variables:
+      resource_name_suffix:
+        default: "dev"

@@ -18,7 +18,6 @@ loadEnv({ path: resolve(process.cwd(), ".env") });
 import { createDatabricksProvider } from "@databricks/ai-sdk-provider";
 import { streamText } from "ai";
 import {
-  parseSSEStream,
   parseAISDKStream,
 } from '../helpers.js';
 
@@ -32,9 +31,9 @@ describe("Integration Tests - Local Endpoints", () => {
   let uiProcess: ChildProcess;
 
   beforeAll(async () => {
-    // Start agent server
-    agentProcess = spawn("node_modules/.bin/tsx", ["src/framework/server.ts"], {
-      env: { ...process.env, PORT: AGENT_PORT.toString() },
+    // Start framework server with stub agent (no LLM required)
+    agentProcess = spawn("node_modules/.bin/tsx", ["tests/framework/stub-server.ts"], {
+      env: { ...process.env, PORT: AGENT_PORT.toString(), MLFLOW_TRACKING_URI: "noop" },
       stdio: ["ignore", "pipe", "pipe"],
     });
 
@@ -103,26 +102,7 @@ describe("Integration Tests - Local Endpoints", () => {
         fullText += chunk;
       }
 
-      expect(fullText.toLowerCase()).toContain("databricks");
-      expect(fullText.toLowerCase()).toContain("successful");
-    }, 30000);
-
-    test("should handle tool calling (time tool)", async () => {
-      const response = await fetch(`${AGENT_URL}/invocations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          input: [{ role: "user", content: "What time is it in Tokyo?" }],
-          stream: true,
-        }),
-      });
-
-      expect(response.ok).toBe(true);
-      const text = await response.text();
-      const { fullOutput, hasToolCall } = parseSSEStream(text);
-
-      expect(hasToolCall).toBe(true);
-      expect(fullOutput.toLowerCase()).toMatch(/tokyo|time/);
+      expect(fullText.length).toBeGreaterThan(0);
     }, 30000);
   });
 

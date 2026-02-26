@@ -17,15 +17,10 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { existsSync } from "fs";
 import {
-  createAgent,
-  type AgentConfig,
-} from "../agent.js";
-import {
   initializeMLflowTracing,
   type MLflowTracing,
 } from "./tracing.js";
 import { createInvocationsRouter } from "./routes/invocations.js";
-import { getMCPServers } from "../mcp-servers.js";
 import { closeMCPClient } from "../tools.js";
 import type { AgentInterface } from "./agent-interface.js";
 
@@ -37,7 +32,6 @@ config();
  */
 interface ServerConfig {
   port: number;
-  agentConfig: AgentConfig;
 }
 
 const SERVICE_INFO = {
@@ -75,6 +69,7 @@ function setupShutdownHandlers(tracing: MLflowTracing): void {
  * Initialize the Express server
  */
 export async function createServer(
+  agent: AgentInterface,
   serverConfig: ServerConfig
 ): Promise<express.Application> {
   const app = express();
@@ -90,15 +85,6 @@ export async function createServer(
   });
 
   setupShutdownHandlers(tracing);
-
-  // Initialize agent
-  let agent: AgentInterface;
-  try {
-    agent = await createAgent(serverConfig.agentConfig);
-  } catch (error) {
-    console.error("❌ Failed to initialize agent:", error);
-    throw error;
-  }
 
   /**
    * Health check endpoint
@@ -184,37 +170,16 @@ export async function createServer(
 /**
  * Start the server
  */
-export async function startServer(config: Partial<ServerConfig> = {}) {
-  const serverConfig: ServerConfig = {
-    port: parseInt(process.env.PORT || "8000", 10),
-    agentConfig: {
-      model: process.env.DATABRICKS_MODEL || "databricks-claude-sonnet-4-5",
-      temperature: parseFloat(process.env.TEMPERATURE || "0.1"),
-      maxTokens: parseInt(process.env.MAX_TOKENS || "2000", 10),
-      useResponsesApi: process.env.USE_RESPONSES_API === "true",
-      // Load MCP servers from mcp-servers.ts
-      // Configure servers there, similar to Python template
-      mcpServers: getMCPServers(),
-      ...config.agentConfig,
-    },
-    ...config,
-  };
+export async function startServer(agent: AgentInterface, config?: { port?: number }) {
+  const port = config?.port ?? parseInt(process.env.PORT || "8000", 10);
 
-  const app = await createServer(serverConfig);
+  const app = await createServer(agent, { port });
 
-  app.listen(serverConfig.port, () => {
-    console.log(`\n🚀 Agent Server running on http://localhost:${serverConfig.port}`);
-    console.log(`   Health: http://localhost:${serverConfig.port}/health`);
-    console.log(`   Invocations API: http://localhost:${serverConfig.port}/invocations`);
+  app.listen(port, () => {
+    console.log(`\n🚀 Agent Server running on http://localhost:${port}`);
+    console.log(`   Health: http://localhost:${port}/health`);
+    console.log(`   Invocations API: http://localhost:${port}/invocations`);
     console.log(`\n📊 MLflow tracking enabled`);
     console.log(`   Experiment: ${process.env.MLFLOW_EXPERIMENT_ID || "default"}`);
-  });
-}
-
-// Start server if running directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  startServer().catch((error) => {
-    console.error("❌ Failed to start server:", error);
-    process.exit(1);
   });
 }

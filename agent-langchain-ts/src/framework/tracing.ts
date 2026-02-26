@@ -257,6 +257,13 @@ export class MLflowTracing {
       return;
     }
 
+    // No-op mode: skip all tracing setup (used in tests)
+    if (this.config.mlflowTrackingUri === "noop") {
+      this.isInitialized = true;
+      console.log("⏭️  MLflow tracing disabled (MLFLOW_TRACKING_URI=noop)");
+      return;
+    }
+
     // Initialize Databricks SDK client for authentication
     if (this.config.mlflowTrackingUri === "databricks") {
       console.log("🔐 Initializing Databricks SDK authentication...");

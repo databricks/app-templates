@@ -15,9 +15,9 @@ describe("API Endpoints", () => {
   let client: OpenAI;
 
   beforeAll(async () => {
-    // Start agent server as subprocess
-    agentProcess = spawn("node_modules/.bin/tsx", ["src/framework/server.ts"], {
-      env: { ...process.env, PORT: PORT.toString() },
+    // Start framework server with stub agent (no LLM required)
+    agentProcess = spawn("node_modules/.bin/tsx", ["tests/framework/stub-server.ts"], {
+      env: { ...process.env, PORT: PORT.toString(), MLFLOW_TRACKING_URI: "noop" },
       stdio: ["ignore", "pipe", "pipe"],
     });
 
@@ -85,34 +85,5 @@ describe("API Endpoints", () => {
       expect(hasTextDelta).toBe(true);
     }, 30000);
 
-    test("should handle tool calling", async () => {
-      const stream = await client.responses.create({
-        model: "test-model",
-        input: [{ role: "user", content: "What time is it in Tokyo?" }],
-        stream: true,
-      });
-
-      let hasToolCall = false;
-      let toolName = "";
-      let fullText = "";
-
-      for await (const event of stream) {
-        if (
-          event.type === "response.output_item.done" &&
-          (event as any).item?.type === "function_call"
-        ) {
-          hasToolCall = true;
-          toolName = (event as any).item.name;
-        }
-        if (event.type === "response.output_text.delta") {
-          fullText += event.delta;
-        }
-      }
-
-      expect(hasToolCall).toBe(true);
-      expect(toolName).toBe("get_current_time");
-      // Response should contain time-related content
-      expect(fullText.toLowerCase()).toMatch(/time|hour|minute|am|pm|:\d{2}|\d{1,2}:\d{2}/i);
-    }, 30000);
   });
 });

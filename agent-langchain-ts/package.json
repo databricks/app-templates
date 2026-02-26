@@ -9,9 +9,9 @@
   "scripts": {
     "predev": "bash scripts/setup-ui.sh",
     "dev": "concurrently --names \"agent,ui\" --prefix-colors \"blue,green\" \"npm run dev:agent\" \"npm run dev:ui\"",
-    "dev:agent": "PORT=5001 tsx watch src/framework/server.ts",
+    "dev:agent": "PORT=5001 tsx watch src/main.ts",
     "dev:ui": "cd ui && API_PROXY=http://localhost:5001/invocations CHAT_APP_PORT=3001 npm run dev",
-    "start": "node $PWD/dist/src/framework/server.js",
+    "start": "node $PWD/dist/src/main.js",
     "build": "bash scripts/setup-ui.sh && npm run build:agent && npm run build:ui",
     "build:agent": "tsc",
     "build:agent-only": "tsc",

@@ -23,11 +23,14 @@ const rl = readline.createInterface({
 
 interface Config {
   databricksHost: string;
-  configProfile?: string;   // profile-based auth (preferred)
-  databricksToken?: string; // PAT fallback
+  configProfile: string;
   model: string;
   experimentId?: string;
-  enableSqlMcp: boolean;
+}
+
+interface DatabricksProfile {
+  name: string;
+  host: string;
 }
 
 async function prompt(question: string, defaultValue?: string): Promise<string> {
@@ -47,13 +50,23 @@ async function confirm(question: string, defaultYes = true): Promise<boolean> {
   return normalized === "y" || normalized === "yes";
 }
 
-async function getDatabricksConfig(): Promise<{ host?: string; profile?: string }> {
+function getValidProfiles(): DatabricksProfile[] {
   try {
-    const client = new WorkspaceClient({});
-    await client.config.ensureResolved();
-    return { host: client.config.host, profile: client.config.profile };
+    const output = execSync("databricks auth profiles", {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const profiles: DatabricksProfile[] = [];
+    for (const line of output.trim().split("\n").slice(1)) {
+      // Each line: "Name  Host  Valid" with 2+ spaces as separator
+      const parts = line.trim().split(/\s{2,}/);
+      if (parts.length >= 3 && parts[2].trim() === "YES") {
+        profiles.push({ name: parts[0].trim(), host: parts[1].trim() });
+      }
+    }
+    return profiles;
   } catch {
-    return {};
+    return [];
   }
 }
 
@@ -62,48 +75,50 @@ async function setupEnvironment(): Promise<Config> {
 
   let config: Config = {
     databricksHost: "",
+    configProfile: "",
     model: "databricks-claude-sonnet-4-5",
-    enableSqlMcp: false,
   };
 
-  // Try SDK-based auth detection
-  console.log("🔍 Detecting Databricks authentication...");
-  const sdkConfig = await getDatabricksConfig();
+  // List available Databricks CLI profiles
+  console.log("🔍 Looking for Databricks CLI profiles...");
+  const profiles = getValidProfiles();
 
-  if (sdkConfig.host) {
-    console.log("✅ Databricks authentication detected");
+  if (profiles.length > 0) {
+    console.log("Found configured profiles:");
+    profiles.forEach((p, idx) => {
+      console.log(`  ${idx + 1}. ${p.name}  (${p.host})`);
+    });
+    console.log(`  ${profiles.length + 1}. Log in with a new profile`);
 
-    const useSdkAuth = await confirm(
-      "Use detected Databricks authentication?",
-      true
+    const choice = await prompt(
+      `Select profile (1-${profiles.length + 1})`,
+      "1"
     );
+    const idx = parseInt(choice) - 1;
 
-    if (useSdkAuth) {
-      config.databricksHost = sdkConfig.host;
-      console.log(`   Host: ${config.databricksHost}`);
-      if (sdkConfig.profile) {
-        config.configProfile = sdkConfig.profile;
-        console.log(`   Profile: ${config.configProfile}`);
-      } else {
-        console.log("   Auth: [configured via environment/credentials]");
-      }
+    if (idx >= 0 && idx < profiles.length) {
+      config.configProfile = profiles[idx].name;
+      config.databricksHost = profiles[idx].host;
+      console.log(`   Using profile: ${config.configProfile}`);
     }
-  } else {
-    console.log("⚠️  No Databricks authentication detected");
-    console.log(
-      "   Configure via: https://docs.databricks.com/en/dev-tools/auth/index.html\n"
-    );
   }
 
-  // Prompt for host if not set
-  if (!config.databricksHost) {
-    config.databricksHost = await prompt(
+  // No profile selected — run `databricks auth login` to set one up
+  if (!config.configProfile) {
+    const host = await prompt(
       "Databricks workspace URL",
       "https://your-workspace.cloud.databricks.com"
     );
-    config.databricksToken = await prompt(
-      "Databricks personal access token (dapi...)"
-    );
+    console.log("\nOpening browser for Databricks login...");
+    try {
+      execSync(`databricks auth login --host ${host} --profile DEFAULT`, { stdio: "inherit" });
+      config.configProfile = "DEFAULT";
+      config.databricksHost = host;
+      console.log(`   ✅ Logged in and saved as profile: DEFAULT`);
+    } catch {
+      console.error("❌ Login failed. Run 'databricks auth login' manually and re-run quickstart.");
+      process.exit(1);
+    }
   }
 
   // Model selection
@@ -140,42 +155,32 @@ async function setupEnvironment(): Promise<Config> {
 
   if (createExperiment) {
     try {
-      const client = new WorkspaceClient({});
-      await client.config.ensureResolved();
+      const client = new WorkspaceClient({ profile: config.configProfile });
 
-      // Get current user
-      const meResponse = await (client as any).apiClient.request({
-        path: "/api/2.0/preview/scim/v2/Me",
-        method: "GET",
-        body: undefined,
-      });
-      const userName = meResponse.userName as string;
-      const experimentPath = `/Users/${userName}/agent-langchain-ts`;
-
+      const me = await client.currentUser.me();
+      const experimentPath = `/Users/${me.userName}/agent-langchain-ts`;
       console.log(`   Creating experiment: ${experimentPath}`);
 
-      // Create experiment
-      const createResponse = await (client as any).apiClient.request({
-        path: "/api/2.0/mlflow/experiments/create",
-        method: "POST",
-        body: { name: experimentPath },
-      });
-      config.experimentId = createResponse.experiment_id as string;
-
-      if (config.experimentId) {
+      try {
+        const created = await client.experiments.createExperiment({ name: experimentPath });
+        config.experimentId = created.experiment_id;
         console.log(`   ✅ Experiment created: ${config.experimentId}`);
+      } catch (createError: any) {
+        if (createError?.message?.includes("RESOURCE_ALREADY_EXISTS")) {
+          const existing = await client.experiments.getByName({ experiment_name: experimentPath });
+          config.experimentId = existing.experiment?.experiment_id;
+          console.log(`   ✅ Using existing experiment: ${config.experimentId}`);
+        } else {
+          throw createError;
+        }
       }
     } catch (error) {
-      console.log("   ⚠️  Could not auto-create experiment");
+      console.log("   ⚠️  Could not auto-create experiment:", error);
       config.experimentId = await prompt("Enter experiment ID (optional)");
     }
   } else {
     config.experimentId = await prompt("Enter experiment ID (optional)");
   }
-
-  // MCP configuration
-  console.log("\n🔧 MCP Tools Configuration");
-  config.enableSqlMcp = await confirm("Enable Databricks SQL MCP tools?", false);
 
   return config;
 }
@@ -192,19 +197,14 @@ function writeEnvFile(config: Config): void {
 
   // Update environment variables
   const updates: Record<string, string> = {
-    DATABRICKS_HOST: config.databricksHost,
     DATABRICKS_MODEL: config.model,
     MLFLOW_TRACKING_URI: "databricks",
-    ENABLE_SQL_MCP: config.enableSqlMcp ? "true" : "false",
   };
 
-  if (config.configProfile) {
-    updates.DATABRICKS_CONFIG_PROFILE = config.configProfile;
-  }
-
-  if (config.databricksToken) {
-    updates.DATABRICKS_TOKEN = config.databricksToken;
-  }
+  updates.DATABRICKS_CONFIG_PROFILE = config.configProfile;
+  // Host and token are in the profile — strip any template placeholders
+  envContent = envContent.replace(/^DATABRICKS_HOST=.*\n?/m, "");
+  envContent = envContent.replace(/^DATABRICKS_TOKEN=.*\n?/m, "");
 
   if (config.experimentId) {
     updates.MLFLOW_EXPERIMENT_ID = config.experimentId;

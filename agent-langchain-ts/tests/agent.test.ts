@@ -1,8 +1,14 @@
 /**
- * Tests for the LangChain agent
+ * Tests for the LangChain agent — USER CODE SPACE
+ *
+ * These tests exercise src/agent.ts and src/tools.ts directly.
+ * When you modify your agent (change tools, swap the model, update the system
+ * prompt), update these tests to match. They are intentionally NOT part of the
+ * framework test suite so that framework tests stay decoupled from user code.
  */
 
 import { describe, test, expect, beforeAll } from "@jest/globals";
+import type { ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import { createAgent } from "../src/agent.js";
 import { getOutput } from "./helpers.js";
 
@@ -69,4 +75,16 @@ describe("Agent", () => {
     const secondOutput = getOutput(secondResult);
     expect(secondOutput.toLowerCase()).toContain("alice");
   }, 60000);
+
+  test("should emit function_call event when calling a tool", async () => {
+    const events: ResponseStreamEvent[] = [];
+    for await (const event of agent.stream({ input: "What time is it in Tokyo?" })) {
+      events.push(event as ResponseStreamEvent);
+    }
+    const toolCallEvent = events.find(
+      (e) => e.type === "response.output_item.done" && (e as any).item?.type === "function_call"
+    );
+    expect(toolCallEvent).toBeDefined();
+    expect((toolCallEvent as any).item.name).toBe("get_current_time");
+  }, 30000);
 });

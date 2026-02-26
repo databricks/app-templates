@@ -18,8 +18,8 @@ const AGENT_URL = `http://localhost:${PORT}`;
 let agentProcess: ChildProcess;
 
 beforeAll(async () => {
-  agentProcess = spawn("node_modules/.bin/tsx", ["src/framework/server.ts"], {
-    env: { ...process.env, PORT: PORT.toString() },
+  agentProcess = spawn("node_modules/.bin/tsx", ["tests/framework/stub-server.ts"], {
+    env: { ...process.env, PORT: PORT.toString(), MLFLOW_TRACKING_URI: "noop" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   const start = Date.now();

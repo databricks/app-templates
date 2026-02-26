@@ -69,14 +69,18 @@ class ProcessManager:
             frontend_port = int(os.environ.get("CHAT_APP_PORT", os.environ.get("PORT", "3000")))
 
             if backend_port == frontend_port:
-                print(f"ERROR: Backend and frontend are both configured to use port {backend_port}.")
-                print(f"  Set CHAT_APP_PORT in .env to a different port (e.g., CHAT_APP_PORT=3000).")
+                print(
+                    f"ERROR: Backend and frontend are both configured to use port {backend_port}."
+                )
+                print("  Set CHAT_APP_PORT in .env to a different port (e.g., CHAT_APP_PORT=3000).")
                 sys.exit(1)
 
             if not check_port_available(frontend_port):
                 port_source = (
-                    "CHAT_APP_PORT" if os.environ.get("CHAT_APP_PORT")
-                    else "PORT" if os.environ.get("PORT")
+                    "CHAT_APP_PORT"
+                    if os.environ.get("CHAT_APP_PORT")
+                    else "PORT"
+                    if os.environ.get("PORT")
                     else "default"
                 )
                 errors.append(
@@ -265,7 +269,11 @@ class ProcessManager:
                 if self.backend_process.poll() is not None:
                     self.failed.set()
                     break
-                if not self.no_ui and self.frontend_process and self.frontend_process.poll() is not None:
+                if (
+                    not self.no_ui
+                    and self.frontend_process
+                    and self.frontend_process.poll() is not None
+                ):
                     self.failed.set()
                     break
 
@@ -298,7 +306,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Start agent frontend and backend",
         usage="%(prog)s [OPTIONS]\n\nAll options are passed through to start-server. "
-        "Use 'uv run start-server --help' for available options."
+        "Use 'uv run start-server --help' for available options.",
     )
     parser.add_argument(
         "--no-ui",

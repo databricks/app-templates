@@ -6,3 +6,4 @@ agent-*/.claude/skills/** linguist-generated=true
 # Source of truth is .scripts/source/; copies are synced by .scripts/sync-scripts.py
 agent-*/scripts/quickstart.py linguist-generated=true
 agent-*/scripts/start_app.py linguist-generated=true
+agent-*/agent_server/evaluate_agent.py linguist-generated=true

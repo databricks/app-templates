@@ -35,7 +35,7 @@ def print_header(text: str) -> None:
     """Print a section header."""
     print(f"\n{'=' * 67}")
     print(text)
-    print('=' * 67)
+    print("=" * 67)
 
 
 def print_step(text: str) -> None:
@@ -84,7 +84,9 @@ def run_command(
     merged_env = {**os.environ, **(env or {})}
     if show_output:
         return subprocess.run(cmd, check=check, env=merged_env)
-    return subprocess.run(cmd, capture_output=capture_output, text=True, check=check, env=merged_env)
+    return subprocess.run(
+        cmd, capture_output=capture_output, text=True, check=check, env=merged_env
+    )
 
 
 def get_command_output(cmd: list[str], env: dict = None) -> str:
@@ -138,10 +140,14 @@ def check_missing_prerequisites(prereqs: dict[str, bool]) -> list[str]:
         if platform.system() == "Darwin":
             missing.append("Databricks CLI - Install with: brew install databricks/tap/databricks")
         else:
-            missing.append("Databricks CLI - Install with: curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh")
+            missing.append(
+                "Databricks CLI - Install with: curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh"
+            )
 
     if missing:
-        missing.append("Note: These install commands are for Unix/macOS. For Windows, please visit the official documentation for each tool.")
+        missing.append(
+            "Note: These install commands are for Unix/macOS. For Windows, please visit the official documentation for each tool."
+        )
 
     return missing
 
@@ -166,7 +172,7 @@ def check_node_version() -> str | None:
     if not match:
         return None
 
-    major, minor, patch = int(match.group(1)), int(match.group(2)), int(match.group(3))
+    major, minor = int(match.group(1)), int(match.group(2))
 
     # Node 21.x is odd-numbered and not a Vite target
     if major == 21:
@@ -196,6 +202,13 @@ def check_node_version() -> str | None:
             f"Node.js {version_str} is too old for Vite (requires 22.12+).\n"
             f"  Your version: {version_str}\n"
             "  Run: nvm install 22  (to get latest 22.x)"
+        )
+
+    if major < 20:
+        return (
+            f"Node.js {version_str} is too old for Vite (requires 20.19+).\n"
+            f"  Your version: {version_str}\n"
+            "  Run: nvm install 22"
         )
 
     return (
@@ -240,7 +253,7 @@ def update_env_file(key: str, value: str) -> None:
     content = env_file.read_text()
 
     # Check if key exists (with or without quotes, with any value)
-    pattern = rf'^{re.escape(key)}=.*$'
+    pattern = rf"^{re.escape(key)}=.*$"
     if re.search(pattern, content, re.MULTILINE):
         # Replace existing key
         content = re.sub(pattern, f"{key}={value}", content, flags=re.MULTILINE)
@@ -271,10 +284,12 @@ def get_databricks_profiles() -> list[dict]:
                 # Profile name is the first column
                 parts = line.split()
                 if parts:
-                    profiles.append({
-                        "name": parts[0],
-                        "line": line,
-                    })
+                    profiles.append(
+                        {
+                            "name": parts[0],
+                            "line": line,
+                        }
+                    )
 
         return profiles
     except Exception:
@@ -377,7 +392,9 @@ def setup_databricks_auth(profile_arg: str = None, host_arg: str = None) -> str:
             host = host_arg
             print(f"Using specified host: {host}")
         else:
-            host = input("\nPlease enter your Databricks host URL\n(e.g., https://your-workspace.cloud.databricks.com): ").strip()
+            host = input(
+                "\nPlease enter your Databricks host URL\n(e.g., https://your-workspace.cloud.databricks.com): "
+            ).strip()
 
             if not host:
                 print_error("Databricks host is required")
@@ -438,9 +455,17 @@ def create_mlflow_experiment(profile_name: str, username: str) -> tuple[str, str
     try:
         # Try to create with default name
         result = run_command(
-            ["databricks", "-p", profile_name, "experiments", "create-experiment",
-             experiment_name, "--output", "json"],
-            check=False
+            [
+                "databricks",
+                "-p",
+                profile_name,
+                "experiments",
+                "create-experiment",
+                experiment_name,
+                "--output",
+                "json",
+            ],
+            check=False,
         )
 
         if result.returncode == 0:
@@ -454,8 +479,16 @@ def create_mlflow_experiment(profile_name: str, username: str) -> tuple[str, str
         experiment_name = f"/Users/{username}/agents-on-apps-{random_suffix}"
 
         result = run_command(
-            ["databricks", "-p", profile_name, "experiments", "create-experiment",
-             experiment_name, "--output", "json"]
+            [
+                "databricks",
+                "-p",
+                profile_name,
+                "experiments",
+                "create-experiment",
+                experiment_name,
+                "--output",
+                "json",
+            ]
         )
         experiment_id = json.loads(result.stdout).get("experiment_id", "")
         print_success(f"Created experiment '{experiment_name}' with ID: {experiment_id}")
@@ -484,7 +517,7 @@ def get_env_value(key: str) -> str:
         return ""
 
     content = env_file.read_text()
-    pattern = rf'^{re.escape(key)}=(.*)$'
+    pattern = rf"^{re.escape(key)}=(.*)$"
     match = re.search(pattern, content, re.MULTILINE)
     if match:
         return match.group(1).strip().strip('"').strip("'")
@@ -499,9 +532,17 @@ def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> dict | 
     print(f"Validating Lakebase instance '{lakebase_name}'...")
 
     result = run_command(
-        ["databricks", "-p", profile_name, "database", "get-database-instance",
-         lakebase_name, "--output", "json"],
-        check=False
+        [
+            "databricks",
+            "-p",
+            profile_name,
+            "database",
+            "get-database-instance",
+            lakebase_name,
+            "--output",
+            "json",
+        ],
+        check=False,
     )
 
     if result.returncode == 0:
@@ -510,17 +551,23 @@ def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> dict | 
 
     # Check if database command is not recognized (old CLI version)
     if 'unknown command "database" for "databricks"' in (result.stderr or ""):
-        print_error("The 'databricks database' command requires a newer version of the Databricks CLI.")
+        print_error(
+            "The 'databricks database' command requires a newer version of the Databricks CLI."
+        )
         print("  Please upgrade: https://docs.databricks.com/dev-tools/cli/install.html")
         return None
 
     error_msg = result.stderr.lower() if result.stderr else ""
     if "not found" in error_msg:
-        print_error(f"Lakebase instance '{lakebase_name}' not found. Please check the instance name.")
+        print_error(
+            f"Lakebase instance '{lakebase_name}' not found. Please check the instance name."
+        )
     elif "permission" in error_msg or "forbidden" in error_msg or "unauthorized" in error_msg:
         print_error(f"No permission to access Lakebase instance '{lakebase_name}'")
     else:
-        print_error(f"Failed to validate Lakebase instance: {result.stderr.strip() if result.stderr else 'Unknown error'}")
+        print_error(
+            f"Failed to validate Lakebase instance: {result.stderr.strip() if result.stderr else 'Unknown error'}"
+        )
     return None
 
 
@@ -539,7 +586,9 @@ def setup_lakebase(profile_name: str, username: str, lakebase_arg: str = None) -
         existing = get_env_value("LAKEBASE_INSTANCE_NAME")
         if existing:
             print(f"Found existing Lakebase instance in .env: {existing}")
-            new_value = input("Press Enter to keep this value, or enter a new instance name: ").strip()
+            new_value = input(
+                "Press Enter to keep this value, or enter a new instance name: "
+            ).strip()
             lakebase_name = new_value if new_value else existing
         else:
             # Interactive mode - prompt for instance name
@@ -585,7 +634,7 @@ Examples:
     uv run quickstart --profile DEFAULT  # Use existing profile (non-interactive)
     uv run quickstart --host https://...  # Set up new profile with host
     uv run quickstart --lakebase my-db   # Include Lakebase setup for memory
-        """
+        """,
     )
     parser.add_argument(
         "--profile",
@@ -669,7 +718,7 @@ Examples:
             if host:
                 summary += f"\n  {host}/lakebase/provisioned/{lakebase_name}"
 
-        summary += "\n"
+        summary += "\nNext step: Run 'uv run start-app' to start the agent locally\n"
         print(summary)
 
     except KeyboardInterrupt:

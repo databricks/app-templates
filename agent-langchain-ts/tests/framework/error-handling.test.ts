@@ -2,20 +2,39 @@
  * Error handling tests for agent endpoints
  * Tests error scenarios including SSE completion and request validation
  *
- * Prerequisites:
- * - Agent server running on http://localhost:5001
- *
- * Run with: npm run test:error-handling
+ * Run with: npm run test:integration
  */
 
-import { describe, test, expect } from '@jest/globals';
+import { describe, test, expect, beforeAll, afterAll } from '@jest/globals';
+import { spawn } from "child_process";
+import type { ChildProcess } from "child_process";
 import {
-  TEST_CONFIG,
   parseSSEStream,
   assertStreamComplete,
 } from '../helpers.js';
 
-const AGENT_URL = TEST_CONFIG.AGENT_URL;
+const PORT = 5558;
+const AGENT_URL = `http://localhost:${PORT}`;
+let agentProcess: ChildProcess;
+
+beforeAll(async () => {
+  agentProcess = spawn("node_modules/.bin/tsx", ["src/framework/server.ts"], {
+    env: { ...process.env, PORT: PORT.toString() },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const start = Date.now();
+  while (Date.now() - start < 20000) {
+    try {
+      const r = await fetch(`${AGENT_URL}/health`);
+      if (r.ok) break;
+    } catch {}
+    await new Promise((r) => setTimeout(r, 200));
+  }
+}, 30000);
+
+afterAll(() => {
+  if (agentProcess) agentProcess.kill();
+});
 
 describe("Error Handling Tests", () => {
   describe("SSE Stream Completion", () => {

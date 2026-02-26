@@ -18,35 +18,6 @@ export const TEST_CONFIG = {
 // Request Helpers
 // ============================================================================
 
-export interface InvocationsRequest {
-  input: Array<{
-    role: "user" | "assistant" | "system";
-    content: string | any[];
-  }>;
-  stream?: boolean;
-}
-
-/**
- * Call /invocations endpoint with Responses API format
- */
-export async function callInvocations(
-  body: InvocationsRequest,
-  baseUrl = TEST_CONFIG.AGENT_URL
-): Promise<Response> {
-  const response = await fetch(`${baseUrl}/invocations`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`HTTP ${response.status}: ${text}`);
-  }
-
-  return response;
-}
-
 /**
  * Create authorization headers with Bearer token
  */

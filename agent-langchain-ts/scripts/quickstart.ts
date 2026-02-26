@@ -14,6 +14,7 @@ import { execSync } from "child_process";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 import * as readline from "readline/promises";
+import { WorkspaceClient } from "@databricks/sdk-experimental";
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -22,7 +23,8 @@ const rl = readline.createInterface({
 
 interface Config {
   databricksHost: string;
-  databricksToken: string;
+  configProfile?: string;   // profile-based auth (preferred)
+  databricksToken?: string; // PAT fallback
   model: string;
   experimentId?: string;
   enableSqlMcp: boolean;
@@ -45,28 +47,11 @@ async function confirm(question: string, defaultYes = true): Promise<boolean> {
   return normalized === "y" || normalized === "yes";
 }
 
-function execCommand(command: string): string {
+async function getDatabricksConfig(): Promise<{ host?: string; profile?: string }> {
   try {
-    return execSync(command, { encoding: "utf-8" }).trim();
-  } catch (error) {
-    return "";
-  }
-}
-
-function checkDatabricksCli(): boolean {
-  try {
-    execSync("databricks --version", { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function getDatabricksConfig(): { host?: string; token?: string } {
-  try {
-    const host = execCommand("databricks auth env --host");
-    const token = execCommand("databricks auth env --token");
-    return { host, token };
+    const client = new WorkspaceClient();
+    await client.config.ensureResolved();
+    return { host: client.config.host, profile: client.config.profile };
   } catch {
     return {};
   }
@@ -75,38 +60,38 @@ function getDatabricksConfig(): { host?: string; token?: string } {
 async function setupEnvironment(): Promise<Config> {
   console.log("\n🚀 LangChain TypeScript Agent Setup\n");
 
-  // Check for Databricks CLI
-  const hasDbxCli = checkDatabricksCli();
   let config: Config = {
     databricksHost: "",
-    databricksToken: "",
     model: "databricks-claude-sonnet-4-5",
     enableSqlMcp: false,
   };
 
-  if (hasDbxCli) {
-    console.log("✅ Databricks CLI detected");
+  // Try SDK-based auth detection
+  console.log("🔍 Detecting Databricks authentication...");
+  const sdkConfig = await getDatabricksConfig();
 
-    const useCliAuth = await confirm(
-      "Use Databricks CLI authentication?",
+  if (sdkConfig.host) {
+    console.log("✅ Databricks authentication detected");
+
+    const useSdkAuth = await confirm(
+      "Use detected Databricks authentication?",
       true
     );
 
-    if (useCliAuth) {
-      const cliConfig = getDatabricksConfig();
-      if (cliConfig.host) {
-        config.databricksHost = cliConfig.host;
-        console.log(`   Host: ${config.databricksHost}`);
-      }
-      if (cliConfig.token) {
-        config.databricksToken = cliConfig.token;
-        console.log("   Token: [configured]");
+    if (useSdkAuth) {
+      config.databricksHost = sdkConfig.host;
+      console.log(`   Host: ${config.databricksHost}`);
+      if (sdkConfig.profile) {
+        config.configProfile = sdkConfig.profile;
+        console.log(`   Profile: ${config.configProfile}`);
+      } else {
+        console.log("   Auth: [configured via environment/credentials]");
       }
     }
   } else {
-    console.log("⚠️  Databricks CLI not found");
+    console.log("⚠️  No Databricks authentication detected");
     console.log(
-      "   Install: https://docs.databricks.com/en/dev-tools/cli/install.html\n"
+      "   Configure via: https://docs.databricks.com/en/dev-tools/auth/index.html\n"
     );
   }
 
@@ -116,10 +101,6 @@ async function setupEnvironment(): Promise<Config> {
       "Databricks workspace URL",
       "https://your-workspace.cloud.databricks.com"
     );
-  }
-
-  // Prompt for token if not set
-  if (!config.databricksToken) {
     config.databricksToken = await prompt(
       "Databricks personal access token (dapi...)"
     );
@@ -158,26 +139,31 @@ async function setupEnvironment(): Promise<Config> {
   );
 
   if (createExperiment) {
-    // Try to create experiment via Databricks CLI
     try {
-      const userName = execCommand(
-        "databricks current-user me --output json | jq -r .userName"
-      );
+      const client = new WorkspaceClient();
+      await client.config.ensureResolved();
+
+      // Get current user
+      const meResponse = await (client as any).apiClient.request({
+        path: "/api/2.0/preview/scim/v2/Me",
+        method: "GET",
+        body: undefined,
+      });
+      const userName = meResponse.userName as string;
       const experimentPath = `/Users/${userName}/agent-langchain-ts`;
 
       console.log(`   Creating experiment: ${experimentPath}`);
 
-      const result = execCommand(
-        `databricks experiments create --experiment-name "${experimentPath}" --output json 2>/dev/null || echo "{}"`
-      );
-
-      const parsed = JSON.parse(result || "{}");
-      config.experimentId = parsed.experiment_id;
+      // Create experiment
+      const createResponse = await (client as any).apiClient.request({
+        path: "/api/2.0/mlflow/experiments/create",
+        method: "POST",
+        body: { name: experimentPath },
+      });
+      config.experimentId = createResponse.experiment_id as string;
 
       if (config.experimentId) {
         console.log(`   ✅ Experiment created: ${config.experimentId}`);
-      } else {
-        console.log("   ℹ️  Experiment may already exist");
       }
     } catch (error) {
       console.log("   ⚠️  Could not auto-create experiment");
@@ -207,11 +193,18 @@ function writeEnvFile(config: Config): void {
   // Update environment variables
   const updates: Record<string, string> = {
     DATABRICKS_HOST: config.databricksHost,
-    DATABRICKS_TOKEN: config.databricksToken,
     DATABRICKS_MODEL: config.model,
     MLFLOW_TRACKING_URI: "databricks",
     ENABLE_SQL_MCP: config.enableSqlMcp ? "true" : "false",
   };
+
+  if (config.configProfile) {
+    updates.DATABRICKS_CONFIG_PROFILE = config.configProfile;
+  }
+
+  if (config.databricksToken) {
+    updates.DATABRICKS_TOKEN = config.databricksToken;
+  }
 
   if (config.experimentId) {
     updates.MLFLOW_EXPERIMENT_ID = config.experimentId;

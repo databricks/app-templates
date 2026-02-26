@@ -593,7 +593,7 @@ async function drainStreamToWriter(
   writer: UIMessageStreamWriter,
 ): Promise<{ failed: boolean; errorText?: string }> {
   const reader = uiStream.getReader();
-  let failed = false;
+  let receivedTextChunk = false;
 
   try {
     for (
@@ -602,21 +602,34 @@ async function drainStreamToWriter(
       chunk = await reader.read()
     ) {
       if (chunk.value.type === 'error') {
-        failed = true;
+        if (!receivedTextChunk) {
+          console.error(
+            'Error before first text chunk, triggering fallback:',
+            chunk.value.errorText,
+          );
+          return { failed: true, errorText: chunk.value.errorText };
+        }
         console.error(
-          'Upstream streaming error detected:',
+          'Mid-stream error, forwarding to client:',
           chunk.value.errorText,
         );
+        writer.write(chunk.value);
       } else {
+        if (!receivedTextChunk && chunk.value.type.startsWith('text-')) {
+          receivedTextChunk = true;
+        }
         writer.write(chunk.value);
       }
     }
   } catch (readError) {
-    failed = true;
-    console.error('Stream read error:', readError);
+    if (!receivedTextChunk) {
+      console.error('Stream read error before first text chunk:', readError);
+      return { failed: true };
+    }
+    console.error('Mid-stream read error:', readError);
   }
 
-  return { failed };
+  return { failed: false };
 }
 
 /**

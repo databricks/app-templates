@@ -3,12 +3,6 @@
 agent-*/.claude/skills/** linguist-generated=true
 
 # Mark synced scripts as generated
-# Source of truth is agent-langgraph/scripts/; copies are synced by .scripts/sync-scripts.py
-agent-langgraph-*/scripts/quickstart.py linguist-generated=true
-agent-langgraph-*/scripts/start_app.py linguist-generated=true
-agent-openai-*/scripts/quickstart.py linguist-generated=true
-agent-openai-*/scripts/start_app.py linguist-generated=true
-agent-non-conversational/scripts/quickstart.py linguist-generated=true
-agent-non-conversational/scripts/start_app.py linguist-generated=true
-agent-migration-from-model-serving/scripts/quickstart.py linguist-generated=true
-agent-migration-from-model-serving/scripts/start_app.py linguist-generated=true
+# Source of truth is .scripts/source/; copies are synced by .scripts/sync-scripts.py
+agent-*/scripts/quickstart.py linguist-generated=true
+agent-*/scripts/start_app.py linguist-generated=true

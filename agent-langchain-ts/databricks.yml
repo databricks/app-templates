@@ -49,23 +49,11 @@ targets:
   dev:
     mode: development
     default: true
-    workspace:
-      profile: dogfood
 
   prod:
     mode: production
-    workspace:
-      profile: dogfood
 
     # Production-specific configuration
     variables:
       resource_name_suffix:
         default: "prod"
-
-  default-workspace:
-    mode: development
-    workspace:
-      profile: DEFAULT
-    variables:
-      resource_name_suffix:
-        default: "dev"

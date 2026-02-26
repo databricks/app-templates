@@ -141,7 +141,9 @@ const execAsync = promisify(exec);
  */
 export async function getDeployedAuthToken(): Promise<string> {
   try {
-    const { stdout } = await execAsync("databricks auth token --profile dogfood");
+    const profile = process.env.DATABRICKS_CLI_PROFILE;
+    const profileFlag = profile ? `--profile ${profile}` : "";
+    const { stdout } = await execAsync(`databricks auth token ${profileFlag}`.trim());
     const tokenData = JSON.parse(stdout.trim());
     return tokenData.access_token;
   } catch (error) {

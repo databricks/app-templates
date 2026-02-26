@@ -234,24 +234,23 @@ Here's a full example from deployment to testing:
 
 ```bash
 # 1. Build
-cd /Users/sid.murching/app-templates/agent-langchain-ts
 npm run build
 
 # 2. Deploy
-databricks bundle deploy --profile dogfood
-databricks bundle run agent_langchain_ts --profile dogfood
+databricks bundle deploy
+databricks bundle run agent_langchain_ts
 
 # 3. Wait for app to start (check status)
-databricks apps get agent-lc-ts-dev --profile dogfood
+databricks apps get agent-lc-ts-dev
 
 # 4. Set environment variables
-export APP_URL=$(databricks apps get agent-lc-ts-dev --profile dogfood --output json | jq -r '.url')
-export DATABRICKS_CLI_PROFILE="dogfood"
+export APP_URL=$(databricks apps get agent-lc-ts-dev --output json | jq -r '.url')
+export DATABRICKS_CLI_PROFILE="${DATABRICKS_CONFIG_PROFILE:-DEFAULT}"
 
 echo "Testing app at: $APP_URL"
 
 # 5. Test authentication
-TOKEN=$(databricks auth token --profile dogfood | jq -r '.access_token')
+TOKEN=$(databricks auth token | jq -r '.access_token')
 curl -I "$APP_URL/api/session" -H "Authorization: Bearer $TOKEN"
 
 # 6. Run E2E tests

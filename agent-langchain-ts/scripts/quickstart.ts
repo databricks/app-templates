@@ -49,7 +49,7 @@ async function confirm(question: string, defaultYes = true): Promise<boolean> {
 
 async function getDatabricksConfig(): Promise<{ host?: string; profile?: string }> {
   try {
-    const client = new WorkspaceClient();
+    const client = new WorkspaceClient({});
     await client.config.ensureResolved();
     return { host: client.config.host, profile: client.config.profile };
   } catch {
@@ -140,7 +140,7 @@ async function setupEnvironment(): Promise<Config> {
 
   if (createExperiment) {
     try {
-      const client = new WorkspaceClient();
+      const client = new WorkspaceClient({});
       await client.config.ensureResolved();
 
       // Get current user

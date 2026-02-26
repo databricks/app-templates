@@ -146,6 +146,72 @@ def check_missing_prerequisites(prereqs: dict[str, bool]) -> list[str]:
     return missing
 
 
+def check_node_version() -> str | None:
+    """Check if the installed Node.js version meets Vite's requirements.
+
+    Vite requires Node.js >=20.19, >=22.12, or >=23.
+    Node 21.x is an odd-numbered release and not supported.
+
+    Returns None if the version is OK, or an error string if not.
+    """
+    if not command_exists("node"):
+        return None  # Missing node is handled by check_missing_prerequisites
+
+    try:
+        version_str = get_command_output(["node", "--version"])
+    except Exception:
+        return None
+
+    match = re.match(r"v(\d+)\.(\d+)\.(\d+)", version_str)
+    if not match:
+        return None
+
+    major, minor = int(match.group(1)), int(match.group(2))
+
+    # Node 21.x is odd-numbered and not a Vite target
+    if major == 21:
+        return (
+            f"Node.js {version_str} is not supported by Vite (odd-numbered release).\n"
+            "  Please install Node.js 20.19+, 22.12+, or 23+.\n"
+            "  Run: nvm install 22"
+        )
+
+    # Check supported version ranges
+    if major == 20 and minor >= 19:
+        return None
+    if major == 22 and minor >= 12:
+        return None
+    if major >= 23:
+        return None
+
+    # Version is too old or unsupported
+    if major == 20:
+        return (
+            f"Node.js {version_str} is too old for Vite (requires 20.19+).\n"
+            f"  Your version: {version_str}\n"
+            "  Run: nvm install 20  (to get latest 20.x)"
+        )
+    if major == 22:
+        return (
+            f"Node.js {version_str} is too old for Vite (requires 22.12+).\n"
+            f"  Your version: {version_str}\n"
+            "  Run: nvm install 22  (to get latest 22.x)"
+        )
+
+    if major < 20:
+        return (
+            f"Node.js {version_str} is too old for Vite (requires 20.19+).\n"
+            f"  Your version: {version_str}\n"
+            "  Run: nvm install 22"
+        )
+
+    return (
+        f"Node.js {version_str} is not supported by Vite.\n"
+        "  Vite requires Node.js 20.19+, 22.12+, or 23+.\n"
+        "  Run: nvm install 22"
+    )
+
+
 def setup_env_file() -> None:
     """Copy .env.example to .env if it doesn't exist."""
     print_step("Setting up configuration files...")
@@ -339,6 +405,23 @@ def setup_databricks_auth(profile_arg: str = None, host_arg: str = None) -> str:
     return profile_name
 
 
+def get_databricks_host(profile_name: str) -> str:
+    """Get the Databricks workspace host URL from the profile."""
+    try:
+        result = run_command(
+            ["databricks", "auth", "env", "--profile", profile_name, "--output", "json"],
+            check=False,
+        )
+        if result.returncode == 0:
+            env_data = json.loads(result.stdout)
+            env_vars = env_data.get("env", {})
+            host = env_vars.get("DATABRICKS_HOST", "")
+            return host.rstrip("/")
+    except Exception:
+        pass
+    return ""
+
+
 def get_databricks_username(profile_name: str) -> str:
     """Get the current Databricks username."""
     try:
@@ -415,8 +498,11 @@ def get_env_value(key: str) -> str:
     return ""
 
 
-def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> bool:
-    """Validate that the Lakebase instance exists and user has access."""
+def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> dict | None:
+    """Validate that the Lakebase instance exists and user has access.
+
+    Returns the instance info dict on success, None on failure.
+    """
     print(f"Validating Lakebase instance '{lakebase_name}'...")
 
     result = run_command(
@@ -427,13 +513,13 @@ def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> bool:
 
     if result.returncode == 0:
         print_success(f"Lakebase instance '{lakebase_name}' validated")
-        return True
+        return json.loads(result.stdout)
 
     # Check if database command is not recognized (old CLI version)
     if 'unknown command "database" for "databricks"' in (result.stderr or ""):
         print_error("The 'databricks database' command requires a newer version of the Databricks CLI.")
         print("  Please upgrade: https://docs.databricks.com/dev-tools/cli/install.html")
-        return False
+        return None
 
     error_msg = result.stderr.lower() if result.stderr else ""
     if "not found" in error_msg:
@@ -442,10 +528,10 @@ def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> bool:
         print_error(f"No permission to access Lakebase instance '{lakebase_name}'")
     else:
         print_error(f"Failed to validate Lakebase instance: {result.stderr.strip() if result.stderr else 'Unknown error'}")
-    return False
+    return None
 
 
-def setup_lakebase(profile_name: str, lakebase_arg: str = None) -> str:
+def setup_lakebase(profile_name: str, username: str, lakebase_arg: str = None) -> str:
     """Set up Lakebase instance for memory features."""
     print_step("Setting up Lakebase instance for memory...")
 
@@ -471,12 +557,27 @@ def setup_lakebase(profile_name: str, lakebase_arg: str = None) -> str:
                 sys.exit(1)
 
     # Validate that the Lakebase instance exists and user has access
-    if not validate_lakebase_instance(profile_name, lakebase_name):
+    instance_info = validate_lakebase_instance(profile_name, lakebase_name)
+    if not instance_info:
         sys.exit(1)
 
     # Update .env with the Lakebase instance name
     update_env_file("LAKEBASE_INSTANCE_NAME", lakebase_name)
     print_success(f"Lakebase instance name '{lakebase_name}' saved to .env")
+
+    # Set up PostgreSQL connection environment variables
+    pg_host = instance_info.get("read_write_dns", "")
+    if pg_host:
+        update_env_file("PGHOST", pg_host)
+        print_success(f"PGHOST set to '{pg_host}'")
+    else:
+        print_error("Could not get read_write_dns from Lakebase instance")
+
+    update_env_file("PGUSER", username)
+    print_success(f"PGUSER set to '{username}'")
+
+    update_env_file("PGDATABASE", "databricks_postgres")
+    print_success("PGDATABASE set to 'databricks_postgres'")
 
     return lakebase_name
 
@@ -525,6 +626,12 @@ Examples:
             print("\nPlease install the missing prerequisites and run this script again.")
             sys.exit(1)
 
+        # Check Node.js version meets Vite requirements
+        node_error = check_node_version()
+        if node_error:
+            print_error(f"Node.js version check failed:\n  {node_error}")
+            sys.exit(1)
+
         # Step 2: Set up .env
         setup_env_file()
 
@@ -546,24 +653,30 @@ Examples:
         lakebase_name = None
         lakebase_required = args.lakebase or check_lakebase_required()
         if lakebase_required:
-            lakebase_name = setup_lakebase(profile_name, args.lakebase)
+            lakebase_name = setup_lakebase(profile_name, username, args.lakebase)
 
         # Final summary
+        host = get_databricks_host(profile_name)
+
         print_header("Setup Complete!")
         summary = f"""
 ✓ Prerequisites verified (uv, Node.js, Databricks CLI)
 ✓ Databricks authenticated with profile: {profile_name}
 ✓ Configuration files created (.env)
-✓ MLflow experiment created: {experiment_name}
+
+✓ MLflow experiment created for tracing and evaluation: {experiment_name}
 ✓ Experiment ID: {experiment_id}"""
 
+        if host and experiment_id:
+            summary += f"\n  {host}/ml/experiments/{experiment_id}"
+
         if lakebase_name:
-            summary += f"\n✓ Lakebase instance: {lakebase_name}"
+            summary += f"\n\n✓ Lakebase instance: {lakebase_name}"
+            summary += "\n✓ PostgreSQL variables set (PGHOST, PGUSER, PGDATABASE)"
+            if host:
+                summary += f"\n  {host}/lakebase/provisioned/{lakebase_name}"
 
-        summary += """
-
-Next step: Run 'uv run start-app' to start the agent locally
-"""
+        summary += "\nNext step: Run 'uv run start-app' to start the agent locally\n"
         print(summary)
 
     except KeyboardInterrupt:

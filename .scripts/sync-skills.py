@@ -6,53 +6,19 @@ template directory. Each template gets a complete copy of its skills (no symlink
 so that `databricks workspace export-dir` works correctly.
 
 Usage:
-    python .claude/sync-skills.py
+    python .scripts/sync-skills.py
 """
 
-import os
 import shutil
 from pathlib import Path
 
-# Get repo root (parent of .claude directory where this script lives)
+from templates import TEMPLATES
+
+# Get repo root (parent of .scripts directory where this script lives)
 SCRIPT_DIR = Path(__file__).parent.resolve()
 REPO_ROOT = SCRIPT_DIR.parent
 
-TEMPLATES = {
-    "agent-langgraph": {
-        "sdk": "langgraph",
-        "bundle_name": "agent_langgraph",
-    },
-    "agent-langgraph-short-term-memory": {
-        "sdk": "langgraph",
-        "bundle_name": "agent_langgraph_short_term_memory",
-    },
-    "agent-langgraph-long-term-memory": {
-        "sdk": "langgraph",
-        "bundle_name": "agent_langgraph_long_term_memory",
-    },
-    "agent-openai-agents-sdk": {
-        "sdk": "openai",
-        "bundle_name": "agent_openai_agents_sdk",
-    },
-    "agent-openai-agents-sdk-multiagent": {
-        "sdk": "openai",
-        "bundle_name": "agent_openai_agents_sdk_multiagent",
-    },
-    "agent-openai-agents-sdk-short-term-memory": {
-        "sdk": "openai",
-        "bundle_name": "agent_openai_agents_sdk_short_term_memory",
-    },
-    "agent-non-conversational": {
-        "sdk": "langgraph",
-        "bundle_name": "agent_non_conversational",
-    },
-    "agent-migration-from-model-serving": {
-        "sdk": ["langgraph", "openai"],
-        "bundle_name": "agent_migration",
-    },
-}
-
-SOURCE = SCRIPT_DIR / "skills"
+SOURCE = REPO_ROOT / ".claude" / "skills"
 
 
 def copy_skill(src: Path, dest: Path, substitutions: dict = None):

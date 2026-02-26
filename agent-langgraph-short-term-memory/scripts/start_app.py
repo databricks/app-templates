@@ -6,16 +6,8 @@ Requirements:
 1. Not reporting ready until BOTH frontend and backend processes are ready
 2. Exiting as soon as EITHER process fails
 3. Printing error logs if either process fails
-
-Usage:
-    start-app [OPTIONS]
-
-All options are passed through to the backend server (start-server).
-See 'uv run start-server --help' for available options.
 """
 
-import argparse
-import os
 import re
 import shutil
 import subprocess
@@ -32,7 +24,7 @@ FRONTEND_READY = [r"Server is running on http://localhost"]
 
 
 class ProcessManager:
-    def __init__(self, port=8000):
+    def __init__(self):
         self.backend_process = None
         self.frontend_process = None
         self.backend_ready = False
@@ -40,7 +32,6 @@ class ProcessManager:
         self.failed = threading.Event()
         self.backend_log = None
         self.frontend_log = None
-        self.port = port
 
     def monitor_process(self, process, name, log_file, patterns):
         is_ready = False
@@ -65,7 +56,7 @@ class ProcessManager:
                     if self.backend_ready and self.frontend_ready:
                         print("\n" + "=" * 50)
                         print("✓ Both frontend and backend are ready!")
-                        print(f"✓ Open the frontend at http://localhost:{self.port}")
+                        print("✓ Open the frontend at http://localhost:8000")
                         print("=" * 50 + "\n")
 
             process.wait()
@@ -150,28 +141,20 @@ class ProcessManager:
         if self.frontend_log:
             self.frontend_log.close()
 
-    def run(self, backend_args=None):
+    def run(self):
         load_dotenv(dotenv_path=".env", override=True)
 
         if not self.clone_frontend_if_needed():
             return 1
-
-        # Set API_PROXY environment variable for frontend to connect to backend
-        os.environ["API_PROXY"] = f"http://localhost:{self.port}/invocations"
 
         # Open log files
         self.backend_log = open("backend.log", "w", buffering=1)
         self.frontend_log = open("frontend.log", "w", buffering=1)
 
         try:
-            # Build backend command, passing through all arguments
-            backend_cmd = ["uv", "run", "start-server"]
-            if backend_args:
-                backend_cmd.extend(backend_args)
-
             # Start backend
             self.backend_process = self.start_process(
-                backend_cmd, "backend", self.backend_log, BACKEND_READY
+                ["uv", "run", "start-server"], "backend", self.backend_log, BACKEND_READY
             )
 
             # Setup and start frontend
@@ -228,25 +211,7 @@ class ProcessManager:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Start agent frontend and backend",
-        usage="%(prog)s [OPTIONS]\n\nAll options are passed through to start-server. "
-        "Use 'uv run start-server --help' for available options."
-    )
-    # Parse known args (none currently) and pass remaining to backend
-    _, backend_args = parser.parse_known_args()
-
-    # Extract port from backend_args if specified
-    port = 8000
-    for i, arg in enumerate(backend_args):
-        if arg == "--port" and i + 1 < len(backend_args):
-            try:
-                port = int(backend_args[i + 1])
-            except ValueError:
-                pass
-            break
-
-    sys.exit(ProcessManager(port=port).run(backend_args))
+    sys.exit(ProcessManager().run())
 
 
 if __name__ == "__main__":

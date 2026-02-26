@@ -4,7 +4,8 @@ bundle:
 variables:
   serving_endpoint_name:
     description: "Name of the model serving endpoint to be used by the app"
-    default: "agents_smurching-default-feb_2026_agent"
+    # TODO: uncomment the line below and specify a default value to avoid needing to specify it on each deployment
+    # default: "your-serving-endpoint-name-goes-here"
   database_instance_name:
     description: "Base name of the Lakebase database instance"
     default: "chatbot-lakebase"

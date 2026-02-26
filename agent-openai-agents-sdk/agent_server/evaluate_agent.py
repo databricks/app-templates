@@ -6,17 +6,17 @@ from dotenv import load_dotenv
 from mlflow.genai.agent_server import get_invoke_function
 from mlflow.genai.scorers import (
     Completeness,
-    ConversationCompleteness,
     ConversationalSafety,
-    KnowledgeRetention,
-    UserFrustration,
+    ConversationCompleteness,
     Fluency,
+    KnowledgeRetention,
     RelevanceToQuery,
     Safety,
     ToolCallCorrectness,
+    UserFrustration,
 )
 from mlflow.genai.simulators import ConversationSimulator
-from mlflow.types.responses import ResponsesAgentRequest, ResponsesAgentResponse
+from mlflow.types.responses import ResponsesAgentRequest
 
 # Load environment variables from .env if it exists
 load_dotenv(dotenv_path=".env", override=True)
@@ -33,7 +33,7 @@ from agent_server import agent  # noqa: F401
 test_cases = [
     {
         "goal": "Learn about the main dishes of Vietnamese cuisine",
-        "persona": "An impatient foodie who knows doesn't know much about Vietnamese cuisine.",
+        "persona": "An impatient foodie who doesn't know much about Vietnamese cuisine.",
         "simulation_guidelines": [
             "Initially explore the main influences of Vietnamese cuisine before the main dishes.",
         ],
@@ -43,7 +43,7 @@ test_cases = [
         "persona": "You are a math novice who has heard of prime numbers but doesn't know what Fibonacci numbers are.",
         "simulation_guidelines": [
             "Initially ask questions to understand the Fibonacci sequence before exploring which ones are prime.",
-            "Prefer short messsages",
+            "Prefer short messages",
         ],
     },
 ]

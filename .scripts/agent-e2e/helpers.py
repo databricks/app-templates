@@ -200,18 +200,6 @@ def revert_edits(originals: list[tuple[Path, str]]):
         filepath.write_text(content)
 
 
-def apply_lakebase_edit(
-    template_dir: Path, lakebase: str
-) -> list[tuple[Path, str]]:
-    """Replace '<your-lakebase-instance-name>' with lakebase value in databricks.yml."""
-    edit = FileEdit(
-        relative_path="databricks.yml",
-        old="<your-lakebase-instance-name>",
-        new=lakebase,
-    )
-    return apply_edits([edit], template_dir)
-
-
 # --- Deploy helpers ---
 
 

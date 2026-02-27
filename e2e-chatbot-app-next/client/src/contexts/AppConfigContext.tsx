@@ -5,6 +5,7 @@ import { fetcher } from '@/lib/utils';
 interface ConfigResponse {
   features: {
     chatHistory: boolean;
+    feedback: boolean;
   };
 }
 
@@ -13,6 +14,7 @@ interface AppConfigContextType {
   isLoading: boolean;
   error: Error | undefined;
   chatHistoryEnabled: boolean;
+  feedbackEnabled: boolean;
 }
 
 const AppConfigContext = createContext<AppConfigContextType | undefined>(
@@ -37,6 +39,7 @@ export function AppConfigProvider({ children }: { children: ReactNode }) {
     error,
     // Default to true until loaded to avoid breaking existing behavior
     chatHistoryEnabled: data?.features.chatHistory ?? true,
+    feedbackEnabled: data?.features.feedback ?? false,
   };
 
   return (

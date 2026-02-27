@@ -10,6 +10,7 @@ import {
 import { memo, useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import type { ChatMessage, Feedback } from '@chat-template/core';
+import { useAppConfig } from '@/contexts/AppConfigContext';
 import {
   ChevronDown,
   ChevronUp,
@@ -37,6 +38,7 @@ function PureMessageActions({
   initialFeedback?: Feedback;
 }) {
   // All hooks MUST be called before any early returns
+  const { feedbackEnabled } = useAppConfig();
   const [_, copyToClipboard] = useCopyToClipboard();
   const [feedback, setFeedback] = useState<'thumbs_up' | 'thumbs_down' | null>(
     initialFeedback?.feedbackType || null,
@@ -181,7 +183,7 @@ function PureMessageActions({
           <CopyIcon />
         </Action>
       )}
-      {feedbackButtons}
+      {feedbackEnabled && feedbackButtons}
       {errorCount > 0 && onToggleErrors && (
         <Action
           tooltip={showErrors ? 'Hide errors' : 'Show errors'}

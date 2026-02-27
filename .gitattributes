@@ -1,3 +1,9 @@
 # Mark synced skills in agent subfolders as generated
 # These are copied from .claude/skills/ by the sync script
 agent-*/.claude/skills/** linguist-generated=true
+
+# Mark synced scripts as generated
+# Source of truth is .scripts/source/; copies are synced by .scripts/sync-scripts.py
+agent-*/scripts/quickstart.py linguist-generated=true
+agent-*/scripts/start_app.py linguist-generated=true
+agent-*/agent_server/evaluate_agent.py linguist-generated=true

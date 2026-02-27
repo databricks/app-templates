@@ -170,17 +170,20 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
         if (!mlflowResponse.ok) {
           const errorText = await mlflowResponse.text();
           console.error('Failed to submit feedback to MLflow:', errorText);
-        } else {
-          const mlflowResult = await mlflowResponse.json();
-          mlflowAssessmentId = mlflowResult.assessment?.assessment_id;
-          // Store assessment ID for deduplication on subsequent submissions
-          if (mlflowAssessmentId) {
-            storeAssessmentId(messageId, session.user.id, mlflowAssessmentId);
-          }
+          return res.status(mlflowResponse.status).json({ error: 'Failed to submit feedback' });
+        }
+
+        const mlflowResult = await mlflowResponse.json();
+        mlflowAssessmentId = mlflowResult.assessment?.assessment_id;
+        // Store assessment ID for deduplication on subsequent submissions
+        if (mlflowAssessmentId) {
+          storeAssessmentId(messageId, session.user.id, mlflowAssessmentId);
         }
       } catch (error) {
         console.error('Error submitting feedback to MLflow:', error);
-        // Continue even if MLflow submission fails
+        const chatError = new ChatSDKError('offline:chat');
+        const chatResponse = chatError.toResponse();
+        return res.status(chatResponse.status).json(chatResponse.json);
       }
     } else {
       console.warn('Message does not have a trace ID, skipping MLflow submission');

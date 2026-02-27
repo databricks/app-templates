@@ -1,3 +1,4 @@
+import litellm
 import logging
 import os
 from typing import Any, AsyncGenerator, Optional, Sequence, TypedDict
@@ -33,6 +34,8 @@ from agent_server.utils import (
 
 logger = logging.getLogger(__name__)
 mlflow.langchain.autolog()
+logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
+litellm.suppress_debug_info = True
 sp_workspace_client = WorkspaceClient()
 
 ############################################
@@ -126,6 +129,7 @@ async def streaming(
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
     thread_id = _get_or_create_thread_id(request)
+    mlflow.update_current_trace(metadata={"mlflow.trace.session": thread_id})
 
     config = {"configurable": {"thread_id": thread_id}}
     input_state: dict[str, Any] = {

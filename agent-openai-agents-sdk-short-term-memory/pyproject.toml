@@ -8,14 +8,14 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi>=0.115.12",
-    "uvicorn>=0.34.2",
-    "mlflow>=3.8.0rc0",
+    "fastapi>=0.129.0",
+    "uvicorn>=0.41.0",
+    "mlflow>=3.10.0",
     "openai-agents>=0.4.1",
-    "python-dotenv",
+    "python-dotenv>=1.2.1",
     "uuid-utils>=0.10.0",
     "databricks-openai[memory]>=0.11.1",
-    "databricks-agents",
+    "databricks-agents>=1.9.3",
 ]
 
 [build-system]
@@ -30,8 +30,8 @@ prerelease = "allow"
 
 [dependency-groups]
 dev = [
-    "hatchling>=1.27.0",
-    "pytest>=7.0.0",
+    "hatchling>=1.28.0",
+    "pytest>=9.0.2",
 ]
 
 

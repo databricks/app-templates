@@ -160,16 +160,25 @@ case "$MODE" in
       exit 1
     fi
 
-    EXP_NAME=$(echo "$APP_JSON" \
-      | jq -r '(.resources // []) | map(select(.mlflow_experiment != null)) | .[0].mlflow_experiment.name // empty')
+    EXPERIMENT_ID=$(echo "$APP_JSON" \
+      | jq -r '(.resources // []) | map(select(.experiment != null)) | .[0].experiment.experiment_id // empty')
 
-    if [[ -z "$EXP_NAME" ]]; then
+    if [[ -z "$EXPERIMENT_ID" ]]; then
       echo "❌ No MLflow experiment resource found on app '$VALUE'." >&2
       echo "   Configure an experiment resource in databricks.yml and redeploy." >&2
       exit 1
     fi
 
-    echo "$EXP_NAME"
+    # Resolve numeric ID to experiment name
+    EXP_JSON=$(curl -sf "$HOST/api/2.0/mlflow/experiments/get?experiment_id=$EXPERIMENT_ID" \
+      -H "Authorization: Bearer $TOKEN" 2>/dev/null || true)
+    EXP_NAME=$(echo "$EXP_JSON" | jq -r '.experiment.name // empty')
+
+    if [[ -n "$EXP_NAME" ]]; then
+      echo "$EXP_NAME"
+    else
+      echo "$EXPERIMENT_ID"
+    fi
     ;;
 
 esac

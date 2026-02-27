@@ -58,9 +58,6 @@ export function Chat({
     initialLastContext,
   );
 
-  const [streamCursor, setStreamCursor] = useState(0);
-  const streamCursorRef = useRef(streamCursor);
-  streamCursorRef.current = streamCursor;
   const [lastPart, setLastPart] = useState<UIMessageChunk | undefined>();
   const lastPartRef = useRef<UIMessageChunk | undefined>(lastPart);
   lastPartRef.current = lastPart;
@@ -118,9 +115,6 @@ export function Chat({
         }
         // Reset resume attempts when we successfully receive stream parts
         resumeAttemptCountRef.current = 0;
-
-        // Keep track of the number of stream parts received
-        setStreamCursor((cursor) => cursor + 1);
         setLastPart(part);
       },
       api: '/api/chat',
@@ -161,10 +155,6 @@ export function Chat({
         return {
           api: `/api/chat/${id}/stream`,
           credentials: 'include',
-          headers: {
-            // Pass the cursor to the server so it can resume the stream from the correct point
-            'X-Resume-Stream-Cursor': streamCursorRef.current.toString(),
-          },
         };
       },
     }),
@@ -188,7 +178,6 @@ export function Chat({
       // If user aborted, don't try to resume
       if (isAbort) {
         console.log('[Chat onFinish] Stream was aborted by user, not resuming');
-        setStreamCursor(0);
         fetchChatHistory();
         return;
       }
@@ -207,7 +196,6 @@ export function Chat({
         console.log(
           '[Chat onFinish] OAuth credential error detected, not resuming',
         );
-        setStreamCursor(0);
         fetchChatHistory();
         clearError();
         return;
@@ -228,13 +216,15 @@ export function Chat({
           resumeAttemptCountRef.current + 1,
         );
         resumeAttemptCountRef.current++;
-        resumeStream();
+        // Ref: https://github.com/vercel/ai/issues/8477#issuecomment-3603209884
+        queueMicrotask(() => {
+          resumeStream();
+        })
       } else {
         // Stream completed normally or we've exhausted resume attempts
         if (resumeAttemptCountRef.current >= maxResumeAttempts) {
           console.warn('[Chat onFinish] Max resume attempts reached');
         }
-        setStreamCursor(0);
         fetchChatHistory();
       }
     },

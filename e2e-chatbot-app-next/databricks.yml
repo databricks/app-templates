@@ -20,11 +20,6 @@ resources:
     #   name: ${var.database_instance_name}-${var.resource_name_suffix}
     #   capacity: CU_1
 
-  mlflow_experiments:
-    # FEEDBACK RESOURCE (1): Uncomment to create an MLflow experiment for collecting user feedback
-    # feedback_experiment:
-    #   name: /Users/${workspace.current_user.userName}/chatbot-feedback-${var.resource_name_suffix}
-
   apps:
     databricks_chatbot:
       # NOTE: customize the app name here, if desired

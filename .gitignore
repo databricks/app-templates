@@ -127,6 +127,9 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# uv
+**/uv.lock
+
 # Visual Studio Code
 .vscode/
 

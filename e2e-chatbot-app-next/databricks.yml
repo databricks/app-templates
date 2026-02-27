@@ -20,11 +20,6 @@ resources:
     #   name: ${var.database_instance_name}-${var.resource_name_suffix}
     #   capacity: CU_1
 
-  mlflow_experiments:
-    # FEEDBACK RESOURCE (1): Uncomment to create an MLflow experiment for collecting user feedback
-    # feedback_experiment:
-    #   name: /Users/${workspace.current_user.userName}/chatbot-feedback-${var.resource_name_suffix}
-
   apps:
     databricks_chatbot:
       # NOTE: customize the app name here, if desired
@@ -48,11 +43,12 @@ resources:
         #     database_name: databricks_postgres
         #     instance_name: ${resources.database_instances.chatbot_lakebase.name}
         #     permission: CAN_CONNECT_AND_CREATE
-        # FEEDBACK RESOURCE (2): Uncomment to grant the app access to the MLflow experiment and enable the feedback UI
+        # FEEDBACK RESOURCE: Uncomment to grant the app access to the MLflow experiment and enable the feedback UI.
+        # Run ./scripts/get-experiment-id.sh to find the experiment name for your agent.
         # - name: experiment
         #   description: "MLflow experiment for collecting user feedback"
         #   mlflow_experiment:
-        #     name: ${resources.mlflow_experiments.feedback_experiment.name}
+        #     name: "/Users/your-email@company.com/your-experiment-name"
         #     permission: CAN_READ
 
 targets:

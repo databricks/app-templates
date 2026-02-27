@@ -33,16 +33,14 @@
       }
     }
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
     "clean": "rm -rf dist"
   },
   "devDependencies": {
-    "ai": "^6.0.57",
+    "ai": "^6.0.70",
     "typescript": "^5.9.3"
   },
   "dependencies": {

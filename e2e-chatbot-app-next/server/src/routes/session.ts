@@ -1,4 +1,9 @@
-import { Router, type Request, type Response, type Router as RouterType } from 'express';
+import {
+  Router,
+  type Request,
+  type Response,
+  type Router as RouterType,
+} from 'express';
 import { authMiddleware } from '../middleware/auth';
 import type { ClientSession } from '@chat-template/auth';
 
@@ -11,7 +16,6 @@ sessionRouter.use(authMiddleware);
  * GET /api/session - Get current user session
  */
 sessionRouter.get('/', async (req: Request, res: Response) => {
-  console.log('GET /api/session', req.session);
   const session = req.session;
 
   if (!session?.user) {

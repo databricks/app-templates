@@ -102,41 +102,70 @@ export default defineConfig({
     },
     {
       name: 'routes',
-      testMatch: /routes\/.*.test.ts/,
+      testMatch: /routes\/.*(?<!\.api-proxy)\.test\.ts$/,
       use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'routes-api-proxy',
+      testMatch: /routes\/.*\.api-proxy\.test\.ts$/,
+      use: { baseURL: 'http://localhost:3003' },
     },
   ],
 
   // Start dev server before running tests
-  webServer: {
-    command: 'npm run dev',
-    url: `${baseURL}/ping`,
-    timeout: 20 * 1000,
-    reuseExistingServer: !process.env.CI,
-    // Mock the environment variables for the server process
-    env: {
-      PLAYWRIGHT: 'True',
-      DATABRICKS_SERVING_ENDPOINT: 'mock-value',
-      DATABRICKS_CLIENT_ID: 'mock-value',
-      DATABRICKS_CLIENT_SECRET: 'mock-value',
-      DATABRICKS_HOST: 'mock-value',
-      ...(TEST_MODE === 'ephemeral'
-        ? {
-            POSTGRES_URL: '',
-            PGHOST: '',
-            PGDATABASE: '',
-            PGUSER: '',
-            PGPASSWORD: '',
-            PGSSLMODE: '',
-          }
-        : {
-            POSTGRES_URL: process.env.POSTGRES_URL ?? '',
-            PGHOST: process.env.PGHOST ?? '',
-            PGDATABASE: process.env.PGDATABASE ?? '',
-            PGUSER: process.env.PGUSER ?? '',
-            PGPASSWORD: process.env.PGPASSWORD ?? '',
-            PGSSLMODE: process.env.PGSSLMODE ?? '',
-          }),
+  webServer: [
+    {
+      command: 'npm run dev',
+      url: `${baseURL}/ping`,
+      timeout: 20 * 1000,
+      reuseExistingServer: !process.env.CI,
+      // Mock the environment variables for the server process
+      env: {
+        PLAYWRIGHT: 'True',
+        DATABRICKS_SERVING_ENDPOINT: 'mock-value',
+        DATABRICKS_CLIENT_ID: 'mock-value',
+        DATABRICKS_CLIENT_SECRET: 'mock-value',
+        DATABRICKS_HOST: 'mock-value',
+        ...(TEST_MODE === 'ephemeral'
+          ? {
+              POSTGRES_URL: '',
+              PGHOST: '',
+              PGDATABASE: '',
+              PGUSER: '',
+              PGPASSWORD: '',
+              PGSSLMODE: '',
+            }
+          : {
+              POSTGRES_URL: process.env.POSTGRES_URL ?? '',
+              PGHOST: process.env.PGHOST ?? '',
+              PGDATABASE: process.env.PGDATABASE ?? '',
+              PGUSER: process.env.PGUSER ?? '',
+              PGPASSWORD: process.env.PGPASSWORD ?? '',
+              PGSSLMODE: process.env.PGSSLMODE ?? '',
+            }),
+      },
     },
-  },
+    {
+      // API_PROXY mode — Express backend only, port 3003
+      command: 'npm run dev:server',
+      url: 'http://localhost:3003/ping',
+      timeout: 20 * 1000,
+      reuseExistingServer: !process.env.CI,
+      env: {
+        PLAYWRIGHT: 'True',
+        CHAT_APP_PORT: '3003',
+        API_PROXY: 'http://mlflow-agent-server-mock/invocations',
+        DATABRICKS_CLIENT_ID: 'mock-value',
+        DATABRICKS_CLIENT_SECRET: 'mock-value',
+        DATABRICKS_HOST: 'mock-value',
+        // Always ephemeral in API_PROXY test mode
+        POSTGRES_URL: '',
+        PGHOST: '',
+        PGDATABASE: '',
+        PGUSER: '',
+        PGPASSWORD: '',
+        PGSSLMODE: '',
+      },
+    },
+  ],
 });

@@ -13,7 +13,12 @@ import {
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
-import { chat, message, type DBMessage, type Chat } from './schema';
+import {
+  chat,
+  message,
+  type DBMessage,
+  type Chat,
+} from './schema';
 import type { VisibilityType } from '@chat-template/utils';
 import { ChatSDKError } from '@chat-template/core/errors';
 import type { LanguageModelV3Usage } from '@ai-sdk/provider';
@@ -285,6 +290,7 @@ export async function saveMessages({
         set: {
           parts: sql`excluded.parts`,
           attachments: sql`excluded.attachments`,
+          traceId: sql`excluded."traceId"`,
         },
       });
   } catch (_error) {
@@ -294,7 +300,9 @@ export async function saveMessages({
 
 export async function getMessagesByChatId({ id }: { id: string }) {
   if (!isDatabaseAvailable()) {
-    console.log('[getMessagesByChatId] Database not available, returning empty');
+    console.log(
+      '[getMessagesByChatId] Database not available, returning empty',
+    );
     return [];
   }
 
@@ -305,6 +313,7 @@ export async function getMessagesByChatId({ id }: { id: string }) {
       .where(eq(message.chatId, id))
       .orderBy(asc(message.createdAt));
   } catch (_error) {
+    console.error('[getMessagesByChatId] Database error:', _error);
     throw new ChatSDKError(
       'bad_request:database',
       'Failed to get messages by chat id',
@@ -339,7 +348,9 @@ export async function deleteMessagesByChatIdAfterTimestamp({
   timestamp: Date;
 }) {
   if (!isDatabaseAvailable()) {
-    console.log('[deleteMessagesByChatIdAfterTimestamp] Database not available, skipping deletion');
+    console.log(
+      '[deleteMessagesByChatIdAfterTimestamp] Database not available, skipping deletion',
+    );
     return;
   }
 
@@ -376,7 +387,9 @@ export async function updateChatVisiblityById({
   visibility: 'private' | 'public';
 }) {
   if (!isDatabaseAvailable()) {
-    console.log('[updateChatVisiblityById] Database not available, skipping update');
+    console.log(
+      '[updateChatVisiblityById] Database not available, skipping update',
+    );
     return;
   }
 
@@ -393,6 +406,32 @@ export async function updateChatVisiblityById({
   }
 }
 
+
+export async function updateChatTitleById({
+  chatId,
+  title,
+}: {
+  chatId: string;
+  title: string;
+}) {
+  if (!isDatabaseAvailable()) {
+    console.log('[updateChatTitleById] Database not available, skipping update');
+    return;
+  }
+
+  try {
+    return await (await ensureDb())
+      .update(chat)
+      .set({ title })
+      .where(eq(chat.id, chatId));
+  } catch (_error) {
+    throw new ChatSDKError(
+      'bad_request:database',
+      'Failed to update chat title by id',
+    );
+  }
+}
+
 export async function updateChatLastContextById({
   chatId,
   context,
@@ -402,7 +441,9 @@ export async function updateChatLastContextById({
   context: LanguageModelV3Usage;
 }) {
   if (!isDatabaseAvailable()) {
-    console.log('[updateChatLastContextById] Database not available, skipping update');
+    console.log(
+      '[updateChatLastContextById] Database not available, skipping update',
+    );
     return;
   }
 
@@ -416,3 +457,5 @@ export async function updateChatLastContextById({
     return;
   }
 }
+
+

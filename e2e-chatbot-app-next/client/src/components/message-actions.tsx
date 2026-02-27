@@ -1,10 +1,23 @@
 import { useCopyToClipboard } from 'usehooks-ts';
 
 import { Actions, Action } from './elements/actions';
-import { memo } from 'react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { memo, useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
-import type { ChatMessage } from '@chat-template/core';
-import { ChevronDown, ChevronUp, CopyIcon, PencilLineIcon } from 'lucide-react';
+import type { ChatMessage, Feedback } from '@chat-template/core';
+import {
+  ChevronDown,
+  ChevronUp,
+  CopyIcon,
+  PencilLineIcon,
+  ThumbsUp,
+  ThumbsDown,
+} from 'lucide-react';
 
 function PureMessageActions({
   message,
@@ -13,6 +26,7 @@ function PureMessageActions({
   errorCount = 0,
   showErrors = false,
   onToggleErrors,
+  initialFeedback,
 }: {
   message: ChatMessage;
   isLoading: boolean;
@@ -20,10 +34,14 @@ function PureMessageActions({
   errorCount?: number;
   showErrors?: boolean;
   onToggleErrors?: () => void;
+  initialFeedback?: Feedback;
 }) {
+  // All hooks MUST be called before any early returns
   const [_, copyToClipboard] = useCopyToClipboard();
-
-  if (isLoading) return null;
+  const [feedback, setFeedback] = useState<'thumbs_up' | 'thumbs_down' | null>(
+    initialFeedback?.feedbackType || null,
+  );
+  const isSubmittingRef = useRef(false);
 
   const textFromParts = message.parts
     ?.filter((part) => part.type === 'text')
@@ -31,7 +49,47 @@ function PureMessageActions({
     .join('\n')
     .trim();
 
-  const handleCopy = async () => {
+  // A data-traceId part with data: null means the endpoint doesn't emit traces,
+  // so MLflow feedback submission isn't possible. When the part is absent (e.g.
+  // for messages streamed before this feature), assume feedback is supported.
+  const traceIdPart = message.parts?.find((p) => p.type === 'data-traceId') as
+    | { type: 'data-traceId'; data: string | null }
+    | undefined;
+  const feedbackSupported = traceIdPart === undefined || traceIdPart.data !== null;
+
+  const handleFeedback = useCallback(
+    async (feedbackType: 'thumbs_up' | 'thumbs_down') => {
+      if (isSubmittingRef.current) return;
+      isSubmittingRef.current = true;
+
+      try {
+        const response = await fetch('/api/feedback', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messageId: message.id,
+            feedbackType,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to submit feedback');
+        }
+
+        setFeedback(feedbackType);
+      } catch (error) {
+        console.error('Error submitting feedback:', error);
+        toast.error('Failed to submit feedback. Please try again.');
+      } finally {
+        isSubmittingRef.current = false;
+      }
+    },
+    [message.id],
+  );
+
+  const handleCopy = useCallback(async () => {
     if (!textFromParts) {
       toast.error("There's no text to copy!");
       return;
@@ -39,7 +97,10 @@ function PureMessageActions({
 
     await copyToClipboard(textFromParts);
     toast.success('Copied to clipboard!');
-  };
+  }, [textFromParts, copyToClipboard]);
+
+  // Early return AFTER all hooks have been called
+  if (isLoading) return null;
 
   // User messages get edit (on hover) and copy actions
   if (message.role === 'user') {
@@ -64,6 +125,55 @@ function PureMessageActions({
     );
   }
 
+  const feedbackButtons = feedbackSupported ? (
+    <>
+      <Action
+        tooltip="Thumbs up"
+        onClick={() => handleFeedback('thumbs_up')}
+        className={feedback === 'thumbs_up' ? 'text-green-600' : ''}
+        data-testid="thumbs-up-button"
+      >
+        <ThumbsUp />
+      </Action>
+      <Action
+        tooltip="Thumbs down"
+        onClick={() => handleFeedback('thumbs_down')}
+        className={feedback === 'thumbs_down' ? 'text-red-600' : ''}
+        data-testid="thumbs-down-button"
+      >
+        <ThumbsDown />
+      </Action>
+    </>
+  ) : (
+    // Wrap disabled buttons in a span so the tooltip still shows on hover
+    // (disabled buttons have pointer-events:none and won't trigger tooltip).
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="flex items-center gap-1">
+            <Action
+              disabled
+              className="opacity-50"
+              data-testid="thumbs-up-button"
+            >
+              <ThumbsUp />
+            </Action>
+            <Action
+              disabled
+              className="opacity-50"
+              data-testid="thumbs-down-button"
+            >
+              <ThumbsDown />
+            </Action>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>Feedback not available for this endpoint</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+
   return (
     <Actions className="-ml-0.5">
       {textFromParts && (
@@ -71,6 +181,7 @@ function PureMessageActions({
           <CopyIcon />
         </Action>
       )}
+      {feedbackButtons}
       {errorCount > 0 && onToggleErrors && (
         <Action
           tooltip={showErrors ? 'Hide errors' : 'Show errors'}
@@ -95,6 +206,14 @@ export const MessageActions = memo(
     if (prevProps.isLoading !== nextProps.isLoading) return false;
     if (prevProps.errorCount !== nextProps.errorCount) return false;
     if (prevProps.showErrors !== nextProps.showErrors) return false;
+    if (prevProps.initialFeedback?.feedbackType !== nextProps.initialFeedback?.feedbackType) return false;
+    const prevTraceId = prevProps.message.parts?.find(
+      (p) => p.type === 'data-traceId',
+    );
+    const nextTraceId = nextProps.message.parts?.find(
+      (p) => p.type === 'data-traceId',
+    );
+    if (prevTraceId !== nextTraceId) return false;
 
     return true;
   },

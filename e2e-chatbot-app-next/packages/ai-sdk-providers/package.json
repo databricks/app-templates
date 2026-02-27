@@ -22,9 +22,7 @@
       }
     }
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
@@ -35,10 +33,10 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@ai-sdk/provider": "^3.0.5",
+    "@ai-sdk/provider": "^3.0.7",
     "@chat-template/auth": "*",
     "@chat-template/utils": "*",
-    "@databricks/ai-sdk-provider": "^0.4.1",
-    "ai": "^6.0.57"
+    "@databricks/ai-sdk-provider": "0.5.0-rc.1",
+    "ai": "^6.0.70"
   }
 }

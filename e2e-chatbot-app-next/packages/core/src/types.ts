@@ -7,16 +7,13 @@ const messageMetadataSchema = z.object({
 
 type MessageMetadata = z.infer<typeof messageMetadataSchema>;
 
-
 export type CustomUIDataTypes = {
   error: string;
   usage: LanguageModelUsage;
+  traceId: string | null;
 };
 
-export type ChatMessage = UIMessage<
-  MessageMetadata,
-  CustomUIDataTypes
->;
+export type ChatMessage = UIMessage<MessageMetadata, CustomUIDataTypes>;
 
 export interface Attachment {
   name: string;
@@ -25,3 +22,11 @@ export interface Attachment {
 }
 
 export type { VisibilityType } from '@chat-template/utils';
+
+export interface Feedback {
+  messageId: string;
+  feedbackType: 'thumbs_up' | 'thumbs_down';
+  assessmentId: string | null;
+}
+
+export type FeedbackMap = Record<string, Feedback>;

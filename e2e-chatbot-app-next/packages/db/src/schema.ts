@@ -48,6 +48,9 @@ export const message = createTable('Message', {
   parts: json('parts').notNull(),
   attachments: json('attachments').notNull(),
   createdAt: timestamp('createdAt').notNull(),
+  traceId: text('traceId'), // MLflow trace ID for feedback submission
 });
 
 export type DBMessage = InferSelectModel<typeof message>;
+
+

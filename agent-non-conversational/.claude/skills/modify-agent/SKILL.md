@@ -11,13 +11,13 @@ description: "Modify agent code, add tools, or change configuration. Use when: (
 
 ## Key Files
 
-| File | Purpose |
-|------|---------|
-| `agent_server/agent.py` | Agent logic, model, instructions, MCP servers |
-| `agent_server/start_server.py` | FastAPI server + MLflow setup |
-| `agent_server/evaluate_agent.py` | Agent evaluation with MLflow scorers |
-| `agent_server/utils.py` | Databricks auth helpers, stream processing |
-| `databricks.yml` | Bundle config & resource permissions |
+| File                             | Purpose                                       |
+| -------------------------------- | --------------------------------------------- |
+| `agent_server/agent.py`          | Agent logic, model, instructions, MCP servers |
+| `agent_server/start_server.py`   | FastAPI server + MLflow setup                 |
+| `agent_server/evaluate_agent.py` | Agent evaluation with MLflow scorers          |
+| `agent_server/utils.py`          | Databricks auth helpers, stream processing    |
+| `databricks.yml`                 | Bundle config & resource permissions          |
 
 ## SDK Setup
 
@@ -62,6 +62,7 @@ llm = ChatDatabricks(endpoint="my-agent-endpoint", use_responses_api=True)
 ```
 
 Available models (check workspace for current list):
+
 - `databricks-claude-3-7-sonnet`
 - `databricks-claude-3-5-sonnet`
 - `databricks-meta-llama-3-3-70b-instruct`
@@ -223,6 +224,7 @@ In LangGraph, agent behavior is customized by prepending a system message to the
 **Correct pattern in `agent.py`:**
 
 1. Define instructions as a constant:
+
 ```python
 AGENT_INSTRUCTIONS = """You are a helpful data analyst assistant.
 
@@ -234,6 +236,7 @@ Always cite your sources when answering questions."""
 ```
 
 2. Prepend to messages in the `streaming()` function:
+
 ```python
 @stream()
 async def streaming(request: ResponsesAgentRequest) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
@@ -249,6 +252,7 @@ async def streaming(request: ResponsesAgentRequest) -> AsyncGenerator[ResponsesA
 ```
 
 **Common mistake to avoid:**
+
 ```python
 # WRONG - will cause "unexpected keyword argument" error
 agent = create_agent(tools=tools, model=llm, prompt=AGENT_INSTRUCTIONS)
@@ -278,7 +282,7 @@ Example: Create UC function wrapping HTTP request for Slack, then expose via MCP
 ## External Resources
 
 1. [databricks-langchain SDK](https://github.com/databricks/databricks-ai-bridge/tree/main/integrations/langchain)
-2. [Agent examples](https://github.com/bbqiu/agent-on-app-prototype)
+2. [Agent examples](https://github.com/databricks/app-templates)
 3. [Agent Framework docs](https://docs.databricks.com/aws/en/generative-ai/agent-framework/)
 4. [Adding tools](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool)
 5. [LangGraph documentation](https://docs.langchain.com/oss/python/langgraph/overview)

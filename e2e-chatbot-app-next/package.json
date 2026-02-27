@@ -1,12 +1,8 @@
 {
-  "name": "databricks/e2e-chatbot-app",
+  "name": "@databricks/e2e-chatbot-app",
   "version": "1.0.0",
   "private": true,
-  "workspaces": [
-    "client",
-    "server",
-    "packages/*"
-  ],
+  "workspaces": ["client", "server", "packages/*"],
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=8.0.0"

@@ -11,6 +11,7 @@ import {
   generateText,
   type LanguageModelUsage,
   pipeUIMessageStreamToResponse,
+  type InferUIMessageChunk,
 } from 'ai';
 import type { LanguageModelV3Usage } from '@ai-sdk/provider';
 
@@ -44,6 +45,7 @@ import {
   updateChatLastContextById,
   updateChatVisiblityById,
   isDatabaseAvailable,
+  updateChatTitleById,
 } from '@chat-template/db';
 import {
   type ChatMessage,
@@ -59,6 +61,7 @@ import {
   CONTEXT_HEADER_USER_ID,
 } from '@chat-template/core';
 import { ChatSDKError } from '@chat-template/core/errors';
+import { storeMessageMeta } from '../lib/message-meta-store';
 
 export const chatRouter: RouterType = Router();
 
@@ -77,8 +80,6 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
   if (!dbAvailable) {
     console.log('[Chat] Running in ephemeral mode - no persistence');
   }
-
-  console.log(`CHAT POST REQUEST ${Date.now()}`);
 
   let requestBody: PostRequestBody;
 
@@ -125,14 +126,32 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     if (!chat) {
       // Only create new chat if we have a message (not a continuation)
       if (isDatabaseAvailable() && message) {
-        const title = await generateTitleFromUserMessage({ message });
-
         await saveChat({
           id,
           userId: session.user.id,
-          title,
+          title: 'New chat',
           visibility: selectedVisibilityType,
         });
+
+        generateTitleFromUserMessage({ message })
+          .then((title) =>
+            updateChatTitleById({
+              chatId: id,
+              title,
+            }),
+          )
+          .catch((error) => {
+            console.error('Error generating title:', error);
+            const textFromUserMessage = message?.parts.find(
+              (part) => part.type === 'text',
+            )?.text;
+            if (textFromUserMessage) {
+              updateChatTitleById({
+                chatId: id,
+                title: truncatePreserveWords(textFromUserMessage, 128),
+              });
+            }
+          });
       }
     } else {
       if (chat.userId !== session.user.id) {
@@ -167,6 +186,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
             parts: message.parts,
             attachments: [],
             createdAt: new Date(),
+            traceId: null,
           },
         ],
       });
@@ -191,6 +211,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
               createdAt: m.metadata?.createdAt
                 ? new Date(m.metadata.createdAt)
                 : new Date(),
+              traceId: null,
             })),
           });
 
@@ -203,9 +224,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
                 (p) =>
                   p.type === 'dynamic-tool' &&
                   (p.state === 'output-denied' ||
-                    ('approval' in p &&
-                      (p.approval)?.approved ===
-                        false)),
+                    ('approval' in p && p.approval?.approved === false)),
               ),
           );
 
@@ -222,18 +241,40 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     streamCache.clearActiveStream(id);
 
     let finalUsage: LanguageModelUsage | undefined;
+    let traceId: string | null = null;
     const streamId = generateUUID();
 
     const model = await myProvider.languageModel(selectedChatModel);
     const result = streamText({
       model,
       messages: await convertToModelMessages(uiMessages),
+      providerOptions: {
+        databricks: { includeTrace: true },
+      },
+      includeRawChunks: true,
       headers: {
         [CONTEXT_HEADER_CONVERSATION_ID]: id,
         [CONTEXT_HEADER_USER_ID]: session.user.email ?? session.user.id,
       },
-      onFinish: ({ usage }) => {
-        finalUsage = usage;
+      onChunk: ({ chunk }) => {
+        if (chunk.type === 'raw') {
+          const raw = chunk.rawValue as any;
+          // Extract trace in Databricks serving endpoint output format, if present
+          if (raw?.type === 'response.output_item.done') {
+            const traceIdFromChunk =
+              raw?.databricks_output?.trace?.info?.trace_id;
+            if (typeof traceIdFromChunk === 'string') {
+              traceId = traceIdFromChunk;
+            }
+          }
+          // Extract trace from MLflow AgentServer output format, if present
+          if (!traceId && typeof raw?.trace_id === 'string') {
+            traceId = raw.trace_id;
+          }
+        }
+      },
+      onFinish: (finishData) => {
+        finalUsage = finishData.usage;
       },
     });
 
@@ -242,31 +283,37 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
      * This allows us to inject custom stream parts like data-error.
      */
     const stream = createUIMessageStream({
+      // Pass originalMessages so that continuation responses reuse the existing
+      // assistant message ID. Without this, handleUIMessageStreamFinish generates
+      // a fresh ID, causing the client to push a second assistant message instead
+      // of replacing the existing one.
+      originalMessages: uiMessages,
       execute: async ({ writer }) => {
-        writer.merge(
-          result.toUIMessageStream({
-            originalMessages: uiMessages,
-            generateMessageId: generateUUID,
-            sendReasoning: true,
-            sendSources: true,
-            onError: (error) => {
-              console.error('Stream error:', error);
-
-              const errorMessage =
-                error instanceof Error ? error.message : JSON.stringify(error);
-
-              writer.write({ type: 'data-error', data: errorMessage });
-
-              return errorMessage;
-            },
-          }),
-        );
+        // Manually drain the AI stream so we can append the traceId data part
+        // after all model chunks are processed (traceId is captured via onChunk).
+        // result.toUIMessageStream() converts TextStreamPart → UIMessageChunk:
+        // - text-delta: maps TextStreamPart.text → UIMessageChunk.delta
+        // - start-step/finish-step: strips extra fields
+        // - finish: strips rawFinishReason/totalUsage
+        // - raw: dropped (trace_id captured via onChunk above)
+        const aiStream = result.toUIMessageStream<ChatMessage>();
+        const reader = aiStream.getReader();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            writer.write(value as InferUIMessageChunk<ChatMessage>);
+          }
+        } finally {
+          reader.releaseLock();
+        }
+        // Write traceId so the client knows whether feedback is supported.
+        writer.write({ type: 'data-traceId', data: traceId });
       },
       onFinish: async ({ responseMessage }) => {
-        console.log(
-          'Finished message stream! Saving message...',
-          JSON.stringify(responseMessage, null, 2),
-        );
+        // Store in-memory for ephemeral mode (also useful when DB is available)
+        storeMessageMeta(responseMessage.id, id, traceId);
+
         await saveMessages({
           messages: [
             {
@@ -276,6 +323,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
               createdAt: new Date(),
               attachments: [],
               chatId: id,
+              traceId, // Store trace ID for feedback
             },
           ],
         });
@@ -307,12 +355,17 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
+    console.error('[Chat] Caught error in chat API:', {
+      errorType: error?.constructor?.name,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      error,
+    });
+
     if (error instanceof ChatSDKError) {
       const response = error.toResponse();
       return res.status(response.status).json(response.json);
     }
-
-    console.error('Unhandled error in chat API:', error);
 
     const chatError = new ChatSDKError('offline:chat');
     const response = chatError.toResponse();
@@ -470,10 +523,23 @@ chatRouter.patch(
 // Helper function to generate title from user message
 async function generateTitleFromUserMessage({
   message,
+  maxMessageLength = 256,
 }: {
   message: ChatMessage;
+  maxMessageLength?: number;
 }) {
   const model = await myProvider.languageModel('title-model');
+
+  // Truncate each text part to the maxMessageLength
+  const truncatedMessage = {
+    ...message,
+    parts: message.parts.map((part) =>
+      part.type === 'text'
+        ? { ...part, text: part.text.slice(0, maxMessageLength) }
+        : part,
+    ),
+  };
+
   const { text: title } = await generateText({
     model,
     system: `\n
@@ -481,8 +547,32 @@ async function generateTitleFromUserMessage({
     - ensure it is not more than 80 characters long
     - the title should be a summary of the user's message
     - do not use quotes or colons. do not include other expository content ("I'll help...")`,
-    prompt: JSON.stringify(message),
+    prompt: JSON.stringify(truncatedMessage),
   });
 
   return title;
+}
+
+function truncatePreserveWords(input: string, maxLength: number): string {
+  if (maxLength <= 0) return '';
+  if (input.length <= maxLength) return input;
+
+  // Take the raw slice first
+  const slice = input.slice(0, maxLength);
+
+  // Find the last whitespace within the slice
+  const lastSpaceIndex = slice.lastIndexOf(' ');
+
+  // If no whitespace found, we must break mid-word
+  if (lastSpaceIndex === -1) {
+    return slice;
+  }
+
+  // If the whitespace is too close to the start (e.g., leading space),
+  // fallback to mid-word break to avoid returning an empty string
+  if (lastSpaceIndex === 0) {
+    return slice;
+  }
+
+  return slice.slice(0, lastSpaceIndex);
 }

@@ -32,7 +32,7 @@ async function getProviderToken(): Promise<string> {
 let cachedWorkspaceHostname: string | null = null;
 
 // Get workspace hostname with one-time resolution and caching
-async function getWorkspaceHostname(): Promise<string> {
+export async function getWorkspaceHostname(): Promise<string> {
   if (cachedWorkspaceHostname) {
     return cachedWorkspaceHostname;
   }
@@ -111,7 +111,12 @@ export const databricksFetch: typeof fetch = async (input, init) => {
   requestInit = { ...requestInit, headers };
 
   // Inject context into request body if appropriate
-  if (conversationId && userId && requestInit?.body && typeof requestInit.body === 'string') {
+  if (
+    conversationId &&
+    userId &&
+    requestInit?.body &&
+    typeof requestInit.body === 'string'
+  ) {
     if (shouldInjectContext()) {
       try {
         const body = JSON.parse(requestInit.body);
@@ -134,7 +139,9 @@ export const databricksFetch: typeof fetch = async (input, init) => {
   if (requestInit?.body) {
     try {
       const requestBody =
-        typeof requestInit.body === 'string' ? JSON.parse(requestInit.body) : requestInit.body;
+        typeof requestInit.body === 'string'
+          ? JSON.parse(requestInit.body)
+          : requestInit.body;
       console.log(
         'Databricks request:',
         JSON.stringify({
@@ -238,23 +245,26 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
   const hostname = await getWorkspaceHostname();
 
   // Create provider with fetch that always uses fresh token
-const provider = createDatabricksProvider({
-  // When using endpoints such as Agent Bricks or custom agents, we need to use remote tool calling to handle the tool calls
-  useRemoteToolCalling: true,
-  baseURL: `${hostname}/serving-endpoints`,
-  formatUrl: ({ baseUrl, path }) => API_PROXY ?? `${baseUrl}${path}`,
-  fetch: async (...[input, init]: Parameters<typeof fetch>) => {
-    // Always get fresh token for each request (will use cache if valid)
-    const currentToken = await getProviderToken();
-    const headers = new Headers(init?.headers);
-    headers.set('Authorization', `Bearer ${currentToken}`);
+  const provider = createDatabricksProvider({
+    // When using endpoints such as Agent Bricks or custom agents, we need to use remote tool calling to handle the tool calls
+    useRemoteToolCalling: true,
+    baseURL: `${hostname}/serving-endpoints`,
+    formatUrl: ({ baseUrl, path }) => API_PROXY ?? `${baseUrl}${path}`,
+    fetch: async (...[input, init]: Parameters<typeof fetch>) => {
+      // Always get fresh token for each request (will use cache if valid)
+      const currentToken = await getProviderToken();
+      const headers = new Headers(init?.headers);
+      headers.set('Authorization', `Bearer ${currentToken}`);
+      if (API_PROXY) {
+        headers.set('x-mlflow-return-trace-id', 'true');
+      }
 
-    return databricksFetch(input, {
-      ...init,
-      headers,
-    });
-  },
-});
+      return databricksFetch(input, {
+        ...init,
+        headers,
+      });
+    },
+  });
 
   oauthProviderCache = provider;
   oauthProviderCacheTime = Date.now();

@@ -11,13 +11,13 @@ description: "Modify agent code, add tools, or change configuration. Use when: (
 
 ## Key Files
 
-| File | Purpose |
-|------|---------|
-| `agent_server/agent.py` | Agent logic, model, instructions, MCP servers |
-| `agent_server/start_server.py` | FastAPI server + MLflow setup |
-| `agent_server/evaluate_agent.py` | Agent evaluation with MLflow scorers |
-| `agent_server/utils.py` | Databricks auth helpers, stream processing |
-| `databricks.yml` | Bundle config & resource permissions |
+| File                             | Purpose                                       |
+| -------------------------------- | --------------------------------------------- |
+| `agent_server/agent.py`          | Agent logic, model, instructions, MCP servers |
+| `agent_server/start_server.py`   | FastAPI server + MLflow setup                 |
+| `agent_server/evaluate_agent.py` | Agent evaluation with MLflow scorers          |
+| `agent_server/utils.py`          | Databricks auth helpers, stream processing    |
+| `databricks.yml`                 | Bundle config & resource permissions          |
 
 ## SDK Setup
 
@@ -73,6 +73,7 @@ agent = Agent(
 ## Changing the Model
 
 Available models (check workspace for current list):
+
 - `databricks-claude-3-7-sonnet`
 - `databricks-claude-3-5-sonnet`
 - `databricks-meta-llama-3-3-70b-instruct`
@@ -132,7 +133,7 @@ async for event in process_agent_stream_events(result.stream_events()):
 ## External Resources
 
 1. [databricks-openai SDK](https://github.com/databricks/databricks-ai-bridge/tree/main/integrations/openai)
-2. [Agent examples](https://github.com/bbqiu/agent-on-app-prototype)
+2. [Agent examples](https://github.com/databricks/app-templates)
 3. [Agent Framework docs](https://docs.databricks.com/aws/en/generative-ai/agent-framework/)
 4. [Adding tools](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool)
 5. [OpenAI Agents SDK](https://platform.openai.com/docs/guides/agents-sdk)

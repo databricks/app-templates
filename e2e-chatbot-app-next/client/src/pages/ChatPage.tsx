@@ -7,12 +7,15 @@ import type { LanguageModelUsage } from 'ai';
 import type { LanguageModelV3Usage } from '@ai-sdk/provider';
 
 // Convert V3 usage format (from db) to flat usage format (for ai package)
-function fromV3Usage(usage: LanguageModelV3Usage | null | undefined): LanguageModelUsage | undefined {
+function fromV3Usage(
+  usage: LanguageModelV3Usage | null | undefined,
+): LanguageModelUsage | undefined {
   if (!usage) return undefined;
   return {
     inputTokens: usage.inputTokens?.total,
     outputTokens: usage.outputTokens?.total,
-    totalTokens: (usage.inputTokens?.total ?? 0) + (usage.outputTokens?.total ?? 0),
+    totalTokens:
+      (usage.inputTokens?.total ?? 0) + (usage.outputTokens?.total ?? 0),
     inputTokenDetails: {
       noCacheTokens: usage.inputTokens?.noCache,
       cacheReadTokens: usage.inputTokens?.cacheRead,
@@ -65,7 +68,7 @@ export default function ChatPage() {
     );
   }
 
-  const { chat, messages } = chatData;
+  const { chat, messages, feedback } = chatData;
   // For now, assume chats are not readonly unless we add proper ACL
   // The server will handle permission checks
   const isReadonly = false;
@@ -82,6 +85,7 @@ export default function ChatPage() {
       isReadonly={isReadonly}
       session={session}
       initialLastContext={fromV3Usage(chat.lastContext)}
+      feedback={feedback}
     />
   );
 }

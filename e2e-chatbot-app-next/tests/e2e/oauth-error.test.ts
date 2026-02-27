@@ -75,13 +75,17 @@ Error: Credential for user identity('user@example.com') is not found for the con
     // For now, we verify the component's expected test IDs exist in the component definition
     // The actual rendering is tested through the data-error parts when they occur
 
-    // Navigate to app
-    await page.goto('/');
-    await expect(page.getByTestId('multimodal-input')).toBeVisible();
-
-    // Send a message to create a chat
     await chatPage.sendUserMessage('Hello');
+    // isGenerationComplete() uses DOM-based stop-button detection, which avoids
+    // the race condition where fast mock responses complete before waitForResponse
+    // can be registered.
     await chatPage.isGenerationComplete();
+
+    // Wait for the assistant message to be rendered in the DOM before reading it.
+    // Even after generation completes, the React throttle may delay the final render.
+    await expect(page.getByTestId('message-assistant')).toBeVisible({
+      timeout: 10000,
+    });
 
     // Verify basic chat functionality works
     const assistantMessage = await chatPage.getRecentAssistantMessage();

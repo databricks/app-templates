@@ -25,7 +25,7 @@ import { cn, sanitizeText } from '@/lib/utils';
 import { MessageEditor } from './message-editor';
 import { MessageReasoning } from './message-reasoning';
 import type { UseChatHelpers } from '@ai-sdk/react';
-import type { ChatMessage } from '@chat-template/core';
+import type { ChatMessage, Feedback } from '@chat-template/core';
 import { useDataStream } from './data-stream-provider';
 import {
   createMessagePartSegments,
@@ -49,8 +49,8 @@ const PurePreviewMessage = ({
   regenerate,
   isReadonly,
   requiresScrollPadding,
+  initialFeedback,
 }: {
-  chatId: string;
   message: ChatMessage;
   allMessages: ChatMessage[];
   isLoading: boolean;
@@ -60,6 +60,7 @@ const PurePreviewMessage = ({
   regenerate: UseChatHelpers<ChatMessage>['regenerate'];
   isReadonly: boolean;
   requiresScrollPadding: boolean;
+  initialFeedback?: Feedback;
 }) => {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [showErrors, setShowErrors] = useState(false);
@@ -227,12 +228,16 @@ const PurePreviewMessage = ({
 
             // Render Databricks tool calls and results
             if (part.type === `dynamic-tool`) {
-              const { toolCallId, input, state, errorText, output, toolName } = part;
+              const { toolCallId, input, state, errorText, output, toolName } =
+                part;
 
               // Check if this is an MCP tool call by looking for approvalRequestId in metadata
               // This works across all states (approval-requested, approval-denied, output-available)
-              const isMcpApproval = part.callProviderMetadata?.databricks?.approvalRequestId != null;
-              const mcpServerName = part.callProviderMetadata?.databricks?.mcpServerName?.toString();
+              const isMcpApproval =
+                part.callProviderMetadata?.databricks?.approvalRequestId !=
+                null;
+              const mcpServerName =
+                part.callProviderMetadata?.databricks?.mcpServerName?.toString();
 
               // Extract approval outcome for 'approval-responded' state
               // When addToolApprovalResponse is called, AI SDK sets the `approval` property
@@ -240,14 +245,17 @@ const PurePreviewMessage = ({
               const approved: boolean | undefined =
                 'approval' in part ? part.approval?.approved : undefined;
 
-
               // When approved but only have approval status (not actual output), show as input-available
               const effectiveState: ToolState = (() => {
-                  if (part.providerExecuted && !isLoading && state === 'input-available') {
-                    return 'output-available'
-                  }
+                if (
+                  part.providerExecuted &&
+                  !isLoading &&
+                  state === 'input-available'
+                ) {
+                  return 'output-available';
+                }
                 return state;
-              })()
+              })();
 
               // Render MCP tool calls with special styling
               if (isMcpApproval) {
@@ -306,10 +314,7 @@ const PurePreviewMessage = ({
               // Render regular tool calls
               return (
                 <Tool key={toolCallId} defaultOpen={true}>
-                  <ToolHeader
-                    type={toolName}
-                    state={effectiveState}
-                  />
+                  <ToolHeader type={toolName} state={effectiveState} />
                   <ToolContent>
                     <ToolInput input={input} />
                     {state === 'output-available' && (
@@ -373,6 +378,7 @@ const PurePreviewMessage = ({
               errorCount={errorParts.length}
               showErrors={showErrors}
               onToggleErrors={() => setShowErrors(!showErrors)}
+              initialFeedback={initialFeedback}
             />
           )}
 
@@ -396,12 +402,21 @@ export const PreviewMessage = memo(
   PurePreviewMessage,
   (prevProps, nextProps) => {
     if (prevProps.isLoading !== nextProps.isLoading) return false;
+    // While streaming, re-render whenever the AI SDK produces a new message
+    // object (each throttled update). We use reference equality rather than
+    // deep-equal on parts because fast-deep-equal short-circuits on identical
+    // references — and the SDK may mutate parts in place during streaming.
+    if (nextProps.isLoading && prevProps.message !== nextProps.message)
+      return false;
+
     if (prevProps.message.id !== nextProps.message.id) return false;
     if (prevProps.requiresScrollPadding !== nextProps.requiresScrollPadding)
       return false;
     if (!equal(prevProps.message.parts, nextProps.message.parts)) return false;
+    if (prevProps.initialFeedback?.feedbackType !== nextProps.initialFeedback?.feedbackType)
+      return false;
 
-    return false;
+    return true; // Props are equal, skip re-render
   },
 );
 

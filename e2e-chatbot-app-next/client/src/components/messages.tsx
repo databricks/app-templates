@@ -4,13 +4,12 @@ import { memo, useEffect } from 'react';
 import equal from 'fast-deep-equal';
 import type { UseChatHelpers } from '@ai-sdk/react';
 import { useMessages } from '@/hooks/use-messages';
-import type { ChatMessage } from '@chat-template/core';
+import type { ChatMessage, FeedbackMap } from '@chat-template/core';
 import { useDataStream } from './data-stream-provider';
 import { Conversation, ConversationContent } from './elements/conversation';
 import { ArrowDownIcon } from 'lucide-react';
 
 interface MessagesProps {
-  chatId: string;
   status: UseChatHelpers<ChatMessage>['status'];
   messages: ChatMessage[];
   setMessages: UseChatHelpers<ChatMessage>['setMessages'];
@@ -19,10 +18,10 @@ interface MessagesProps {
   regenerate: UseChatHelpers<ChatMessage>['regenerate'];
   isReadonly: boolean;
   selectedModelId: string;
+  feedback?: FeedbackMap;
 }
 
 function PureMessages({
-  chatId,
   status,
   messages,
   setMessages,
@@ -31,6 +30,7 @@ function PureMessages({
   regenerate,
   isReadonly,
   selectedModelId,
+  feedback = {},
 }: MessagesProps) {
   const {
     containerRef: messagesContainerRef,
@@ -71,7 +71,6 @@ function PureMessages({
           {messages.map((message, index) => (
             <PreviewMessage
               key={message.id}
-              chatId={chatId}
               message={message}
               allMessages={messages}
               isLoading={
@@ -85,6 +84,7 @@ function PureMessages({
               requiresScrollPadding={
                 hasSentMessage && index === messages.length - 1
               }
+              initialFeedback={feedback[message.id]}
             />
           ))}
 
@@ -117,10 +117,15 @@ function PureMessages({
 }
 
 export const Messages = memo(PureMessages, (prevProps, nextProps) => {
-  if (prevProps.status !== nextProps.status) return false;
+  // Always re-render during streaming to ensure incremental token display
+  if (prevProps.status === 'streaming' || nextProps.status === 'streaming') {
+    return false;
+  }
+
   if (prevProps.selectedModelId !== nextProps.selectedModelId) return false;
   if (prevProps.messages.length !== nextProps.messages.length) return false;
   if (!equal(prevProps.messages, nextProps.messages)) return false;
+  if (!equal(prevProps.feedback, nextProps.feedback)) return false;
 
-  return false;
+  return true; // Props are equal, skip re-render
 });

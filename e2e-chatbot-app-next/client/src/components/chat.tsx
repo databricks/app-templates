@@ -10,6 +10,7 @@ import type {
   Attachment,
   ChatMessage,
   CustomUIDataTypes,
+  FeedbackMap,
   VisibilityType,
 } from '@chat-template/core';
 import { unstable_serialize } from 'swr/infinite';
@@ -32,6 +33,7 @@ export function Chat({
   initialVisibilityType,
   isReadonly,
   initialLastContext,
+  feedback = {},
 }: {
   id: string;
   initialMessages: ChatMessage[];
@@ -40,6 +42,7 @@ export function Chat({
   isReadonly: boolean;
   session: ClientSession;
   initialLastContext?: LanguageModelUsage;
+  feedback?: FeedbackMap;
 }) {
   const { visibilityType } = useChatVisibility({
     chatId: id,
@@ -271,7 +274,6 @@ export function Chat({
         <ChatHeader />
 
         <Messages
-          chatId={id}
           status={status}
           messages={messages}
           setMessages={setMessages}
@@ -280,6 +282,7 @@ export function Chat({
           sendMessage={sendMessage}
           isReadonly={isReadonly}
           selectedModelId={initialChatModel}
+          feedback={feedback}
         />
 
         <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 border-t-0 bg-background px-2 pb-3 md:px-4 md:pb-4">

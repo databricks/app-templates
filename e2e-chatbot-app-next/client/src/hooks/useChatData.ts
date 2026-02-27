@@ -1,11 +1,12 @@
 import useSWR from 'swr';
 import type { Chat } from '@chat-template/db';
-import type { ChatMessage } from '@chat-template/core';
+import type { ChatMessage, FeedbackMap } from '@chat-template/core';
 import { convertToUIMessages } from '@/lib/utils';
 
 interface ChatData {
   chat: Chat;
   messages: ChatMessage[];
+  feedback: FeedbackMap;
 }
 
 /**
@@ -16,9 +17,7 @@ async function fetchChatData(url: string): Promise<ChatData | null> {
   const chatId = url.split('/').pop();
 
   // Fetch chat details
-  const chatResponse = await fetch(`/api/chat/${chatId}`, {
-    credentials: 'include',
-  });
+  const chatResponse = await fetch(`/api/chat/${chatId}`);
 
   if (!chatResponse.ok) {
     if (chatResponse.status === 404 || chatResponse.status === 403) {
@@ -30,9 +29,7 @@ async function fetchChatData(url: string): Promise<ChatData | null> {
   const chat = await chatResponse.json();
 
   // Fetch messages
-  const messagesResponse = await fetch(`/api/messages/${chatId}`, {
-    credentials: 'include',
-  });
+  const messagesResponse = await fetch(`/api/messages/${chatId}`);
 
   if (!messagesResponse.ok) {
     // If messages endpoint returns 404 (e.g., database disabled), return empty messages
@@ -40,6 +37,7 @@ async function fetchChatData(url: string): Promise<ChatData | null> {
       return {
         chat,
         messages: [],
+        feedback: {},
       };
     }
     throw new Error('Failed to load messages');
@@ -48,9 +46,23 @@ async function fetchChatData(url: string): Promise<ChatData | null> {
   const messagesFromDb = await messagesResponse.json();
   const messages = convertToUIMessages(messagesFromDb);
 
+  // Fetch feedback for this chat (returned as messageId -> feedback map from MLflow)
+  let feedbackMap: FeedbackMap = {};
+  try {
+    const feedbackResponse = await fetch(`/api/feedback/chat/${chatId}`);
+
+    if (feedbackResponse.ok) {
+      feedbackMap = await feedbackResponse.json();
+    }
+  } catch (error) {
+    // If feedback fetch fails, just continue without it
+    console.warn('Failed to fetch feedback:', error);
+  }
+
   return {
     chat,
     messages,
+    feedback: feedbackMap,
   };
 }
 
@@ -76,13 +88,17 @@ export function useChatData(chatId: string | undefined, enabled = true) {
       keepPreviousData: true,
       // Dedupe requests within 2 seconds
       dedupingInterval: 2000,
-    }
+    },
   );
 
   return {
     chatData: data,
     isLoading,
-    error: error ? 'Failed to load chat' : data === null && !isLoading ? 'Chat not found or you do not have access' : null,
+    error: error
+      ? 'Failed to load chat'
+      : data === null && !isLoading
+        ? 'Chat not found or you do not have access'
+        : null,
     mutate, // Expose mutate for manual cache updates if needed
   };
 }

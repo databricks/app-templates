@@ -4,9 +4,25 @@ import {
   mockMcpApprovalRequestStream,
   mockMcpApprovalApprovedStream,
   mockMcpApprovalDeniedStream,
-  mockResponsesApiTextStream,
+  mockMlflowAgentServerStream,
+  mockResponsesApiMultiDeltaTextStream,
 } from '../helpers';
 import { TEST_PROMPTS } from '../prompts/routes';
+
+// ============================================================================
+// MLflow Assessment State Management
+// ============================================================================
+
+interface StoredAssessment {
+  assessment_id: string;
+  assessment_name: string;
+  trace_id: string;
+  source: { source_type: string; source_id: string };
+  feedback: { value: boolean };
+}
+
+/** In-memory store: traceId -> list of assessments. Populated by POST/PATCH handlers. */
+const mlflowAssessmentStore: Record<string, StoredAssessment[]> = {};
 
 // ============================================================================
 // MCP Approval State Management
@@ -16,14 +32,20 @@ import { TEST_PROMPTS } from '../prompts/routes';
  * State machine for MCP approval flow.
  * This tracks the state of approval requests across multiple API calls.
  */
-type McpApprovalState =
-  | 'idle'
-  | 'awaiting-approval'
-  | 'approved'
-  | 'denied';
+type McpApprovalState = 'idle' | 'awaiting-approval' | 'approved' | 'denied';
 
 let mcpApprovalState: McpApprovalState = 'idle';
 const MCP_REQUEST_ID = '__fake_mcp_request_id__';
+
+/**
+ * Reset MLflow assessment store. Call this in beforeEach for tests that
+ * use fixed trace IDs, to prevent state from bleeding between test runs.
+ */
+export function resetMlflowAssessmentStore() {
+  for (const key of Object.keys(mlflowAssessmentStore)) {
+    delete mlflowAssessmentStore[key];
+  }
+}
 
 /**
  * Reset MCP approval state. Call this in test beforeEach.
@@ -193,6 +215,13 @@ export const handlers = [
     const body = await req.request.clone().json();
     captureRequestContext(req.request.url, body);
     const isStreaming = (body as { stream?: boolean })?.stream;
+    // Detect if the request wants trace data.
+    // chat.ts passes providerOptions.databricks.includeTrace: true to streamText(),
+    // which the AI SDK provider converts to databricks_options.return_trace: true
+    // in the request body before sending to the Databricks API.
+    const returnTrace =
+      (body as any)?.databricks_options?.return_trace === true;
+    const streamTraceId = returnTrace ? 'mock-trace-id-from-databricks' : undefined;
 
     // Check for MCP approval response in the request
     const { found: hasApprovalResponse, approved } =
@@ -221,10 +250,18 @@ export const handlers = [
       }
     }
 
-    // Default response for non-MCP requests
+    // Default response: split text into per-word chunks to replicate real streaming
+    // (one response.output_text.delta per token). This validates that interleaved
+    // raw and text-delta chunks produced by streamText are parsed correctly by the client.
+    // Pass streamTraceId so the response.output_item.done event includes trace data
+    // when the request contained databricks_options.return_trace === true
+    // (set by the AI SDK provider when providerOptions.databricks.includeTrace is true).
     if (isStreaming) {
       return createMockStreamResponse(
-        mockResponsesApiTextStream("It's just blue duh!"),
+        mockResponsesApiMultiDeltaTextStream(
+          ["It's", ' just', ' blue', ' duh!'],
+          streamTraceId,
+        ),
       );
     } else {
       return HttpResponse.json(TEST_PROMPTS.SKY.OUTPUT_TITLE.response);
@@ -256,4 +293,173 @@ export const handlers = [
       access_token: 'test-token',
     });
   }),
+
+  // Mock MLflow AgentServer invocations endpoint (API_PROXY mode).
+  // Checks for x-mlflow-return-trace-id header and appends standalone trace-ID event.
+  http.post(/mlflow-agent-server-mock\/invocations$/, async (req) => {
+    const returnTrace =
+      req.request.headers.get('x-mlflow-return-trace-id')?.toLowerCase() ===
+      'true';
+    return createMockStreamResponse(
+      mockMlflowAgentServerStream(
+        ["It's", ' just', ' blue', ' duh!'],
+        returnTrace,
+      ),
+    );
+  }),
+
+  // Mock MLflow GET assessments endpoint.
+  // Returns stored assessments for the given trace ID.
+  // URL: GET /api/3.0/mlflow/traces/{trace_id}/assessments
+  http.get(/\/api\/3\.0\/mlflow\/traces\/([^/]+)\/assessments$/, (req) => {
+    const url = req.request.url;
+    const traceIdMatch = url.match(/\/traces\/([^/]+)\/assessments/);
+    const traceId = traceIdMatch?.[1] ?? 'unknown';
+
+    return HttpResponse.json({
+      assessments: mlflowAssessmentStore[traceId] ?? [],
+    });
+  }),
+
+  // Mock MLflow assessments POST endpoint (api/3.0, trace_id in URL path).
+  // Validates the request body has the correct structure:
+  //   { assessment: { trace_id, assessment_name, source, feedback: { value: boolean } } }
+  // Stores the assessment in mlflowAssessmentStore for GET to return.
+  http.post(/\/api\/3\.0\/mlflow\/traces\/([^/]+)\/assessments$/, async (req) => {
+    const url = req.request.url;
+    const traceIdMatch = url.match(/\/traces\/([^/]+)\/assessments/);
+    const traceId = traceIdMatch?.[1] ?? 'unknown';
+
+    const body = (await req.request.json()) as {
+      assessment?: {
+        trace_id?: string;
+        assessment_name?: string;
+        source?: { source_type?: string; source_id?: string };
+        feedback?: { value?: unknown };
+      };
+    };
+
+    // Validate required fields — return 400 if malformed so tests catch wrong body format
+    const assessment = body?.assessment;
+    const feedbackValue = assessment?.feedback?.value;
+    if (
+      !assessment ||
+      assessment.trace_id !== traceId ||
+      !assessment.assessment_name ||
+      typeof feedbackValue !== 'boolean'
+    ) {
+      return HttpResponse.json(
+        {
+          error_code: 'INVALID_PARAMETER_VALUE',
+          message: `Mock: invalid assessment body. Got feedback.value=${JSON.stringify(feedbackValue)} (expected boolean)`,
+        },
+        { status: 400 },
+      );
+    }
+
+    const assessmentId = `mock-assessment-${traceId}`;
+    const stored: StoredAssessment = {
+      assessment_id: assessmentId,
+      assessment_name: assessment.assessment_name,
+      trace_id: traceId,
+      source: {
+        source_type: assessment.source?.source_type ?? 'HUMAN',
+        source_id: assessment.source?.source_id ?? '',
+      },
+      feedback: { value: feedbackValue },
+    };
+
+    // Store (replace any existing assessment for this trace+source)
+    const existing = mlflowAssessmentStore[traceId] ?? [];
+    const idx = existing.findIndex(
+      (a) => a.source.source_id === stored.source.source_id,
+    );
+    if (idx >= 0) {
+      existing[idx] = stored;
+    } else {
+      existing.push(stored);
+    }
+    mlflowAssessmentStore[traceId] = existing;
+
+    return HttpResponse.json({
+      assessment: {
+        assessment_id: assessmentId,
+        trace_id: traceId,
+        assessment_name: assessment.assessment_name,
+      },
+    });
+  }),
+
+  // Mock MLflow assessments PATCH endpoint (update existing assessment).
+  // URL: PATCH /api/3.0/mlflow/traces/{trace_id}/assessments/{assessment_id}
+  // Updates the stored assessment's feedback value.
+  http.patch(
+    /\/api\/3\.0\/mlflow\/traces\/([^/]+)\/assessments\/([^/]+)$/,
+    async (req) => {
+      const url = req.request.url;
+      const match = url.match(/\/traces\/([^/]+)\/assessments\/([^/]+)/);
+      const traceId = match?.[1] ?? 'unknown';
+      const assessmentId = match?.[2] ?? 'unknown';
+
+      const body = (await req.request.json()) as {
+        assessment?: {
+          trace_id?: string;
+          assessment_name?: string;
+          source?: { source_type?: string; source_id?: string };
+          feedback?: { value?: unknown };
+        };
+      };
+
+      const assessment = body?.assessment;
+      const feedbackValue = assessment?.feedback?.value;
+      if (
+        !assessment ||
+        assessment.trace_id !== traceId ||
+        !assessment.assessment_name ||
+        typeof feedbackValue !== 'boolean'
+      ) {
+        return HttpResponse.json(
+          {
+            error_code: 'INVALID_PARAMETER_VALUE',
+            message: `Mock: invalid PATCH assessment body. Got feedback.value=${JSON.stringify(feedbackValue)} (expected boolean)`,
+          },
+          { status: 400 },
+        );
+      }
+
+      // Reject source updates — matches real MLflow behavior
+      if ((assessment as { source?: unknown }).source !== undefined) {
+        return HttpResponse.json(
+          {
+            error_code: 'INVALID_PARAMETER_VALUE',
+            message: "The field `source` may not be updated.",
+          },
+          { status: 400 },
+        );
+      }
+
+      // Update the stored assessment's feedback value
+      const existing = mlflowAssessmentStore[traceId] ?? [];
+      const idx = existing.findIndex((a) => a.assessment_id === assessmentId);
+      if (idx >= 0) {
+        existing[idx] = {
+          ...existing[idx],
+          feedback: { value: feedbackValue },
+          source: {
+            source_type: assessment.source?.source_type ?? existing[idx].source.source_type,
+            source_id: assessment.source?.source_id ?? existing[idx].source.source_id,
+          },
+        };
+        mlflowAssessmentStore[traceId] = existing;
+      }
+
+      return HttpResponse.json({
+        assessment: {
+          assessment_id: assessmentId,
+          trace_id: traceId,
+          assessment_name: assessment.assessment_name,
+        },
+      });
+    },
+  ),
 ];

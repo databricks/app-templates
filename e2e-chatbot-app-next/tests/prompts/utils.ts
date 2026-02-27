@@ -121,20 +121,11 @@ export const getResponseChunksByPrompt = (
   }
 
   if (compareMessages(recentMessage, TEST_PROMPTS.USER_THANKS)) {
-    return [
-      ...textToDeltas("You're welcome!"),
-      createFinishPart(3, 10),
-    ];
+    return [...textToDeltas("You're welcome!"), createFinishPart(3, 10)];
   } else if (compareMessages(recentMessage, TEST_PROMPTS.USER_GRASS)) {
-    return [
-      ...textToDeltas("It's just green duh!"),
-      createFinishPart(3, 10),
-    ];
+    return [...textToDeltas("It's just green duh!"), createFinishPart(3, 10)];
   } else if (compareMessages(recentMessage, TEST_PROMPTS.USER_SKY)) {
-    return [
-      ...textToDeltas("It's just blue duh!"),
-      createFinishPart(3, 10),
-    ];
+    return [...textToDeltas("It's just blue duh!"), createFinishPart(3, 10)];
   } else if (compareMessages(recentMessage, TEST_PROMPTS.USER_NEXTJS)) {
     return [
       ...textToDeltas('With Next.js, you can ship fast!'),

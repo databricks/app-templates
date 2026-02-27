@@ -94,7 +94,9 @@ export const OAUTH_TEST_PROMPTS = {
       createdAt: new Date().toISOString(),
       role: 'user' as const,
       content: 'Search slack for recent messages',
-      parts: [{ type: 'text' as const, text: 'Search slack for recent messages' }],
+      parts: [
+        { type: 'text' as const, text: 'Search slack for recent messages' },
+      ],
     },
     OUTPUT_STREAM: OAUTH_ERROR_STREAM,
     EXPECTED: {

@@ -10,7 +10,7 @@
  * long-running deployments without adding any package dependencies.
  */
 
-// ~1 KB per entry × 10 000 entries ≈ 10 MB ceiling.
+// Each entry is ~200 bytes (two UUIDs + overhead); 10 000 entries ≈ 2 MB ceiling.
 const MAX_ENTRIES = 10_000;
 
 function setBounded<K, V>(map: Map<K, V>, key: K, value: V): void {

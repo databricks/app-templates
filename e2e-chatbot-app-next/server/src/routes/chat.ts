@@ -293,7 +293,14 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       // of replacing the existing one.
       originalMessages: uiMessages,
       execute: async ({ writer }) => {
-        const uiStream = result.toUIMessageStream({
+        // Manually drain the AI stream so we can append the traceId data part
+        // after all model chunks are processed (traceId is captured via onChunk).
+        // result.toUIMessageStream() converts TextStreamPart → UIMessageChunk:
+        // - text-delta: maps TextStreamPart.text → UIMessageChunk.delta
+        // - start-step/finish-step: strips extra fields
+        // - finish: strips rawFinishReason/totalUsage
+        // - raw: dropped (trace_id captured via onChunk above)
+        const aiStream = result.toUIMessageStream<ChatMessage>({
           sendReasoning: true,
           sendSources: true,
           sendFinish: false,
@@ -305,7 +312,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           },
         });
 
-        const { failed } = await drainStreamToWriter(uiStream, writer);
+        const { failed } = await drainStreamToWriter(aiStream, writer);
 
         if (failed) {
           console.log('Streaming failed, falling back to generateText...');
@@ -315,6 +322,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           );
         }
 
+        // Write traceId so the client knows whether feedback is supported.
         writer.write({ type: 'data-traceId', data: traceId });
       },
       onFinish: async ({ responseMessage }) => {

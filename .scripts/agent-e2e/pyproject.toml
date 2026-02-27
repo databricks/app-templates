@@ -1,0 +1,11 @@
+[project]
+name = "agent-e2e-tests"
+version = "0.1.0"
+description = "E2E tests for agent templates"
+requires-python = ">=3.11"
+dependencies = [
+    "pytest>=8.0",
+    "requests>=2.31",
+    "openai>=1.75",
+    "databricks-sdk>=0.40",
+]

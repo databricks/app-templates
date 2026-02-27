@@ -1,16 +1,16 @@
 bundle:
-  name: agent_openai_agents_sdk_short_term_memory
+  name: agent_langgraph_short_term_memory
 
 resources:
   # MLflow experiment for agent tracing - automatically created by bundle
   experiments:
-    agent_openai_agents_sdk_short_term_memory_experiment:
+    agent_langgraph_short_term_memory_experiment:
       name: /Users/${workspace.current_user.userName}/${bundle.name}-${bundle.target}
 
   apps:
-    agent_openai_agents_sdk_short_term_memory:
-      name: "${bundle.target}-agent-openai-agents-sdk-short-term-memory"
-      description: "OpenAI Agents SDK agent application with short-term memory"
+    agent_langgraph_short_term_memory:
+      name: "${bundle.target}-agent-langgraph-short-term-memory"
+      description: "LangGraph agent application with short-term memory"
       source_code_path: ./
       config:
         command: ["uv", "run", "start-app"]
@@ -34,9 +34,8 @@ resources:
       resources:
         - name: 'experiment'
           experiment:
-            experiment_id: "${resources.experiments.agent_openai_agents_sdk_short_term_memory_experiment.id}"
+            experiment_id: "${resources.experiments.agent_langgraph_short_term_memory_experiment.id}"
             permission: 'CAN_MANAGE'
-        # Lakebase instance for persistent session storage
         - name: 'database'
           database:
             instance_name: '<your-lakebase-instance-name>'
@@ -56,5 +55,5 @@ targets:
     #   host: https://...
     resources:
       apps:
-        agent_openai_agents_sdk_short_term_memory:
-          name: agent-openai-agents-sdk-short-term-memory
+        agent_langgraph_short_term_memory:
+          name: agent-langgraph-short-term-memory

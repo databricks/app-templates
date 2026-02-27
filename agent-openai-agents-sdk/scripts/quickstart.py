@@ -501,12 +501,12 @@ def create_mlflow_experiment(profile_name: str, username: str) -> tuple[str, str
 
 
 def check_lakebase_required() -> bool:
-    """Check if app.yaml has LAKEBASE_INSTANCE_NAME configured."""
-    app_yaml = Path("app.yaml")
-    if not app_yaml.exists():
+    """Check if databricks.yml has LAKEBASE_INSTANCE_NAME configured."""
+    databricks_yml = Path("databricks.yml")
+    if not databricks_yml.exists():
         return False
 
-    content = app_yaml.read_text()
+    content = databricks_yml.read_text()
     return "LAKEBASE_INSTANCE_NAME" in content
 
 

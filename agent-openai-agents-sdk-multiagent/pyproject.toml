@@ -8,13 +8,13 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi>=0.115.12",
-    "uvicorn>=0.34.2",
+    "fastapi>=0.129.0",
+    "uvicorn>=0.41.0",
     "databricks-openai>=0.11.0",
-    "databricks-agents",
-    "mlflow>=3.9.0",
+    "databricks-agents>=1.9.3",
+    "mlflow>=3.10.0",
     "openai-agents>=0.4.1",
-    "python-dotenv",
+    "python-dotenv>=1.2.1",
 ]
 
 [build-system]
@@ -24,8 +24,8 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
-    "hatchling>=1.27.0",
-    "pytest>=7.0.0",
+    "hatchling>=1.28.0",
+    "pytest>=9.0.2",
 ]
 
 

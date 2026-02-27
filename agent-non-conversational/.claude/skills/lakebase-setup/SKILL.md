@@ -19,7 +19,7 @@ Lakebase provides persistent storage for agent memory:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  1. Add dependency  →  2. Get instance  →  3. Configure DAB + app.yaml     │
+│  1. Add dependency  →  2. Get instance  →  3. Configure DAB               │
 │  4. Configure .env  →  5. Initialize tables  →  6. Deploy + Run      │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -82,34 +82,33 @@ resources:
 ```
 
 **Important:**
-- The `instance_name: '<your-lakebase-instance-name>'` must match the `value` reference in `app.yaml`
+- The `instance_name: '<your-lakebase-instance-name>'` must match the actual Lakebase instance name
 - Using the `database` resource type automatically grants the app's service principal access to Lakebase
 
-### Update app.yaml (Environment Variables)
+### Add Environment Variables to databricks.yml config block
 
-Update `app.yaml` with the Lakebase instance name:
+Add the Lakebase environment variables to the `config.env` section of your app in `databricks.yml`:
 
 ```yaml
-env:
-  # ... other env vars ...
+      config:
+        command: ["uv", "run", "start-app"]
+        env:
+          # ... other env vars ...
 
-  # Lakebase instance name - must match instance_name in databricks.yml database resource
-  # Note: Use 'value' (not 'valueFrom') because AsyncDatabricksStore needs the instance name,
-  # not the full connection string that valueFrom would provide
-  - name: LAKEBASE_INSTANCE_NAME
-    value: "<your-lakebase-instance-name>"
+          # Lakebase instance name - resolved from database resource at deploy time
+          - name: LAKEBASE_INSTANCE_NAME
+            valueFrom: "database"
 
-  # Static values for embedding configuration
-  - name: EMBEDDING_ENDPOINT
-    value: "databricks-gte-large-en"
-  - name: EMBEDDING_DIMS
-    value: "1024"
+          # Static values for embedding configuration
+          - name: EMBEDDING_ENDPOINT
+            value: "databricks-gte-large-en"
+          - name: EMBEDDING_DIMS
+            value: "1024"
 ```
 
 **Important:**
-- The `LAKEBASE_INSTANCE_NAME` value must match the `instance_name` in your `databricks.yml` database resource
-- The `database` resource handles permissions; `app.yaml` provides the instance name to your code
-- Don't use `valueFrom` for Lakebase - it provides the connection string, not the instance name
+- The `LAKEBASE_INSTANCE_NAME` uses `valueFrom: "database"` which resolves from the `database` resource at deploy time
+- The `database` resource handles permissions; the `config.env` provides the instance name to your code
 
 ---
 
@@ -131,7 +130,7 @@ EMBEDDING_DIMS=1024
 | `databricks-gte-large-en` | 1024 |
 | `databricks-bge-large-en` | 1024 |
 
-> **Note:** `.env` is only for local development. When deployed, the app gets `LAKEBASE_INSTANCE_NAME` from the `valueFrom` reference in `app.yaml`.
+> **Note:** `.env` is only for local development. When deployed, the app gets `LAKEBASE_INSTANCE_NAME` from the `valueFrom` reference in the `databricks.yml` config block.
 
 ---
 
@@ -222,6 +221,30 @@ resources:
       name: "my-agent-app"
       description: "Agent with long-term memory"
       source_code_path: ./
+      config:
+        command: ["uv", "run", "start-app"]
+        env:
+          - name: MLFLOW_TRACKING_URI
+            value: "databricks"
+          - name: MLFLOW_REGISTRY_URI
+            value: "databricks-uc"
+          - name: API_PROXY
+            value: "http://localhost:8000/invocations"
+          - name: CHAT_APP_PORT
+            value: "3000"
+          - name: CHAT_PROXY_TIMEOUT_SECONDS
+            value: "300"
+          # Reference experiment resource
+          - name: MLFLOW_EXPERIMENT_ID
+            valueFrom: "experiment"
+          # Lakebase instance name (resolved from database resource)
+          - name: LAKEBASE_INSTANCE_NAME
+            valueFrom: "database"
+          # Embedding configuration
+          - name: EMBEDDING_ENDPOINT
+            value: "databricks-gte-large-en"
+          - name: EMBEDDING_DIMS
+            value: "1024"
 
       resources:
         - name: 'experiment'
@@ -242,35 +265,6 @@ targets:
     default: true
 ```
 
-## Complete Example: app.yaml
-
-```yaml
-command: ["uv", "run", "start-app"]
-
-env:
-  - name: MLFLOW_TRACKING_URI
-    value: "databricks"
-  - name: MLFLOW_REGISTRY_URI
-    value: "databricks-uc"
-  - name: API_PROXY
-    value: "http://localhost:8000/invocations"
-  - name: CHAT_APP_PORT
-    value: "3000"
-  - name: CHAT_PROXY_TIMEOUT_SECONDS
-    value: "300"
-  # Reference experiment resource from databricks.yml
-  - name: MLFLOW_EXPERIMENT_ID
-    valueFrom: "experiment"
-  # Lakebase instance name (must match instance_name in databricks.yml)
-  - name: LAKEBASE_INSTANCE_NAME
-    value: "<your-lakebase-instance-name>"
-  # Embedding configuration
-  - name: EMBEDDING_ENDPOINT
-    value: "databricks-gte-large-en"
-  - name: EMBEDDING_DIMS
-    value: "1024"
-```
-
 ---
 
 ## Troubleshooting
@@ -279,7 +273,7 @@ env:
 |-------|-------|----------|
 | **"embedding_dims is required when embedding_endpoint is specified"** | Missing `embedding_dims` parameter | Add `embedding_dims=1024` to AsyncDatabricksStore |
 | **"relation 'store' does not exist"** | Tables not initialized | Run `await store.setup()` locally first (Step 5) |
-| **"Unable to resolve Lakebase instance 'None'"** | Missing env var in deployed app | Add `LAKEBASE_INSTANCE_NAME` value to app.yaml |
+| **"Unable to resolve Lakebase instance 'None'"** | Missing env var in deployed app | Add `LAKEBASE_INSTANCE_NAME` to databricks.yml `config.env` |
 | **"Unable to resolve Lakebase instance '...database.cloud.databricks.com'"** | Used valueFrom instead of value | Use `value: "<instance-name>"` not `valueFrom` for Lakebase |
 | **"permission denied for table store"** | Missing grants | The `database` resource in DAB should handle this; verify the resource is configured |
 | **"Failed to connect to Lakebase"** | Wrong instance name | Verify instance name in databricks.yml and .env |

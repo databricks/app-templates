@@ -6,10 +6,19 @@ from databricks_langchain.chat_models import json
 from langchain.messages import AIMessageChunk, ToolMessage
 from mlflow.genai.agent_server import get_request_headers
 from mlflow.types.responses import (
+    ResponsesAgentRequest,
     ResponsesAgentStreamEvent,
     create_text_delta,
     output_to_responses_items_stream,
 )
+
+
+def get_session_id(request: ResponsesAgentRequest) -> str | None:
+    if request.context and request.context.conversation_id:
+        return request.context.conversation_id
+    if request.custom_inputs and isinstance(request.custom_inputs, dict):
+        return request.custom_inputs.get("session_id")
+    return None
 
 
 def get_user_workspace_client() -> WorkspaceClient:

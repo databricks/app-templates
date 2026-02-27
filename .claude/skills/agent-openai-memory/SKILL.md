@@ -101,14 +101,15 @@ resources:
             permission: 'CAN_CONNECT_AND_CREATE'
 ```
 
-### app.yaml (Environment Variables)
+### databricks.yml config block (Environment Variables)
 
-The `LAKEBASE_INSTANCE_NAME` env var is resolved from the database resource at deploy time:
+The `LAKEBASE_INSTANCE_NAME` env var is resolved from the database resource at deploy time. Add to your app's `config.env` in `databricks.yml`:
 
 ```yaml
-env:
-  - name: LAKEBASE_INSTANCE_NAME
-    valueFrom: "database"
+      config:
+        env:
+          - name: LAKEBASE_INSTANCE_NAME
+            valueFrom: "database"
 ```
 
 ### .env (Local Development)

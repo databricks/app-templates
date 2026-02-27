@@ -1,3 +1,5 @@
+import litellm
+import logging
 from typing import AsyncGenerator, Optional
 
 import mlflow
@@ -14,11 +16,14 @@ from mlflow.types.responses import (
 
 from agent_server.utils import (
     get_databricks_host_from_env,
+    get_session_id,
     get_user_workspace_client,
     process_agent_astream_events,
 )
 
 mlflow.langchain.autolog()
+logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
+litellm.suppress_debug_info = True
 sp_workspace_client = WorkspaceClient()
 
 
@@ -55,6 +60,8 @@ async def non_streaming(request: ResponsesAgentRequest) -> ResponsesAgentRespons
 async def streaming(
     request: ResponsesAgentRequest,
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
+    if session_id := get_session_id(request):
+        mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
     agent = await init_agent()

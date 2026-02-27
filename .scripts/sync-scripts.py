@@ -46,6 +46,7 @@ def main():
         for script, dest_subdir in scripts:
             dest_dir = REPO_ROOT / template / dest_subdir
             if not dest_dir.exists():
+                print(f"  Warning: {dest_dir} does not exist, skipping {script}")
                 continue
             shutil.copy2(SOURCE_DIR / script, dest_dir / script)
             synced.append(script)

@@ -1,12 +1,6 @@
 import { useCopyToClipboard } from 'usehooks-ts';
 
 import { Actions, Action } from './elements/actions';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { memo, useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import type { ChatMessage, Feedback } from '@chat-template/core';
@@ -127,7 +121,7 @@ function PureMessageActions({
     );
   }
 
-  const feedbackButtons = feedbackSupported ? (
+  const feedbackButtons = (
     <>
       <Action
         tooltip="Thumbs up"
@@ -146,34 +140,6 @@ function PureMessageActions({
         <ThumbsDown />
       </Action>
     </>
-  ) : (
-    // Wrap disabled buttons in a span so the tooltip still shows on hover
-    // (disabled buttons have pointer-events:none and won't trigger tooltip).
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="flex items-center gap-1">
-            <Action
-              disabled
-              className="opacity-50"
-              data-testid="thumbs-up-button"
-            >
-              <ThumbsUp />
-            </Action>
-            <Action
-              disabled
-              className="opacity-50"
-              data-testid="thumbs-down-button"
-            >
-              <ThumbsDown />
-            </Action>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>Feedback not available for this endpoint</p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
   );
 
   return (
@@ -183,7 +149,7 @@ function PureMessageActions({
           <CopyIcon />
         </Action>
       )}
-      {feedbackEnabled && feedbackButtons}
+      {feedbackEnabled && feedbackSupported && feedbackButtons}
       {errorCount > 0 && onToggleErrors && (
         <Action
           tooltip={showErrors ? 'Hide errors' : 'Show errors'}

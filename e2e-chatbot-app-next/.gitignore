@@ -5,7 +5,10 @@ cookies.txt
 node_modules
 .pnp
 .pnp.js
-.claude
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/enable-feedback/
 
 # testing
 coverage

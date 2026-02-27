@@ -47,7 +47,9 @@ export const TEST_PROMPTS = {
         mockFmapiSSE('STATIC_ID', { role: 'assistant', content: ' duh!' }),
         'data: [DONE]',
       ],
-      // Multi-delta: one chunk per word, matching mockResponsesApiMultiDeltaTextStream
+      // Multi-delta: one chunk per word, matching mockResponsesApiMultiDeltaTextStream.
+      // The server appends a data-traceId part after all model chunks so the client
+      // knows whether MLflow feedback is supported for this message.
       expectedSSE: [
         'data: {"type":"start","messageId":"STATIC_MESSAGE_ID"}',
         'data: {"type":"start-step"}',
@@ -59,6 +61,7 @@ export const TEST_PROMPTS = {
         'data: {"type":"text-end","id":"STATIC_ID"}',
         'data: {"type":"finish-step"}',
         'data: {"type":"finish","finishReason":"stop"}',
+        'data: {"type":"data-traceId",',
         'data: [DONE]',
       ],
       expectedText: "It's just blue duh!",

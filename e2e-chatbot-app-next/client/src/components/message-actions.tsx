@@ -1,6 +1,12 @@
 import { useCopyToClipboard } from 'usehooks-ts';
 
 import { Actions, Action } from './elements/actions';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { memo, useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import type { ChatMessage, Feedback } from '@chat-template/core';
@@ -42,6 +48,14 @@ function PureMessageActions({
     .map((part) => part.text)
     .join('\n')
     .trim();
+
+  // A data-traceId part with data: null means the endpoint doesn't emit traces,
+  // so MLflow feedback submission isn't possible. When the part is absent (e.g.
+  // for messages streamed before this feature), assume feedback is supported.
+  const traceIdPart = message.parts?.find((p) => p.type === 'data-traceId') as
+    | { type: 'data-traceId'; data: string | null }
+    | undefined;
+  const feedbackSupported = traceIdPart === undefined || traceIdPart.data !== null;
 
   const handleFeedback = useCallback(
     async (feedbackType: 'thumbs_up' | 'thumbs_down') => {
@@ -111,13 +125,8 @@ function PureMessageActions({
     );
   }
 
-  return (
-    <Actions className="-ml-0.5">
-      {textFromParts && (
-        <Action tooltip="Copy" onClick={handleCopy}>
-          <CopyIcon />
-        </Action>
-      )}
+  const feedbackButtons = feedbackSupported ? (
+    <>
       <Action
         tooltip="Thumbs up"
         onClick={() => handleFeedback('thumbs_up')}
@@ -134,6 +143,45 @@ function PureMessageActions({
       >
         <ThumbsDown />
       </Action>
+    </>
+  ) : (
+    // Wrap disabled buttons in a span so the tooltip still shows on hover
+    // (disabled buttons have pointer-events:none and won't trigger tooltip).
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="flex items-center gap-1">
+            <Action
+              disabled
+              className="opacity-50"
+              data-testid="thumbs-up-button"
+            >
+              <ThumbsUp />
+            </Action>
+            <Action
+              disabled
+              className="opacity-50"
+              data-testid="thumbs-down-button"
+            >
+              <ThumbsDown />
+            </Action>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>Feedback not available for this endpoint</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+
+  return (
+    <Actions className="-ml-0.5">
+      {textFromParts && (
+        <Action tooltip="Copy" onClick={handleCopy}>
+          <CopyIcon />
+        </Action>
+      )}
+      {feedbackButtons}
       {errorCount > 0 && onToggleErrors && (
         <Action
           tooltip={showErrors ? 'Hide errors' : 'Show errors'}
@@ -159,6 +207,13 @@ export const MessageActions = memo(
     if (prevProps.errorCount !== nextProps.errorCount) return false;
     if (prevProps.showErrors !== nextProps.showErrors) return false;
     if (prevProps.initialFeedback?.feedbackType !== nextProps.initialFeedback?.feedbackType) return false;
+    const prevTraceId = prevProps.message.parts?.find(
+      (p) => p.type === 'data-traceId',
+    );
+    const nextTraceId = nextProps.message.parts?.find(
+      (p) => p.type === 'data-traceId',
+    );
+    if (prevTraceId !== nextTraceId) return false;
 
     return true;
   },

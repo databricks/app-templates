@@ -10,6 +10,7 @@ type MessageMetadata = z.infer<typeof messageMetadataSchema>;
 export type CustomUIDataTypes = {
   error: string;
   usage: LanguageModelUsage;
+  traceId: string | null;
 };
 
 export type ChatMessage = UIMessage<MessageMetadata, CustomUIDataTypes>;

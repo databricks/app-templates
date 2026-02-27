@@ -11,6 +11,7 @@ import {
   generateText,
   type LanguageModelUsage,
   pipeUIMessageStreamToResponse,
+  type InferUIMessageChunk,
 } from 'ai';
 import type { LanguageModelV3Usage } from '@ai-sdk/provider';
 
@@ -288,12 +289,26 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       // of replacing the existing one.
       originalMessages: uiMessages,
       execute: async ({ writer }) => {
-        // result.toUIMessageStream() properly converts TextStreamPart → UIMessageChunk:
+        // Manually drain the AI stream so we can append the traceId data part
+        // after all model chunks are processed (traceId is captured via onChunk).
+        // result.toUIMessageStream() converts TextStreamPart → UIMessageChunk:
         // - text-delta: maps TextStreamPart.text → UIMessageChunk.delta
         // - start-step/finish-step: strips extra fields
         // - finish: strips rawFinishReason/totalUsage
         // - raw: dropped (trace_id captured via onChunk above)
-        writer.merge(result.toUIMessageStream());
+        const aiStream = result.toUIMessageStream<ChatMessage>();
+        const reader = aiStream.getReader();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            writer.write(value as InferUIMessageChunk<ChatMessage>);
+          }
+        } finally {
+          reader.releaseLock();
+        }
+        // Write traceId so the client knows whether feedback is supported.
+        writer.write({ type: 'data-traceId', data: traceId });
       },
       onFinish: async ({ responseMessage }) => {
         // Store in-memory for ephemeral mode (also useful when DB is available)

@@ -155,19 +155,6 @@ async function startServer() {
         res.json({ success: true });
       });
 
-      // Test-only endpoint to seed the message-meta store directly.
-      // Lets tests simulate a message from an endpoint that doesn't return traces.
-      app.post('/api/test/store-message-meta', (req, res) => {
-        const { messageId, chatId, traceId } = req.body as {
-          messageId: string;
-          chatId: string;
-          traceId: string | null;
-        };
-        storeMessageMeta(messageId, chatId, traceId ?? null);
-        res.json({ success: true });
-      });
-
-
       console.log(
         '[Test Mode] Test endpoints for context injection registered',
       );
@@ -178,6 +165,18 @@ async function startServer() {
         error instanceof Error ? error.stack : error,
       );
     }
+
+    // Registered outside the MSW try/catch so it's available even if MSW setup fails.
+    // Lets tests simulate a message from an endpoint that doesn't return traces.
+    app.post('/api/test/store-message-meta', (req, res) => {
+      const { messageId, chatId, traceId } = req.body as {
+        messageId: string;
+        chatId: string;
+        traceId: string | null;
+      };
+      storeMessageMeta(messageId, chatId, traceId ?? null);
+      res.json({ success: true });
+    });
   }
 
   app.listen(PORT, () => {

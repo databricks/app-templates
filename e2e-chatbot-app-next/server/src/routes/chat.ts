@@ -316,10 +316,13 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
 
         if (failed) {
           console.log('Streaming failed, falling back to generateText...');
-          finalUsage = await runGenerateTextFallback(
+          const fallbackResult = await runGenerateTextFallback(
             { model, messages: modelMessages, headers: requestHeaders },
             writer,
           );
+
+          finalUsage = fallbackResult?.usage;
+          traceId = fallbackResult?.traceId ?? null;
         }
 
         // Write traceId so the client knows whether feedback is supported.
@@ -648,9 +651,15 @@ async function drainStreamToWriter(
 async function runGenerateTextFallback(
   params: Parameters<typeof generateText>[0],
   writer: UIMessageStreamWriter,
-): Promise<LanguageModelUsage | undefined> {
+): Promise<{ usage: LanguageModelUsage, traceId?: string } | undefined> {
   try {
     const fallback = await generateText(params);
+
+    const traceId = (fallback?.response?.body as {
+      metadata: {
+        trace_id: string;
+      };
+    })?.metadata?.trace_id;
 
     const partId = generateUUID();
     writer.write({ type: 'text-start', id: partId });
@@ -658,7 +667,7 @@ async function runGenerateTextFallback(
     writer.write({ type: 'text-end', id: partId });
     writer.write({ type: 'finish', finishReason: fallback.finishReason });
 
-    return fallback.usage;
+    return { usage: fallback.usage, traceId };
   } catch (fallbackError) {
     console.error('[runGenerateTextFallback] generateText fallback also failed:', fallbackError);
     const errorMessage =

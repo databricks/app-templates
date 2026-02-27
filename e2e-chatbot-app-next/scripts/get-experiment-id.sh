@@ -73,7 +73,7 @@ if [[ -z "$HOST" ]]; then
   exit 1
 fi
 
-TOKEN=$(databricks auth token 2>/dev/null | awk '/Token:/ {print $2}')
+TOKEN=$(databricks auth token --host "$HOST" --output json 2>/dev/null | jq -r '.access_token // empty')
 if [[ -z "$TOKEN" ]]; then
   echo "❌ Could not obtain a Databricks token. Run 'databricks auth login' first." >&2
   exit 1
@@ -115,32 +115,27 @@ case "$MODE" in
     ;;
 
   tile)
-    # Agent Bricks (Knowledge Assistant / Multi-Agent Supervisor) tiles expose
-    # mlflowExperimentId via the internal GraphQL API. A stable REST equivalent
-    # is not yet available; this will be updated when the team publishes one.
+    # Agent Bricks (Knowledge Assistant / Multi-Agent Supervisor)
+    # The tile ID is visible in the URL when configuring a tile in the Agent Bricks UI.
     echo "🔍 Looking up experiment for Agent Bricks tile: $VALUE" >&2
 
-    GQL_QUERY='{"operationName":"GetTile","variables":{"input":{"tileId":"'"$VALUE"'"}},"query":"query GetTile($input: TilesGetTileRequestInput!) { tilesGetTile(input: $input) { tileId mlflowExperimentId } }"}'
+    TILE_JSON=$(curl -sf "$HOST/api/2.0/tiles/$VALUE" \
+      -H "Authorization: Bearer $TOKEN" 2>/dev/null || true)
 
-    RESPONSE=$(curl -sf "$HOST/graphql" \
-      -H "Authorization: Bearer $TOKEN" \
-      -H "Content-Type: application/json" \
-      -d "$GQL_QUERY" 2>/dev/null || true)
-
-    if [[ -z "$RESPONSE" ]]; then
-      echo "❌ Failed to reach the Agent Bricks API at $HOST/graphql." >&2
+    if [[ -z "$TILE_JSON" ]]; then
+      echo "❌ Failed to reach the Agent Bricks API. Check your host and credentials." >&2
       exit 1
     fi
 
-    GQL_ERR=$(echo "$RESPONSE" | jq -r '.errors[0].message // empty')
-    if [[ -n "$GQL_ERR" ]]; then
-      echo "❌ Agent Bricks API returned an error: $GQL_ERR" >&2
+    API_ERR=$(echo "$TILE_JSON" | jq -r '.message // empty')
+    if [[ -n "$API_ERR" ]]; then
+      echo "❌ Agent Bricks API error: $API_ERR" >&2
       exit 1
     fi
 
-    EXPERIMENT_ID=$(echo "$RESPONSE" | jq -r '.data.tilesGetTile.mlflowExperimentId // empty')
+    EXPERIMENT_ID=$(echo "$TILE_JSON" | jq -r '.mlflow_experiment_id // empty')
     if [[ -z "$EXPERIMENT_ID" ]]; then
-      echo "❌ No mlflowExperimentId found for tile '$VALUE'." >&2
+      echo "❌ No mlflow_experiment_id found for tile '$VALUE'." >&2
       echo "   Make sure the tile ID is correct (visible in the URL when configuring the tile)." >&2
       exit 1
     fi

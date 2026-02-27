@@ -11,12 +11,15 @@ import litellm
 import logging
 from typing import AsyncGenerator
 
+import mlflow
 from mlflow.genai.agent_server import invoke, stream
 from mlflow.types.responses import (
     ResponsesAgentRequest,
     ResponsesAgentResponse,
     ResponsesAgentStreamEvent,
 )
+
+from agent_server.utils import get_session_id
 
 # ──────────────────────────────────────────────
 # TODO: Import your agent framework and tools here.
@@ -26,23 +29,17 @@ from mlflow.types.responses import (
 #   LangGraph:
 #     from databricks_langchain import ChatDatabricks
 #     from langchain.agents import create_agent
-#     import mlflow; mlflow.langchain.autolog()
+#     mlflow.langchain.autolog()
 #
 #   OpenAI Agents SDK:
 #     from agents import Agent, Runner
 #     from databricks_openai import AsyncDatabricksOpenAI
-#     import mlflow; mlflow.openai.autolog()
-#
-# After enabling autolog, suppress noisy loggers:
-#   logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
-#   litellm.suppress_debug_info = True
-#
-# For session tracking in your streaming handler:
-#   from agent_server.utils import get_session_id
-#   if session_id := get_session_id(request):
-#       mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
+#     mlflow.openai.autolog()
 #
 # ──────────────────────────────────────────────
+
+logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
+litellm.suppress_debug_info = True
 
 
 # ──────────────────────────────────────────────
@@ -80,6 +77,8 @@ async def streaming(
 
     TODO: Replace the body of this function with your agent's streaming logic.
     """
+    if session_id := get_session_id(request):
+        mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
     raise NotImplementedError(
         "Replace this with your migrated agent's streaming implementation."
     )

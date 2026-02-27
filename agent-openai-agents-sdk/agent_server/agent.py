@@ -62,7 +62,7 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
 
 
 @stream()
-async def stream_handler(request: dict) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
+async def stream_handler(request: ResponsesAgentRequest) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
     if session_id := get_session_id(request):
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
     workspace_client = WorkspaceClient()

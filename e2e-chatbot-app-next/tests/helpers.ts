@@ -853,6 +853,150 @@ export function mockMlflowAgentServerStream(
   return events;
 }
 
+/**
+ * Create a 200 SSE response whose body stream errors immediately.
+ * This simulates a connection that opens successfully but breaks before
+ * any model data arrives, triggering the stream-error → fallback path.
+ */
+export function createMockImmediateStreamErrorResponse(): Response {
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.error(new Error('Mock upstream connection error'));
+    },
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  });
+}
+
+/**
+ * Create a non-streaming Responses API response object for generateText fallback.
+ */
+export function mockResponsesApiNonStreamingResponse(text: string) {
+  const responseId = generateUUID();
+  const textItemId = generateUUID();
+
+  return {
+    id: responseId,
+    created_at: Math.floor(Date.now() / 1000),
+    status: 'completed',
+    error: null,
+    model: 'databricks-claude-3-7-sonnet',
+    object: 'response',
+    output: [
+      {
+        id: textItemId,
+        content: [
+          {
+            annotations: [],
+            text,
+            type: 'output_text',
+            logprobs: null,
+          },
+        ],
+        role: 'assistant',
+        status: 'completed',
+        type: 'message',
+      },
+    ],
+    usage: {
+      input_tokens: 100,
+      output_tokens: text.length,
+      total_tokens: 100 + text.length,
+    },
+  };
+}
+
+/**
+ * Create a mock streaming response that sends valid Responses API text events,
+ * then a response.failed event to simulate a mid-stream model failure.
+ * The response.failed event (rather than a transport-level stream break) causes
+ * the AI SDK to emit an error chunk through toUIMessageStream's onError.
+ */
+export function createMockMidStreamErrorResponse(text: string): Response {
+  const responseId = generateUUID();
+  const textItemId = generateUUID();
+
+  const events = [
+    mockSSE({
+      response: {
+        id: responseId,
+        created_at: Math.floor(Date.now() / 1000),
+        error: null,
+        model: 'databricks-claude-3-7-sonnet',
+        object: 'response',
+        output: [],
+      },
+      sequence_number: 0,
+      type: 'response.created',
+    }),
+    mockSSE({
+      item: {
+        id: textItemId,
+        content: [],
+        role: 'assistant',
+        status: 'in_progress',
+        type: 'message',
+      },
+      output_index: 0,
+      sequence_number: 1,
+      type: 'response.output_item.added',
+    }),
+    mockSSE({
+      content_index: 0,
+      item_id: textItemId,
+      output_index: 0,
+      part: { annotations: [], text: '', type: 'output_text', logprobs: null },
+      sequence_number: 2,
+      type: 'response.content_part.added',
+    }),
+    mockSSE({
+      content_index: 0,
+      delta: text,
+      item_id: textItemId,
+      logprobs: [],
+      output_index: 0,
+      sequence_number: 3,
+      type: 'response.output_text.delta',
+    }),
+    mockSSE({
+      response: {
+        id: responseId,
+        created_at: Math.floor(Date.now() / 1000),
+        status: 'failed',
+        error: {
+          type: 'server_error',
+          message: 'Mock mid-stream error',
+        },
+        model: 'databricks-claude-3-7-sonnet',
+        object: 'response',
+        output: [
+          {
+            id: textItemId,
+            content: [
+              { annotations: [], text, type: 'output_text', logprobs: null },
+            ],
+            role: 'assistant',
+            status: 'incomplete',
+            type: 'message',
+          },
+        ],
+        usage: {
+          input_tokens: 100,
+          output_tokens: text.length,
+          total_tokens: 100 + text.length,
+        },
+      },
+      sequence_number: 4,
+      type: 'response.failed',
+    }),
+  ];
+
+  return createMockStreamResponse(events);
+}
+
 // Skips
 export function skipInEphemeralMode(test: TestType<any, any>) {
   test.skip(

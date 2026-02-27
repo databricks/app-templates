@@ -465,3 +465,69 @@ test.describe
       expect(text).toBeTruthy();
     });
   });
+
+test.describe
+  .serial('/api/chat - Stream Fallback', () => {
+    test('warmup: initialize model cache with a normal request', async ({
+      adaContext,
+    }) => {
+      const chatId = generateUUID();
+      const response = await adaContext.request.post('/api/chat', {
+        data: {
+          id: chatId,
+          message: TEST_PROMPTS.SKY.MESSAGE,
+          selectedChatModel: 'chat-model',
+          selectedVisibilityType: 'private',
+        },
+      });
+      expect(response.status()).toBe(200);
+    });
+
+    test('Ada gets fallback response when stream fails before first text chunk', async ({
+      adaContext,
+    }) => {
+      const chatId = generateUUID();
+
+      const response = await adaContext.request.post('/api/chat', {
+        data: {
+          id: chatId,
+          message: TEST_PROMPTS.STREAM_ERROR_BEFORE_TEXT.MESSAGE,
+          selectedChatModel: 'chat-model',
+          selectedVisibilityType: 'private',
+        },
+      });
+      expect(response.status()).toBe(200);
+
+      const text = await response.text();
+      expect(text).toContain(
+        TEST_PROMPTS.STREAM_ERROR_BEFORE_TEXT.FALLBACK_TEXT,
+      );
+      expect(text).toContain('"type":"finish"');
+    });
+
+    test('Ada gets partial text without fallback when stream fails mid-stream', async ({
+      adaContext,
+    }) => {
+      const chatId = generateUUID();
+
+      const response = await adaContext.request.post('/api/chat', {
+        data: {
+          id: chatId,
+          message: TEST_PROMPTS.STREAM_ERROR_MID_STREAM.MESSAGE,
+          selectedChatModel: 'chat-model',
+          selectedVisibilityType: 'private',
+        },
+      });
+      expect(response.status()).toBe(200);
+
+      const text = await response.text();
+      // Partial text that was streamed before the error should be present
+      expect(text).toContain(
+        TEST_PROMPTS.STREAM_ERROR_MID_STREAM.PARTIAL_TEXT,
+      );
+      // No fallback text should appear — the stream error happened after text started
+      expect(text).not.toContain(
+        TEST_PROMPTS.STREAM_ERROR_BEFORE_TEXT.FALLBACK_TEXT,
+      );
+    });
+  });

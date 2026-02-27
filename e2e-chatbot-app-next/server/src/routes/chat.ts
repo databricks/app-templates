@@ -10,8 +10,8 @@ import {
   streamText,
   generateText,
   type LanguageModelUsage,
+  type UIMessageStreamWriter,
   pipeUIMessageStreamToResponse,
-  type InferUIMessageChunk,
 } from 'ai';
 import type { LanguageModelV3Usage } from '@ai-sdk/provider';
 
@@ -245,17 +245,20 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     const streamId = generateUUID();
 
     const model = await myProvider.languageModel(selectedChatModel);
+    const modelMessages = await convertToModelMessages(uiMessages);
+    const requestHeaders = {
+      [CONTEXT_HEADER_CONVERSATION_ID]: id,
+      [CONTEXT_HEADER_USER_ID]: session.user.email ?? session.user.id,
+    };
+
     const result = streamText({
       model,
-      messages: await convertToModelMessages(uiMessages),
+      messages: modelMessages,
       providerOptions: {
         databricks: { includeTrace: true },
       },
       includeRawChunks: true,
-      headers: {
-        [CONTEXT_HEADER_CONVERSATION_ID]: id,
-        [CONTEXT_HEADER_USER_ID]: session.user.email ?? session.user.id,
-      },
+      headers: requestHeaders,
       onChunk: ({ chunk }) => {
         if (chunk.type === 'raw') {
           const raw = chunk.rawValue as any;
@@ -273,14 +276,15 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           }
         }
       },
-      onFinish: (finishData) => {
-        finalUsage = finishData.usage;
+      onFinish: ({ usage }) => {
+        finalUsage = usage;
       },
     });
 
     /**
-     * We manually create the stream to have access to the stream writer.
-     * This allows us to inject custom stream parts like data-error.
+     * We manually read from toUIMessageStream instead of using writer.merge
+     * so the execute promise (and thus the outer stream) stays alive if we
+     * need to fall back to generateText after a streaming error.
      */
     const stream = createUIMessageStream({
       // Pass originalMessages so that continuation responses reuse the existing
@@ -296,17 +300,31 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
         // - start-step/finish-step: strips extra fields
         // - finish: strips rawFinishReason/totalUsage
         // - raw: dropped (trace_id captured via onChunk above)
-        const aiStream = result.toUIMessageStream<ChatMessage>();
-        const reader = aiStream.getReader();
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            writer.write(value as InferUIMessageChunk<ChatMessage>);
-          }
-        } finally {
-          reader.releaseLock();
+        const aiStream = result.toUIMessageStream<ChatMessage>({
+          sendReasoning: true,
+          sendSources: true,
+          sendFinish: false,
+          onError: (error) => {
+            const msg =
+              error instanceof Error ? error.message : String(error);
+            writer.onError?.(error);
+            return msg;
+          },
+        });
+
+        const { failed } = await drainStreamToWriter(aiStream, writer);
+
+        if (failed) {
+          console.log('Streaming failed, falling back to generateText...');
+          const fallbackResult = await runGenerateTextFallback(
+            { model, messages: modelMessages, headers: requestHeaders },
+            writer,
+          );
+
+          finalUsage = fallbackResult?.usage;
+          traceId = fallbackResult?.traceId ?? null;
         }
+
         // Write traceId so the client knows whether feedback is supported.
         writer.write({ type: 'data-traceId', data: traceId });
       },
@@ -575,4 +593,88 @@ function truncatePreserveWords(input: string, maxLength: number): string {
   }
 
   return slice.slice(0, lastSpaceIndex);
+}
+
+/**
+ * Reads all chunks from a UI message stream, forwarding non-error parts to the
+ * writer. Returns whether the stream encountered any errors.
+ */
+async function drainStreamToWriter(
+  uiStream: ReadableStream,
+  writer: UIMessageStreamWriter,
+): Promise<{ failed: boolean; errorText?: string }> {
+  const reader = uiStream.getReader();
+  let receivedTextChunk = false;
+
+  try {
+    for (
+      let chunk = await reader.read();
+      !chunk.done;
+      chunk = await reader.read()
+    ) {
+      if (chunk.value.type === 'error') {
+        if (!receivedTextChunk) {
+          console.error(
+            'Error before first text chunk, triggering fallback:',
+            chunk.value.errorText,
+          );
+          return { failed: true, errorText: chunk.value.errorText };
+        }
+        console.error(
+          'Mid-stream error, forwarding to client:',
+          chunk.value.errorText,
+        );
+        writer.write(chunk.value);
+      } else {
+        if (!receivedTextChunk && chunk.value.type.startsWith('text-')) {
+          receivedTextChunk = true;
+        }
+        writer.write(chunk.value);
+      }
+    }
+  } catch (readError) {
+    if (!receivedTextChunk) {
+      console.error('Stream read error before first text chunk:', readError);
+      return { failed: true };
+    }
+    console.error('Mid-stream read error:', readError);
+  }
+
+  return { failed: false };
+}
+
+/**
+ * Falls back to a non-streaming generateText call and writes the result as
+ * stream parts. Returns the usage on success, or undefined if the fallback
+ * itself fails.
+ */
+async function runGenerateTextFallback(
+  params: Parameters<typeof generateText>[0],
+  writer: UIMessageStreamWriter,
+): Promise<{ usage: LanguageModelUsage, traceId?: string } | undefined> {
+  try {
+    const fallback = await generateText(params);
+
+    const traceId = (fallback?.response?.body as {
+      metadata: {
+        trace_id: string;
+      };
+    })?.metadata?.trace_id;
+
+    const partId = generateUUID();
+    writer.write({ type: 'text-start', id: partId });
+    writer.write({ type: 'text-delta', id: partId, delta: fallback.text });
+    writer.write({ type: 'text-end', id: partId });
+    writer.write({ type: 'finish', finishReason: fallback.finishReason });
+
+    return { usage: fallback.usage, traceId };
+  } catch (fallbackError) {
+    console.error('[runGenerateTextFallback] generateText fallback also failed:', fallbackError);
+    const errorMessage =
+      fallbackError instanceof Error
+        ? fallbackError.message
+        : String(fallbackError);
+    writer.write({ type: 'data-error', data: errorMessage })
+    return undefined;
+  }
 }

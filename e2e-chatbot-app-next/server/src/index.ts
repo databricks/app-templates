@@ -12,6 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import { chatRouter } from './routes/chat';
+import { storeMessageMeta } from './lib/message-meta-store';
 import { historyRouter } from './routes/history';
 import { sessionRouter } from './routes/session';
 import { messagesRouter } from './routes/messages';
@@ -151,6 +152,18 @@ async function startServer() {
       // Test-only endpoint to reset MLflow assessment store
       app.post('/api/test/reset-mlflow-store', (_req, res) => {
         resetMlflowAssessmentStore();
+        res.json({ success: true });
+      });
+
+      // Test-only endpoint to seed the message-meta store directly.
+      // Lets tests simulate a message from an endpoint that doesn't return traces.
+      app.post('/api/test/store-message-meta', (req, res) => {
+        const { messageId, chatId, traceId } = req.body as {
+          messageId: string;
+          chatId: string;
+          traceId: string | null;
+        };
+        storeMessageMeta(messageId, chatId, traceId ?? null);
         res.json({ success: true });
       });
 

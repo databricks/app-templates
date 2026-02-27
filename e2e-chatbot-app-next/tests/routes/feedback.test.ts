@@ -42,6 +42,27 @@ test.describe('/api/feedback', () => {
     // (depends on endpoint type; present when using the Responses API mock)
   });
 
+  test('POST /api/feedback succeeds without mlflowAssessmentId when message has no trace ID', async ({
+    adaContext,
+  }) => {
+    // Simulates a foundation model endpoint (e.g. databricks-claude-sonnet-4-5) that
+    // uses the FMAPI chat completions format, which does not embed trace IDs in the
+    // response stream. The server should skip MLflow and return success: true.
+    const messageId = generateUUID();
+    await adaContext.request.post('/api/test/store-message-meta', {
+      data: { messageId, chatId: generateUUID(), traceId: null },
+    });
+
+    const feedbackResponse = await adaContext.request.post('/api/feedback', {
+      data: { messageId, feedbackType: 'thumbs_up' },
+    });
+    expect(feedbackResponse.status()).toBe(200);
+    const body = await feedbackResponse.json();
+    expect(body.success).toBe(true);
+    // No MLflow submission when there's no trace ID
+    expect(body.mlflowAssessmentId).toBeUndefined();
+  });
+
   test.describe('deduplication', () => {
     test.beforeEach(async ({ adaContext }) => {
       // The mock trace ID is fixed ('mock-trace-id-from-databricks'), so reset

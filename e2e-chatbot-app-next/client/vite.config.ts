@@ -4,10 +4,10 @@ import path from "node:path";
 import type { ProxyOptions } from "vite";
 
 export function simulateNetworkError(
-  timeout: number,
+  _timeout: number,
 ): ProxyOptions["configure"] {
   return (proxy, _options) => {
-    proxy.on("proxyReq", (proxyReq, req, res) => {
+    proxy.on("proxyReq", (proxyReq, _req, res) => {
       setTimeout(() => {
         // Destroy the socket connection to the browser
         res.socket?.destroy(new Error("simulated network error"));

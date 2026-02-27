@@ -16,6 +16,7 @@ configRouter.get('/', (_req: Request, res: Response) => {
   res.json({
     features: {
       chatHistory: isDatabaseAvailable(),
+      feedback: !!process.env.MLFLOW_EXPERIMENT_ID,
     },
   });
 });

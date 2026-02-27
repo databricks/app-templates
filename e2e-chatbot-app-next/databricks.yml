@@ -44,6 +44,12 @@ resources:
         #     database_name: databricks_postgres
         #     instance_name: ${resources.database_instances.chatbot_lakebase.name}
         #     permission: CAN_CONNECT_AND_CREATE
+        # TODO (optional): Uncomment the experiment resource below to enable the feedback widget
+        # - name: experiment
+        #   description: "MLflow experiment for collecting user feedback"
+        #   mlflow_experiment:
+        #     name: "your-experiment-name"
+        #     permission: CAN_READ
 
 targets:
   dev:

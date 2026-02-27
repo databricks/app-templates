@@ -4,7 +4,7 @@ import { useWindowSize } from 'usehooks-ts';
 import { SidebarToggle } from '@/components/sidebar-toggle';
 import { Button } from '@/components/ui/button';
 import { useSidebar } from './ui/sidebar';
-import { PlusIcon, CloudOffIcon } from 'lucide-react';
+import { PlusIcon, CloudOffIcon, MessageSquareOff } from 'lucide-react';
 import { useConfig } from '@/hooks/use-config';
 import {
   Tooltip,
@@ -13,10 +13,13 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
+const DOCS_URL =
+  'https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app';
+
 export function ChatHeader() {
   const navigate = useNavigate();
   const { open } = useSidebar();
-  const { chatHistoryEnabled } = useConfig();
+  const { chatHistoryEnabled, feedbackEnabled } = useConfig();
 
   const { width: windowWidth } = useWindowSize();
 
@@ -37,21 +40,48 @@ export function ChatHeader() {
         </Button>
       )}
 
-      {!chatHistoryEnabled && (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="ml-auto flex items-center gap-1.5 rounded-full bg-muted px-2 py-1 text-muted-foreground text-xs">
-                <CloudOffIcon className="h-3 w-3" />
-                <span className="hidden sm:inline">Ephemeral</span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Chat history disabled - conversations are not saved</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      )}
+      <div className="ml-auto flex items-center gap-2">
+        {!chatHistoryEnabled && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <a
+                  href={DOCS_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 rounded-full bg-muted px-2 py-1 text-muted-foreground text-xs hover:text-foreground"
+                >
+                  <CloudOffIcon className="h-3 w-3" />
+                  <span className="hidden sm:inline">Ephemeral</span>
+                </a>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Chat history disabled — conversations are not saved. Click to learn more.</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
+        {!feedbackEnabled && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <a
+                  href={DOCS_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 rounded-full bg-muted px-2 py-1 text-muted-foreground text-xs hover:text-foreground"
+                >
+                  <MessageSquareOff className="h-3 w-3" />
+                  <span className="hidden sm:inline">Feedback disabled</span>
+                </a>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Feedback submission disabled. Click to learn more.</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
+      </div>
     </header>
   );
 }

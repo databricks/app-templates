@@ -4,6 +4,6 @@ runtime: nodejs20
 env:
   - name: DATABRICKS_SERVING_ENDPOINT
     valueFrom: serving-endpoint
-  # Uncomment to enable MLflow feedback logging
+  # FEEDBACK RESOURCE: Uncomment to enable the feedback UI (requires experiment resource in databricks.yml)
   # - name: MLFLOW_EXPERIMENT_ID
-  #   value: "your-experiment-id"
+  #   valueFrom: experiment

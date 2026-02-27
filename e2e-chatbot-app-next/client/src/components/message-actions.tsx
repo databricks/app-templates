@@ -83,7 +83,7 @@ function PureMessageActions({
         setFeedback(feedbackType);
       } catch (error) {
         console.error('Error submitting feedback:', error);
-        toast.error('Failed to submit feedback. Please try again.');
+        toast.error('Failed to submit feedback. Please try again, or contact the app developer if the error persists.');
       } finally {
         isSubmittingRef.current = false;
       }

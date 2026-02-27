@@ -46,11 +46,11 @@ resources:
         #     permission: CAN_CONNECT_AND_CREATE
         # TODO (optional): Uncomment the experiment resource below to enable the feedback widget.
         # Run ./scripts/get-experiment-id.sh --endpoint <your-endpoint-name> to find the experiment ID.
-        - name: experiment
-          description: "MLflow experiment for collecting user feedback"
-          experiment:
-            experiment_id: "2610606164207251"
-            permission: CAN_READ
+        # - name: experiment
+        #   description: "MLflow experiment for collecting user feedback"
+        #   experiment:
+        #     experiment_id: "your-experiment-id"
+        #     permission: CAN_READ
 
 targets:
   dev:

@@ -54,11 +54,14 @@ test.describe
         const capturedRequests =
           (await capturedResponse.json()) as CapturedRequest[];
 
-        // Find the request to the serving endpoint (responses endpoint)
+        // Find the request for this specific chat (filter by chatId to avoid
+        // picking up title-generation requests from previous tests that may
+        // arrive after the beforeEach reset due to async fire-and-forget)
         const chatRequest = capturedRequests.find(
           (req) =>
-            req.url.includes('/chat/completions') ||
-            req.url.includes('/responses'),
+            (req.url.includes('/chat/completions') ||
+              req.url.includes('/responses')) &&
+            req.context?.conversation_id === chatId,
         );
 
         expect(chatRequest).toBeDefined();

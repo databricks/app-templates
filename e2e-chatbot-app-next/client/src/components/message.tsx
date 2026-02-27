@@ -25,7 +25,7 @@ import { cn, sanitizeText } from '@/lib/utils';
 import { MessageEditor } from './message-editor';
 import { MessageReasoning } from './message-reasoning';
 import type { UseChatHelpers } from '@ai-sdk/react';
-import type { ChatMessage } from '@chat-template/core';
+import type { ChatMessage, Feedback } from '@chat-template/core';
 import { useDataStream } from './data-stream-provider';
 import {
   createMessagePartSegments,
@@ -49,8 +49,8 @@ const PurePreviewMessage = ({
   regenerate,
   isReadonly,
   requiresScrollPadding,
+  initialFeedback,
 }: {
-  chatId: string;
   message: ChatMessage;
   allMessages: ChatMessage[];
   isLoading: boolean;
@@ -60,6 +60,7 @@ const PurePreviewMessage = ({
   regenerate: UseChatHelpers<ChatMessage>['regenerate'];
   isReadonly: boolean;
   requiresScrollPadding: boolean;
+  initialFeedback?: Feedback;
 }) => {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [showErrors, setShowErrors] = useState(false);
@@ -377,6 +378,7 @@ const PurePreviewMessage = ({
               errorCount={errorParts.length}
               showErrors={showErrors}
               onToggleErrors={() => setShowErrors(!showErrors)}
+              initialFeedback={initialFeedback}
             />
           )}
 
@@ -400,12 +402,21 @@ export const PreviewMessage = memo(
   PurePreviewMessage,
   (prevProps, nextProps) => {
     if (prevProps.isLoading !== nextProps.isLoading) return false;
+    // While streaming, re-render whenever the AI SDK produces a new message
+    // object (each throttled update). We use reference equality rather than
+    // deep-equal on parts because fast-deep-equal short-circuits on identical
+    // references — and the SDK may mutate parts in place during streaming.
+    if (nextProps.isLoading && prevProps.message !== nextProps.message)
+      return false;
+
     if (prevProps.message.id !== nextProps.message.id) return false;
     if (prevProps.requiresScrollPadding !== nextProps.requiresScrollPadding)
       return false;
     if (!equal(prevProps.message.parts, nextProps.message.parts)) return false;
+    if (prevProps.initialFeedback?.feedbackType !== nextProps.initialFeedback?.feedbackType)
+      return false;
 
-    return false;
+    return true; // Props are equal, skip re-render
   },
 );
 

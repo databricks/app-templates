@@ -40,11 +40,17 @@ export class ChatPage {
   }
 
   async isGenerationComplete() {
-    const response = await this.page.waitForResponse((response) =>
-      response.url().includes('/api/chat'),
-    );
-
-    await response.finished();
+    // Wait for the stop button to appear (generation started), then disappear (done).
+    // Using DOM-based detection avoids the race condition where waitForResponse can
+    // miss a response that arrives before the listener is registered.
+    await this.stopButton
+      .waitFor({ state: 'visible', timeout: 1000 })
+      .catch(() => {
+        // Stop button never appeared — generation may have completed before we
+        // checked (very fast mock), or we arrived after it already disappeared.
+      });
+    // Wait for the stop button to be hidden (generation finished).
+    await expect(this.stopButton).toBeHidden({ timeout: 60000 });
   }
 
   async hasChatIdInUrl() {

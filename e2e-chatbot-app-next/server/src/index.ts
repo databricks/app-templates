@@ -12,10 +12,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import { chatRouter } from './routes/chat';
+import { storeMessageMeta } from './lib/message-meta-store';
 import { historyRouter } from './routes/history';
 import { sessionRouter } from './routes/session';
 import { messagesRouter } from './routes/messages';
 import { configRouter } from './routes/config';
+import { feedbackRouter } from './routes/feedback';
 import { ChatSDKError } from '@chat-template/core/errors';
 
 // ESM-compatible __dirname
@@ -54,6 +56,7 @@ app.use('/api/history', historyRouter);
 app.use('/api/session', sessionRouter);
 app.use('/api/messages', messagesRouter);
 app.use('/api/config', configRouter);
+app.use('/api/feedback', feedbackRouter);
 
 // Agent backend proxy (optional)
 // If API_PROXY is set, proxy /invocations requests to the agent backend
@@ -167,6 +170,7 @@ async function startServer() {
         getCapturedRequests,
         resetCapturedRequests,
         getLastCapturedRequest,
+        resetMlflowAssessmentStore,
       } = await import(handlersPath);
 
       // Test-only endpoint to get captured requests (for context injection testing)
@@ -190,6 +194,12 @@ async function startServer() {
         res.json({ success: true });
       });
 
+      // Test-only endpoint to reset MLflow assessment store
+      app.post('/api/test/reset-mlflow-store', (_req, res) => {
+        resetMlflowAssessmentStore();
+        res.json({ success: true });
+      });
+
       console.log(
         '[Test Mode] Test endpoints for context injection registered',
       );
@@ -200,6 +210,18 @@ async function startServer() {
         error instanceof Error ? error.stack : error,
       );
     }
+
+    // Registered outside the MSW try/catch so it's available even if MSW setup fails.
+    // Lets tests simulate a message from an endpoint that doesn't return traces.
+    app.post('/api/test/store-message-meta', (req, res) => {
+      const { messageId, chatId, traceId } = req.body as {
+        messageId: string;
+        chatId: string;
+        traceId: string | null;
+      };
+      storeMessageMeta(messageId, chatId, traceId ?? null);
+      res.json({ success: true });
+    });
   }
 
   app.listen(PORT, () => {

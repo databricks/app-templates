@@ -11,6 +11,7 @@ import {
   generateText,
   type LanguageModelUsage,
   pipeUIMessageStreamToResponse,
+  type InferUIMessageChunk,
 } from 'ai';
 import type { LanguageModelV3Usage } from '@ai-sdk/provider';
 
@@ -60,6 +61,7 @@ import {
   CONTEXT_HEADER_USER_ID,
 } from '@chat-template/core';
 import { ChatSDKError } from '@chat-template/core/errors';
+import { storeMessageMeta } from '../lib/message-meta-store';
 
 export const chatRouter: RouterType = Router();
 
@@ -78,8 +80,6 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
   if (!dbAvailable) {
     console.log('[Chat] Running in ephemeral mode - no persistence');
   }
-
-  console.log(`CHAT POST REQUEST ${Date.now()}`);
 
   let requestBody: PostRequestBody;
 
@@ -186,6 +186,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
             parts: message.parts,
             attachments: [],
             createdAt: new Date(),
+            traceId: null,
           },
         ],
       });
@@ -210,6 +211,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
               createdAt: m.metadata?.createdAt
                 ? new Date(m.metadata.createdAt)
                 : new Date(),
+              traceId: null,
             })),
           });
 
@@ -239,18 +241,40 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     streamCache.clearActiveStream(id);
 
     let finalUsage: LanguageModelUsage | undefined;
+    let traceId: string | null = null;
     const streamId = generateUUID();
 
     const model = await myProvider.languageModel(selectedChatModel);
     const result = streamText({
       model,
       messages: await convertToModelMessages(uiMessages),
+      providerOptions: {
+        databricks: { includeTrace: true },
+      },
+      includeRawChunks: true,
       headers: {
         [CONTEXT_HEADER_CONVERSATION_ID]: id,
         [CONTEXT_HEADER_USER_ID]: session.user.email ?? session.user.id,
       },
-      onFinish: ({ usage }) => {
-        finalUsage = usage;
+      onChunk: ({ chunk }) => {
+        if (chunk.type === 'raw') {
+          const raw = chunk.rawValue as any;
+          // Extract trace in Databricks serving endpoint output format, if present
+          if (raw?.type === 'response.output_item.done') {
+            const traceIdFromChunk =
+              raw?.databricks_output?.trace?.info?.trace_id;
+            if (typeof traceIdFromChunk === 'string') {
+              traceId = traceIdFromChunk;
+            }
+          }
+          // Extract trace from MLflow AgentServer output format, if present
+          if (!traceId && typeof raw?.trace_id === 'string') {
+            traceId = raw.trace_id;
+          }
+        }
+      },
+      onFinish: (finishData) => {
+        finalUsage = finishData.usage;
       },
     });
 
@@ -259,31 +283,37 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
      * This allows us to inject custom stream parts like data-error.
      */
     const stream = createUIMessageStream({
+      // Pass originalMessages so that continuation responses reuse the existing
+      // assistant message ID. Without this, handleUIMessageStreamFinish generates
+      // a fresh ID, causing the client to push a second assistant message instead
+      // of replacing the existing one.
+      originalMessages: uiMessages,
       execute: async ({ writer }) => {
-        writer.merge(
-          result.toUIMessageStream({
-            originalMessages: uiMessages,
-            generateMessageId: generateUUID,
-            sendReasoning: true,
-            sendSources: true,
-            onError: (error) => {
-              console.error('Stream error:', error);
-
-              const errorMessage =
-                error instanceof Error ? error.message : JSON.stringify(error);
-
-              writer.write({ type: 'data-error', data: errorMessage });
-
-              return errorMessage;
-            },
-          }),
-        );
+        // Manually drain the AI stream so we can append the traceId data part
+        // after all model chunks are processed (traceId is captured via onChunk).
+        // result.toUIMessageStream() converts TextStreamPart → UIMessageChunk:
+        // - text-delta: maps TextStreamPart.text → UIMessageChunk.delta
+        // - start-step/finish-step: strips extra fields
+        // - finish: strips rawFinishReason/totalUsage
+        // - raw: dropped (trace_id captured via onChunk above)
+        const aiStream = result.toUIMessageStream<ChatMessage>();
+        const reader = aiStream.getReader();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            writer.write(value as InferUIMessageChunk<ChatMessage>);
+          }
+        } finally {
+          reader.releaseLock();
+        }
+        // Write traceId so the client knows whether feedback is supported.
+        writer.write({ type: 'data-traceId', data: traceId });
       },
       onFinish: async ({ responseMessage }) => {
-        console.log(
-          'Finished message stream! Saving message...',
-          JSON.stringify(responseMessage, null, 2),
-        );
+        // Store in-memory for ephemeral mode (also useful when DB is available)
+        storeMessageMeta(responseMessage.id, id, traceId);
+
         await saveMessages({
           messages: [
             {
@@ -293,6 +323,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
               createdAt: new Date(),
               attachments: [],
               chatId: id,
+              traceId, // Store trace ID for feedback
             },
           ],
         });
@@ -324,12 +355,17 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
+    console.error('[Chat] Caught error in chat API:', {
+      errorType: error?.constructor?.name,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      error,
+    });
+
     if (error instanceof ChatSDKError) {
       const response = error.toResponse();
       return res.status(response.status).json(response.json);
     }
-
-    console.error('Unhandled error in chat API:', error);
 
     const chatError = new ChatSDKError('offline:chat');
     const response = chatError.toResponse();

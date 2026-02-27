@@ -13,7 +13,12 @@ import {
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
-import { chat, message, type DBMessage, type Chat } from './schema';
+import {
+  chat,
+  message,
+  type DBMessage,
+  type Chat,
+} from './schema';
 import type { VisibilityType } from '@chat-template/utils';
 import { ChatSDKError } from '@chat-template/core/errors';
 import type { LanguageModelV3Usage } from '@ai-sdk/provider';
@@ -285,6 +290,7 @@ export async function saveMessages({
         set: {
           parts: sql`excluded.parts`,
           attachments: sql`excluded.attachments`,
+          traceId: sql`excluded."traceId"`,
         },
       });
   } catch (_error) {
@@ -307,6 +313,7 @@ export async function getMessagesByChatId({ id }: { id: string }) {
       .where(eq(message.chatId, id))
       .orderBy(asc(message.createdAt));
   } catch (_error) {
+    console.error('[getMessagesByChatId] Database error:', _error);
     throw new ChatSDKError(
       'bad_request:database',
       'Failed to get messages by chat id',
@@ -450,3 +457,5 @@ export async function updateChatLastContextById({
     return;
   }
 }
+
+

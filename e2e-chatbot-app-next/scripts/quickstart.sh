@@ -27,6 +27,17 @@ get_current_app_name() {
     fi
 }
 
+# Helper function to check if feedback/experiment is already configured in databricks.yml
+is_feedback_enabled() {
+    if [ -f "databricks.yml" ]; then
+        # Check if the experiment resource is uncommented (line starts with spaces, not # )
+        if grep -q "^        - name: experiment$" databricks.yml; then
+            return 0  # Feedback is enabled
+        fi
+    fi
+    return 1  # Feedback is not enabled
+}
+
 # Helper function to check if database is enabled in databricks.yml
 is_database_enabled() {
     if [ -f "databricks.yml" ]; then
@@ -410,7 +421,78 @@ else
 fi
 echo "✓ Serving endpoint configured"
 
-# 2. App and Bundle Name Configuration (within Section 4)
+# 2. Feedback Widget Configuration (within Section 4)
+echo
+echo "Feedback Widget Configuration"
+echo "-----------------------------"
+echo "The feedback widget lets users submit thumbs up/down on AI responses."
+echo "It requires your serving endpoint to have an associated MLflow experiment."
+echo
+
+if is_feedback_enabled; then
+    CURRENT_EXP_ID=$(grep "^        experiment_id:" databricks.yml 2>/dev/null | head -1 | awk '{print $2}' | tr -d '"' || true)
+    echo "✓ Feedback widget already configured (experiment_id: $CURRENT_EXP_ID)"
+else
+    # Extract the numeric experiment ID from the endpoint's MONITOR_EXPERIMENT_ID tag
+    EXPERIMENT_ID=""
+    if [ $ENDPOINT_EXISTS -eq 0 ]; then
+        EXPERIMENT_ID=$(echo "$ENDPOINT_CHECK" \
+            | jq -r '(.tags // []) | map(select(.key == "MONITOR_EXPERIMENT_ID")) | .[0].value // empty' \
+            2>/dev/null || true)
+    fi
+
+    if [ -n "$EXPERIMENT_ID" ]; then
+        echo "✓ Found MLflow experiment (ID: $EXPERIMENT_ID) linked to '$SERVING_ENDPOINT'."
+        echo
+
+        if prompt_yes_no "Do you want to enable the feedback widget?" "Y"; then
+            # Update .env
+            if grep -q "MLFLOW_EXPERIMENT_ID=" .env; then
+                if [[ "$OSTYPE" == "darwin"* ]]; then
+                    sed -i '' "s|.*MLFLOW_EXPERIMENT_ID=.*|MLFLOW_EXPERIMENT_ID=$EXPERIMENT_ID|" .env
+                else
+                    sed -i "s|.*MLFLOW_EXPERIMENT_ID=.*|MLFLOW_EXPERIMENT_ID=$EXPERIMENT_ID|" .env
+                fi
+            else
+                echo "MLFLOW_EXPERIMENT_ID=$EXPERIMENT_ID" >> .env
+            fi
+            echo "✓ MLFLOW_EXPERIMENT_ID set in .env"
+
+            # Uncomment and configure experiment resource in databricks.yml
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                sed -i '' '/# - name: experiment$/s/^        # /        /' databricks.yml
+                sed -i '' '/#   description: "MLflow experiment/s/^        # /        /' databricks.yml
+                sed -i '' '/#   experiment:$/s/^        # /        /' databricks.yml
+                sed -i '' '/#     experiment_id:/s/^        # /        /' databricks.yml
+                sed -i '' '/#     permission: CAN_READ/s/^        # /        /' databricks.yml
+                sed -i '' "s/experiment_id: \"your-experiment-id\"/experiment_id: \"$EXPERIMENT_ID\"/" databricks.yml
+                # Uncomment MLFLOW_EXPERIMENT_ID in app.yaml
+                sed -i '' '/# - name: MLFLOW_EXPERIMENT_ID/s/^  # /  /' app.yaml
+                sed -i '' '/#   valueFrom: experiment/s/^  # /  /' app.yaml
+            else
+                sed -i '/# - name: experiment$/s/^        # /        /' databricks.yml
+                sed -i '/#   description: "MLflow experiment/s/^        # /        /' databricks.yml
+                sed -i '/#   experiment:$/s/^        # /        /' databricks.yml
+                sed -i '/#     experiment_id:/s/^        # /        /' databricks.yml
+                sed -i '/#     permission: CAN_READ/s/^        # /        /' databricks.yml
+                sed -i "s/experiment_id: \"your-experiment-id\"/experiment_id: \"$EXPERIMENT_ID\"/" databricks.yml
+                # Uncomment MLFLOW_EXPERIMENT_ID in app.yaml
+                sed -i '/# - name: MLFLOW_EXPERIMENT_ID/s/^  # /  /' app.yaml
+                sed -i '/#   valueFrom: experiment/s/^  # /  /' app.yaml
+            fi
+            echo "✓ Feedback widget enabled in databricks.yml and app.yaml"
+        else
+            echo "Skipping feedback setup."
+            echo "To enable it later, run: ./scripts/get-experiment-id.sh --endpoint $SERVING_ENDPOINT"
+        fi
+    else
+        echo "ℹ️  No MLflow experiment linked to endpoint '$SERVING_ENDPOINT'."
+        echo "   Feedback widget is only available for custom agents and Agent Bricks endpoints."
+        echo "   To enable it later, run: ./scripts/get-experiment-id.sh --endpoint <endpoint-name>"
+    fi
+fi
+
+# 3. App and Bundle Name Configuration (within Section 4)
 echo
 echo "App and Bundle Name Configuration"
 echo "-----------------------------------"
@@ -563,7 +645,7 @@ else
     FINAL_APP_NAME="$DEFAULT_APP_NAME"
 fi
 
-# 3. Database Setup (within Section 4)
+# 4. Database Setup (within Section 4)
 echo
 echo "Database Configuration"
 echo "----------------------"

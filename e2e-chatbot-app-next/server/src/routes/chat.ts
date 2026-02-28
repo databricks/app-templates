@@ -323,19 +323,23 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
         // Store in-memory for ephemeral mode (also useful when DB is available)
         storeMessageMeta(responseMessage.id, id, traceId);
 
-        await saveMessages({
-          messages: [
-            {
-              id: responseMessage.id,
-              role: responseMessage.role,
-              parts: responseMessage.parts,
-              createdAt: new Date(),
-              attachments: [],
-              chatId: id,
-              traceId, // Store trace ID for feedback
-            },
-          ],
-        });
+        try {
+          await saveMessages({
+            messages: [
+              {
+                id: responseMessage.id,
+                role: responseMessage.role,
+                parts: responseMessage.parts,
+                createdAt: new Date(),
+                attachments: [],
+                chatId: id,
+                traceId, // Store trace ID for feedback
+              },
+            ],
+          });
+        } catch (err) {
+          console.error('[onFinish] Failed to save assistant message:', err);
+        }
 
         if (finalUsage) {
           try {

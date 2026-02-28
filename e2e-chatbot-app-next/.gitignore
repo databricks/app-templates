@@ -49,3 +49,6 @@ yarn-error.log*
 /playwright/*
 tsconfig.tsbuildinfo
 .idea
+
+# Databricks bundle state - exclude to prevent stale state when copying the project
+.databricks

@@ -294,6 +294,7 @@ export async function saveMessages({
         },
       });
   } catch (_error) {
+    console.error('[saveMessages] DB error:', _error);
     throw new ChatSDKError('bad_request:database', 'Failed to save messages');
   }
 }

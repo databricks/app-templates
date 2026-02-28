@@ -8,7 +8,7 @@ node_modules
 .claude/*
 !.claude/skills/
 .claude/skills/*
-!.claude/skills/enable-feedback/
+!.claude/skills/quickstart/
 
 # testing
 coverage

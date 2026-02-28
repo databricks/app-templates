@@ -288,6 +288,9 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       // a fresh ID, causing the client to push a second assistant message instead
       // of replacing the existing one.
       originalMessages: uiMessages,
+      // The DB Message.id column is typed as uuid, so we must generate UUIDs
+      // rather than the AI SDK's default short-id format (e.g. "Xt8nZiQRj1fS4yiU").
+      generateId: generateUUID,
       execute: async ({ writer }) => {
         // Manually drain the AI stream so we can append the traceId data part
         // after all model chunks are processed (traceId is captured via onChunk).

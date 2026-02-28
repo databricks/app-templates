@@ -52,7 +52,7 @@ MLFLOW_EXPERIMENT_ID=<experiment-id-from-step-1>
           description: "MLflow experiment for collecting user feedback"
           experiment:
             experiment_id: "<experiment-id-from-step-1>"
-            permission: CAN_READ
+            permission: CAN_EDIT
 ```
 
 **4. Configure `app.yaml`** — uncomment the env var:
@@ -74,5 +74,5 @@ databricks bundle run databricks_chatbot
 | Feedback widget not showing after setup | Restart dev server; env vars are read at startup |
 | `get-experiment-id.sh` fails with auth error | Run `databricks auth login` first |
 | No experiment found for endpoint | Only custom agents and Agent Bricks endpoints have linked experiments; Foundation Model endpoints do not support feedback |
-| Feedback submission returns 403 | App service principal is missing `CAN_READ` on the experiment — check `permission: CAN_READ` in `databricks.yml` |
+| Feedback submission returns 403 | App service principal is missing `CAN_EDIT` on the experiment — check `permission: CAN_EDIT` in `databricks.yml` |
 | "Instance name is not unique" on deploy | Run `./scripts/cleanup-database.sh` to remove the old database instance |

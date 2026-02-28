@@ -294,9 +294,9 @@ The script prints the experiment name to stdout — copy it for Step 2.
 ```yaml
 - name: experiment
   description: "MLflow experiment for collecting user feedback"
-  mlflow_experiment:
-    name: "/Users/your-email@company.com/your-experiment-name"
-    permission: CAN_READ
+  experiment:
+    experiment_id: "your-experiment-id"
+    permission: CAN_EDIT
 ```
 
 **In `app.yaml`**, uncomment the `MLFLOW_EXPERIMENT_ID` environment variable:

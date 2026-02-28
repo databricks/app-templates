@@ -464,7 +464,7 @@ else
                 sed -i '' '/#   description: "MLflow experiment/s/^        # /        /' databricks.yml
                 sed -i '' '/#   experiment:$/s/^        # /        /' databricks.yml
                 sed -i '' '/#     experiment_id:/s/^        # /        /' databricks.yml
-                sed -i '' '/#     permission: CAN_READ/s/^        # /        /' databricks.yml
+                sed -i '' '/#     permission: CAN_EDIT/s/^        # /        /' databricks.yml
                 sed -i '' "s/experiment_id: \"your-experiment-id\"/experiment_id: \"$EXPERIMENT_ID\"/" databricks.yml
                 # Uncomment MLFLOW_EXPERIMENT_ID in app.yaml
                 sed -i '' '/# - name: MLFLOW_EXPERIMENT_ID/s/^  # /  /' app.yaml
@@ -474,7 +474,7 @@ else
                 sed -i '/#   description: "MLflow experiment/s/^        # /        /' databricks.yml
                 sed -i '/#   experiment:$/s/^        # /        /' databricks.yml
                 sed -i '/#     experiment_id:/s/^        # /        /' databricks.yml
-                sed -i '/#     permission: CAN_READ/s/^        # /        /' databricks.yml
+                sed -i '/#     permission: CAN_EDIT/s/^        # /        /' databricks.yml
                 sed -i "s/experiment_id: \"your-experiment-id\"/experiment_id: \"$EXPERIMENT_ID\"/" databricks.yml
                 # Uncomment MLFLOW_EXPERIMENT_ID in app.yaml
                 sed -i '/# - name: MLFLOW_EXPERIMENT_ID/s/^  # /  /' app.yaml

@@ -50,7 +50,7 @@ resources:
         #   description: "MLflow experiment for collecting user feedback"
         #   experiment:
         #     experiment_id: "your-experiment-id"
-        #     permission: CAN_READ
+        #     permission: CAN_EDIT
 
 targets:
   dev:

@@ -38,7 +38,7 @@ And configure the experiment resource in databricks.yml:
   - name: experiment
     mlflow_experiment:
       name: "<experiment-name>"
-      permission: CAN_READ
+      permission: CAN_EDIT
 EOF
   exit 1
 }

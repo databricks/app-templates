@@ -6,7 +6,9 @@ import {
   jsonb,
   uuid,
   text,
+  boolean,
   pgSchema,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
 import type { LanguageModelV3Usage } from '@ai-sdk/provider';
 import type { User as SharedUser } from '@chat-template/utils';
@@ -53,4 +55,16 @@ export const message = createTable('Message', {
 
 export type DBMessage = InferSelectModel<typeof message>;
 
+export const vote = createTable(
+  'Vote',
+  {
+    chatId: uuid('chatId').notNull().references(() => chat.id),
+    messageId: uuid('messageId').notNull().references(() => message.id),
+    isUpvoted: boolean('isUpvoted').notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.chatId, table.messageId] }),
+  }),
+);
 
+export type Vote = InferSelectModel<typeof vote>;

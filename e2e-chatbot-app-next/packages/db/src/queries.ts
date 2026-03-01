@@ -16,8 +16,10 @@ import postgres from 'postgres';
 import {
   chat,
   message,
+  vote,
   type DBMessage,
   type Chat,
+  type Vote,
 } from './schema';
 import type { VisibilityType } from '@chat-template/utils';
 import { ChatSDKError } from '@chat-template/core/errors';
@@ -459,4 +461,34 @@ export async function updateChatLastContextById({
   }
 }
 
+export async function voteMessage({
+  chatId,
+  messageId,
+  type,
+}: {
+  chatId: string;
+  messageId: string;
+  type: 'up' | 'down';
+}) {
+  if (!isDatabaseAvailable()) {
+    return;
+  }
 
+  const db = await ensureDb();
+  await db
+    .insert(vote)
+    .values({ chatId, messageId, isUpvoted: type === 'up' })
+    .onConflictDoUpdate({
+      target: [vote.chatId, vote.messageId],
+      set: { isUpvoted: type === 'up' },
+    });
+}
+
+export async function getVotesByChatId({ id }: { id: string }): Promise<Vote[]> {
+  if (!isDatabaseAvailable()) {
+    return [];
+  }
+
+  const db = await ensureDb();
+  return db.select().from(vote).where(eq(vote.chatId, id));
+}

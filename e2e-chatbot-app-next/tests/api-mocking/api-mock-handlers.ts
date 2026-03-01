@@ -308,16 +308,24 @@ export const handlers = [
     );
   }),
 
-  // Mock MLflow GET assessments endpoint.
-  // Returns stored assessments for the given trace ID.
-  // URL: GET /api/3.0/mlflow/traces/{trace_id}/assessments
-  http.get(/\/api\/3\.0\/mlflow\/traces\/([^/]+)\/assessments$/, (req) => {
+  // Mock MLflow GET trace endpoint.
+  // Returns a minimal trace object with assessments embedded in trace_info.assessments.
+  // The server reads assessments from the trace object rather than a separate assessments
+  // endpoint, since the standalone GET .../assessments route is not available in all workspaces.
+  // URL: GET /api/3.0/mlflow/traces/{trace_id}
+  http.get(/\/api\/3\.0\/mlflow\/traces\/([^/]+)$/, (req) => {
     const url = req.request.url;
-    const traceIdMatch = url.match(/\/traces\/([^/]+)\/assessments/);
+    const traceIdMatch = url.match(/\/traces\/([^/]+)$/);
     const traceId = traceIdMatch?.[1] ?? 'unknown';
+    const assessments = mlflowAssessmentStore[traceId] ?? [];
 
     return HttpResponse.json({
-      assessments: mlflowAssessmentStore[traceId] ?? [],
+      trace: {
+        trace_info: {
+          trace_id: traceId,
+          assessments,
+        },
+      },
     });
   }),
 

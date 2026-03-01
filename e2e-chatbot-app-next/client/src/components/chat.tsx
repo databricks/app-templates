@@ -34,6 +34,7 @@ export function Chat({
   isReadonly,
   initialLastContext,
   feedback = {},
+  onStreamComplete,
 }: {
   id: string;
   initialMessages: ChatMessage[];
@@ -43,6 +44,8 @@ export function Chat({
   session: ClientSession;
   initialLastContext?: LanguageModelUsage;
   feedback?: FeedbackMap;
+  /** Called when a stream finishes normally (not aborted/errored). */
+  onStreamComplete?: () => void;
 }) {
   const { visibilityType } = useChatVisibility({
     chatId: id,
@@ -226,6 +229,7 @@ export function Chat({
           console.warn('[Chat onFinish] Max resume attempts reached');
         }
         fetchChatHistory();
+        onStreamComplete?.();
       }
     },
     onError: (error) => {

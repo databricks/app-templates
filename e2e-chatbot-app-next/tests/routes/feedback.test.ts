@@ -1,10 +1,7 @@
 import { expect, test } from '../fixtures';
 import { generateUUID } from '@chat-template/core';
 import { TEST_PROMPTS } from '../prompts/routes';
-import {
-  sendChatAndGetMessageId,
-  skipInEphemeralMode,
-} from '../helpers';
+import { sendChatAndGetMessageId, skipInEphemeralMode } from '../helpers';
 
 test.describe('/api/feedback', () => {
   test('POST /api/feedback validates request body', async ({ adaContext }) => {
@@ -105,10 +102,9 @@ test.describe('/api/feedback', () => {
     });
   });
 
-  test('GET /api/feedback/chat/:chatId returns MLflow-backed feedback map', async ({
+  test('GET /api/feedback/chat/:chatId returns DB-backed feedback map', async ({
     adaContext,
   }) => {
-    // This test requires DB mode so that getMessagesByChatId can return messages
     skipInEphemeralMode(test);
 
     const chatId = generateUUID();
@@ -118,7 +114,7 @@ test.describe('/api/feedback', () => {
       TEST_PROMPTS.SKY.MESSAGE,
     );
 
-    // Submit feedback — this POSTs to MLflow and stores the assessment in the mock
+    // Submit feedback — writes to MLflow and persists vote to DB
     const feedbackResponse = await adaContext.request.post('/api/feedback', {
       data: {
         messageId: assistantMessageId,
@@ -126,9 +122,8 @@ test.describe('/api/feedback', () => {
       },
     });
     expect(feedbackResponse.status()).toBe(200);
-    expect((await feedbackResponse.json()).mlflowAssessmentId).toBeTruthy();
 
-    // GET feedback for the chat — server queries MLflow GET assessments for each message
+    // GET feedback for the chat — server reads from DB (single query, no MLflow)
     const getChatFeedbackResponse = await adaContext.request.get(
       `/api/feedback/chat/${chatId}`,
     );
@@ -138,5 +133,37 @@ test.describe('/api/feedback', () => {
     expect(chatFeedback).toHaveProperty(assistantMessageId);
     expect(chatFeedback[assistantMessageId].feedbackType).toBe('thumbs_up');
     expect(chatFeedback[assistantMessageId].messageId).toBe(assistantMessageId);
+  });
+
+  test('GET /api/feedback/chat/:chatId reflects updated vote after toggling', async ({
+    adaContext,
+  }) => {
+    skipInEphemeralMode(test);
+
+    const chatId = generateUUID();
+    const assistantMessageId = await sendChatAndGetMessageId(
+      adaContext.request,
+      chatId,
+      TEST_PROMPTS.SKY.MESSAGE,
+    );
+
+    // First vote: thumbs_up
+    await adaContext.request.post('/api/feedback', {
+      data: { messageId: assistantMessageId, feedbackType: 'thumbs_up' },
+    });
+
+    // Toggle to thumbs_down
+    const secondResponse = await adaContext.request.post('/api/feedback', {
+      data: { messageId: assistantMessageId, feedbackType: 'thumbs_down' },
+    });
+    expect(secondResponse.status()).toBe(200);
+
+    // GET should reflect the updated vote
+    const getChatFeedbackResponse = await adaContext.request.get(
+      `/api/feedback/chat/${chatId}`,
+    );
+    expect(getChatFeedbackResponse.status()).toBe(200);
+    const chatFeedback = await getChatFeedbackResponse.json();
+    expect(chatFeedback[assistantMessageId].feedbackType).toBe('thumbs_down');
   });
 });

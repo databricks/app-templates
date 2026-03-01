@@ -5,7 +5,10 @@ cookies.txt
 node_modules
 .pnp
 .pnp.js
-.claude
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/quickstart/
 
 # testing
 coverage
@@ -46,3 +49,6 @@ yarn-error.log*
 /playwright/*
 tsconfig.tsbuildinfo
 .idea
+
+# Databricks bundle state - exclude to prevent stale state when copying the project
+.databricks

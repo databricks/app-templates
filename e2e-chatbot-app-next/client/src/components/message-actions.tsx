@@ -1,13 +1,7 @@
 import { useCopyToClipboard } from 'usehooks-ts';
 
 import { Actions, Action } from './elements/actions';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { memo, useState, useCallback, useRef } from 'react';
+import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import type { ChatMessage, Feedback } from '@chat-template/core';
 import { useAppConfig } from '@/contexts/AppConfigContext';
@@ -44,6 +38,15 @@ function PureMessageActions({
     initialFeedback?.feedbackType || null,
   );
   const isSubmittingRef = useRef(false);
+
+  // Sync server-restored feedback into local state when it arrives after mount
+  // (e.g. NewChatPage's useChatData resolves after the first stream completes).
+  // Only applies when the user hasn't clicked anything yet (feedback === null).
+  useEffect(() => {
+    if (initialFeedback?.feedbackType && feedback === null) {
+      setFeedback(initialFeedback.feedbackType);
+    }
+  }, [initialFeedback?.feedbackType]);
 
   const textFromParts = message.parts
     ?.filter((part) => part.type === 'text')
@@ -83,7 +86,7 @@ function PureMessageActions({
         setFeedback(feedbackType);
       } catch (error) {
         console.error('Error submitting feedback:', error);
-        toast.error('Failed to submit feedback. Please try again.');
+        toast.error('Failed to submit feedback. Please try again, or contact the app developer if the error persists.');
       } finally {
         isSubmittingRef.current = false;
       }
@@ -127,7 +130,7 @@ function PureMessageActions({
     );
   }
 
-  const feedbackButtons = feedbackSupported ? (
+  const feedbackButtons = (
     <>
       <Action
         tooltip="Thumbs up"
@@ -146,34 +149,6 @@ function PureMessageActions({
         <ThumbsDown />
       </Action>
     </>
-  ) : (
-    // Wrap disabled buttons in a span so the tooltip still shows on hover
-    // (disabled buttons have pointer-events:none and won't trigger tooltip).
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="flex items-center gap-1">
-            <Action
-              disabled
-              className="opacity-50"
-              data-testid="thumbs-up-button"
-            >
-              <ThumbsUp />
-            </Action>
-            <Action
-              disabled
-              className="opacity-50"
-              data-testid="thumbs-down-button"
-            >
-              <ThumbsDown />
-            </Action>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>Feedback not available for this endpoint</p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
   );
 
   return (
@@ -183,7 +158,7 @@ function PureMessageActions({
           <CopyIcon />
         </Action>
       )}
-      {feedbackEnabled && feedbackButtons}
+      {feedbackEnabled && feedbackSupported && feedbackButtons}
       {errorCount > 0 && onToggleErrors && (
         <Action
           tooltip={showErrors ? 'Hide errors' : 'Show errors'}

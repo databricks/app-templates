@@ -288,6 +288,9 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       // a fresh ID, causing the client to push a second assistant message instead
       // of replacing the existing one.
       originalMessages: uiMessages,
+      // The DB Message.id column is typed as uuid, so we must generate UUIDs
+      // rather than the AI SDK's default short-id format (e.g. "Xt8nZiQRj1fS4yiU").
+      generateId: generateUUID,
       execute: async ({ writer }) => {
         // Manually drain the AI stream so we can append the traceId data part
         // after all model chunks are processed (traceId is captured via onChunk).
@@ -298,35 +301,48 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
         // - raw: dropped (trace_id captured via onChunk above)
         const aiStream = result.toUIMessageStream<ChatMessage>();
         const reader = aiStream.getReader();
+        let traceIdWritten = false;
         try {
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
+            // Write traceId before any error chunk so the client receives it
+            // before the SDK throws on the error and stops reading the stream.
+            if ((value as any).type === 'error' && !traceIdWritten) {
+              writer.write({ type: 'data-traceId', data: traceId });
+              traceIdWritten = true;
+            }
             writer.write(value as InferUIMessageChunk<ChatMessage>);
           }
         } finally {
           reader.releaseLock();
         }
         // Write traceId so the client knows whether feedback is supported.
-        writer.write({ type: 'data-traceId', data: traceId });
+        if (!traceIdWritten) {
+          writer.write({ type: 'data-traceId', data: traceId });
+        }
       },
       onFinish: async ({ responseMessage }) => {
         // Store in-memory for ephemeral mode (also useful when DB is available)
         storeMessageMeta(responseMessage.id, id, traceId);
 
-        await saveMessages({
-          messages: [
-            {
-              id: responseMessage.id,
-              role: responseMessage.role,
-              parts: responseMessage.parts,
-              createdAt: new Date(),
-              attachments: [],
-              chatId: id,
-              traceId, // Store trace ID for feedback
-            },
-          ],
-        });
+        try {
+          await saveMessages({
+            messages: [
+              {
+                id: responseMessage.id,
+                role: responseMessage.role,
+                parts: responseMessage.parts,
+                createdAt: new Date(),
+                attachments: [],
+                chatId: id,
+                traceId, // Store trace ID for feedback
+              },
+            ],
+          });
+        } catch (err) {
+          console.error('[onFinish] Failed to save assistant message:', err);
+        }
 
         if (finalUsage) {
           try {

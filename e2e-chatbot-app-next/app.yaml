@@ -4,7 +4,5 @@ runtime: nodejs20
 env:
   - name: DATABRICKS_SERVING_ENDPOINT
     valueFrom: serving-endpoint
-  # FEEDBACK RESOURCE: Uncomment and set the experiment name to enable the feedback UI.
-  # Run ./scripts/get-experiment-id.sh to find the right experiment name for your agent.
-  # - name: MLFLOW_EXPERIMENT_ID
-  #   valueFrom: experiment
+  - name: MLFLOW_EXPERIMENT_ID
+    valueFrom: experiment

@@ -110,6 +110,19 @@ export default defineConfig({
       testMatch: /routes\/.*\.api-proxy\.test\.ts$/,
       use: { baseURL: 'http://localhost:3003' },
     },
+    // Deployed tests run against a live Databricks App.
+    // Only included when DEPLOYED_APP_URL is set.
+    ...(process.env.DEPLOYED_APP_URL
+      ? [
+          {
+            name: 'deployed',
+            testMatch: /deployed\/.*.test.ts/,
+            use: {
+              baseURL: process.env.DEPLOYED_APP_URL,
+            },
+          },
+        ]
+      : []),
   ],
 
   // Start dev server before running tests

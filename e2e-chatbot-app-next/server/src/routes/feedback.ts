@@ -12,6 +12,7 @@ import { getDatabricksToken } from '@chat-template/auth';
 import { getWorkspaceHostname } from '@chat-template/ai-sdk-providers';
 import {
   getMessageMetadata,
+  getMessageMetasByChatId,
   getAssessmentId,
   storeAssessmentId,
 } from '../lib/message-meta-store';
@@ -20,8 +21,14 @@ export const feedbackRouter: RouterType = Router();
 
 feedbackRouter.use(authMiddleware);
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Fetch the user's assessment for a specific trace from MLflow.
+ * Reads assessments from the trace object itself (GET /mlflow/traces/:traceId),
+ * since the standalone assessments list endpoint is not available in all workspaces.
  * Returns null if no matching assessment is found or if MLflow is unavailable.
  */
 async function getUserAssessmentForTrace(
@@ -31,20 +38,35 @@ async function getUserAssessmentForTrace(
   userId: string,
 ): Promise<{ assessmentId: string; feedbackType: 'thumbs_up' | 'thumbs_down' } | null> {
   const response = await fetch(
-    `${hostUrl}/api/3.0/mlflow/traces/${traceId}/assessments`,
+    `${hostUrl}/api/3.0/mlflow/traces/${traceId}`,
     {
       headers: {
         Authorization: `Bearer ${token}`,
       },
     },
   );
-  if (!response.ok) return null;
+  if (!response.ok) {
+    console.warn(`[Feedback] MLflow trace status=${response.status} for traceId=${traceId}`);
+    return null;
+  }
   const data = await response.json();
-  const assessment = (data.assessments ?? []).find(
+  const allAssessments = data.trace?.trace_info?.assessments ?? [];
+  const assessment = allAssessments.find(
     (a: any) =>
       a.assessment_name === 'user_feedback' && a.source?.source_id === userId,
   );
-  if (!assessment) return null;
+  if (!assessment) {
+    if (allAssessments.length > 0) {
+      // Log the actual source_id from MLflow to help diagnose source_id mismatches
+      const sourceIds = allAssessments
+        .filter((a: any) => a.assessment_name === 'user_feedback')
+        .map((a: any) => a.source?.source_id);
+      console.warn(
+        `[Feedback] No matching assessment for userId="${userId}". MLflow source_ids: ${JSON.stringify(sourceIds)}`,
+      );
+    }
+    return null;
+  }
   return {
     assessmentId: assessment.assessment_id,
     feedbackType: assessment.feedback?.value === true ? 'thumbs_up' : 'thumbs_down',
@@ -141,30 +163,45 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
             },
           );
         } else {
-          // POST to create a new assessment
-          mlflowResponse = await fetch(
-            `${hostUrl}/api/3.0/mlflow/traces/${traceId}/assessments`,
-            {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${token}`,
-                'Content-Type': 'application/json',
+          // POST to create a new assessment, retrying on 404.
+          // The trace may not be indexed in MLflow immediately after the stream
+          // completes (eventual consistency), so we retry up to 3 times.
+          const MAX_RETRIES = 3;
+          const RETRY_DELAY_MS = 1000;
+          const postBody = JSON.stringify({
+            assessment: {
+              trace_id: traceId,
+              assessment_name: 'user_feedback',
+              source: {
+                source_type: 'HUMAN',
+                source_id: userId,
               },
-              body: JSON.stringify({
-                assessment: {
-                  trace_id: traceId,
-                  assessment_name: 'user_feedback',
-                  source: {
-                    source_type: 'HUMAN',
-                    source_id: userId,
-                  },
-                  feedback: {
-                    value: feedbackType === 'thumbs_up',
-                  },
-                },
-              }),
+              feedback: {
+                value: feedbackType === 'thumbs_up',
+              },
             },
-          );
+          });
+          const postHeaders = {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          };
+          const mlflowUrl = `${hostUrl}/api/3.0/mlflow/traces/${traceId}/assessments`;
+          mlflowResponse = await fetch(mlflowUrl, {
+            method: 'POST',
+            headers: postHeaders,
+            body: postBody,
+          });
+          for (let attempt = 1; attempt < MAX_RETRIES && !mlflowResponse.ok && mlflowResponse.status === 404; attempt++) {
+            console.warn(
+              `[Feedback] MLflow trace not found (attempt ${attempt}/${MAX_RETRIES}), retrying in ${RETRY_DELAY_MS}ms`,
+            );
+            await sleep(RETRY_DELAY_MS);
+            mlflowResponse = await fetch(mlflowUrl, {
+              method: 'POST',
+              headers: postHeaders,
+              body: postBody,
+            });
+          }
         }
 
         if (!mlflowResponse.ok) {
@@ -218,6 +255,8 @@ feedbackRouter.get(
   '/chat/:chatId',
   requireAuth,
   async (req: Request, res: Response) => {
+    // Prevent browser caching so stale {} responses don't block fresh feedback data
+    res.set('Cache-Control', 'no-store');
     try {
       const { chatId } = req.params;
       const session = req.session;
@@ -233,13 +272,27 @@ feedbackRouter.get(
 
       const userId = session.user.email ?? session.user.id;
 
-      // Get all messages for this chat that have trace IDs
+      // Get all messages for this chat that have trace IDs.
+      // Fall back to the in-memory store when the DB has no traced messages
+      // (ephemeral mode, or the stream finished so recently the DB write is pending).
       const messages = await getMessagesByChatId({ id: chatId as string });
-      const messagesWithTrace = messages.filter(
+      const dbMessagesWithTrace = messages.filter(
         (msg): msg is typeof msg & { traceId: string } => msg.traceId != null,
       );
 
-      if (messagesWithTrace.length === 0) {
+      type TracedMessage = { messageId: string; traceId: string };
+      let tracedMessages: TracedMessage[];
+      if (dbMessagesWithTrace.length > 0) {
+        tracedMessages = dbMessagesWithTrace.map((m) => ({
+          messageId: m.id,
+          traceId: m.traceId,
+        }));
+      } else {
+        // In ephemeral mode the DB is empty; use in-memory store as fallback
+        tracedMessages = getMessageMetasByChatId(chatId as string);
+      }
+
+      if (tracedMessages.length === 0) {
         return res.status(200).json({});
       }
 
@@ -249,14 +302,14 @@ feedbackRouter.get(
 
         // Fetch assessments for all messages in parallel
         const results = await Promise.allSettled(
-          messagesWithTrace.map(async (msg) => {
+          tracedMessages.map(async (msg) => {
             const assessment = await getUserAssessmentForTrace(
               hostUrl,
               token,
               msg.traceId,
               userId,
             );
-            return { messageId: msg.id, assessment };
+            return { messageId: msg.messageId, assessment };
           }),
         );
 

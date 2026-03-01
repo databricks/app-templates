@@ -1,10 +1,7 @@
 import { expect, test } from '../fixtures';
 import { generateUUID } from '@chat-template/core';
 import { TEST_PROMPTS } from '../prompts/routes';
-import {
-  sendChatAndGetMessageId,
-  skipInEphemeralMode,
-} from '../helpers';
+import { sendChatAndGetMessageId } from '../helpers';
 
 test.describe('/api/feedback', () => {
   test('POST /api/feedback validates request body', async ({ adaContext }) => {
@@ -108,9 +105,6 @@ test.describe('/api/feedback', () => {
   test('GET /api/feedback/chat/:chatId returns MLflow-backed feedback map', async ({
     adaContext,
   }) => {
-    // This test requires DB mode so that getMessagesByChatId can return messages
-    skipInEphemeralMode(test);
-
     const chatId = generateUUID();
     const assistantMessageId = await sendChatAndGetMessageId(
       adaContext.request,

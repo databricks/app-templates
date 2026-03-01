@@ -1,7 +1,7 @@
 import { useCopyToClipboard } from 'usehooks-ts';
 
 import { Actions, Action } from './elements/actions';
-import { memo, useState, useCallback, useRef } from 'react';
+import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import type { ChatMessage, Feedback } from '@chat-template/core';
 import { useAppConfig } from '@/contexts/AppConfigContext';
@@ -38,6 +38,15 @@ function PureMessageActions({
     initialFeedback?.feedbackType || null,
   );
   const isSubmittingRef = useRef(false);
+
+  // Sync server-restored feedback into local state when it arrives after mount
+  // (e.g. NewChatPage's useChatData resolves after the first stream completes).
+  // Only applies when the user hasn't clicked anything yet (feedback === null).
+  useEffect(() => {
+    if (initialFeedback?.feedbackType && feedback === null) {
+      setFeedback(initialFeedback.feedbackType);
+    }
+  }, [initialFeedback?.feedbackType]);
 
   const textFromParts = message.parts
     ?.filter((part) => part.type === 'text')

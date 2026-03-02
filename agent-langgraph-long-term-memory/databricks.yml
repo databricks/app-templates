@@ -9,7 +9,7 @@ resources:
 
   apps:
     agent_langgraph_long_term_memory:
-      name: "${bundle.target}-agent-langgraph-ltm"
+      name: "agent-langgraph-ltm"
       description: "LangGraph agent application with long-term memory"
       source_code_path: ./
       config:
@@ -38,7 +38,7 @@ resources:
             permission: 'CAN_MANAGE'
         - name: 'database'
           database:
-            instance_name: '<your-lakebase-instance-name>'
+            instance_name: 'bbqiu'
             database_name: 'postgres'
             permission: 'CAN_CONNECT_AND_CREATE'
 

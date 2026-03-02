@@ -9,7 +9,7 @@ resources:
 
   apps:
     agent_non_conversational:
-      name: "${bundle.target}-agent-non-conversational"
+      name: "agent-non-conversational"
       description: "Non-conversational agent application"
       source_code_path: ./
       config:

@@ -9,7 +9,7 @@ resources:
 
   apps:
     agent_openai_agents_sdk:
-      name: "${bundle.target}-agent-openai-agents-sdk"
+      name: "agent-openai-agents-sdk"
       description: "OpenAI Agents SDK agent application"
       source_code_path: ./
       config:

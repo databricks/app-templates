@@ -9,7 +9,7 @@ resources:
 
   apps:
     agent_langgraph:
-      name: "${bundle.target}-agent-langgraph"
+      name: "agent-langgraph"
       description: "LangGraph agent application"
       source_code_path: ./
       config:

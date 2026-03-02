@@ -9,7 +9,7 @@ resources:
 
   apps:
     agent_openai_agents_sdk_short_term_memory:
-      name: "${bundle.target}-agent-openai-sdk-stm"
+      name: "agent-openai-sdk-stm"
       description: "OpenAI Agents SDK agent application with short-term memory"
       source_code_path: ./
       config:
@@ -39,7 +39,7 @@ resources:
         # Lakebase instance for persistent session storage
         - name: 'database'
           database:
-            instance_name: '<your-lakebase-instance-name>'
+            instance_name: 'bbqiu'
             database_name: 'postgres'
             permission: 'CAN_CONNECT_AND_CREATE'
 

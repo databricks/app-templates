@@ -69,23 +69,37 @@ Local and deploy phases run **in parallel** via `ThreadPoolExecutor`. Either pha
 
 ## How to Run
 
+All commands must be run from the `.scripts/agent-e2e/` directory (the `pyproject.toml` and `conftest.py` live there):
+
 ```bash
-# All templates
 cd .scripts/agent-e2e
-uv run pytest test_e2e.py -v
+
+# Run all 7 templates in parallel (local + deploy for each)
+uv run pytest test_e2e.py -v -n 7
+
+# Run all 7 templates in parallel, local only (skip deploy)
+uv run pytest test_e2e.py -v -n 7 --skip-deploy
+
+# Sequential with full live output (for debugging)
+uv run pytest test_e2e.py -v -n0 -s --skip-deploy
 
 # Single template
 uv run pytest test_e2e.py -v --template agent-langgraph
 
-# Local only (skip deploy)
-uv run pytest test_e2e.py -v --skip-deploy
-
 # Deploy only (skip local)
-uv run pytest test_e2e.py -v --skip-local
+uv run pytest test_e2e.py -v -n 7 --skip-local
 
 # Custom profile and lakebase
-uv run pytest test_e2e.py -v --profile staging --lakebase my-instance
+uv run pytest test_e2e.py -v -n 7 --profile staging --lakebase my-instance
+
+# Multiagent with custom Genie space and endpoint
+uv run pytest test_e2e.py -v --template agent-openai-agents-sdk-multiagent \
+  --genie-space-id <UUID> --serving-endpoint <NAME>
 ```
+
+### Parallelism with pytest-xdist
+
+Templates run in parallel via `pytest-xdist` (`-n <workers>`). Output from parallel workers is captured and only shown on failure. To see full live output (e.g. for debugging), use `-n0 -s` which disables xdist and runs sequentially in the main process.
 
 ## Timeouts
 

@@ -1,4 +1,6 @@
+import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Configurable defaults — override via pytest CLI options
@@ -110,6 +112,39 @@ SUBAGENTS = [
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _parse_databricks_yml(template_name: str) -> tuple[str, str]:
+    """Parse bundle_name and dev_app_name from a template's databricks.yml.
+
+    Returns (bundle_name, dev_app_name) where dev_app_name is the app name
+    with ${bundle.target} resolved to 'dev'.
+    """
+    yml_path = _REPO_ROOT / template_name / "databricks.yml"
+    text = yml_path.read_text()
+
+    bundle_match = re.search(r'^bundle:\s*\n\s*name:\s*(\S+)', text, re.MULTILINE)
+    assert bundle_match, f"Could not find bundle name in {yml_path}"
+    bundle_name = bundle_match.group(1)
+
+    # Match the app name line under resources.apps (contains ${bundle.target})
+    app_match = re.search(
+        r'^\s*apps:\s*\n\s*\w+:\s*\n\s*name:\s*"([^"]+)"', text, re.MULTILINE
+    )
+    assert app_match, f"Could not find app name in {yml_path}"
+    dev_app_name = app_match.group(1).replace("${bundle.target}", "dev")
+
+    assert len(dev_app_name) <= 30, (
+        f"App name '{dev_app_name}' is {len(dev_app_name)} chars (max 30) "
+        f"in {yml_path}"
+    )
+    return bundle_name, dev_app_name
+
+
+# ---------------------------------------------------------------------------
 # Template builder
 # ---------------------------------------------------------------------------
 def build_templates(
@@ -117,67 +152,59 @@ def build_templates(
     serving_endpoint: str = DEFAULT_SERVING_ENDPOINT,
     knowledge_assistant_endpoint: str = DEFAULT_KNOWLEDGE_ASSISTANT_ENDPOINT,
 ) -> list[TemplateConfig]:
-    return [
-        TemplateConfig(
-            name="agent-langgraph",
-            bundle_name="agent_langgraph",
-            dev_app_name="dev-agent-langgraph",
+    configs: list[tuple[str, dict]] = [
+        ("agent-langgraph", {}),
+        ("agent-langgraph-short-term-memory", {"needs_lakebase_edit": True}),
+        ("agent-langgraph-long-term-memory", {"needs_lakebase_edit": True}),
+        ("agent-openai-agents-sdk", {}),
+        (
+            "agent-openai-agents-sdk-short-term-memory",
+            {"needs_lakebase_edit": True},
         ),
-        TemplateConfig(
-            name="agent-langgraph-short-term-memory",
-            bundle_name="agent_langgraph_short_term_memory",
-            dev_app_name="dev-agent-langgraph-short-term-memory",
-            needs_lakebase_edit=True,
+        (
+            "agent-openai-agents-sdk-multiagent",
+            {
+                "pre_test_edits": [
+                    FileEdit(
+                        relative_path="agent_server/agent.py",
+                        old=MULTIAGENT_SUBAGENTS_OLD,
+                        new=_multiagent_subagents_new(
+                            genie_space_id, serving_endpoint
+                        ),
+                    ),
+                    FileEdit(
+                        relative_path="databricks.yml",
+                        old="<YOUR-GENIE-SPACE-ID>",
+                        new=genie_space_id,
+                    ),
+                    FileEdit(
+                        relative_path="databricks.yml",
+                        old="<YOUR-SERVING-ENDPOINT>",
+                        new=serving_endpoint,
+                    ),
+                    FileEdit(
+                        relative_path="databricks.yml",
+                        old="<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>",
+                        new=knowledge_assistant_endpoint,
+                    ),
+                ],
+            },
         ),
-        TemplateConfig(
-            name="agent-langgraph-long-term-memory",
-            bundle_name="agent_langgraph_long_term_memory",
-            dev_app_name="dev-agent-langgraph-long-term-memory",
-            needs_lakebase_edit=True,
-        ),
-        TemplateConfig(
-            name="agent-openai-agents-sdk",
-            bundle_name="agent_openai_agents_sdk",
-            dev_app_name="dev-agent-openai-agents-sdk",
-        ),
-        TemplateConfig(
-            name="agent-openai-agents-sdk-short-term-memory",
-            bundle_name="agent_openai_agents_sdk_short_term_memory",
-            dev_app_name="dev-agent-openai-agents-sdk-short-term-memory",
-            needs_lakebase_edit=True,
-        ),
-        TemplateConfig(
-            name="agent-openai-agents-sdk-multiagent",
-            bundle_name="agent_openai_agents_sdk_multiagent",
-            dev_app_name="dev-agent-openai-agents-sdk-multiagent",
-            pre_test_edits=[
-                FileEdit(
-                    relative_path="agent_server/agent.py",
-                    old=MULTIAGENT_SUBAGENTS_OLD,
-                    new=_multiagent_subagents_new(genie_space_id, serving_endpoint),
-                ),
-                FileEdit(
-                    relative_path="databricks.yml",
-                    old="<YOUR-GENIE-SPACE-ID>",
-                    new=genie_space_id,
-                ),
-                FileEdit(
-                    relative_path="databricks.yml",
-                    old="<YOUR-SERVING-ENDPOINT>",
-                    new=serving_endpoint,
-                ),
-                FileEdit(
-                    relative_path="databricks.yml",
-                    old="<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>",
-                    new=knowledge_assistant_endpoint,
-                ),
-            ],
-        ),
-        TemplateConfig(
-            name="agent-non-conversational",
-            bundle_name="agent_non_conversational",
-            dev_app_name="dev-agent-non-conversational",
-            is_conversational=False,
-            has_evaluate=False,
+        (
+            "agent-non-conversational",
+            {"is_conversational": False, "has_evaluate": False},
         ),
     ]
+
+    templates = []
+    for name, overrides in configs:
+        bundle_name, dev_app_name = _parse_databricks_yml(name)
+        templates.append(
+            TemplateConfig(
+                name=name,
+                bundle_name=bundle_name,
+                dev_app_name=dev_app_name,
+                **overrides,
+            )
+        )
+    return templates

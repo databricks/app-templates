@@ -5,8 +5,9 @@ description = "E2E tests for agent templates"
 requires-python = ">=3.11"
 dependencies = [
     "pytest>=8.0",
+    "pytest-xdist>=3.5",
     "requests>=2.31",
     "openai>=1.75",
     "databricks-sdk>=0.40",
-    "databricks-ai-bridge",
+    "databricks-ai-bridge[memory]",
 ]

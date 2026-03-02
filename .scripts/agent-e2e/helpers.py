@@ -21,7 +21,7 @@ from template_config import FileEdit
 
 def clean_template(template_dir: Path):
     """Remove .venv/, uv.lock, .env from template directory."""
-    for name in [".venv", "uv.lock", ".env"]:
+    for name in [".venv", "uv.lock", ".env", ".bundle"]:
         target = template_dir / name
         if target.is_dir():
             shutil.rmtree(target)
@@ -124,7 +124,12 @@ def query_endpoint(base_url: str, payload: dict, endpoint: str = "/responses") -
         headers={"Content-Type": "application/json"},
         timeout=120,
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        body = resp.text[:2000]
+        raise requests.HTTPError(
+            f"{resp.status_code} for {resp.url}\nResponse body: {body}",
+            response=resp,
+        )
     return resp.json()
 
 
@@ -256,15 +261,29 @@ def revert_edits(originals: list[tuple[Path, str]]):
 # --- Deploy helpers ---
 
 
-def bundle_deploy(template_dir: Path, profile: str):
-    """Run `databricks bundle deploy --target dev -p <profile>`."""
-    result = subprocess.run(
-        ["databricks", "bundle", "deploy", "--target", "dev", "-p", profile],
-        cwd=template_dir,
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
+def bundle_deploy(template_dir: Path, profile: str, retries: int = 3):
+    """Run `databricks bundle deploy --target dev -p <profile>`.
+
+    Retries on transient terraform provider download failures (e.g. 502 from GitHub).
+    """
+    for attempt in range(1, retries + 1):
+        result = subprocess.run(
+            ["databricks", "bundle", "deploy", "--target", "dev", "-p", profile],
+            cwd=template_dir,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if result.returncode == 0:
+            return
+        if attempt < retries and "terraform init" in result.stderr:
+            print(
+                f"bundle deploy attempt {attempt}/{retries} failed in "
+                f"{template_dir.name} (terraform init error), retrying in 30s..."
+            )
+            time.sleep(30)
+            continue
+        break
     assert result.returncode == 0, (
         f"bundle deploy failed in {template_dir.name}:\n"
         f"stdout: {result.stdout}\n"

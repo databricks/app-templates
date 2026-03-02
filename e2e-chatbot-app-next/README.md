@@ -281,9 +281,6 @@ npx tsx scripts/get-experiment-id.ts --endpoint <your-endpoint-name>
 
 # For an Agent Bricks Knowledge Assistant or Multi-Agent Supervisor
 npx tsx scripts/get-experiment-id.ts --agent-brick <agent-brick-name>
-
-# For an agent already deployed as a Databricks App
-npx tsx scripts/get-experiment-id.ts --app <app-name>
 ```
 
 The script prints the experiment name to stdout — copy it for Step 2.

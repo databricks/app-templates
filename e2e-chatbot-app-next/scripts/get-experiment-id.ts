@@ -7,7 +7,6 @@
  * Usage:
  *   npx tsx scripts/get-experiment-id.ts --endpoint <serving-endpoint-name>
  *   npx tsx scripts/get-experiment-id.ts --agent-brick <agent-brick-name>
- *   npx tsx scripts/get-experiment-id.ts --app <databricks-app-name>
  *
  * The experiment name is printed to stdout on success, suitable for use in
  * your databricks.yml experiment resource:
@@ -26,12 +25,10 @@ Get the MLflow experiment name for your agent deployment.
 Options:
   --endpoint <name>      Serving endpoint name (custom agent or Agent Bricks endpoint)
   --agent-brick <name>   Agent Bricks name (Knowledge Assistant or Multi-Agent Supervisor)
-  --app <name>           Databricks App name
 
 Examples:
   npx tsx scripts/get-experiment-id.ts --endpoint my-agent-endpoint
   npx tsx scripts/get-experiment-id.ts --agent-brick my-agent-brick
-  npx tsx scripts/get-experiment-id.ts --app db-chatbot-dev-myname
 
 Once you have the experiment name, set it in databricks.yml:
   - name: experiment
@@ -152,10 +149,9 @@ async function handleAgentBrick(
   value: string,
 ): Promise<void> {
   console.error(`🔍 Looking up experiment for Agent Bricks: ${value}`);
-  const resp = await fetch(
-    `${host}/api/2.0/tiles/get?name=${encodeURIComponent(value)}`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
+  const resp = await fetch(`${host}/api/2.0/tiles`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
 
   if (!resp.ok) {
     const err = await resp.text().catch(() => '');
@@ -164,55 +160,21 @@ async function handleAgentBrick(
   }
 
   const data = (await resp.json()) as {
-    mlflow_experiment_id?: string;
-    message?: string;
+    tiles?: Array<{ name?: string; mlflow_experiment_id?: string }>;
   };
-  if (data.message) {
-    console.error(`❌ Agent Bricks API error: ${data.message}`);
+  const tile = (data.tiles ?? []).find((t) => t.name === value);
+  if (!tile) {
+    console.error(`❌ No Agent Brick named '${value}' found.`);
+    console.error(
+      '   Check the name in Agent Bricks UI and make sure you have access.',
+    );
     process.exit(1);
   }
 
-  const experimentId = data.mlflow_experiment_id;
+  const experimentId = tile.mlflow_experiment_id;
   if (!experimentId) {
     console.error(
       `❌ No mlflow_experiment_id found for agent brick '${value}'.`,
-    );
-    console.error('   Make sure the agent brick name is correct.');
-    process.exit(1);
-  }
-
-  console.log(await resolveExperimentName(host, token, experimentId));
-}
-
-async function handleApp(
-  host: string,
-  token: string,
-  value: string,
-): Promise<void> {
-  console.error(`🔍 Looking up experiment resource for Databricks App: ${value}`);
-  let appJson: string;
-  try {
-    appJson = execSync(`databricks apps get "${value}" --output json`, {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-  } catch {
-    console.error(`❌ App not found: ${value}`);
-    process.exit(1);
-  }
-
-  const app = JSON.parse(appJson) as {
-    resources?: Array<{ experiment?: { experiment_id?: string } }>;
-  };
-  const experimentId = (app.resources ?? []).find((r) => r.experiment != null)
-    ?.experiment?.experiment_id;
-
-  if (!experimentId) {
-    console.error(
-      `❌ No MLflow experiment resource found on app '${value}'.`,
-    );
-    console.error(
-      '   Configure an experiment resource in databricks.yml and redeploy.',
     );
     process.exit(1);
   }
@@ -222,7 +184,7 @@ async function handleApp(
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  let mode: 'endpoint' | 'agent-brick' | 'app' | null = null;
+  let mode: 'endpoint' | 'agent-brick' | null = null;
   let value = '';
 
   for (let i = 0; i < args.length; i++) {
@@ -231,9 +193,6 @@ async function main(): Promise<void> {
       value = args[++i];
     } else if (args[i] === '--agent-brick' && args[i + 1]) {
       mode = 'agent-brick';
-      value = args[++i];
-    } else if (args[i] === '--app' && args[i + 1]) {
-      mode = 'app';
       value = args[++i];
     } else if (args[i] === '--help' || args[i] === '-h') {
       usage();
@@ -254,9 +213,6 @@ async function main(): Promise<void> {
       break;
     case 'agent-brick':
       await handleAgentBrick(host, token, value);
-      break;
-    case 'app':
-      await handleApp(host, token, value);
       break;
   }
 }

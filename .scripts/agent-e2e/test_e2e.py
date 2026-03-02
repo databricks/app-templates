@@ -144,10 +144,9 @@ def _run_deploy(
     bundle_deploy(template_dir, profile)
     bundle_run(template_dir, template.bundle_name, profile)
     try:
+        app_url = wait_for_app_ready(template.dev_app_name, profile)
         if template.needs_lakebase_edit:
             grant_lakebase_access(template.dev_app_name, lakebase, profile)
-
-        app_url = wait_for_app_ready(template.dev_app_name, profile)
         token = get_oauth_token(profile)
 
         try:

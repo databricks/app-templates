@@ -9,7 +9,8 @@
 <p align="center">
   <a href="#features"><strong>Features</strong></a> ·
   <a href="#running-locally"><strong>Running Locally</strong></a> ·
-  <a href="#deployment"><strong>Deployment</strong></a>
+  <a href="#deployment"><strong>Deployment</strong></a> ·
+  <a href="#optional-chat-ui-features"><strong>Optional Features</strong></a>
 </p>
 <br/>
 
@@ -173,7 +174,27 @@ If you prefer to configure the environment manually:
 
    The app starts on [localhost:3000](http://localhost:3000)
 
-### Database Modes
+### Optional Chat UI Features
+
+The chat UI supports two optional features that can be enabled by updating `databricks.yml`:
+
+### User Feedback
+
+Users can give thumbs up/down on assistant responses. Feedback is stored as [MLflow assessments](https://docs.databricks.com/aws/en/generative-ai/agent-evaluation/assessments) on the underlying traces, making it easy to review and act on in the MLflow Experiment Tracking UI.
+
+Feedback is **disabled by default**. See [Feedback Collection](#feedback-collection) for setup instructions.
+
+> **Note:** If you're using one of the conversational agent templates (e.g. `agent-openai-agents-sdk`, `agent-langgraph`), their `databricks.yml` already creates and binds an MLflow experiment — feedback works automatically after `databricks bundle deploy`, with no extra configuration required.
+
+### Persistent Chat History
+
+By default, conversation messages are stored in memory and lost when the server restarts. To persist chat history across sessions, bind a Lakebase database in `databricks.yml`.
+
+See [Database Modes](#database-modes) for setup instructions.
+
+---
+
+## Database Modes
 
 The application supports two operating modes:
 

@@ -19,14 +19,85 @@ from databricks_ai_bridge.lakebase import (
 from template_config import FileEdit
 
 
-def clean_template(template_dir: Path):
-    """Remove .venv/, uv.lock, .env from template directory."""
+def _parse_yml_names(template_dir: Path) -> tuple[str, str] | None:
+    """Parse bundle_name and app_name from databricks.yml. Returns None on failure."""
+    import re
+
+    yml_path = template_dir / "databricks.yml"
+    if not yml_path.exists():
+        return None
+    text = yml_path.read_text()
+    bundle_match = re.search(
+        r"^bundle:\s*\n\s*name:\s*(\S+)", text, re.MULTILINE
+    )
+    app_match = re.search(
+        r'^\s*apps:\s*\n\s*\w+:\s*\n\s*name:\s*"([^"]+)"', text, re.MULTILINE
+    )
+    if not bundle_match or not app_match:
+        return None
+    return bundle_match.group(1), app_match.group(1)
+
+
+def _clean_bundle_state(template_dir: Path, profile: str):
+    """Delete local .bundle/ and remote workspace terraform state."""
+    bundle_dir = template_dir / ".bundle"
+    if bundle_dir.is_dir():
+        shutil.rmtree(bundle_dir)
+
+    names = _parse_yml_names(template_dir)
+    if not names:
+        return
+    bundle_name = names[0]
+
+    user_result = subprocess.run(
+        ["databricks", "current-user", "me", "-p", profile, "--output", "json"],
+        capture_output=True, text=True, timeout=30,
+    )
+    if user_result.returncode == 0:
+        user_name = json.loads(user_result.stdout).get("userName", "")
+        if user_name:
+            remote_path = (
+                f"/Workspace/Users/{user_name}/.bundle/{bundle_name}"
+            )
+            subprocess.run(
+                ["databricks", "workspace", "delete", remote_path,
+                 "--recursive", "-p", profile],
+                capture_output=True, text=True, timeout=30,
+            )
+
+
+def _delete_existing_app(template_dir: Path, profile: str):
+    """Delete the Databricks app named in databricks.yml, if it exists."""
+    names = _parse_yml_names(template_dir)
+    if not names:
+        return
+    app_name = names[1]
+    # Check if app exists
+    result = subprocess.run(
+        ["databricks", "apps", "get", app_name, "-p", profile, "--output", "json"],
+        capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode != 0:
+        return  # App doesn't exist
+    # Delete the app
+    subprocess.run(
+        ["databricks", "apps", "delete", app_name, "-p", profile],
+        capture_output=True, text=True, timeout=60,
+    )
+    print(f"Deleted existing app '{app_name}' during cleanup.")
+
+
+def clean_template(template_dir: Path, profile: str = "dev"):
+    """Remove .venv/, uv.lock, .env, .bundle, remote state, and existing apps."""
     for name in [".venv", "uv.lock", ".env", ".bundle"]:
         target = template_dir / name
         if target.is_dir():
             shutil.rmtree(target)
         elif target.is_file():
             target.unlink()
+
+    _clean_bundle_state(template_dir, profile)
+    _delete_existing_app(template_dir, profile)
 
 
 def run_quickstart(
@@ -264,7 +335,10 @@ def revert_edits(originals: list[tuple[Path, str]]):
 def bundle_deploy(template_dir: Path, profile: str, retries: int = 3):
     """Run `databricks bundle deploy --target dev -p <profile>`.
 
-    Retries on transient terraform provider download failures (e.g. 502 from GitHub).
+    Handles transient errors with automatic recovery:
+    - Terraform init failures (e.g. GitHub 502): wait and retry
+    - "already exists": delete existing app + clean state, retry
+    - "does not exist or is deleted": clean stale state, retry
     """
     for attempt in range(1, retries + 1):
         result = subprocess.run(
@@ -276,13 +350,34 @@ def bundle_deploy(template_dir: Path, profile: str, retries: int = 3):
         )
         if result.returncode == 0:
             return
-        if attempt < retries and "terraform init" in result.stderr:
-            print(
-                f"bundle deploy attempt {attempt}/{retries} failed in "
-                f"{template_dir.name} (terraform init error), retrying in 30s..."
-            )
-            time.sleep(30)
-            continue
+
+        stderr = result.stderr
+        if attempt < retries:
+            if "terraform init" in stderr:
+                print(
+                    f"bundle deploy attempt {attempt}/{retries} failed in "
+                    f"{template_dir.name} (terraform init error), retrying in 30s..."
+                )
+                time.sleep(30)
+                continue
+
+            if "already exists" in stderr:
+                print(
+                    f"bundle deploy attempt {attempt}/{retries} failed in "
+                    f"{template_dir.name} (app already exists), cleaning up..."
+                )
+                _delete_existing_app(template_dir, profile)
+                _clean_bundle_state(template_dir, profile)
+                continue
+
+            if "does not exist or is deleted" in stderr:
+                print(
+                    f"bundle deploy attempt {attempt}/{retries} failed in "
+                    f"{template_dir.name} (stale state), cleaning up..."
+                )
+                _clean_bundle_state(template_dir, profile)
+                continue
+
         break
     assert result.returncode == 0, (
         f"bundle deploy failed in {template_dir.name}:\n"

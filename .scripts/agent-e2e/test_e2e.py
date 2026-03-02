@@ -150,7 +150,7 @@ def test_e2e(template, repo_root, profile, lakebase, request):
     template_dir = repo_root / template.name
 
     with phase("setup:clean"):
-        clean_template(template_dir)
+        clean_template(template_dir, profile)
 
     with phase("setup:quickstart"):
         run_quickstart(
@@ -160,13 +160,15 @@ def test_e2e(template, repo_root, profile, lakebase, request):
     with phase("setup:edits"):
         edits = list(template.pre_test_edits)
         if template.needs_lakebase_edit:
-            edits.append(
-                FileEdit(
-                    relative_path="databricks.yml",
-                    old="<your-lakebase-instance-name>",
-                    new=lakebase,
+            yml_text = (template_dir / "databricks.yml").read_text()
+            if "<your-lakebase-instance-name>" in yml_text:
+                edits.append(
+                    FileEdit(
+                        relative_path="databricks.yml",
+                        old="<your-lakebase-instance-name>",
+                        new=lakebase,
+                    )
                 )
-            )
         originals = apply_edits(edits, template_dir)
 
     try:

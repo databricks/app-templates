@@ -111,6 +111,40 @@ SUBAGENTS = [
 ]"""
 
 
+def _multiagent_edits(
+    template_name: str,
+    genie_space_id: str,
+    serving_endpoint: str,
+    knowledge_assistant_endpoint: str,
+) -> list[FileEdit]:
+    """Build pre_test_edits for multiagent, skipping already-configured values."""
+    template_dir = _REPO_ROOT / template_name
+    edits: list[FileEdit] = []
+
+    # Only replace SUBAGENTS if the template still has the commented-out block
+    agent_py = (template_dir / "agent_server" / "agent.py").read_text()
+    if MULTIAGENT_SUBAGENTS_OLD in agent_py:
+        edits.append(
+            FileEdit(
+                relative_path="agent_server/agent.py",
+                old=MULTIAGENT_SUBAGENTS_OLD,
+                new=_multiagent_subagents_new(genie_space_id, serving_endpoint),
+            )
+        )
+
+    # Only replace databricks.yml placeholders if they exist
+    yml_text = (template_dir / "databricks.yml").read_text()
+    for old, new in [
+        ("<YOUR-GENIE-SPACE-ID>", genie_space_id),
+        ("<YOUR-SERVING-ENDPOINT>", serving_endpoint),
+        ("<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>", knowledge_assistant_endpoint),
+    ]:
+        if old in yml_text:
+            edits.append(FileEdit(relative_path="databricks.yml", old=old, new=new))
+
+    return edits
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -164,30 +198,12 @@ def build_templates(
         (
             "agent-openai-agents-sdk-multiagent",
             {
-                "pre_test_edits": [
-                    FileEdit(
-                        relative_path="agent_server/agent.py",
-                        old=MULTIAGENT_SUBAGENTS_OLD,
-                        new=_multiagent_subagents_new(
-                            genie_space_id, serving_endpoint
-                        ),
-                    ),
-                    FileEdit(
-                        relative_path="databricks.yml",
-                        old="<YOUR-GENIE-SPACE-ID>",
-                        new=genie_space_id,
-                    ),
-                    FileEdit(
-                        relative_path="databricks.yml",
-                        old="<YOUR-SERVING-ENDPOINT>",
-                        new=serving_endpoint,
-                    ),
-                    FileEdit(
-                        relative_path="databricks.yml",
-                        old="<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>",
-                        new=knowledge_assistant_endpoint,
-                    ),
-                ],
+                "pre_test_edits": _multiagent_edits(
+                    "agent-openai-agents-sdk-multiagent",
+                    genie_space_id,
+                    serving_endpoint,
+                    knowledge_assistant_endpoint,
+                ),
             },
         ),
         (

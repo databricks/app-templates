@@ -22,7 +22,7 @@ from helpers import (
     stop_server,
     wait_for_app_ready,
 )
-from template_config import TEMPLATES, FileEdit, TemplateConfig
+from template_config import FileEdit, TemplateConfig, build_templates
 
 CONVERSATIONAL_PAYLOAD = {"input": [{"role": "user", "content": "What is 2+2?"}]}
 NON_CONVERSATIONAL_PAYLOAD = {
@@ -36,6 +36,20 @@ NON_CONVERSATIONAL_PAYLOAD = {
         "Do the documents contain an income statement?",
     ],
 }
+
+
+def pytest_generate_tests(metafunc):
+    """Build templates from CLI options and parametrize at collection time."""
+    if "template" in metafunc.fixturenames:
+        config = metafunc.config
+        templates = build_templates(
+            genie_space_id=config.getoption("--genie-space-id"),
+            serving_endpoint=config.getoption("--serving-endpoint"),
+            knowledge_assistant_endpoint=config.getoption(
+                "--knowledge-assistant-endpoint"
+            ),
+        )
+        metafunc.parametrize("template", templates, ids=lambda t: t.name)
 
 
 def _run_local(template: TemplateConfig, template_dir: Path):
@@ -93,7 +107,6 @@ def _run_deploy(
         assert len(result["results"]) > 0, "No results returned"
 
 
-@pytest.mark.parametrize("template", TEMPLATES, ids=lambda t: t.name)
 def test_e2e(template, repo_root, profile, lakebase, request):
     """Full e2e test: clean -> quickstart -> edits -> (local || deploy) -> revert."""
     skip_local = request.config.getoption("--skip-local")

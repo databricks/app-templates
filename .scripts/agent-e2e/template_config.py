@@ -1,6 +1,18 @@
 from dataclasses import dataclass, field
 
+# ---------------------------------------------------------------------------
+# Configurable defaults — override via pytest CLI options
+# ---------------------------------------------------------------------------
+DEFAULT_PROFILE = "dev"
+DEFAULT_LAKEBASE = "bbqiu"
+DEFAULT_GENIE_SPACE_ID = "01f05202dbb51d74b6cccf1b1b1683eb"
+DEFAULT_SERVING_ENDPOINT = "agents_dev-bbqiu-test-bb-2-25"
+DEFAULT_KNOWLEDGE_ASSISTANT_ENDPOINT = "agents_dev-bbqiu-test-bb-2-25"
 
+
+# ---------------------------------------------------------------------------
+# Data classes
+# ---------------------------------------------------------------------------
 @dataclass
 class FileEdit:
     """A file edit to apply/revert."""
@@ -21,6 +33,10 @@ class TemplateConfig:
     has_evaluate: bool = True
 
 
+# ---------------------------------------------------------------------------
+# Multiagent SUBAGENTS — the "old" block is the verbatim commented-out code
+# in agent-openai-agents-sdk-multiagent/agent_server/agent.py (lines 60-101).
+# ---------------------------------------------------------------------------
 MULTIAGENT_SUBAGENTS_OLD = """\
 SUBAGENTS = [
     # Uncomment and configure the subagents you need. You must enable at least one.
@@ -65,91 +81,103 @@ SUBAGENTS = [
     # },
 ]"""
 
-MULTIAGENT_SUBAGENTS_NEW = """\
+
+def _multiagent_subagents_new(
+    genie_space_id: str, serving_endpoint: str
+) -> str:
+    return f"""\
 SUBAGENTS = [
-    {
+    {{
         "name": "genie",
         "type": "genie",
-        "space_id": "01f05202dbb51d74b6cccf1b1b1683eb",
+        "space_id": "{genie_space_id}",
         "description": (
             "Query a Genie space for structured data analysis. "
             "Use this for questions about data, metrics, and tables."
         ),
-    },
-    {
+    }},
+    {{
         "name": "serving_endpoint",
         "type": "serving_endpoint",
-        "endpoint": "agents_dev-bbqiu-test-bb-2-25",
+        "endpoint": "{serving_endpoint}",
         "description": (
             "Query a model hosted on a Databricks Model Serving endpoint. "
             "Use this for questions best answered by the serving model. "
             "The endpoint must have task type agent/v1/responses."
         ),
-    },
+    }},
 ]"""
 
 
-TEMPLATES = [
-    TemplateConfig(
-        name="agent-langgraph",
-        bundle_name="agent_langgraph",
-        dev_app_name="dev-agent-langgraph",
-    ),
-    TemplateConfig(
-        name="agent-langgraph-short-term-memory",
-        bundle_name="agent_langgraph_short_term_memory",
-        dev_app_name="dev-agent-langgraph-short-term-memory",
-        needs_lakebase_edit=True,
-    ),
-    TemplateConfig(
-        name="agent-langgraph-long-term-memory",
-        bundle_name="agent_langgraph_long_term_memory",
-        dev_app_name="dev-agent-langgraph-long-term-memory",
-        needs_lakebase_edit=True,
-    ),
-    TemplateConfig(
-        name="agent-openai-agents-sdk",
-        bundle_name="agent_openai_agents_sdk",
-        dev_app_name="dev-agent-openai-agents-sdk",
-    ),
-    TemplateConfig(
-        name="agent-openai-agents-sdk-short-term-memory",
-        bundle_name="agent_openai_agents_sdk_short_term_memory",
-        dev_app_name="dev-agent-openai-agents-sdk-short-term-memory",
-        needs_lakebase_edit=True,
-    ),
-    TemplateConfig(
-        name="agent-openai-agents-sdk-multiagent",
-        bundle_name="agent_openai_agents_sdk_multiagent",
-        dev_app_name="dev-agent-openai-agents-sdk-multiagent",
-        pre_test_edits=[
-            FileEdit(
-                relative_path="agent_server/agent.py",
-                old=MULTIAGENT_SUBAGENTS_OLD,
-                new=MULTIAGENT_SUBAGENTS_NEW,
-            ),
-            FileEdit(
-                relative_path="databricks.yml",
-                old="<YOUR-GENIE-SPACE-ID>",
-                new="01f05202dbb51d74b6cccf1b1b1683eb",
-            ),
-            FileEdit(
-                relative_path="databricks.yml",
-                old="<YOUR-SERVING-ENDPOINT>",
-                new="agents_dev-bbqiu-test-bb-2-25",
-            ),
-            FileEdit(
-                relative_path="databricks.yml",
-                old="<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>",
-                new="agents_dev-bbqiu-test-bb-2-25",
-            ),
-        ],
-    ),
-    TemplateConfig(
-        name="agent-non-conversational",
-        bundle_name="agent_non_conversational",
-        dev_app_name="dev-agent-non-conversational",
-        is_conversational=False,
-        has_evaluate=False,
-    ),
-]
+# ---------------------------------------------------------------------------
+# Template builder
+# ---------------------------------------------------------------------------
+def build_templates(
+    genie_space_id: str = DEFAULT_GENIE_SPACE_ID,
+    serving_endpoint: str = DEFAULT_SERVING_ENDPOINT,
+    knowledge_assistant_endpoint: str = DEFAULT_KNOWLEDGE_ASSISTANT_ENDPOINT,
+) -> list[TemplateConfig]:
+    return [
+        TemplateConfig(
+            name="agent-langgraph",
+            bundle_name="agent_langgraph",
+            dev_app_name="dev-agent-langgraph",
+        ),
+        TemplateConfig(
+            name="agent-langgraph-short-term-memory",
+            bundle_name="agent_langgraph_short_term_memory",
+            dev_app_name="dev-agent-langgraph-short-term-memory",
+            needs_lakebase_edit=True,
+        ),
+        TemplateConfig(
+            name="agent-langgraph-long-term-memory",
+            bundle_name="agent_langgraph_long_term_memory",
+            dev_app_name="dev-agent-langgraph-long-term-memory",
+            needs_lakebase_edit=True,
+        ),
+        TemplateConfig(
+            name="agent-openai-agents-sdk",
+            bundle_name="agent_openai_agents_sdk",
+            dev_app_name="dev-agent-openai-agents-sdk",
+        ),
+        TemplateConfig(
+            name="agent-openai-agents-sdk-short-term-memory",
+            bundle_name="agent_openai_agents_sdk_short_term_memory",
+            dev_app_name="dev-agent-openai-agents-sdk-short-term-memory",
+            needs_lakebase_edit=True,
+        ),
+        TemplateConfig(
+            name="agent-openai-agents-sdk-multiagent",
+            bundle_name="agent_openai_agents_sdk_multiagent",
+            dev_app_name="dev-agent-openai-agents-sdk-multiagent",
+            pre_test_edits=[
+                FileEdit(
+                    relative_path="agent_server/agent.py",
+                    old=MULTIAGENT_SUBAGENTS_OLD,
+                    new=_multiagent_subagents_new(genie_space_id, serving_endpoint),
+                ),
+                FileEdit(
+                    relative_path="databricks.yml",
+                    old="<YOUR-GENIE-SPACE-ID>",
+                    new=genie_space_id,
+                ),
+                FileEdit(
+                    relative_path="databricks.yml",
+                    old="<YOUR-SERVING-ENDPOINT>",
+                    new=serving_endpoint,
+                ),
+                FileEdit(
+                    relative_path="databricks.yml",
+                    old="<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>",
+                    new=knowledge_assistant_endpoint,
+                ),
+            ],
+        ),
+        TemplateConfig(
+            name="agent-non-conversational",
+            bundle_name="agent_non_conversational",
+            dev_app_name="dev-agent-non-conversational",
+            is_conversational=False,
+            has_evaluate=False,
+        ),
+    ]

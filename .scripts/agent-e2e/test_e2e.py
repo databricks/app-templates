@@ -15,12 +15,9 @@ from helpers import (
     clean_template,
     get_oauth_token,
     grant_lakebase_access,
-    query_deployed_non_conversational,
     query_deployed_with_openai_sdk,
     query_endpoint,
     query_endpoint_stream,
-    query_endpoint_stream_with_auth,
-    query_endpoint_with_auth,
     revert_edits,
     run_evaluate,
     run_quickstart,
@@ -54,7 +51,7 @@ def phase(name: str):
         yield
     except Exception as exc:
         _log(f"Phase {name} FAILED: {exc}")
-        raise type(exc)(f"[{name}] {exc}") from exc
+        raise RuntimeError(f"[{name}] {exc}") from exc
     _log(f"Phase {name} completed")
 
 
@@ -75,6 +72,30 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize("template", templates, ids=lambda t: t.name)
 
 
+def _query_endpoints(
+    template: TemplateConfig,
+    base_url: str,
+    token: str | None = None,
+):
+    """Test non-streaming and streaming endpoints. Shared by local and deploy phases."""
+    auth_headers = {"Authorization": f"Bearer {token}"} if token else None
+
+    if template.is_conversational:
+        result = query_endpoint(base_url, CONVERSATIONAL_PAYLOAD, "/responses", auth_headers)
+        assert "output" in result, f"/responses missing 'output': {result}"
+
+        result = query_endpoint(base_url, CONVERSATIONAL_PAYLOAD, "/invocations", auth_headers)
+        assert "output" in result, f"/invocations missing 'output': {result}"
+
+        query_endpoint_stream(base_url, CONVERSATIONAL_PAYLOAD, "/responses", auth_headers)
+    else:
+        result = query_endpoint(
+            base_url, NON_CONVERSATIONAL_PAYLOAD, "/invocations", auth_headers
+        )
+        assert "results" in result, f"/invocations missing 'results': {result}"
+        assert len(result["results"]) > 0, "No results returned"
+
+
 def _run_local(template: TemplateConfig, template_dir: Path, log_file: Path):
     """Local phase: start server -> curl endpoints -> stop server -> evaluate."""
     set_log_file(log_file)
@@ -84,20 +105,7 @@ def _run_local(template: TemplateConfig, template_dir: Path, log_file: Path):
     proc, port = start_server(template_dir)
     base_url = f"http://localhost:{port}"
     try:
-        if template.is_conversational:
-            result = query_endpoint(base_url, CONVERSATIONAL_PAYLOAD, "/responses")
-            assert "output" in result, f"/responses missing 'output': {result}"
-
-            result = query_endpoint(base_url, CONVERSATIONAL_PAYLOAD, "/invocations")
-            assert "output" in result, f"/invocations missing 'output': {result}"
-
-            query_endpoint_stream(base_url, CONVERSATIONAL_PAYLOAD, "/responses")
-        else:
-            result = query_endpoint(
-                base_url, NON_CONVERSATIONAL_PAYLOAD, "/invocations"
-            )
-            assert "results" in result, f"/invocations missing 'results': {result}"
-            assert len(result["results"]) > 0, "No results returned"
+        _query_endpoints(template, base_url)
     finally:
         stop_server(proc)
 
@@ -135,17 +143,7 @@ def _run_deploy(
                 )
                 assert output_text, "OpenAI SDK returned empty response"
 
-                result = query_endpoint_with_auth(
-                    app_url, token, CONVERSATIONAL_PAYLOAD, "/invocations"
-                )
-                assert "output" in result, f"/invocations missing 'output': {result}"
-
-                query_endpoint_stream_with_auth(
-                    app_url, token, CONVERSATIONAL_PAYLOAD, "/responses"
-                )
-            else:
-                result = query_deployed_non_conversational(app_url, token)
-                assert len(result["results"]) > 0, "No results returned"
+            _query_endpoints(template, app_url, token)
         except Exception:
             logs = capture_app_logs(template.dev_app_name, profile)
             if logs:
@@ -171,6 +169,10 @@ def test_e2e(template, repo_root, profile, lakebase, request):
     log_file = log_dir / f"{template.name}.log"
     log_file.write_text("")  # clear previous run
     set_log_file(log_file)
+
+    # Snapshot databricks.yml before quickstart (quickstart may modify it)
+    yml_path = template_dir / "databricks.yml"
+    yml_original = yml_path.read_text() if yml_path.exists() else None
 
     with phase("setup:clean"):
         clean_template(template_dir, profile)
@@ -232,3 +234,6 @@ def test_e2e(template, repo_root, profile, lakebase, request):
                 )
     finally:
         revert_edits(originals)
+        # Restore databricks.yml to pre-quickstart state (quickstart replaces placeholders)
+        if yml_original is not None:
+            yml_path.write_text(yml_original)

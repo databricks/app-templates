@@ -19,6 +19,17 @@ from databricks_ai_bridge.lakebase import (
 from template_config import FileEdit
 
 # ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+POLL_INTERVAL = 30  # seconds between polls
+MAX_POLLS = 10  # max number of polls before giving up
+QUERY_TIMEOUT = 120  # seconds for HTTP requests
+BUNDLE_TIMEOUT = 300  # seconds for bundle deploy/run/destroy commands
+QUICKSTART_TIMEOUT = 300  # seconds for quickstart command
+EVALUATE_TIMEOUT = 900  # seconds for agent-evaluate
+SERVER_START_TIMEOUT = 60  # seconds to wait for local server to start
+
+# ---------------------------------------------------------------------------
 # Thread-safe logging
 # ---------------------------------------------------------------------------
 _thread_local = threading.local()
@@ -105,7 +116,7 @@ def _clean_bundle_state(template_dir: Path, profile: str):
 
 
 def _delete_existing_app(template_dir: Path, profile: str):
-    """Delete the Databricks app named in databricks.yml, if it exists."""
+    """Delete the Databricks app named in databricks.yml and wait until it's gone."""
     names = _parse_yml_names(template_dir)
     if not names:
         return
@@ -116,11 +127,26 @@ def _delete_existing_app(template_dir: Path, profile: str):
     )
     if result.returncode != 0:
         return  # App doesn't exist
+
+    # Try to delete (may fail if already deleting)
     _run_cmd(
         ["databricks", "apps", "delete", app_name, "-p", profile],
         timeout=60,
     )
-    _log(f"Deleted existing app '{app_name}' during cleanup.")
+
+    # Poll until the app is fully gone
+    _log(f"Waiting for app '{app_name}' to be fully deleted...")
+    for _ in range(MAX_POLLS):
+        time.sleep(POLL_INTERVAL)
+        result = _run_cmd(
+            ["databricks", "apps", "get", app_name, "-p", profile, "--output", "json"],
+            timeout=30,
+        )
+        if result.returncode != 0:
+            _log(f"App '{app_name}' fully deleted.")
+            return
+
+    _log(f"WARNING: App '{app_name}' still exists after {MAX_POLLS} polls.")
 
 
 def clean_template(template_dir: Path, profile: str = "dev"):
@@ -146,7 +172,7 @@ def run_quickstart(template_dir: Path, profile: str, lakebase: str | None = None
     cmd = ["uv", "run", "quickstart", "--profile", profile]
     if lakebase:
         cmd.extend(["--lakebase", lakebase])
-    result = _run_cmd(cmd, cwd=template_dir, timeout=300)
+    result = _run_cmd(cmd, cwd=template_dir, timeout=QUICKSTART_TIMEOUT)
     assert result.returncode == 0, (
         f"quickstart failed in {template_dir.name}:\n"
         f"stdout: {result.stdout}\n"
@@ -181,7 +207,7 @@ def start_server(template_dir: Path, port: int = 0) -> tuple[subprocess.Popen, i
         preexec_fn=os.setsid,
     )
 
-    deadline = time.time() + 60
+    deadline = time.time() + SERVER_START_TIMEOUT
     while time.time() < deadline:
         if proc.poll() is not None:
             stdout = proc.stdout.read() if proc.stdout else ""
@@ -198,7 +224,7 @@ def start_server(template_dir: Path, port: int = 0) -> tuple[subprocess.Popen, i
                 _log(f"Server started on port {port}")
                 return proc, port
     stop_server(proc)
-    raise TimeoutError("Server did not start within 60 seconds")
+    raise TimeoutError(f"Server did not start within {SERVER_START_TIMEOUT} seconds")
 
 
 def stop_server(proc: subprocess.Popen):
@@ -221,15 +247,23 @@ def stop_server(proc: subprocess.Popen):
 # ---------------------------------------------------------------------------
 
 
-def query_endpoint(base_url: str, payload: dict, endpoint: str = "/responses") -> dict:
+def query_endpoint(
+    base_url: str,
+    payload: dict,
+    endpoint: str = "/responses",
+    extra_headers: dict[str, str] | None = None,
+) -> dict:
     """POST to {base_url}{endpoint}, return response JSON. Timeout: 120s."""
     url = f"{base_url}{endpoint}"
     _log(f"POST {url}")
+    headers = {"Content-Type": "application/json"}
+    if extra_headers:
+        headers.update(extra_headers)
     resp = requests.post(
         url,
         json=payload,
-        headers={"Content-Type": "application/json"},
-        timeout=120,
+        headers=headers,
+        timeout=QUERY_TIMEOUT,
     )
     _log(f"  status={resp.status_code}")
     if not resp.ok:
@@ -239,25 +273,6 @@ def query_endpoint(base_url: str, payload: dict, endpoint: str = "/responses") -
             f"{resp.status_code} for {resp.url}\nResponse body: {body}",
             response=resp,
         )
-    _log(f"  response: {json.dumps(resp.json(), indent=2)[:1000]}")
-    return resp.json()
-
-
-def query_endpoint_with_auth(base_url: str, token: str, payload: dict, endpoint: str) -> dict:
-    """POST to {base_url}{endpoint} with Bearer token. Return response JSON."""
-    url = f"{base_url}{endpoint}"
-    _log(f"POST {url} (authenticated)")
-    resp = requests.post(
-        url,
-        json=payload,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {token}",
-        },
-        timeout=120,
-    )
-    _log(f"  status={resp.status_code}")
-    resp.raise_for_status()
     _log(f"  response: {json.dumps(resp.json(), indent=2)[:1000]}")
     return resp.json()
 
@@ -279,7 +294,7 @@ def _assert_sse_stream(
         url,
         json=stream_payload,
         headers=headers,
-        timeout=120,
+        timeout=QUERY_TIMEOUT,
         stream=True,
     )
     resp.raise_for_status()
@@ -292,16 +307,14 @@ def _assert_sse_stream(
     assert has_data, "No SSE data: events received in stream response"
 
 
-def query_endpoint_stream(base_url: str, payload: dict, endpoint: str = "/responses") -> None:
-    """POST with stream=True, validate SSE response with at least one data: event."""
-    _assert_sse_stream(base_url, payload, endpoint)
-
-
-def query_endpoint_stream_with_auth(
-    base_url: str, token: str, payload: dict, endpoint: str
+def query_endpoint_stream(
+    base_url: str,
+    payload: dict,
+    endpoint: str = "/responses",
+    extra_headers: dict[str, str] | None = None,
 ) -> None:
-    """POST with stream=True and Bearer token, validate SSE response."""
-    _assert_sse_stream(base_url, payload, endpoint, {"Authorization": f"Bearer {token}"})
+    """POST with stream=True, validate SSE response with at least one data: event."""
+    _assert_sse_stream(base_url, payload, endpoint, extra_headers)
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +327,7 @@ def run_evaluate(template_dir: Path):
     result = _run_cmd(
         ["uv", "run", "agent-evaluate"],
         cwd=template_dir,
-        timeout=900,
+        timeout=EVALUATE_TIMEOUT,
     )
     assert result.returncode == 0, (
         f"evaluate failed in {template_dir.name}:\nstdout: {result.stdout}\nstderr: {result.stderr}"
@@ -326,7 +339,7 @@ def run_test_agent(template_dir: Path):
     result = _run_cmd(
         ["uv", "run", "python", "test_agent.py"],
         cwd=template_dir,
-        timeout=120,
+        timeout=QUERY_TIMEOUT,
     )
     assert result.returncode == 0, (
         f"test_agent.py failed in {template_dir.name}:\n"
@@ -372,7 +385,7 @@ def revert_edits(originals: list[tuple[Path, str]]):
 # ---------------------------------------------------------------------------
 
 
-def bundle_deploy(template_dir: Path, profile: str, retries: int = 5):
+def bundle_deploy(template_dir: Path, profile: str):
     """Run `databricks bundle deploy --target dev -p <profile>`.
 
     Handles transient errors with automatic recovery:
@@ -380,28 +393,28 @@ def bundle_deploy(template_dir: Path, profile: str, retries: int = 5):
     - "already exists": delete existing app + clean state, retry
     - "does not exist or is deleted": clean stale state, wait and retry
     """
-    for attempt in range(1, retries + 1):
+    for attempt in range(1, MAX_POLLS + 1):
         result = _run_cmd(
             ["databricks", "bundle", "deploy", "--target", "dev", "-p", profile],
             cwd=template_dir,
-            timeout=300,
+            timeout=BUNDLE_TIMEOUT,
         )
         if result.returncode == 0:
             return
 
         stderr = result.stderr
-        if attempt < retries:
+        if attempt < MAX_POLLS:
             if "terraform init" in stderr:
                 _log(
-                    f"bundle deploy attempt {attempt}/{retries} failed in "
-                    f"{template_dir.name} (terraform init error), retrying in 30s..."
+                    f"bundle deploy attempt {attempt}/{MAX_POLLS} failed in "
+                    f"{template_dir.name} (terraform init error), retrying in {POLL_INTERVAL}s..."
                 )
-                time.sleep(30)
+                time.sleep(POLL_INTERVAL)
                 continue
 
             if "already exists" in stderr:
                 _log(
-                    f"bundle deploy attempt {attempt}/{retries} failed in "
+                    f"bundle deploy attempt {attempt}/{MAX_POLLS} failed in "
                     f"{template_dir.name} (app already exists), cleaning up..."
                 )
                 _delete_existing_app(template_dir, profile)
@@ -410,11 +423,11 @@ def bundle_deploy(template_dir: Path, profile: str, retries: int = 5):
 
             if "does not exist or is deleted" in stderr:
                 _log(
-                    f"bundle deploy attempt {attempt}/{retries} failed in "
-                    f"{template_dir.name} (stale state), cleaning up and retrying in 30s..."
+                    f"bundle deploy attempt {attempt}/{MAX_POLLS} failed in "
+                    f"{template_dir.name} (stale state), cleaning up and retrying in {POLL_INTERVAL}s..."
                 )
                 _clean_bundle_state(template_dir, profile)
-                time.sleep(30)
+                time.sleep(POLL_INTERVAL)
                 continue
 
         break
@@ -425,23 +438,23 @@ def bundle_deploy(template_dir: Path, profile: str, retries: int = 5):
     )
 
 
-def bundle_run(template_dir: Path, resource_key: str, profile: str, retries: int = 5):
+def bundle_run(template_dir: Path, resource_key: str, profile: str):
     """Run `databricks bundle run <resource_key> --target dev` to start the app."""
     _log(f"Starting app via bundle run {resource_key}...")
-    for attempt in range(1, retries + 1):
+    for attempt in range(1, MAX_POLLS + 1):
         result = _run_cmd(
             ["databricks", "bundle", "run", resource_key, "--target", "dev", "-p", profile],
             cwd=template_dir,
-            timeout=300,
+            timeout=BUNDLE_TIMEOUT,
         )
         if result.returncode == 0:
             return
-        if attempt < retries:
+        if attempt < MAX_POLLS:
             _log(
-                f"bundle run attempt {attempt}/{retries} failed in "
-                f"{template_dir.name}, retrying in 30s..."
+                f"bundle run attempt {attempt}/{MAX_POLLS} failed in "
+                f"{template_dir.name}, retrying in {POLL_INTERVAL}s..."
             )
-            time.sleep(30)
+            time.sleep(POLL_INTERVAL)
     assert result.returncode == 0, (
         f"bundle run failed in {template_dir.name}:\n"
         f"stdout: {result.stdout}\n"
@@ -467,7 +480,7 @@ def bundle_destroy(template_dir: Path, profile: str):
                 "--auto-approve",
             ],
             cwd=template_dir,
-            timeout=300,
+            timeout=BUNDLE_TIMEOUT,
         )
         if result.returncode != 0:
             _log(
@@ -478,24 +491,15 @@ def bundle_destroy(template_dir: Path, profile: str):
         _log(f"WARNING: bundle destroy errored in {template_dir.name}: {exc}")
 
 
-def wait_for_app_ready(
-    app_name: str,
-    profile: str,
-    deploy_timeout: int = 600,
-    serve_timeout: int = 180,
-) -> str:
+def wait_for_app_ready(app_name: str, profile: str) -> str:
     """Poll `databricks apps get` until RUNNING, then poll /agent/info until responsive.
-
-    Uses separate timeouts for each phase so a slow deploy doesn't starve the
-    serve-readiness check.
 
     Returns the app URL (without trailing slash).
     """
     # Phase 1: wait for RUNNING state
     _log(f"Waiting for app {app_name} to reach RUNNING state...")
-    deadline = time.time() + deploy_timeout
     app_url = ""
-    while time.time() < deadline:
+    for _ in range(MAX_POLLS):
         result = _run_cmd(
             ["databricks", "apps", "get", app_name, "-p", profile, "--output", "json"],
             timeout=60,
@@ -508,15 +512,14 @@ def wait_for_app_ready(
                 app_url = data.get("url", "").rstrip("/")
                 assert app_url, f"No URL found for app {app_name}"
                 break
-        time.sleep(30)
+        time.sleep(POLL_INTERVAL)
     else:
-        raise TimeoutError(f"App {app_name} did not reach RUNNING state within {deploy_timeout}s")
+        raise TimeoutError(f"App {app_name} did not reach RUNNING state within {MAX_POLLS} polls")
 
     # Phase 2: poll /agent/info until the app is actually serving
     _log(f"App is RUNNING at {app_url}, polling /agent/info...")
-    deadline = time.time() + serve_timeout
     token = get_oauth_token(profile)
-    while time.time() < deadline:
+    for _ in range(MAX_POLLS):
         try:
             resp = requests.get(
                 f"{app_url}/agent/info",
@@ -528,10 +531,10 @@ def wait_for_app_ready(
                 return app_url
         except requests.RequestException as exc:
             _log(f"  /agent/info error: {exc}")
-        time.sleep(10)
+        time.sleep(POLL_INTERVAL)
 
     raise TimeoutError(
-        f"App {app_name} is RUNNING but /agent/info did not respond within {serve_timeout}s"
+        f"App {app_name} is RUNNING but /agent/info did not respond within {MAX_POLLS} polls"
     )
 
 
@@ -613,23 +616,10 @@ def query_deployed_with_openai_sdk(app_url: str, token: str, message: str) -> st
     )
     response = client.responses.create(
         model="agent",
-        input=message,
+        input=[{"role": "user", "content": message}],
     )
     _log(f"  OpenAI SDK response: {response.output_text[:500]}")
     return response.output_text
 
 
-def query_deployed_non_conversational(app_url: str, token: str) -> dict:
-    """POST to /invocations with dict payload and Bearer token."""
-    payload = {
-        "document_text": (
-            "Total assets: $2,300,000. Total liabilities: $1,200,000. "
-            "Shareholder's equity: $1,100,000. Net income: $450,000. "
-            "Revenues: $1,700,000. Expenses: $1,250,000."
-        ),
-        "questions": [
-            "Do the documents contain a balance sheet?",
-            "Do the documents contain an income statement?",
-        ],
-    }
-    return query_endpoint_with_auth(app_url, token, payload, "/invocations")
+

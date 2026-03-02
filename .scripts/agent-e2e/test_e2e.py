@@ -15,9 +15,9 @@ from helpers import (
     clean_template,
     get_oauth_token,
     grant_lakebase_access,
-    query_deployed_with_openai_sdk,
     query_endpoint,
     query_endpoint_stream,
+    query_with_openai_sdk,
     revert_edits,
     run_evaluate,
     run_quickstart,
@@ -77,17 +77,31 @@ def _query_endpoints(
     base_url: str,
     token: str | None = None,
 ):
-    """Test non-streaming and streaming endpoints. Shared by local and deploy phases."""
+    """Test all endpoints: curl non-streaming, curl streaming, and OpenAI SDK.
+
+    Shared by local and deploy phases. When token is None (local), the OpenAI SDK
+    uses a dummy key; when token is provided (deploy), it authenticates with Bearer.
+    """
     auth_headers = {"Authorization": f"Bearer {token}"} if token else None
 
     if template.is_conversational:
+        # curl: non-streaming /responses and /invocations
         result = query_endpoint(base_url, CONVERSATIONAL_PAYLOAD, "/responses", auth_headers)
         assert "output" in result, f"/responses missing 'output': {result}"
 
         result = query_endpoint(base_url, CONVERSATIONAL_PAYLOAD, "/invocations", auth_headers)
         assert "output" in result, f"/invocations missing 'output': {result}"
 
+        # curl: streaming /responses and /invocations
         query_endpoint_stream(base_url, CONVERSATIONAL_PAYLOAD, "/responses", auth_headers)
+        query_endpoint_stream(base_url, CONVERSATIONAL_PAYLOAD, "/invocations", auth_headers)
+
+        # OpenAI SDK: non-streaming and streaming
+        output_text = query_with_openai_sdk(base_url, token, "What is 2+2?")
+        assert output_text, "OpenAI SDK returned empty response"
+
+        output_text = query_with_openai_sdk(base_url, token, "What is 3+3?", stream=True)
+        assert output_text, "OpenAI SDK streaming returned empty response"
     else:
         result = query_endpoint(
             base_url, NON_CONVERSATIONAL_PAYLOAD, "/invocations", auth_headers
@@ -137,12 +151,6 @@ def _run_deploy(
         token = get_oauth_token(profile)
 
         try:
-            if template.is_conversational:
-                output_text = query_deployed_with_openai_sdk(
-                    app_url, token, "What is 2+2?"
-                )
-                assert output_text, "OpenAI SDK returned empty response"
-
             _query_endpoints(template, app_url, token)
         except Exception:
             logs = capture_app_logs(template.dev_app_name, profile)

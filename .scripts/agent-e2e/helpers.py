@@ -605,21 +605,43 @@ def grant_lakebase_access(app_name: str, lakebase: str, profile: str):
         _log(f"WARNING: grant_lakebase_access failed for {app_name}: {exc}")
 
 
-def query_deployed_with_openai_sdk(app_url: str, token: str, message: str) -> str:
-    """Use OpenAI SDK to test /responses endpoint. Return response.output_text."""
+def query_with_openai_sdk(
+    base_url: str,
+    token: str | None,
+    message: str,
+    stream: bool = False,
+) -> str:
+    """Use OpenAI SDK to test /responses endpoint. Return response text.
+
+    Works for both local (token=None, uses dummy key) and deployed (token=Bearer).
+    When stream=True, uses the streaming API and collects text from events.
+    """
     from openai import OpenAI
 
-    _log(f"Querying {app_url} via OpenAI SDK...")
+    mode = "streaming" if stream else "non-streaming"
+    _log(f"Querying {base_url} via OpenAI SDK ({mode})...")
     client = OpenAI(
-        base_url=f"{app_url}",
-        api_key=token,
+        base_url=base_url,
+        api_key=token or "dummy",
     )
-    response = client.responses.create(
-        model="agent",
-        input=[{"role": "user", "content": message}],
-    )
-    _log(f"  OpenAI SDK response: {response.output_text[:500]}")
-    return response.output_text
+    if stream:
+        text_parts: list[str] = []
+        with client.responses.stream(
+            model="agent",
+            input=[{"role": "user", "content": message}],
+        ) as resp_stream:
+            for event in resp_stream:
+                if hasattr(event, "delta") and event.delta:
+                    text_parts.append(event.delta)
+        output_text = "".join(text_parts)
+    else:
+        response = client.responses.create(
+            model="agent",
+            input=[{"role": "user", "content": message}],
+        )
+        output_text = response.output_text
+    _log(f"  OpenAI SDK response ({mode}): {output_text[:500]}")
+    return output_text
 
 
 

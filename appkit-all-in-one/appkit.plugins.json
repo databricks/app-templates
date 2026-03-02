@@ -1,0 +1,52 @@
+{
+  "$schema": "https://databricks.github.io/appkit/schemas/template-plugins.schema.json",
+  "version": "1.0",
+  "plugins": {
+    "analytics": {
+      "name": "analytics",
+      "displayName": "Analytics Plugin",
+      "description": "SQL query execution against Databricks SQL Warehouses",
+      "package": "@databricks/appkit",
+      "resources": {
+        "required": [
+          {
+            "type": "sql_warehouse",
+            "alias": "SQL Warehouse",
+            "resourceKey": "sql-warehouse",
+            "description": "SQL Warehouse for executing analytics queries",
+            "permission": "CAN_USE",
+            "fields": {
+              "id": {
+                "env": "DATABRICKS_WAREHOUSE_ID",
+                "description": "SQL Warehouse ID"
+              }
+            }
+          }
+        ],
+        "optional": []
+      }
+    },
+    "lakebase": {
+      "name": "lakebase",
+      "displayName": "Lakebase",
+      "description": "SQL query execution against Databricks Lakebase Autoscaling",
+      "package": "@databricks/appkit",
+      "resources": {
+        "required": [],
+        "optional": []
+      },
+      "onSetupMessage": "Configure environment variables before running or deploying the app.\nSee: https://databricks.github.io/appkit/docs/plugins/lakebase"
+    },
+    "server": {
+      "name": "server",
+      "displayName": "Server Plugin",
+      "description": "HTTP server with Express, static file serving, and Vite dev mode support",
+      "package": "@databricks/appkit",
+      "resources": {
+        "required": [],
+        "optional": []
+      },
+      "requiredByTemplate": true
+    }
+  }
+}

@@ -5,6 +5,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -17,6 +18,45 @@ from databricks_ai_bridge.lakebase import (
 )
 
 from template_config import FileEdit
+
+# ---------------------------------------------------------------------------
+# Thread-safe logging
+# ---------------------------------------------------------------------------
+_thread_local = threading.local()
+_log_lock = threading.Lock()
+
+
+def set_log_file(log_file: Path | None):
+    """Set the log file for the current thread."""
+    _thread_local.log_file = log_file
+
+
+def _log(msg: str):
+    """Write to the current thread's log file and stdout."""
+    print(msg)
+    log_file = getattr(_thread_local, "log_file", None)
+    if log_file:
+        with _log_lock, open(log_file, "a") as f:
+            f.write(msg + "\n")
+
+
+def _run_cmd(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
+    """Run a subprocess, log its output, and return the result."""
+    kwargs.setdefault("capture_output", True)
+    kwargs.setdefault("text", True)
+    _log(f"$ {' '.join(cmd)}")
+    result = subprocess.run(cmd, **kwargs)
+    _log(f"  exit={result.returncode}")
+    if result.stdout:
+        _log(f"  stdout:\n{result.stdout.rstrip()}")
+    if result.stderr:
+        _log(f"  stderr:\n{result.stderr.rstrip()}")
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Parse helpers
+# ---------------------------------------------------------------------------
 
 
 def _parse_yml_names(template_dir: Path) -> tuple[str, str] | None:
@@ -38,6 +78,11 @@ def _parse_yml_names(template_dir: Path) -> tuple[str, str] | None:
     return bundle_match.group(1), app_match.group(1)
 
 
+# ---------------------------------------------------------------------------
+# Clean helpers
+# ---------------------------------------------------------------------------
+
+
 def _clean_bundle_state(template_dir: Path, profile: str):
     """Delete local .bundle/ and remote workspace terraform state."""
     bundle_dir = template_dir / ".bundle"
@@ -49,9 +94,9 @@ def _clean_bundle_state(template_dir: Path, profile: str):
         return
     bundle_name = names[0]
 
-    user_result = subprocess.run(
+    user_result = _run_cmd(
         ["databricks", "current-user", "me", "-p", profile, "--output", "json"],
-        capture_output=True, text=True, timeout=30,
+        timeout=30,
     )
     if user_result.returncode == 0:
         user_name = json.loads(user_result.stdout).get("userName", "")
@@ -59,10 +104,10 @@ def _clean_bundle_state(template_dir: Path, profile: str):
             remote_path = (
                 f"/Workspace/Users/{user_name}/.bundle/{bundle_name}"
             )
-            subprocess.run(
+            _run_cmd(
                 ["databricks", "workspace", "delete", remote_path,
                  "--recursive", "-p", profile],
-                capture_output=True, text=True, timeout=30,
+                timeout=30,
             )
 
 
@@ -72,19 +117,17 @@ def _delete_existing_app(template_dir: Path, profile: str):
     if not names:
         return
     app_name = names[1]
-    # Check if app exists
-    result = subprocess.run(
+    result = _run_cmd(
         ["databricks", "apps", "get", app_name, "-p", profile, "--output", "json"],
-        capture_output=True, text=True, timeout=30,
+        timeout=30,
     )
     if result.returncode != 0:
         return  # App doesn't exist
-    # Delete the app
-    subprocess.run(
+    _run_cmd(
         ["databricks", "apps", "delete", app_name, "-p", profile],
-        capture_output=True, text=True, timeout=60,
+        timeout=60,
     )
-    print(f"Deleted existing app '{app_name}' during cleanup.")
+    _log(f"Deleted existing app '{app_name}' during cleanup.")
 
 
 def clean_template(template_dir: Path, profile: str = "dev"):
@@ -100,6 +143,11 @@ def clean_template(template_dir: Path, profile: str = "dev"):
     _delete_existing_app(template_dir, profile)
 
 
+# ---------------------------------------------------------------------------
+# Quickstart / server
+# ---------------------------------------------------------------------------
+
+
 def run_quickstart(
     template_dir: Path, profile: str, lakebase: str | None = None
 ):
@@ -107,13 +155,7 @@ def run_quickstart(
     cmd = ["uv", "run", "quickstart", "--profile", profile]
     if lakebase:
         cmd.extend(["--lakebase", lakebase])
-    result = subprocess.run(
-        cmd,
-        cwd=template_dir,
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
+    result = _run_cmd(cmd, cwd=template_dir, timeout=300)
     assert result.returncode == 0, (
         f"quickstart failed in {template_dir.name}:\n"
         f"stdout: {result.stdout}\n"
@@ -122,11 +164,7 @@ def run_quickstart(
 
 
 def find_free_port() -> int:
-    """Bind to port 0 and return the OS-assigned free port.
-
-    There is a small TOCTOU window between closing the socket and the server
-    binding to the port, but the risk of collision is negligible in practice.
-    """
+    """Bind to port 0 and return the OS-assigned free port."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
         return s.getsockname()[1]
@@ -144,6 +182,7 @@ def start_server(
     if port == 0:
         port = find_free_port()
 
+    _log(f"Starting server on port {port} in {template_dir.name}")
     proc = subprocess.Popen(
         ["uv", "run", "start-server", "--port", str(port)],
         cwd=template_dir,
@@ -167,6 +206,7 @@ def start_server(
         if ready:
             line = proc.stderr.readline()
             if "Uvicorn running on" in line or "Application startup complete" in line:
+                _log(f"Server started on port {port}")
                 return proc, port
     stop_server(proc)
     raise TimeoutError("Server did not start within 60 seconds")
@@ -187,20 +227,30 @@ def stop_server(proc: subprocess.Popen):
             pass
 
 
+# ---------------------------------------------------------------------------
+# Endpoint query helpers
+# ---------------------------------------------------------------------------
+
+
 def query_endpoint(base_url: str, payload: dict, endpoint: str = "/responses") -> dict:
     """POST to {base_url}{endpoint}, return response JSON. Timeout: 120s."""
+    url = f"{base_url}{endpoint}"
+    _log(f"POST {url}")
     resp = requests.post(
-        f"{base_url}{endpoint}",
+        url,
         json=payload,
         headers={"Content-Type": "application/json"},
         timeout=120,
     )
+    _log(f"  status={resp.status_code}")
     if not resp.ok:
         body = resp.text[:2000]
+        _log(f"  error body: {body}")
         raise requests.HTTPError(
             f"{resp.status_code} for {resp.url}\nResponse body: {body}",
             response=resp,
         )
+    _log(f"  response: {json.dumps(resp.json(), indent=2)[:1000]}")
     return resp.json()
 
 
@@ -208,8 +258,10 @@ def query_endpoint_with_auth(
     base_url: str, token: str, payload: dict, endpoint: str
 ) -> dict:
     """POST to {base_url}{endpoint} with Bearer token. Return response JSON."""
+    url = f"{base_url}{endpoint}"
+    _log(f"POST {url} (authenticated)")
     resp = requests.post(
-        f"{base_url}{endpoint}",
+        url,
         json=payload,
         headers={
             "Content-Type": "application/json",
@@ -217,7 +269,9 @@ def query_endpoint_with_auth(
         },
         timeout=120,
     )
+    _log(f"  status={resp.status_code}")
     resp.raise_for_status()
+    _log(f"  response: {json.dumps(resp.json(), indent=2)[:1000]}")
     return resp.json()
 
 
@@ -228,12 +282,14 @@ def _assert_sse_stream(
     extra_headers: dict[str, str] | None = None,
 ) -> None:
     """POST with stream=True and validate the SSE response contains data."""
+    url = f"{base_url}{endpoint}"
+    _log(f"POST {url} (streaming)")
     stream_payload = {**payload, "stream": True}
     headers = {"Content-Type": "application/json"}
     if extra_headers:
         headers.update(extra_headers)
     resp = requests.post(
-        f"{base_url}{endpoint}",
+        url,
         json=stream_payload,
         headers=headers,
         timeout=120,
@@ -249,6 +305,7 @@ def _assert_sse_stream(
         for line in resp.iter_lines(decode_unicode=True)
         if line
     )
+    _log(f"  streaming: content_type={content_type}, has_data={has_data}")
     assert has_data, "No SSE data: events received in stream response"
 
 
@@ -268,13 +325,16 @@ def query_endpoint_stream_with_auth(
     )
 
 
+# ---------------------------------------------------------------------------
+# Evaluate / test
+# ---------------------------------------------------------------------------
+
+
 def run_evaluate(template_dir: Path):
     """Run `uv run agent-evaluate`. Timeout: 15 minutes."""
-    result = subprocess.run(
+    result = _run_cmd(
         ["uv", "run", "agent-evaluate"],
         cwd=template_dir,
-        capture_output=True,
-        text=True,
         timeout=900,
     )
     assert result.returncode == 0, (
@@ -286,11 +346,9 @@ def run_evaluate(template_dir: Path):
 
 def run_test_agent(template_dir: Path):
     """Run `uv run python test_agent.py` for non-conversational template."""
-    result = subprocess.run(
+    result = _run_cmd(
         ["uv", "run", "python", "test_agent.py"],
         cwd=template_dir,
-        capture_output=True,
-        text=True,
         timeout=120,
     )
     assert result.returncode == 0, (
@@ -298,6 +356,11 @@ def run_test_agent(template_dir: Path):
         f"stdout: {result.stdout}\n"
         f"stderr: {result.stderr}"
     )
+
+
+# ---------------------------------------------------------------------------
+# File edits
+# ---------------------------------------------------------------------------
 
 
 def apply_edits(
@@ -320,6 +383,7 @@ def apply_edits(
             f"Looking for: {edit.old[:100]}..."
         )
         filepath.write_text(current.replace(edit.old, edit.new, 1))
+        _log(f"Applied edit to {edit.relative_path}")
     return list(seen.items())
 
 
@@ -329,7 +393,9 @@ def revert_edits(originals: list[tuple[Path, str]]):
         filepath.write_text(content)
 
 
-# --- Deploy helpers ---
+# ---------------------------------------------------------------------------
+# Deploy helpers
+# ---------------------------------------------------------------------------
 
 
 def bundle_deploy(template_dir: Path, profile: str, retries: int = 3):
@@ -341,11 +407,9 @@ def bundle_deploy(template_dir: Path, profile: str, retries: int = 3):
     - "does not exist or is deleted": clean stale state, retry
     """
     for attempt in range(1, retries + 1):
-        result = subprocess.run(
+        result = _run_cmd(
             ["databricks", "bundle", "deploy", "--target", "dev", "-p", profile],
             cwd=template_dir,
-            capture_output=True,
-            text=True,
             timeout=300,
         )
         if result.returncode == 0:
@@ -354,7 +418,7 @@ def bundle_deploy(template_dir: Path, profile: str, retries: int = 3):
         stderr = result.stderr
         if attempt < retries:
             if "terraform init" in stderr:
-                print(
+                _log(
                     f"bundle deploy attempt {attempt}/{retries} failed in "
                     f"{template_dir.name} (terraform init error), retrying in 30s..."
                 )
@@ -362,7 +426,7 @@ def bundle_deploy(template_dir: Path, profile: str, retries: int = 3):
                 continue
 
             if "already exists" in stderr:
-                print(
+                _log(
                     f"bundle deploy attempt {attempt}/{retries} failed in "
                     f"{template_dir.name} (app already exists), cleaning up..."
                 )
@@ -371,7 +435,7 @@ def bundle_deploy(template_dir: Path, profile: str, retries: int = 3):
                 continue
 
             if "does not exist or is deleted" in stderr:
-                print(
+                _log(
                     f"bundle deploy attempt {attempt}/{retries} failed in "
                     f"{template_dir.name} (stale state), cleaning up..."
                 )
@@ -386,29 +450,42 @@ def bundle_deploy(template_dir: Path, profile: str, retries: int = 3):
     )
 
 
+def bundle_run(template_dir: Path, resource_key: str, profile: str):
+    """Run `databricks bundle run <resource_key> --target dev` to start the app."""
+    _log(f"Starting app via bundle run {resource_key}...")
+    result = _run_cmd(
+        ["databricks", "bundle", "run", resource_key, "--target", "dev", "-p", profile],
+        cwd=template_dir,
+        timeout=300,
+    )
+    assert result.returncode == 0, (
+        f"bundle run failed in {template_dir.name}:\n"
+        f"stdout: {result.stdout}\n"
+        f"stderr: {result.stderr}"
+    )
+
+
 def bundle_destroy(template_dir: Path, profile: str):
     """Run `databricks bundle destroy --target dev` to clean up deployed resources.
 
     Best-effort: prints warnings on failure, never raises.
     """
     try:
-        result = subprocess.run(
+        result = _run_cmd(
             [
                 "databricks", "bundle", "destroy", "--target", "dev",
                 "-p", profile, "--auto-approve",
             ],
             cwd=template_dir,
-            capture_output=True,
-            text=True,
             timeout=300,
         )
         if result.returncode != 0:
-            print(
+            _log(
                 f"WARNING: bundle destroy failed in {template_dir.name}:\n"
                 f"stdout: {result.stdout}\nstderr: {result.stderr}"
             )
     except Exception as exc:
-        print(f"WARNING: bundle destroy errored in {template_dir.name}: {exc}")
+        _log(f"WARNING: bundle destroy errored in {template_dir.name}: {exc}")
 
 
 def wait_for_app_ready(
@@ -425,18 +502,18 @@ def wait_for_app_ready(
     Returns the app URL (without trailing slash).
     """
     # Phase 1: wait for RUNNING state
+    _log(f"Waiting for app {app_name} to reach RUNNING state...")
     deadline = time.time() + deploy_timeout
     app_url = ""
     while time.time() < deadline:
-        result = subprocess.run(
+        result = _run_cmd(
             ["databricks", "apps", "get", app_name, "-p", profile, "--output", "json"],
-            capture_output=True,
-            text=True,
             timeout=60,
         )
         if result.returncode == 0:
             data = json.loads(result.stdout)
             state = data.get("app_status", {}).get("state", "")
+            _log(f"  app state: {state}")
             if state == "RUNNING":
                 app_url = data.get("url", "").rstrip("/")
                 assert app_url, f"No URL found for app {app_name}"
@@ -448,6 +525,7 @@ def wait_for_app_ready(
         )
 
     # Phase 2: poll /agent/info until the app is actually serving
+    _log(f"App is RUNNING at {app_url}, polling /agent/info...")
     deadline = time.time() + serve_timeout
     token = get_oauth_token(profile)
     while time.time() < deadline:
@@ -457,10 +535,11 @@ def wait_for_app_ready(
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=10,
             )
+            _log(f"  /agent/info status={resp.status_code}")
             if resp.status_code < 500:
                 return app_url
-        except requests.RequestException:
-            pass
+        except requests.RequestException as exc:
+            _log(f"  /agent/info error: {exc}")
         time.sleep(10)
 
     raise TimeoutError(
@@ -470,10 +549,8 @@ def wait_for_app_ready(
 
 def get_oauth_token(profile: str) -> str:
     """Get token from `databricks auth token -p <profile>`."""
-    result = subprocess.run(
+    result = _run_cmd(
         ["databricks", "auth", "token", "-p", profile],
-        capture_output=True,
-        text=True,
         timeout=60,
     )
     assert result.returncode == 0, f"Failed to get auth token: {result.stderr}"
@@ -486,15 +563,13 @@ def get_oauth_token(profile: str) -> str:
 def capture_app_logs(app_name: str, profile: str) -> str:
     """Capture app logs via `databricks apps logs`. Returns log output or empty string."""
     try:
-        result = subprocess.run(
+        result = _run_cmd(
             ["databricks", "apps", "logs", app_name, "-p", profile],
-            capture_output=True,
-            text=True,
             timeout=30,
         )
         return result.stdout if result.returncode == 0 else ""
     except Exception as exc:
-        print(f"WARNING: Failed to capture logs for {app_name}: {exc}")
+        _log(f"WARNING: Failed to capture logs for {app_name}: {exc}")
         return ""
 
 
@@ -504,10 +579,8 @@ def grant_lakebase_access(app_name: str, lakebase: str, profile: str):
     Best-effort: prints warnings on failure, never raises.
     """
     try:
-        result = subprocess.run(
+        result = _run_cmd(
             ["databricks", "apps", "get", app_name, "-p", profile, "--output", "json"],
-            capture_output=True,
-            text=True,
             timeout=60,
         )
         assert result.returncode == 0, f"Failed to get app info: {result.stderr}"
@@ -517,7 +590,7 @@ def grant_lakebase_access(app_name: str, lakebase: str, profile: str):
 
         client = LakebaseClient(instance_name=lakebase)
         try:
-            print(f"Granting lakebase access to SP {sp_name}...")
+            _log(f"Granting lakebase access to SP {sp_name}...")
             client.create_role(sp_name, "SERVICE_PRINCIPAL")
             client.grant_schema(
                 grantee=sp_name,
@@ -534,17 +607,18 @@ def grant_lakebase_access(app_name: str, lakebase: str, profile: str):
                 privileges=[SequencePrivilege.ALL],
                 schemas=["public"],
             )
-            print(f"Lakebase access granted to {sp_name}.")
+            _log(f"Lakebase access granted to {sp_name}.")
         finally:
             client.close()
     except Exception as exc:
-        print(f"WARNING: grant_lakebase_access failed for {app_name}: {exc}")
+        _log(f"WARNING: grant_lakebase_access failed for {app_name}: {exc}")
 
 
 def query_deployed_with_openai_sdk(app_url: str, token: str, message: str) -> str:
     """Use OpenAI SDK to test /responses endpoint. Return response.output_text."""
     from openai import OpenAI
 
+    _log(f"Querying {app_url}/api/v1 via OpenAI SDK...")
     client = OpenAI(
         base_url=f"{app_url}/api/v1",
         api_key=token,
@@ -553,6 +627,7 @@ def query_deployed_with_openai_sdk(app_url: str, token: str, message: str) -> st
         model="agent",
         input=message,
     )
+    _log(f"  OpenAI SDK response: {response.output_text[:500]}")
     return response.output_text
 
 

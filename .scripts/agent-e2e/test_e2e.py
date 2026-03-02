@@ -6,9 +6,11 @@ from pathlib import Path
 import pytest
 
 from helpers import (
+    _log,
     apply_edits,
     bundle_deploy,
     bundle_destroy,
+    bundle_run,
     capture_app_logs,
     clean_template,
     get_oauth_token,
@@ -23,6 +25,7 @@ from helpers import (
     run_evaluate,
     run_quickstart,
     run_test_agent,
+    set_log_file,
     start_server,
     stop_server,
     wait_for_app_ready,
@@ -46,10 +49,13 @@ NON_CONVERSATIONAL_PAYLOAD = {
 @contextmanager
 def phase(name: str):
     """Wrap a test phase so exceptions carry a [phase] prefix."""
+    _log(f"\n--- Phase: {name} ---")
     try:
         yield
     except Exception as exc:
+        _log(f"Phase {name} FAILED: {exc}")
         raise type(exc)(f"[{name}] {exc}") from exc
+    _log(f"Phase {name} completed")
 
 
 def pytest_generate_tests(metafunc):
@@ -69,8 +75,12 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize("template", templates, ids=lambda t: t.name)
 
 
-def _run_local(template: TemplateConfig, template_dir: Path):
+def _run_local(template: TemplateConfig, template_dir: Path, log_file: Path):
     """Local phase: start server -> curl endpoints -> stop server -> evaluate."""
+    set_log_file(log_file)
+    _log(f"\n{'='*60}")
+    _log(f"LOCAL PHASE: {template.name}")
+    _log(f"{'='*60}")
     proc, port = start_server(template_dir)
     base_url = f"http://localhost:{port}"
     try:
@@ -102,9 +112,15 @@ def _run_deploy(
     template_dir: Path,
     profile: str,
     lakebase: str,
+    log_file: Path,
 ):
-    """Deploy phase: bundle deploy -> grant perms -> wait -> query -> destroy."""
+    """Deploy phase: bundle deploy -> run -> grant perms -> wait -> query -> destroy."""
+    set_log_file(log_file)
+    _log(f"\n{'='*60}")
+    _log(f"DEPLOY PHASE: {template.name}")
+    _log(f"{'='*60}")
     bundle_deploy(template_dir, profile)
+    bundle_run(template_dir, template.bundle_name, profile)
     try:
         if template.needs_lakebase_edit:
             grant_lakebase_access(template.dev_app_name, lakebase, profile)
@@ -133,7 +149,7 @@ def _run_deploy(
         except Exception:
             logs = capture_app_logs(template.dev_app_name, profile)
             if logs:
-                print(
+                _log(
                     f"\n--- App logs for {template.dev_app_name} ---\n"
                     f"{logs}\n--- End logs ---"
                 )
@@ -148,6 +164,13 @@ def test_e2e(template, repo_root, profile, lakebase, request):
     skip_deploy = request.config.getoption("--skip-deploy")
 
     template_dir = repo_root / template.name
+
+    # Setup log file for this template
+    log_dir = Path(__file__).parent / "logs"
+    log_dir.mkdir(exist_ok=True)
+    log_file = log_dir / f"{template.name}.log"
+    log_file.write_text("")  # clear previous run
+    set_log_file(log_file)
 
     with phase("setup:clean"):
         clean_template(template_dir, profile)
@@ -177,21 +200,21 @@ def test_e2e(template, repo_root, profile, lakebase, request):
 
         if skip_deploy:
             with phase("local"):
-                _run_local(template, template_dir)
+                _run_local(template, template_dir, log_file)
             return
 
         if skip_local:
             with phase("deploy"):
-                _run_deploy(template, template_dir, profile, lakebase)
+                _run_deploy(template, template_dir, profile, lakebase, log_file)
             return
 
         # Run local and deploy in parallel
         with ThreadPoolExecutor(max_workers=2) as executor:
             local_future: Future = executor.submit(
-                _run_local, template, template_dir
+                _run_local, template, template_dir, log_file
             )
             deploy_future: Future = executor.submit(
-                _run_deploy, template, template_dir, profile, lakebase
+                _run_deploy, template, template_dir, profile, lakebase, log_file
             )
 
             errors: list[str] = []

@@ -2,7 +2,6 @@ from pathlib import Path
 
 import pytest
 
-from helpers import kill_port
 from template_config import (
     DEFAULT_GENIE_SPACE_ID,
     DEFAULT_KNOWLEDGE_ASSISTANT_ENDPOINT,
@@ -52,19 +51,3 @@ def lakebase(request):
 @pytest.fixture
 def repo_root():
     return Path(__file__).resolve().parents[2]
-
-
-@pytest.fixture(autouse=True)
-def cleanup_port():
-    """Ensure port 8000 is free after each test."""
-    yield
-    kill_port(8000)
-
-
-def pytest_collection_modifyitems(config, items):
-    """Filter tests by --template option (exact match on parametrize id)."""
-    template_filter = config.getoption("--template")
-    if template_filter:
-        items[:] = [
-            item for item in items if f"[{template_filter}]" in item.nodeid
-        ]

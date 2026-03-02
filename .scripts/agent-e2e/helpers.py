@@ -16,7 +16,6 @@ from databricks_ai_bridge.lakebase import (
     SequencePrivilege,
     TablePrivilege,
 )
-
 from template_config import FileEdit
 
 # ---------------------------------------------------------------------------
@@ -67,12 +66,8 @@ def _parse_yml_names(template_dir: Path) -> tuple[str, str] | None:
     if not yml_path.exists():
         return None
     text = yml_path.read_text()
-    bundle_match = re.search(
-        r"^bundle:\s*\n\s*name:\s*(\S+)", text, re.MULTILINE
-    )
-    app_match = re.search(
-        r'^\s*apps:\s*\n\s*\w+:\s*\n\s*name:\s*"([^"]+)"', text, re.MULTILINE
-    )
+    bundle_match = re.search(r"^bundle:\s*\n\s*name:\s*(\S+)", text, re.MULTILINE)
+    app_match = re.search(r'^\s*apps:\s*\n\s*\w+:\s*\n\s*name:\s*"([^"]+)"', text, re.MULTILINE)
     if not bundle_match or not app_match:
         return None
     return bundle_match.group(1), app_match.group(1)
@@ -84,10 +79,11 @@ def _parse_yml_names(template_dir: Path) -> tuple[str, str] | None:
 
 
 def _clean_bundle_state(template_dir: Path, profile: str):
-    """Delete local .bundle/ and remote workspace terraform state."""
-    bundle_dir = template_dir / ".bundle"
-    if bundle_dir.is_dir():
-        shutil.rmtree(bundle_dir)
+    """Delete local .bundle/, .databricks/bundle/, and remote workspace terraform state."""
+    for name in [".bundle", ".databricks/bundle"]:
+        d = template_dir / name
+        if d.is_dir():
+            shutil.rmtree(d)
 
     names = _parse_yml_names(template_dir)
     if not names:
@@ -101,12 +97,9 @@ def _clean_bundle_state(template_dir: Path, profile: str):
     if user_result.returncode == 0:
         user_name = json.loads(user_result.stdout).get("userName", "")
         if user_name:
-            remote_path = (
-                f"/Workspace/Users/{user_name}/.bundle/{bundle_name}"
-            )
+            remote_path = f"/Workspace/Users/{user_name}/.bundle/{bundle_name}"
             _run_cmd(
-                ["databricks", "workspace", "delete", remote_path,
-                 "--recursive", "-p", profile],
+                ["databricks", "workspace", "delete", remote_path, "--recursive", "-p", profile],
                 timeout=30,
             )
 
@@ -131,8 +124,8 @@ def _delete_existing_app(template_dir: Path, profile: str):
 
 
 def clean_template(template_dir: Path, profile: str = "dev"):
-    """Remove .venv/, uv.lock, .env, .bundle, remote state, and existing apps."""
-    for name in [".venv", "uv.lock", ".env", ".bundle"]:
+    """Remove .venv/, uv.lock, .env, .bundle, .databricks/bundle, remote state, and existing apps."""
+    for name in [".venv", "uv.lock", ".env", ".bundle", ".databricks/bundle"]:
         target = template_dir / name
         if target.is_dir():
             shutil.rmtree(target)
@@ -148,9 +141,7 @@ def clean_template(template_dir: Path, profile: str = "dev"):
 # ---------------------------------------------------------------------------
 
 
-def run_quickstart(
-    template_dir: Path, profile: str, lakebase: str | None = None
-):
+def run_quickstart(template_dir: Path, profile: str, lakebase: str | None = None):
     """Run `uv run quickstart --profile <profile>`, optionally with --lakebase."""
     cmd = ["uv", "run", "quickstart", "--profile", profile]
     if lakebase:
@@ -170,9 +161,7 @@ def find_free_port() -> int:
         return s.getsockname()[1]
 
 
-def start_server(
-    template_dir: Path, port: int = 0
-) -> tuple[subprocess.Popen, int]:
+def start_server(template_dir: Path, port: int = 0) -> tuple[subprocess.Popen, int]:
     """Start `uv run start-server` as background process.
 
     If port is 0 (default), dynamically allocates a free port.
@@ -254,9 +243,7 @@ def query_endpoint(base_url: str, payload: dict, endpoint: str = "/responses") -
     return resp.json()
 
 
-def query_endpoint_with_auth(
-    base_url: str, token: str, payload: dict, endpoint: str
-) -> dict:
+def query_endpoint_with_auth(base_url: str, token: str, payload: dict, endpoint: str) -> dict:
     """POST to {base_url}{endpoint} with Bearer token. Return response JSON."""
     url = f"{base_url}{endpoint}"
     _log(f"POST {url} (authenticated)")
@@ -297,21 +284,15 @@ def _assert_sse_stream(
     )
     resp.raise_for_status()
     content_type = resp.headers.get("content-type", "")
-    assert "text/event-stream" in content_type, (
-        f"Expected text/event-stream, got {content_type}"
-    )
+    assert "text/event-stream" in content_type, f"Expected text/event-stream, got {content_type}"
     has_data = any(
-        line.startswith("data:")
-        for line in resp.iter_lines(decode_unicode=True)
-        if line
+        line.startswith("data:") for line in resp.iter_lines(decode_unicode=True) if line
     )
     _log(f"  streaming: content_type={content_type}, has_data={has_data}")
     assert has_data, "No SSE data: events received in stream response"
 
 
-def query_endpoint_stream(
-    base_url: str, payload: dict, endpoint: str = "/responses"
-) -> None:
+def query_endpoint_stream(base_url: str, payload: dict, endpoint: str = "/responses") -> None:
     """POST with stream=True, validate SSE response with at least one data: event."""
     _assert_sse_stream(base_url, payload, endpoint)
 
@@ -320,9 +301,7 @@ def query_endpoint_stream_with_auth(
     base_url: str, token: str, payload: dict, endpoint: str
 ) -> None:
     """POST with stream=True and Bearer token, validate SSE response."""
-    _assert_sse_stream(
-        base_url, payload, endpoint, {"Authorization": f"Bearer {token}"}
-    )
+    _assert_sse_stream(base_url, payload, endpoint, {"Authorization": f"Bearer {token}"})
 
 
 # ---------------------------------------------------------------------------
@@ -338,9 +317,7 @@ def run_evaluate(template_dir: Path):
         timeout=900,
     )
     assert result.returncode == 0, (
-        f"evaluate failed in {template_dir.name}:\n"
-        f"stdout: {result.stdout}\n"
-        f"stderr: {result.stderr}"
+        f"evaluate failed in {template_dir.name}:\nstdout: {result.stdout}\nstderr: {result.stderr}"
     )
 
 
@@ -363,9 +340,7 @@ def run_test_agent(template_dir: Path):
 # ---------------------------------------------------------------------------
 
 
-def apply_edits(
-    edits: list[FileEdit], template_dir: Path
-) -> list[tuple[Path, str]]:
+def apply_edits(edits: list[FileEdit], template_dir: Path) -> list[tuple[Path, str]]:
     """Apply file edits. Returns list of (path, original_content) for revert.
 
     Only the *first* snapshot of each file is stored so that files with multiple
@@ -379,8 +354,7 @@ def apply_edits(
         if filepath not in seen:
             seen[filepath] = current
         assert edit.old in current, (
-            f"Could not find expected text in {filepath}:\n"
-            f"Looking for: {edit.old[:100]}..."
+            f"Could not find expected text in {filepath}:\nLooking for: {edit.old[:100]}..."
         )
         filepath.write_text(current.replace(edit.old, edit.new, 1))
         _log(f"Applied edit to {edit.relative_path}")
@@ -398,13 +372,13 @@ def revert_edits(originals: list[tuple[Path, str]]):
 # ---------------------------------------------------------------------------
 
 
-def bundle_deploy(template_dir: Path, profile: str, retries: int = 3):
+def bundle_deploy(template_dir: Path, profile: str, retries: int = 5):
     """Run `databricks bundle deploy --target dev -p <profile>`.
 
     Handles transient errors with automatic recovery:
     - Terraform init failures (e.g. GitHub 502): wait and retry
     - "already exists": delete existing app + clean state, retry
-    - "does not exist or is deleted": clean stale state, retry
+    - "does not exist or is deleted": clean stale state, wait and retry
     """
     for attempt in range(1, retries + 1):
         result = _run_cmd(
@@ -437,9 +411,10 @@ def bundle_deploy(template_dir: Path, profile: str, retries: int = 3):
             if "does not exist or is deleted" in stderr:
                 _log(
                     f"bundle deploy attempt {attempt}/{retries} failed in "
-                    f"{template_dir.name} (stale state), cleaning up..."
+                    f"{template_dir.name} (stale state), cleaning up and retrying in 30s..."
                 )
                 _clean_bundle_state(template_dir, profile)
+                time.sleep(30)
                 continue
 
         break
@@ -450,14 +425,23 @@ def bundle_deploy(template_dir: Path, profile: str, retries: int = 3):
     )
 
 
-def bundle_run(template_dir: Path, resource_key: str, profile: str):
+def bundle_run(template_dir: Path, resource_key: str, profile: str, retries: int = 5):
     """Run `databricks bundle run <resource_key> --target dev` to start the app."""
     _log(f"Starting app via bundle run {resource_key}...")
-    result = _run_cmd(
-        ["databricks", "bundle", "run", resource_key, "--target", "dev", "-p", profile],
-        cwd=template_dir,
-        timeout=300,
-    )
+    for attempt in range(1, retries + 1):
+        result = _run_cmd(
+            ["databricks", "bundle", "run", resource_key, "--target", "dev", "-p", profile],
+            cwd=template_dir,
+            timeout=300,
+        )
+        if result.returncode == 0:
+            return
+        if attempt < retries:
+            _log(
+                f"bundle run attempt {attempt}/{retries} failed in "
+                f"{template_dir.name}, retrying in 30s..."
+            )
+            time.sleep(30)
     assert result.returncode == 0, (
         f"bundle run failed in {template_dir.name}:\n"
         f"stdout: {result.stdout}\n"
@@ -473,8 +457,14 @@ def bundle_destroy(template_dir: Path, profile: str):
     try:
         result = _run_cmd(
             [
-                "databricks", "bundle", "destroy", "--target", "dev",
-                "-p", profile, "--auto-approve",
+                "databricks",
+                "bundle",
+                "destroy",
+                "--target",
+                "dev",
+                "-p",
+                profile,
+                "--auto-approve",
             ],
             cwd=template_dir,
             timeout=300,
@@ -520,9 +510,7 @@ def wait_for_app_ready(
                 break
         time.sleep(30)
     else:
-        raise TimeoutError(
-            f"App {app_name} did not reach RUNNING state within {deploy_timeout}s"
-        )
+        raise TimeoutError(f"App {app_name} did not reach RUNNING state within {deploy_timeout}s")
 
     # Phase 2: poll /agent/info until the app is actually serving
     _log(f"App is RUNNING at {app_url}, polling /agent/info...")
@@ -618,9 +606,9 @@ def query_deployed_with_openai_sdk(app_url: str, token: str, message: str) -> st
     """Use OpenAI SDK to test /responses endpoint. Return response.output_text."""
     from openai import OpenAI
 
-    _log(f"Querying {app_url}/api/v1 via OpenAI SDK...")
+    _log(f"Querying {app_url} via OpenAI SDK...")
     client = OpenAI(
-        base_url=f"{app_url}/api/v1",
+        base_url=f"{app_url}",
         api_key=token,
     )
     response = client.responses.create(

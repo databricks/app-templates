@@ -139,7 +139,6 @@ async def streaming(
 
     try:
         async with AsyncCheckpointSaver(instance_name=LAKEBASE_INSTANCE_NAME) as checkpointer:
-            await checkpointer.setup()
             agent = await init_agent(checkpointer=checkpointer)
 
             async for event in process_agent_astream_events(

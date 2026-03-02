@@ -39,7 +39,7 @@ resources:
         # Lakebase instance for persistent session storage
         - name: 'database'
           database:
-            instance_name: 'bbqiu'
+            instance_name: '<your-lakebase-instance-name>'
             database_name: 'postgres'
             permission: 'CAN_CONNECT_AND_CREATE'
 

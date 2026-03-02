@@ -9,7 +9,7 @@ resources:
 
   apps:
     agent_openai_agents_sdk_multiagent:
-      name: "agent-openai-sdk-multi"
+      name: "agent-openai-multiagent"
       description: "Multi-agent orchestrator that queries other agents, Genie spaces, and serving endpoints"
       source_code_path: ./
       config:
@@ -39,19 +39,19 @@ resources:
         - name: 'genie_space'
           genie_space:
             name: 'Genie Space'
-            space_id: '01f05202dbb51d74b6cccf1b1b1683eb'
+            space_id: '<YOUR-GENIE-SPACE-ID>'
             permission: 'CAN_RUN'
 
         # TODO: Set your knowledge-assistant serving endpoint name
         - name: 'knowledge_assistant'
           serving_endpoint:
-            name: 'agents_dev-bbqiu-test-bb-2-25'
+            name: '<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>'
             permission: 'CAN_QUERY'
 
         # TODO: Set your serving endpoint name
         - name: 'serving_endpoint'
           serving_endpoint:
-            name: 'agents_dev-bbqiu-test-bb-2-25'
+            name: '<YOUR-SERVING-ENDPOINT>'
             permission: 'CAN_QUERY'
 
         # NOTE: App-to-app permissions are not yet supported as bundle resources.
@@ -86,4 +86,4 @@ targets:
     resources:
       apps:
         agent_openai_agents_sdk_multiagent:
-          name: agent-openai-sdk-multi
+          name: agent-openai-multiagent

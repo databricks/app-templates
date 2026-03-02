@@ -11,7 +11,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { execSync } from 'child_process';
+import { execSync } from 'node:child_process';
 import { generateUUID } from '@chat-template/core';
 
 function getAuthToken(): string {
@@ -83,7 +83,7 @@ test.describe('Deployed app: feedback round-trip', () => {
     ) as { type: string; messageId: string } | undefined;
 
     expect(startEvent?.messageId, 'Expected a start SSE event with messageId').toBeTruthy();
-    const assistantMessageId = startEvent!.messageId;
+    const assistantMessageId = startEvent?.messageId;
 
     // Submit thumbs-up feedback for the assistant message.
     const feedbackResponse = await request.post('/api/feedback', {

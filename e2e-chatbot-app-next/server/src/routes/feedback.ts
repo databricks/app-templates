@@ -24,10 +24,6 @@ export const feedbackRouter: RouterType = Router();
 
 feedbackRouter.use(authMiddleware);
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 /**
  * POST /api/feedback - Submit feedback for a message
  *
@@ -116,51 +112,29 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
             },
           );
         } else {
-          // POST to create a new assessment, retrying on 404.
-          // The trace may not be indexed in MLflow immediately after the stream
-          // completes (eventual consistency), so we retry up to 3 times.
-          const MAX_RETRIES = 3;
-          const RETRY_DELAY_MS = 1000;
-          const postBody = JSON.stringify({
-            assessment: {
-              trace_id: traceId,
-              assessment_name: 'user_feedback',
-              source: {
-                source_type: 'HUMAN',
-                source_id: userId,
-              },
-              feedback: {
-                value: feedbackType === 'thumbs_up',
-              },
-            },
-          });
-          const postHeaders = {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          };
-          const mlflowUrl = `${hostUrl}/api/3.0/mlflow/traces/${traceId}/assessments`;
-          mlflowResponse = await fetch(mlflowUrl, {
-            method: 'POST',
-            headers: postHeaders,
-            body: postBody,
-          });
-          for (
-            let attempt = 1;
-            attempt < MAX_RETRIES &&
-            !mlflowResponse.ok &&
-            mlflowResponse.status === 404;
-            attempt++
-          ) {
-            console.warn(
-              `[Feedback] MLflow trace not found (attempt ${attempt}/${MAX_RETRIES}), retrying in ${RETRY_DELAY_MS}ms`,
-            );
-            await sleep(RETRY_DELAY_MS);
-            mlflowResponse = await fetch(mlflowUrl, {
+          mlflowResponse = await fetch(
+            `${hostUrl}/api/3.0/mlflow/traces/${traceId}/assessments`,
+            {
               method: 'POST',
-              headers: postHeaders,
-              body: postBody,
-            });
-          }
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                assessment: {
+                  trace_id: traceId,
+                  assessment_name: 'user_feedback',
+                  source: {
+                    source_type: 'HUMAN',
+                    source_id: userId,
+                  },
+                  feedback: {
+                    value: feedbackType === 'thumbs_up',
+                  },
+                },
+              }),
+            },
+          );
         }
 
         if (!mlflowResponse.ok) {
@@ -229,8 +203,6 @@ feedbackRouter.get(
   '/chat/:chatId',
   requireAuth,
   async (req: Request, res: Response) => {
-    // Prevent browser caching so stale {} responses don't block fresh feedback data
-    res.set('Cache-Control', 'no-store');
     try {
       const { chatId } = req.params;
       const session = req.session;

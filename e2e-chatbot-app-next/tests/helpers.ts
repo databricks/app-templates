@@ -628,7 +628,7 @@ export function mockMcpApprovalApprovedStream(options?: {
   } = options ?? {};
 
   const responseId = generateUUID();
-  const approvalResponseId = generateUUID();
+  const _approvalResponseId = generateUUID();
   const textItemId = generateUUID();
 
   return [
@@ -738,7 +738,7 @@ export function mockMcpApprovalDeniedStream(options?: {
   } = options ?? {};
 
   const responseId = generateUUID();
-  const approvalResponseId = generateUUID();
+  const _approvalResponseId = generateUUID();
   const textItemId = generateUUID();
 
   return [

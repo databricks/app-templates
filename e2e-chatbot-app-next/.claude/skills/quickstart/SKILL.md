@@ -30,20 +30,19 @@ The script walks through the following steps interactively:
 
 If you skipped feedback during quickstart, or ran the script before feedback support was added, enable it manually:
 
-**1. Find the experiment ID for your endpoint:**
+**1. Find the experiment name for your endpoint:**
 ```bash
-./scripts/get-experiment-id.sh --endpoint <your-serving-endpoint-name>
+npx tsx scripts/get-experiment-id.ts --endpoint <your-serving-endpoint-name>
 ```
 
-For Agent Bricks tile (Knowledge Assistant / Multi-Agent Supervisor):
+For Agent Bricks (Knowledge Assistant / Multi-Agent Supervisor):
 ```bash
-# Tile ID is the UUID in the URL when configuring the tile
-./scripts/get-experiment-id.sh --tile-id <tile-uuid>
+npx tsx scripts/get-experiment-id.ts --agent-brick <agent-brick-name>
 ```
 
 **2. Set `MLFLOW_EXPERIMENT_ID` in `.env`** (for local dev):
 ```
-MLFLOW_EXPERIMENT_ID=<experiment-id-from-step-1>
+MLFLOW_EXPERIMENT_ID=<experiment-name-from-step-1>
 ```
 
 **3. Configure `databricks.yml`** — uncomment and fill in the experiment resource:
@@ -51,7 +50,7 @@ MLFLOW_EXPERIMENT_ID=<experiment-id-from-step-1>
         - name: experiment
           description: "MLflow experiment for collecting user feedback"
           experiment:
-            experiment_id: "<experiment-id-from-step-1>"
+            name: "<experiment-name-from-step-1>"
             permission: CAN_EDIT
 ```
 
@@ -72,7 +71,7 @@ databricks bundle run databricks_chatbot
 | Issue | Solution |
 |-------|----------|
 | Feedback widget not showing after setup | Restart dev server; env vars are read at startup |
-| `get-experiment-id.sh` fails with auth error | Run `databricks auth login` first |
+| `get-experiment-id.ts` fails with auth error | Run `databricks auth login` first |
 | No experiment found for endpoint | Only custom agents and Agent Bricks endpoints have linked experiments; Foundation Model endpoints do not support feedback |
 | Feedback submission returns 403 | App service principal is missing `CAN_EDIT` on the experiment — check `permission: CAN_EDIT` in `databricks.yml` |
 | "Instance name is not unique" on deploy | Run `./scripts/cleanup-database.sh` to remove the old database instance |

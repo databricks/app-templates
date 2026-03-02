@@ -483,12 +483,12 @@ else
             echo "✓ Feedback widget enabled in databricks.yml and app.yaml"
         else
             echo "Skipping feedback setup."
-            echo "To enable it later, run: ./scripts/get-experiment-id.sh --endpoint $SERVING_ENDPOINT"
+            echo "To enable it later, run: npx tsx scripts/get-experiment-id.ts --endpoint $SERVING_ENDPOINT"
         fi
     else
         echo "ℹ️  No MLflow experiment linked to endpoint '$SERVING_ENDPOINT'."
         echo "   Feedback widget is only available for custom agents and Agent Bricks endpoints."
-        echo "   To enable it later, run: ./scripts/get-experiment-id.sh --endpoint <endpoint-name>"
+        echo "   To enable it later, run: npx tsx scripts/get-experiment-id.ts --endpoint <endpoint-name>"
     fi
 fi
 

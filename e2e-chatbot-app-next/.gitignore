@@ -7,8 +7,6 @@ node_modules
 .pnp.js
 .claude/*
 !.claude/skills/
-.claude/skills/*
-!.claude/skills/quickstart/
 
 # testing
 coverage

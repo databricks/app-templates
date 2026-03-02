@@ -1,0 +1,19 @@
+bundle:
+  name: appkit-lakebase
+
+resources:
+  apps:
+    app:
+      name: "appkit-lakebase"
+      description: "Node.js app with Lakebase Autoscaling (Postgres) CRUD operations"
+      source_code_path: ./
+
+      # Uncomment to enable on behalf of user API scopes. Available scopes: sql, dashboards.genie, files.files
+      # user_api_scopes:
+      #   - sql
+
+targets:
+  default:
+    default: true
+    workspace:
+      host: https://your-workspace.cloud.databricks.com

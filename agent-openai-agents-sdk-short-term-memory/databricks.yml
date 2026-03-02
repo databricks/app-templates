@@ -9,7 +9,7 @@ resources:
 
   apps:
     agent_openai_agents_sdk_short_term_memory:
-      name: "${bundle.target}-agent-openai-agents-sdk-short-term-memory"
+      name: "${bundle.target}-agent-openai-sdk-stm"
       description: "OpenAI Agents SDK agent application with short-term memory"
       source_code_path: ./
       config:
@@ -57,4 +57,4 @@ targets:
     resources:
       apps:
         agent_openai_agents_sdk_short_term_memory:
-          name: agent-openai-agents-sdk-short-term-memory
+          name: agent-openai-sdk-stm

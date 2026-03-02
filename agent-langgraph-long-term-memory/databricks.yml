@@ -9,7 +9,7 @@ resources:
 
   apps:
     agent_langgraph_long_term_memory:
-      name: "${bundle.target}-agent-langgraph-long-term-memory"
+      name: "${bundle.target}-agent-langgraph-ltm"
       description: "LangGraph agent application with long-term memory"
       source_code_path: ./
       config:
@@ -56,4 +56,4 @@ targets:
     resources:
       apps:
         agent_langgraph_long_term_memory:
-          name: agent-langgraph-long-term-memory
+          name: agent-langgraph-ltm

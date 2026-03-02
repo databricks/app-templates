@@ -9,7 +9,7 @@ resources:
 
   apps:
     agent_openai_agents_sdk_multiagent:
-      name: "${bundle.target}-agent-openai-agents-sdk-multiagent"
+      name: "${bundle.target}-agent-openai-sdk-multi"
       description: "Multi-agent orchestrator that queries other agents, Genie spaces, and serving endpoints"
       source_code_path: ./
       config:
@@ -86,4 +86,4 @@ targets:
     resources:
       apps:
         agent_openai_agents_sdk_multiagent:
-          name: agent-openai-agents-sdk-multiagent
+          name: agent-openai-sdk-multi

@@ -10,12 +10,7 @@ import time
 from pathlib import Path
 
 import requests
-from databricks_ai_bridge.lakebase import (
-    LakebaseClient,
-    SchemaPrivilege,
-    SequencePrivilege,
-    TablePrivilege,
-)
+from databricks_ai_bridge.lakebase import LakebaseClient
 from template_config import FileEdit
 
 # ---------------------------------------------------------------------------
@@ -69,8 +64,11 @@ def _run_cmd(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
 # ---------------------------------------------------------------------------
 
 
-def _parse_yml_names(template_dir: Path) -> tuple[str, str] | None:
-    """Parse bundle_name and app_name from databricks.yml. Returns None on failure."""
+def _parse_yml_names(template_dir: Path) -> tuple[str, str, str] | None:
+    """Parse bundle_name, app_name, and app_resource_key from databricks.yml.
+
+    Returns (bundle_name, app_name, app_resource_key) or None on failure.
+    """
     import re
 
     yml_path = template_dir / "databricks.yml"
@@ -78,10 +76,10 @@ def _parse_yml_names(template_dir: Path) -> tuple[str, str] | None:
         return None
     text = yml_path.read_text()
     bundle_match = re.search(r"^bundle:\s*\n\s*name:\s*(\S+)", text, re.MULTILINE)
-    app_match = re.search(r'^\s*apps:\s*\n\s*\w+:\s*\n\s*name:\s*"([^"]+)"', text, re.MULTILINE)
+    app_match = re.search(r'^\s*apps:\s*\n\s*(\w+):\s*\n\s*name:\s*"([^"]+)"', text, re.MULTILINE)
     if not bundle_match or not app_match:
         return None
-    return bundle_match.group(1), app_match.group(1)
+    return bundle_match.group(1), app_match.group(2), app_match.group(1)
 
 
 # ---------------------------------------------------------------------------
@@ -115,51 +113,19 @@ def _clean_bundle_state(template_dir: Path, profile: str):
             )
 
 
-def _delete_existing_app(template_dir: Path, profile: str):
-    """Delete the Databricks app named in databricks.yml and wait until it's gone."""
-    names = _parse_yml_names(template_dir)
-    if not names:
-        return
-    app_name = names[1]
-    result = _run_cmd(
-        ["databricks", "apps", "get", app_name, "-p", profile, "--output", "json"],
-        timeout=30,
-    )
-    if result.returncode != 0:
-        return  # App doesn't exist
-
-    # Try to delete (may fail if already deleting)
-    _run_cmd(
-        ["databricks", "apps", "delete", app_name, "-p", profile],
-        timeout=60,
-    )
-
-    # Poll until the app is fully gone
-    _log(f"Waiting for app '{app_name}' to be fully deleted...")
-    for _ in range(MAX_POLLS):
-        time.sleep(POLL_INTERVAL)
-        result = _run_cmd(
-            ["databricks", "apps", "get", app_name, "-p", profile, "--output", "json"],
-            timeout=30,
-        )
-        if result.returncode != 0:
-            _log(f"App '{app_name}' fully deleted.")
-            return
-
-    _log(f"WARNING: App '{app_name}' still exists after {MAX_POLLS} polls.")
-
 
 def clean_template(template_dir: Path, profile: str = "dev"):
-    """Remove .venv/, uv.lock, .env, .bundle, .databricks/bundle, remote state, and existing apps."""
-    for name in [".venv", "uv.lock", ".env", ".bundle", ".databricks/bundle"]:
+    """Remove local dev artifacts (.venv/, uv.lock, .env).
+
+    Keeps existing apps and remote bundle state so that ``bundle deploy``
+    can update in-place instead of recreating from scratch.
+    """
+    for name in [".venv", "uv.lock", ".env"]:
         target = template_dir / name
         if target.is_dir():
             shutil.rmtree(target)
         elif target.is_file():
             target.unlink()
-
-    _clean_bundle_state(template_dir, profile)
-    _delete_existing_app(template_dir, profile)
 
 
 # ---------------------------------------------------------------------------
@@ -334,10 +300,10 @@ def run_evaluate(template_dir: Path):
     )
 
 
-def run_test_agent(template_dir: Path):
+def run_test_agent(template_dir: Path, port: int = 8000):
     """Run `uv run python test_agent.py` for non-conversational template."""
     result = _run_cmd(
-        ["uv", "run", "python", "test_agent.py"],
+        ["uv", "run", "python", "test_agent.py", "--url", f"http://localhost:{port}"],
         cwd=template_dir,
         timeout=QUERY_TIMEOUT,
     )
@@ -385,14 +351,54 @@ def revert_edits(originals: list[tuple[Path, str]]):
 # ---------------------------------------------------------------------------
 
 
+def _delete_mlflow_experiment(exp_name: str, profile: str):
+    """Delete the MLflow experiment by name.
+
+    exp_name can be an absolute path (/Users/...) or a bare node name from a DAB
+    error message (e.g. '[dev bryan_qiu] agent_langgraph-dev'). If it's not
+    absolute, we prepend /Users/<current_user>/ to form a valid experiment path.
+    """
+    if not exp_name.startswith("/"):
+        user_result = _run_cmd(
+            ["databricks", "current-user", "me", "-p", profile, "--output", "json"],
+            timeout=30,
+        )
+        if user_result.returncode != 0:
+            _log(f"WARNING: could not resolve user for experiment path: {exp_name}")
+            return
+        user_name = json.loads(user_result.stdout).get("userName", "")
+        if not user_name:
+            return
+        exp_name = f"/Users/{user_name}/{exp_name}"
+
+    _log(f"Deleting conflicting MLflow experiment: {exp_name}")
+    result = _run_cmd(
+        ["databricks", "experiments", "get-by-name", exp_name, "-p", profile, "--output", "json"],
+        timeout=30,
+    )
+    if result.returncode == 0:
+        exp_id = json.loads(result.stdout).get("experiment", {}).get("experiment_id", "")
+        if exp_id:
+            _run_cmd(
+                ["databricks", "experiments", "delete-experiment", exp_id, "-p", profile],
+                timeout=30,
+            )
+
+
 def bundle_deploy(template_dir: Path, profile: str):
     """Run `databricks bundle deploy --target dev -p <profile>`.
 
     Handles transient errors with automatic recovery:
     - Terraform init failures (e.g. GitHub 502): wait and retry
-    - "already exists": delete existing app + clean state, retry
-    - "does not exist or is deleted": clean stale state, wait and retry
+    - MLflow experiment conflict: delete experiment + clean state, retry
+    - "already exists" (app): unbind stale state + bind existing app, retry
+    - "does not exist or is deleted": unbind stale reference, retry
     """
+    import re
+
+    names = _parse_yml_names(template_dir)
+    app_resource_key = names[2] if names else None
+
     for attempt in range(1, MAX_POLLS + 1):
         result = _run_cmd(
             ["databricks", "bundle", "deploy", "--target", "dev", "-p", profile],
@@ -413,20 +419,62 @@ def bundle_deploy(template_dir: Path, profile: str):
                 continue
 
             if "already exists" in stderr:
-                _log(
-                    f"bundle deploy attempt {attempt}/{MAX_POLLS} failed in "
-                    f"{template_dir.name} (app already exists), cleaning up..."
-                )
-                _delete_existing_app(template_dir, profile)
-                _clean_bundle_state(template_dir, profile)
-                continue
+                exp_match = re.search(r"Node named '(.+?)' already exists", stderr)
+                if exp_match:
+                    _log(
+                        f"bundle deploy attempt {attempt}/{MAX_POLLS} failed in "
+                        f"{template_dir.name} (MLflow experiment conflict), cleaning up..."
+                    )
+                    _delete_mlflow_experiment(exp_match.group(1), profile)
+                    _clean_bundle_state(template_dir, profile)
+                    continue
+                if app_resource_key:
+                    _log(
+                        f"bundle deploy attempt {attempt}/{MAX_POLLS} failed in "
+                        f"{template_dir.name} (app already exists), unbinding and binding..."
+                    )
+                    # Unbind stale state, then bind the existing app
+                    _run_cmd(
+                        [
+                            "databricks", "bundle", "deployment", "unbind",
+                            app_resource_key, "--target", "dev", "-p", profile,
+                        ],
+                        cwd=template_dir,
+                        timeout=BUNDLE_TIMEOUT,
+                    )
+                    app_name = names[1] if names else None
+                    if app_name:
+                        _run_cmd(
+                            [
+                                "databricks", "bundle", "deployment", "bind",
+                                app_resource_key, app_name,
+                                "--auto-approve", "--target", "dev", "-p", profile,
+                            ],
+                            cwd=template_dir,
+                            timeout=BUNDLE_TIMEOUT,
+                        )
+                    continue
 
             if "does not exist or is deleted" in stderr:
-                _log(
-                    f"bundle deploy attempt {attempt}/{MAX_POLLS} failed in "
-                    f"{template_dir.name} (stale state), cleaning up and retrying in {POLL_INTERVAL}s..."
-                )
-                _clean_bundle_state(template_dir, profile)
+                if app_resource_key:
+                    _log(
+                        f"bundle deploy attempt {attempt}/{MAX_POLLS} failed in "
+                        f"{template_dir.name} (stale state), unbinding and retrying..."
+                    )
+                    _run_cmd(
+                        [
+                            "databricks", "bundle", "deployment", "unbind",
+                            app_resource_key, "--target", "dev", "-p", profile,
+                        ],
+                        cwd=template_dir,
+                        timeout=BUNDLE_TIMEOUT,
+                    )
+                else:
+                    _log(
+                        f"bundle deploy attempt {attempt}/{MAX_POLLS} failed in "
+                        f"{template_dir.name} (stale state), cleaning up and retrying in {POLL_INTERVAL}s..."
+                    )
+                    _clean_bundle_state(template_dir, profile)
                 time.sleep(POLL_INTERVAL)
                 continue
 
@@ -564,11 +612,26 @@ def capture_app_logs(app_name: str, profile: str) -> str:
         return ""
 
 
-def grant_lakebase_access(app_name: str, lakebase: str, profile: str):
-    """Grant the app's service principal access to the lakebase instance.
+def _try_sql(client, sql: str):
+    """Execute SQL, logging but not raising on failure."""
+    try:
+        client.execute(sql)
+    except Exception as exc:
+        _log(f"  SQL warning: {exc!r} for: {sql}")
 
-    Best-effort: prints warnings on failure, never raises.
+
+def grant_lakebase_access(app_name: str, lakebase: str, profile: str):
+    """Grant the app's SP lakebase access and clean up leftover tables.
+
+    Steps:
+    1. Create a postgres role for the SP (databricks_create_role rejects app SPs).
+    2. Grant CREATE on the database so the SP can create schemas.
+    3. Grant schema/table/sequence privileges via the LakebaseClient SDK.
+    4. Drop leftover tables from previous runs so the SP recreates them with
+       proper ownership.
     """
+    from databricks_ai_bridge.lakebase import SchemaPrivilege, SequencePrivilege, TablePrivilege
+
     try:
         result = _run_cmd(
             ["databricks", "apps", "get", app_name, "-p", profile, "--output", "json"],
@@ -576,33 +639,70 @@ def grant_lakebase_access(app_name: str, lakebase: str, profile: str):
         )
         assert result.returncode == 0, f"Failed to get app info: {result.stderr}"
         data = json.loads(result.stdout)
-        sp_name = data.get("service_principal_name", "")
-        assert sp_name, f"No service_principal_name found for app {app_name}"
+        sp_client_id = data.get("service_principal_client_id", "")
+        assert sp_client_id, f"No service_principal_client_id found for app {app_name}"
 
         client = LakebaseClient(instance_name=lakebase)
         try:
-            _log(f"Granting lakebase access to SP {sp_name}...")
-            client.create_role(sp_name, "SERVICE_PRINCIPAL")
+            _log(f"Granting lakebase access to SP {sp_client_id}...")
+            quoted_sp = f'"{sp_client_id}"'
+
+            # 1. Create postgres role via direct SQL (databricks_create_role
+            #    rejects app-created SPs with "Identity not found")
+            try:
+                client.execute(f'CREATE ROLE {quoted_sp};')
+                _log("  Created postgres role via direct SQL")
+            except Exception as exc:
+                if "already exists" in str(exc):
+                    _log("  Postgres role already exists")
+                else:
+                    _log(f"  CREATE ROLE failed: {exc}")
+
+            # 2. Grant CREATE on the database so the SP can create schemas
+            #    (the actual database name is databricks_postgres, not postgres)
+            _try_sql(client, f'GRANT CREATE ON DATABASE databricks_postgres TO {quoted_sp};')
+
+            # 3. Grant schema-level privileges via SDK
+            all_schemas = ["public", "drizzle", "ai_chatbot"]
+            for schema in all_schemas:
+                _try_sql(client, f'CREATE SCHEMA IF NOT EXISTS {schema};')
             client.grant_schema(
-                grantee=sp_name,
+                grantee=sp_client_id,
                 privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE],
-                schemas=["public"],
+                schemas=all_schemas,
             )
             client.grant_all_tables_in_schema(
-                grantee=sp_name,
+                grantee=sp_client_id,
                 privileges=[TablePrivilege.ALL],
-                schemas=["public"],
+                schemas=all_schemas,
             )
             client.grant_all_sequences_in_schema(
-                grantee=sp_name,
+                grantee=sp_client_id,
                 privileges=[SequencePrivilege.ALL],
-                schemas=["public"],
+                schemas=all_schemas,
             )
-            _log(f"Lakebase access granted to {sp_name}.")
+            # Default privileges so the SP can access future tables/sequences
+            for schema in all_schemas:
+                _try_sql(client, f'ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT ALL ON TABLES TO {quoted_sp};')
+                _try_sql(client, f'ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT ALL ON SEQUENCES TO {quoted_sp};')
+
+            # 4. Drop leftover tables/schemas from previous runs so the SP
+            #    can recreate them with proper ownership
+            _log("  Cleaning leftover tables...")
+            for schema in ["drizzle", "ai_chatbot"]:
+                _try_sql(client, f"DROP SCHEMA IF EXISTS {schema} CASCADE;")
+            known_tables = [
+                "checkpoints", "checkpoint_writes", "checkpoint_migrations",
+                "checkpoint_blobs", "agent_messages", "store",
+            ]
+            for table in known_tables:
+                _try_sql(client, f"DROP TABLE IF EXISTS public.{table} CASCADE;")
+
+            _log(f"Lakebase access granted to {sp_client_id}.")
         finally:
             client.close()
     except Exception as exc:
-        _log(f"WARNING: grant_lakebase_access failed for {app_name}: {exc}")
+        raise RuntimeError(f"grant_lakebase_access failed for {app_name}: {exc}") from exc
 
 
 def query_with_openai_sdk(
@@ -626,13 +726,14 @@ def query_with_openai_sdk(
     )
     if stream:
         text_parts: list[str] = []
-        with client.responses.stream(
+        resp_stream = client.responses.create(
             model="agent",
             input=[{"role": "user", "content": message}],
-        ) as resp_stream:
-            for event in resp_stream:
-                if hasattr(event, "delta") and event.delta:
-                    text_parts.append(event.delta)
+            stream=True,
+        )
+        for event in resp_stream:
+            if hasattr(event, "delta") and event.delta:
+                text_parts.append(event.delta)
         output_text = "".join(text_parts)
     else:
         response = client.responses.create(

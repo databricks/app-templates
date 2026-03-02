@@ -26,7 +26,7 @@ resources:
           - name: CHAT_PROXY_TIMEOUT_SECONDS
             value: "300"
           - name: MLFLOW_EXPERIMENT_ID
-            valueFrom: "experiment"
+            value_from: "experiment"
 
       # Resources which this app has access to
       resources:
@@ -39,19 +39,19 @@ resources:
         - name: 'genie_space'
           genie_space:
             name: 'Genie Space'
-            space_id: '<YOUR-GENIE-SPACE-ID>'
+            space_id: '01f05202dbb51d74b6cccf1b1b1683eb'
             permission: 'CAN_RUN'
 
         # TODO: Set your knowledge-assistant serving endpoint name
         - name: 'knowledge_assistant'
           serving_endpoint:
-            name: '<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>'
+            name: 'agents_dev-bbqiu-test-bb-2-25'
             permission: 'CAN_QUERY'
 
         # TODO: Set your serving endpoint name
         - name: 'serving_endpoint'
           serving_endpoint:
-            name: '<YOUR-SERVING-ENDPOINT>'
+            name: 'agents_dev-bbqiu-test-bb-2-25'
             permission: 'CAN_QUERY'
 
         # NOTE: App-to-app permissions are not yet supported as bundle resources.

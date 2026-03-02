@@ -109,7 +109,7 @@ The `LAKEBASE_INSTANCE_NAME` env var is resolved from the database resource at d
       config:
         env:
           - name: LAKEBASE_INSTANCE_NAME
-            valueFrom: "database"
+            value_from: "database"
 ```
 
 ### .env (Local Development)

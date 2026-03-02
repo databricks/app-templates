@@ -173,7 +173,7 @@ resources:
             permission: 'CAN_CONNECT_AND_CREATE'
 ```
 
-**Important:** The `name: 'database'` must match the `valueFrom` reference in the `databricks.yml` `config.env` block.
+**Important:** The `name: 'database'` must match the `value_from` reference in the `databricks.yml` `config.env` block.
 
 ### Step 2: databricks.yml config block (Environment Variables)
 
@@ -187,7 +187,7 @@ Add the Lakebase environment variables to your app's `config.env` in `databricks
 
           # Lakebase instance name (resolved from database resource)
           - name: LAKEBASE_INSTANCE_NAME
-            valueFrom: "database"
+            value_from: "database"
 
           # Embedding configuration
           - name: EMBEDDING_ENDPOINT
@@ -196,7 +196,7 @@ Add the Lakebase environment variables to your app's `config.env` in `databricks
             value: "1024"
 ```
 
-**Important:** `LAKEBASE_INSTANCE_NAME` uses `valueFrom: "database"` to resolve from the database resource at deploy time.
+**Important:** `LAKEBASE_INSTANCE_NAME` uses `value_from: "database"` to resolve from the database resource at deploy time.
 
 ### Step 3: .env (Local Development)
 

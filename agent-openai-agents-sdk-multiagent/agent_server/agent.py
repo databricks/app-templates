@@ -58,46 +58,25 @@ from agent_server.utils import (
 # ---------------------------------------------------------------------------
 
 SUBAGENTS = [
-    # Uncomment and configure the subagents you need. You must enable at least one.
-    #
-    # {
-    #     "name": "genie",
-    #     "type": "genie",
-    #     "space_id": "<YOUR-GENIE-SPACE-ID>",  # UUID from the Genie space URL
-    #     "description": (
-    #         "Query a Genie space for structured data analysis. "
-    #         "Use this for questions about data, metrics, and tables."
-    #     ),
-    # },
-    # {
-    #     "name": "app_agent",
-    #     "type": "app",
-    #     "endpoint": "<YOUR-APP-AGENT-NAME>",  # TODO: set to your Databricks App name
-    #     "description": (
-    #         "Query a specialist agent deployed as a Databricks App. "
-    #         "Use this for questions the specialist app agent handles."
-    #     ),
-    # },
-    # {
-    #     "name": "knowledge_assistant",
-    #     "type": "serving_endpoint",
-    #     "endpoint": "<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>",  # flat name, NOT a Vector Search index
-    #     "description": (
-    #         "Query the knowledge-assistant endpoint on Model Serving. "
-    #         "Use this for knowledge-base / documentation lookups. "
-    #         "The endpoint must have task type agent/v1/responses."
-    #     ),
-    # },
-    # {
-    #     "name": "serving_endpoint",
-    #     "type": "serving_endpoint",
-    #     "endpoint": "<YOUR-SERVING-ENDPOINT>",
-    #     "description": (
-    #         "Query a model hosted on a Databricks Model Serving endpoint. "
-    #         "Use this for questions best answered by the serving model. "
-    #         "The endpoint must have task type agent/v1/responses."
-    #     ),
-    # },
+    {
+        "name": "genie",
+        "type": "genie",
+        "space_id": "01f05202dbb51d74b6cccf1b1b1683eb",
+        "description": (
+            "Query a Genie space for structured data analysis. "
+            "Use this for questions about data, metrics, and tables."
+        ),
+    },
+    {
+        "name": "serving_endpoint",
+        "type": "serving_endpoint",
+        "endpoint": "agents_dev-bbqiu-test-bb-2-25",
+        "description": (
+            "Query a model hosted on a Databricks Model Serving endpoint. "
+            "Use this for questions best answered by the serving model. "
+            "The endpoint must have task type agent/v1/responses."
+        ),
+    },
 ]
 
 assert SUBAGENTS, (

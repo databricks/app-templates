@@ -22,7 +22,7 @@ def resolve_lakebase_instance_name(
     """
     Resolve a Lakebase instance name from a hostname if needed.
 
-    If the input is a hostname (e.g., from Databricks Apps valueFrom resolution),
+    If the input is a hostname (e.g., from Databricks Apps value_from resolution),
     this will resolve it to the actual instance name by listing database instances.
 
     Args:

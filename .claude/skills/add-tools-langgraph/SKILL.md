@@ -78,21 +78,21 @@ databricks apps update-permissions <mcp-server-app-name> \
 
 See `examples/custom-mcp-server.md` for detailed steps.
 
-## valueFrom Pattern
+## value_from Pattern
 
-**IMPORTANT**: Make sure all `valueFrom` references in `databricks.yml` `config.env` reference an existing key in the `databricks.yml` `resources` list.
-Some resources need environment variables in your app. Use `valueFrom` in `databricks.yml` `config.env` to reference resources defined in `databricks.yml`:
+**IMPORTANT**: Make sure all `value_from` references in `databricks.yml` `config.env` reference an existing key in the `databricks.yml` `resources` list.
+Some resources need environment variables in your app. Use `value_from` in `databricks.yml` `config.env` to reference resources defined in `databricks.yml`:
 
 ```yaml
 # In databricks.yml, under apps.<app>.config.env:
 env:
   - name: MLFLOW_EXPERIMENT_ID
-    valueFrom: "experiment"        # References resources.apps.<app>.resources[name='experiment']
+    value_from: "experiment"        # References resources.apps.<app>.resources[name='experiment']
   - name: LAKEBASE_INSTANCE_NAME
-    valueFrom: "database"   # References resources.apps.<app>.resources[name='database']
+    value_from: "database"   # References resources.apps.<app>.resources[name='database']
 ```
 
-**Critical:** Every `valueFrom` value must match a `name` field in `databricks.yml` resources.
+**Critical:** Every `value_from` value must match a `name` field in `databricks.yml` resources.
 
 ## Important Notes
 
@@ -100,4 +100,4 @@ env:
 - **Multiple resources**: Add multiple entries under `resources:` list
 - **Permission types vary**: Each resource type has specific permission values
 - **Deploy + Run after changes**: Run both `databricks bundle deploy` AND `databricks bundle run agent_langgraph`
-- **valueFrom matching**: Ensure `config.env` `valueFrom` values match `databricks.yml` resource `name` values
+- **value_from matching**: Ensure `config.env` `value_from` values match `databricks.yml` resource `name` values

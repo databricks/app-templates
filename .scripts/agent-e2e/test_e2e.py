@@ -1,3 +1,4 @@
+import time
 import traceback
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
@@ -68,7 +69,7 @@ def pytest_generate_tests(metafunc):
         )
         template_filter = config.getoption("--template")
         if template_filter:
-            templates = [t for t in templates if t.name == template_filter]
+            templates = [t for t in templates if t.name in template_filter]
         metafunc.parametrize("template", templates, ids=lambda t: t.name)
 
 
@@ -120,13 +121,12 @@ def _run_local(template: TemplateConfig, template_dir: Path, log_file: Path):
     base_url = f"http://localhost:{port}"
     try:
         _query_endpoints(template, base_url)
+        if template.has_evaluate:
+            run_evaluate(template_dir)
+        elif not template.is_conversational:
+            run_test_agent(template_dir, port)
     finally:
         stop_server(proc)
-
-    if template.has_evaluate:
-        run_evaluate(template_dir)
-    elif not template.is_conversational:
-        run_test_agent(template_dir)
 
 
 def _run_deploy(
@@ -135,23 +135,51 @@ def _run_deploy(
     profile: str,
     lakebase: str,
     log_file: Path,
+    no_destroy: bool = False,
 ):
-    """Deploy phase: bundle deploy -> run -> grant perms -> wait -> query -> destroy."""
+    """Deploy phase: bundle deploy -> grant perms -> run -> wait -> query -> destroy."""
     set_log_file(log_file)
     _log(f"\n{'='*60}")
     _log(f"DEPLOY PHASE: {template.name}")
     _log(f"{'='*60}")
     bundle_deploy(template_dir, profile)
+    if template.needs_lakebase_edit:
+        grant_lakebase_access(template.dev_app_name, lakebase, profile)
     bundle_run(template_dir, template.bundle_name, profile)
     try:
-        app_url = wait_for_app_ready(template.dev_app_name, profile)
-        if template.needs_lakebase_edit:
-            grant_lakebase_access(template.dev_app_name, lakebase, profile)
+        try:
+            app_url = wait_for_app_ready(template.dev_app_name, profile)
+        except (TimeoutError, Exception) as exc:
+            # Capture app logs on readiness failure for debugging
+            logs = capture_app_logs(template.dev_app_name, profile)
+            if logs:
+                _log(
+                    f"\n--- App logs for {template.dev_app_name} (readiness timeout) ---\n"
+                    f"{logs}\n--- End logs ---"
+                )
+            raise
         token = get_oauth_token(profile)
 
         try:
-            _query_endpoints(template, app_url, token)
-        except Exception:
+            # Retry endpoint queries to handle transient 502s after lakebase grant
+            last_exc = None
+            for attempt in range(3):
+                try:
+                    _query_endpoints(template, app_url, token)
+                    last_exc = None
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    _log(f"Endpoint query attempt {attempt + 1}/3 failed: {exc}")
+                    if attempt < 2:
+                        time.sleep(30)
+            if last_exc is not None:
+                raise last_exc
+        except Exception as exc:
+            _log(
+                f"\n--- Endpoint query failed ---\n"
+                f"{''.join(traceback.format_exception(exc))}"
+            )
             logs = capture_app_logs(template.dev_app_name, profile)
             if logs:
                 _log(
@@ -160,13 +188,17 @@ def _run_deploy(
                 )
             raise
     finally:
-        bundle_destroy(template_dir, profile)
+        if not no_destroy:
+            bundle_destroy(template_dir, profile)
+        else:
+            _log("--no-destroy: skipping bundle destroy")
 
 
 def test_e2e(template, repo_root, profile, lakebase, request):
     """Full e2e test: clean -> quickstart -> edits -> (local || deploy) -> revert."""
     skip_local = request.config.getoption("--skip-local")
     skip_deploy = request.config.getoption("--skip-deploy")
+    no_destroy = request.config.getoption("--no-destroy")
 
     template_dir = repo_root / template.name
 
@@ -201,6 +233,18 @@ def test_e2e(template, repo_root, profile, lakebase, request):
                         new=lakebase,
                     )
                 )
+            # valueFrom/value_from "database" resolves to PGHOST hostname, not
+            # the instance name.  Replace with a literal value.
+            for vf_syntax in ['valueFrom: "database"', 'value_from: "database"']:
+                if "LAKEBASE_INSTANCE_NAME" in yml_text and vf_syntax in yml_text:
+                    edits.append(
+                        FileEdit(
+                            relative_path="databricks.yml",
+                            old=vf_syntax,
+                            new=f'value: "{lakebase}"',
+                        )
+                    )
+                    break
         originals = apply_edits(edits, template_dir)
 
     try:
@@ -214,7 +258,7 @@ def test_e2e(template, repo_root, profile, lakebase, request):
 
         if skip_local:
             with phase("deploy"):
-                _run_deploy(template, template_dir, profile, lakebase, log_file)
+                _run_deploy(template, template_dir, profile, lakebase, log_file, no_destroy)
             return
 
         # Run local and deploy in parallel

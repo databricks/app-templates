@@ -20,7 +20,7 @@ resources:
           - name: MLFLOW_REGISTRY_URI
             value: "databricks-uc"
           - name: MLFLOW_EXPERIMENT_ID
-            valueFrom: "experiment"
+            value_from: "experiment"
 
       # Resources which this app has access to
       resources:

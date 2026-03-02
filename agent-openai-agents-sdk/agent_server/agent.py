@@ -20,7 +20,6 @@ from agent_server.utils import (
     get_session_id,
     get_user_workspace_client,
     process_agent_stream_events,
-    sanitize_output_items,
 )
 
 # NOTE: this will work for all databricks models OTHER than GPT-OSS, which uses a slightly different API
@@ -58,7 +57,7 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
         agent = create_coding_agent(mcp_server)
         messages = [i.model_dump() for i in request.input]
         result = await Runner.run(agent, messages)
-        return ResponsesAgentResponse(output=sanitize_output_items(result.new_items))
+        return ResponsesAgentResponse(output=[item.to_input_item() for item in result.new_items])
 
 
 @stream()

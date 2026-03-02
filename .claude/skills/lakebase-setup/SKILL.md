@@ -97,7 +97,7 @@ Add the Lakebase environment variables to the `config.env` section of your app i
 
           # Lakebase instance name - resolved from database resource at deploy time
           - name: LAKEBASE_INSTANCE_NAME
-            valueFrom: "database"
+            value_from: "database"
 
           # Static values for embedding configuration
           - name: EMBEDDING_ENDPOINT
@@ -107,7 +107,7 @@ Add the Lakebase environment variables to the `config.env` section of your app i
 ```
 
 **Important:**
-- The `LAKEBASE_INSTANCE_NAME` uses `valueFrom: "database"` which resolves from the `database` resource at deploy time
+- The `LAKEBASE_INSTANCE_NAME` uses `value_from: "database"` which resolves from the `database` resource at deploy time
 - The `database` resource handles permissions; the `config.env` provides the instance name to your code
 
 ---
@@ -130,7 +130,7 @@ EMBEDDING_DIMS=1024
 | `databricks-gte-large-en` | 1024 |
 | `databricks-bge-large-en` | 1024 |
 
-> **Note:** `.env` is only for local development. When deployed, the app gets `LAKEBASE_INSTANCE_NAME` from the `valueFrom` reference in the `databricks.yml` config block.
+> **Note:** `.env` is only for local development. When deployed, the app gets `LAKEBASE_INSTANCE_NAME` from the `value_from` reference in the `databricks.yml` config block.
 
 ---
 
@@ -236,10 +236,10 @@ resources:
             value: "300"
           # Reference experiment resource
           - name: MLFLOW_EXPERIMENT_ID
-            valueFrom: "experiment"
+            value_from: "experiment"
           # Lakebase instance name (resolved from database resource)
           - name: LAKEBASE_INSTANCE_NAME
-            valueFrom: "database"
+            value_from: "database"
           # Embedding configuration
           - name: EMBEDDING_ENDPOINT
             value: "databricks-gte-large-en"
@@ -274,12 +274,12 @@ targets:
 | **"embedding_dims is required when embedding_endpoint is specified"** | Missing `embedding_dims` parameter | Add `embedding_dims=1024` to AsyncDatabricksStore |
 | **"relation 'store' does not exist"** | Tables not initialized | Run `await store.setup()` locally first (Step 5) |
 | **"Unable to resolve Lakebase instance 'None'"** | Missing env var in deployed app | Add `LAKEBASE_INSTANCE_NAME` to databricks.yml `config.env` |
-| **"Unable to resolve Lakebase instance '...database.cloud.databricks.com'"** | Used valueFrom instead of value | Use `value: "<instance-name>"` not `valueFrom` for Lakebase |
+| **"Unable to resolve Lakebase instance '...database.cloud.databricks.com'"** | Used value_from instead of value | Use `value: "<instance-name>"` not `value_from` for Lakebase |
 | **"permission denied for table store"** | Missing grants | The `database` resource in DAB should handle this; verify the resource is configured |
 | **"Failed to connect to Lakebase"** | Wrong instance name | Verify instance name in databricks.yml and .env |
 | **Connection pool errors on exit** | Python cleanup race | Ignore `PythonFinalizationError` - it's harmless |
 | **App not updated after deploy** | Forgot to run bundle | Run `databricks bundle run agent_langgraph` after deploy |
-| **valueFrom not resolving** | Resource name mismatch | Ensure `valueFrom` value matches `name` in databricks.yml resources |
+| **value_from not resolving** | Resource name mismatch | Ensure `value_from` value matches `name` in databricks.yml resources |
 
 ---
 

@@ -14,7 +14,7 @@ from template_config import (
 def pytest_addoption(parser):
     parser.addoption("--profile", default=DEFAULT_PROFILE, help="Databricks CLI profile")
     parser.addoption("--lakebase", default=DEFAULT_LAKEBASE, help="Lakebase instance name")
-    parser.addoption("--template", default=None, help="Run only this template")
+    parser.addoption("--template", action="append", default=None, help="Run only these templates (repeatable)")
     parser.addoption(
         "--genie-space-id",
         default=DEFAULT_GENIE_SPACE_ID,
@@ -35,6 +35,12 @@ def pytest_addoption(parser):
     )
     parser.addoption(
         "--skip-deploy", action="store_true", default=False, help="Skip deploy testing"
+    )
+    parser.addoption(
+        "--no-destroy",
+        action="store_true",
+        default=False,
+        help="Skip bundle destroy on failure (keep app running for inspection)",
     )
 
 

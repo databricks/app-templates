@@ -10,7 +10,9 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.12",
     "uvicorn>=0.34.2",
-    "databricks-langchain[memory]>=0.13.0",
+    # Note: Using git reference until official release
+    "databricks-langchain[memory] @ git+https://github.com/databricks/databricks-ai-bridge@lakebase-autoscaling-support#subdirectory=integrations/langchain",
+    "databricks-ai-bridge @ git+https://github.com/databricks/databricks-ai-bridge@lakebase-autoscaling-support",
     "mlflow>=3.8.0rc0",
     "langgraph>=1.0.1",
     "langchain-mcp-adapters>=0.1.11",
@@ -19,6 +21,10 @@ dependencies = [
 
 [tool.uv]
 prerelease = "allow"
+
+[tool.hatch.metadata]
+# Note: Required for direct git references. Delete when official databricks-langchain[memory] release is available
+allow-direct-references = true
 
 [build-system]
 requires = ["hatchling"]

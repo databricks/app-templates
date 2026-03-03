@@ -1,7 +1,11 @@
 import { expect, test } from '../fixtures';
 import { generateUUID } from '@chat-template/core';
 import { TEST_PROMPTS } from '../prompts/routes';
-import { sendChatAndGetMessageId, skipInEphemeralMode } from '../helpers';
+import {
+  sendChatAndGetMessageId,
+  skipInEphemeralMode,
+  skipInWithDatabaseMode,
+} from '../helpers';
 
 test.describe('/api/feedback', () => {
   test('POST /api/feedback validates request body', async ({ adaContext }) => {
@@ -45,9 +49,10 @@ test.describe('/api/feedback', () => {
     // Simulates a foundation model endpoint (e.g. databricks-claude-sonnet-4-5) that
     // uses the FMAPI chat completions format, which does not embed trace IDs in the
     // response stream. The server should skip MLflow and return success: true.
+    const chatId = generateUUID();
     const messageId = generateUUID();
     await adaContext.request.post('/api/test/store-message-meta', {
-      data: { messageId, chatId: generateUUID(), traceId: null },
+      data: { messageId, chatId, traceId: null },
     });
 
     const feedbackResponse = await adaContext.request.post('/api/feedback', {
@@ -58,6 +63,10 @@ test.describe('/api/feedback', () => {
     expect(body.success).toBe(true);
     // No MLflow submission when there's no trace ID
     expect(body.mlflowAssessmentId).toBeUndefined();
+    // Note: DB vote persistence for the no-trace-ID path is verified separately in
+    // "GET /api/feedback/chat/:chatId returns DB-backed feedback map", which uses a
+    // real chat (message exists in DB). Here, the message is only in the in-memory
+    // store (via store-message-meta), so the Vote FK constraint would reject it.
   });
 
   test.describe('deduplication', () => {
@@ -133,6 +142,31 @@ test.describe('/api/feedback', () => {
     expect(chatFeedback).toHaveProperty(assistantMessageId);
     expect(chatFeedback[assistantMessageId].feedbackType).toBe('thumbs_up');
     expect(chatFeedback[assistantMessageId].messageId).toBe(assistantMessageId);
+  });
+
+  test('GET /api/feedback/chat/:chatId returns empty map in ephemeral mode (votes not persisted)', async ({
+    adaContext,
+  }) => {
+    skipInWithDatabaseMode(test);
+
+    const chatId = generateUUID();
+    const assistantMessageId = await sendChatAndGetMessageId(
+      adaContext.request,
+      chatId,
+      TEST_PROMPTS.SKY.MESSAGE,
+    );
+
+    // Submit feedback — in ephemeral mode this writes to MLflow but not to DB
+    await adaContext.request.post('/api/feedback', {
+      data: { messageId: assistantMessageId, feedbackType: 'thumbs_up' },
+    });
+
+    // GET should return an empty map since there's no DB to read from
+    const getResponse = await adaContext.request.get(
+      `/api/feedback/chat/${chatId}`,
+    );
+    expect(getResponse.status()).toBe(200);
+    expect(await getResponse.json()).toEqual({});
   });
 
   test('GET /api/feedback/chat/:chatId reflects updated vote after toggling', async ({

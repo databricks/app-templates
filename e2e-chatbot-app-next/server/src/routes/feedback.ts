@@ -165,13 +165,15 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
 
     // Also persist to DB for fast bulk reads on page load
     if (chatId) {
-      voteMessage({
-        chatId,
-        messageId,
-        type: feedbackType === 'thumbs_up' ? 'up' : 'down',
-      }).catch((err) =>
-        console.warn('[Feedback] DB vote save failed:', err),
-      );
+      try {
+        await voteMessage({
+          chatId,
+          messageId,
+          type: feedbackType === 'thumbs_up' ? 'up' : 'down',
+        });
+      } catch (err) {
+        console.warn('[Feedback] DB vote save failed:', err);
+      }
     }
 
     return res.status(200).json({

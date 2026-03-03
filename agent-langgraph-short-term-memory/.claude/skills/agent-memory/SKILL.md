@@ -184,9 +184,15 @@ command: ["uv", "run", "start-app"]
 env:
   # ... other env vars ...
 
-  # Lakebase instance name
+  # Option 1: Lakebase Provisioned instance
   - name: LAKEBASE_INSTANCE_NAME
     value: "<your-lakebase-instance-name>"
+
+  # Option 2: Lakebase Autoscaling instance (set these instead of LAKEBASE_INSTANCE_NAME)
+  # - name: LAKEBASE_AUTOSCALING_PROJECT
+  #   value: "<your-project-name>"
+  # - name: LAKEBASE_AUTOSCALING_BRANCH
+  #   value: "<your-branch-name>"
 
   # Embedding configuration
   - name: EMBEDDING_ENDPOINT
@@ -195,13 +201,18 @@ env:
     value: "1024"
 ```
 
-**Important:** `LAKEBASE_INSTANCE_NAME` must match `instance_name` in databricks.yml.
+**Important:** Use either `LAKEBASE_INSTANCE_NAME` (provisioned) or `LAKEBASE_AUTOSCALING_PROJECT`/`LAKEBASE_AUTOSCALING_BRANCH` (autoscaling), not both.
 
 ### Step 3: .env (Local Development)
 
 ```bash
 # Lakebase configuration for long-term memory
+# Option 1: Provisioned instance
 LAKEBASE_INSTANCE_NAME=<your-instance-name>
+# Option 2: Autoscaling instance (set these instead of LAKEBASE_INSTANCE_NAME)
+# LAKEBASE_AUTOSCALING_PROJECT=<your-project-name>
+# LAKEBASE_AUTOSCALING_BRANCH=<your-branch-name>
+
 EMBEDDING_ENDPOINT=databricks-gte-large-en
 EMBEDDING_DIMS=1024
 ```
@@ -219,8 +230,11 @@ from agent_server.utils_memory import memory_tools, get_user_id
 async def streaming(request: ResponsesAgentRequest):
     user_id = get_user_id(request)
 
+    # Supports both provisioned (instance_name) and autoscaling (project/branch)
     async with AsyncDatabricksStore(
         instance_name=LAKEBASE_INSTANCE_NAME,
+        project=LAKEBASE_AUTOSCALING_PROJECT,
+        branch=LAKEBASE_AUTOSCALING_BRANCH,
         embedding_endpoint=EMBEDDING_ENDPOINT,
         embedding_dims=EMBEDDING_DIMS,
     ) as store:
@@ -243,6 +257,7 @@ async def streaming(request: ResponsesAgentRequest):
 Before deploying, initialize the tables locally:
 
 ```bash
+# For provisioned instances:
 uv run python -c "$(cat <<'EOF'
 import asyncio
 from databricks_langchain import AsyncDatabricksStore
@@ -250,6 +265,25 @@ from databricks_langchain import AsyncDatabricksStore
 async def setup():
     async with AsyncDatabricksStore(
         instance_name="<your-instance-name>",
+        embedding_endpoint="databricks-gte-large-en",
+        embedding_dims=1024,
+    ) as store:
+        await store.setup()
+        print("Tables created!")
+
+asyncio.run(setup())
+EOF
+)"
+
+# For autoscaling instances:
+uv run python -c "$(cat <<'EOF'
+import asyncio
+from databricks_langchain import AsyncDatabricksStore
+
+async def setup():
+    async with AsyncDatabricksStore(
+        project="<your-project-name>",
+        branch="<your-branch-name>",
         embedding_endpoint="databricks-gte-large-en",
         embedding_dims=1024,
     ) as store:
@@ -274,7 +308,12 @@ For conversation history within a session, use `AsyncCheckpointSaver`:
 ```python
 from databricks_langchain import AsyncCheckpointSaver
 
-async with AsyncCheckpointSaver(instance_name=LAKEBASE_INSTANCE_NAME) as checkpointer:
+# Supports both provisioned (instance_name) and autoscaling (project/branch)
+async with AsyncCheckpointSaver(
+    instance_name=LAKEBASE_INSTANCE_NAME,
+    project=LAKEBASE_AUTOSCALING_PROJECT,
+    branch=LAKEBASE_AUTOSCALING_BRANCH,
+) as checkpointer:
     agent = create_react_agent(
         model=model,
         tools=tools,
@@ -346,9 +385,9 @@ curl -X POST https://<app-url>/invocations \
 - [ ] Added `databricks-langchain[memory]` to `pyproject.toml`
 - [ ] Run `uv sync` to install dependencies
 - [ ] Created or identified Lakebase instance
-- [ ] Added Lakebase env vars to `.env` (for local dev)
+- [ ] Added Lakebase env vars to `.env` (for local dev) — either `LAKEBASE_INSTANCE_NAME` or `LAKEBASE_AUTOSCALING_PROJECT`/`LAKEBASE_AUTOSCALING_BRANCH`
 - [ ] Added `database` resource to `databricks.yml`
-- [ ] Added `LAKEBASE_INSTANCE_NAME` to `app.yaml`
+- [ ] Added Lakebase env vars to `app.yaml`
 - [ ] **Initialized tables locally** by running `await store.setup()`
 - [ ] Deployed with `databricks bundle deploy && databricks bundle run`
 
@@ -360,7 +399,7 @@ curl -X POST https://<app-url>/invocations \
 |-------|-------|----------|
 | **"embedding_dims is required"** | Missing parameter | Add `embedding_dims=1024` to AsyncDatabricksStore |
 | **"relation 'store' does not exist"** | Tables not created | Run `await store.setup()` locally first |
-| **"Unable to resolve Lakebase instance 'None'"** | Missing env var | Check `LAKEBASE_INSTANCE_NAME` in app.yaml |
+| **"Unable to resolve Lakebase instance 'None'"** | Missing env var | Check `LAKEBASE_INSTANCE_NAME` or `LAKEBASE_AUTOSCALING_PROJECT`/`LAKEBASE_AUTOSCALING_BRANCH` in app.yaml |
 | **"permission denied for table store"** | Missing grants | Add `database` resource to databricks.yml |
 | **"Memory not available - no user_id"** | Missing user_id | Pass `custom_inputs.user_id` in request |
 | **Memory not persisting** | Different user_ids | Use consistent user_id across requests |

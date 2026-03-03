@@ -310,10 +310,16 @@ export const handlers = [
 
   // Mock fetching endpoint details
   // Returns agent/v1/responses to enable context injection testing
+  // Includes auth_policy to simulate an OBO-enabled endpoint
   http.get(/\/api\/2\.0\/serving-endpoints\/[^/]+$/, () => {
     return HttpResponse.json({
       name: 'test-endpoint',
       task: 'agent/v1/responses',
+      auth_policy: {
+        user_auth_policy: {
+          api_scopes: ['serving.serving-endpoints'],
+        },
+      },
     });
   }),
 

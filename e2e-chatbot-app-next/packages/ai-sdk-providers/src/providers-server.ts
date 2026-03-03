@@ -73,10 +73,10 @@ const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true';
 
 const API_PROXY = process.env.API_PROXY;
 
-// Cache for endpoint details to check task type
+// Cache for endpoint details to check task type and OBO scopes
 const endpointDetailsCache = new Map<
   string,
-  { task: string | undefined; timestamp: number }
+  { task: string | undefined; userApiScopes: string[]; timestamp: number }
 >();
 const ENDPOINT_DETAILS_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
@@ -271,7 +271,17 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
   return provider;
 }
 
-// Get the task type of the serving endpoint
+// Response type for serving endpoint details
+interface EndpointDetailsResponse {
+  task: string | undefined;
+  auth_policy?: {
+    user_auth_policy: {
+      api_scopes: string[];
+    };
+  };
+}
+
+// Get the task type and OBO scopes of the serving endpoint
 const getEndpointDetails = async (servingEndpoint: string) => {
   const cached = endpointDetailsCache.get(servingEndpoint);
   if (
@@ -294,14 +304,40 @@ const getEndpointDetails = async (servingEndpoint: string) => {
       headers,
     },
   );
-  const data = (await response.json()) as { task: string | undefined };
+  const data = (await response.json()) as EndpointDetailsResponse;
+  const userApiScopes = data.auth_policy?.user_auth_policy?.api_scopes ?? [];
+
+  if (userApiScopes.length > 0) {
+    console.warn(
+      `⚠ OBO detected on endpoint "${servingEndpoint}". Required user authorization scopes: ${JSON.stringify(userApiScopes)}\n` +
+      `  → Add these scopes to your app via the Databricks UI or in databricks.yml under resources.apps.<name>.user_authorization.scopes\n` +
+      `  → See: https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth`,
+    );
+  }
+
   const returnValue = {
     task: data.task as string | undefined,
+    userApiScopes,
     timestamp: Date.now(),
   };
   endpointDetailsCache.set(servingEndpoint, returnValue);
   return returnValue;
 };
+
+/**
+ * Returns the OBO scopes for the configured serving endpoint, or empty array.
+ * Fetches endpoint details if not yet cached.
+ */
+export async function getEndpointOboScopes(): Promise<string[]> {
+  const servingEndpoint = process.env.DATABRICKS_SERVING_ENDPOINT;
+  if (!servingEndpoint) return [];
+  try {
+    const details = await getEndpointDetails(servingEndpoint);
+    return details.userApiScopes;
+  } catch {
+    return [];
+  }
+}
 
 // Create a smart provider wrapper that handles OAuth initialization
 interface SmartProvider {

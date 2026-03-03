@@ -43,13 +43,19 @@ sp_workspace_client = WorkspaceClient()
 ############################################
 LLM_ENDPOINT_NAME = "databricks-claude-sonnet-4-5"
 SYSTEM_PROMPT = "You are a helpful assistant. Use the available tools to answer questions."
-LAKEBASE_INSTANCE_NAME = os.getenv("LAKEBASE_INSTANCE_NAME", "")
+LAKEBASE_INSTANCE_NAME = os.getenv("LAKEBASE_INSTANCE_NAME") or None
+LAKEBASE_AUTOSCALING_PROJECT = os.getenv("LAKEBASE_AUTOSCALING_PROJECT") or None
+LAKEBASE_AUTOSCALING_BRANCH = os.getenv("LAKEBASE_AUTOSCALING_BRANCH") or None
 
-if not LAKEBASE_INSTANCE_NAME:
+if not LAKEBASE_INSTANCE_NAME and not (LAKEBASE_AUTOSCALING_PROJECT and LAKEBASE_AUTOSCALING_BRANCH):
     raise ValueError(
-        "LAKEBASE_INSTANCE_NAME environment variable is required but not set. "
-        "Please set it in your environment:\n"
-        "  LAKEBASE_INSTANCE_NAME=<your-lakebase-instance-name>\n"
+        "Lakebase configuration is required but not set. "
+        "Please set one of the following in your environment:\n"
+        "  For provisioned instances:\n"
+        "    LAKEBASE_INSTANCE_NAME=<your-lakebase-instance-name>\n"
+        "  For autoscaling instances:\n"
+        "    LAKEBASE_AUTOSCALING_PROJECT=<your-project-name>\n"
+        "    LAKEBASE_AUTOSCALING_BRANCH=<your-branch-name>\n"
     )
 
 
@@ -138,7 +144,11 @@ async def streaming(
     }
 
     try:
-        async with AsyncCheckpointSaver(instance_name=LAKEBASE_INSTANCE_NAME) as checkpointer:
+        async with AsyncCheckpointSaver(
+            instance_name=LAKEBASE_INSTANCE_NAME,
+            project=LAKEBASE_AUTOSCALING_PROJECT,
+            branch=LAKEBASE_AUTOSCALING_BRANCH,
+        ) as checkpointer:
             agent = await init_agent(checkpointer=checkpointer)
 
             async for event in process_agent_astream_events(
@@ -165,10 +175,15 @@ def _is_databricks_app_env() -> bool:
 
 def _get_lakebase_access_error_message() -> str:
     """Generate a helpful error message for Lakebase access issues."""
+    if LAKEBASE_INSTANCE_NAME:
+        lakebase_desc = f"Lakebase instance '{LAKEBASE_INSTANCE_NAME}'"
+    else:
+        lakebase_desc = f"Lakebase project '{LAKEBASE_AUTOSCALING_PROJECT}' (branch: '{LAKEBASE_AUTOSCALING_BRANCH}')"
+
     if _is_databricks_app_env():
         app_name = os.getenv("DATABRICKS_APP_NAME")
         return (
-            f"Failed to connect to Lakebase instance '{LAKEBASE_INSTANCE_NAME}'. "
+            f"Failed to connect to {lakebase_desc}. "
             f"The App Service Principal for '{app_name}' may not have access.\n\n"
             "To fix this:\n"
             "1. Go to the Databricks UI and navigate to your app\n"
@@ -179,9 +194,9 @@ def _get_lakebase_access_error_message() -> str:
         )
     else:
         return (
-            f"Failed to connect to Lakebase instance '{LAKEBASE_INSTANCE_NAME}'. "
+            f"Failed to connect to {lakebase_desc}. "
             "Please verify:\n"
-            "1. The instance name is correct\n"
+            "1. The instance/project name is correct\n"
             "2. You have the necessary permissions to access the instance\n"
             "3. Your Databricks authentication is configured correctly"
         )

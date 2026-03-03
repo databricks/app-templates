@@ -169,7 +169,7 @@ resources:
         - name: 'database'
           database:
             instance_name: '<your-lakebase-instance-name>'
-            database_name: 'postgres'
+            database_name: 'databricks_postgres'
             permission: 'CAN_CONNECT_AND_CREATE'
 ```
 

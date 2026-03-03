@@ -133,11 +133,9 @@ class LongRunningAgentServer(AgentServer):
         """
         super()._setup_routes()
 
-        # TODO: check because I don't think we need pghost ... just the LAKEBASE_INSTANCE_NAME
         if not is_db_configured():
             logger.warning(
-                "Database not configured (PGHOST, PGUSER or POSTGRES_URL). "
-                "Background mode disabled."
+                "Database not configured. Background mode disabled."
             )
             return
 

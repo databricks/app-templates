@@ -55,7 +55,7 @@ def sanitize_output_items(items) -> list[dict]:
 
 async def process_agent_stream_events(
     async_stream: AsyncIterator[StreamEvent],
-) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
+) -> AsyncGenerator[dict | ResponsesAgentStreamEvent, None]:
     curr_item_id = str(uuid4())
     async for event in async_stream:
         if event.type == "raw_response_event":

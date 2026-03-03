@@ -57,7 +57,7 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
 
 
 @stream()
-async def stream_handler(request: dict) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
+async def stream_handler(request: ResponsesAgentRequest) -> AsyncGenerator[dict | ResponsesAgentStreamEvent, None]:
     workspace_client = WorkspaceClient()
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()

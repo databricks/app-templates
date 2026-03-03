@@ -28,7 +28,7 @@ resources:
           - name: MLFLOW_EXPERIMENT_ID
             value_from: "experiment"
           - name: LAKEBASE_INSTANCE_NAME
-            value_from: "database"
+            value: "<your-lakebase-instance-name>"
 
       # Resources which this app has access to
       resources:

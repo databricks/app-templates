@@ -108,7 +108,8 @@ async def stream_handler(request: ResponsesAgentRequest) -> AsyncGenerator[Respo
 
     # Create session for stateful, short-term conversation history with your Databricks Lakebase instance
     session_id = get_session_id(request)
-    mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
+    if session_id:
+        mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
     session = AsyncDatabricksSession(
         session_id=session_id,
         instance_name=LAKEBASE_INSTANCE_NAME,

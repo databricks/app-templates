@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import select
 import shutil
 import signal
@@ -7,6 +8,7 @@ import socket
 import subprocess
 import threading
 import time
+from collections import defaultdict
 from pathlib import Path
 
 import requests
@@ -60,34 +62,11 @@ def _run_cmd(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
 
 
 # ---------------------------------------------------------------------------
-# Parse helpers
-# ---------------------------------------------------------------------------
-
-
-def _parse_yml_names(template_dir: Path) -> tuple[str, str, str] | None:
-    """Parse bundle_name, app_name, and app_resource_key from databricks.yml.
-
-    Returns (bundle_name, app_name, app_resource_key) or None on failure.
-    """
-    import re
-
-    yml_path = template_dir / "databricks.yml"
-    if not yml_path.exists():
-        return None
-    text = yml_path.read_text()
-    bundle_match = re.search(r"^bundle:\s*\n\s*name:\s*(\S+)", text, re.MULTILINE)
-    app_match = re.search(r'^\s*apps:\s*\n\s*(\w+):\s*\n\s*name:\s*"([^"]+)"', text, re.MULTILINE)
-    if not bundle_match or not app_match:
-        return None
-    return bundle_match.group(1), app_match.group(2), app_match.group(1)
-
-
-# ---------------------------------------------------------------------------
 # Clean helpers
 # ---------------------------------------------------------------------------
 
 
-def clean_template(template_dir: Path, profile: str = "dev"):
+def clean_template(template_dir: Path):
     """Remove local dev artifacts (.venv/, uv.lock, .env) and bundle state."""
     for name in [".venv", "uv.lock", ".env", ".bundle", ".databricks"]:
         target = template_dir / name
@@ -208,17 +187,18 @@ def query_endpoint(
             f"{resp.status_code} for {resp.url}\nResponse body: {body}",
             response=resp,
         )
-    _log(f"  response: {json.dumps(resp.json(), indent=2)[:1000]}")
-    return resp.json()
+    data = resp.json()
+    _log(f"  response: {json.dumps(data, indent=2)[:1000]}")
+    return data
 
 
-def _assert_sse_stream(
+def query_endpoint_stream(
     base_url: str,
     payload: dict,
-    endpoint: str,
+    endpoint: str = "/responses",
     extra_headers: dict[str, str] | None = None,
 ) -> None:
-    """POST with stream=True and validate the SSE response contains data."""
+    """POST with stream=True, validate SSE response with at least one data: event."""
     url = f"{base_url}{endpoint}"
     _log(f"POST {url} (streaming)")
     stream_payload = {**payload, "stream": True}
@@ -240,16 +220,6 @@ def _assert_sse_stream(
     )
     _log(f"  streaming: content_type={content_type}, has_data={has_data}")
     assert has_data, "No SSE data: events received in stream response"
-
-
-def query_endpoint_stream(
-    base_url: str,
-    payload: dict,
-    endpoint: str = "/responses",
-    extra_headers: dict[str, str] | None = None,
-) -> None:
-    """POST with stream=True, validate SSE response with at least one data: event."""
-    _assert_sse_stream(base_url, payload, endpoint, extra_headers)
 
 
 # ---------------------------------------------------------------------------
@@ -291,22 +261,25 @@ def run_test_agent(template_dir: Path, port: int = 8000):
 def apply_edits(edits: list[FileEdit], template_dir: Path) -> list[tuple[Path, str]]:
     """Apply file edits. Returns list of (path, original_content) for revert.
 
-    Only the *first* snapshot of each file is stored so that files with multiple
-    edits (e.g. multiagent's 3 edits to databricks.yml) are reverted to the true
-    original content.
+    Edits are grouped by file so each file is read and written exactly once,
+    even when multiple edits target the same file.
     """
-    seen: dict[Path, str] = {}
+    grouped: dict[Path, list[FileEdit]] = defaultdict(list)
     for edit in edits:
-        filepath = template_dir / edit.relative_path
-        current = filepath.read_text()
-        if filepath not in seen:
-            seen[filepath] = current
-        assert edit.old in current, (
-            f"Could not find expected text in {filepath}:\nLooking for: {edit.old[:100]}..."
-        )
-        filepath.write_text(current.replace(edit.old, edit.new, 1))
-        _log(f"Applied edit to {edit.relative_path}")
-    return list(seen.items())
+        grouped[template_dir / edit.relative_path].append(edit)
+
+    originals: list[tuple[Path, str]] = []
+    for filepath, file_edits in grouped.items():
+        content = filepath.read_text()
+        originals.append((filepath, content))
+        for edit in file_edits:
+            assert edit.old in content, (
+                f"Could not find expected text in {filepath}:\nLooking for: {edit.old[:100]}..."
+            )
+            content = content.replace(edit.old, edit.new, 1)
+            _log(f"Applied edit to {edit.relative_path}")
+        filepath.write_text(content)
+    return originals
 
 
 def revert_edits(originals: list[tuple[Path, str]]):
@@ -354,7 +327,23 @@ def _delete_mlflow_experiment(exp_name: str, profile: str):
             )
 
 
-def bundle_deploy(template_dir: Path, profile: str):
+def _bundle_unbind(
+    template_dir: Path, app_resource_key: str, profile: str,
+):
+    """Unbind a DAB app resource to clear stale state."""
+    _run_cmd(
+        [
+            "databricks", "bundle", "deployment", "unbind",
+            app_resource_key, "--target", "dev", "-p", profile,
+        ],
+        cwd=template_dir,
+        timeout=BUNDLE_TIMEOUT,
+    )
+
+
+def bundle_deploy(
+    template_dir: Path, profile: str, app_resource_key: str, app_name: str,
+):
     """Run `databricks bundle deploy --target dev -p <profile>`.
 
     Handles transient errors with automatic recovery:
@@ -363,11 +352,6 @@ def bundle_deploy(template_dir: Path, profile: str):
     - "already exists" (app): unbind stale state + bind existing app, retry
     - "does not exist or is deleted": unbind stale reference, retry
     """
-    import re
-
-    names = _parse_yml_names(template_dir)
-    app_resource_key = names[2] if names else None
-
     for attempt in range(1, MAX_POLLS + 1):
         result = _run_cmd(
             ["databricks", "bundle", "deploy", "--target", "dev", "-p", profile],
@@ -396,74 +380,28 @@ def bundle_deploy(template_dir: Path, profile: str):
                     )
                     _delete_mlflow_experiment(exp_match.group(1), profile)
                     continue
-                if app_resource_key:
-                    _log(
-                        f"bundle deploy attempt {attempt}/{MAX_POLLS} failed in "
-                        f"{template_dir.name} (app already exists), unbinding and binding..."
-                    )
-                    # Unbind stale state, then bind the existing app
-                    _run_cmd(
-                        [
-                            "databricks",
-                            "bundle",
-                            "deployment",
-                            "unbind",
-                            app_resource_key,
-                            "--target",
-                            "dev",
-                            "-p",
-                            profile,
-                        ],
-                        cwd=template_dir,
-                        timeout=BUNDLE_TIMEOUT,
-                    )
-                    app_name = names[1] if names else None
-                    if app_name:
-                        _run_cmd(
-                            [
-                                "databricks",
-                                "bundle",
-                                "deployment",
-                                "bind",
-                                app_resource_key,
-                                app_name,
-                                "--auto-approve",
-                                "--target",
-                                "dev",
-                                "-p",
-                                profile,
-                            ],
-                            cwd=template_dir,
-                            timeout=BUNDLE_TIMEOUT,
-                        )
-                    continue
+                _log(
+                    f"bundle deploy attempt {attempt}/{MAX_POLLS} failed in "
+                    f"{template_dir.name} (app already exists), unbinding and binding..."
+                )
+                _bundle_unbind(template_dir, app_resource_key, profile)
+                _run_cmd(
+                    [
+                        "databricks", "bundle", "deployment", "bind",
+                        app_resource_key, app_name, "--auto-approve",
+                        "--target", "dev", "-p", profile,
+                    ],
+                    cwd=template_dir,
+                    timeout=BUNDLE_TIMEOUT,
+                )
+                continue
 
             if "does not exist or is deleted" in stderr:
-                if app_resource_key:
-                    _log(
-                        f"bundle deploy attempt {attempt}/{MAX_POLLS} failed in "
-                        f"{template_dir.name} (stale state), unbinding and retrying..."
-                    )
-                    _run_cmd(
-                        [
-                            "databricks",
-                            "bundle",
-                            "deployment",
-                            "unbind",
-                            app_resource_key,
-                            "--target",
-                            "dev",
-                            "-p",
-                            profile,
-                        ],
-                        cwd=template_dir,
-                        timeout=BUNDLE_TIMEOUT,
-                    )
-                else:
-                    _log(
-                        f"bundle deploy attempt {attempt}/{MAX_POLLS} failed in "
-                        f"{template_dir.name} (stale state), retrying in {POLL_INTERVAL}s..."
-                    )
+                _log(
+                    f"bundle deploy attempt {attempt}/{MAX_POLLS} failed in "
+                    f"{template_dir.name} (stale state), unbinding and retrying..."
+                )
+                _bundle_unbind(template_dir, app_resource_key, profile)
                 time.sleep(POLL_INTERVAL)
                 continue
 
@@ -528,10 +466,10 @@ def bundle_destroy(template_dir: Path, profile: str):
         _log(f"WARNING: bundle destroy errored in {template_dir.name}: {exc}")
 
 
-def wait_for_app_ready(app_name: str, profile: str) -> str:
+def wait_for_app_ready(app_name: str, profile: str) -> tuple[str, str]:
     """Poll `databricks apps get` until RUNNING, then poll /agent/info until responsive.
 
-    Returns the app URL (without trailing slash).
+    Returns (app_url, oauth_token).
     """
     # Phase 1: wait for RUNNING state
     _log(f"Waiting for app {app_name} to reach RUNNING state...")
@@ -565,7 +503,7 @@ def wait_for_app_ready(app_name: str, profile: str) -> str:
             )
             _log(f"  /agent/info status={resp.status_code}")
             if resp.status_code < 500:
-                return app_url
+                return app_url, token
         except requests.RequestException as exc:
             _log(f"  /agent/info error: {exc}")
         time.sleep(POLL_INTERVAL)

@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 
 from template_config import (
@@ -8,6 +6,7 @@ from template_config import (
     DEFAULT_LAKEBASE,
     DEFAULT_PROFILE,
     DEFAULT_SERVING_ENDPOINT,
+    REPO_ROOT,
 )
 
 
@@ -56,4 +55,4 @@ def lakebase(request):
 
 @pytest.fixture
 def repo_root():
-    return Path(__file__).resolve().parents[2]
+    return REPO_ROOT

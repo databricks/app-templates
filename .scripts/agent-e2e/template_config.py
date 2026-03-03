@@ -29,6 +29,7 @@ class TemplateConfig:
     name: str  # e.g. "agent-langgraph"
     bundle_name: str  # e.g. "agent_langgraph"
     dev_app_name: str  # e.g. "dev-agent-langgraph"
+    app_resource_key: str  # DAB resource key under resources.apps
     is_conversational: bool = True  # /responses vs /invocations
     needs_lakebase_edit: bool = False  # Whether databricks.yml has lakebase placeholder
     pre_test_edits: list[FileEdit] = field(default_factory=list)
@@ -118,7 +119,7 @@ def _multiagent_edits(
     knowledge_assistant_endpoint: str,
 ) -> list[FileEdit]:
     """Build pre_test_edits for multiagent, skipping already-configured values."""
-    template_dir = _REPO_ROOT / template_name
+    template_dir = REPO_ROOT / template_name
     edits: list[FileEdit] = []
 
     # Only replace SUBAGENTS if the template still has the commented-out block
@@ -148,34 +149,34 @@ def _multiagent_edits(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def _parse_databricks_yml(template_name: str) -> tuple[str, str]:
-    """Parse bundle_name and dev_app_name from a template's databricks.yml.
+def _parse_databricks_yml(template_name: str) -> tuple[str, str, str]:
+    """Parse bundle_name, dev_app_name, and app_resource_key from databricks.yml.
 
-    Returns (bundle_name, dev_app_name) where dev_app_name is the app name
-    with ${bundle.target} resolved to 'dev'.
+    Returns (bundle_name, dev_app_name, app_resource_key) where dev_app_name
+    has ${bundle.target} resolved to 'dev'.
     """
-    yml_path = _REPO_ROOT / template_name / "databricks.yml"
+    yml_path = REPO_ROOT / template_name / "databricks.yml"
     text = yml_path.read_text()
 
     bundle_match = re.search(r'^bundle:\s*\n\s*name:\s*(\S+)', text, re.MULTILINE)
     assert bundle_match, f"Could not find bundle name in {yml_path}"
     bundle_name = bundle_match.group(1)
 
-    # Match the app name line under resources.apps (contains ${bundle.target})
     app_match = re.search(
-        r'^\s*apps:\s*\n\s*\w+:\s*\n\s*name:\s*"([^"]+)"', text, re.MULTILINE
+        r'^\s*apps:\s*\n\s*(\w+):\s*\n\s*name:\s*"([^"]+)"', text, re.MULTILINE
     )
     assert app_match, f"Could not find app name in {yml_path}"
-    dev_app_name = app_match.group(1).replace("${bundle.target}", "dev")
+    app_resource_key = app_match.group(1)
+    dev_app_name = app_match.group(2).replace("${bundle.target}", "dev")
 
     assert len(dev_app_name) <= 30, (
         f"App name '{dev_app_name}' is {len(dev_app_name)} chars (max 30) "
         f"in {yml_path}"
     )
-    return bundle_name, dev_app_name
+    return bundle_name, dev_app_name, app_resource_key
 
 
 # ---------------------------------------------------------------------------
@@ -214,12 +215,13 @@ def build_templates(
 
     templates = []
     for name, overrides in configs:
-        bundle_name, dev_app_name = _parse_databricks_yml(name)
+        bundle_name, dev_app_name, app_resource_key = _parse_databricks_yml(name)
         templates.append(
             TemplateConfig(
                 name=name,
                 bundle_name=bundle_name,
                 dev_app_name=dev_app_name,
+                app_resource_key=app_resource_key,
                 **overrides,
             )
         )

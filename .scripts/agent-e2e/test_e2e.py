@@ -1,3 +1,4 @@
+import os
 import time
 import traceback
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -5,7 +6,6 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
-
 from helpers import (
     _log,
     apply_edits,
@@ -63,9 +63,7 @@ def pytest_generate_tests(metafunc):
         templates = build_templates(
             genie_space_id=config.getoption("--genie-space-id"),
             serving_endpoint=config.getoption("--serving-endpoint"),
-            knowledge_assistant_endpoint=config.getoption(
-                "--knowledge-assistant-endpoint"
-            ),
+            knowledge_assistant_endpoint=config.getoption("--knowledge-assistant-endpoint"),
         )
         template_filter = config.getoption("--template")
         if template_filter:
@@ -104,9 +102,7 @@ def _query_endpoints(
         output_text = query_with_openai_sdk(base_url, token, "What is 3+3?", stream=True)
         assert output_text, "OpenAI SDK streaming returned empty response"
     else:
-        result = query_endpoint(
-            base_url, NON_CONVERSATIONAL_PAYLOAD, "/invocations", auth_headers
-        )
+        result = query_endpoint(base_url, NON_CONVERSATIONAL_PAYLOAD, "/invocations", auth_headers)
         assert "results" in result, f"/invocations missing 'results': {result}"
         assert len(result["results"]) > 0, "No results returned"
 
@@ -114,9 +110,9 @@ def _query_endpoints(
 def _run_local(template: TemplateConfig, template_dir: Path, log_file: Path):
     """Local phase: start server -> curl endpoints -> stop server -> evaluate."""
     set_log_file(log_file)
-    _log(f"\n{'='*60}")
+    _log(f"\n{'=' * 60}")
     _log(f"LOCAL PHASE: {template.name}")
-    _log(f"{'='*60}")
+    _log(f"{'=' * 60}")
     proc, port = start_server(template_dir)
     base_url = f"http://localhost:{port}"
     try:
@@ -139,11 +135,12 @@ def _run_deploy(
 ):
     """Deploy phase: bundle deploy -> grant perms -> run -> wait -> query -> destroy."""
     set_log_file(log_file)
-    _log(f"\n{'='*60}")
+    _log(f"\n{'=' * 60}")
     _log(f"DEPLOY PHASE: {template.name}")
-    _log(f"{'='*60}")
+    _log(f"{'=' * 60}")
     bundle_deploy(template_dir, profile)
     if template.needs_lakebase_edit:
+        print("granting lakebase access")
         grant_lakebase_access(template.dev_app_name, lakebase, profile)
     bundle_run(template_dir, template.bundle_name, profile)
     try:
@@ -176,16 +173,10 @@ def _run_deploy(
             if last_exc is not None:
                 raise last_exc
         except Exception as exc:
-            _log(
-                f"\n--- Endpoint query failed ---\n"
-                f"{''.join(traceback.format_exception(exc))}"
-            )
+            _log(f"\n--- Endpoint query failed ---\n{''.join(traceback.format_exception(exc))}")
             logs = capture_app_logs(template.dev_app_name, profile)
             if logs:
-                _log(
-                    f"\n--- App logs for {template.dev_app_name} ---\n"
-                    f"{logs}\n--- End logs ---"
-                )
+                _log(f"\n--- App logs for {template.dev_app_name} ---\n{logs}\n--- End logs ---")
             raise
     finally:
         if not no_destroy:
@@ -196,6 +187,8 @@ def _run_deploy(
 
 def test_e2e(template, repo_root, profile, lakebase, request):
     """Full e2e test: clean -> quickstart -> edits -> (local || deploy) -> revert."""
+    os.environ["DATABRICKS_CONFIG_PROFILE"] = profile
+
     skip_local = request.config.getoption("--skip-local")
     skip_deploy = request.config.getoption("--skip-deploy")
     no_destroy = request.config.getoption("--no-destroy")
@@ -217,9 +210,7 @@ def test_e2e(template, repo_root, profile, lakebase, request):
         clean_template(template_dir, profile)
 
     with phase("setup:quickstart"):
-        run_quickstart(
-            template_dir, profile, lakebase if template.needs_lakebase_edit else None
-        )
+        run_quickstart(template_dir, profile, lakebase if template.needs_lakebase_edit else None)
 
     with phase("setup:edits"):
         edits = list(template.pre_test_edits)
@@ -263,9 +254,7 @@ def test_e2e(template, repo_root, profile, lakebase, request):
 
         # Run local and deploy in parallel
         with ThreadPoolExecutor(max_workers=2) as executor:
-            local_future: Future = executor.submit(
-                _run_local, template, template_dir, log_file
-            )
+            local_future: Future = executor.submit(_run_local, template, template_dir, log_file)
             deploy_future: Future = executor.submit(
                 _run_deploy, template, template_dir, profile, lakebase, log_file
             )
@@ -275,14 +264,10 @@ def test_e2e(template, repo_root, profile, lakebase, request):
                 try:
                     future.result()
                 except Exception as exc:
-                    errors.append(
-                        f"{name}:\n{''.join(traceback.format_exception(exc))}"
-                    )
+                    errors.append(f"{name}:\n{''.join(traceback.format_exception(exc))}")
 
             if errors:
-                raise AssertionError(
-                    "Failures in parallel phases:\n" + "\n".join(errors)
-                )
+                raise AssertionError("Failures in parallel phases:\n" + "\n".join(errors))
     finally:
         revert_edits(originals)
         # Restore databricks.yml to pre-quickstart state (quickstart replaces placeholders)

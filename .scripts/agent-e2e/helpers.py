@@ -87,40 +87,9 @@ def _parse_yml_names(template_dir: Path) -> tuple[str, str, str] | None:
 # ---------------------------------------------------------------------------
 
 
-def _clean_bundle_state(template_dir: Path, profile: str):
-    """Delete local .bundle/, .databricks/bundle/, and remote workspace terraform state."""
-    for name in [".bundle", ".databricks/bundle"]:
-        d = template_dir / name
-        if d.is_dir():
-            shutil.rmtree(d)
-
-    names = _parse_yml_names(template_dir)
-    if not names:
-        return
-    bundle_name = names[0]
-
-    user_result = _run_cmd(
-        ["databricks", "current-user", "me", "-p", profile, "--output", "json"],
-        timeout=30,
-    )
-    if user_result.returncode == 0:
-        user_name = json.loads(user_result.stdout).get("userName", "")
-        if user_name:
-            remote_path = f"/Workspace/Users/{user_name}/.bundle/{bundle_name}"
-            _run_cmd(
-                ["databricks", "workspace", "delete", remote_path, "--recursive", "-p", profile],
-                timeout=30,
-            )
-
-
-
 def clean_template(template_dir: Path, profile: str = "dev"):
-    """Remove local dev artifacts (.venv/, uv.lock, .env).
-
-    Keeps existing apps and remote bundle state so that ``bundle deploy``
-    can update in-place instead of recreating from scratch.
-    """
-    for name in [".venv", "uv.lock", ".env"]:
+    """Remove local dev artifacts (.venv/, uv.lock, .env) and bundle state."""
+    for name in [".venv", "uv.lock", ".env", ".bundle", ".databricks"]:
         target = template_dir / name
         if target.is_dir():
             shutil.rmtree(target)
@@ -426,7 +395,6 @@ def bundle_deploy(template_dir: Path, profile: str):
                         f"{template_dir.name} (MLflow experiment conflict), cleaning up..."
                     )
                     _delete_mlflow_experiment(exp_match.group(1), profile)
-                    _clean_bundle_state(template_dir, profile)
                     continue
                 if app_resource_key:
                     _log(
@@ -436,8 +404,15 @@ def bundle_deploy(template_dir: Path, profile: str):
                     # Unbind stale state, then bind the existing app
                     _run_cmd(
                         [
-                            "databricks", "bundle", "deployment", "unbind",
-                            app_resource_key, "--target", "dev", "-p", profile,
+                            "databricks",
+                            "bundle",
+                            "deployment",
+                            "unbind",
+                            app_resource_key,
+                            "--target",
+                            "dev",
+                            "-p",
+                            profile,
                         ],
                         cwd=template_dir,
                         timeout=BUNDLE_TIMEOUT,
@@ -446,9 +421,17 @@ def bundle_deploy(template_dir: Path, profile: str):
                     if app_name:
                         _run_cmd(
                             [
-                                "databricks", "bundle", "deployment", "bind",
-                                app_resource_key, app_name,
-                                "--auto-approve", "--target", "dev", "-p", profile,
+                                "databricks",
+                                "bundle",
+                                "deployment",
+                                "bind",
+                                app_resource_key,
+                                app_name,
+                                "--auto-approve",
+                                "--target",
+                                "dev",
+                                "-p",
+                                profile,
                             ],
                             cwd=template_dir,
                             timeout=BUNDLE_TIMEOUT,
@@ -463,8 +446,15 @@ def bundle_deploy(template_dir: Path, profile: str):
                     )
                     _run_cmd(
                         [
-                            "databricks", "bundle", "deployment", "unbind",
-                            app_resource_key, "--target", "dev", "-p", profile,
+                            "databricks",
+                            "bundle",
+                            "deployment",
+                            "unbind",
+                            app_resource_key,
+                            "--target",
+                            "dev",
+                            "-p",
+                            profile,
                         ],
                         cwd=template_dir,
                         timeout=BUNDLE_TIMEOUT,
@@ -472,9 +462,8 @@ def bundle_deploy(template_dir: Path, profile: str):
                 else:
                     _log(
                         f"bundle deploy attempt {attempt}/{MAX_POLLS} failed in "
-                        f"{template_dir.name} (stale state), cleaning up and retrying in {POLL_INTERVAL}s..."
+                        f"{template_dir.name} (stale state), retrying in {POLL_INTERVAL}s..."
                     )
-                    _clean_bundle_state(template_dir, profile)
                 time.sleep(POLL_INTERVAL)
                 continue
 
@@ -620,15 +609,14 @@ def _try_sql(client, sql: str):
         _log(f"  SQL warning: {exc!r} for: {sql}")
 
 
-def grant_lakebase_access(app_name: str, lakebase: str, profile: str):
-    """Grant the app's SP lakebase access and clean up leftover tables.
+_MANAGED_SCHEMAS = ["public", "drizzle", "ai_chatbot"]
 
-    Steps:
-    1. Create a postgres role for the SP (databricks_create_role rejects app SPs).
-    2. Grant CREATE on the database so the SP can create schemas.
-    3. Grant schema/table/sequence privileges via the LakebaseClient SDK.
-    4. Drop leftover tables from previous runs so the SP recreates them with
-       proper ownership.
+
+def grant_lakebase_access(app_name: str, lakebase: str, profile: str):
+    """Grant the app's service principal Lakebase access.
+
+    Assumes the SP's postgres role already exists (created by the ``database``
+    resource in databricks.yml at deploy time).
     """
     from databricks_ai_bridge.lakebase import SchemaPrivilege, SequencePrivilege, TablePrivilege
 
@@ -642,65 +630,36 @@ def grant_lakebase_access(app_name: str, lakebase: str, profile: str):
         sp_client_id = data.get("service_principal_client_id", "")
         assert sp_client_id, f"No service_principal_client_id found for app {app_name}"
 
-        client = LakebaseClient(instance_name=lakebase)
-        try:
+        with LakebaseClient(instance_name=lakebase) as client:
             _log(f"Granting lakebase access to SP {sp_client_id}...")
-            quoted_sp = f'"{sp_client_id}"'
 
-            # 1. Create postgres role via direct SQL (databricks_create_role
-            #    rejects app-created SPs with "Identity not found")
-            try:
-                client.execute(f'CREATE ROLE {quoted_sp};')
-                _log("  Created postgres role via direct SQL")
-            except Exception as exc:
-                if "already exists" in str(exc):
-                    _log("  Postgres role already exists")
-                else:
-                    _log(f"  CREATE ROLE failed: {exc}")
-
-            # 2. Grant CREATE on the database so the SP can create schemas
-            #    (the actual database name is databricks_postgres, not postgres)
-            _try_sql(client, f'GRANT CREATE ON DATABASE databricks_postgres TO {quoted_sp};')
-
-            # 3. Grant schema-level privileges via SDK
-            all_schemas = ["public", "drizzle", "ai_chatbot"]
-            for schema in all_schemas:
-                _try_sql(client, f'CREATE SCHEMA IF NOT EXISTS {schema};')
-            client.grant_schema(
-                grantee=sp_client_id,
-                privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE],
-                schemas=all_schemas,
+            # Grant schema/table/sequence privileges on each managed schema that exists
+            rows = client.execute(
+                "SELECT schema_name FROM information_schema.schemata WHERE schema_name = ANY(%s);",
+                (_MANAGED_SCHEMAS,),
             )
-            client.grant_all_tables_in_schema(
-                grantee=sp_client_id,
-                privileges=[TablePrivilege.ALL],
-                schemas=all_schemas,
-            )
-            client.grant_all_sequences_in_schema(
-                grantee=sp_client_id,
-                privileges=[SequencePrivilege.ALL],
-                schemas=all_schemas,
-            )
-            # Default privileges so the SP can access future tables/sequences
-            for schema in all_schemas:
-                _try_sql(client, f'ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT ALL ON TABLES TO {quoted_sp};')
-                _try_sql(client, f'ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT ALL ON SEQUENCES TO {quoted_sp};')
+            existing_schemas = [r["schema_name"] for r in rows] if rows else []
+            _log(f"  Existing managed schemas: {existing_schemas}")
 
-            # 4. Drop leftover tables/schemas from previous runs so the SP
-            #    can recreate them with proper ownership
-            _log("  Cleaning leftover tables...")
-            for schema in ["drizzle", "ai_chatbot"]:
-                _try_sql(client, f"DROP SCHEMA IF EXISTS {schema} CASCADE;")
-            known_tables = [
-                "checkpoints", "checkpoint_writes", "checkpoint_migrations",
-                "checkpoint_blobs", "agent_messages", "store",
-            ]
-            for table in known_tables:
-                _try_sql(client, f"DROP TABLE IF EXISTS public.{table} CASCADE;")
+            if existing_schemas:
+                print("granting schema access")
+                client.grant_schema(
+                    grantee=sp_client_id,
+                    privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE],
+                    schemas=existing_schemas,
+                )
+                client.grant_all_tables_in_schema(
+                    grantee=sp_client_id,
+                    privileges=[TablePrivilege.ALL],
+                    schemas=existing_schemas,
+                )
+                client.grant_all_sequences_in_schema(
+                    grantee=sp_client_id,
+                    privileges=[SequencePrivilege.ALL],
+                    schemas=existing_schemas,
+                )
 
             _log(f"Lakebase access granted to {sp_client_id}.")
-        finally:
-            client.close()
     except Exception as exc:
         raise RuntimeError(f"grant_lakebase_access failed for {app_name}: {exc}") from exc
 
@@ -743,6 +702,3 @@ def query_with_openai_sdk(
         output_text = response.output_text
     _log(f"  OpenAI SDK response ({mode}): {output_text[:500]}")
     return output_text
-
-
-

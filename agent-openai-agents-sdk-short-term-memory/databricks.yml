@@ -40,7 +40,7 @@ resources:
         - name: 'database'
           database:
             instance_name: 'bbqiu'
-            database_name: 'postgres'
+            database_name: 'databricks_postgres'
             permission: 'CAN_CONNECT_AND_CREATE'
 
 targets:

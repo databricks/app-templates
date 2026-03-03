@@ -32,15 +32,15 @@ resources:
 
       # Resources which this app has access to
       resources:
-        - name: 'experiment'
+        - name: "experiment"
           experiment:
             experiment_id: "${resources.experiments.agent_langgraph_long_term_memory_experiment.id}"
-            permission: 'CAN_MANAGE'
-        - name: 'database'
+            permission: "CAN_MANAGE"
+        - name: "database"
           database:
-            instance_name: 'bbqiu'
-            database_name: 'postgres'
-            permission: 'CAN_CONNECT_AND_CREATE'
+            instance_name: "bbqiu"
+            database_name: "databricks_postgres"
+            permission: "CAN_CONNECT_AND_CREATE"
 
 targets:
   dev:

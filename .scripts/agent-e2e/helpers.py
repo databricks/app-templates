@@ -632,6 +632,10 @@ def grant_lakebase_access(app_name: str, lakebase: str, profile: str):
 
         with LakebaseClient(instance_name=lakebase) as client:
             _log(f"Granting lakebase access to SP {sp_client_id}...")
+            quoted_sp = f'"{sp_client_id}"'
+
+            # Grant CREATE on database so the SP can create schemas
+            _try_sql(client, f"GRANT CREATE ON DATABASE databricks_postgres TO {quoted_sp};")
 
             # Grant schema/table/sequence privileges on each managed schema that exists
             rows = client.execute(
@@ -642,7 +646,6 @@ def grant_lakebase_access(app_name: str, lakebase: str, profile: str):
             _log(f"  Existing managed schemas: {existing_schemas}")
 
             if existing_schemas:
-                print("granting schema access")
                 client.grant_schema(
                     grantee=sp_client_id,
                     privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE],

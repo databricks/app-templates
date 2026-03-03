@@ -140,7 +140,6 @@ def _run_deploy(
     _log(f"{'=' * 60}")
     bundle_deploy(template_dir, profile)
     if template.needs_lakebase_edit:
-        print("granting lakebase access")
         grant_lakebase_access(template.dev_app_name, lakebase, profile)
     bundle_run(template_dir, template.bundle_name, profile)
     try:

@@ -107,14 +107,14 @@ def _get_or_create_thread_id(request: ResponsesAgentRequest) -> str:
 
 
 @invoke()
-async def non_streaming(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
+async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
     thread_id = _get_or_create_thread_id(request)
     request.custom_inputs = dict(request.custom_inputs or {})
     request.custom_inputs["thread_id"] = thread_id
 
     outputs = [
         event.item
-        async for event in streaming(request)
+        async for event in stream_handler(request)
         if event.type == "response.output_item.done"
     ]
 
@@ -122,7 +122,7 @@ async def non_streaming(request: ResponsesAgentRequest) -> ResponsesAgentRespons
 
 
 @stream()
-async def streaming(
+async def stream_handler(
     request: ResponsesAgentRequest,
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
     # workspace_client = WorkspaceClient()

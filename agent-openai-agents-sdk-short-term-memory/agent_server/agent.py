@@ -86,8 +86,11 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
     # user_workspace_client = get_user_workspace_client()
 
     # Create session for stateful, short-term conversation history with your Databricks Lakebase instance
+    session_id = get_session_id(request)
+    if session_id:
+        mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
     session = AsyncDatabricksSession(
-        session_id=get_session_id(request),
+        session_id=session_id,
         instance_name=LAKEBASE_INSTANCE_NAME,
     )
 

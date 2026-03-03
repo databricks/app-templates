@@ -50,6 +50,8 @@ def create_coding_agent(mcp_server: McpServer) -> Agent:
 
 @invoke()
 async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
+    if session_id := get_session_id(request):
+        mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
     workspace_client = WorkspaceClient()
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()

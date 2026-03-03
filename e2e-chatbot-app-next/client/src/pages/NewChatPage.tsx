@@ -11,18 +11,22 @@ export default function NewChatPage() {
   const { chatHistoryEnabled } = useAppConfig();
   const [id, setId] = useState(() => generateUUID());
   const [modelId, setModelId] = useState('chat-model');
-  // Becomes true once the first stream completes so we can fetch feedback.
-  const [streamCompleted, setStreamCompleted] = useState(false);
+  // Becomes true after the first exchange completes and the new chat is saved
+  // to the database. We gate useChatData on this flag so we don't issue a
+  // /api/chat/:id request before the chat row exists (which would 404).
+  // Once set, useChatData fetches the chat metadata so the sidebar entry
+  // appears, and restores any saved feedback votes on page refresh.
+  const [chatInitialized, setChatInitialized] = useState(false);
 
   // Fetch feedback (and chat/messages) after the first exchange finishes.
   // Only enabled in DB mode — ephemeral mode has no persistent data to fetch.
   const { chatData } = useChatData(
     id,
-    streamCompleted && chatHistoryEnabled && !!session?.user,
+    chatInitialized && chatHistoryEnabled && !!session?.user,
   );
 
   const handleStreamComplete = useCallback(() => {
-    setStreamCompleted(true);
+    setChatInitialized(true);
   }, []);
 
   // Check if the new chat page was navigated to when we're already on the new chat page
@@ -31,7 +35,7 @@ export default function NewChatPage() {
   useEffect(() => {
     // Start a new chat when the page is navigated to
     setId(generateUUID());
-    setStreamCompleted(false);
+    setChatInitialized(false);
   }, [location.key]);
 
   useEffect(() => {

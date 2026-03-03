@@ -44,21 +44,26 @@ sp_workspace_client = WorkspaceClient()
 # Configuration
 ############################################
 LLM_ENDPOINT_NAME = "databricks-claude-sonnet-4-5"
-_LAKEBASE_INSTANCE_NAME_RAW = os.getenv("LAKEBASE_INSTANCE_NAME", "")
+LAKEBASE_INSTANCE_NAME = os.getenv("LAKEBASE_INSTANCE_NAME") or None
+LAKEBASE_AUTOSCALING_PROJECT = os.getenv("LAKEBASE_AUTOSCALING_PROJECT") or None
+LAKEBASE_AUTOSCALING_BRANCH = os.getenv("LAKEBASE_AUTOSCALING_BRANCH") or None
 EMBEDDING_ENDPOINT = "databricks-gte-large-en"
 EMBEDDING_DIMS = 1024
 
-############################################
-
-if not _LAKEBASE_INSTANCE_NAME_RAW:
+if not LAKEBASE_INSTANCE_NAME and not (LAKEBASE_AUTOSCALING_PROJECT and LAKEBASE_AUTOSCALING_BRANCH):
     raise ValueError(
-        "LAKEBASE_INSTANCE_NAME environment variable is required but not set. "
-        "Please set it in your environment:\n"
-        "  LAKEBASE_INSTANCE_NAME=<your-lakebase-instance-name>\n"
+        "Lakebase configuration is required but not set. "
+        "Please set one of the following in your environment:\n"
+        "  For provisioned instances:\n"
+        "    LAKEBASE_INSTANCE_NAME=<your-lakebase-instance-name>\n"
+        "  For autoscaling instances:\n"
+        "    LAKEBASE_AUTOSCALING_PROJECT=<your-project-name>\n"
+        "    LAKEBASE_AUTOSCALING_BRANCH=<your-branch-name>\n"
     )
 
 # Resolve hostname to instance name if needed (if given hostname of lakebase instead of name)
-LAKEBASE_INSTANCE_NAME = resolve_lakebase_instance_name(_LAKEBASE_INSTANCE_NAME_RAW)
+if LAKEBASE_INSTANCE_NAME:
+    LAKEBASE_INSTANCE_NAME = resolve_lakebase_instance_name(LAKEBASE_INSTANCE_NAME)
 
 SYSTEM_PROMPT = """You are a helpful assistant. Use the available tools to answer questions.
 
@@ -130,6 +135,8 @@ async def streaming(
     try:
         async with AsyncDatabricksStore(
             instance_name=LAKEBASE_INSTANCE_NAME,
+            project=LAKEBASE_AUTOSCALING_PROJECT,
+            branch=LAKEBASE_AUTOSCALING_BRANCH,
             embedding_endpoint=EMBEDDING_ENDPOINT,
             embedding_dims=EMBEDDING_DIMS,
         ) as store:
@@ -148,7 +155,6 @@ async def streaming(
         # Check for Lakebase access/connection errors
         if any(keyword in error_msg for keyword in ["permission"]):
             logger.error(f"Lakebase access error: {e}")
-            raise HTTPException(
-                status_code=503, detail=get_lakebase_access_error_message(LAKEBASE_INSTANCE_NAME)
-            ) from e
+            lakebase_desc = LAKEBASE_INSTANCE_NAME or f"{LAKEBASE_AUTOSCALING_PROJECT}/{LAKEBASE_AUTOSCALING_BRANCH}"
+            raise HTTPException(status_code=503, detail=get_lakebase_access_error_message(lakebase_desc)) from e
         raise

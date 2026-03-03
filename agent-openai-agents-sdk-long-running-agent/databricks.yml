@@ -1,0 +1,57 @@
+bundle:
+  name: agent_openai_agents_sdk
+
+resources:
+  experiments:
+    agent_openai_agents_sdk_experiment:
+      name: /Users/${workspace.current_user.userName}/${bundle.name}-${bundle.target}
+
+  apps:
+    agent_openai_agents_sdk:
+      name: "agent-openai-agents-sdk"
+      description: "OpenAI Agents SDK agent application"
+      source_code_path: ./
+      config:
+        command: ["uv", "run", "start-app"]
+        env:
+          - name: MLFLOW_TRACKING_URI
+            value: "databricks"
+          - name: MLFLOW_REGISTRY_URI
+            value: "databricks-uc"
+          - name: API_PROXY
+            value: "http://localhost:8000/invocations"
+          - name: CHAT_APP_PORT
+            value: "3000"
+          - name: CHAT_PROXY_TIMEOUT_SECONDS
+            value: "300"
+          - name: MLFLOW_EXPERIMENT_ID
+            value_from: "experiment"
+          - name: LAKEBASE_INSTANCE_NAME
+            value_from: "database"
+          - name: LOG_LEVEL
+            value: "INFO"
+      resources:
+        - name: 'experiment'
+          experiment:
+            experiment_id: "${resources.experiments.agent_openai_agents_sdk_experiment.id}"
+            permission: 'CAN_MANAGE'
+        - name: 'database'
+          database:
+            instance_name: '<your-lakebase-instance-name>'  # TODO: Replace with your Lakebase instance name
+            database_name: 'databricks_postgres'
+            permission: CAN_CONNECT_AND_CREATE
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://<your-workspace-host>  # TODO: Replace with your Databricks workspace URL (e.g. https://adb-xxx.azuredatabricks.net or https://xxx.cloud.databricks.com)
+  prod:
+    mode: production
+    workspace:
+      host: https://<your-workspace-host>  # TODO: Replace with your Databricks workspace URL
+    resources:
+      apps:
+        agent_openai_agents_sdk:
+          name: agent-openai-agents-sdk

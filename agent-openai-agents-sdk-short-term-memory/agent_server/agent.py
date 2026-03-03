@@ -26,16 +26,27 @@ from agent_server.utils import (
     sanitize_output_items,
 )
 
-# Lakebase instance name for persistent session storage
-_LAKEBASE_INSTANCE_NAME_RAW = os.environ.get("LAKEBASE_INSTANCE_NAME")
-if not _LAKEBASE_INSTANCE_NAME_RAW:
+############################################
+# Lakebase Configuration
+############################################
+LAKEBASE_INSTANCE_NAME = os.getenv("LAKEBASE_INSTANCE_NAME") or None
+LAKEBASE_AUTOSCALING_PROJECT = os.getenv("LAKEBASE_AUTOSCALING_PROJECT") or None
+LAKEBASE_AUTOSCALING_BRANCH = os.getenv("LAKEBASE_AUTOSCALING_BRANCH") or None
+
+if not LAKEBASE_INSTANCE_NAME and not (LAKEBASE_AUTOSCALING_PROJECT and LAKEBASE_AUTOSCALING_BRANCH):
     raise ValueError(
-        "LAKEBASE_INSTANCE_NAME environment variable is required but not set. "
-        "Please set it in your environment:\n"
-        "  LAKEBASE_INSTANCE_NAME=<your-lakebase-instance-name>\n"
+        "Lakebase configuration is required but not set. "
+        "Please set one of the following in your environment:\n"
+        "  For provisioned instances:\n"
+        "    LAKEBASE_INSTANCE_NAME=<your-lakebase-instance-name>\n"
+        "  For autoscaling instances:\n"
+        "    LAKEBASE_AUTOSCALING_PROJECT=<your-project-name>\n"
+        "    LAKEBASE_AUTOSCALING_BRANCH=<your-branch-name>\n"
     )
+
 # Resolve hostname to instance name if needed (if given hostname of lakebase instead of name)
-LAKEBASE_INSTANCE_NAME = resolve_lakebase_instance_name(_LAKEBASE_INSTANCE_NAME_RAW)
+if LAKEBASE_INSTANCE_NAME:
+    LAKEBASE_INSTANCE_NAME = resolve_lakebase_instance_name(LAKEBASE_INSTANCE_NAME)
 
 
 def get_session_id(request: ResponsesAgentRequest) -> str:
@@ -89,6 +100,8 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
     session = AsyncDatabricksSession(
         session_id=get_session_id(request),
         instance_name=LAKEBASE_INSTANCE_NAME,
+        project=LAKEBASE_AUTOSCALING_PROJECT,
+        branch=LAKEBASE_AUTOSCALING_BRANCH,
     )
 
     async with await init_mcp_server() as mcp_server:
@@ -112,6 +125,8 @@ async def stream_handler(request: ResponsesAgentRequest) -> AsyncGenerator[Respo
     session = AsyncDatabricksSession(
         session_id=session_id,
         instance_name=LAKEBASE_INSTANCE_NAME,
+        project=LAKEBASE_AUTOSCALING_PROJECT,
+        branch=LAKEBASE_AUTOSCALING_BRANCH,
     )
 
     async with await init_mcp_server() as mcp_server:

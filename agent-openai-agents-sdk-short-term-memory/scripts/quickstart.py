@@ -667,8 +667,7 @@ def select_lakebase_interactive(profile_name: str) -> dict:
     if provisioned:
         print("Provisioned instances:")
         for inst in provisioned:
-            creator_str = f"  (creator: {inst['creator']})" if inst.get("creator") else ""
-            print(f"  {number}) {inst['name']}{creator_str}")
+            print(f"  {number}) {inst['name']}")
             all_items.append({"type": "provisioned", "data": inst})
             number += 1
 

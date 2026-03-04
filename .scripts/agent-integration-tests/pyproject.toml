@@ -1,5 +1,5 @@
 [project]
-name = "agent-e2e-tests"
+name = "agent-integration-tests"
 version = "0.1.0"
 description = "E2E tests for agent templates"
 requires-python = ">=3.11"

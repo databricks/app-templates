@@ -4,7 +4,7 @@ These rules apply ONLY when modifying agent templates in this repository. An "ag
 
 ## CRITICAL: Sync After Modifying Shared Sources
 
-Shared files are copied from source-of-truth directories into each template. **Never manually edit synced copies** — edit the source and run the sync command.
+Shared files are copied from source-of-truth directories into each template. **Never manually edit synced copies** (e.g. `{template}/quickstart.py`, `{template}/start_app.py`, `{template}/evaluate_agent.py`) — always edit the source file in `.scripts/source/` or `.claude/skills/` first, then run the sync command to propagate changes to all templates.
 
 | Source directory | Sync command | What it syncs |
 |---|---|---|
@@ -59,13 +59,13 @@ All memory templates return the ID in `custom_outputs` so clients can reuse it.
 
 ### `databricks.yml` conventions
 
-- Use `value_from:` (snake_case), never `valueFrom:`
 - `bundle.name` uses underscores: `agent_langgraph`
 - App `name` uses hyphens: `agent-langgraph`
 - Memory template app names are abbreviated (`-stm`, `-ltm`) to stay within the 30-char limit
 - App command: `["uv", "run", "start-app"]`
-- Experiment name pattern: `/Users/${workspace.current_user.userName}/${bundle.name}-${bundle.target}`
 - Lakebase resources use `permission: 'CAN_CONNECT_AND_CREATE'`
+- Lakebase templates use `<your-lakebase-instance-name>` as placeholder — quickstart replaces it
+- Quickstart removes the DAB-managed experiment resource and sets `MLFLOW_EXPERIMENT_ID` to a literal value
 
 ### Per-template AGENTS.md
 
@@ -73,7 +73,7 @@ Each template has its own `{template}/AGENTS.md` (loaded via `{template}/CLAUDE.
 
 ## E2E Tests
 
-Tests live in `.scripts/agent-e2e/`. Run from that directory:
+Tests live in `.scripts/agent-integration-tests/`. Run from that directory:
 
 ```bash
 # All templates in parallel (local + deploy)
@@ -86,7 +86,7 @@ uv run pytest test_e2e.py -v -n 7 --skip-deploy
 uv run pytest test_e2e.py -v -n0 -s --skip-deploy --template agent-langgraph
 ```
 
-Template test configs are in `.scripts/agent-e2e/template_config.py`.
+Template test configs are in `.scripts/agent-integration-tests/template_config.py`.
 
 ## Editing Workflow Summary
 
@@ -95,5 +95,5 @@ Template test configs are in `.scripts/agent-e2e/template_config.py`.
 3. **Changing template-specific agent code** — edit directly in `{template}/agent_server/`
 4. **Adding a new template** — add to `.scripts/templates.py`, create directory, run both sync commands
 5. **Changing `databricks.yml`** — edit directly in the template (not synced)
-6. **After any change** — run e2e tests: `cd .scripts/agent-e2e && uv run pytest test_e2e.py -v -n 7 --skip-deploy`
+6. **After any change** — run e2e tests: `cd .scripts/agent-integration-tests && uv run pytest test_e2e.py -v -n 7 --skip-deploy`
 7. **After any change** — review this file (`.claude/AGENTS.md`) and each affected template's `AGENTS.md` for inaccuracies, then update them to reflect the new state

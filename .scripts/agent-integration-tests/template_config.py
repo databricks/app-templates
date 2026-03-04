@@ -9,7 +9,6 @@ DEFAULT_PROFILE = "dev"
 DEFAULT_LAKEBASE = "bbqiu"
 DEFAULT_GENIE_SPACE_ID = "01f05202dbb51d74b6cccf1b1b1683eb"
 DEFAULT_SERVING_ENDPOINT = "agents_dev-bbqiu-test-bb-2-25"
-DEFAULT_KNOWLEDGE_ASSISTANT_ENDPOINT = "agents_dev-bbqiu-test-bb-2-25"
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +115,6 @@ def _multiagent_edits(
     template_name: str,
     genie_space_id: str,
     serving_endpoint: str,
-    knowledge_assistant_endpoint: str,
 ) -> list[FileEdit]:
     """Build pre_test_edits for multiagent, skipping already-configured values."""
     template_dir = REPO_ROOT / template_name
@@ -138,7 +136,7 @@ def _multiagent_edits(
     for old, new in [
         ("<YOUR-GENIE-SPACE-ID>", genie_space_id),
         ("<YOUR-SERVING-ENDPOINT>", serving_endpoint),
-        ("<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>", knowledge_assistant_endpoint),
+        ("<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>", serving_endpoint),
     ]:
         if old in yml_text:
             edits.append(FileEdit(relative_path="databricks.yml", old=old, new=new))
@@ -185,7 +183,6 @@ def _parse_databricks_yml(template_name: str) -> tuple[str, str, str]:
 def build_templates(
     genie_space_id: str = DEFAULT_GENIE_SPACE_ID,
     serving_endpoint: str = DEFAULT_SERVING_ENDPOINT,
-    knowledge_assistant_endpoint: str = DEFAULT_KNOWLEDGE_ASSISTANT_ENDPOINT,
 ) -> list[TemplateConfig]:
     configs: list[tuple[str, dict]] = [
         ("agent-langgraph", {}),
@@ -203,7 +200,6 @@ def build_templates(
                     "agent-openai-agents-sdk-multiagent",
                     genie_space_id,
                     serving_endpoint,
-                    knowledge_assistant_endpoint,
                 ),
             },
         ),

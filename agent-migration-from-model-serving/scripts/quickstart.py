@@ -624,6 +624,61 @@ def setup_lakebase(profile_name: str, username: str, lakebase_arg: str = None) -
     return lakebase_name
 
 
+def update_databricks_yml_experiment(experiment_id: str) -> None:
+    """Update databricks.yml to use a literal experiment ID instead of DAB-managed experiment."""
+    yml_path = Path("databricks.yml")
+    if not yml_path.exists():
+        return
+
+    content = yml_path.read_text()
+
+    # 1. Remove top-level resources.experiments section (comment + experiments block)
+    content = re.sub(
+        r"  # MLflow experiment[^\n]*\n  experiments:\n(?:    [^\n]*\n)*\n",
+        "",
+        content,
+    )
+
+    # 2. Remove experiment resource entry from app resources list
+    content = re.sub(
+        r"        - name: ['\"]experiment['\"]\n          experiment:\n(?:            [^\n]*\n)*",
+        "",
+        content,
+    )
+
+    # 3. Clean up empty resources section (comment + resources: with no entries)
+    content = re.sub(
+        r"      # Resources which this app has access to\n      resources:[ \t]*\n(?=\n|\Z)",
+        "",
+        content,
+    )
+
+    # 4. Replace value_from: "experiment" with literal value
+    content = re.sub(
+        r"""value_from: ["']experiment["']""",
+        f'value: "{experiment_id}"',
+        content,
+    )
+
+    yml_path.write_text(content)
+    print_success("Updated databricks.yml with experiment ID")
+
+
+def update_databricks_yml_lakebase(lakebase_name: str) -> None:
+    """Update databricks.yml to replace lakebase placeholder with actual instance name."""
+    yml_path = Path("databricks.yml")
+    if not yml_path.exists():
+        return
+
+    content = yml_path.read_text()
+    if "<your-lakebase-instance-name>" not in content:
+        return
+
+    content = content.replace("<your-lakebase-instance-name>", lakebase_name)
+    yml_path.write_text(content)
+    print_success("Updated databricks.yml with Lakebase instance name")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Quickstart setup for Databricks agent development",
@@ -691,11 +746,15 @@ Examples:
         update_env_file("MLFLOW_EXPERIMENT_ID", experiment_id)
         print_success("Updated .env with experiment ID")
 
+        # Step 5b: Update databricks.yml to use literal experiment ID
+        update_databricks_yml_experiment(experiment_id)
+
         # Step 6: Lakebase setup (if needed for memory features)
         lakebase_name = None
         lakebase_required = args.lakebase or check_lakebase_required()
         if lakebase_required:
             lakebase_name = setup_lakebase(profile_name, username, args.lakebase)
+            update_databricks_yml_lakebase(lakebase_name)
 
         # Final summary
         host = get_databricks_host(profile_name)

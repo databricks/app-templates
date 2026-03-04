@@ -27,7 +27,7 @@ EVALUATE_TIMEOUT = 900  # seconds for agent-evaluate
 SERVER_START_TIMEOUT = 60  # seconds to wait for local server to start
 
 # ---------------------------------------------------------------------------
-# Thread-safe logging
+# Logging & subprocess
 # ---------------------------------------------------------------------------
 _thread_local = threading.local()
 _log_lock = threading.Lock()
@@ -61,8 +61,34 @@ def _run_cmd(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
     return result
 
 
+def _run_with_retries(
+    cmd: list[str],
+    *,
+    cwd: Path,
+    label: str,
+    max_attempts: int = MAX_POLLS,
+    timeout: int = BUNDLE_TIMEOUT,
+    recover: "Callable[[str, int, int], bool] | None" = None,
+):
+    """Run a command with retries.
+
+    recover(stderr, attempt, max_attempts) is called on failure and returns
+    True to retry or False to give up.
+    """
+    for attempt in range(1, max_attempts + 1):
+        result = _run_cmd(cmd, cwd=cwd, timeout=timeout)
+        if result.returncode == 0:
+            return result
+        if attempt < max_attempts and recover and recover(result.stderr, attempt, max_attempts):
+            continue
+        break
+    assert result.returncode == 0, (
+        f"{label} failed in {cwd.name}:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+
+
 # ---------------------------------------------------------------------------
-# Clean helpers
+# Setup & cleanup
 # ---------------------------------------------------------------------------
 
 
@@ -76,11 +102,6 @@ def clean_template(template_dir: Path):
             target.unlink()
 
 
-# ---------------------------------------------------------------------------
-# Quickstart / server
-# ---------------------------------------------------------------------------
-
-
 def run_quickstart(template_dir: Path, profile: str, lakebase: str | None = None):
     """Run `uv run quickstart --profile <profile>`, optionally with --lakebase."""
     cmd = ["uv", "run", "quickstart", "--profile", profile]
@@ -92,6 +113,41 @@ def run_quickstart(template_dir: Path, profile: str, lakebase: str | None = None
         f"stdout: {result.stdout}\n"
         f"stderr: {result.stderr}"
     )
+
+
+def apply_edits(edits: list[FileEdit], template_dir: Path) -> list[tuple[Path, str]]:
+    """Apply file edits. Returns list of (path, original_content) for revert.
+
+    Edits are grouped by file so each file is read and written exactly once,
+    even when multiple edits target the same file.
+    """
+    grouped: dict[Path, list[FileEdit]] = defaultdict(list)
+    for edit in edits:
+        grouped[template_dir / edit.relative_path].append(edit)
+
+    originals: list[tuple[Path, str]] = []
+    for filepath, file_edits in grouped.items():
+        content = filepath.read_text()
+        originals.append((filepath, content))
+        for edit in file_edits:
+            assert edit.old in content, (
+                f"Could not find expected text in {filepath}:\nLooking for: {edit.old[:100]}..."
+            )
+            content = content.replace(edit.old, edit.new, 1)
+            _log(f"Applied edit to {edit.relative_path}")
+        filepath.write_text(content)
+    return originals
+
+
+def revert_edits(originals: list[tuple[Path, str]]):
+    """Write back original file contents."""
+    for filepath, content in originals:
+        filepath.write_text(content)
+
+
+# ---------------------------------------------------------------------------
+# Local server
+# ---------------------------------------------------------------------------
 
 
 def find_free_port() -> int:
@@ -156,8 +212,34 @@ def stop_server(proc: subprocess.Popen):
             pass
 
 
+def run_evaluate(template_dir: Path):
+    """Run `uv run agent-evaluate`. Timeout: 15 minutes."""
+    result = _run_cmd(
+        ["uv", "run", "agent-evaluate"],
+        cwd=template_dir,
+        timeout=EVALUATE_TIMEOUT,
+    )
+    assert result.returncode == 0, (
+        f"evaluate failed in {template_dir.name}:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+
+
+def run_test_agent(template_dir: Path, port: int = 8000):
+    """Run `uv run python test_agent.py` for non-conversational template."""
+    result = _run_cmd(
+        ["uv", "run", "python", "test_agent.py", "--url", f"http://localhost:{port}"],
+        cwd=template_dir,
+        timeout=QUERY_TIMEOUT,
+    )
+    assert result.returncode == 0, (
+        f"test_agent.py failed in {template_dir.name}:\n"
+        f"stdout: {result.stdout}\n"
+        f"stderr: {result.stderr}"
+    )
+
+
 # ---------------------------------------------------------------------------
-# Endpoint query helpers
+# Endpoint queries
 # ---------------------------------------------------------------------------
 
 
@@ -222,74 +304,48 @@ def query_endpoint_stream(
     assert has_data, "No SSE data: events received in stream response"
 
 
-# ---------------------------------------------------------------------------
-# Evaluate / test
-# ---------------------------------------------------------------------------
+def query_with_openai_sdk(
+    base_url: str,
+    token: str | None,
+    message: str,
+    stream: bool = False,
+) -> str:
+    """Use OpenAI SDK to test /responses endpoint. Return response text.
 
-
-def run_evaluate(template_dir: Path):
-    """Run `uv run agent-evaluate`. Timeout: 15 minutes."""
-    result = _run_cmd(
-        ["uv", "run", "agent-evaluate"],
-        cwd=template_dir,
-        timeout=EVALUATE_TIMEOUT,
-    )
-    assert result.returncode == 0, (
-        f"evaluate failed in {template_dir.name}:\nstdout: {result.stdout}\nstderr: {result.stderr}"
-    )
-
-
-def run_test_agent(template_dir: Path, port: int = 8000):
-    """Run `uv run python test_agent.py` for non-conversational template."""
-    result = _run_cmd(
-        ["uv", "run", "python", "test_agent.py", "--url", f"http://localhost:{port}"],
-        cwd=template_dir,
-        timeout=QUERY_TIMEOUT,
-    )
-    assert result.returncode == 0, (
-        f"test_agent.py failed in {template_dir.name}:\n"
-        f"stdout: {result.stdout}\n"
-        f"stderr: {result.stderr}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# File edits
-# ---------------------------------------------------------------------------
-
-
-def apply_edits(edits: list[FileEdit], template_dir: Path) -> list[tuple[Path, str]]:
-    """Apply file edits. Returns list of (path, original_content) for revert.
-
-    Edits are grouped by file so each file is read and written exactly once,
-    even when multiple edits target the same file.
+    Works for both local (token=None, uses dummy key) and deployed (token=Bearer).
+    When stream=True, uses the streaming API and collects text from events.
     """
-    grouped: dict[Path, list[FileEdit]] = defaultdict(list)
-    for edit in edits:
-        grouped[template_dir / edit.relative_path].append(edit)
+    from openai import OpenAI
 
-    originals: list[tuple[Path, str]] = []
-    for filepath, file_edits in grouped.items():
-        content = filepath.read_text()
-        originals.append((filepath, content))
-        for edit in file_edits:
-            assert edit.old in content, (
-                f"Could not find expected text in {filepath}:\nLooking for: {edit.old[:100]}..."
-            )
-            content = content.replace(edit.old, edit.new, 1)
-            _log(f"Applied edit to {edit.relative_path}")
-        filepath.write_text(content)
-    return originals
-
-
-def revert_edits(originals: list[tuple[Path, str]]):
-    """Write back original file contents."""
-    for filepath, content in originals:
-        filepath.write_text(content)
+    mode = "streaming" if stream else "non-streaming"
+    _log(f"Querying {base_url} via OpenAI SDK ({mode})...")
+    client = OpenAI(
+        base_url=base_url,
+        api_key=token or "dummy",
+    )
+    if stream:
+        text_parts: list[str] = []
+        resp_stream = client.responses.create(
+            model="agent",
+            input=[{"role": "user", "content": message}],
+            stream=True,
+        )
+        for event in resp_stream:
+            if hasattr(event, "delta") and event.delta:
+                text_parts.append(event.delta)
+        output_text = "".join(text_parts)
+    else:
+        response = client.responses.create(
+            model="agent",
+            input=[{"role": "user", "content": message}],
+        )
+        output_text = response.output_text
+    _log(f"  OpenAI SDK response ({mode}): {output_text[:500]}")
+    return output_text
 
 
 # ---------------------------------------------------------------------------
-# Deploy helpers
+# Bundle commands (deploy / run / destroy)
 # ---------------------------------------------------------------------------
 
 
@@ -352,88 +408,77 @@ def bundle_deploy(
     - "already exists" (app): unbind stale state + bind existing app, retry
     - "does not exist or is deleted": unbind stale reference, retry
     """
-    for attempt in range(1, MAX_POLLS + 1):
-        result = _run_cmd(
-            ["databricks", "bundle", "deploy", "--target", "dev", "-p", profile],
-            cwd=template_dir,
-            timeout=BUNDLE_TIMEOUT,
-        )
-        if result.returncode == 0:
-            return
 
-        stderr = result.stderr
-        if attempt < MAX_POLLS:
-            if "terraform init" in stderr:
+    def recover(stderr: str, attempt: int, max_attempts: int) -> bool:
+        if "terraform init" in stderr:
+            _log(
+                f"bundle deploy attempt {attempt}/{max_attempts} failed in "
+                f"{template_dir.name} (terraform init error), retrying in {POLL_INTERVAL}s..."
+            )
+            time.sleep(POLL_INTERVAL)
+            return True
+
+        if "already exists" in stderr:
+            exp_match = re.search(r"Node named '(.+?)' already exists", stderr)
+            if exp_match:
                 _log(
-                    f"bundle deploy attempt {attempt}/{MAX_POLLS} failed in "
-                    f"{template_dir.name} (terraform init error), retrying in {POLL_INTERVAL}s..."
+                    f"bundle deploy attempt {attempt}/{max_attempts} failed in "
+                    f"{template_dir.name} (MLflow experiment conflict), cleaning up..."
                 )
-                time.sleep(POLL_INTERVAL)
-                continue
+                _delete_mlflow_experiment(exp_match.group(1), profile)
+                return True
+            _log(
+                f"bundle deploy attempt {attempt}/{max_attempts} failed in "
+                f"{template_dir.name} (app already exists), unbinding and binding..."
+            )
+            _bundle_unbind(template_dir, app_resource_key, profile)
+            _run_cmd(
+                [
+                    "databricks", "bundle", "deployment", "bind",
+                    app_resource_key, app_name, "--auto-approve",
+                    "--target", "dev", "-p", profile,
+                ],
+                cwd=template_dir,
+                timeout=BUNDLE_TIMEOUT,
+            )
+            return True
 
-            if "already exists" in stderr:
-                exp_match = re.search(r"Node named '(.+?)' already exists", stderr)
-                if exp_match:
-                    _log(
-                        f"bundle deploy attempt {attempt}/{MAX_POLLS} failed in "
-                        f"{template_dir.name} (MLflow experiment conflict), cleaning up..."
-                    )
-                    _delete_mlflow_experiment(exp_match.group(1), profile)
-                    continue
-                _log(
-                    f"bundle deploy attempt {attempt}/{MAX_POLLS} failed in "
-                    f"{template_dir.name} (app already exists), unbinding and binding..."
-                )
-                _bundle_unbind(template_dir, app_resource_key, profile)
-                _run_cmd(
-                    [
-                        "databricks", "bundle", "deployment", "bind",
-                        app_resource_key, app_name, "--auto-approve",
-                        "--target", "dev", "-p", profile,
-                    ],
-                    cwd=template_dir,
-                    timeout=BUNDLE_TIMEOUT,
-                )
-                continue
+        if "does not exist or is deleted" in stderr:
+            _log(
+                f"bundle deploy attempt {attempt}/{max_attempts} failed in "
+                f"{template_dir.name} (stale state), unbinding and retrying..."
+            )
+            _bundle_unbind(template_dir, app_resource_key, profile)
+            time.sleep(POLL_INTERVAL)
+            return True
 
-            if "does not exist or is deleted" in stderr:
-                _log(
-                    f"bundle deploy attempt {attempt}/{MAX_POLLS} failed in "
-                    f"{template_dir.name} (stale state), unbinding and retrying..."
-                )
-                _bundle_unbind(template_dir, app_resource_key, profile)
-                time.sleep(POLL_INTERVAL)
-                continue
+        return False
 
-        break
-    assert result.returncode == 0, (
-        f"bundle deploy failed in {template_dir.name}:\n"
-        f"stdout: {result.stdout}\n"
-        f"stderr: {result.stderr}"
+    _run_with_retries(
+        ["databricks", "bundle", "deploy", "--target", "dev", "-p", profile],
+        cwd=template_dir,
+        label="bundle deploy",
+        recover=recover,
     )
 
 
 def bundle_run(template_dir: Path, resource_key: str, profile: str):
     """Run `databricks bundle run <resource_key> --target dev` to start the app."""
     _log(f"Starting app via bundle run {resource_key}...")
-    for attempt in range(1, MAX_POLLS + 1):
-        result = _run_cmd(
-            ["databricks", "bundle", "run", resource_key, "--target", "dev", "-p", profile],
-            cwd=template_dir,
-            timeout=BUNDLE_TIMEOUT,
+
+    def recover(stderr: str, attempt: int, max_attempts: int) -> bool:
+        _log(
+            f"bundle run attempt {attempt}/{max_attempts} failed in "
+            f"{template_dir.name}, retrying in {POLL_INTERVAL}s..."
         )
-        if result.returncode == 0:
-            return
-        if attempt < MAX_POLLS:
-            _log(
-                f"bundle run attempt {attempt}/{MAX_POLLS} failed in "
-                f"{template_dir.name}, retrying in {POLL_INTERVAL}s..."
-            )
-            time.sleep(POLL_INTERVAL)
-    assert result.returncode == 0, (
-        f"bundle run failed in {template_dir.name}:\n"
-        f"stdout: {result.stdout}\n"
-        f"stderr: {result.stderr}"
+        time.sleep(POLL_INTERVAL)
+        return True
+
+    _run_with_retries(
+        ["databricks", "bundle", "run", resource_key, "--target", "dev", "-p", profile],
+        cwd=template_dir,
+        label="bundle run",
+        recover=recover,
     )
 
 
@@ -464,6 +509,24 @@ def bundle_destroy(template_dir: Path, profile: str):
             )
     except Exception as exc:
         _log(f"WARNING: bundle destroy errored in {template_dir.name}: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# App management (readiness, auth, logs)
+# ---------------------------------------------------------------------------
+
+
+def get_oauth_token(profile: str) -> str:
+    """Get token from `databricks auth token -p <profile>`."""
+    result = _run_cmd(
+        ["databricks", "auth", "token", "-p", profile],
+        timeout=60,
+    )
+    assert result.returncode == 0, f"Failed to get auth token: {result.stderr}"
+    data = json.loads(result.stdout)
+    token = data.get("access_token", "")
+    assert token, "No access_token in auth response"
+    return token
 
 
 def wait_for_app_ready(app_name: str, profile: str) -> tuple[str, str]:
@@ -513,19 +576,6 @@ def wait_for_app_ready(app_name: str, profile: str) -> tuple[str, str]:
     )
 
 
-def get_oauth_token(profile: str) -> str:
-    """Get token from `databricks auth token -p <profile>`."""
-    result = _run_cmd(
-        ["databricks", "auth", "token", "-p", profile],
-        timeout=60,
-    )
-    assert result.returncode == 0, f"Failed to get auth token: {result.stderr}"
-    data = json.loads(result.stdout)
-    token = data.get("access_token", "")
-    assert token, "No access_token in auth response"
-    return token
-
-
 def capture_app_logs(app_name: str, profile: str) -> str:
     """Capture app logs via `databricks apps logs`. Returns log output or empty string."""
     try:
@@ -539,15 +589,19 @@ def capture_app_logs(app_name: str, profile: str) -> str:
         return ""
 
 
+# ---------------------------------------------------------------------------
+# Lakebase
+# ---------------------------------------------------------------------------
+
+_MANAGED_SCHEMAS = ["public", "drizzle", "ai_chatbot"]
+
+
 def _try_sql(client, sql: str):
     """Execute SQL, logging but not raising on failure."""
     try:
         client.execute(sql)
     except Exception as exc:
         _log(f"  SQL warning: {exc!r} for: {sql}")
-
-
-_MANAGED_SCHEMAS = ["public", "drizzle", "ai_chatbot"]
 
 
 def grant_lakebase_access(app_name: str, lakebase: str, profile: str):
@@ -603,43 +657,3 @@ def grant_lakebase_access(app_name: str, lakebase: str, profile: str):
             _log(f"Lakebase access granted to {sp_client_id}.")
     except Exception as exc:
         raise RuntimeError(f"grant_lakebase_access failed for {app_name}: {exc}") from exc
-
-
-def query_with_openai_sdk(
-    base_url: str,
-    token: str | None,
-    message: str,
-    stream: bool = False,
-) -> str:
-    """Use OpenAI SDK to test /responses endpoint. Return response text.
-
-    Works for both local (token=None, uses dummy key) and deployed (token=Bearer).
-    When stream=True, uses the streaming API and collects text from events.
-    """
-    from openai import OpenAI
-
-    mode = "streaming" if stream else "non-streaming"
-    _log(f"Querying {base_url} via OpenAI SDK ({mode})...")
-    client = OpenAI(
-        base_url=base_url,
-        api_key=token or "dummy",
-    )
-    if stream:
-        text_parts: list[str] = []
-        resp_stream = client.responses.create(
-            model="agent",
-            input=[{"role": "user", "content": message}],
-            stream=True,
-        )
-        for event in resp_stream:
-            if hasattr(event, "delta") and event.delta:
-                text_parts.append(event.delta)
-        output_text = "".join(text_parts)
-    else:
-        response = client.responses.create(
-            model="agent",
-            input=[{"role": "user", "content": message}],
-        )
-        output_text = response.output_text
-    _log(f"  OpenAI SDK response ({mode}): {output_text[:500]}")
-    return output_text

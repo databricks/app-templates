@@ -2,7 +2,6 @@ import pytest
 
 from template_config import (
     DEFAULT_GENIE_SPACE_ID,
-    DEFAULT_KNOWLEDGE_ASSISTANT_ENDPOINT,
     DEFAULT_LAKEBASE,
     DEFAULT_PROFILE,
     DEFAULT_SERVING_ENDPOINT,
@@ -25,11 +24,6 @@ def pytest_addoption(parser):
         help="Serving endpoint name for multiagent template",
     )
     parser.addoption(
-        "--knowledge-assistant-endpoint",
-        default=DEFAULT_KNOWLEDGE_ASSISTANT_ENDPOINT,
-        help="Knowledge assistant endpoint for multiagent template",
-    )
-    parser.addoption(
         "--skip-local", action="store_true", default=False, help="Skip local testing"
     )
     parser.addoption(
@@ -39,7 +33,7 @@ def pytest_addoption(parser):
         "--no-destroy",
         action="store_true",
         default=False,
-        help="Skip bundle destroy on failure (keep app running for inspection)",
+        help="Skip bundle destroy (keep app running for inspection)",
     )
 
 

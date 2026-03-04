@@ -63,7 +63,6 @@ def pytest_generate_tests(metafunc):
         templates = build_templates(
             genie_space_id=config.getoption("--genie-space-id"),
             serving_endpoint=config.getoption("--serving-endpoint"),
-            knowledge_assistant_endpoint=config.getoption("--knowledge-assistant-endpoint"),
         )
         template_filter = config.getoption("--template")
         if template_filter:
@@ -202,26 +201,6 @@ def test_e2e(template, repo_root, profile, lakebase, request):
 
     with phase("setup:edits"):
         edits = list(template.pre_test_edits)
-        if template.needs_lakebase_edit:
-            yml_text = yml_path.read_text()
-            if "<your-lakebase-instance-name>" in yml_text:
-                edits.append(
-                    FileEdit(
-                        relative_path="databricks.yml",
-                        old="<your-lakebase-instance-name>",
-                        new=lakebase,
-                    )
-                )
-            # value_from "database" resolves to PGHOST hostname, not
-            # the instance name.  Replace with a literal value.
-            if "LAKEBASE_INSTANCE_NAME" in yml_text and 'value_from: "database"' in yml_text:
-                edits.append(
-                    FileEdit(
-                        relative_path="databricks.yml",
-                        old='value_from: "database"',
-                        new=f'value: "{lakebase}"',
-                    )
-                )
         originals = apply_edits(edits, template_dir)
 
     try:

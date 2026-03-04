@@ -368,7 +368,10 @@ export async function deleteMessagesByChatIdAfterTimestamp({
     const messageIds = messagesToDelete.map((message) => message.id);
 
     if (messageIds.length > 0) {
-      return await (await ensureDb())
+      const db = await ensureDb();
+      // Delete votes first to satisfy the Vote.messageId → Message.id FK constraint
+      await db.delete(vote).where(inArray(vote.messageId, messageIds));
+      return await db
         .delete(message)
         .where(
           and(eq(message.chatId, chatId), inArray(message.id, messageIds)),

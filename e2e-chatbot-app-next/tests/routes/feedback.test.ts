@@ -169,6 +169,31 @@ test.describe('/api/feedback', () => {
     expect(await getResponse.json()).toEqual({});
   });
 
+  test('DELETE /api/messages/:id/trailing succeeds when message has a vote (no FK violation)', async ({
+    adaContext,
+  }) => {
+    skipInEphemeralMode(test);
+
+    const chatId = generateUUID();
+    const assistantMessageId = await sendChatAndGetMessageId(
+      adaContext.request,
+      chatId,
+      TEST_PROMPTS.SKY.MESSAGE,
+    );
+
+    // Submit feedback — writes a Vote row referencing this message
+    await adaContext.request.post('/api/feedback', {
+      data: { messageId: assistantMessageId, feedbackType: 'thumbs_up' },
+    });
+
+    // Edit the message (deletes trailing messages including the voted-on one).
+    // Before the fix this would 500 due to Vote.messageId → Message.id FK violation.
+    const deleteResponse = await adaContext.request.delete(
+      `/api/messages/${assistantMessageId}/trailing`,
+    );
+    expect(deleteResponse.status()).toBe(200);
+  });
+
   test('GET /api/feedback/chat/:chatId reflects updated vote after toggling', async ({
     adaContext,
   }) => {

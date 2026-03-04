@@ -26,7 +26,6 @@ class FileEdit:
 @dataclass
 class TemplateConfig:
     name: str  # e.g. "agent-langgraph"
-    bundle_name: str  # e.g. "agent_langgraph"
     dev_app_name: str  # e.g. "dev-agent-langgraph"
     app_resource_key: str  # DAB resource key under resources.apps
     is_conversational: bool = True  # /responses vs /invocations
@@ -150,18 +149,14 @@ def _multiagent_edits(
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def _parse_databricks_yml(template_name: str) -> tuple[str, str, str]:
-    """Parse bundle_name, dev_app_name, and app_resource_key from databricks.yml.
+def _parse_databricks_yml(template_name: str) -> tuple[str, str]:
+    """Parse dev_app_name and app_resource_key from databricks.yml.
 
-    Returns (bundle_name, dev_app_name, app_resource_key) where dev_app_name
+    Returns (dev_app_name, app_resource_key) where dev_app_name
     has ${bundle.target} resolved to 'dev'.
     """
     yml_path = REPO_ROOT / template_name / "databricks.yml"
     text = yml_path.read_text()
-
-    bundle_match = re.search(r'^bundle:\s*\n\s*name:\s*(\S+)', text, re.MULTILINE)
-    assert bundle_match, f"Could not find bundle name in {yml_path}"
-    bundle_name = bundle_match.group(1)
 
     app_match = re.search(
         r'^\s*apps:\s*\n\s*(\w+):\s*\n\s*name:\s*"([^"]+)"', text, re.MULTILINE
@@ -174,7 +169,7 @@ def _parse_databricks_yml(template_name: str) -> tuple[str, str, str]:
         f"App name '{dev_app_name}' is {len(dev_app_name)} chars (max 30) "
         f"in {yml_path}"
     )
-    return bundle_name, dev_app_name, app_resource_key
+    return dev_app_name, app_resource_key
 
 
 # ---------------------------------------------------------------------------
@@ -211,11 +206,10 @@ def build_templates(
 
     templates = []
     for name, overrides in configs:
-        bundle_name, dev_app_name, app_resource_key = _parse_databricks_yml(name)
+        dev_app_name, app_resource_key = _parse_databricks_yml(name)
         templates.append(
             TemplateConfig(
                 name=name,
-                bundle_name=bundle_name,
                 dev_app_name=dev_app_name,
                 app_resource_key=app_resource_key,
                 **overrides,

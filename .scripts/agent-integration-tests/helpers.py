@@ -8,6 +8,7 @@ import subprocess
 import threading
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from pathlib import Path
 
 import requests
@@ -67,7 +68,7 @@ def _run_with_retries(
     label: str,
     max_attempts: int = MAX_POLLS,
     timeout: int = BUNDLE_TIMEOUT,
-    recover: "Callable[[str, int, int], bool] | None" = None,
+    recover: Callable[[str, int, int], bool] | None = None,
 ):
     """Run a command with retries.
 
@@ -170,7 +171,7 @@ def start_server(template_dir: Path, port: int = 0) -> tuple[subprocess.Popen, i
     proc = subprocess.Popen(
         ["uv", "run", "start-server", "--port", str(port)],
         cwd=template_dir,
-        stdout=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
         text=True,
         preexec_fn=os.setsid,
@@ -179,11 +180,10 @@ def start_server(template_dir: Path, port: int = 0) -> tuple[subprocess.Popen, i
     deadline = time.time() + SERVER_START_TIMEOUT
     while time.time() < deadline:
         if proc.poll() is not None:
-            stdout = proc.stdout.read() if proc.stdout else ""
             stderr = proc.stderr.read() if proc.stderr else ""
             raise RuntimeError(
                 f"Server process exited early (code {proc.returncode}):\n"
-                f"stdout: {stdout}\nstderr: {stderr}"
+                f"stderr: {stderr}"
             )
         # Check stderr for uvicorn startup message
         ready = select.select([proc.stderr], [], [], 1.0)[0]

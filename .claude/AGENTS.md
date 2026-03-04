@@ -75,7 +75,17 @@ The 3 base templates (`agent-langgraph`, `agent-openai-agents-sdk`, `agent-non-c
 
 Each template has its own `{template}/AGENTS.md` (loaded via `{template}/CLAUDE.md`). These are maintained individually and are **not synced** — they contain template-specific guidance for end users.
 
-## E2E Tests
+## Tests
+
+### Quickstart unit tests
+
+The quickstart unit tests (`test_quickstart.py`) live in `.scripts/source/` but have no `pyproject.toml` of their own. Run them from `.scripts/agent-integration-tests/` which has pytest installed:
+
+```bash
+cd .scripts/agent-integration-tests && uv run pytest ../source/test_quickstart.py -v
+```
+
+### E2E integration tests
 
 Tests live in `.scripts/agent-integration-tests/`. Run from that directory.
 

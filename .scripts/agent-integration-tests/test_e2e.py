@@ -28,7 +28,7 @@ from helpers import (
     stop_server,
     wait_for_app_ready,
 )
-from template_config import FileEdit, TemplateConfig, build_templates
+from template_config import TemplateConfig, build_templates
 
 CONVERSATIONAL_PAYLOAD = {"input": [{"role": "user", "content": "What is 2+2?"}]}
 NON_CONVERSATIONAL_PAYLOAD = {

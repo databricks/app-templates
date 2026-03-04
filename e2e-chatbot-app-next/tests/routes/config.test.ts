@@ -23,6 +23,18 @@ test.describe('/api/config', () => {
     }
   });
 
+  test('backgroundModeAvailable is false when API_PROXY is not set', async ({
+    adaContext,
+  }) => {
+    // The main routes project runs without API_PROXY
+    const response = await adaContext.request.get('/api/config');
+    expect(response.status()).toBe(200);
+
+    const data = await response.json();
+    expect(data.features).toHaveProperty('backgroundModeAvailable');
+    expect(data.features.backgroundModeAvailable).toBe(false);
+  });
+
   test('GET /api/config does not require authentication', async ({
     adaContext,
   }) => {

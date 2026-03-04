@@ -17,6 +17,7 @@ configRouter.get('/', (_req: Request, res: Response) => {
     features: {
       chatHistory: isDatabaseAvailable(),
       feedback: !!process.env.MLFLOW_EXPERIMENT_ID,
+      backgroundModeAvailable: Boolean(process.env.API_PROXY),
     },
   });
 });

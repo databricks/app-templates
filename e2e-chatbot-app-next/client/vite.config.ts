@@ -39,7 +39,7 @@ export default defineConfig({
         // configure: simulateNetworkError(2000),
       },
       "/api": {
-        target: process.env.BACKEND_URL || "http://localhost:3001",
+        target: process.env.UI_BACKEND_URL || "http://localhost:3001",
         changeOrigin: true,
       },
     },

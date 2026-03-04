@@ -71,6 +71,7 @@ export interface CapturedRequest {
     [key: string]: unknown;
   };
   hasContext: boolean;
+  body?: Record<string, unknown>;
 }
 
 let capturedRequests: CapturedRequest[] = [];
@@ -100,12 +101,14 @@ export function getLastCapturedRequest(): CapturedRequest | undefined {
  * Helper to capture request context from a request body.
  */
 function captureRequestContext(url: string, body: unknown): void {
-  const context = (body as { context?: CapturedRequest['context'] })?.context;
+  const typedBody = body as Record<string, unknown>;
+  const context = typedBody?.context as CapturedRequest['context'];
   capturedRequests.push({
     url,
     timestamp: Date.now(),
     context,
     hasContext: context !== undefined && context !== null,
+    body: typedBody,
   });
 }
 
@@ -296,7 +299,10 @@ export const handlers = [
 
   // Mock MLflow AgentServer invocations endpoint (API_PROXY mode).
   // Checks for x-mlflow-return-trace-id header and appends standalone trace-ID event.
+  // Captures the full request body for background mode assertions.
   http.post(/mlflow-agent-server-mock\/invocations$/, async (req) => {
+    const body = await req.request.clone().json();
+    captureRequestContext(req.request.url, body);
     const returnTrace =
       req.request.headers.get('x-mlflow-return-trace-id')?.toLowerCase() ===
       'true';

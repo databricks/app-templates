@@ -69,9 +69,203 @@ export async function getWorkspaceHostname(): Promise<string> {
 }
 
 // Environment variable to enable SSE logging
-const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true';
+// - "true": high-level summary (event types, still-streaming, stream end)
+// - "verbose": log every single event (for deep debugging)
+const LOG_SSE_EVENTS =
+  process.env.LOG_SSE_EVENTS === 'true' ||
+  process.env.LOG_SSE_EVENTS === 'verbose';
+const LOG_SSE_VERBOSE = process.env.LOG_SSE_EVENTS === 'verbose';
 
 const API_PROXY = process.env.API_PROXY;
+
+// Reconnection config for long-running agent streams
+const LONG_RUNNING_MAX_RECONNECT_RETRIES = Number.parseInt(
+  process.env.LONG_RUNNING_MAX_RECONNECT_RETRIES ?? '60',
+  10,
+);
+const LONG_RUNNING_RECONNECT_BACKOFF_MS = Number.parseInt(
+  process.env.LONG_RUNNING_RECONNECT_BACKOFF_MS ?? '1000',
+  10,
+);
+
+export type BackgroundMode = 'direct' | 'streaming';
+
+/**
+ * Resolve background mode from headers.
+ * Supports X-Background-Mode (direct|streaming) and legacy X-Use-Background-Mode (true|false).
+ */
+function getBackgroundMode(headers: Headers): BackgroundMode {
+  const mode = headers.get('X-Background-Mode');
+  if (mode === 'direct' || mode === 'streaming') {
+    return mode;
+  }
+  const legacy = headers.get('X-Use-Background-Mode');
+  if (legacy === 'false') return 'direct';
+  return 'streaming';
+}
+
+/**
+ * Async generator that fetches from the agent retrieve endpoint and reconnects
+ * when the stream ends without [DONE] (e.g. proxy timeout). Tracks sequence_number
+ * and reconnects with starting_after for resumption.
+ */
+async function* createReconnectingAgentStream(
+  responseId: string,
+  baseUrl: string,
+  headers: Headers,
+  maxRetries = LONG_RUNNING_MAX_RECONNECT_RETRIES,
+  backoffMs = LONG_RUNNING_RECONNECT_BACKOFF_MS,
+  startingAfter = 0,
+): AsyncGenerator<Uint8Array> {
+  let lastSeq = startingAfter;
+  let retries = 0;
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (retries <= maxRetries) {
+    const url = `${baseUrl}/responses/${responseId}?stream=true&starting_after=${lastSeq}`;
+    const res = await fetch(url, { method: 'GET', headers });
+    if (!res.ok) {
+      console.warn(
+        `[STREAM_DEBUG] provider reconnect failed responseId=${responseId} status=${res.status}`,
+      );
+      break;
+    }
+
+    if (!res.body) break;
+    const reader = res.body.getReader();
+    let skipFirst = lastSeq > 0;
+
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() ?? '';
+
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line) continue;
+          if (line.startsWith('data:')) {
+            const data = line.slice(5).trim();
+            if (data === '[DONE]') return;
+            try {
+              const parsed = JSON.parse(data) as {
+                type?: string;
+                sequence_number?: number;
+              };
+              if (parsed.sequence_number != null) {
+                lastSeq = parsed.sequence_number;
+              }
+              if (skipFirst && parsed.type === 'response.created') {
+                skipFirst = false;
+                continue;
+              }
+            } catch {
+              // Not JSON, pass through
+            }
+          }
+          yield new TextEncoder().encode(`${part}\n\n`);
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    retries++;
+    if (retries <= maxRetries) {
+      console.log(
+        `[STREAM_DEBUG] provider reconnecting responseId=${responseId} attempt=${retries} lastSeq=${lastSeq}`,
+      );
+      await new Promise((r) => setTimeout(r, backoffMs));
+    }
+  }
+}
+
+/**
+ * Stream from POST response, resuming via GET when connection drops without [DONE].
+ * Uses Responses API format: response ID from parsed.response.id.
+ */
+async function* streamFromPostWithResume(
+  postResponse: Response,
+  baseUrl: string,
+  headers: Headers,
+): AsyncGenerator<Uint8Array> {
+  if (!postResponse.body) return;
+  const reader = postResponse.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let responseId: string | null = null;
+  let lastSeq = 0;
+  let gotDone = false;
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split('\n\n');
+      buffer = parts.pop() ?? '';
+
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line) continue;
+        if (line.startsWith('data:')) {
+          const data = line.slice(5).trim();
+          if (data === '[DONE]') {
+            gotDone = true;
+            yield new TextEncoder().encode(`${part}\n\n`);
+            return;
+          }
+          try {
+            const parsed = JSON.parse(data) as {
+              type?: string;
+              response?: { id?: string };
+              sequence_number?: number;
+            };
+            if (parsed.response?.id) responseId = parsed.response.id;
+            if (parsed.sequence_number != null)
+              lastSeq = parsed.sequence_number;
+          } catch {
+            // Not JSON, pass through
+          }
+        }
+        yield new TextEncoder().encode(`${part}\n\n`);
+      }
+    }
+  } catch (err) {
+    // Connection drops (timeout, reset, etc.) typically throw rather than return done.
+    // Fall through to resume logic if we have responseId.
+    console.warn(
+      '[STREAM_DEBUG] POST stream error, attempting resume:',
+      err instanceof Error ? err.message : String(err),
+    );
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (responseId && !gotDone) {
+    console.log(
+      `[STREAM_DEBUG] POST stream ended without [DONE], resuming via GET responseId=${responseId} starting_after=${lastSeq}`,
+    );
+    yield* createReconnectingAgentStream(
+      responseId,
+      baseUrl,
+      headers,
+      LONG_RUNNING_MAX_RECONNECT_RETRIES,
+      LONG_RUNNING_RECONNECT_BACKOFF_MS,
+      lastSeq,
+    );
+  }
+}
+
+// When API_PROXY is set, use background=true + poll flow for long-running agent support.
+// Set USE_LONG_RUNNING_MODE=false to opt out and use direct streamText.
+const USE_LONG_RUNNING_MODE =
+  process.env.USE_LONG_RUNNING_MODE !== 'false' && Boolean(API_PROXY);
 
 // Cache for endpoint details to check task type
 const endpointDetailsCache = new Map<
@@ -135,6 +329,40 @@ export const databricksFetch: typeof fetch = async (input, init) => {
     }
   }
 
+  // Long-running mode: add background=true for streaming when using API_PROXY
+  // Skip for title-model and artifact-model - they are quick calls
+  const backgroundMode = getBackgroundMode(headers);
+  const useBackground = backgroundMode === 'streaming';
+  if (
+    USE_LONG_RUNNING_MODE &&
+    useBackground &&
+    requestInit?.method === 'POST' &&
+    requestInit?.body &&
+    typeof requestInit.body === 'string'
+  ) {
+    try {
+      const body = JSON.parse(requestInit.body) as { model?: string };
+      if (body.model !== 'title-model' && body.model !== 'artifact-model') {
+        console.log(
+          `[STREAM_DEBUG] provider adding background=true mode=${backgroundMode}`,
+        );
+        const enhancedBody = {
+          ...body,
+          background: true,
+          stream: true,
+        };
+        requestInit = {
+          ...requestInit,
+          body: JSON.stringify(enhancedBody),
+        };
+      }
+    } catch {
+      // If JSON parsing fails, pass through unchanged
+    }
+  } else if (USE_LONG_RUNNING_MODE && backgroundMode === 'direct') {
+    console.log('[STREAM_DEBUG] provider using direct streaming');
+  }
+
   // Log the request being sent to Databricks
   if (requestInit?.body) {
     try {
@@ -159,7 +387,48 @@ export const databricksFetch: typeof fetch = async (input, init) => {
     }
   }
 
-  const response = await fetch(url, requestInit);
+  let response = await fetch(url, requestInit);
+
+  // Long-running mode: stream from POST directly, use GET only for resume
+  if (
+    USE_LONG_RUNNING_MODE &&
+    useBackground &&
+    requestInit?.method === 'POST' &&
+    response.ok
+  ) {
+    const contentType = response.headers.get('content-type') || '';
+    const isSSE =
+      contentType.includes('text/event-stream') ||
+      contentType.includes('application/x-ndjson');
+
+    const baseUrl = new URL(url).origin;
+    const fetchHeaders = new Headers(requestInit?.headers);
+
+    if (isSSE && backgroundMode === 'streaming') {
+      console.log(
+        '[STREAM_DEBUG] provider streaming from POST, will resume via GET if connection drops',
+      );
+      const postStream = new ReadableStream({
+        async start(controller) {
+          try {
+            for await (const chunk of streamFromPostWithResume(
+              response,
+              baseUrl,
+              fetchHeaders,
+            )) {
+              controller.enqueue(chunk);
+            }
+          } finally {
+            controller.close();
+          }
+        },
+      });
+      response = new Response(postStream, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    }
+  }
 
   // If SSE logging is enabled and this is a streaming response, wrap the body to log events
   if (LOG_SSE_EVENTS && response.body) {
@@ -173,18 +442,20 @@ export const databricksFetch: typeof fetch = async (input, init) => {
       const reader = originalBody.getReader();
       const decoder = new TextDecoder();
       let eventCounter = 0;
+      let lastLoggedType: string | null = null;
+      const STILL_STREAMING_INTERVAL = 50;
 
       const loggingStream = new ReadableStream({
         async pull(controller) {
           const { done, value } = await reader.read();
 
           if (done) {
-            console.log('[SSE] Stream ended');
+            console.log(`[SSE] Stream ended (${eventCounter} events)`);
             controller.close();
             return;
           }
 
-          // Decode and log the chunk
+          // Decode and process the chunk
           const text = decoder.decode(value, { stream: true });
           const lines = text.split('\n').filter((line) => line.trim());
 
@@ -193,12 +464,40 @@ export const databricksFetch: typeof fetch = async (input, init) => {
             if (line.startsWith('data:')) {
               const data = line.slice(5).trim();
               try {
-                const parsed = JSON.parse(data);
-                console.log(`[SSE #${eventCounter}]`, JSON.stringify(parsed));
+                const parsed = JSON.parse(data) as {
+                  type?: string;
+                  object?: string;
+                };
+                const eventType =
+                  parsed.type ?? parsed.object ?? 'unknown';
+
+                if (LOG_SSE_VERBOSE) {
+                  console.log(
+                    `[SSE #${eventCounter}]`,
+                    JSON.stringify(parsed),
+                  );
+                } else {
+                  // Summary mode: log event type when it changes
+                  if (eventType !== lastLoggedType) {
+                    console.log(
+                      `[SSE] event #${eventCounter}: ${eventType}`,
+                    );
+                    lastLoggedType = eventType;
+                  } else if (
+                    eventCounter % STILL_STREAMING_INTERVAL ===
+                    0
+                  ) {
+                    console.log(
+                      `[SSE] still streaming (${eventCounter} events, type=${eventType})`,
+                    );
+                  }
+                }
               } catch {
-                console.log(`[SSE #${eventCounter}] (raw)`, data);
+                if (LOG_SSE_VERBOSE) {
+                  console.log(`[SSE #${eventCounter}] (raw)`, data);
+                }
               }
-            } else if (line.trim()) {
+            } else if (line.trim() && LOG_SSE_VERBOSE) {
               console.log(`[SSE #${eventCounter}] (line)`, line);
             }
           }

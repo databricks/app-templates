@@ -4,7 +4,7 @@ import { useWindowSize } from 'usehooks-ts';
 import { SidebarToggle } from '@/components/sidebar-toggle';
 import { Button } from '@/components/ui/button';
 import { useSidebar } from './ui/sidebar';
-import { PlusIcon, CloudOffIcon, MessageSquareOff } from 'lucide-react';
+import { PlusIcon, CloudOffIcon, MessageSquareOff, ZapIcon } from 'lucide-react';
 import { useConfig } from '@/hooks/use-config';
 import {
   Tooltip,
@@ -16,7 +16,22 @@ import {
 const DOCS_URL =
   'https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app';
 
-export function ChatHeader() {
+export type BackgroundMode = 'direct' | 'streaming';
+
+const BACKGROUND_MODE_LABELS: Record<BackgroundMode, string> = {
+  direct: 'Direct',
+  streaming: 'Background (stream)',
+};
+
+const BACKGROUND_MODE_ORDER: BackgroundMode[] = ['direct', 'streaming'];
+
+export function ChatHeader({
+  backgroundMode,
+  onBackgroundModeChange,
+}: {
+  backgroundMode?: BackgroundMode;
+  onBackgroundModeChange?: (value: BackgroundMode) => void;
+} = {}) {
   const navigate = useNavigate();
   const { open } = useSidebar();
   const { chatHistoryEnabled, feedbackEnabled } = useConfig();
@@ -77,6 +92,39 @@ export function ChatHeader() {
               </TooltipTrigger>
               <TooltipContent>
                 <p>Feedback submission disabled. Click to learn more.</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
+        {onBackgroundModeChange && backgroundMode && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 rounded-full px-2 text-xs"
+                  onClick={() => {
+                    const idx = BACKGROUND_MODE_ORDER.indexOf(backgroundMode);
+                    const next =
+                      BACKGROUND_MODE_ORDER[
+                        (idx + 1) % BACKGROUND_MODE_ORDER.length
+                      ];
+                    onBackgroundModeChange(next);
+                  }}
+                >
+                  <ZapIcon className="h-3 w-3" />
+                  <span className="hidden sm:inline">
+                    {BACKGROUND_MODE_LABELS[backgroundMode]}
+                  </span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>
+                  Mode: {BACKGROUND_MODE_LABELS[backgroundMode]}. Direct = no
+                  background. Streaming = background + stream results. Click to
+                  cycle.
+                </p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>

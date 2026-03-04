@@ -6,6 +6,7 @@ interface ConfigResponse {
   features: {
     chatHistory: boolean;
     feedback: boolean;
+    backgroundModeAvailable?: boolean;
   };
 }
 
@@ -15,6 +16,7 @@ interface AppConfigContextType {
   error: Error | undefined;
   chatHistoryEnabled: boolean;
   feedbackEnabled: boolean;
+  backgroundModeAvailable: boolean;
 }
 
 const AppConfigContext = createContext<AppConfigContextType | undefined>(
@@ -40,6 +42,7 @@ export function AppConfigProvider({ children }: { children: ReactNode }) {
     // Default to true until loaded to avoid breaking existing behavior
     chatHistoryEnabled: data?.features.chatHistory ?? true,
     feedbackEnabled: data?.features.feedback ?? false,
+    backgroundModeAvailable: data?.features.backgroundModeAvailable ?? false,
   };
 
   return (

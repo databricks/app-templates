@@ -98,12 +98,20 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       message,
       selectedChatModel,
       selectedVisibilityType,
+      backgroundMode,
+      useBackgroundMode,
     }: {
       id: string;
       message?: ChatMessage;
       selectedChatModel: string;
       selectedVisibilityType: VisibilityType;
+      backgroundMode?: 'direct' | 'streaming';
+      useBackgroundMode?: boolean;
     } = requestBody;
+
+    const effectiveBackgroundMode =
+      backgroundMode ??
+      (useBackgroundMode !== false ? 'streaming' : 'direct');
 
     const session = req.session;
     if (!session) {
@@ -255,6 +263,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       headers: {
         [CONTEXT_HEADER_CONVERSATION_ID]: id,
         [CONTEXT_HEADER_USER_ID]: session.user.email ?? session.user.id,
+        'X-Background-Mode': effectiveBackgroundMode,
       },
       onChunk: ({ chunk }) => {
         if (chunk.type === 'raw') {
@@ -339,9 +348,20 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           }
         }
 
-        streamCache.clearActiveStream(id);
+        // Do NOT clear active stream here. When the client disconnects (e.g. proxy timeout),
+        // onFinish may run before the client's resume request arrives. We only clear when
+        // starting a new message (see POST handler above), so resume can find the cached stream.
       },
     });
+
+    // SSE keep-alive to prevent Databricks Apps proxy timeout (~120s) during long tool executions
+    const KEEPALIVE_INTERVAL_MS = 45_000;
+    const keepAliveTimer = setInterval(() => {
+      if (!res.writableEnded) {
+        res.write(': keepalive\n\n');
+      }
+    }, KEEPALIVE_INTERVAL_MS);
+    res.on('finish', () => clearInterval(keepAliveTimer));
 
     pipeUIMessageStreamToResponse({
       stream,
@@ -467,6 +487,15 @@ chatRouter.get(
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+
+    // SSE keep-alive to prevent proxy timeout during long resume streams
+    const KEEPALIVE_INTERVAL_MS = 45_000;
+    const keepAliveTimer = setInterval(() => {
+      if (!res.writableEnded) {
+        res.write(': keepalive\n\n');
+      }
+    }, KEEPALIVE_INTERVAL_MS);
+    res.on('finish', () => clearInterval(keepAliveTimer));
 
     // Pipe the cached stream directly to the response
     stream.pipe(res);

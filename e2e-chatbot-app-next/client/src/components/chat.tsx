@@ -51,12 +51,35 @@ export function Chat({
 
   const { mutate } = useSWRConfig();
   const { setDataStream } = useDataStream();
-  const { chatHistoryEnabled } = useAppConfig();
+  const { chatHistoryEnabled, backgroundModeAvailable } = useAppConfig();
 
   const [input, setInput] = useState<string>('');
   const [_usage, setUsage] = useState<LanguageModelUsage | undefined>(
     initialLastContext,
   );
+
+  // Background mode: direct or streaming (background+stream)
+  const [backgroundMode, setBackgroundMode] = useState<
+    'direct' | 'streaming'
+  >(() => {
+    try {
+      const stored = localStorage.getItem('backgroundMode');
+      return stored === 'direct' || stored === 'streaming'
+        ? stored
+        : 'streaming';
+    } catch {
+      return 'streaming';
+    }
+  });
+  const backgroundModeRef = useRef(backgroundMode);
+  backgroundModeRef.current = backgroundMode;
+  useEffect(() => {
+    try {
+      localStorage.setItem('backgroundMode', backgroundMode);
+    } catch {
+      /* ignore */
+    }
+  }, [backgroundMode]);
 
   const [lastPart, setLastPart] = useState<UIMessageChunk | undefined>();
   const lastPartRef = useRef<UIMessageChunk | undefined>(lastPart);
@@ -148,6 +171,7 @@ export function Chat({
                 }
               : {}),
             ...body,
+            backgroundMode: backgroundModeRef.current,
           },
         };
       },
@@ -271,7 +295,14 @@ export function Chat({
   return (
     <>
       <div className="overscroll-behavior-contain flex h-dvh min-w-0 touch-pan-y flex-col bg-background">
-        <ChatHeader />
+        <ChatHeader
+          backgroundMode={
+            backgroundModeAvailable ? backgroundMode : undefined
+          }
+          onBackgroundModeChange={
+            backgroundModeAvailable ? setBackgroundMode : undefined
+          }
+        />
 
         <Messages
           status={status}

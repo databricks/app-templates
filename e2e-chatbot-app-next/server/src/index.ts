@@ -66,7 +66,7 @@ if (agentBackendUrl) {
   app.all('/invocations', async (req: Request, res: Response) => {
     try {
       const forwardHeaders = { ...req.headers } as Record<string, string>;
-      delete forwardHeaders['content-length'];
+      forwardHeaders['content-length'] = undefined;
 
       const response = await fetch(agentBackendUrl, {
         method: req.method,

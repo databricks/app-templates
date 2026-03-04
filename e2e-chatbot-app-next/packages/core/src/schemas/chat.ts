@@ -38,6 +38,10 @@ export const postRequestBodySchema = z.object({
   selectedVisibilityType: z.enum(['public', 'private']),
   // Optional field for ephemeral mode: frontend sends previous conversation history
   previousMessages: z.array(previousMessageSchema).optional(),
+  // Background mode: direct (no background), streaming (background + stream)
+  backgroundMode: z.enum(['direct', 'streaming']).optional(),
+  // Deprecated: use backgroundMode instead. When true -> 'streaming', false -> 'direct'
+  useBackgroundMode: z.boolean().optional(),
 });
 
 export type PostRequestBody = z.infer<typeof postRequestBodySchema>;

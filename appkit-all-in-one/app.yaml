@@ -2,13 +2,5 @@ command: ['npm', 'run', 'start']
 env:
   - name: DATABRICKS_WAREHOUSE_ID
     valueFrom: sql-warehouse
-  - name: PGHOST
-    value: "" # Copy from the Lakebase Postgres UI
-  - name: PGDATABASE
-    value: "databricks_postgres" # Copy from the Lakebase Postgres UI
   - name: LAKEBASE_ENDPOINT
-    value: "" # Run: databricks postgres list-endpoints projects/{project-id}/branches/{branch-id}
-  - name: PGSSLMODE
-    value: "require"
-#  - name: PGUSER
-#    value: "" # optional, defaults to DATABRICKS_CLIENT_ID
+    valueFrom: postgres

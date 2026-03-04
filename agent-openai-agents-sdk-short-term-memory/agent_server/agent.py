@@ -1,3 +1,5 @@
+import litellm
+import logging
 import os
 from typing import AsyncGenerator
 
@@ -58,6 +60,8 @@ set_default_openai_client(AsyncDatabricksOpenAI())
 set_default_openai_api("chat_completions")
 set_trace_processors([])  # only use mlflow for trace processing
 mlflow.openai.autolog()
+logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
+litellm.suppress_debug_info = True
 
 
 async def init_mcp_server():
@@ -103,8 +107,10 @@ async def stream_handler(request: ResponsesAgentRequest) -> AsyncGenerator[Respo
     # user_workspace_client = get_user_workspace_client()
 
     # Create session for stateful, short-term conversation history with your Databricks Lakebase instance
+    session_id = get_session_id(request)
+    mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
     session = AsyncDatabricksSession(
-        session_id=get_session_id(request),
+        session_id=session_id,
         instance_name=LAKEBASE_INSTANCE_NAME,
     )
 

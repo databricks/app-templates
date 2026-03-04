@@ -65,7 +65,7 @@ All memory templates return the ID in `custom_outputs` so clients can reuse it.
 - App command: `["uv", "run", "start-app"]`
 - Lakebase resources use `permission: 'CAN_CONNECT_AND_CREATE'`
 - Lakebase templates use `<your-lakebase-instance-name>` as placeholder — quickstart replaces it
-- Quickstart removes the DAB-managed experiment definition, replaces the app's experiment resource ID with a literal value, and sets `MLFLOW_EXPERIMENT_ID` to that value
+- Templates do not define a DAB-managed experiment resource (`resources.experiments`); instead, the app resource references an experiment by ID (initially empty), and quickstart fills in the literal experiment ID
 
 ### `app.yaml` files
 

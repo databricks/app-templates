@@ -2,11 +2,6 @@ bundle:
   name: agent_openai_agents_sdk_multiagent
 
 resources:
-  # MLflow experiment for agent tracing - automatically created by bundle
-  experiments:
-    agent_openai_agents_sdk_multiagent_experiment:
-      name: /Users/${workspace.current_user.userName}/${bundle.name}-${bundle.target}
-
   apps:
     agent_openai_agents_sdk_multiagent:
       name: "agent-openai-multiagent"
@@ -32,7 +27,7 @@ resources:
       resources:
         - name: 'experiment'
           experiment:
-            experiment_id: "${resources.experiments.agent_openai_agents_sdk_multiagent_experiment.id}"
+            experiment_id: ""
             permission: 'CAN_MANAGE'
 
         # TODO: Set your Genie space ID

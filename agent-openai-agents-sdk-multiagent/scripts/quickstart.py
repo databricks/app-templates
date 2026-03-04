@@ -625,31 +625,17 @@ def setup_lakebase(profile_name: str, username: str, lakebase_arg: str = None) -
 
 
 def update_databricks_yml_experiment(experiment_id: str) -> None:
-    """Update databricks.yml to use a literal experiment ID instead of DAB-managed experiment."""
+    """Update databricks.yml to set the experiment ID in the app resource."""
     yml_path = Path("databricks.yml")
     if not yml_path.exists():
         return
 
     content = yml_path.read_text()
 
-    # 1. Remove top-level resources.experiments section (comment + experiments block)
+    # Set the experiment_id in the app's experiment resource
     content = re.sub(
-        r"  # MLflow experiment[^\n]*\n  experiments:\n(?:    [^\n]*\n)*\n",
-        "",
-        content,
-    )
-
-    # 2. Replace DAB experiment ID reference with literal experiment ID in app resources
-    content = re.sub(
-        r"""experiment_id: ["']\$\{resources\.experiments\.[^}]+\}["']""",
-        f'experiment_id: "{experiment_id}"',
-        content,
-    )
-
-    # 3. Replace value_from: "experiment" with literal value
-    content = re.sub(
-        r"""value_from: ["']experiment["']""",
-        f'value: "{experiment_id}"',
+        r'(experiment_id: )"[^"]*"',
+        f'\\1"{experiment_id}"',
         content,
     )
 

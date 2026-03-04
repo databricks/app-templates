@@ -1,6 +1,5 @@
 import json
 import os
-import re
 import select
 import shutil
 import signal
@@ -349,48 +348,23 @@ def query_with_openai_sdk(
 # ---------------------------------------------------------------------------
 
 
-def _delete_mlflow_experiment(exp_name: str, profile: str):
-    """Delete the MLflow experiment by name.
-
-    exp_name can be an absolute path (/Users/...) or a bare node name from a DAB
-    error message (e.g. '[dev bryan_qiu] agent_langgraph-dev'). If it's not
-    absolute, we prepend /Users/<current_user>/ to form a valid experiment path.
-    """
-    if not exp_name.startswith("/"):
-        user_result = _run_cmd(
-            ["databricks", "current-user", "me", "-p", profile, "--output", "json"],
-            timeout=30,
-        )
-        if user_result.returncode != 0:
-            _log(f"WARNING: could not resolve user for experiment path: {exp_name}")
-            return
-        user_name = json.loads(user_result.stdout).get("userName", "")
-        if not user_name:
-            return
-        exp_name = f"/Users/{user_name}/{exp_name}"
-
-    _log(f"Deleting conflicting MLflow experiment: {exp_name}")
-    result = _run_cmd(
-        ["databricks", "experiments", "get-by-name", exp_name, "-p", profile, "--output", "json"],
-        timeout=30,
-    )
-    if result.returncode == 0:
-        exp_id = json.loads(result.stdout).get("experiment", {}).get("experiment_id", "")
-        if exp_id:
-            _run_cmd(
-                ["databricks", "experiments", "delete-experiment", exp_id, "-p", profile],
-                timeout=30,
-            )
-
-
 def _bundle_unbind(
-    template_dir: Path, app_resource_key: str, profile: str,
+    template_dir: Path,
+    app_resource_key: str,
+    profile: str,
 ):
     """Unbind a DAB app resource to clear stale state."""
     _run_cmd(
         [
-            "databricks", "bundle", "deployment", "unbind",
-            app_resource_key, "--target", "dev", "-p", profile,
+            "databricks",
+            "bundle",
+            "deployment",
+            "unbind",
+            app_resource_key,
+            "--target",
+            "dev",
+            "-p",
+            profile,
         ],
         cwd=template_dir,
         timeout=BUNDLE_TIMEOUT,
@@ -398,13 +372,15 @@ def _bundle_unbind(
 
 
 def bundle_deploy(
-    template_dir: Path, profile: str, app_resource_key: str, app_name: str,
+    template_dir: Path,
+    profile: str,
+    app_resource_key: str,
+    app_name: str,
 ):
     """Run `databricks bundle deploy --target dev -p <profile>`.
 
     Handles transient errors with automatic recovery:
     - Terraform init failures (e.g. GitHub 502): wait and retry
-    - MLflow experiment conflict: delete experiment + clean state, retry
     - "already exists" (app): unbind stale state + bind existing app, retry
     - "does not exist or is deleted": unbind stale reference, retry
     """
@@ -419,14 +395,6 @@ def bundle_deploy(
             return True
 
         if "already exists" in stderr:
-            exp_match = re.search(r"Node named '(.+?)' already exists", stderr)
-            if exp_match:
-                _log(
-                    f"bundle deploy attempt {attempt}/{max_attempts} failed in "
-                    f"{template_dir.name} (MLflow experiment conflict), cleaning up..."
-                )
-                _delete_mlflow_experiment(exp_match.group(1), profile)
-                return True
             _log(
                 f"bundle deploy attempt {attempt}/{max_attempts} failed in "
                 f"{template_dir.name} (app already exists), unbinding and binding..."
@@ -434,9 +402,17 @@ def bundle_deploy(
             _bundle_unbind(template_dir, app_resource_key, profile)
             _run_cmd(
                 [
-                    "databricks", "bundle", "deployment", "bind",
-                    app_resource_key, app_name, "--auto-approve",
-                    "--target", "dev", "-p", profile,
+                    "databricks",
+                    "bundle",
+                    "deployment",
+                    "bind",
+                    app_resource_key,
+                    app_name,
+                    "--auto-approve",
+                    "--target",
+                    "dev",
+                    "-p",
+                    profile,
                 ],
                 cwd=template_dir,
                 timeout=BUNDLE_TIMEOUT,

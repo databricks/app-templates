@@ -938,9 +938,17 @@ PGDATABASE=databricks_postgres
 PGPORT=5432
 EOF
 
-        echo "Running database migrations..."
-        npm run db:migrate
-        echo "✓ Database migrations completed"
+        if [ "$DID_DEPLOY" = true ]; then
+            # Skip local migrations when deploying to Databricks: the app's build step
+            # (npm run build → npm run db:migrate) runs migrations as the service principal,
+            # which ensures it owns the drizzle schema. Running migrations locally first
+            # would make your CLI user the schema owner, causing permission errors on deploy.
+            echo "ℹ️  Skipping local migrations — they will run automatically when the app builds on Databricks."
+        else
+            echo "Running database migrations..."
+            npm run db:migrate
+            echo "✓ Database migrations completed"
+        fi
 
     else
         if [ "$DID_DEPLOY" = true ]; then

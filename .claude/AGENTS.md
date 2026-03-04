@@ -67,6 +67,10 @@ All memory templates return the ID in `custom_outputs` so clients can reuse it.
 - Lakebase templates use `<your-lakebase-instance-name>` as placeholder — quickstart replaces it
 - Quickstart removes the DAB-managed experiment definition, replaces the app's experiment resource ID with a literal value, and sets `MLFLOW_EXPERIMENT_ID` to that value
 
+### `app.yaml` files
+
+The 3 base templates (`agent-langgraph`, `agent-openai-agents-sdk`, `agent-non-conversational`) have `app.yaml` files for UI-based template creation in the Databricks UI. These are separate from `databricks.yml` and use `valueFrom` (camelCase) for resource references. Memory/multiagent variants do not need separate `app.yaml` files.
+
 ### Per-template AGENTS.md
 
 Each template has its own `{template}/AGENTS.md` (loaded via `{template}/CLAUDE.md`). These are maintained individually and are **not synced** — they contain template-specific guidance for end users.

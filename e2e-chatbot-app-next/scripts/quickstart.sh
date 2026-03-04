@@ -850,6 +850,10 @@ echo "✓ Dependencies installed"
 # Section 5: Deployment
 # ===================================================================
 echo
+if [ "$USE_DATABASE" = true ]; then
+    echo "💡 Recommended: deploy to Databricks first to ensure correct database permissions."
+    echo
+fi
 if prompt_yes_no "Do you want to deploy the app to Databricks now?" "Y"; then
     # Clear bundle cache to ensure fresh deployment with new names
     if [ -d ".databricks" ]; then

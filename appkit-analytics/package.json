@@ -32,8 +32,8 @@
   "license": "Unlicensed",
   "description": "Node.js app with SQL analytics dashboards and charts",
   "dependencies": {
-    "@databricks/appkit": "0.11.2",
-    "@databricks/appkit-ui": "0.11.2",
+    "@databricks/appkit": "0.14.1",
+    "@databricks/appkit-ui": "0.14.1",
     "@databricks/sdk-experimental": "^0.14.2",
     "clsx": "^2.1.1",
     "embla-carousel-react": "^8.6.0",

@@ -436,12 +436,14 @@ chatRouter.get(
     if (!chatId) return;
     const cursor = req.headers['x-resume-stream-cursor'] as string;
 
-    console.log(`[Stream Resume] Cursor: ${cursor}`);
-
-    console.log(`[Stream Resume] GET request for chat ${chatId}`);
+    console.log(`[Stream Resume] GET request for chat ${chatId}, cursor: ${cursor}`);
 
     // Check if there's an active stream for this chat first
     const streamId = streamCache.getActiveStreamId(chatId);
+    const cachedChunkCount = streamId ? streamCache.getChunkCount(streamId) : 0;
+    const isStreamDone = streamId ? streamCache.isStreamDone(streamId) : false;
+
+    console.log(`[Stream Resume] streamId=${streamId}, cachedChunks=${cachedChunkCount}, streamDone=${isStreamDone}, cursor=${cursor ?? 'none (replaying from 0)'}`);
 
     if (!streamId) {
       console.log(`[Stream Resume] No active stream for chat ${chatId}`);

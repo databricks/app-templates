@@ -131,6 +131,7 @@ export function Chat({
     resume: id !== undefined && initialMessages.length > 0, // Enable automatic stream resumption
     transport: new ChatTransport({
       onStreamPart: (part) => {
+        console.log('[Chat onStreamPart]', part.type, part.type === 'start' ? (part as any).messageId : '');
         // As soon as we recive a stream part, we fetch the chat history again for new chats
         if (isNewChat && !didFetchHistoryOnNewChat.current) {
           fetchChatHistory();
@@ -196,6 +197,19 @@ export function Chat({
       isError,
       messages: finishedMessages,
     }) => {
+      const lastPart = lastPartRef.current;
+      console.log('[Chat onFinish] Called with:', {
+        isAbort,
+        isDisconnect,
+        isError,
+        lastPartType: lastPart?.type ?? 'undefined',
+        messageCount: finishedMessages?.length,
+        lastMessageRole: finishedMessages?.at(-1)?.role,
+        lastMessageId: finishedMessages?.at(-1)?.id,
+        lastMessagePartsCount: finishedMessages?.at(-1)?.parts?.length,
+        resumeAttempt: resumeAttemptCountRef.current,
+      });
+
       // Reset state for next message
       didFetchHistoryOnNewChat.current = false;
 
@@ -229,10 +243,16 @@ export function Chat({
       // 1. Stream didn't end with a 'finish' part (incomplete)
       // 2. It was a disconnect/error that terminated the stream
       // 3. We haven't exceeded max resume attempts
-      const streamIncomplete = lastPartRef.current?.type !== 'finish';
+      const streamIncomplete = lastPart?.type !== 'finish';
       const shouldResume =
         streamIncomplete &&
-        (isDisconnect || isError || lastPartRef.current === undefined);
+        (isDisconnect || isError || lastPart === undefined);
+
+      console.log('[Chat onFinish] Resume decision:', {
+        streamIncomplete,
+        shouldResume,
+        wouldResume: shouldResume && resumeAttemptCountRef.current < maxResumeAttempts,
+      });
 
       if (shouldResume && resumeAttemptCountRef.current < maxResumeAttempts) {
         console.log(
@@ -249,11 +269,12 @@ export function Chat({
         if (resumeAttemptCountRef.current >= maxResumeAttempts) {
           console.warn('[Chat onFinish] Max resume attempts reached');
         }
+        console.log('[Chat onFinish] Stream completed, not resuming');
         fetchChatHistory();
       }
     },
     onError: (error) => {
-      console.log('[Chat onError] Error occurred:', error);
+      console.log('[Chat onError] Error occurred:', error.name, error.message, error);
 
       // Only show toast for explicit ChatSDKError (backend validation errors)
       // Other errors (network, schema validation) are handled silently or in message parts

@@ -36,7 +36,7 @@ export default defineConfig({
         target: proxyTarget,
         changeOrigin: true,
         // Uncomment this to test situations where the stream will time out.
-        // configure: simulateNetworkError(2000),
+        configure: simulateNetworkError(2000),
       },
       "/api": {
         target: process.env.UI_BACKEND_URL || "http://localhost:3001",

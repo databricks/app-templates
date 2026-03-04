@@ -128,10 +128,25 @@ export class StreamCache {
       this.cache.delete(streamId);
     }
   }
+
+  /**
+   * Get the number of cached chunks for a stream (for debugging)
+   */
+  getChunkCount(streamId: string): number {
+    return this.cache.get(streamId)?.cache.chunks.length ?? 0;
+  }
+
+  /**
+   * Check if a stream's source has finished reading (for debugging)
+   */
+  isStreamDone(streamId: string): boolean {
+    return this.cache.get(streamId)?.cache.done ?? false;
+  }
 }
 
 interface CacheableStream<T> {
   readonly chunks: readonly T[];
+  readonly done: boolean;
   read({ cursor }: { cursor?: number }): AsyncIterableIterator<T>;
   close(): void;
 }
@@ -201,6 +216,10 @@ function makeCacheableStream<T>({
     // expose a **read‑only** view of the internal array
     get chunks() {
       return chunks as readonly T[];
+    },
+
+    get done() {
+      return done;
     },
 
     // The core async generator – see the comments inside for details.

@@ -850,13 +850,6 @@ echo "✓ Dependencies installed"
 # Section 5: Deployment
 # ===================================================================
 echo
-if [ "$USE_DATABASE" = true ]; then
-    echo "⚠️  Recommended: Deploy to Databricks before running locally."
-    echo "   Deploying first ensures the app's service principal owns the database schema,"
-    echo "   avoiding permission errors. If you skip deployment and use an existing database"
-    echo "   instance, you may need to manually grant your local user the necessary permissions."
-    echo
-fi
 if prompt_yes_no "Do you want to deploy the app to Databricks now?" "Y"; then
     # Clear bundle cache to ensure fresh deployment with new names
     if [ -d ".databricks" ]; then
@@ -873,12 +866,10 @@ if prompt_yes_no "Do you want to deploy the app to Databricks now?" "Y"; then
     databricks bundle deploy -t dev --profile "$PROFILE_NAME"
     DID_DEPLOY=true
 else
+    echo "Skipping deployment."
     if [ "$USE_DATABASE" = true ]; then
-        echo "⚠️  Skipping deployment. Note: if you connect to an existing Lakebase instance,"
-        echo "   ensure your local user has the necessary schema permissions, or use a fresh"
-        echo "   database instance to avoid permission conflicts with the app service principal."
-    else
-        echo "Skipping deployment."
+        echo "⚠️  Note: when you deploy later, you may need to manually grant the app service"
+        echo "   principal the necessary permissions on your database instance."
     fi
     DID_DEPLOY=false
 fi

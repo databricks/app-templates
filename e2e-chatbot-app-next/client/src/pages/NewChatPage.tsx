@@ -41,6 +41,7 @@ export default function NewChatPage() {
       initialVisibilityType="private"
       isReadonly={false}
       session={session}
+      feedback={{}}
     />
   );
 }

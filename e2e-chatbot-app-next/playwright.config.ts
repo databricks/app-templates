@@ -110,6 +110,19 @@ export default defineConfig({
       testMatch: /routes\/.*\.api-proxy\.test\.ts$/,
       use: { baseURL: 'http://localhost:3003' },
     },
+    // Deployed tests run against a live Databricks App.
+    // Only included when DEPLOYED_APP_URL is set.
+    ...(process.env.DEPLOYED_APP_URL
+      ? [
+          {
+            name: 'deployed',
+            testMatch: /deployed\/.*.test.ts/,
+            use: {
+              baseURL: process.env.DEPLOYED_APP_URL,
+            },
+          },
+        ]
+      : []),
   ],
 
   // Start dev server before running tests
@@ -136,6 +149,17 @@ export default defineConfig({
               PGSSLMODE: '',
             }
           : {
+              // In with-db mode, clear mock Databricks credentials so the server
+              // falls back to CLI auth (DATABRICKS_CONFIG_PROFILE). CLI auth
+              // fetches tokens via a subprocess, bypassing MSW interception, so
+              // the real Lakebase token is used for the DB connection.
+              // Clearing HOST is critical: getDatabricksCliToken passes HOST as
+              // --host to the CLI, so 'mock-value' would break token fetching.
+              DATABRICKS_CLIENT_ID: '',
+              DATABRICKS_CLIENT_SECRET: '',
+              DATABRICKS_HOST: '',
+              DATABRICKS_CONFIG_PROFILE:
+                process.env.DATABRICKS_CONFIG_PROFILE ?? '',
               POSTGRES_URL: process.env.POSTGRES_URL ?? '',
               PGHOST: process.env.PGHOST ?? '',
               PGDATABASE: process.env.PGDATABASE ?? '',

@@ -16,8 +16,10 @@ import postgres from 'postgres';
 import {
   chat,
   message,
+  vote,
   type DBMessage,
   type Chat,
+  type Vote,
 } from './schema';
 import type { VisibilityType } from '@chat-template/utils';
 import { ChatSDKError } from '@chat-template/core/errors';
@@ -294,6 +296,7 @@ export async function saveMessages({
         },
       });
   } catch (_error) {
+    console.error('[saveMessages] DB error:', _error);
     throw new ChatSDKError('bad_request:database', 'Failed to save messages');
   }
 }
@@ -365,7 +368,10 @@ export async function deleteMessagesByChatIdAfterTimestamp({
     const messageIds = messagesToDelete.map((message) => message.id);
 
     if (messageIds.length > 0) {
-      return await (await ensureDb())
+      const db = await ensureDb();
+      // Delete votes first to satisfy the Vote.messageId → Message.id FK constraint
+      await db.delete(vote).where(inArray(vote.messageId, messageIds));
+      return await db
         .delete(message)
         .where(
           and(eq(message.chatId, chatId), inArray(message.id, messageIds)),
@@ -458,4 +464,34 @@ export async function updateChatLastContextById({
   }
 }
 
+export async function voteMessage({
+  chatId,
+  messageId,
+  type,
+}: {
+  chatId: string;
+  messageId: string;
+  type: 'up' | 'down';
+}) {
+  if (!isDatabaseAvailable()) {
+    return;
+  }
 
+  const db = await ensureDb();
+  await db
+    .insert(vote)
+    .values({ chatId, messageId, isUpvoted: type === 'up' })
+    .onConflictDoUpdate({
+      target: [vote.chatId, vote.messageId],
+      set: { isUpvoted: type === 'up' },
+    });
+}
+
+export async function getVotesByChatId({ id }: { id: string }): Promise<Vote[]> {
+  if (!isDatabaseAvailable()) {
+    return [];
+  }
+
+  const db = await ensureDb();
+  return db.select().from(vote).where(eq(vote.chatId, id));
+}

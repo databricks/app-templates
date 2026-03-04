@@ -33,6 +33,22 @@ export const storeMessageMeta = (
 export const getMessageMetadata = (messageId: string) =>
   store.get(messageId) ?? null;
 
+/**
+ * Return all in-memory entries for a given chatId that have a non-null traceId.
+ * Used by the feedback GET route as a fallback when the DB has no messages (ephemeral mode).
+ */
+export const getMessageMetasByChatId = (
+  chatId: string,
+): Array<{ messageId: string; traceId: string }> => {
+  const results: Array<{ messageId: string; traceId: string }> = [];
+  for (const [messageId, meta] of store) {
+    if (meta.chatId === chatId && meta.traceId != null) {
+      results.push({ messageId, traceId: meta.traceId });
+    }
+  }
+  return results;
+};
+
 // Assessment IDs keyed by `${messageId}:${userId}` for ephemeral-mode deduplication.
 const assessmentStore = new Map<string, string>();
 

@@ -9,7 +9,8 @@
 <p align="center">
   <a href="#features"><strong>Features</strong></a> ·
   <a href="#running-locally"><strong>Running Locally</strong></a> ·
-  <a href="#deployment"><strong>Deployment</strong></a>
+  <a href="#deployment"><strong>Deployment</strong></a> ·
+  <a href="#optional-chat-ui-features"><strong>Optional Features</strong></a>
 </p>
 <br/>
 
@@ -21,6 +22,7 @@ but has some [known limitations](#known-limitations) for other use cases. Work i
 - **Databricks Agent and Foundation Model Integration**: Direct connection to Databricks Agent serving endpoints and Agent Bricks
 - **Databricks Authentication**: Uses Databricks authentication to identify end users of the chat app and securely manage their conversations.
 - **Persistent Chat History (Optional)**: Leverages Databricks Lakebase (Postgres) for storing conversations, with governance and tight lakehouse integration. Can also run in ephemeral mode without database.
+- **User Feedback Collection (Optional)**: Thumbs up/down feedback on assistant messages, stored as MLflow assessments on the underlying traces. Requires an MLflow experiment resource to be configured.
 
 ## Prerequisites
 
@@ -49,9 +51,9 @@ This project includes a [Databricks Asset Bundle (DAB)](https://docs.databricks.
    cd e2e-chatbot-app-next
    ```
 2. **Databricks authentication**: Ensure auth is configured as described in [Prerequisites](#prerequisites).
-3. **Specify serving endpoint and address TODOs in databricks.yml**: Address the TODOs in `databricks.yml`, setting the default value of `serving_endpoint_name` to the name of the custom code agent or Agent Bricks endpoint to chat with. The optional TODOs wil allow you to deploy a Lakebase database bound to your application, which will allow for chat history to be persisted.
-
-   **Tip:** To automatically configure and deploy with database support, run `./scripts/quickstart.sh` and select "Yes" when prompted about enabling persistent chat history. See [Database Configuration](#database-modes) for details.
+3. **Specify serving endpoint and address TODOs in databricks.yml**: Address the TODOs in `databricks.yml`, setting the default value of `serving_endpoint_name` to the name of the custom code agent or Agent Bricks endpoint to chat with. The optional commented-out sections allow you to enable:
+   - **Persistent chat history** — uncomment the two optional `TODO` database blocks to provision and bind a Lakebase database. See [Database Modes](#database-modes) for details. **Tip:** run `./scripts/quickstart.sh` to do this automatically.
+   - **User feedback collection** — uncomment the optional `TODO` experiment block and set the experiment ID. Also requires a database (both database `TODO` blocks must be uncommented). See [Feedback Collection](#feedback-collection) for details. **Tip:** run `./scripts/quickstart.sh` to configure both database and feedback automatically.
 
    - NOTE: if using [Agent Bricks Multi-Agent Supervisor](https://docs.databricks.com/aws/en/generative-ai/agent-bricks/multi-agent-supervisor), you need to additionally grant the app service principal the `CAN_QUERY` permission on the underlying agent(s) that the MAS orchestrates. You can do this by adding those
      agent serving endpoints as resources in `databricks.yml` (see the NOTE in `databricks.yml` on this)
@@ -172,7 +174,27 @@ If you prefer to configure the environment manually:
 
    The app starts on [localhost:3000](http://localhost:3000)
 
-### Database Modes
+### Optional Chat UI Features
+
+The chat UI supports two optional features that can be enabled by updating `databricks.yml`:
+
+### User Feedback
+
+Users can give thumbs up/down on assistant responses. Feedback is stored as [MLflow assessments](https://docs.databricks.com/aws/en/generative-ai/agent-evaluation/assessments) on the underlying traces, making it easy to review and act on in the MLflow Experiment Tracking UI.
+
+Feedback is **disabled by default**. See [Feedback Collection](#feedback-collection) for setup instructions.
+
+> **Note:** If you're using one of the conversational agent templates (e.g. `agent-openai-agents-sdk`, `agent-langgraph`), their `databricks.yml` already creates and binds an MLflow experiment — feedback works automatically after `databricks bundle deploy`, with no extra configuration required.
+
+### Persistent Chat History
+
+By default, conversation messages are stored in memory and lost when the server restarts. To persist chat history across sessions, bind a Lakebase database in `databricks.yml`.
+
+See [Database Modes](#database-modes) for setup instructions.
+
+---
+
+## Database Modes
 
 The application supports two operating modes:
 
@@ -261,6 +283,81 @@ If you prefer to enable the database manually:
    ```bash
    npm run db:migrate
    ```
+
+## Feedback Collection
+
+The chat app supports optional thumbs up/down feedback on assistant messages. When enabled, feedback is stored as [MLflow assessments](https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app) on the traces emitted by your agent endpoint, making it easy to review and act on in the MLflow UI.
+
+Feedback is **disabled by default**. A "Feedback disabled" badge appears in the header when it is not configured.
+
+> **Note:** Feedback vote persistence (restoring thumbs up/down state on page reload) requires a database. Both features can be enabled together in one step using the quickstart script.
+
+### Recommended: use the quickstart script
+
+The easiest way to enable feedback (and persistent chat history) is to run the interactive setup script:
+
+```bash
+./scripts/quickstart.sh
+```
+
+The script automatically:
+1. Looks up the MLflow experiment ID linked to your serving endpoint
+2. Uncomments and configures the feedback `TODO` block in `databricks.yml` (setting `experiment_id`) and the `MLFLOW_EXPERIMENT_ID` env var in `app.yaml`
+3. Uncomments both database `TODO` blocks in `databricks.yml` to provision and bind a Lakebase database
+
+After the script completes, run `databricks bundle deploy` to apply the changes.
+
+### Manual setup
+
+If you prefer to configure manually:
+
+**Step 1 — Find your experiment ID**
+
+```bash
+# For a custom-code agent or Agent Bricks serving endpoint
+npx tsx scripts/get-experiment-id.ts --endpoint <your-endpoint-name>
+
+# For an Agent Bricks Knowledge Assistant or Multi-Agent Supervisor
+npx tsx scripts/get-experiment-id.ts --agent-brick <agent-brick-name>
+```
+
+**Step 2 — Configure `databricks.yml`**
+
+Uncomment both database `TODO` blocks (required for vote persistence) and the feedback `TODO` block, setting the experiment ID from Step 1:
+
+```yaml
+- name: experiment
+  description: "MLflow experiment for collecting user feedback"
+  experiment:
+    experiment_id: "your-experiment-id"
+    permission: CAN_EDIT
+```
+
+**Step 3 — Configure `app.yaml`**
+
+Uncomment the `MLFLOW_EXPERIMENT_ID` environment variable:
+
+```yaml
+- name: MLFLOW_EXPERIMENT_ID
+  valueFrom: experiment
+```
+
+**Step 4 — Redeploy**:
+
+```bash
+databricks bundle deploy
+databricks bundle run databricks_chatbot
+```
+
+Once deployed, the "Feedback disabled" badge disappears and the thumbs up/down buttons become active on assistant messages.
+
+### Enabling feedback for local development
+
+Set `MLFLOW_EXPERIMENT_ID` in your `.env` file to the experiment ID from Step 1:
+
+```bash
+MLFLOW_EXPERIMENT_ID=<your-experiment-id>
+```
 
 ## Testing
 

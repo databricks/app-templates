@@ -15,6 +15,13 @@
       "when": 1740268800000,
       "tag": "0001_add_trace_id",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1772346540471,
+      "tag": "0002_polite_red_hulk",
+      "breakpoints": true
     }
   ]
 }

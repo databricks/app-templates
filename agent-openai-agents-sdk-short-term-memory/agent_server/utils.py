@@ -7,6 +7,25 @@ from databricks.sdk import WorkspaceClient
 from databricks_openai.agents import AsyncDatabricksSession
 from mlflow.genai.agent_server import get_request_headers
 from mlflow.types.responses import ResponsesAgentRequest, ResponsesAgentStreamEvent
+from uuid_utils import uuid7
+
+
+def get_session_id(request: ResponsesAgentRequest) -> str:
+    """Extract session_id from request or generate a new one."""
+    # Priority:
+    # 1. Use session_id from custom_inputs
+    # 2. Use conversation_id from ChatContext
+    #    https://mlflow.org/docs/latest/api_reference/python_api/mlflow.types.html#mlflow.types.agent.ChatContext
+    # 3. Generate a new UUID
+    ci = dict(request.custom_inputs or {})
+
+    if "session_id" in ci and ci["session_id"]:
+        return str(ci["session_id"])
+
+    if request.context and getattr(request.context, "conversation_id", None):
+        return str(request.context.conversation_id)
+
+    return str(uuid7())
 
 
 def _is_lakebase_hostname(value: str) -> bool:

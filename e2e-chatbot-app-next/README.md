@@ -53,7 +53,7 @@ This project includes a [Databricks Asset Bundle (DAB)](https://docs.databricks.
 2. **Databricks authentication**: Ensure auth is configured as described in [Prerequisites](#prerequisites).
 3. **Specify serving endpoint and address TODOs in databricks.yml**: Address the TODOs in `databricks.yml`, setting the default value of `serving_endpoint_name` to the name of the custom code agent or Agent Bricks endpoint to chat with. The optional commented-out sections allow you to enable:
    - **Persistent chat history** — uncomment both `DATABASE RESOURCE` blocks to provision and bind a Lakebase database. See [Database Modes](#database-modes) for details. **Tip:** run `./scripts/quickstart.sh` to do this automatically.
-   - **User feedback collection** — uncomment the `FEEDBACK RESOURCE` block and set the experiment name. Also requires a database (both `DATABASE RESOURCE` blocks must be uncommented). See [Feedback Collection](#feedback-collection) for details. **Tip:** run `npx tsx scripts/get-experiment-id.ts` to find the experiment name for your agent.
+   - **User feedback collection** — uncomment the `FEEDBACK RESOURCE` block and set the experiment ID. Also requires a database (both `DATABASE RESOURCE` blocks must be uncommented). See [Feedback Collection](#feedback-collection) for details. **Tip:** run `./scripts/quickstart.sh` to configure both database and feedback automatically.
 
    - NOTE: if using [Agent Bricks Multi-Agent Supervisor](https://docs.databricks.com/aws/en/generative-ai/agent-bricks/multi-agent-supervisor), you need to additionally grant the app service principal the `CAN_QUERY` permission on the underlying agent(s) that the MAS orchestrates. You can do this by adding those
      agent serving endpoints as resources in `databricks.yml` (see the NOTE in `databricks.yml` on this)
@@ -288,13 +288,30 @@ If you prefer to enable the database manually:
 
 The chat app supports optional thumbs up/down feedback on assistant messages. When enabled, feedback is stored as [MLflow assessments](https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app) on the traces emitted by your agent endpoint, making it easy to review and act on in the MLflow UI.
 
-Feedback is **disabled by default**. A "Feedback disabled" badge appears in the header when it is not configured. Enabling it requires two steps: finding the MLflow experiment associated with your agent, then configuring the app to grant access to it.
+Feedback is **disabled by default**. A "Feedback disabled" badge appears in the header when it is not configured.
 
-> **Note:** Feedback vote persistence (restoring thumbs up/down state on page reload) requires a database. Make sure to also uncomment both `DATABASE RESOURCE` blocks in `databricks.yml`.
+> **Note:** Feedback vote persistence (restoring thumbs up/down state on page reload) requires a database. Both features can be enabled together in one step using the quickstart script.
 
-### Step 1 — Find your experiment name
+### Recommended: use the quickstart script
 
-Use the helper script to look up the MLflow experiment for your agent:
+The easiest way to enable feedback (and persistent chat history) is to run the interactive setup script:
+
+```bash
+./scripts/quickstart.sh
+```
+
+The script automatically:
+1. Looks up the MLflow experiment ID linked to your serving endpoint
+2. Uncomments and configures the `FEEDBACK RESOURCE` block in `databricks.yml` (setting `experiment_id`) and the `MLFLOW_EXPERIMENT_ID` env var in `app.yaml`
+3. Uncomments both `DATABASE RESOURCE` blocks in `databricks.yml` to provision and bind a Lakebase database
+
+After the script completes, run `databricks bundle deploy` to apply the changes.
+
+### Manual setup
+
+If you prefer to configure manually:
+
+**Step 1 — Find your experiment ID**
 
 ```bash
 # For a custom-code agent or Agent Bricks serving endpoint
@@ -304,28 +321,28 @@ npx tsx scripts/get-experiment-id.ts --endpoint <your-endpoint-name>
 npx tsx scripts/get-experiment-id.ts --agent-brick <agent-brick-name>
 ```
 
-The script prints the experiment name to stdout — copy it for Step 2.
+**Step 2 — Configure `databricks.yml`**
 
-### Step 2 — Configure the app
-
-**In `databricks.yml`**, uncomment the `FEEDBACK RESOURCE` block and set the experiment name from Step 1:
+Uncomment both `DATABASE RESOURCE` blocks (required for vote persistence) and the `FEEDBACK RESOURCE` block, setting the experiment ID from Step 1:
 
 ```yaml
 - name: experiment
   description: "MLflow experiment for collecting user feedback"
   experiment:
-    name: "your-experiment-name"
+    experiment_id: "your-experiment-id"
     permission: CAN_EDIT
 ```
 
-**In `app.yaml`**, uncomment the `MLFLOW_EXPERIMENT_ID` environment variable:
+**Step 3 — Configure `app.yaml`**
+
+Uncomment the `MLFLOW_EXPERIMENT_ID` environment variable:
 
 ```yaml
 - name: MLFLOW_EXPERIMENT_ID
   valueFrom: experiment
 ```
 
-**Redeploy**:
+**Step 4 — Redeploy**:
 
 ```bash
 databricks bundle deploy
@@ -336,10 +353,10 @@ Once deployed, the "Feedback disabled" badge disappears and the thumbs up/down b
 
 ### Enabling feedback for local development
 
-Set `MLFLOW_EXPERIMENT_ID` in your `.env` file to the experiment name from Step 1:
+Set `MLFLOW_EXPERIMENT_ID` in your `.env` file to the experiment ID from Step 1:
 
 ```bash
-MLFLOW_EXPERIMENT_ID=/Users/your-email@company.com/your-experiment-name
+MLFLOW_EXPERIMENT_ID=<your-experiment-id>
 ```
 
 ## Testing

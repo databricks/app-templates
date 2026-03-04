@@ -76,6 +76,17 @@ async def deduplicate_input(request: ResponsesAgentRequest, session: AsyncDatabr
     since the session will prepend the full history automatically.
     """
     messages = [i.model_dump() for i in request.input]
+    # Normalize assistant message content from string to structured list format.
+    # MLflow evaluation sends assistant content as a plain string, but the OpenAI
+    # Agents SDK expects it as [{"type": "output_text", "text": ..., "annotations": []}].
+    for msg in messages:
+        if (
+            isinstance(msg, dict)
+            and msg.get("type") == "message"
+            and msg.get("role") == "assistant"
+            and isinstance(msg.get("content"), str)
+        ):
+            msg["content"] = [{"type": "output_text", "text": msg["content"], "annotations": []}]
     session_items = await session.get_items()
     if len(session_items) >= len(messages) - 1:
         return [messages[-1]]

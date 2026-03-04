@@ -59,18 +59,18 @@ litellm.suppress_debug_info = True
 
 
 @invoke()
-async def non_streaming(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
+async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
     """Collect all streaming events and return the final response."""
     outputs = [
         event.item
-        async for event in streaming(request)
+        async for event in stream_handler(request)
         if event.type == "response.output_item.done"
     ]
     return ResponsesAgentResponse(output=outputs)
 
 
 @stream()
-async def streaming(
+async def stream_handler(
     request: ResponsesAgentRequest,
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
     """Stream agent responses.

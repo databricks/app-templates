@@ -65,7 +65,7 @@ All memory templates return the ID in `custom_outputs` so clients can reuse it.
 - App command: `["uv", "run", "start-app"]`
 - Lakebase resources use `permission: 'CAN_CONNECT_AND_CREATE'`
 - Lakebase templates use `<your-lakebase-instance-name>` as placeholder — quickstart replaces it
-- Quickstart removes the DAB-managed experiment resource and sets `MLFLOW_EXPERIMENT_ID` to a literal value
+- Quickstart removes the DAB-managed experiment definition, replaces the app's experiment resource ID with a literal value, and sets `MLFLOW_EXPERIMENT_ID` to that value
 
 ### Per-template AGENTS.md
 
@@ -73,17 +73,19 @@ Each template has its own `{template}/AGENTS.md` (loaded via `{template}/CLAUDE.
 
 ## E2E Tests
 
-Tests live in `.scripts/agent-integration-tests/`. Run from that directory:
+Tests live in `.scripts/agent-integration-tests/`. Run from that directory.
+
+**Default runs both local and deploy.** Only add `--skip-deploy` or `--skip-local` when the user explicitly asks.
 
 ```bash
-# All templates in parallel (local + deploy)
+# DEFAULT: All templates in parallel (local + deploy)
 uv run pytest test_e2e.py -v -n 7
 
-# Local only (fast, ~2 min/template)
-uv run pytest test_e2e.py -v -n 7 --skip-deploy
+# Single template (still runs both local + deploy)
+uv run pytest test_e2e.py -v --template agent-langgraph
 
-# Single template, sequential, live output
-uv run pytest test_e2e.py -v -n0 -s --skip-deploy --template agent-langgraph
+# Sequential with live output (for debugging)
+uv run pytest test_e2e.py -v -n0 -s --template agent-langgraph
 ```
 
 Template test configs are in `.scripts/agent-integration-tests/template_config.py`.

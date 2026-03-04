@@ -86,25 +86,27 @@ Local and deploy phases run **in parallel** via `ThreadPoolExecutor`. Either pha
 
 ## How to Run
 
-All commands must be run from the `.scripts/agent-integration-tests/` directory:
+All commands must be run from the `.scripts/agent-integration-tests/` directory.
+
+**The default runs both local and deploy phases.** Only add `--skip-deploy` or `--skip-local` when the user explicitly asks for it.
 
 ```bash
 cd .scripts/agent-integration-tests
 
-# Run all 7 templates in parallel (local + deploy for each)
+# DEFAULT: Run all 7 templates in parallel (local + deploy)
 uv run pytest test_e2e.py -v -n 7
 
-# Run all 7 templates in parallel, local only (skip deploy)
-uv run pytest test_e2e.py -v -n 7 --skip-deploy
-
-# Sequential with full live output (for debugging)
-uv run pytest test_e2e.py -v -n0 -s --skip-deploy
-
-# Single template
+# Single template (still runs both local + deploy)
 uv run pytest test_e2e.py -v --template agent-langgraph
 
-# Deploy only (skip local)
+# Local only — ONLY when explicitly requested
+uv run pytest test_e2e.py -v -n 7 --skip-deploy
+
+# Deploy only — ONLY when explicitly requested
 uv run pytest test_e2e.py -v -n 7 --skip-local
+
+# Sequential with full live output (for debugging)
+uv run pytest test_e2e.py -v -n0 -s
 
 # Keep deployed apps running for inspection
 uv run pytest test_e2e.py -v --template agent-langgraph --skip-local --no-destroy
@@ -160,7 +162,7 @@ Each template writes a detailed log to `logs/{template-name}.log` (e.g. `logs/ag
 
 **Lakebase access grants**: For memory-backed templates, the deploy phase grants the app's service principal access to the Lakebase instance. It queries the app to get the SP client ID, then uses `LakebaseClient` to grant CREATE on the database, plus USAGE/CREATE on schemas and ALL on tables/sequences for existing managed schemas (`public`, `drizzle`, `ai_chatbot`). Individual SQL statements use `_try_sql` (best-effort, logs warnings) but the overall function raises on unexpected errors.
 
-**Pre-test edits with revert**: Templates contain placeholders (e.g. `<YOUR-GENIE-SPACE-ID>`) that must be replaced before testing. Quickstart handles lakebase placeholders (`<your-lakebase-instance-name>`) and experiment resource removal automatically, so the test only needs to apply template-specific edits (e.g. multiagent subagent configuration). Edits are grouped by file path so each file is read and written exactly once, even when multiple edits target the same file. Original content is always reverted in a finally block, and `databricks.yml` is restored to its pre-quickstart state (since quickstart also modifies it).
+**Pre-test edits with revert**: Templates contain placeholders (e.g. `<YOUR-GENIE-SPACE-ID>`) that must be replaced before testing. Quickstart handles lakebase placeholders (`<your-lakebase-instance-name>`) and experiment resource updates (replaces DAB reference with literal ID) automatically, so the test only needs to apply template-specific edits (e.g. multiagent subagent configuration). Edits are grouped by file path so each file is read and written exactly once, even when multiple edits target the same file. Original content is always reverted in a finally block, and `databricks.yml` is restored to its pre-quickstart state (since quickstart also modifies it).
 
 **Phase context manager**: Each test phase is wrapped in a `phase()` context manager that prefixes exceptions with the phase name (e.g. `[setup:quickstart]`), making it easy to identify which phase failed in error output.
 
@@ -174,4 +176,4 @@ Each template writes a detailed log to `logs/{template-name}.log` (e.g. `logs/ag
 
 **Multiagent** (`agent-openai-agents-sdk-multiagent`): Has the most complex pre-test setup. Uncomments a SUBAGENTS block in `agent_server/agent.py` and enables 2 subagents (genie + serving_endpoint). Also replaces placeholders in `databricks.yml` (Genie space ID, serving endpoint; the knowledge assistant placeholder is filled with the serving endpoint value as a stand-in). Runs `agent-evaluate` after endpoint queries.
 
-**Lakebase memory templates** (`*-short-term-memory`, `*-long-term-memory`): The quickstart command receives `--lakebase` and handles all `databricks.yml` modifications: it removes the DAB-managed experiment resource, sets `MLFLOW_EXPERIMENT_ID` to a literal value, and replaces `<your-lakebase-instance-name>` placeholders with the actual instance name. During deploy, the app's service principal is granted Lakebase access. This applies to 3 templates across both LangGraph and OpenAI SDK families.
+**Lakebase memory templates** (`*-short-term-memory`, `*-long-term-memory`): The quickstart command receives `--lakebase` and handles all `databricks.yml` modifications: it removes the DAB-managed experiment definition, replaces the app's experiment resource ID with a literal value, sets `MLFLOW_EXPERIMENT_ID` to that value, and replaces `<your-lakebase-instance-name>` placeholders with the actual instance name. During deploy, the app's service principal is granted Lakebase access. This applies to 3 templates across both LangGraph and OpenAI SDK families.

@@ -639,21 +639,14 @@ def update_databricks_yml_experiment(experiment_id: str) -> None:
         content,
     )
 
-    # 2. Remove experiment resource entry from app resources list
+    # 2. Replace DAB experiment ID reference with literal experiment ID in app resources
     content = re.sub(
-        r"        - name: ['\"]experiment['\"]\n          experiment:\n(?:            [^\n]*\n)*",
-        "",
+        r"""experiment_id: ["']\$\{resources\.experiments\.[^}]+\}["']""",
+        f'experiment_id: "{experiment_id}"',
         content,
     )
 
-    # 3. Clean up empty resources section (comment + resources: with no entries)
-    content = re.sub(
-        r"      # Resources which this app has access to\n      resources:[ \t]*\n(?=\n|\Z)",
-        "",
-        content,
-    )
-
-    # 4. Replace value_from: "experiment" with literal value
+    # 3. Replace value_from: "experiment" with literal value
     content = re.sub(
         r"""value_from: ["']experiment["']""",
         f'value: "{experiment_id}"',

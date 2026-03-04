@@ -14,5 +14,9 @@ env:
     value: "300"
   - name: MLFLOW_EXPERIMENT_ID
     valueFrom: "experiment"
-  - name: LAKEBASE_INSTANCE_NAME
-    valueFrom: "database"
+  # Use for provisioned lakebase resource
+  # - name: LAKEBASE_INSTANCE_NAME
+  #   valueFrom: "database"
+  # Use for autoscaling lakebase resource
+  - name: LAKEBASE_AUTOSCALING_ENDPOINT
+    valueFrom: "postgres"

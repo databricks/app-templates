@@ -6,21 +6,19 @@ readme = "README.md"
 authors = [
     { name = "Agent Developer", email = "developer@example.com" }
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 dependencies = [
-    "fastapi>=0.115.12",
-    "uvicorn>=0.34.2",
     # Note: Using git reference until official release
     "databricks-langchain[memory] @ git+https://github.com/databricks/databricks-ai-bridge@lakebase-autoscaling-support#subdirectory=integrations/langchain",
     "databricks-ai-bridge @ git+https://github.com/databricks/databricks-ai-bridge@lakebase-autoscaling-support",
-    "mlflow>=3.8.0rc0",
-    "langgraph>=1.0.1",
-    "langchain-mcp-adapters>=0.1.11",
-    "python-dotenv",
+    "fastapi>=0.129.0",
+    "uvicorn>=0.41.0",
+    "databricks-agents>=1.9.3",
+    "mlflow>=3.10.0",
+    "langgraph>=1.0.9",
+    "langchain-mcp-adapters>=0.2.1",
+    "python-dotenv>=1.2.1",
 ]
-
-[tool.uv]
-prerelease = "allow"
 
 [tool.hatch.metadata]
 # Note: Required for direct git references. Delete when official databricks-langchain[memory] release is available

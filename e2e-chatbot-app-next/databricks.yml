@@ -14,7 +14,7 @@ variables:
 
 resources:
   database_instances:
-    # DATABASE RESOURCE (1): Uncomment the database resource below to deploy the app with a database
+    # TODO (optional): Uncomment the database resource below to enable persistent chat history
     # chatbot_lakebase:
     #   name: ${var.database_instance_name}-${var.resource_name_suffix}
     #   capacity: CU_1
@@ -35,21 +35,21 @@ resources:
           serving_endpoint:
             name: ${var.serving_endpoint_name}
             permission: CAN_QUERY
-        # DATABASE RESOURCE (2): Uncomment the database resource below to bind the app to the deployed database instance
-        # and to enable persistent chat history
+        # TODO (optional): Uncomment the database resource below to bind the app to the database instance above
+        # and enable persistent chat history
         # - name: database
         #   description: "Lakebase database instance for the chat app"
         #   database:
         #     database_name: databricks_postgres
         #     instance_name: ${resources.database_instances.chatbot_lakebase.name}
         #     permission: CAN_CONNECT_AND_CREATE
-        # FEEDBACK RESOURCE: Uncomment the experiment resource below to enable the feedback widget.
-        # First run `npx tsx scripts/get-experiment-id.ts --endpoint <your-endpoint-name>` to find the experiment name.
-        # Note: enabling feedback also requires a database (uncomment both DATABASE RESOURCE blocks above).
+        # TODO (optional): Uncomment the experiment resource below to enable the feedback widget.
+        # First run `npx tsx scripts/get-experiment-id.ts --endpoint <your-endpoint-name>` to find the experiment ID.
+        # Note: enabling feedback also requires a database (uncomment both TODO database blocks above).
         # - name: experiment
         #   description: "MLflow experiment for collecting user feedback"
         #   experiment:
-        #     name: "your-experiment-name"
+        #     experiment_id: "your-experiment-id"
         #     permission: CAN_EDIT
 
 targets:

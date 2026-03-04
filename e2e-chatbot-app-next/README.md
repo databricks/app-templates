@@ -52,8 +52,8 @@ This project includes a [Databricks Asset Bundle (DAB)](https://docs.databricks.
    ```
 2. **Databricks authentication**: Ensure auth is configured as described in [Prerequisites](#prerequisites).
 3. **Specify serving endpoint and address TODOs in databricks.yml**: Address the TODOs in `databricks.yml`, setting the default value of `serving_endpoint_name` to the name of the custom code agent or Agent Bricks endpoint to chat with. The optional commented-out sections allow you to enable:
-   - **Persistent chat history** — uncomment both `DATABASE RESOURCE` blocks to provision and bind a Lakebase database. See [Database Modes](#database-modes) for details. **Tip:** run `./scripts/quickstart.sh` to do this automatically.
-   - **User feedback collection** — uncomment the `FEEDBACK RESOURCE` block and set the experiment ID. Also requires a database (both `DATABASE RESOURCE` blocks must be uncommented). See [Feedback Collection](#feedback-collection) for details. **Tip:** run `./scripts/quickstart.sh` to configure both database and feedback automatically.
+   - **Persistent chat history** — uncomment the two optional `TODO` database blocks to provision and bind a Lakebase database. See [Database Modes](#database-modes) for details. **Tip:** run `./scripts/quickstart.sh` to do this automatically.
+   - **User feedback collection** — uncomment the optional `TODO` experiment block and set the experiment ID. Also requires a database (both database `TODO` blocks must be uncommented). See [Feedback Collection](#feedback-collection) for details. **Tip:** run `./scripts/quickstart.sh` to configure both database and feedback automatically.
 
    - NOTE: if using [Agent Bricks Multi-Agent Supervisor](https://docs.databricks.com/aws/en/generative-ai/agent-bricks/multi-agent-supervisor), you need to additionally grant the app service principal the `CAN_QUERY` permission on the underlying agent(s) that the MAS orchestrates. You can do this by adding those
      agent serving endpoints as resources in `databricks.yml` (see the NOTE in `databricks.yml` on this)
@@ -302,8 +302,8 @@ The easiest way to enable feedback (and persistent chat history) is to run the i
 
 The script automatically:
 1. Looks up the MLflow experiment ID linked to your serving endpoint
-2. Uncomments and configures the `FEEDBACK RESOURCE` block in `databricks.yml` (setting `experiment_id`) and the `MLFLOW_EXPERIMENT_ID` env var in `app.yaml`
-3. Uncomments both `DATABASE RESOURCE` blocks in `databricks.yml` to provision and bind a Lakebase database
+2. Uncomments and configures the feedback `TODO` block in `databricks.yml` (setting `experiment_id`) and the `MLFLOW_EXPERIMENT_ID` env var in `app.yaml`
+3. Uncomments both database `TODO` blocks in `databricks.yml` to provision and bind a Lakebase database
 
 After the script completes, run `databricks bundle deploy` to apply the changes.
 
@@ -323,7 +323,7 @@ npx tsx scripts/get-experiment-id.ts --agent-brick <agent-brick-name>
 
 **Step 2 — Configure `databricks.yml`**
 
-Uncomment both `DATABASE RESOURCE` blocks (required for vote persistence) and the `FEEDBACK RESOURCE` block, setting the experiment ID from Step 1:
+Uncomment both database `TODO` blocks (required for vote persistence) and the feedback `TODO` block, setting the experiment ID from Step 1:
 
 ```yaml
 - name: experiment

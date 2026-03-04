@@ -205,20 +205,20 @@ To enable **persistent chat history** with a managed Lakebase database, you need
 
 1. Open `databricks.yml`
 
-2. **Uncomment DATABASE RESOURCE (1)** - Find the database instance definition (around lines 17-21):
+2. **Uncomment the first database TODO** - Find the database instance definition (around lines 17-21):
    ```yaml
    resources:
      database_instances:
-     # DATABASE RESOURCE (1): Uncomment the database resource below...
+     # TODO (optional): Uncomment the database resource below to enable persistent chat history
      #   chatbot_lakebase:
      #     name: ${var.database_instance_name}-${var.resource_name_suffix}
      #     capacity: CU_1
    ```
    Remove the `#` symbols to uncomment it.
 
-3. **Uncomment DATABASE RESOURCE (2)** - Find the database resource binding (around lines 39-44):
+3. **Uncomment the second database TODO** - Find the database resource binding (around lines 39-44):
    ```yaml
-   # DATABASE RESOURCE (2): uncomment the database resource below...
+   # TODO (optional): Uncomment the database resource below to bind the app to the database instance above
    # - name: database
    #   description: "Lakebase database instance for the chat app"
    #   database:

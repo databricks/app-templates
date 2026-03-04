@@ -15,16 +15,18 @@ import os
 from contextlib import asynccontextmanager
 
 from databricks_ai_bridge.lakebase import AsyncLakebaseSQLAlchemy
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy import event, text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from agent_server.db.models import AGENT_DB_SCHEMA, Base
+from agent_server.settings import settings
 from agent_server.utils_lakebase import resolve_lakebase_instance_name
 
 logger = logging.getLogger(__name__)
 
 _session_factory: async_sessionmaker[AsyncSession] | None = None
-_engine: AsyncEngine | None = None
+_engine = None
+_lakebase: AsyncLakebaseSQLAlchemy | None = None
 
 
 def is_db_configured() -> bool:
@@ -34,7 +36,7 @@ def is_db_configured() -> bool:
 
 async def init_db() -> None:
     """Create engine, schema, and tables. Call on app startup."""
-    global _session_factory, _engine
+    global _session_factory, _engine, _lakebase
 
     if not is_db_configured():
         logger.debug("[DB] Skipping: database not configured (LAKEBASE_INSTANCE_NAME not set)")
@@ -46,13 +48,28 @@ async def init_db() -> None:
 
     instance_name = resolve_lakebase_instance_name(instance_name)
 
-    lakebase = AsyncLakebaseSQLAlchemy(
+    _lakebase = AsyncLakebaseSQLAlchemy(
         instance_name=instance_name,
         pool_size=10,
         max_overflow=0,
         pool_pre_ping=True,
     )
-    _engine = lakebase.engine
+    _engine = _lakebase.engine
+
+    # Force Postgres to kill any query exceeding db_statement_timeout_ms.
+    # This is the only reliable way to reclaim a connection whose query is
+    # stuck (e.g. waiting on a lock) — asyncio.timeout cannot interrupt
+    # psycopg's C-level wait().  Uses "checkout" (not "connect") because
+    # the pool resets session GUCs when returning connections; "connect"
+    # only fires once per physical connection and gets wiped on reuse.
+    # Applied via event listener because AsyncLakebaseSQLAlchemy already
+    # sets its own connect_args (for sslmode), so we can't pass ours.
+    @event.listens_for(_engine.sync_engine, "checkout")
+    def _set_statement_timeout(dbapi_conn, connection_record, connection_proxy):
+        cursor = dbapi_conn.cursor()
+        cursor.execute(f"SET statement_timeout = {settings.db_statement_timeout_ms}")
+        cursor.close()
+
     _session_factory = async_sessionmaker(
         _engine,
         class_=AsyncSession,
@@ -71,13 +88,14 @@ async def init_db() -> None:
 
 async def dispose_db() -> None:
     """Dispose engine and clear registration. Call on app shutdown."""
-    global _session_factory, _engine
+    global _session_factory, _engine, _lakebase
 
     if _engine is not None:
         await _engine.dispose()
         logger.info("[DB] Engine disposed")
     _session_factory = None
     _engine = None
+    _lakebase = None
 
 
 def get_async_session():

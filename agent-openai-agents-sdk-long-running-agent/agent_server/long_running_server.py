@@ -4,9 +4,9 @@ import asyncio
 import inspect
 import json
 import logging
-import os
 import time
 import uuid
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator
 
@@ -33,11 +33,55 @@ from agent_server.db import (
     update_response_status,
     update_response_trace_id,
 )
+from agent_server.settings import settings
 
 logger = logging.getLogger(__name__)
 
 BACKGROUND_KEY = "background"
 FAKE_ID = "__fake_id__"
+
+
+async def _deferred_mark_failed(
+    response_id: str, delay: float = 2.0, reason: str = "Task timed out"
+) -> None:
+    """Mark a response as failed after a short delay.
+
+    Runs as an independent asyncio task so the caller (``_task_scope``) can
+    return immediately.  The delay lets the connection pool stabilise after
+    a cancellation before we attempt new DB writes.  The DB work is bounded
+    by ``cleanup_timeout_seconds`` so this task cannot hang indefinitely;
+    the stale-run check in ``_handle_retrieve_request`` is the final safety
+    net if this fails.
+    """
+    try:
+        await asyncio.sleep(delay)
+
+        async with asyncio.timeout(settings.cleanup_timeout_seconds):
+            existing = await get_messages(response_id, after_sequence=None)
+            next_seq = max((seq for seq, _, _ in existing), default=-1) + 1
+
+            error_event = {
+                "type": "error",
+                "error": {
+                    "message": reason,
+                    "type": "server_error",
+                    "code": "task_timeout",
+                },
+            }
+            await append_message(response_id, next_seq, item=None, stream_event=error_event)
+            await update_response_status(response_id, "failed")
+
+        logger.info("Marked %s as failed (reason: %s)", response_id, reason)
+    except TimeoutError:
+        logger.error(
+            "Timed out marking %s as failed; stale-run check will catch it",
+            response_id,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to mark %s as failed; stale-run check will catch it",
+            response_id,
+        )
 
 
 def _sse_event(event_type: str, data: dict[str, Any] | str) -> str:
@@ -249,16 +293,98 @@ class LongRunningAgentServer(AgentServer):
             )
             return response_obj
 
+    @asynccontextmanager
+    async def _task_scope(
+        self, response_id: str, state: dict[str, Any]
+    ) -> AsyncGenerator[None, None]:
+        """Timeout + error handling wrapper for background tasks.
+
+        Three layers protect against stuck tasks:
+        1. ``asyncio.timeout`` cancels the task after ``task_timeout_seconds``.
+        2. ``_deferred_mark_failed`` writes an error event + "failed" status
+           after a short delay (bounded by its own ``asyncio.timeout``).
+        3. The stale-run check in ``_handle_retrieve_request`` catches anything
+           the above two missed on the next client poll.
+
+        On unhandled exceptions the status update is attempted inline first,
+        falling back to the deferred path if that fails.
+        """
+        try:
+            async with asyncio.timeout(settings.task_timeout_seconds):
+                yield
+        except TimeoutError:
+            logger.warning(
+                "Task %s timed out after %ss",
+                response_id,
+                settings.task_timeout_seconds,
+            )
+            # Defer the DB status update to a separate task rather than
+            # blocking here.  After cancellation, the pool connection may
+            # be mid-reconnect at the C level (un-interruptible by asyncio).
+            # The short delay lets the pool stabilise; the stale-run check
+            # in _handle_retrieve_request acts as a final safety net.
+            asyncio.create_task(
+                _deferred_mark_failed(response_id, delay=settings.cleanup_timeout_seconds),
+                name=f"deferred-fail-{response_id}",
+            )
+        except Exception as exc:
+            logger.exception("Task %s failed: %s", response_id, exc)
+            try:
+                async with asyncio.timeout(settings.cleanup_timeout_seconds):
+                    existing = await get_messages(response_id, after_sequence=None)
+                    next_seq = max((seq for seq, _, _ in existing), default=-1) + 1
+                    await append_message(
+                        response_id,
+                        next_seq,
+                        item=None,
+                        stream_event={
+                            "type": "error",
+                            "error": {
+                                "message": str(exc),
+                                "type": "server_error",
+                                "code": "task_failed",
+                            },
+                        },
+                    )
+                    await update_response_status(response_id, "failed")
+            except Exception:
+                logger.exception(
+                    "[error-cleanup] Immediate update failed for %s, deferring",
+                    response_id,
+                )
+                asyncio.create_task(
+                    _deferred_mark_failed(
+                        response_id,
+                        delay=settings.cleanup_timeout_seconds,
+                        reason=str(exc),
+                    ),
+                    name=f"deferred-fail-{response_id}",
+                )
+
     async def _run_background_stream(
         self,
         response_id: str,
         request_data: dict[str, Any],
         return_trace_id: bool = False,
     ) -> None:
+        """Timeout-guarded wrapper around the streaming agent loop."""
+        state: dict[str, Any] = {"seq": 0}
+        async with self._task_scope(response_id, state):
+            await self._do_background_stream(
+                response_id, request_data, return_trace_id, state
+            )
+
+    async def _do_background_stream(
+        self,
+        response_id: str,
+        request_data: dict[str, Any],
+        return_trace_id: bool,
+        state: dict[str, Any],
+    ) -> None:
         """Run agent via stream_fn, persist each stream event as a message row, update status.
 
-        We store events individually so retrieve can stream or poll results
-        and support starting_after for resumption.
+        ``state["seq"]`` is updated on every persisted event so _task_scope can
+        append a terminal error at the correct sequence number on timeout.
         """
         stream_fn = get_stream_function()
         if stream_fn is None:
@@ -269,83 +395,71 @@ class LongRunningAgentServer(AgentServer):
         all_chunks: list[dict[str, Any]] = []
         seq = 0
         norm_state = _StreamNormState()
-        try:
-            with mlflow.start_span(name=f"{func_name}") as span:
-                span.set_inputs(request_data)
-                async for event in stream_fn(request_data):
-                    evt = self.validator.validate_and_convert_result(event, stream=True)
-                    evt = _normalize_stream_event(evt, norm_state, response_id)
-                    if evt is None:
-                        continue
 
-                    all_chunks.append(evt)
-                    item = evt.get("item")
-                    evt_type = evt.get("type", "message")
-                    logger.debug(
-                        "SSE event (background)",
-                        extra={"response_id": response_id, "seq": seq, "type": evt_type},
-                    )
-                    await append_message(
-                        response_id,
-                        seq,
-                        item=json.dumps(item) if item is not None else None,
-                        stream_event=evt,
-                    )
-                    seq += 1
+        with mlflow.start_span(name=f"{func_name}") as span:
+            span.set_inputs(request_data)
+            async for event in stream_fn(request_data):
+                evt = self.validator.validate_and_convert_result(event, stream=True)
+                evt = _normalize_stream_event(evt, norm_state, response_id)
+                if evt is None:
+                    continue
 
-                # Emit the final response.completed once at the very end
-                pending_completed = norm_state.pending_completed
-                if pending_completed is not None:
-                    all_chunks.append(pending_completed)
-                    logger.debug(
-                        "SSE event (background)",
-                        extra={
-                            "response_id": response_id,
-                            "seq": seq,
-                            "type": "response.completed",
-                        },
-                    )
-                    await append_message(
-                        response_id,
-                        seq,
-                        item=None,
-                        stream_event=pending_completed,
-                    )
-                    seq += 1
-
-                if self.agent_type == "ResponsesAgent":
-                    span.set_attribute(SpanAttributeKey.MESSAGE_FORMAT, "openai")
-                    span.set_outputs(
-                        ResponsesAgent.responses_agent_output_reducer(all_chunks)
-                    )
-                else:
-                    span.set_outputs(all_chunks)
-
-                if return_trace_id:
-                    await append_message(
-                        response_id,
-                        seq,
-                        stream_event={"trace_id": span.trace_id},
-                    )
-
-            await update_response_status(response_id, "completed")
-            logger.debug(
-                "Background stream completed",
-                extra={"response_id": response_id, "total_events": seq},
-            )
-        except Exception as e:
-            logger.debug(
-                "Background stream error",
-                extra={"response_id": response_id, "error": str(e)},
-            )
-            logger.exception("Background stream failed: %s", e)
-            try:
-                await update_response_status(response_id, "failed")
-            except Exception as update_err:
-                logger.exception(
-                    "Failed to update response status to failed: %s", update_err
+                all_chunks.append(evt)
+                item = evt.get("item")
+                evt_type = evt.get("type", "message")
+                logger.debug(
+                    "SSE event (background)",
+                    extra={"response_id": response_id, "seq": seq, "type": evt_type},
                 )
-            raise
+                await append_message(
+                    response_id,
+                    seq,
+                    item=json.dumps(item) if item is not None else None,
+                    stream_event=evt,
+                )
+                seq += 1
+                state["seq"] = seq
+
+            pending_completed = norm_state.pending_completed
+            if pending_completed is not None:
+                all_chunks.append(pending_completed)
+                logger.debug(
+                    "SSE event (background)",
+                    extra={
+                        "response_id": response_id,
+                        "seq": seq,
+                        "type": "response.completed",
+                    },
+                )
+                await append_message(
+                    response_id,
+                    seq,
+                    item=None,
+                    stream_event=pending_completed,
+                )
+                seq += 1
+                state["seq"] = seq
+
+            if self.agent_type == "ResponsesAgent":
+                span.set_attribute(SpanAttributeKey.MESSAGE_FORMAT, "openai")
+                span.set_outputs(
+                    ResponsesAgent.responses_agent_output_reducer(all_chunks)
+                )
+            else:
+                span.set_outputs(all_chunks)
+
+            if return_trace_id:
+                await append_message(
+                    response_id,
+                    seq,
+                    stream_event={"trace_id": span.trace_id},
+                )
+
+        await update_response_status(response_id, "completed")
+        logger.debug(
+            "Background stream completed",
+            extra={"response_id": response_id, "total_events": seq},
+        )
 
     async def _run_background_invoke(
         self,
@@ -353,10 +467,24 @@ class LongRunningAgentServer(AgentServer):
         request_data: dict[str, Any],
         return_trace_id: bool = False,
     ) -> None:
+        """Timeout-guarded wrapper around the invoke agent loop."""
+        state: dict[str, Any] = {"seq": 0}
+        async with self._task_scope(response_id, state):
+            await self._do_background_invoke(
+                response_id, request_data, return_trace_id, state
+            )
+
+    async def _do_background_invoke(
+        self,
+        response_id: str,
+        request_data: dict[str, Any],
+        return_trace_id: bool,
+        state: dict[str, Any],
+    ) -> None:
         """Run agent via invoke_fn, persist each output item as a message row, update status.
 
-        We store items individually (like the stream path) so retrieve can build
-        output from messages and support stream=true with starting_after.
+        ``state["seq"]`` is updated after persisting so _task_scope can
+        append a terminal error at the correct sequence number on timeout.
         """
         invoke_fn = get_invoke_function()
         if invoke_fn is None:
@@ -364,48 +492,36 @@ class LongRunningAgentServer(AgentServer):
             raise RuntimeError("No invoke function registered; cannot run background invoke")
 
         func_name = invoke_fn.__name__
-        try:
-            with mlflow.start_span(name=f"{func_name}") as span:
-                span.set_inputs(request_data)
-                if inspect.iscoroutinefunction(invoke_fn):
-                    result = await invoke_fn(request_data)
-                else:
-                    result = invoke_fn(request_data)
 
-                result = self.validator.validate_and_convert_result(result)
-                if self.agent_type == "ResponsesAgent":
-                    span.set_attribute(SpanAttributeKey.MESSAGE_FORMAT, "openai")
-                span.set_outputs(result)
+        with mlflow.start_span(name=f"{func_name}") as span:
+            span.set_inputs(request_data)
+            if inspect.iscoroutinefunction(invoke_fn):
+                result = await invoke_fn(request_data)
+            else:
+                result = invoke_fn(request_data)
 
-            output = result.get("output", [])
-            for i, item in enumerate(output):
-                item_dict = item if isinstance(item, dict) else (item.model_dump() if hasattr(item, "model_dump") else {"content": str(item)})
-                await append_message(
-                    response_id,
-                    i,
-                    item=json.dumps(item_dict),
-                    stream_event={"type": "response.output_item.done", "item": item_dict},
-                )
-            if return_trace_id:
-                await update_response_trace_id(response_id, span.trace_id)
-            await update_response_status(response_id, "completed")
-            logger.debug(
-                "Background invoke completed",
-                extra={"response_id": response_id, "output_items": len(output)},
+            result = self.validator.validate_and_convert_result(result)
+            if self.agent_type == "ResponsesAgent":
+                span.set_attribute(SpanAttributeKey.MESSAGE_FORMAT, "openai")
+            span.set_outputs(result)
+
+        output = result.get("output", [])
+        for i, item in enumerate(output):
+            item_dict = item if isinstance(item, dict) else (item.model_dump() if hasattr(item, "model_dump") else {"content": str(item)})
+            await append_message(
+                response_id,
+                i,
+                item=json.dumps(item_dict),
+                stream_event={"type": "response.output_item.done", "item": item_dict},
             )
-        except Exception as e:
-            logger.debug(
-                "Background invoke error",
-                extra={"response_id": response_id, "error": str(e)},
-            )
-            logger.exception("Background invoke failed: %s", e)
-            try:
-                await update_response_status(response_id, "failed")
-            except Exception as update_err:
-                logger.exception(
-                    "Failed to update response status to failed: %s", update_err
-                )
-            raise
+            state["seq"] = i + 1
+        if return_trace_id:
+            await update_response_trace_id(response_id, span.trace_id)
+        await update_response_status(response_id, "completed")
+        logger.debug(
+            "Background invoke completed",
+            extra={"response_id": response_id, "output_items": len(output)},
+        )
 
     async def _handle_retrieve_request(
         self,
@@ -423,7 +539,30 @@ class LongRunningAgentServer(AgentServer):
         if resp is None:
             raise HTTPException(status_code=404, detail="Response not found")
 
-        _, status, trace_id = resp
+        _, status, created_at, trace_id = resp
+
+        if status == "in_progress" and (time.time() - created_at) > settings.task_timeout_seconds:
+            logger.warning(
+                "Stale in_progress run detected, marking as failed",
+                extra={"response_id": response_id, "age_s": time.time() - created_at},
+            )
+            existing = await get_messages(response_id, after_sequence=None)
+            next_seq = max((seq for seq, _, _ in existing), default=-1) + 1
+            await append_message(
+                response_id,
+                next_seq,
+                item=None,
+                stream_event={
+                    "type": "error",
+                    "error": {
+                        "message": "Task timed out",
+                        "type": "server_error",
+                        "code": "task_timeout",
+                    },
+                },
+            )
+            await update_response_status(response_id, "failed")
+            status = "failed"
 
         logger.debug(
             "Retrieve request",
@@ -457,6 +596,10 @@ class LongRunningAgentServer(AgentServer):
             if trace_id:
                 result["metadata"] = {"trace_id": trace_id}
             return result
+        if status == "failed" and messages:
+            for _, _, evt in messages:
+                if evt and evt.get("type") == "error":
+                    return {"id": response_id, "status": "failed", "error": evt.get("error")}
         return {"id": response_id, "status": status}
 
     async def _stream_retrieve(
@@ -464,12 +607,14 @@ class LongRunningAgentServer(AgentServer):
         response_id: str,
         starting_after: int,
     ) -> AsyncGenerator[str, None]:
-        poll_interval = float(
-            os.getenv("LONG_RUNNING_POLL_INTERVAL_SECONDS", "1")
-        )
+        poll_interval = settings.poll_interval_seconds
         last_seq = starting_after
 
         while True:
+            logger.debug(
+                "Poll iteration for %s (last_seq=%s)",
+                response_id, last_seq,
+            )
             resp = await get_response(response_id)
             if resp is None:
                 logger.debug(
@@ -488,7 +633,7 @@ class LongRunningAgentServer(AgentServer):
                 )
                 break
 
-            _, status, _ = resp
+            _, status, _, _ = resp
             # When last_seq is 0 (start from beginning), use -1 so we include seq 0 (response.created)
             after_seq = last_seq if last_seq > 0 else -1
             messages = await get_messages(response_id, after_sequence=after_seq)
@@ -517,7 +662,6 @@ class LongRunningAgentServer(AgentServer):
                     "SSE stream ended",
                     extra={"response_id": response_id, "status": "failed"},
                 )
-                yield "data: [DONE]\n\n"
                 break
 
             await asyncio.sleep(poll_interval)

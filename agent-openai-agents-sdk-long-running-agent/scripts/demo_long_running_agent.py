@@ -108,7 +108,7 @@ from tenacity import (
     wait_none,
 )
 
-from openai import OpenAI
+from openai import APIError, OpenAI
 from databricks_openai import DatabricksOpenAI
 from databricks.sdk import WorkspaceClient
 
@@ -117,6 +117,7 @@ DIM = "\033[2m"
 BOLD = "\033[1m"
 CYAN = "\033[36m"
 GREEN = "\033[32m"
+RED = "\033[31m"
 RESET = "\033[0m"
 
 
@@ -161,6 +162,14 @@ def _process_event(evt: object, tool_call_state: dict[str, str] | None = None) -
     # Ignore function call argument events (not user-facing)
     if evt_type in ("response.function_call_arguments.delta", "response.function_call_arguments.done"):
         return None
+
+    if evt_type == "error":
+        error = _get_event_attr(evt, "error")
+        if isinstance(error, dict):
+            msg = error.get("message", "Unknown error")
+            code = error.get("code", "")
+            return f"\n{RED}{BOLD}  ✗  Error{f' ({code})' if code else ''}: {msg}{RESET}\n"
+        return f"\n{RED}{BOLD}  ✗  Error: {error}{RESET}\n"
 
     if evt_type == "response.output_text.delta":
         delta = _get_event_attr(evt, "delta")
@@ -321,6 +330,17 @@ def example_poll(prompt: str, raw_events: bool = False) -> None:
         resp = client.responses.retrieve(response_id, extra_headers=TRACE_HEADERS)
 
     print(f"\nFinal status: {resp.status}")
+
+    if resp.status == "failed":
+        error = getattr(resp, "error", None)
+        if error:
+            msg = error.get("message", str(error)) if isinstance(error, dict) else getattr(error, "message", str(error))
+            code = error.get("code", "") if isinstance(error, dict) else getattr(error, "code", "")
+            print(f"\n{RED}{BOLD}  ✗  Error{f' ({code})' if code else ''}: {msg}{RESET}\n")
+        else:
+            print(f"\n{RED}{BOLD}  ✗  Task failed (no error details){RESET}\n")
+        return
+
     trace_id = None
     if hasattr(resp, "metadata") and resp.metadata:
         meta = resp.metadata

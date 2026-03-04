@@ -3,7 +3,9 @@
 Uses agent_server schema to keep agent tables separate from frontend (ai_chatbot).
 """
 
-from sqlalchemy import ForeignKey, Integer, Text
+import time
+
+from sqlalchemy import Float, ForeignKey, Integer, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 # Dedicated schema for agent tables (responses, messages)
@@ -24,6 +26,7 @@ class Response(Base):
 
     response_id: Mapped[str] = mapped_column(Text, primary_key=True)
     status: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[float] = mapped_column(Float, nullable=False, default=time.time)
     trace_id: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     messages = relationship("Message", back_populates="response", cascade="all, delete-orphan")

@@ -77,11 +77,14 @@ async def get_messages(
         return out
 
 
-async def get_response(response_id: str) -> tuple[str, str, str | None] | None:
-    """Fetch response status and trace_id. Returns (response_id, status, trace_id) or None if not found."""
+async def get_response(response_id: str) -> tuple[str, str, float, str | None] | None:
+    """Fetch response metadata.
+
+    Returns (response_id, status, created_at, trace_id) or None if not found.
+    """
     async with get_async_session() as session:
         result = await session.execute(select(Response).where(Response.response_id == response_id))
         row = result.scalar_one_or_none()
         if row:
-            return (row.response_id, row.status, row.trace_id)
+            return (row.response_id, row.status, row.created_at, row.trace_id)
         return None

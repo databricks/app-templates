@@ -17,6 +17,7 @@ dependencies = [
     "openai-agents>=0.4.1",
     "python-dotenv",
     "sqlalchemy[asyncio]>=2.0",
+    "pydantic-settings>=2.0",
 ]
 
 [build-system]

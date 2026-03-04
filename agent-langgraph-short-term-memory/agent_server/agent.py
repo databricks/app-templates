@@ -44,22 +44,20 @@ sp_workspace_client = WorkspaceClient()
 LLM_ENDPOINT_NAME = "databricks-claude-sonnet-4-5"
 SYSTEM_PROMPT = "You are a helpful assistant. Use the available tools to answer questions."
 LAKEBASE_INSTANCE_NAME = os.getenv("LAKEBASE_INSTANCE_NAME") or None
-# Autoscaling params - priority: endpoint > parent > project/branch
+# Autoscaling params - priority: endpoint > project/branch
 LAKEBASE_AUTOSCALING_ENDPOINT = os.getenv("LAKEBASE_AUTOSCALING_ENDPOINT") or None
-LAKEBASE_AUTOSCALING_PARENT = os.getenv("LAKEBASE_AUTOSCALING_PARENT") or None
 LAKEBASE_AUTOSCALING_PROJECT = os.getenv("LAKEBASE_AUTOSCALING_PROJECT") or None
 LAKEBASE_AUTOSCALING_BRANCH = os.getenv("LAKEBASE_AUTOSCALING_BRANCH") or None
 
-_has_autoscaling = LAKEBASE_AUTOSCALING_ENDPOINT or LAKEBASE_AUTOSCALING_PARENT or (LAKEBASE_AUTOSCALING_PROJECT and LAKEBASE_AUTOSCALING_BRANCH)
+_has_autoscaling = LAKEBASE_AUTOSCALING_ENDPOINT or (LAKEBASE_AUTOSCALING_PROJECT and LAKEBASE_AUTOSCALING_BRANCH)
 if not LAKEBASE_INSTANCE_NAME and not _has_autoscaling:
     raise ValueError(
         "Lakebase configuration is required but not set. "
         "Please set one of the following in your environment:\n"
         "  For provisioned instances:\n"
         "    LAKEBASE_INSTANCE_NAME=<your-lakebase-instance-name>\n"
-        "  For autoscaling instances (in priority order):\n"
+        "  For autoscaling instances:\n"
         "    LAKEBASE_AUTOSCALING_ENDPOINT=<your-endpoint>\n"
-        "    LAKEBASE_AUTOSCALING_PARENT=<your-parent>\n"
         "    LAKEBASE_AUTOSCALING_PROJECT=<your-project-name> and LAKEBASE_AUTOSCALING_BRANCH=<your-branch-name>\n"
     )
 
@@ -152,7 +150,6 @@ async def streaming(
         async with AsyncCheckpointSaver(
             instance_name=LAKEBASE_INSTANCE_NAME,
             endpoint=LAKEBASE_AUTOSCALING_ENDPOINT,
-            parent=LAKEBASE_AUTOSCALING_PARENT,
             project=LAKEBASE_AUTOSCALING_PROJECT,
             branch=LAKEBASE_AUTOSCALING_BRANCH,
         ) as checkpointer:
@@ -186,8 +183,6 @@ def _get_lakebase_access_error_message() -> str:
         lakebase_desc = f"Lakebase instance '{LAKEBASE_INSTANCE_NAME}'"
     elif LAKEBASE_AUTOSCALING_ENDPOINT:
         lakebase_desc = f"Lakebase endpoint '{LAKEBASE_AUTOSCALING_ENDPOINT}'"
-    elif LAKEBASE_AUTOSCALING_PARENT:
-        lakebase_desc = f"Lakebase parent '{LAKEBASE_AUTOSCALING_PARENT}'"
     else:
         lakebase_desc = f"Lakebase project '{LAKEBASE_AUTOSCALING_PROJECT}' (branch: '{LAKEBASE_AUTOSCALING_BRANCH}')"
 

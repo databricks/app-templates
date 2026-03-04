@@ -30,22 +30,20 @@ from agent_server.utils import (
 # Lakebase Configuration
 ############################################
 LAKEBASE_INSTANCE_NAME = os.getenv("LAKEBASE_INSTANCE_NAME") or None
-# Autoscaling params - priority: endpoint > parent > project/branch
+# Autoscaling params - priority: endpoint > project/branch
 LAKEBASE_AUTOSCALING_ENDPOINT = os.getenv("LAKEBASE_AUTOSCALING_ENDPOINT") or None
-LAKEBASE_AUTOSCALING_PARENT = os.getenv("LAKEBASE_AUTOSCALING_PARENT") or None
 LAKEBASE_AUTOSCALING_PROJECT = os.getenv("LAKEBASE_AUTOSCALING_PROJECT") or None
 LAKEBASE_AUTOSCALING_BRANCH = os.getenv("LAKEBASE_AUTOSCALING_BRANCH") or None
 
-_has_autoscaling = LAKEBASE_AUTOSCALING_ENDPOINT or LAKEBASE_AUTOSCALING_PARENT or (LAKEBASE_AUTOSCALING_PROJECT and LAKEBASE_AUTOSCALING_BRANCH)
+_has_autoscaling = LAKEBASE_AUTOSCALING_ENDPOINT or (LAKEBASE_AUTOSCALING_PROJECT and LAKEBASE_AUTOSCALING_BRANCH)
 if not LAKEBASE_INSTANCE_NAME and not _has_autoscaling:
     raise ValueError(
         "Lakebase configuration is required but not set. "
         "Please set one of the following in your environment:\n"
         "  For provisioned instances:\n"
         "    LAKEBASE_INSTANCE_NAME=<your-lakebase-instance-name>\n"
-        "  For autoscaling instances (in priority order):\n"
+        "  For autoscaling instances:\n"
         "    LAKEBASE_AUTOSCALING_ENDPOINT=<your-endpoint>\n"
-        "    LAKEBASE_AUTOSCALING_PARENT=<your-parent>\n"
         "    LAKEBASE_AUTOSCALING_PROJECT=<your-project-name> and LAKEBASE_AUTOSCALING_BRANCH=<your-branch-name>\n"
     )
 
@@ -106,7 +104,6 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
         session_id=get_session_id(request),
         instance_name=LAKEBASE_INSTANCE_NAME,
         endpoint=LAKEBASE_AUTOSCALING_ENDPOINT,
-        parent=LAKEBASE_AUTOSCALING_PARENT,
         project=LAKEBASE_AUTOSCALING_PROJECT,
         branch=LAKEBASE_AUTOSCALING_BRANCH,
     )

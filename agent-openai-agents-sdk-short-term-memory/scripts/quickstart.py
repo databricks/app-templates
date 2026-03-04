@@ -507,7 +507,7 @@ def check_lakebase_required() -> bool:
         return False
 
     content = app_yaml.read_text()
-    return "LAKEBASE_INSTANCE_NAME" in content or "LAKEBASE_AUTOSCALING_ENDPOINT" in content or "LAKEBASE_AUTOSCALING_PARENT" in content or "LAKEBASE_AUTOSCALING_PROJECT" in content or "LAKEBASE_AUTOSCALING_BRANCH" in content
+    return "LAKEBASE_INSTANCE_NAME" in content or "LAKEBASE_AUTOSCALING_ENDPOINT" in content or "LAKEBASE_AUTOSCALING_PROJECT" in content or "LAKEBASE_AUTOSCALING_BRANCH" in content
 
 
 def get_env_value(key: str) -> str:

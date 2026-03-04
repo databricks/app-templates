@@ -851,7 +851,9 @@ echo "✓ Dependencies installed"
 # ===================================================================
 echo
 if [ "$USE_DATABASE" = true ]; then
-    echo "💡 Recommended: deploy to Databricks first to ensure correct database permissions."
+    echo "💡 Recommended: deploy to Databricks now to ensure the app service principal has"
+    echo "   the correct database permissions. If you skip this step and deploy later, you"
+    echo "   may need to manually grant the service principal permissions on your database instance."
     echo
 fi
 if prompt_yes_no "Do you want to deploy the app to Databricks now?" "Y"; then
@@ -871,10 +873,6 @@ if prompt_yes_no "Do you want to deploy the app to Databricks now?" "Y"; then
     DID_DEPLOY=true
 else
     echo "Skipping deployment."
-    if [ "$USE_DATABASE" = true ]; then
-        echo "⚠️  Note: when you deploy later, you may need to manually grant the app service"
-        echo "   principal the necessary permissions on your database instance."
-    fi
     DID_DEPLOY=false
 fi
 

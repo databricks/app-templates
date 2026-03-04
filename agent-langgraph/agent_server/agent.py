@@ -1,11 +1,13 @@
-import litellm
 import logging
+from datetime import datetime
 from typing import AsyncGenerator, Optional
 
+import litellm
 import mlflow
 from databricks.sdk import WorkspaceClient
 from databricks_langchain import ChatDatabricks, DatabricksMCPServer, DatabricksMultiServerMCPClient
 from langchain.agents import create_agent
+from langchain_core.tools import tool
 from mlflow.genai.agent_server import invoke, stream
 from mlflow.types.responses import (
     ResponsesAgentRequest,
@@ -27,6 +29,12 @@ litellm.suppress_debug_info = True
 sp_workspace_client = WorkspaceClient()
 
 
+@tool
+def get_current_time() -> str:
+    """Get the current date and time."""
+    return datetime.now().isoformat()
+
+
 def init_mcp_client(workspace_client: WorkspaceClient) -> DatabricksMultiServerMCPClient:
     host_name = get_databricks_host_from_env()
     return DatabricksMultiServerMCPClient(
@@ -41,8 +49,10 @@ def init_mcp_client(workspace_client: WorkspaceClient) -> DatabricksMultiServerM
 
 
 async def init_agent(workspace_client: Optional[WorkspaceClient] = None):
-    mcp_client = init_mcp_client(workspace_client or sp_workspace_client)
-    tools = await mcp_client.get_tools()
+    tools = [get_current_time]
+    # To use MCP server tools instead, replace the line above with:
+    #   mcp_client = init_mcp_client(workspace_client or sp_workspace_client)
+    #   tools.extend(await mcp_client.get_tools())
     return create_agent(tools=tools, model=ChatDatabricks(endpoint="databricks-gpt-5-2"))
 
 
@@ -62,6 +72,7 @@ async def stream_handler(
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
     if session_id := get_session_id(request):
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
+
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
     agent = await init_agent()

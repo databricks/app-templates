@@ -1,10 +1,11 @@
-import litellm
 import logging
 import os
+from datetime import datetime
 from typing import AsyncGenerator
 
+import litellm
 import mlflow
-from agents import Agent, Runner, set_default_openai_api, set_default_openai_client
+from agents import Agent, Runner, function_tool, set_default_openai_api, set_default_openai_client
 from agents.tracing import set_trace_processors
 from databricks_openai import AsyncDatabricksOpenAI
 from databricks_openai.agents import AsyncDatabricksSession, McpServer
@@ -14,6 +15,7 @@ from mlflow.types.responses import (
     ResponsesAgentResponse,
     ResponsesAgentStreamEvent,
 )
+from uuid_utils import uuid7
 
 from agent_server.utils import (
     deduplicate_input,
@@ -36,6 +38,7 @@ if not _LAKEBASE_INSTANCE_NAME_RAW:
 LAKEBASE_INSTANCE_NAME = resolve_lakebase_instance_name(_LAKEBASE_INSTANCE_NAME_RAW)
 
 
+
 # NOTE: this will work for all databricks models OTHER than GPT-OSS, which uses a slightly different API
 set_default_openai_client(AsyncDatabricksOpenAI())
 set_default_openai_api("chat_completions")
@@ -45,6 +48,12 @@ logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
 litellm.suppress_debug_info = True
 
 
+@function_tool
+def get_current_time() -> str:
+    """Get the current date and time."""
+    return datetime.now().isoformat()
+
+
 async def init_mcp_server():
     return McpServer(
         url=f"{get_databricks_host_from_env()}/api/2.0/mcp/functions/system/ai",
@@ -52,12 +61,13 @@ async def init_mcp_server():
     )
 
 
-def create_coding_agent(mcp_server: McpServer) -> Agent:
+def create_agent(mcp_servers: list[McpServer] | None = None) -> Agent:
     return Agent(
-        name="code execution agent",
-        instructions="You are a code execution agent. You can execute code and return the results.",
+        name="Agent",
+        instructions="You are a helpful assistant.",
         model="databricks-gpt-5-2",
-        mcp_servers=[mcp_server],
+        tools=[get_current_time],
+        mcp_servers=mcp_servers or [],
     )
 
 
@@ -75,18 +85,22 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
         instance_name=LAKEBASE_INSTANCE_NAME,
     )
 
-    async with await init_mcp_server() as mcp_server:
-        agent = create_coding_agent(mcp_server)
-        messages = await deduplicate_input(request, session)
-        result = await Runner.run(agent, messages, session=session)
-        return ResponsesAgentResponse(
-            output=[item.to_input_item() for item in result.new_items],
-            custom_outputs={"session_id": session.session_id},
-        )
+    # To use MCP server tools, wrap the code below with this async context manager:
+    # async with await init_mcp_server(WorkspaceClient()) as mcp_server:
+    #     agent = create_agent(mcp_servers=[mcp_server])
+    agent = create_agent()
+    messages = await deduplicate_input(request, session)
+    result = await Runner.run(agent, messages, session=session)
+    return ResponsesAgentResponse(
+        output=[item.to_input_item() for item in result.new_items],
+        custom_outputs={"session_id": session.session_id},
+    )
 
 
 @stream()
-async def stream_handler(request: ResponsesAgentRequest) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
+async def stream_handler(
+    request: ResponsesAgentRequest,
+) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
 
@@ -99,10 +113,12 @@ async def stream_handler(request: ResponsesAgentRequest) -> AsyncGenerator[Respo
         instance_name=LAKEBASE_INSTANCE_NAME,
     )
 
-    async with await init_mcp_server() as mcp_server:
-        agent = create_coding_agent(mcp_server)
-        messages = await deduplicate_input(request, session)
-        result = Runner.run_streamed(agent, input=messages, session=session)
+    # To use MCP server tools, wrap the code below with this async context manager:
+    # async with await init_mcp_server(WorkspaceClient()) as mcp_server:
+    #     agent = create_agent(mcp_servers=[mcp_server])
+    agent = create_agent()
+    messages = await deduplicate_input(request, session)
+    result = Runner.run_streamed(agent, input=messages, session=session)
 
-        async for event in process_agent_stream_events(result.stream_events()):
-            yield event
+    async for event in process_agent_stream_events(result.stream_events()):
+        yield event

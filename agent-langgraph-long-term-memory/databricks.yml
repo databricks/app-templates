@@ -4,8 +4,8 @@ bundle:
 resources:
   apps:
     agent_langgraph_long_term_memory:
-      name: "agent-j-auto-ll"
-      description: "LangGraph agent with long-term memory"
+      name: "agent-langgraph-ltm"
+      description: "LangGraph agent application with long-term memory"
       source_code_path: ./
       config:
         command: ["uv", "run", "start-app"]
@@ -22,10 +22,6 @@ resources:
             value: "300"
           - name: MLFLOW_EXPERIMENT_ID
             value_from: "experiment"
-          - name: LAKEBASE_AUTOSCALING_PROJECT
-            value: "j-autoscaling6"
-          - name: LAKEBASE_AUTOSCALING_BRANCH
-            value: "j-ll2-3"
           - name: PGENDPOINT
             value_from: postgres
           # Use for provisioned lakebase resource
@@ -36,7 +32,7 @@ resources:
       resources:
         - name: "experiment"
           experiment:
-            experiment_id: "1833083097272006"
+            experiment_id: ""
             permission: "CAN_MANAGE"
         - name: "postgres"
           postgres:
@@ -54,19 +50,14 @@ targets:
   dev:
     mode: development
     default: true
-    workspace:
-      host: https://dbc-fb904e0e-bca7.staging.cloud.databricks.com/
-      profile: dbc-fb904e0e-bca7
+    # workspace:
+    #   host: https://...
 
   prod:
     mode: production
-    workspace:
-      host: https://dbc-fb904e0e-bca7.staging.cloud.databricks.com/
-      profile: dbc-fb904e0e-bca7
-      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    # workspace:
+    #   host: https://...
     resources:
       apps:
         agent_langgraph_long_term_memory:
-          name: agent-langgraph-ll2-j
-          description: "A conversational agent backend and UI using LangGraph and MLflow AgentServer"
-          budget_policy_id: "b17225b0-53fa-41f1-a46d-399193b72217"
+          name: agent-langgraph-ltm

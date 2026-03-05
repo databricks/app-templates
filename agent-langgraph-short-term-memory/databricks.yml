@@ -4,7 +4,7 @@ bundle:
 resources:
   apps:
     agent_langgraph_short_term_memory:
-      name: "agent-j-auto-ls"
+      name: "agent-langgraph-stm"
       description: "LangGraph agent application with short-term memory"
       source_code_path: ./
       config:
@@ -20,33 +20,44 @@ resources:
             value: "3000"
           - name: CHAT_PROXY_TIMEOUT_SECONDS
             value: "300"
-          - name: LAKEBASE_AUTOSCALING_PROJECT
-            value: "j-autoscaling6"
-          - name: LAKEBASE_AUTOSCALING_BRANCH
-            value: "j-autoscaling6-branch"
+          - name: MLFLOW_EXPERIMENT_ID
+            value_from: "experiment"
           - name: PGENDPOINT
             value_from: postgres
+          # Use for provisioned lakebase resource
+          # - name: LAKEBASE_INSTANCE_NAME
+          #   value: "<your-lakebase-instance-name>"
 
       # Resources which this app has access to
       resources:
         - name: 'experiment'
           experiment:
-            experiment_id: "3164172780813008"
+            experiment_id: ""
             permission: 'CAN_MANAGE'
         - name: 'postgres'
           postgres:
             branch: '<your-branch-resource-path>'
             database: '<your-branch-resource-path>/databases/<your-database-instance>'
             permission: 'CAN_CONNECT_AND_CREATE'
+        # Use for provisioned lakebase resource
+        # - name: 'database'
+        #   database:
+        #     instance_name: '<your-lakebase-instance-name>'
+        #     database_name: 'databricks_postgres'
+        #     permission: 'CAN_CONNECT_AND_CREATE'
 
 targets:
   dev:
     mode: development
     default: true
+    # workspace:
+    #   host: https://...
 
   prod:
     mode: production
+    # workspace:
+    #   host: https://...
     resources:
       apps:
         agent_langgraph_short_term_memory:
-          name: agent-j-auto-ls
+          name: agent-langgraph-stm

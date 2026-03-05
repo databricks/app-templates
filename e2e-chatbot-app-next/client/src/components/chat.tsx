@@ -260,10 +260,20 @@ export function Chat({
           resumeAttemptCountRef.current + 1,
         );
         resumeAttemptCountRef.current++;
+        // Clear the last assistant message's parts before resuming to prevent
+        // duplicates. The server replays cached chunks from index 0, and the
+        // AI SDK doesn't deduplicate within a message's parts array.
+        setMessages((prev) => {
+          const lastMsg = prev.at(-1);
+          if (lastMsg?.role === 'assistant') {
+            return [...prev.slice(0, -1), { ...lastMsg, parts: [] }];
+          }
+          return prev;
+        });
         // Ref: https://github.com/vercel/ai/issues/8477#issuecomment-3603209884
         queueMicrotask(() => {
           resumeStream();
-        })
+        });
       } else {
         // Stream completed normally or we've exhausted resume attempts
         if (resumeAttemptCountRef.current >= maxResumeAttempts) {

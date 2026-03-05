@@ -255,6 +255,10 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       headers: {
         [CONTEXT_HEADER_CONVERSATION_ID]: id,
         [CONTEXT_HEADER_USER_ID]: session.user.email ?? session.user.id,
+        // Forward OBO user token to the backend/serving endpoint
+        ...(req.headers['x-forwarded-access-token']
+          ? { 'x-forwarded-access-token': req.headers['x-forwarded-access-token'] as string }
+          : {}),
       },
       onChunk: ({ chunk }) => {
         if (chunk.type === 'raw') {

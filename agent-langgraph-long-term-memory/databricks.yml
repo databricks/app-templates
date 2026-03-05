@@ -2,10 +2,34 @@ bundle:
   name: agent_langgraph_long_term_memory
 
 resources:
+  # Lakebase autoscaling resources for long-term memory
+  # These resources already exist in the workspace, so they are commented out
+  # to avoid conflicts during deployment.
+  # postgres_projects:
+  #   lakebase_project:
+  #     project_id: 'j-autoscaling6'
+  #     display_name: 'Long-Term Memory Database'
+  #     pg_version: 17
+  #
+  # postgres_branches:
+  #   lakebase_branch:
+  #     parent: ${resources.postgres_projects.lakebase_project.id}
+  #     branch_id: 'j-langgraphlongterm'
+  #     is_protected: false
+  #     no_expiry: true
+  #
+  # postgres_endpoints:
+  #   lakebase_endpoint:
+  #     parent: ${resources.postgres_branches.lakebase_branch.id}
+  #     endpoint_id: primary
+  #     endpoint_type: ENDPOINT_TYPE_READ_WRITE
+  #     autoscaling_limit_min_cu: 0.5
+  #     autoscaling_limit_max_cu: 4
+
   apps:
     agent_langgraph_long_term_memory:
-      name: "agent-langgraph-ltm"
-      description: "LangGraph agent application with long-term memory"
+      name: "agent-j-auto-ll"
+      description: "LangGraph agent with long-term memory"
       source_code_path: ./
       config:
         command: ["uv", "run", "start-app"]
@@ -22,33 +46,53 @@ resources:
             value: "300"
           - name: MLFLOW_EXPERIMENT_ID
             value_from: "experiment"
-          - name: LAKEBASE_INSTANCE_NAME
-            value: "<your-lakebase-instance-name>"
+          - name: LAKEBASE_AUTOSCALING_PROJECT
+            value: "j-autoscaling6"
+          - name: LAKEBASE_AUTOSCALING_BRANCH
+            value: "j-ll2-3"
+          - name: PGENDPOINT
+            value_from: postgres
+          # Use for provisioned lakebase resource
+          # - name: LAKEBASE_INSTANCE_NAME
+          #   value: "<your-lakebase-instance-name>"
 
       # Resources which this app has access to
       resources:
         - name: "experiment"
           experiment:
-            experiment_id: ""
+            experiment_id: "1833083097272006"
             permission: "CAN_MANAGE"
-        - name: "database"
-          database:
-            instance_name: "<your-lakebase-instance-name>"
-            database_name: "databricks_postgres"
-            permission: "CAN_CONNECT_AND_CREATE"
+        # Use for autoscaling lakebase resource (recommended)
+        # TODO: uncomment once the Terraform provider supports postgres app resources
+        # - name: "postgres"
+        #   postgres:
+        #     branch: ${resources.postgres_branches.lakebase_branch.id}
+        #     database: ${resources.postgres_branches.lakebase_branch.id}/databases/postgres
+        #     permission: "CAN_CONNECT_AND_CREATE"
+        # Use for provisioned lakebase resource
+        # - name: "database"
+        #   database:
+        #     instance_name: "<your-lakebase-instance-name>"
+        #     database_name: "databricks_postgres"
+        #     permission: "CAN_CONNECT_AND_CREATE"
 
 targets:
   dev:
     mode: development
     default: true
-    # workspace:
-    #   host: https://...
+    workspace:
+      host: https://dbc-fb904e0e-bca7.staging.cloud.databricks.com/
+      profile: dbc-fb904e0e-bca7
 
   prod:
     mode: production
-    # workspace:
-    #   host: https://...
+    workspace:
+      host: https://dbc-fb904e0e-bca7.staging.cloud.databricks.com/
+      profile: dbc-fb904e0e-bca7
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
     resources:
       apps:
         agent_langgraph_long_term_memory:
-          name: agent-langgraph-ltm
+          name: agent-langgraph-ll2-j
+          description: "A conversational agent backend and UI using LangGraph and MLflow AgentServer"
+          budget_policy_id: "b17225b0-53fa-41f1-a46d-399193b72217"

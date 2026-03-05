@@ -11,7 +11,10 @@ agent_server = AgentServer("ResponsesAgent", enable_chat_proxy=True)
 
 # Define the app as a module level variable to enable multiple workers
 app = agent_server.app  # noqa: F841
-setup_mlflow_git_based_version_tracking()
+try:
+    setup_mlflow_git_based_version_tracking()
+except Exception:
+    pass  # Not critical - may fail in deployed environments without git
 
 
 def main():

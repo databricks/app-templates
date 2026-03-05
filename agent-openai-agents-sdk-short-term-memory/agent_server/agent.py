@@ -25,16 +25,25 @@ from agent_server.utils import (
     resolve_lakebase_instance_name,
 )
 
-# Lakebase instance name for persistent session storage
-_LAKEBASE_INSTANCE_NAME_RAW = os.environ.get("LAKEBASE_INSTANCE_NAME")
-if not _LAKEBASE_INSTANCE_NAME_RAW:
+# Lakebase configuration for persistent session storage
+_LAKEBASE_INSTANCE_NAME_RAW = os.environ.get("LAKEBASE_INSTANCE_NAME") or None
+# Autoscaling params: in the app environment, PGENDPOINT is provided automatically;
+# for local dev, use project/branch names directly.
+_is_app_env = bool(os.getenv("DATABRICKS_APP_NAME"))
+LAKEBASE_AUTOSCALING_ENDPOINT = os.getenv("PGENDPOINT") if _is_app_env else None
+LAKEBASE_AUTOSCALING_PROJECT = os.getenv("LAKEBASE_AUTOSCALING_PROJECT") or None
+LAKEBASE_AUTOSCALING_BRANCH = os.getenv("LAKEBASE_AUTOSCALING_BRANCH") or None
+
+_has_autoscaling = LAKEBASE_AUTOSCALING_ENDPOINT or (LAKEBASE_AUTOSCALING_PROJECT and LAKEBASE_AUTOSCALING_BRANCH)
+if not _LAKEBASE_INSTANCE_NAME_RAW and not _has_autoscaling:
     raise ValueError(
-        "LAKEBASE_INSTANCE_NAME environment variable is required but not set. "
-        "Please set it in your environment:\n"
-        "  LAKEBASE_INSTANCE_NAME=<your-lakebase-instance-name>\n"
+        "Lakebase configuration is required but not set. "
+        "Please set one of the following in your environment:\n"
+        "  Option 1 (provisioned): LAKEBASE_INSTANCE_NAME=<your-instance-name>\n"
+        "  Option 2 (autoscaling): LAKEBASE_AUTOSCALING_PROJECT=<project> and LAKEBASE_AUTOSCALING_BRANCH=<branch>\n"
     )
 # Resolve hostname to instance name if needed (if given hostname of lakebase instead of name)
-LAKEBASE_INSTANCE_NAME = resolve_lakebase_instance_name(_LAKEBASE_INSTANCE_NAME_RAW)
+LAKEBASE_INSTANCE_NAME = resolve_lakebase_instance_name(_LAKEBASE_INSTANCE_NAME_RAW) if _LAKEBASE_INSTANCE_NAME_RAW else None
 
 
 # NOTE: this will work for all databricks models OTHER than GPT-OSS, which uses a slightly different API
@@ -79,6 +88,9 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
     session = AsyncDatabricksSession(
         session_id=session_id,
         instance_name=LAKEBASE_INSTANCE_NAME,
+        autoscaling_endpoint=LAKEBASE_AUTOSCALING_ENDPOINT,
+        project=LAKEBASE_AUTOSCALING_PROJECT,
+        branch=LAKEBASE_AUTOSCALING_BRANCH,
     )
 
     # To use MCP server tools, wrap the code below with this async context manager.
@@ -106,6 +118,9 @@ async def stream_handler(
     session = AsyncDatabricksSession(
         session_id=session_id,
         instance_name=LAKEBASE_INSTANCE_NAME,
+        autoscaling_endpoint=LAKEBASE_AUTOSCALING_ENDPOINT,
+        project=LAKEBASE_AUTOSCALING_PROJECT,
+        branch=LAKEBASE_AUTOSCALING_BRANCH,
     )
 
     # To use MCP server tools, wrap the code below with this async context manager.

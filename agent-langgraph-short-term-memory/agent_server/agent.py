@@ -51,13 +51,21 @@ def get_current_time() -> str:
 ############################################
 LLM_ENDPOINT_NAME = "databricks-claude-sonnet-4-5"
 SYSTEM_PROMPT = "You are a helpful assistant. Use the available tools to answer questions."
-LAKEBASE_INSTANCE_NAME = os.getenv("LAKEBASE_INSTANCE_NAME", "")
+LAKEBASE_INSTANCE_NAME = os.getenv("LAKEBASE_INSTANCE_NAME") or None
+# Autoscaling params: in the app environment, PGENDPOINT is provided automatically;
+# for local dev, use project/branch names directly.
+_is_app_env = bool(os.getenv("DATABRICKS_APP_NAME"))
+LAKEBASE_AUTOSCALING_ENDPOINT = os.getenv("PGENDPOINT") if _is_app_env else None
+LAKEBASE_AUTOSCALING_PROJECT = os.getenv("LAKEBASE_AUTOSCALING_PROJECT") or None
+LAKEBASE_AUTOSCALING_BRANCH = os.getenv("LAKEBASE_AUTOSCALING_BRANCH") or None
 
-if not LAKEBASE_INSTANCE_NAME:
+_has_autoscaling = LAKEBASE_AUTOSCALING_ENDPOINT or (LAKEBASE_AUTOSCALING_PROJECT and LAKEBASE_AUTOSCALING_BRANCH)
+if not LAKEBASE_INSTANCE_NAME and not _has_autoscaling:
     raise ValueError(
-        "LAKEBASE_INSTANCE_NAME environment variable is required but not set. "
-        "Please set it in your environment:\n"
-        "  LAKEBASE_INSTANCE_NAME=<your-lakebase-instance-name>\n"
+        "Lakebase configuration is required but not set. "
+        "Please set one of the following in your environment:\n"
+        "  Option 1 (provisioned): LAKEBASE_INSTANCE_NAME=<your-instance-name>\n"
+        "  Option 2 (autoscaling): LAKEBASE_AUTOSCALING_PROJECT=<project> and LAKEBASE_AUTOSCALING_BRANCH=<branch>\n"
     )
 
 
@@ -129,7 +137,12 @@ async def stream_handler(
     }
 
     try:
-        async with AsyncCheckpointSaver(instance_name=LAKEBASE_INSTANCE_NAME) as checkpointer:
+        async with AsyncCheckpointSaver(
+            instance_name=LAKEBASE_INSTANCE_NAME,
+            autoscaling_endpoint=LAKEBASE_AUTOSCALING_ENDPOINT,
+            project=LAKEBASE_AUTOSCALING_PROJECT,
+            branch=LAKEBASE_AUTOSCALING_BRANCH,
+        ) as checkpointer:
             await checkpointer.setup()
             # By default, uses service principal credentials.
             # For on-behalf-of user authentication, pass get_user_workspace_client() to init_agent.
@@ -148,7 +161,8 @@ async def stream_handler(
         # Check for Lakebase access/connection errors
         if any(keyword in error_msg for keyword in ["permission"]):
             logger.error(f"Lakebase access error: {e}")
+            lakebase_desc = LAKEBASE_INSTANCE_NAME or LAKEBASE_AUTOSCALING_ENDPOINT or f"{LAKEBASE_AUTOSCALING_PROJECT}/{LAKEBASE_AUTOSCALING_BRANCH}"
             raise HTTPException(
-                status_code=503, detail=_get_lakebase_access_error_message(LAKEBASE_INSTANCE_NAME)
+                status_code=503, detail=_get_lakebase_access_error_message(lakebase_desc)
             ) from e
         raise

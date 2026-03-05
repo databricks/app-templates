@@ -50,27 +50,6 @@ bundle:
   name: agent_langgraph_short_term_memory
 
 resources:
-  postgres_projects:
-    lakebase_project:
-      project_id: '<your-project-id>'
-      display_name: 'Short-Term Memory Database'
-      pg_version: 17
-
-  postgres_branches:
-    lakebase_branch:
-      parent: ${resources.postgres_projects.lakebase_project.id}
-      branch_id: '<your-branch-id>'
-      is_protected: false
-      no_expiry: true
-
-  postgres_endpoints:
-    lakebase_endpoint:
-      parent: ${resources.postgres_branches.lakebase_branch.id}
-      endpoint_id: primary
-      endpoint_type: ENDPOINT_TYPE_READ_WRITE
-      autoscaling_limit_min_cu: 0.5
-      autoscaling_limit_max_cu: 4
-
   apps:
     agent_langgraph_short_term_memory:
       name: "agent-langgraph-stm"
@@ -91,11 +70,10 @@ resources:
           experiment:
             experiment_id: ""
             permission: 'CAN_MANAGE'
-        # Use for autoscaling lakebase resource (recommended)
         - name: 'postgres'
           postgres:
-            branch: ${resources.postgres_branches.lakebase_branch.id}
-            database: ${resources.postgres_branches.lakebase_branch.id}/databases/postgres
+            branch: '<your-branch-resource-path>'
+            database: '<your-branch-resource-path>/databases/<your-database-instance>'
             permission: 'CAN_CONNECT_AND_CREATE'
         # Use for provisioned lakebase resource
         # - name: 'database'
@@ -115,27 +93,6 @@ bundle:
   name: agent_langgraph_long_term_memory
 
 resources:
-  postgres_projects:
-    lakebase_project:
-      project_id: '<your-project-id>'
-      display_name: 'Long-Term Memory Database'
-      pg_version: 17
-
-  postgres_branches:
-    lakebase_branch:
-      parent: ${resources.postgres_projects.lakebase_project.id}
-      branch_id: '<your-branch-id>'
-      is_protected: false
-      no_expiry: true
-
-  postgres_endpoints:
-    lakebase_endpoint:
-      parent: ${resources.postgres_branches.lakebase_branch.id}
-      endpoint_id: primary
-      endpoint_type: ENDPOINT_TYPE_READ_WRITE
-      autoscaling_limit_min_cu: 0.5
-      autoscaling_limit_max_cu: 4
-
   apps:
     agent_langgraph_long_term_memory:
       name: "agent-langgraph-ltm"
@@ -153,11 +110,10 @@ resources:
           experiment:
             experiment_id: ""
             permission: "CAN_MANAGE"
-        # Use for autoscaling lakebase resource (recommended)
         - name: "postgres"
           postgres:
-            branch: ${resources.postgres_branches.lakebase_branch.id}
-            database: ${resources.postgres_branches.lakebase_branch.id}/databases/postgres
+            branch: '<your-branch-resource-path>'
+            database: '<your-branch-resource-path>/databases/<your-database-instance>'
             permission: "CAN_CONNECT_AND_CREATE"
         # Use for provisioned lakebase resource
         # - name: "database"

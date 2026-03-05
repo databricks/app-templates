@@ -24,6 +24,8 @@ resources:
             value: "j-autoscaling6"
           - name: LAKEBASE_AUTOSCALING_BRANCH
             value: "j-autoscaling6-branch"
+          - name: PGENDPOINT
+            value_from: postgres
 
       # Resources which this app has access to
       resources:
@@ -31,6 +33,11 @@ resources:
           experiment:
             experiment_id: "3164172780813008"
             permission: 'CAN_MANAGE'
+        - name: 'postgres'
+          postgres:
+            branch: '<your-branch-resource-path>'
+            database: '<your-branch-resource-path>/databases/<your-database-instance>'
+            permission: 'CAN_CONNECT_AND_CREATE'
 
 targets:
   dev:

@@ -2,30 +2,6 @@ bundle:
   name: agent_langgraph_long_term_memory
 
 resources:
-  # Lakebase autoscaling resources for long-term memory
-  # These resources already exist in the workspace, so they are commented out
-  # to avoid conflicts during deployment.
-  # postgres_projects:
-  #   lakebase_project:
-  #     project_id: 'j-autoscaling6'
-  #     display_name: 'Long-Term Memory Database'
-  #     pg_version: 17
-  #
-  # postgres_branches:
-  #   lakebase_branch:
-  #     parent: ${resources.postgres_projects.lakebase_project.id}
-  #     branch_id: 'j-langgraphlongterm'
-  #     is_protected: false
-  #     no_expiry: true
-  #
-  # postgres_endpoints:
-  #   lakebase_endpoint:
-  #     parent: ${resources.postgres_branches.lakebase_branch.id}
-  #     endpoint_id: primary
-  #     endpoint_type: ENDPOINT_TYPE_READ_WRITE
-  #     autoscaling_limit_min_cu: 0.5
-  #     autoscaling_limit_max_cu: 4
-
   apps:
     agent_langgraph_long_term_memory:
       name: "agent-j-auto-ll"
@@ -62,13 +38,11 @@ resources:
           experiment:
             experiment_id: "1833083097272006"
             permission: "CAN_MANAGE"
-        # Use for autoscaling lakebase resource (recommended)
-        # TODO: uncomment once the Terraform provider supports postgres app resources
-        # - name: "postgres"
-        #   postgres:
-        #     branch: ${resources.postgres_branches.lakebase_branch.id}
-        #     database: ${resources.postgres_branches.lakebase_branch.id}/databases/postgres
-        #     permission: "CAN_CONNECT_AND_CREATE"
+        - name: "postgres"
+          postgres:
+            branch: '<your-branch-resource-path>'
+            database: '<your-branch-resource-path>/databases/<your-database-instance>'
+            permission: "CAN_CONNECT_AND_CREATE"
         # Use for provisioned lakebase resource
         # - name: "database"
         #   database:

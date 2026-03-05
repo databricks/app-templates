@@ -1,5 +1,5 @@
 {
-  "name": "appkit-lakebase",
+  "name": "appkit-genie",
   "version": "1.0.0",
   "main": "dist/server.js",
   "type": "module",
@@ -30,7 +30,7 @@
   "keywords": [],
   "author": "",
   "license": "Unlicensed",
-  "description": "Node.js app with Lakebase Autoscaling (Postgres) CRUD operations",
+  "description": "Node.js app with AI/BI Genie for natural language data queries",
   "dependencies": {
     "@databricks/appkit": "0.15.0",
     "@databricks/appkit-ui": "0.15.0",

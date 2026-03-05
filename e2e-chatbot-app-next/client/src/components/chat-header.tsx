@@ -4,7 +4,7 @@ import { useWindowSize } from 'usehooks-ts';
 import { SidebarToggle } from '@/components/sidebar-toggle';
 import { Button } from '@/components/ui/button';
 import { useSidebar } from './ui/sidebar';
-import { PlusIcon, CloudOffIcon, MessageSquareOff } from 'lucide-react';
+import { PlusIcon, CloudOffIcon, MessageSquareOff, ShieldAlert } from 'lucide-react';
 import { useConfig } from '@/hooks/use-config';
 import {
   Tooltip,
@@ -19,7 +19,7 @@ const DOCS_URL =
 export function ChatHeader() {
   const navigate = useNavigate();
   const { open } = useSidebar();
-  const { chatHistoryEnabled, feedbackEnabled } = useConfig();
+  const { chatHistoryEnabled, feedbackEnabled, oboEnabled, oboRequiredScopes } = useConfig();
 
   const { width: windowWidth } = useWindowSize();
 
@@ -77,6 +77,32 @@ export function ChatHeader() {
               </TooltipTrigger>
               <TooltipContent>
                 <p>Feedback submission disabled. Click to learn more.</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
+        {oboEnabled && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <a
+                  href="https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2 py-1 text-amber-700 dark:text-amber-400 text-xs hover:text-amber-900 dark:hover:text-amber-300"
+                >
+                  <ShieldAlert className="h-3 w-3" />
+                  <span className="hidden sm:inline">OBO scopes required</span>
+                </a>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">
+                <p>
+                  This endpoint uses on-behalf-of user authorization. Add these scopes to your
+                  app via the Databricks UI or databricks.yml:{' '}
+                  <strong>{oboRequiredScopes.join(', ')}</strong>.
+                  Note: UC function scopes are not yet supported.
+                  Click to learn more.
+                </p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>

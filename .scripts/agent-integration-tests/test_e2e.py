@@ -17,7 +17,6 @@ from helpers import (
     get_oauth_token,
     grant_lakebase_access,
     query_endpoint,
-    query_endpoint_stream,
     query_with_openai_sdk,
     revert_edits,
     run_evaluate,
@@ -91,8 +90,8 @@ def _query_endpoints(
         assert "output" in result, f"/invocations missing 'output': {result}"
 
         # curl: streaming /responses and /invocations
-        query_endpoint_stream(base_url, CONVERSATIONAL_PAYLOAD, "/responses", auth_headers)
-        query_endpoint_stream(base_url, CONVERSATIONAL_PAYLOAD, "/invocations", auth_headers)
+        query_endpoint(base_url, CONVERSATIONAL_PAYLOAD, "/responses", auth_headers, stream=True)
+        query_endpoint(base_url, CONVERSATIONAL_PAYLOAD, "/invocations", auth_headers, stream=True)
 
         # OpenAI SDK: non-streaming and streaming
         output_text = query_with_openai_sdk(base_url, token, "What is 2+2?")
@@ -180,6 +179,9 @@ def test_e2e(template, repo_root, profile, lakebase, request):
     skip_deploy = request.config.getoption("--skip-deploy")
     no_destroy = request.config.getoption("--no-destroy")
 
+    if skip_local and skip_deploy:
+        pytest.skip("Both --skip-local and --skip-deploy specified")
+
     template_dir = repo_root / template.name
 
     # Setup log file for this template
@@ -204,9 +206,6 @@ def test_e2e(template, repo_root, profile, lakebase, request):
         originals = apply_edits(edits, template_dir)
 
     try:
-        if skip_local and skip_deploy:
-            pytest.skip("Both --skip-local and --skip-deploy specified")
-
         if skip_deploy:
             with phase("local"):
                 _run_local(template, template_dir, log_file)

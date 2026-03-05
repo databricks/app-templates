@@ -4,6 +4,7 @@ from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Configurable defaults — override via pytest CLI options
+# Workspace: https://db-ml-models-dev-us-west.cloud.databricks.com
 # ---------------------------------------------------------------------------
 DEFAULT_PROFILE = "dev"
 DEFAULT_LAKEBASE = "bbqiu"
@@ -35,52 +36,8 @@ class TemplateConfig:
 
 
 # ---------------------------------------------------------------------------
-# Multiagent SUBAGENTS — the "old" block is the verbatim commented-out code
-# in agent-openai-agents-sdk-multiagent/agent_server/agent.py (lines 60-101).
+# Multiagent SUBAGENTS
 # ---------------------------------------------------------------------------
-MULTIAGENT_SUBAGENTS_OLD = """\
-SUBAGENTS = [
-    # Uncomment and configure the subagents you need. You must enable at least one.
-    #
-    # {
-    #     "name": "genie",
-    #     "type": "genie",
-    #     "space_id": "<YOUR-GENIE-SPACE-ID>",  # UUID from the Genie space URL
-    #     "description": (
-    #         "Query a Genie space for structured data analysis. "
-    #         "Use this for questions about data, metrics, and tables."
-    #     ),
-    # },
-    # {
-    #     "name": "app_agent",
-    #     "type": "app",
-    #     "endpoint": "<YOUR-APP-AGENT-NAME>",  # TODO: set to your Databricks App name
-    #     "description": (
-    #         "Query a specialist agent deployed as a Databricks App. "
-    #         "Use this for questions the specialist app agent handles."
-    #     ),
-    # },
-    # {
-    #     "name": "knowledge_assistant",
-    #     "type": "serving_endpoint",
-    #     "endpoint": "<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>",  # flat name, NOT a Vector Search index
-    #     "description": (
-    #         "Query the knowledge-assistant endpoint on Model Serving. "
-    #         "Use this for knowledge-base / documentation lookups. "
-    #         "The endpoint must have task type agent/v1/responses."
-    #     ),
-    # },
-    # {
-    #     "name": "serving_endpoint",
-    #     "type": "serving_endpoint",
-    #     "endpoint": "<YOUR-SERVING-ENDPOINT>",
-    #     "description": (
-    #         "Query a model hosted on a Databricks Model Serving endpoint. "
-    #         "Use this for questions best answered by the serving model. "
-    #         "The endpoint must have task type agent/v1/responses."
-    #     ),
-    # },
-]"""
 
 
 def _multiagent_subagents_new(
@@ -119,13 +76,14 @@ def _multiagent_edits(
     template_dir = REPO_ROOT / template_name
     edits: list[FileEdit] = []
 
-    # Only replace SUBAGENTS if the template still has the commented-out block
+    # Match the SUBAGENTS = [...] block and replace if it still has commented-out code
     agent_py = (template_dir / "agent_server" / "agent.py").read_text()
-    if MULTIAGENT_SUBAGENTS_OLD in agent_py:
+    match = re.search(r"SUBAGENTS\s*=\s*\[.*?\]", agent_py, re.DOTALL)
+    if match and "#" in match.group(0):
         edits.append(
             FileEdit(
                 relative_path="agent_server/agent.py",
-                old=MULTIAGENT_SUBAGENTS_OLD,
+                old=match.group(0),
                 new=_multiagent_subagents_new(genie_space_id, serving_endpoint),
             )
         )

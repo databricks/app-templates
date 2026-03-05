@@ -247,13 +247,36 @@ def query_endpoint(
     payload: dict,
     endpoint: str = "/responses",
     extra_headers: dict[str, str] | None = None,
-) -> dict:
-    """POST to {base_url}{endpoint}, return response JSON. Timeout: 120s."""
+    stream: bool = False,
+) -> dict | None:
+    """POST to {base_url}{endpoint}. Returns JSON when stream=False, None when stream=True."""
     url = f"{base_url}{endpoint}"
-    _log(f"POST {url}")
     headers = {"Content-Type": "application/json"}
     if extra_headers:
         headers.update(extra_headers)
+
+    if stream:
+        _log(f"POST {url} (streaming)")
+        resp = requests.post(
+            url,
+            json={**payload, "stream": True},
+            headers=headers,
+            timeout=QUERY_TIMEOUT,
+            stream=True,
+        )
+        resp.raise_for_status()
+        content_type = resp.headers.get("content-type", "")
+        assert "text/event-stream" in content_type, (
+            f"Expected text/event-stream, got {content_type}"
+        )
+        has_data = any(
+            line.startswith("data:") for line in resp.iter_lines(decode_unicode=True) if line
+        )
+        _log(f"  streaming: content_type={content_type}, has_data={has_data}")
+        assert has_data, "No SSE data: events received in stream response"
+        return None
+
+    _log(f"POST {url}")
     resp = requests.post(
         url,
         json=payload,
@@ -271,36 +294,6 @@ def query_endpoint(
     data = resp.json()
     _log(f"  response: {json.dumps(data, indent=2)[:1000]}")
     return data
-
-
-def query_endpoint_stream(
-    base_url: str,
-    payload: dict,
-    endpoint: str = "/responses",
-    extra_headers: dict[str, str] | None = None,
-) -> None:
-    """POST with stream=True, validate SSE response with at least one data: event."""
-    url = f"{base_url}{endpoint}"
-    _log(f"POST {url} (streaming)")
-    stream_payload = {**payload, "stream": True}
-    headers = {"Content-Type": "application/json"}
-    if extra_headers:
-        headers.update(extra_headers)
-    resp = requests.post(
-        url,
-        json=stream_payload,
-        headers=headers,
-        timeout=QUERY_TIMEOUT,
-        stream=True,
-    )
-    resp.raise_for_status()
-    content_type = resp.headers.get("content-type", "")
-    assert "text/event-stream" in content_type, f"Expected text/event-stream, got {content_type}"
-    has_data = any(
-        line.startswith("data:") for line in resp.iter_lines(decode_unicode=True) if line
-    )
-    _log(f"  streaming: content_type={content_type}, has_data={has_data}")
-    assert has_data, "No SSE data: events received in stream response"
 
 
 def query_with_openai_sdk(

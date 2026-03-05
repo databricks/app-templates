@@ -218,6 +218,3 @@ sketch
 !.claude/skills/lakebase-setup/
 !.claude/skills/agent-memory/
 !.claude/skills/migrate-from-model-serving/
-
-# Exclude e2e chatbot app (separate project)
-e2e-chatbot-app-next/

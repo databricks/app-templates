@@ -61,12 +61,18 @@ assert invoke_fn is not None, (
     "Ensure you have a function decorated with `@invoke()`."
 )
 
-# if invoke function is async, then we need to wrap it in a sync function
+# if invoke function is async, wrap it in a sync function.
+# The simulator may already be running an event loop, so we use nest_asyncio
+# to allow nested run_until_complete() calls without deadlocking.
 if asyncio.iscoroutinefunction(invoke_fn):
+    import nest_asyncio
+
+    nest_asyncio.apply()
 
     def predict_fn(input: list[dict], **kwargs) -> dict:
         req = ResponsesAgentRequest(input=input)
-        response = asyncio.run(invoke_fn(req))
+        loop = asyncio.get_event_loop()
+        response = loop.run_until_complete(invoke_fn(req))
         return response.model_dump()
 else:
 

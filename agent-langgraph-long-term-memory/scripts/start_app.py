@@ -246,7 +246,9 @@ class ProcessManager:
                         cmd.split(), cwd=frontend_dir, capture_output=True, text=True
                     )
                     if result.returncode != 0:
-                        print(f"npm {desc} failed: {result.stderr}")
+                        print(f"npm {desc} failed: {result.stdout}")
+                        if result.stderr:
+                            print(f"stderr: {result.stderr}")
                         return 1
 
                 self.frontend_process = self.start_process(

@@ -35,8 +35,12 @@ from agent_server.utils_memory import (
 )
 
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
 logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+# Enable debug logging for lakebase connection tracing
+logging.getLogger("databricks_ai_bridge.lakebase").setLevel(logging.DEBUG)
+logging.getLogger("databricks_langchain.store").setLevel(logging.DEBUG)
 mlflow.langchain.autolog()
 sp_workspace_client = WorkspaceClient()
 
@@ -44,21 +48,41 @@ sp_workspace_client = WorkspaceClient()
 # Configuration
 ############################################
 LLM_ENDPOINT_NAME = "databricks-claude-sonnet-4-5"
-_LAKEBASE_INSTANCE_NAME_RAW = os.getenv("LAKEBASE_INSTANCE_NAME", "")
+_LAKEBASE_INSTANCE_NAME_RAW = os.getenv("LAKEBASE_INSTANCE_NAME") or None
 EMBEDDING_ENDPOINT = "databricks-gte-large-en"
 EMBEDDING_DIMS = 1024
+# Autoscaling params: in the app environment, PGENDPOINT is provided automatically;
+# for local dev, use project/branch names directly.
+_is_app_env = bool(os.getenv("DATABRICKS_APP_NAME"))
+LAKEBASE_AUTOSCALING_ENDPOINT = os.getenv("PGENDPOINT") if _is_app_env else None
+# If PGENDPOINT is available, use it exclusively; don't also pass project/branch
+LAKEBASE_AUTOSCALING_PROJECT = None if LAKEBASE_AUTOSCALING_ENDPOINT else (os.getenv("LAKEBASE_AUTOSCALING_PROJECT") or None)
+LAKEBASE_AUTOSCALING_BRANCH = None if LAKEBASE_AUTOSCALING_ENDPOINT else (os.getenv("LAKEBASE_AUTOSCALING_BRANCH") or None)
+
+logger.info("=== Lakebase Configuration ===")
+logger.info(f"  _is_app_env: {_is_app_env}")
+logger.info(f"  DATABRICKS_APP_NAME: {os.getenv('DATABRICKS_APP_NAME')}")
+logger.info(f"  PGENDPOINT (raw): {os.getenv('PGENDPOINT')}")
+logger.info(f"  PGHOST (raw): {os.getenv('PGHOST')}")
+logger.info(f"  LAKEBASE_INSTANCE_NAME_RAW: {_LAKEBASE_INSTANCE_NAME_RAW}")
+logger.info(f"  LAKEBASE_AUTOSCALING_ENDPOINT: {LAKEBASE_AUTOSCALING_ENDPOINT}")
+logger.info(f"  LAKEBASE_AUTOSCALING_PROJECT: {LAKEBASE_AUTOSCALING_PROJECT}")
+logger.info(f"  LAKEBASE_AUTOSCALING_BRANCH: {LAKEBASE_AUTOSCALING_BRANCH}")
+logger.info("===============================")
 
 ############################################
 
-if not _LAKEBASE_INSTANCE_NAME_RAW:
+_has_autoscaling = LAKEBASE_AUTOSCALING_ENDPOINT or (LAKEBASE_AUTOSCALING_PROJECT and LAKEBASE_AUTOSCALING_BRANCH)
+if not _LAKEBASE_INSTANCE_NAME_RAW and not _has_autoscaling:
     raise ValueError(
-        "LAKEBASE_INSTANCE_NAME environment variable is required but not set. "
-        "Please set it in your environment:\n"
-        "  LAKEBASE_INSTANCE_NAME=<your-lakebase-instance-name>\n"
+        "Lakebase configuration is required but not set. "
+        "Please set one of the following in your environment:\n"
+        "  Option 1 (provisioned): LAKEBASE_INSTANCE_NAME=<your-instance-name>\n"
+        "  Option 2 (autoscaling): LAKEBASE_AUTOSCALING_PROJECT=<project> and LAKEBASE_AUTOSCALING_BRANCH=<branch>\n"
     )
 
 # Resolve hostname to instance name if needed (if given hostname of lakebase instead of name)
-LAKEBASE_INSTANCE_NAME = resolve_lakebase_instance_name(_LAKEBASE_INSTANCE_NAME_RAW)
+LAKEBASE_INSTANCE_NAME = resolve_lakebase_instance_name(_LAKEBASE_INSTANCE_NAME_RAW) if _LAKEBASE_INSTANCE_NAME_RAW else None
 
 SYSTEM_PROMPT = """You are a helpful assistant. Use the available tools to answer questions.
 
@@ -128,12 +152,29 @@ async def stream_handler(
     }
 
     try:
+        logger.info("=== Creating AsyncDatabricksStore ===")
+        logger.info(f"  instance_name={LAKEBASE_INSTANCE_NAME}")
+        logger.info(f"  autoscaling_endpoint={LAKEBASE_AUTOSCALING_ENDPOINT}")
+        logger.info(f"  project={LAKEBASE_AUTOSCALING_PROJECT}")
+        logger.info(f"  branch={LAKEBASE_AUTOSCALING_BRANCH}")
+        logger.info(f"  embedding_endpoint={EMBEDDING_ENDPOINT}")
+        logger.info(f"  embedding_dims={EMBEDDING_DIMS}")
         async with AsyncDatabricksStore(
             instance_name=LAKEBASE_INSTANCE_NAME,
+            autoscaling_endpoint=LAKEBASE_AUTOSCALING_ENDPOINT,
+            project=LAKEBASE_AUTOSCALING_PROJECT,
+            branch=LAKEBASE_AUTOSCALING_BRANCH,
             embedding_endpoint=EMBEDDING_ENDPOINT,
             embedding_dims=EMBEDDING_DIMS,
         ) as store:
+            logger.info("AsyncDatabricksStore context entered (pool opened)")
+            logger.info(f"  store._lakebase.host={getattr(store._lakebase, 'host', 'N/A')}")
+            logger.info(f"  store._lakebase.username={getattr(store._lakebase, 'username', 'N/A')}")
+            logger.info(f"  store._lakebase._endpoint_name={getattr(store._lakebase, '_endpoint_name', 'N/A')}")
+            logger.info(f"  store._lakebase._is_autoscaling={getattr(store._lakebase, '_is_autoscaling', 'N/A')}")
+            logger.info("Calling store.setup()...")
             await store.setup()
+            logger.info("store.setup() completed successfully")
             config: dict[str, Any] = {"configurable": {"store": store}}
             if user_id:
                 config["configurable"]["user_id"] = user_id
@@ -148,7 +189,8 @@ async def stream_handler(
         # Check for Lakebase access/connection errors
         if any(keyword in error_msg for keyword in ["permission"]):
             logger.error(f"Lakebase access error: {e}")
+            lakebase_desc = LAKEBASE_INSTANCE_NAME or LAKEBASE_AUTOSCALING_ENDPOINT or f"{LAKEBASE_AUTOSCALING_PROJECT}/{LAKEBASE_AUTOSCALING_BRANCH}"
             raise HTTPException(
-                status_code=503, detail=get_lakebase_access_error_message(LAKEBASE_INSTANCE_NAME)
+                status_code=503, detail=get_lakebase_access_error_message(lakebase_desc)
             ) from e
         raise

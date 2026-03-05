@@ -47,7 +47,7 @@ Example JSON output:
 
 
 @invoke()
-async def invoke(data: dict) -> dict:
+async def invoke_handler(data: dict) -> dict:
     """Process document analysis questions and generate yes/no answers.
 
     Args:

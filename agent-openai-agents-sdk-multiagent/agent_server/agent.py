@@ -41,7 +41,6 @@ from agent_server.utils import (
     get_session_id,
     get_user_workspace_client,
     process_agent_stream_events,
-    sanitize_output_items,
 )
 
 # ---------------------------------------------------------------------------
@@ -192,13 +191,15 @@ def create_orchestrator_agent(mcp_server: McpServer) -> Agent:
 
 @invoke()
 async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
+    if session_id := get_session_id(request):
+        mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
     async with await init_mcp_server() as mcp_server:
         agent = create_orchestrator_agent(mcp_server)
         messages = [i.model_dump() for i in request.input]
         result = await Runner.run(agent, messages)
-        return ResponsesAgentResponse(output=sanitize_output_items(result.new_items))
+        return ResponsesAgentResponse(output=[item.to_input_item() for item in result.new_items])
 
 
 @stream()

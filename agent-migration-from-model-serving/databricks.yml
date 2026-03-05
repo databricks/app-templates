@@ -2,22 +2,26 @@ bundle:
   name: agent_migration
 
 resources:
-  # MLflow experiment for agent tracing - automatically created by bundle
-  experiments:
-    agent_migration_experiment:
-      name: /Users/${workspace.current_user.userName}/${bundle.name}-${bundle.target}
-
   apps:
     agent_migration:
       name: "agent-migration"
       description: "Migrated agent from Model Serving to Databricks Apps"
       source_code_path: ./
+      config:
+        command: ["uv", "run", "start-server"]
+        env:
+          - name: MLFLOW_TRACKING_URI
+            value: "databricks"
+          - name: MLFLOW_REGISTRY_URI
+            value: "databricks-uc"
+          - name: MLFLOW_EXPERIMENT_ID
+            value_from: "experiment"
 
       # Resources which this app has access to
       resources:
         - name: 'experiment'
           experiment:
-            experiment_id: "${resources.experiments.agent_migration_experiment.id}"
+            experiment_id: ""
             permission: 'CAN_MANAGE'
         # TODO: Add resources extracted from original MLmodel file (see migration skill Step 6)
         # Example - serving endpoint:

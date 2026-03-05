@@ -3,8 +3,6 @@ import logging
 import os
 from typing import Any, AsyncGenerator, Optional, Sequence, TypedDict
 
-import uuid_utils
-
 import mlflow
 from databricks.sdk import WorkspaceClient
 from databricks_langchain import (
@@ -28,6 +26,8 @@ from mlflow.types.responses import (
 )
 
 from agent_server.utils import (
+    _get_lakebase_access_error_message,
+    _get_or_create_thread_id,
     get_databricks_host_from_env,
     process_agent_astream_events,
 )
@@ -90,31 +90,15 @@ async def init_agent(
     )
 
 
-def _get_or_create_thread_id(request: ResponsesAgentRequest) -> str:
-    # priority of getting thread id:
-    # 1. Use thread id from custom inputs
-    # 2. Use conversation id from ChatContext https://mlflow.org/docs/latest/api_reference/python_api/mlflow.types.html#mlflow.types.agent.ChatContext
-    # 3. Generate random UUID
-    ci = dict(request.custom_inputs or {})
-
-    if "thread_id" in ci and ci["thread_id"]:
-        return str(ci["thread_id"])
-
-    if request.context and getattr(request.context, "conversation_id", None):
-        return str(request.context.conversation_id)
-
-    return str(uuid_utils.uuid7())
-
-
 @invoke()
-async def non_streaming(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
+async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
     thread_id = _get_or_create_thread_id(request)
     request.custom_inputs = dict(request.custom_inputs or {})
     request.custom_inputs["thread_id"] = thread_id
 
     outputs = [
         event.item
-        async for event in streaming(request)
+        async for event in stream_handler(request)
         if event.type == "response.output_item.done"
     ]
 
@@ -122,7 +106,7 @@ async def non_streaming(request: ResponsesAgentRequest) -> ResponsesAgentRespons
 
 
 @stream()
-async def streaming(
+async def stream_handler(
     request: ResponsesAgentRequest,
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
     # workspace_client = WorkspaceClient()
@@ -139,6 +123,7 @@ async def streaming(
 
     try:
         async with AsyncCheckpointSaver(instance_name=LAKEBASE_INSTANCE_NAME) as checkpointer:
+            await checkpointer.setup()
             agent = await init_agent(checkpointer=checkpointer)
 
             async for event in process_agent_astream_events(
@@ -154,34 +139,7 @@ async def streaming(
         # Check for Lakebase access/connection errors
         if any(keyword in error_msg for keyword in ["permission"]):
             logger.error(f"Lakebase access error: {e}")
-            raise HTTPException(status_code=503, detail=_get_lakebase_access_error_message()) from e
+            raise HTTPException(
+                status_code=503, detail=_get_lakebase_access_error_message(LAKEBASE_INSTANCE_NAME)
+            ) from e
         raise
-
-
-def _is_databricks_app_env() -> bool:
-    """Check if running in a Databricks App environment."""
-    return bool(os.getenv("DATABRICKS_APP_NAME"))
-
-
-def _get_lakebase_access_error_message() -> str:
-    """Generate a helpful error message for Lakebase access issues."""
-    if _is_databricks_app_env():
-        app_name = os.getenv("DATABRICKS_APP_NAME")
-        return (
-            f"Failed to connect to Lakebase instance '{LAKEBASE_INSTANCE_NAME}'. "
-            f"The App Service Principal for '{app_name}' may not have access.\n\n"
-            "To fix this:\n"
-            "1. Go to the Databricks UI and navigate to your app\n"
-            "2. Click 'Edit' → 'App resources' → 'Add resource'\n"
-            "3. Add your Lakebase instance as a resource\n"
-            "4. Grant the necessary permissions on your Lakebase instance. "
-            "See the README section 'Grant Lakebase permissions to your App's Service Principal' for the SQL commands."
-        )
-    else:
-        return (
-            f"Failed to connect to Lakebase instance '{LAKEBASE_INSTANCE_NAME}'. "
-            "Please verify:\n"
-            "1. The instance name is correct\n"
-            "2. You have the necessary permissions to access the instance\n"
-            "3. Your Databricks authentication is configured correctly"
-        )

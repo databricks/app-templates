@@ -176,7 +176,7 @@ env:
   - name: MLFLOW_TRACKING_URI
     value: "databricks"
   - name: MLFLOW_EXPERIMENT_ID
-    valueFrom: "experiment"
+    value_from: "experiment"
 
 resources:
   - name: serving-endpoint

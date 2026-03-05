@@ -2,22 +2,32 @@ bundle:
   name: agent_openai_agents_sdk_multiagent
 
 resources:
-  # MLflow experiment for agent tracing - automatically created by bundle
-  experiments:
-    agent_openai_agents_sdk_multiagent_experiment:
-      name: /Users/${workspace.current_user.userName}/${bundle.name}-${bundle.target}
-
   apps:
     agent_openai_agents_sdk_multiagent:
-      name: "${bundle.target}-agent-openai-agents-sdk-multiagent"
+      name: "agent-openai-multiagent"
       description: "Multi-agent orchestrator that queries other agents, Genie spaces, and serving endpoints"
       source_code_path: ./
+      config:
+        command: ["uv", "run", "start-app"]
+        env:
+          - name: MLFLOW_TRACKING_URI
+            value: "databricks"
+          - name: MLFLOW_REGISTRY_URI
+            value: "databricks-uc"
+          - name: API_PROXY
+            value: "http://localhost:8000/invocations"
+          - name: CHAT_APP_PORT
+            value: "3000"
+          - name: CHAT_PROXY_TIMEOUT_SECONDS
+            value: "300"
+          - name: MLFLOW_EXPERIMENT_ID
+            value_from: "experiment"
 
       # Resources which this app has access to
       resources:
         - name: 'experiment'
           experiment:
-            experiment_id: "${resources.experiments.agent_openai_agents_sdk_multiagent_experiment.id}"
+            experiment_id: ""
             permission: 'CAN_MANAGE'
 
         # TODO: Set your Genie space ID
@@ -71,4 +81,4 @@ targets:
     resources:
       apps:
         agent_openai_agents_sdk_multiagent:
-          name: agent-openai-agents-sdk-multiagent
+          name: agent-openai-multiagent

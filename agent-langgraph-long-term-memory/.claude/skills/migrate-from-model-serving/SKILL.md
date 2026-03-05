@@ -32,7 +32,6 @@ This guide instructs LLM coding agents how to migrate an MLflow ResponsesAgent f
     ├── agent_server/
     │   ├── agent.py          # Migrated agent code
     │   └── ...
-    ├── app.yaml
     ├── databricks.yml        # Bundle config with resources
     ├── pyproject.toml
     ├── requirements.txt
@@ -850,8 +849,7 @@ If `databricks bundle deploy` fails because the app already exists, refer to the
 │   ├── __init__.py
 │   ├── quickstart.py     # Setup script
 │   └── start_app.py      # App startup
-├── app.yaml              # Databricks Apps configuration
-├── databricks.yml        # Databricks Asset Bundle configuration (resources, targets)
+├── databricks.yml        # Databricks Asset Bundle configuration (resources, config, targets)
 ├── pyproject.toml        # Dependencies (for local dev with uv)
 ├── requirements.txt      # REQUIRED: Must contain "uv" for Databricks Apps
 ├── .env.example          # Environment template

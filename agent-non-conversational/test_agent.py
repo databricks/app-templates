@@ -69,6 +69,7 @@ def test_agent(base_url: str = "http://localhost:8000", profile: Optional[str] =
 
     except Exception as e:
         print(f"❌ Test failed: {e}")
+        raise
 
 
 if __name__ == "__main__":

@@ -120,9 +120,8 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
 async def stream_handler(
     request: ResponsesAgentRequest,
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
-    # workspace_client = WorkspaceClient()
-    # Optionally use the user's workspace client for on-behalf-of authentication
-    # user_workspace_client = get_user_workspace_client()
+    # By default, uses service principal credentials.
+    # For on-behalf-of user authentication, pass get_user_workspace_client() to init_agent.
     thread_id = _get_or_create_thread_id(request)
     mlflow.update_current_trace(metadata={"mlflow.trace.session": thread_id})
 

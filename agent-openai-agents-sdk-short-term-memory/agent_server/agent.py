@@ -7,6 +7,7 @@ import litellm
 import mlflow
 from agents import Agent, Runner, function_tool, set_default_openai_api, set_default_openai_client
 from agents.tracing import set_trace_processors
+from databricks.sdk import WorkspaceClient
 from databricks_openai import AsyncDatabricksOpenAI
 from databricks_openai.agents import AsyncDatabricksSession, McpServer
 from mlflow.genai.agent_server import invoke, stream
@@ -54,10 +55,11 @@ def get_current_time() -> str:
     return datetime.now().isoformat()
 
 
-async def init_mcp_server():
+async def init_mcp_server(workspace_client: WorkspaceClient):
     return McpServer(
         url=f"{get_databricks_host_from_env()}/api/2.0/mcp/functions/system/ai",
         name="system.ai uc function mcp server",
+        workspace_client=workspace_client,
     )
 
 
@@ -73,9 +75,6 @@ def create_agent(mcp_servers: list[McpServer] | None = None) -> Agent:
 
 @invoke()
 async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
-    # Optionally use the user's workspace client for on-behalf-of authentication
-    # user_workspace_client = get_user_workspace_client()
-
     # Create session for stateful, short-term conversation history with your Databricks Lakebase instance
     session_id = get_session_id(request)
     if session_id:
@@ -85,7 +84,9 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
         instance_name=LAKEBASE_INSTANCE_NAME,
     )
 
-    # To use MCP server tools, wrap the code below with this async context manager:
+    # To use MCP server tools, wrap the code below with this async context manager.
+    # By default, uses service principal credentials via WorkspaceClient().
+    # For on-behalf-of user authentication, use get_user_workspace_client() instead.
     # async with await init_mcp_server(WorkspaceClient()) as mcp_server:
     #     agent = create_agent(mcp_servers=[mcp_server])
     agent = create_agent()
@@ -101,9 +102,6 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
 async def stream_handler(
     request: ResponsesAgentRequest,
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
-    # Optionally use the user's workspace client for on-behalf-of authentication
-    # user_workspace_client = get_user_workspace_client()
-
     # Create session for stateful, short-term conversation history with your Databricks Lakebase instance
     session_id = get_session_id(request)
     if session_id:
@@ -113,7 +111,9 @@ async def stream_handler(
         instance_name=LAKEBASE_INSTANCE_NAME,
     )
 
-    # To use MCP server tools, wrap the code below with this async context manager:
+    # To use MCP server tools, wrap the code below with this async context manager.
+    # By default, uses service principal credentials via WorkspaceClient().
+    # For on-behalf-of user authentication, use get_user_workspace_client() instead.
     # async with await init_mcp_server(WorkspaceClient()) as mcp_server:
     #     agent = create_agent(mcp_servers=[mcp_server])
     agent = create_agent()

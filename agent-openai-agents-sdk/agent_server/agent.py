@@ -38,7 +38,7 @@ def get_current_time() -> str:
     return datetime.now().isoformat()
 
 
-async def init_mcp_server(workspace_client=None):
+async def init_mcp_server(workspace_client: WorkspaceClient):
     return McpServer(
         url=build_mcp_url("/api/2.0/mcp/functions/system/ai", workspace_client=workspace_client),
         name="system.ai UC function MCP server",
@@ -60,10 +60,9 @@ def create_agent(mcp_servers: list[McpServer] | None = None) -> Agent:
 async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
     if session_id := get_session_id(request):
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
-    # Optionally use the user's workspace client for on-behalf-of authentication
-    # user_workspace_client = get_user_workspace_client()
-
-    # To use MCP server tools, wrap the code below with this async context manager:
+    # To use MCP server tools, wrap the code below with this async context manager.
+    # By default, uses service principal credentials via WorkspaceClient().
+    # For on-behalf-of user authentication, use get_user_workspace_client() instead.
     # async with await init_mcp_server(WorkspaceClient()) as mcp_server:
     #     agent = create_agent(mcp_servers=[mcp_server])
     agent = create_agent()
@@ -78,10 +77,9 @@ async def stream_handler(
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
     if session_id := get_session_id(request):
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
-    # Optionally use the user's workspace client for on-behalf-of authentication
-    # user_workspace_client = get_user_workspace_client()
-
-    # To use MCP server tools, wrap the code below with this async context manager:
+    # To use MCP server tools, wrap the code below with this async context manager.
+    # By default, uses service principal credentials via WorkspaceClient().
+    # For on-behalf-of user authentication, use get_user_workspace_client() instead.
     # async with await init_mcp_server(WorkspaceClient()) as mcp_server:
     #     agent = create_agent(mcp_servers=[mcp_server])
     agent = create_agent()

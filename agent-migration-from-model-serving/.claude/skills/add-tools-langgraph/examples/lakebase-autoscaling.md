@@ -20,7 +20,7 @@ Add `LAKEBASE_AUTOSCALING_PROJECT` and `LAKEBASE_AUTOSCALING_BRANCH` as static `
 
 ```bash
 databricks bundle deploy
-databricks bundle run agent_langgraph  # Required to create the app before adding resources
+databricks bundle run <your-app-resource-name>  # from databricks.yml resources.apps.*
 ```
 
 ### 3. Add the postgres resource via API (for permissions only)
@@ -47,7 +47,13 @@ Replace the placeholders:
 - `<branch-id>`: Your Lakebase branch ID
 - `<database-id>`: Your Lakebase database ID
 
-> **Note:** This resource will be wiped on next `databricks bundle deploy`, so you must re-add it after each deploy.
+Then re-run the app so it picks up the new resource:
+
+```bash
+databricks bundle run <your-app-resource-name>
+```
+
+> **Note:** This resource will be wiped on next `databricks bundle deploy`, so you must re-add it and re-run after each deploy.
 
 ### 4. Use autoscaling env vars in your agent code
 

@@ -5,6 +5,16 @@ description: "Deploy agent to Databricks Apps using DAB (Databricks Asset Bundle
 
 # Deploy to Databricks Apps
 
+## Profile Configuration
+
+**IMPORTANT:** Before running any `databricks` CLI command, read the `.env` file to get the `DATABRICKS_CONFIG_PROFILE` value. All commands must include the profile:
+
+```bash
+databricks <command> --profile <profile>
+```
+
+For example, if `.env` has `DATABRICKS_CONFIG_PROFILE=dev`, run `databricks bundle deploy --profile dev`. Without this, the CLI may target the wrong workspace.
+
 ## App Naming Convention
 
 Unless the user specifies a different name, apps should use the prefix `agent-*`:

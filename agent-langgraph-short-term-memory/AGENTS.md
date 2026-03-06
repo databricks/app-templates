@@ -12,12 +12,29 @@
 2. **Lakebase instance (required for memory):**
    > "This template requires Lakebase for memory. Do you have an existing Lakebase instance? If so, what's the instance name?"
 
-**Then check authentication status by running `databricks auth profiles`.**
+**Then check authentication and profile configuration:**
 
-This helps you understand:
-- Which Databricks profiles are configured
-- Whether authentication is already set up
-- Which profile to use for subsequent commands
+1. Read the `.env` file to find `DATABRICKS_CONFIG_PROFILE` (e.g., `dev`)
+2. Run `databricks auth profiles` to verify the profile is configured and valid
+
+**CRITICAL: All `databricks` CLI commands must include the profile from `.env`.** Either use `--profile` or set the env var:
+
+```bash
+databricks <command> --profile <profile>
+# or
+DATABRICKS_CONFIG_PROFILE=<profile> databricks <command>
+```
+
+For example, if `.env` has `DATABRICKS_CONFIG_PROFILE=dev`:
+```bash
+databricks bundle deploy --profile dev
+databricks bundle run <bundle_name> --profile dev
+databricks apps get <app-name> --profile dev
+databricks apps logs <app-name> --follow --profile dev
+databricks auth token --profile dev
+```
+
+> **Why this matters:** Without the profile, the CLI may target the wrong workspace, causing "not found" errors for experiments, apps, or other resources.
 
 If no profiles exist or `.env` is missing, guide the user through running `uv run quickstart` to set up authentication and configuration. See the **quickstart** skill for details.
 

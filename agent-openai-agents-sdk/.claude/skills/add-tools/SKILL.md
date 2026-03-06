@@ -5,6 +5,8 @@ description: "Add tools to your agent and grant required permissions in databric
 
 # Add Tools & Grant Permissions
 
+> **Profile reminder:** All `databricks` CLI commands must include the profile from `.env`: `databricks <command> --profile <profile>`
+
 **After adding any MCP server to your agent, you MUST grant the app access in `databricks.yml`.**
 
 Without this, you'll get permission errors when the agent tries to use the resource.

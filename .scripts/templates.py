@@ -25,6 +25,10 @@ TEMPLATES = {
         "sdk": "openai",
         "bundle_name": "agent_openai_agents_sdk_short_term_memory",
     },
+    "agent-openai-agents-sdk-long-running-agent": {
+        "sdk": "openai",
+        "bundle_name": "agent_openai_agents_sdk_long_running_agent",
+    },
     "agent-non-conversational": {
         "sdk": "langgraph",
         "bundle_name": "agent_non_conversational",

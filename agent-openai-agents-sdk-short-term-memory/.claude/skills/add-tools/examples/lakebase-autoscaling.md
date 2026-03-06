@@ -25,27 +25,49 @@ databricks bundle run <your-app-resource-name>  # from databricks.yml resources.
 
 ### 3. Add the postgres resource via API (for permissions only)
 
-After the app is deployed, add the postgres resource using the Databricks API. This grants the app's service principal access to Lakebase — the app reads PROJECT+BRANCH from env vars, not from this resource:
+After the app is deployed, add the postgres resource using the Databricks API. This grants the app's service principal access to Lakebase — the app reads PROJECT+BRANCH from env vars, not from this resource.
+
+**Important:** The PATCH replaces the entire `resources` list, so you must fetch existing resources first and append the postgres resource to preserve other resources (e.g., MLflow experiments added by DAB).
 
 ```bash
+# 1. Fetch existing resources
+EXISTING=$(databricks api get /api/2.0/apps/<your-app-name> | jq -c '.resources // []')
+
+# 2. Append the postgres resource
+UPDATED=$(echo "$EXISTING" | jq -c '. + [{
+  "name": "postgres",
+  "postgres": {
+    "branch": "projects/<project-id>/branches/<branch-id>",
+    "database": "projects/<project-id>/branches/<branch-id>/databases/<database-id>",
+    "permission": "CAN_CONNECT_AND_CREATE"
+  }
+}]')
+
+# 3. Patch with the merged list
 databricks api patch /api/2.0/apps/<your-app-name> \
-  --json '{
-    "resources": [{
-      "name": "postgres",
-      "postgres": {
-        "branch": "projects/<project-id>/branches/<branch-id>",
-        "database": "projects/<project-id>/branches/<branch-id>/databases/<database-id>",
-        "permission": "CAN_CONNECT_AND_CREATE"
-      }
-    }]
-  }'
+  --json "{\"resources\": $UPDATED}"
 ```
 
 Replace the placeholders:
 - `<your-app-name>`: Your deployed app name (e.g., `agent-openai-sdk-stm`)
-- `<project-id>`: Your Lakebase project ID
-- `<branch-id>`: Your Lakebase branch ID
-- `<database-id>`: Your Lakebase database ID
+- `<project-id>`, `<branch-id>`, `<database-id>`: Look these up using the **postgres API** (see below)
+
+#### Finding your project, branch, and database IDs
+
+Autoscaling Lakebase uses the **postgres API** (`/api/2.0/postgres/`), NOT the database API. Do NOT use `/api/2.0/database/` or `/api/2.0/lakebase/` — those are for provisioned instances.
+
+```bash
+# List projects — find your project ID
+databricks api get /api/2.0/postgres/projects
+
+# List branches for a project
+databricks api get /api/2.0/postgres/projects/<project-id>/branches
+
+# List databases for a branch
+databricks api get /api/2.0/postgres/projects/<project-id>/branches/<branch-id>/databases
+```
+
+API docs: https://docs.databricks.com/api/workspace/postgres
 
 Then re-run the app so it picks up the new resource:
 
@@ -84,7 +106,9 @@ The app's service principal needs permissions on the memory tables. First, get t
 databricks apps get <your-app-name> --output json | jq -r '.service_principal_client_id'
 ```
 
-Then grant permissions using the `LakebaseClient`. **Run with `uv run`** from the template directory so `databricks-ai-bridge` is available:
+Then grant permissions using the `LakebaseClient`. **Run with `uv run`** from the template directory so `databricks-ai-bridge` is available.
+
+> Upon first usage of stateful agent the schemas and tables below won't exist yet. Attempt the grants below, but if `grant_table` or `grant_all_tables_in_schema` calls fail because the table/schema doesn't exist, that's expected, not an error.
 
 ```python
 from databricks_ai_bridge.lakebase import (

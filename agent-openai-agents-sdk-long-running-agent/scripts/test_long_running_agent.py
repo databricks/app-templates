@@ -65,7 +65,8 @@ def test_sync():
     resp = client.responses.create(
         input=[{"role": "user", "content": PROMPT}],
     )
-    assert resp.status == "completed"
+    # Non-background responses may return status=None (server doesn't set it)
+    assert resp.status in ("completed", None)
     assert resp.output_text
 
 

@@ -405,7 +405,7 @@ def setup_databricks_auth(profile_arg: str = None, host_arg: str = None) -> str:
             print_error("Databricks authentication failed")
             print_troubleshooting_auth()
             sys.exit(1)
-        print_success("Successfully authenticated with Databricks")
+        print_success(f"Successfully authenticated with Databricks")
 
     # Update .env with profile
     update_env_file("DATABRICKS_CONFIG_PROFILE", profile_name)

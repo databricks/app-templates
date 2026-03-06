@@ -1,11 +1,11 @@
 bundle:
-  name: agent_openai_agents_sdk
+  name: agent_openai_agents_sdk_long_running_agent
 
 resources:
   apps:
-    agent_openai_agents_sdk:
-      name: "agent-openai-agents-sdk"
-      description: "OpenAI Agents SDK agent application"
+    agent_openai_agents_sdk_long_running_agent:
+      name: "agent-openai-agents-sdk-lra"
+      description: "OpenAI Agents SDK long-running agent application"
       source_code_path: ./
       config:
         command: ["uv", "run", "start-app"]
@@ -51,5 +51,5 @@ targets:
     #   host: https://...
     resources:
       apps:
-        agent_openai_agents_sdk:
-          name: agent-openai-agents-sdk
+        agent_openai_agents_sdk_long_running_agent:
+          name: agent-openai-agents-sdk-lra

@@ -1,5 +1,7 @@
 # Long-Running Responses API Agent
 
+Inspired by [OpenAI's background mode](https://platform.openai.com/docs/guides/background), this template is compatible with the [OpenAI Python SDK](https://github.com/openai/openai-python) — see the [Client Contract](#client-contract) below for usage examples.
+
 This template extends [agent-openai-agents-sdk](https://github.com/databricks/app-templates/tree/main/agent-openai-agents-sdk) with support for long-running agent queries. It adds background execution, database persistence, and stream resumption — enabling use cases where agent responses take minutes rather than seconds.
 
 Standard synchronous invoke/stream behavior is fully preserved when `background=false` (default), so this template is backward-compatible with the base.

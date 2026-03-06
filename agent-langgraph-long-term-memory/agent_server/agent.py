@@ -56,17 +56,12 @@ LLM_ENDPOINT_NAME = "databricks-claude-sonnet-4-5"
 _LAKEBASE_INSTANCE_NAME_RAW = os.getenv("LAKEBASE_INSTANCE_NAME") or None
 EMBEDDING_ENDPOINT = "databricks-gte-large-en"
 EMBEDDING_DIMS = 1024
-# Autoscaling params: in the app environment, PGENDPOINT is provided automatically;
-# for local dev, use project/branch names directly.
-_is_app_env = bool(os.getenv("DATABRICKS_APP_NAME"))
-LAKEBASE_AUTOSCALING_ENDPOINT = os.getenv("PGENDPOINT") if _is_app_env else None
-# If PGENDPOINT is available, use it exclusively; don't also pass project/branch
-LAKEBASE_AUTOSCALING_PROJECT = None if LAKEBASE_AUTOSCALING_ENDPOINT else (os.getenv("LAKEBASE_AUTOSCALING_PROJECT") or None)
-LAKEBASE_AUTOSCALING_BRANCH = None if LAKEBASE_AUTOSCALING_ENDPOINT else (os.getenv("LAKEBASE_AUTOSCALING_BRANCH") or None)
+LAKEBASE_AUTOSCALING_PROJECT = os.getenv("LAKEBASE_AUTOSCALING_PROJECT") or None
+LAKEBASE_AUTOSCALING_BRANCH = os.getenv("LAKEBASE_AUTOSCALING_BRANCH") or None
 
 ############################################
 
-_has_autoscaling = LAKEBASE_AUTOSCALING_ENDPOINT or (LAKEBASE_AUTOSCALING_PROJECT and LAKEBASE_AUTOSCALING_BRANCH)
+_has_autoscaling = LAKEBASE_AUTOSCALING_PROJECT and LAKEBASE_AUTOSCALING_BRANCH
 if not _LAKEBASE_INSTANCE_NAME_RAW and not _has_autoscaling:
     raise ValueError(
         "Lakebase configuration is required but not set. "
@@ -147,7 +142,6 @@ async def stream_handler(
     try:
         async with AsyncDatabricksStore(
             instance_name=LAKEBASE_INSTANCE_NAME,
-            autoscaling_endpoint=LAKEBASE_AUTOSCALING_ENDPOINT,
             project=LAKEBASE_AUTOSCALING_PROJECT,
             branch=LAKEBASE_AUTOSCALING_BRANCH,
             embedding_endpoint=EMBEDDING_ENDPOINT,
@@ -170,7 +164,7 @@ async def stream_handler(
         # Check for Lakebase access/connection errors
         if any(keyword in error_msg for keyword in ["permission"]):
             logger.error(f"Lakebase access error: {e}")
-            lakebase_desc = LAKEBASE_INSTANCE_NAME or LAKEBASE_AUTOSCALING_ENDPOINT or f"{LAKEBASE_AUTOSCALING_PROJECT}/{LAKEBASE_AUTOSCALING_BRANCH}"
+            lakebase_desc = LAKEBASE_INSTANCE_NAME or f"{LAKEBASE_AUTOSCALING_PROJECT}/{LAKEBASE_AUTOSCALING_BRANCH}"
             raise HTTPException(
                 status_code=503, detail=get_lakebase_access_error_message(lakebase_desc)
             ) from e

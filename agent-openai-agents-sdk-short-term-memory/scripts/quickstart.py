@@ -618,6 +618,7 @@ def select_lakebase_interactive(profile_name: str) -> dict:
 
     # Existing instance
     print("\nWhat type of Lakebase instance?")
+    print("  See https://docs.databricks.com/aws/en/oltp/#feature-comparison for details.")
     print("  1) Provisioned")
     print("  2) Autoscaling (recommended)")
     print()

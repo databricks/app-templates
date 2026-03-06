@@ -11,7 +11,6 @@ import {
   generateText,
   type LanguageModelUsage,
   pipeUIMessageStreamToResponse,
-  type InferUIMessageChunk,
 } from 'ai';
 import type { LanguageModelV3Usage } from '@ai-sdk/provider';
 
@@ -62,6 +61,7 @@ import {
 } from '@chat-template/core';
 import { ChatSDKError } from '@chat-template/core/errors';
 import { storeMessageMeta } from '../lib/message-meta-store';
+import { drainStreamToWriter, fallbackToGenerateText } from '../lib/stream-fallback';
 
 export const chatRouter: RouterType = Router();
 
@@ -245,21 +245,24 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     const streamId = generateUUID();
 
     const model = await myProvider.languageModel(selectedChatModel);
+    const modelMessages = await convertToModelMessages(uiMessages);
+    const requestHeaders = {
+      [CONTEXT_HEADER_CONVERSATION_ID]: id,
+      [CONTEXT_HEADER_USER_ID]: session.user.email ?? session.user.id,
+      // Forward OBO user token to the backend/serving endpoint
+      ...(req.headers['x-forwarded-access-token']
+        ? { 'x-forwarded-access-token': req.headers['x-forwarded-access-token'] as string }
+        : {}),
+    };
+
     const result = streamText({
       model,
-      messages: await convertToModelMessages(uiMessages),
+      messages: modelMessages,
       providerOptions: {
         databricks: { includeTrace: true },
       },
       includeRawChunks: true,
-      headers: {
-        [CONTEXT_HEADER_CONVERSATION_ID]: id,
-        [CONTEXT_HEADER_USER_ID]: session.user.email ?? session.user.id,
-        // Forward OBO user token to the backend/serving endpoint
-        ...(req.headers['x-forwarded-access-token']
-          ? { 'x-forwarded-access-token': req.headers['x-forwarded-access-token'] as string }
-          : {}),
-      },
+      headers: requestHeaders,
       onChunk: ({ chunk }) => {
         if (chunk.type === 'raw') {
           const raw = chunk.rawValue as any;
@@ -277,14 +280,15 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           }
         }
       },
-      onFinish: (finishData) => {
-        finalUsage = finishData.usage;
+      onFinish: ({ usage }) => {
+        finalUsage = usage;
       },
     });
 
     /**
-     * We manually create the stream to have access to the stream writer.
-     * This allows us to inject custom stream parts like data-error.
+     * We manually read from toUIMessageStream instead of using writer.merge
+     * so the execute promise (and thus the outer stream) stays alive if we
+     * need to fall back to generateText after a streaming error.
      */
     const stream = createUIMessageStream({
       // Pass originalMessages so that continuation responses reuse the existing
@@ -303,17 +307,31 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
         // - start-step/finish-step: strips extra fields
         // - finish: strips rawFinishReason/totalUsage
         // - raw: dropped (trace_id captured via onChunk above)
-        const aiStream = result.toUIMessageStream<ChatMessage>();
-        const reader = aiStream.getReader();
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            writer.write(value as InferUIMessageChunk<ChatMessage>);
-          }
-        } finally {
-          reader.releaseLock();
+        const aiStream = result.toUIMessageStream<ChatMessage>({
+          sendReasoning: true,
+          sendSources: true,
+          sendFinish: false,
+          onError: (error) => {
+            const msg =
+              error instanceof Error ? error.message : String(error);
+            writer.onError?.(error);
+            return msg;
+          },
+        });
+
+        const { failed } = await drainStreamToWriter(aiStream, writer);
+
+        if (failed) {
+          console.log('Streaming failed, falling back to generateText...');
+          const fallbackResult = await fallbackToGenerateText(
+            { model, messages: modelMessages, headers: requestHeaders },
+            writer,
+          );
+
+          finalUsage = fallbackResult?.usage;
+          traceId = fallbackResult?.traceId ?? null;
         }
+
         // Write traceId so the client knows whether feedback is supported.
         writer.write({ type: 'data-traceId', data: traceId });
       },
@@ -587,3 +605,4 @@ function truncatePreserveWords(input: string, maxLength: number): string {
 
   return slice.slice(0, lastSpaceIndex);
 }
+

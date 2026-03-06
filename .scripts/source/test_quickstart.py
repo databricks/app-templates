@@ -6,14 +6,15 @@
 # 5. Creates MLflow experiment via `databricks experiments create-experiment`
 # 6. Updates .env with: DATABRICKS_CONFIG_PROFILE, MLFLOW_TRACKING_URI, MLFLOW_EXPERIMENT_ID
 # 7. Updates databricks.yml: sets experiment_id in app resource
-# 8. (If lakebase needed) Sets up Lakebase (provisioned or autoscaling), updates .env
+# 8. (If lakebase needed) Validates lakebase instance, updates .env with LAKEBASE_INSTANCE_NAME, PGHOST, PGUSER, PGDATABASE
+# 9. (If lakebase needed) Updates databricks.yml: replaces <your-lakebase-instance-name> placeholder
 
 import os
 from pathlib import Path
 
 import pytest
 
-from quickstart import update_databricks_yml_experiment
+from quickstart import update_databricks_yml_experiment, update_databricks_yml_lakebase
 
 # A minimal databricks.yml with experiment app resource (like agent-langgraph)
 MINIMAL_YML = """\
@@ -44,8 +45,8 @@ targets:
     mode: development
 """
 
-# A databricks.yml with autoscaling lakebase resources (like agent-langgraph-short-term-memory)
-LAKEBASE_AUTOSCALING_YML = """\
+# A databricks.yml with experiment + database resource (like agent-langgraph-short-term-memory)
+LAKEBASE_YML = """\
 bundle:
   name: agent_langgraph_short_term_memory
 
@@ -60,9 +61,8 @@ resources:
         env:
           - name: MLFLOW_EXPERIMENT_ID
             value_from: "experiment"
-          # Use for provisioned lakebase resource
-          # - name: LAKEBASE_INSTANCE_NAME
-          #   value: "<your-lakebase-instance-name>"
+          - name: LAKEBASE_INSTANCE_NAME
+            value: "<your-lakebase-instance-name>"
 
       # Resources which this app has access to
       resources:
@@ -70,25 +70,19 @@ resources:
           experiment:
             experiment_id: ""
             permission: 'CAN_MANAGE'
-        - name: 'postgres'
-          postgres:
-            branch: '<your-branch-resource-path>'
-            database: '<your-branch-resource-path>/databases/<your-database-instance>'
+        - name: 'database'
+          database:
+            instance_name: '<your-lakebase-instance-name>'
+            database_name: 'databricks_postgres'
             permission: 'CAN_CONNECT_AND_CREATE'
-        # Use for provisioned lakebase resource
-        # - name: 'database'
-        #   database:
-        #     instance_name: '<your-lakebase-instance-name>'
-        #     database_name: 'databricks_postgres'
-        #     permission: 'CAN_CONNECT_AND_CREATE'
 
 targets:
   dev:
     mode: development
 """
 
-# Double-quoted variant (like agent-langgraph-long-term-memory)
-LAKEBASE_AUTOSCALING_DOUBLE_QUOTED_YML = """\
+# Double-quoted experiment name (like agent-langgraph-long-term-memory)
+DOUBLE_QUOTED_YML = """\
 bundle:
   name: agent_langgraph_long_term_memory
 
@@ -100,9 +94,8 @@ resources:
         env:
           - name: MLFLOW_EXPERIMENT_ID
             value_from: "experiment"
-          # Use for provisioned lakebase resource
-          # - name: LAKEBASE_INSTANCE_NAME
-          #   value: "<your-lakebase-instance-name>"
+          - name: LAKEBASE_INSTANCE_NAME
+            value: "<your-lakebase-instance-name>"
 
       # Resources which this app has access to
       resources:
@@ -110,17 +103,11 @@ resources:
           experiment:
             experiment_id: ""
             permission: "CAN_MANAGE"
-        - name: "postgres"
-          postgres:
-            branch: '<your-branch-resource-path>'
-            database: '<your-branch-resource-path>/databases/<your-database-instance>'
+        - name: "database"
+          database:
+            instance_name: "<your-lakebase-instance-name>"
+            database_name: "databricks_postgres"
             permission: "CAN_CONNECT_AND_CREATE"
-        # Use for provisioned lakebase resource
-        # - name: "database"
-        #   database:
-        #     instance_name: "<your-lakebase-instance-name>"
-        #     database_name: "databricks_postgres"
-        #     permission: "CAN_CONNECT_AND_CREATE"
 
 targets:
   dev:
@@ -160,18 +147,19 @@ class TestUpdateDatabricksYmlExperiment:
         assert not (tmp_path / "databricks.yml").exists()
 
     def test_preserves_other_app_resources(self, tmp_path):
-        (tmp_path / "databricks.yml").write_text(LAKEBASE_AUTOSCALING_YML)
+        (tmp_path / "databricks.yml").write_text(LAKEBASE_YML)
         update_databricks_yml_experiment("12345")
         content = (tmp_path / "databricks.yml").read_text()
-        assert "postgres:" in content
+        assert "- name: 'database'" in content
+        assert "instance_name:" in content
         assert "CAN_CONNECT_AND_CREATE" in content
 
     def test_handles_double_quoted_experiment_name(self, tmp_path):
-        (tmp_path / "databricks.yml").write_text(LAKEBASE_AUTOSCALING_DOUBLE_QUOTED_YML)
+        (tmp_path / "databricks.yml").write_text(DOUBLE_QUOTED_YML)
         update_databricks_yml_experiment("99999")
         content = (tmp_path / "databricks.yml").read_text()
         assert 'experiment_id: "99999"' in content
-        assert '"postgres"' in content
+        assert '- name: "database"' in content
 
     def test_no_experiments_resource_section(self, tmp_path):
         (tmp_path / "databricks.yml").write_text(MINIMAL_YML)
@@ -204,3 +192,48 @@ class TestUpdateDatabricksYmlExperiment:
             content = (tdir / "databricks.yml").read_text()
             assert "experiments:" not in content, f"{template_name}: experiments resource section should not exist"
             assert 'experiment_id: "99999"' in content, f"{template_name}: experiment ID not set in resource"
+
+            # Lakebase replacement if applicable
+            if "<your-lakebase-instance-name>" in yml_path.read_text():
+                # Re-read after experiment update to also apply lakebase
+                update_databricks_yml_lakebase("test-lb")
+                content = (tdir / "databricks.yml").read_text()
+                assert "<your-lakebase-instance-name>" not in content, (
+                    f"{template_name}: lakebase placeholder not replaced"
+                )
+
+
+class TestUpdateDatabricksYmlLakebase:
+    def test_replaces_placeholder_in_env_and_database(self, tmp_path):
+        (tmp_path / "databricks.yml").write_text(LAKEBASE_YML)
+        update_databricks_yml_lakebase("my-instance")
+        content = (tmp_path / "databricks.yml").read_text()
+        assert "<your-lakebase-instance-name>" not in content
+        assert "my-instance" in content
+        # Both env var value and database instance_name should be replaced
+        assert 'value: "my-instance"' in content
+        assert "instance_name: 'my-instance'" in content
+
+    def test_noop_without_placeholder(self, tmp_path):
+        yml = MINIMAL_YML  # no lakebase placeholder
+        (tmp_path / "databricks.yml").write_text(yml)
+        update_databricks_yml_lakebase("my-instance")
+        content = (tmp_path / "databricks.yml").read_text()
+        assert content == yml
+
+    def test_handles_missing_file(self, tmp_path):
+        update_databricks_yml_lakebase("my-instance")
+        assert not (tmp_path / "databricks.yml").exists()
+
+
+class TestCombined:
+    def test_both_functions_applied_in_sequence(self, tmp_path):
+        (tmp_path / "databricks.yml").write_text(LAKEBASE_YML)
+        update_databricks_yml_experiment("54321")
+        update_databricks_yml_lakebase("prod-db")
+        content = (tmp_path / "databricks.yml").read_text()
+        # Experiment changes
+        assert 'experiment_id: "54321"' in content
+        # Lakebase changes
+        assert "<your-lakebase-instance-name>" not in content
+        assert "prod-db" in content

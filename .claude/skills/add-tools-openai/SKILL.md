@@ -54,6 +54,7 @@ See the `examples/` directory for complete YAML snippets:
 | `sql-warehouse.yaml` | SQL warehouse | SQL execution |
 | `serving-endpoint.yaml` | Model serving endpoint | Model inference |
 | `genie-space.yaml` | Genie space | Natural language data |
+| `lakebase-autoscaling.md` | Lakebase autoscaling postgres | Agent memory storage (autoscaling) |
 | `experiment.yaml` | MLflow experiment | Tracing (already configured) |
 | `custom-mcp-server.md` | Custom MCP apps | Apps starting with `mcp-*` |
 

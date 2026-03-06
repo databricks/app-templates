@@ -22,11 +22,10 @@ resources:
             value: "300"
           - name: MLFLOW_EXPERIMENT_ID
             value_from: "experiment"
-          - name: PGENDPOINT
-            value_from: postgres
-          # Use for provisioned lakebase resource
-          # - name: LAKEBASE_INSTANCE_NAME
-          #   value: "<your-lakebase-instance-name>"
+          # Autoscaling Lakebase config
+          - name: LAKEBASE_AUTOSCALING_PROJECT
+          - name: LAKEBASE_AUTOSCALING_BRANCH
+            value: "<your-branch-name>"
 
       # Resources which this app has access to
       resources:
@@ -34,17 +33,8 @@ resources:
           experiment:
             experiment_id: ""
             permission: "CAN_MANAGE"
-        - name: "postgres"
-          postgres:
-            branch: '<your-branch-resource-path>'
-            database: '<your-branch-resource-path>/databases/<your-database-instance>'
-            permission: "CAN_CONNECT_AND_CREATE"
-        # Use for provisioned lakebase resource
-        # - name: "database"
-        #   database:
-        #     instance_name: "<your-lakebase-instance-name>"
-        #     database_name: "databricks_postgres"
-        #     permission: "CAN_CONNECT_AND_CREATE"
+        # Autoscaling postgres resource must be added via API after deploy
+        # See: .claude/skills/add-tools/examples/lakebase-autoscaling.md
 
 targets:
   dev:

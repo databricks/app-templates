@@ -10,7 +10,10 @@
    *Note: New apps should use the `agent-*` prefix (e.g., `agent-data-analyst`) unless the user specifies otherwise.*
 
 2. **Lakebase instance (required for memory):**
-   > "This template requires Lakebase for memory. Do you have an existing Lakebase instance? If so, what's the instance name?"
+   > "This template requires Lakebase for memory. Are you using a **provisioned** Lakebase instance or an **autoscaling** Lakebase project/branch?"
+
+   - **Provisioned instance**: Use the **lakebase-setup** skill (configures `LAKEBASE_INSTANCE_NAME` in databricks.yml)
+   - **Autoscaling project/branch**: Follow `.claude/skills/add-tools/examples/lakebase-autoscaling.md` — this requires deploying the app first, then adding the postgres resource via API and granting table permissions to the app's service principal
 
 **Then check authentication status by running `databricks auth profiles`.**
 
@@ -40,8 +43,12 @@ Use `uv run discover-tools` to show them available resources in their workspace,
 This template includes **short-term memory** (conversation history within a session). The agent remembers what was said earlier in the same conversation thread.
 
 **Required setup:**
-1. Configure Lakebase instance (see **lakebase-setup** skill)
+1. Configure Lakebase — either:
+   - **Provisioned**: See **lakebase-setup** skill
+   - **Autoscaling**: See `.claude/skills/add-tools/examples/lakebase-autoscaling.md` — deploy first, add resource via API, grant table permissions
 2. Use `thread_id` in requests to maintain conversation context (see **agent-memory** skill)
+
+**Autoscaling keywords**: If the user mentions "autoscaling", "project", "branch", or "postgres" in the context of Lakebase/memory, use the **autoscaling** guide at `.claude/skills/add-tools/examples/lakebase-autoscaling.md`.
 
 ## Handling Deployment Errors
 

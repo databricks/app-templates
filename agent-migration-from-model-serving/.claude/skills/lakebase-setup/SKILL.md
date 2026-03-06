@@ -9,6 +9,8 @@ description: "Configure Lakebase for agent memory storage. Use when: (1) Adding 
 > - `agent-langgraph-short-term-memory` - Conversation history within a session
 > - `agent-langgraph-long-term-memory` - User facts that persist across sessions
 
+> **Autoscaling Lakebase?** If the user mentions "autoscaling", "project", or "branch" in the context of Lakebase, they are using an **autoscaling** Lakebase instance (not provisioned). This skill covers **provisioned** instances only. For autoscaling, see `.claude/skills/add-tools/examples/lakebase-autoscaling.md` instead — it uses `LAKEBASE_AUTOSCALING_PROJECT` and `LAKEBASE_AUTOSCALING_BRANCH` env vars, deploys the app first, then adds the postgres resource via API for permissions and grants table access.
+
 ## Overview
 
 Lakebase provides persistent storage for agent memory:

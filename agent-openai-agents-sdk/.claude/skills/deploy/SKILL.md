@@ -178,6 +178,16 @@ databricks apps get <app-name> --output json | jq '{app_status, compute_status}'
 databricks apps get <app-name> --output json | jq -r '.url'
 ```
 
+## Post-Deploy: Autoscaling Lakebase Resources
+
+If the agent uses **autoscaling Lakebase** (user mentions "autoscaling", "project", or "branch" in the context of Lakebase), you must add the postgres resource via API **after** deploying:
+
+1. Deploy the app first (`databricks bundle deploy` + `databricks bundle run`)
+2. Add the postgres resource via API
+3. Grant table permissions to the app's service principal
+
+**See `.claude/skills/add-tools/examples/lakebase-autoscaling.md` for complete steps.**
+
 ## Important Notes
 
 - **App naming convention**: App names must be prefixed with `agent-` (e.g., `agent-my-assistant`, `agent-data-analyst`)

@@ -2,10 +2,6 @@ bundle:
   name: agent_openai_agents_sdk
 
 resources:
-  experiments:
-    agent_openai_agents_sdk_experiment:
-      name: /Users/${workspace.current_user.userName}/${bundle.name}-${bundle.target}
-
   apps:
     agent_openai_agents_sdk:
       name: "agent-openai-agents-sdk"
@@ -30,10 +26,11 @@ resources:
             value_from: "database"
           - name: LOG_LEVEL
             value: "INFO"
+      # Resources which this app has access to
       resources:
         - name: 'experiment'
           experiment:
-            experiment_id: "${resources.experiments.agent_openai_agents_sdk_experiment.id}"
+            experiment_id: ""
             permission: 'CAN_MANAGE'
         - name: 'database'
           database:
@@ -45,12 +42,13 @@ targets:
   dev:
     mode: development
     default: true
-    workspace:
-      host: https://<your-workspace-host>  # TODO: Replace with your Databricks workspace URL (e.g. https://adb-xxx.azuredatabricks.net or https://xxx.cloud.databricks.com)
+    # workspace:
+    #   host: https://...
+
   prod:
     mode: production
-    workspace:
-      host: https://<your-workspace-host>  # TODO: Replace with your Databricks workspace URL
+    # workspace:
+    #   host: https://...
     resources:
       apps:
         agent_openai_agents_sdk:

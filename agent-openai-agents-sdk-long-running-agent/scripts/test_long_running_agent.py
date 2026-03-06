@@ -4,16 +4,17 @@ Pytest tests for the long-running agent's Responses API.
 Covers all responses.create() paths: sync, stream, background+poll,
 background+stream, and background+stream with cursor-based retrieval.
 
+Note: client.responses.stream() (non-background) is not tested. The OpenAI
+Agents SDK's ChatCmplStreamHandler produces output items that don't conform
+to what the OpenAI platform SDK's ResponseStreamManager expects (e.g. missing
+type="message"), causing an AssertionError in the stream accumulator.
+Background .stream() works because events are stored/retrieved via the DB
+rather than accumulated client-side.
+
 Tests use a trivial prompt ("what time is it?") so they complete quickly.
 The goal is to verify each API path works end-to-end, not to exercise
 long-running behavior — background polling and streaming work the same
 regardless of response length.
-
-Note: client.responses.stream() is explicitly not tested here. That API
-returns normalized event types that differ from the raw SSE events returned
-by responses.create(stream=True), requiring complex event normalization
-code to handle correctly. All streaming tests use responses.create() and
-responses.retrieve() with stream=True instead.
 
 Usage:
     # Start the server first
@@ -190,6 +191,43 @@ def test_background_stream_retrieve_poll():
     assert response_id, "Expected to get a response ID from stream"
 
     # Poll until completed (no stream)
+    resp = client.responses.retrieve(response_id)
+    while resp.status in ("queued", "in_progress"):
+        time.sleep(2)
+        resp = client.responses.retrieve(response_id)
+    assert resp.status == "completed"
+    assert resp.output_text
+
+
+def test_responses_stream_background_retrieve_with_cursor():
+    """Background .stream() to get response ID, then retrieve with starting_after cursor."""
+    client = get_client()
+    with client.responses.stream(
+        model="unused",
+        input=[{"role": "user", "content": PROMPT}],
+        background=True,
+    ) as stream:
+        response_id = None
+        cursor = None
+        events_before = 0
+        for event in stream:
+            seq = _get_event_attr(event, "sequence_number")
+            if seq is not None:
+                cursor = seq
+
+            if response_id is None:
+                resp = _get_event_attr(event, "response")
+                if resp is not None:
+                    response_id = _get_event_attr(resp, "id")
+
+            events_before += 1
+            if events_before >= 5 and response_id and cursor is not None:
+                break
+
+    assert response_id, "Expected to get a response ID from .stream()"
+    assert cursor is not None, "Expected to get a cursor from .stream()"
+
+    # Poll with starting_after cursor until completed
     resp = client.responses.retrieve(response_id)
     while resp.status in ("queued", "in_progress"):
         time.sleep(2)

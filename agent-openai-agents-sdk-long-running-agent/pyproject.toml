@@ -36,7 +36,7 @@ dev = [
 
 [tool.pytest.ini_options]
 base_url = "http://localhost:8000"
-addopts = "-n 6"
+addopts = "-n 7"
 
 [project.scripts]
 quickstart = "scripts.quickstart:main"

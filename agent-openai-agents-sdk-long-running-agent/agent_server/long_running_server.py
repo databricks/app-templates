@@ -96,9 +96,8 @@ class LongRunningAgentServer(AgentServer):
     def _setup_routes(self) -> None:
         """Register routes. Reuses parent's POST /invocations and POST /responses.
 
-        Adds GET /retrieve/{id} and GET /responses/{id} for polling/streaming
-        when DB is configured. Background mode is handled via overridden
-        _handle_invocations_request.
+        Adds GET /responses/{id} for polling/streaming when DB is configured.
+        Background mode is handled via overridden _handle_invocations_request.
         """
         super()._setup_routes()
 
@@ -108,14 +107,13 @@ class LongRunningAgentServer(AgentServer):
             )
             return
 
-        @self.app.get("/retrieve/{response_id}")
         @self.app.get("/responses/{response_id}")
         async def retrieve_endpoint(
             response_id: str,
             stream: bool = Query(False, description="Stream results as SSE"),
             starting_after: int = Query(0, ge=0, description="Resume from sequence number"),
         ):
-            """Handle GET /responses/{id} and GET /retrieve/{id}.
+            """Handle GET /responses/{id}.
 
             Polls or streams new messages from the database as the agent loop
             produces them. Clients use the response_id returned from

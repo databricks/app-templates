@@ -7,6 +7,7 @@ from agent_server.db.connection import (
     init_db,
     is_db_configured,
 )
+from agent_server.db.utils_lakebase import resolve_lakebase_instance_name
 from agent_server.db.repository import (
     append_message,
     create_response,
@@ -28,5 +29,6 @@ __all__ = [
     "init_db",
     "is_db_configured",
     "update_response_status",
+    "resolve_lakebase_instance_name",
     "update_response_trace_id",
 ]

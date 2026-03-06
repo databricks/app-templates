@@ -35,7 +35,7 @@ dev = [
 
 
 [tool.pytest.ini_options]
-base_url = "http://localhost:3000"
+base_url = "http://localhost:8000"
 addopts = "-n 6"
 
 [project.scripts]

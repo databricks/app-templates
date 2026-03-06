@@ -8,7 +8,6 @@ import time
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from typing import Any
 
 from fastapi import HTTPException, Query, Request
@@ -35,11 +34,11 @@ from agent_server.db import (
     update_response_trace_id,
 )
 from agent_server.settings import settings
+from agent_server.utils import replace_fake_id
 
 logger = logging.getLogger(__name__)
 
 BACKGROUND_KEY = "background"
-FAKE_ID = "__fake_id__"
 
 
 async def _deferred_mark_failed(
@@ -89,81 +88,6 @@ def _sse_event(event_type: str, data: dict[str, Any] | str) -> str:
     """Format an SSE event per Open Responses spec: event must match type in body."""
     payload = data if isinstance(data, str) else json.dumps(data)
     return f"event: {event_type}\ndata: {payload}\n\n"
-
-
-def _normalize_fake_id(obj: Any, real_id: str) -> Any:
-    """Replace __fake_id__ with real response id in event (recursively)."""
-    if isinstance(obj, dict):
-        return {k: _normalize_fake_id(v, real_id) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [_normalize_fake_id(item, real_id) for item in obj]
-    elif isinstance(obj, str) and obj == FAKE_ID:
-        return real_id
-    return obj
-
-
-@dataclass
-class _StreamNormState:
-    """State for normalizing multi-turn agent stream events."""
-
-    response_created_sent: bool = False
-    pending_completed: dict[str, Any] | None = None
-    output_index_offset: int = 0
-    last_output_index: int = -1
-
-
-def _normalize_stream_event(
-    evt: dict[str, Any],
-    state: _StreamNormState,
-    response_id: str,
-) -> dict[str, Any] | None:
-    """Normalize a stream event for multi-turn agent output.
-
-    Replaces __fake_id__ with response_id, deduplicates response.created,
-    holds intermediate response.completed (emit only the last one at end),
-    and remaps output_index across turns so the SDK's flat output array
-    stays consistent.
-
-    Returns the event to append, or None to skip.
-    Mutates state; for response.completed, sets state.pending_completed.
-    """
-    evt = _normalize_fake_id(evt, response_id)
-    evt_type = evt.get("type")
-
-    # 1. Deduplicate response.created — only store the first one
-    if evt_type == "response.created":
-        if state.response_created_sent:
-            return None
-        state.response_created_sent = True
-
-    # 2. Hold intermediate response.completed — only emit the last one at end
-    elif evt_type == "response.completed":
-        state.pending_completed = evt
-        return None
-
-    # 3. Remap output_index across turns. Each new model turn resets
-    #    output_index to 0, but the SDK tracks a flat list — apply offset
-    #    when we detect a new turn (output_item.added with index <= previous).
-    #    Skip for function_call_output: SDK ignores it, leave output_index as null.
-    item = evt.get("item") or {}
-    is_function_call_output = (
-        evt_type in ("response.output_item.added", "response.output_item.done")
-        and item.get("type") == "function_call_output"
-    )
-    if not is_function_call_output:
-        raw_index = evt.get("output_index")
-        if raw_index is not None:
-            if evt_type == "response.output_item.added":
-                if raw_index <= state.last_output_index and state.last_output_index >= 0:
-                    state.output_index_offset += state.last_output_index + 1
-                state.last_output_index = raw_index
-            evt["output_index"] = raw_index + state.output_index_offset
-
-    # 4. Skip malformed events (no type)
-    if not evt_type:
-        return None
-
-    return evt
 
 
 class LongRunningAgentServer(AgentServer):
@@ -395,15 +319,12 @@ class LongRunningAgentServer(AgentServer):
         func_name = stream_fn.__name__
         all_chunks: list[dict[str, Any]] = []
         seq = 0
-        norm_state = _StreamNormState()
 
         with mlflow.start_span(name=f"{func_name}") as span:
             span.set_inputs(request_data)
             async for event in stream_fn(request_data):
                 evt = self.validator.validate_and_convert_result(event, stream=True)
-                evt = _normalize_stream_event(evt, norm_state, response_id)
-                if evt is None:
-                    continue
+                evt = replace_fake_id(evt, response_id)
 
                 all_chunks.append(evt)
                 item = evt.get("item")
@@ -417,26 +338,6 @@ class LongRunningAgentServer(AgentServer):
                     seq,
                     item=json.dumps(item) if item is not None else None,
                     stream_event=evt,
-                )
-                seq += 1
-                state["seq"] = seq
-
-            pending_completed = norm_state.pending_completed
-            if pending_completed is not None:
-                all_chunks.append(pending_completed)
-                logger.debug(
-                    "SSE event (background)",
-                    extra={
-                        "response_id": response_id,
-                        "seq": seq,
-                        "type": "response.completed",
-                    },
-                )
-                await append_message(
-                    response_id,
-                    seq,
-                    item=None,
-                    stream_event=pending_completed,
                 )
                 seq += 1
                 state["seq"] = seq

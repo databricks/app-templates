@@ -7,7 +7,7 @@ Uses AsyncLakebaseSQLAlchemy from databricks-ai-bridge for OAuth token handling:
 
 When running in Databricks Apps, LAKEBASE_INSTANCE_NAME may be a hostname
 (from valueFrom: "database") rather than an instance name. resolve_lakebase_instance_name
-in agent_server.utils_lakebase resolves hostnames to instance names.
+in agent_server.db.utils_lakebase resolves hostnames to instance names.
 """
 
 import logging
@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from agent_server.db.models import AGENT_DB_SCHEMA, Base
 from agent_server.settings import settings
-from agent_server.utils_lakebase import resolve_lakebase_instance_name
+from agent_server.db.utils_lakebase import resolve_lakebase_instance_name
 
 logger = logging.getLogger(__name__)
 

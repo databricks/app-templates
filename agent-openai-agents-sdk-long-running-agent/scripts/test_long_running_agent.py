@@ -30,28 +30,31 @@ Usage:
     uv run pytest scripts/test_long_running_agent.py -v -k test_background_stream_retrieve_with_cursor
 
     # Against deployed app
-    AGENT_URL=https://my-app.databricksapps.com uv run pytest scripts/test_long_running_agent.py -v
+    uv run pytest scripts/test_long_running_agent.py -v --agent-url https://my-app.databricksapps.com
 """
 
 from __future__ import annotations
 
-import os
 import time
 
+import pytest
 from openai import OpenAI
 from databricks_openai import DatabricksOpenAI
 from databricks.sdk import WorkspaceClient
 
-AGENT_URL = os.environ.get("AGENT_URL", "http://localhost:8000")
+
+@pytest.fixture(scope="session")
+def agent_url(request):
+    return request.config.getoption("--agent-url")
 
 PROMPT = "What time is it?"
 
 
-def get_client() -> OpenAI | DatabricksOpenAI:
-    is_local = "localhost" in AGENT_URL or "127.0.0.1" in AGENT_URL
+def get_client(agent_url: str) -> OpenAI | DatabricksOpenAI:
+    is_local = "localhost" in agent_url or "127.0.0.1" in agent_url
     if is_local:
-        return OpenAI(base_url=AGENT_URL, api_key="local")
-    return DatabricksOpenAI(workspace_client=WorkspaceClient(), base_url=AGENT_URL)
+        return OpenAI(base_url=agent_url, api_key="local")
+    return DatabricksOpenAI(workspace_client=WorkspaceClient(), base_url=agent_url)
 
 
 def _get_event_attr(evt: object, key: str, default=None):
@@ -60,9 +63,8 @@ def _get_event_attr(evt: object, key: str, default=None):
     return getattr(evt, key, default)
 
 
-def test_sync():
-    """responses.create(stream=False) — basic synchronous call."""
-    client = get_client()
+def test_sync(agent_url):
+    client = get_client(agent_url)
     resp = client.responses.create(
         input=[{"role": "user", "content": PROMPT}],
     )
@@ -71,9 +73,8 @@ def test_sync():
     assert resp.output_text
 
 
-def test_stream():
-    """responses.create(stream=True) — streaming call, collect text deltas."""
-    client = get_client()
+def test_stream(agent_url):
+    client = get_client(agent_url)
     stream = client.responses.create(
         input=[{"role": "user", "content": PROMPT}],
         stream=True,
@@ -87,9 +88,8 @@ def test_stream():
     assert text_parts, "Expected text deltas from stream"
 
 
-def test_background_poll():
-    """responses.create(background=True, stream=False) + poll until completed."""
-    client = get_client()
+def test_background_poll(agent_url):
+    client = get_client(agent_url)
     resp = client.responses.create(
         input=[{"role": "user", "content": PROMPT}],
         background=True,
@@ -102,9 +102,8 @@ def test_background_poll():
     assert resp.output_text
 
 
-def test_background_stream():
-    """responses.create(background=True, stream=True) — iterate events."""
-    client = get_client()
+def test_background_stream(agent_url):
+    client = get_client(agent_url)
     stream = client.responses.create(
         input=[{"role": "user", "content": PROMPT}],
         background=True,
@@ -119,9 +118,8 @@ def test_background_stream():
     assert text_parts, "Expected text deltas from background stream"
 
 
-def test_background_stream_retrieve_with_cursor():
-    """Background+stream, then retrieve with starting_after cursor to resume."""
-    client = get_client()
+def test_background_stream_retrieve_with_cursor(agent_url):
+    client = get_client(agent_url)
     stream = client.responses.create(
         input=[{"role": "user", "content": PROMPT}],
         background=True,
@@ -169,9 +167,8 @@ def test_background_stream_retrieve_with_cursor():
     assert text_parts, "Expected text deltas from resumed stream"
 
 
-def test_background_stream_retrieve_poll():
-    """Background+stream to get response ID, then retrieve (poll) until completed."""
-    client = get_client()
+def test_background_stream_retrieve_poll(agent_url):
+    client = get_client(agent_url)
     stream = client.responses.create(
         input=[{"role": "user", "content": PROMPT}],
         background=True,
@@ -199,9 +196,8 @@ def test_background_stream_retrieve_poll():
     assert resp.output_text
 
 
-def test_responses_stream_background_retrieve_with_cursor():
-    """Background .stream() to get response ID, then retrieve with starting_after cursor."""
-    client = get_client()
+def test_responses_stream_background_retrieve_with_cursor(agent_url):
+    client = get_client(agent_url)
     with client.responses.stream(
         model="unused",
         input=[{"role": "user", "content": PROMPT}],

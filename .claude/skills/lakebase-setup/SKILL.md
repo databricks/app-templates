@@ -3,17 +3,21 @@ name: lakebase-setup
 description: "Configure Lakebase for agent memory storage. Use when: (1) Adding memory capabilities to the agent, (2) 'Failed to connect to Lakebase' errors, (3) Permission errors on checkpoint/store tables, (4) User says 'lakebase', 'memory setup', or 'add memory'."
 ---
 
-# Lakebase Setup for Agent Memory
+# Lakebase Setup for Agent Persistence
 
-> **Note:** This template does not include memory by default. Use this skill if you want to **add memory capabilities** to your agent. For pre-configured memory templates, see:
-> - `agent-langgraph-short-term-memory` - Conversation history within a session
-> - `agent-langgraph-long-term-memory` - User facts that persist across sessions
+> **Profile reminder:** All `databricks` CLI commands must include the profile from `.env`: `databricks <command> --profile <profile>` or `DATABRICKS_CONFIG_PROFILE=<profile> databricks <command>`
 
 ## Overview
 
-Lakebase provides persistent storage for agent memory:
-- **Short-term memory**: Conversation history within a thread (`AsyncCheckpointSaver`)
-- **Long-term memory**: User facts across sessions (`AsyncDatabricksStore`)
+Lakebase provides persistent PostgreSQL storage for agents:
+- **Short-term memory** (LangGraph): Conversation history within a thread (`AsyncCheckpointSaver`)
+- **Long-term memory** (LangGraph): User facts across sessions (`AsyncDatabricksStore`)
+- **Long-running agent persistence** (OpenAI SDK): Background task state via custom SQLAlchemy tables (`agent_server` schema)
+
+> **Note:** For pre-configured memory templates, see:
+> - `agent-langgraph-short-term-memory` - Conversation history within a session
+> - `agent-langgraph-long-term-memory` - User facts that persist across sessions
+> - `agent-openai-agents-sdk-long-running-agent` - Background tasks with Lakebase persistence
 
 ## Complete Setup Workflow
 
@@ -134,36 +138,14 @@ EMBEDDING_DIMS=1024
 
 ---
 
-## Step 5: Initialize Store Tables (CRITICAL - First Time Only)
+## Step 5: Initialize Tables
 
-**Before deploying**, you must initialize the Lakebase tables. The `AsyncDatabricksStore` creates tables on first use, but you need to do this locally first:
+### Option A: LangGraph Memory Templates (public schema)
 
-```python
-# Run this script locally BEFORE first deployment
-import asyncio
-from databricks_langchain import AsyncDatabricksStore
+**Before deploying**, initialize the Lakebase tables. The `AsyncDatabricksStore` creates tables on first use, but you need to do this locally first:
 
-async def setup_store():
-    async with AsyncDatabricksStore(
-        instance_name="<your-instance-name>",
-        embedding_endpoint="databricks-gte-large-en",
-        embedding_dims=1024,
-    ) as store:
-        print("Setting up store tables...")
-        await store.setup()  # Creates required tables
-        print("Store tables created!")
-
-        # Verify with a test write/read
-        await store.aput(("test", "init"), "test_key", {"value": "test_value"})
-        results = await store.asearch(("test", "init"), query="test", limit=1)
-        print(f"Test successful: {results}")
-
-asyncio.run(setup_store())
-```
-
-Run with:
 ```bash
-uv run python -c "$(cat <<'EOF'
+DATABRICKS_CONFIG_PROFILE=<profile> uv run python -c "$(cat <<'EOF'
 import asyncio
 from databricks_langchain import AsyncDatabricksStore
 
@@ -187,18 +169,83 @@ This creates these tables in the `public` schema:
 - `store_migrations` - Schema migration tracking
 - `vector_migrations` - Vector schema migration tracking
 
+### Option B: Long-Running Agent Templates (agent_server schema)
+
+The long-running agent uses SQLAlchemy with a custom `agent_server` schema. Tables are created automatically on app startup via `CREATE SCHEMA IF NOT EXISTS agent_server` and `Base.metadata.create_all`. No manual table initialization is needed.
+
+Tables created in the `agent_server` schema:
+- `responses` - Response status tracking for background agent tasks
+- `messages` - Stream events and output items for responses
+
 ---
 
-## Step 6: Deploy and Run Your App
+## Step 6: Grant SP Permissions (CRITICAL for deployed apps)
+
+After deploying, the app's service principal needs Postgres roles to access Lakebase tables. The DAB `database` resource with `CAN_CONNECT_AND_CREATE` grants basic connectivity, but you must also grant Postgres-level schema and table permissions.
+
+**Step 1:** Get the app's service principal client ID:
+```bash
+DATABRICKS_CONFIG_PROFILE=<profile> databricks apps get <app-name> --output json | jq -r '.service_principal_client_id'
+```
+
+**Step 2:** Grant permissions using `LakebaseClient`:
+
+```bash
+DATABRICKS_CONFIG_PROFILE=<profile> uv run python -c "
+from databricks_ai_bridge.lakebase import LakebaseClient, SchemaPrivilege, TablePrivilege
+
+client = LakebaseClient(instance_name='<your-instance-name>')
+sp_id = '<service-principal-client-id>'  # UUID from step 1
+
+# Create role (must do first)
+client.create_role(sp_id, 'SERVICE_PRINCIPAL')
+
+# Grant schema privileges
+client.grant_schema(
+    grantee=sp_id,
+    schemas=['<schema-name>'],  # 'public' for LangGraph, 'agent_server' for long-running agent
+    privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE],
+)
+
+# Grant table privileges
+client.grant_table(
+    grantee=sp_id,
+    tables=['<schema>.<table1>', '<schema>.<table2>'],
+    privileges=[TablePrivilege.SELECT, TablePrivilege.INSERT, TablePrivilege.UPDATE, TablePrivilege.DELETE],
+)
+
+print('Done!')
+"
+```
+
+### LangGraph Memory Templates
+
+Grant on `public` schema:
+```python
+client.grant_schema(grantee=sp_id, schemas=['public'], privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE])
+client.grant_table(grantee=sp_id, tables=['public.store', 'public.store_vectors'], privileges=[TablePrivilege.SELECT, TablePrivilege.INSERT, TablePrivilege.UPDATE, TablePrivilege.DELETE])
+```
+
+### Long-Running Agent Templates
+
+Grant on `agent_server` schema:
+```python
+client.grant_schema(grantee=sp_id, schemas=['agent_server'], privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE])
+client.grant_table(grantee=sp_id, tables=['agent_server.responses', 'agent_server.messages'], privileges=[TablePrivilege.SELECT, TablePrivilege.INSERT, TablePrivilege.UPDATE, TablePrivilege.DELETE])
+```
+
+---
+
+## Step 7: Deploy and Run Your App
 
 **IMPORTANT:** Always run both `deploy` AND `run` commands:
 
 ```bash
 # Deploy resources and upload files
-databricks bundle deploy
+DATABRICKS_CONFIG_PROFILE=<profile> databricks bundle deploy
 
 # Start/restart the app with new code (REQUIRED!)
-databricks bundle run agent_langgraph
+DATABRICKS_CONFIG_PROFILE=<profile> databricks bundle run {{BUNDLE_NAME}}
 ```
 
 > **Note:** `bundle deploy` only uploads files and configures resources. `bundle run` is required to actually start the app with the new code.
@@ -325,7 +372,7 @@ When granting permissions manually, note that Databricks apps have multiple iden
 
 **Get all identifiers:**
 ```bash
-databricks apps get <app-name> --output json | jq '{
+DATABRICKS_CONFIG_PROFILE=<profile> databricks apps get <app-name> --output json | jq '{
   id: .service_principal_id,
   client_id: .service_principal_client_id,
   name: .service_principal_name

@@ -72,13 +72,13 @@ async with AsyncDatabricksSession(
 
 ### 5. Grant table permissions to the app's service principal
 
-The app's service principal needs permissions on the memory tables. First, get the service principal ID:
+The app's service principal needs permissions on the memory tables. First, get the service principal **client ID** (UUID format):
 
 ```bash
-databricks apps get <your-app-name> --output json | jq -r '.service_principal_id'
+databricks apps get <your-app-name> --output json | jq -r '.service_principal_client_id'
 ```
 
-Then grant permissions using the `LakebaseClient`:
+Then grant permissions using the `LakebaseClient`. **Run with `uv run`** from the template directory so `databricks-ai-bridge` is available:
 
 ```python
 from databricks_ai_bridge.lakebase import (
@@ -89,7 +89,7 @@ from databricks_ai_bridge.lakebase import (
 )
 
 INSTANCE_NAME = "<your-lakebase-instance>"
-APP_SP = "<your-app-service-principal-id>"  # from the command above
+APP_SP = "<your-app-service-principal-client-id>"  # UUID from the command above
 
 with LakebaseClient(instance_name=INSTANCE_NAME) as client:
     client.create_role(APP_SP, "SERVICE_PRINCIPAL")
@@ -151,7 +151,7 @@ with LakebaseClient(instance_name=INSTANCE_NAME) as client:
 
 ## Notes
 
-- The app uses `LAKEBASE_AUTOSCALING_PROJECT` and `LAKEBASE_AUTOSCALING_BRANCH` env vars to connect — NOT `PGENDPOINT`
-- The postgres resource added via API is only for granting the service principal permissions, not for env var injection
+- The app uses `LAKEBASE_AUTOSCALING_PROJECT` and `LAKEBASE_AUTOSCALING_BRANCH` env vars to connect
+- The postgres resource added via API is only for granting the service principal permissions
 - For local development, set the same `LAKEBASE_AUTOSCALING_PROJECT` and `LAKEBASE_AUTOSCALING_BRANCH` in your `.env` file
 - The permission grants persist across deployments, but must be re-run if the app's service principal changes

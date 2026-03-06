@@ -110,137 +110,31 @@ async with AsyncDatabricksStore(
 
 ### 5. Grant table permissions to the app's service principal
 
-The app's service principal needs permissions on the memory tables. First, get the service principal **client ID** (UUID format):
+The app's service principal needs permissions on the memory tables. Use the `scripts/grant_lakebase_permissions.py` script included in the template.
+
+First, get the service principal **client ID** (UUID format):
 
 ```bash
 databricks apps get <your-app-name> --output json | jq -r '.service_principal_client_id'
 ```
 
-Then grant permissions using the `LakebaseClient`. **Run with `uv run`** from the template directory so `databricks-ai-bridge` is available.
+Then run the grant script. Pass `--instance-name` for provisioned instances, or `--project` + `--branch` for autoscaling (the script also reads these from `.env` if set):
+
+```bash
+# Provisioned:
+uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --instance-name <name>
+
+# Autoscaling:
+uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --project <project> --branch <branch>
+```
 
 > Upon first usage of stateful agent the schemas and tables below won't exist yet. Attempt the grants below, but if `grant_table` or `grant_all_tables_in_schema` calls fail because the table/schema doesn't exist, that's expected, not an error.
-
-The required tables differ by memory type:
-
-#### Short-term memory (`AsyncCheckpointSaver`)
-
-```python
-from databricks_ai_bridge.lakebase import (
-    LakebaseClient,
-    SchemaPrivilege,
-    TablePrivilege,
-)
-
-INSTANCE_NAME = "<your-lakebase-instance>"
-APP_SP = "<your-app-service-principal-client-id>"  # UUID from the command above
-
-with LakebaseClient(instance_name=INSTANCE_NAME) as client:
-    client.create_role(APP_SP, "SERVICE_PRINCIPAL")
-
-    # Drizzle schema: migration metadata tables
-    client.grant_schema(
-        grantee=APP_SP,
-        privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE],
-        schemas=["drizzle"],
-    )
-    client.grant_all_tables_in_schema(
-        grantee=APP_SP,
-        privileges=[TablePrivilege.SELECT, TablePrivilege.INSERT, TablePrivilege.UPDATE],
-        schemas=["drizzle"],
-    )
-
-    # App schema: business tables (Chat, Message, etc.)
-    client.grant_schema(
-        grantee=APP_SP,
-        privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE],
-        schemas=["ai_chatbot"],
-    )
-    client.grant_all_tables_in_schema(
-        grantee=APP_SP,
-        privileges=[TablePrivilege.SELECT, TablePrivilege.INSERT, TablePrivilege.UPDATE],
-        schemas=["ai_chatbot"],
-    )
-
-    # Public schema: checkpoint tables
-    client.grant_schema(
-        grantee=APP_SP,
-        privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE],
-        schemas=["public"],
-    )
-    client.grant_table(
-        grantee=APP_SP,
-        privileges=[TablePrivilege.SELECT, TablePrivilege.INSERT, TablePrivilege.UPDATE],
-        tables=[
-            "public.checkpoint_migrations",
-            "public.checkpoint_writes",
-            "public.checkpoints",
-            "public.checkpoint_blobs",
-        ],
-    )
-```
-
-#### Long-term memory (`AsyncDatabricksStore`)
-
-```python
-from databricks_ai_bridge.lakebase import (
-    LakebaseClient,
-    SchemaPrivilege,
-    TablePrivilege,
-)
-
-INSTANCE_NAME = "<your-lakebase-instance>"
-APP_SP = "<your-app-service-principal-client-id>"  # UUID from the command above
-
-with LakebaseClient(instance_name=INSTANCE_NAME) as client:
-    client.create_role(APP_SP, "SERVICE_PRINCIPAL")
-
-    # Drizzle schema: migration metadata tables
-    client.grant_schema(
-        grantee=APP_SP,
-        privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE],
-        schemas=["drizzle"],
-    )
-    client.grant_all_tables_in_schema(
-        grantee=APP_SP,
-        privileges=[TablePrivilege.SELECT, TablePrivilege.INSERT, TablePrivilege.UPDATE],
-        schemas=["drizzle"],
-    )
-
-    # App schema: business tables (Chat, Message, etc.)
-    client.grant_schema(
-        grantee=APP_SP,
-        privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE],
-        schemas=["ai_chatbot"],
-    )
-    client.grant_all_tables_in_schema(
-        grantee=APP_SP,
-        privileges=[TablePrivilege.SELECT, TablePrivilege.INSERT, TablePrivilege.UPDATE],
-        schemas=["ai_chatbot"],
-    )
-
-    # Public schema: store tables
-    client.grant_schema(
-        grantee=APP_SP,
-        privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE],
-        schemas=["public"],
-    )
-    client.grant_table(
-        grantee=APP_SP,
-        privileges=[TablePrivilege.SELECT, TablePrivilege.INSERT, TablePrivilege.UPDATE],
-        tables=[
-            "public.store_migrations",
-            "public.store",
-            "public.store_vectors",
-            "public.vector_migrations",
-        ],
-    )
-```
 
 ## Deploy Sequence Summary
 
 1. `databricks bundle deploy` — uploads code with PROJECT+BRANCH env vars
 2. Add postgres resource via API (`PATCH /api/2.0/apps/<name>`) — grants the service principal permissions to Lakebase
-3. Grant table permissions via `LakebaseClient` (step 5 above)
+3. Grant table permissions via `scripts/grant_lakebase_permissions.py` (step 5 above)
 4. `databricks bundle run` — starts the app (reads PROJECT+BRANCH from env vars, has permissions via the postgres resource)
 
 > **On subsequent deploys:** You must re-add the postgres resource via API (step 3) after each `databricks bundle deploy`, since DAB overwrites app resources. The `LakebaseClient` grants (step 5) persist and only need to be run once (unless the service principal changes).

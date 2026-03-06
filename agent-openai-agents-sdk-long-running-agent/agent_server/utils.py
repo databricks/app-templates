@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import AsyncGenerator, AsyncIterator, Optional
+from collections.abc import AsyncGenerator, AsyncIterator
 from uuid import uuid4
 
 from agents.result import StreamEvent
@@ -9,7 +9,7 @@ from mlflow.genai.agent_server import get_request_headers
 from mlflow.types.responses import ResponsesAgentStreamEvent
 
 
-def get_databricks_host(workspace_client: WorkspaceClient | None = None) -> Optional[str]:
+def get_databricks_host(workspace_client: WorkspaceClient | None = None) -> str | None:
     workspace_client = workspace_client or WorkspaceClient()
     try:
         return workspace_client.config.host

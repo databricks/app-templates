@@ -12,32 +12,17 @@ This script scans for:
 """
 
 import json
-import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from databricks.sdk import WorkspaceClient
 
 DEFAULT_MAX_RESULTS = 100
 DEFAULT_MAX_SCHEMAS = 25
 
-def run_databricks_cli(args: List[str]) -> str:
-    """Run databricks CLI command and return output."""
-    try:
-        result = subprocess.run(
-            ["databricks"] + args,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return result.stdout
-    except subprocess.CalledProcessError as e:
-        print(f"Error running databricks CLI: {e.stderr}", file=sys.stderr)
-        return ""
 
-
-def discover_uc_functions(w: WorkspaceClient, catalog: str = None, max_schemas: int = DEFAULT_MAX_SCHEMAS) -> List[Dict[str, Any]]:
+def discover_uc_functions(w: WorkspaceClient, catalog: str = None, max_schemas: int = DEFAULT_MAX_SCHEMAS) -> list[dict[str, Any]]:
     """Discover Unity Catalog functions that could be used as tools.
 
     Args:
@@ -89,7 +74,7 @@ def discover_uc_functions(w: WorkspaceClient, catalog: str = None, max_schemas: 
     return functions
 
 
-def discover_uc_tables(w: WorkspaceClient, catalog: str = None, schema: str = None, max_schemas: int = DEFAULT_MAX_SCHEMAS) -> List[Dict[str, Any]]:
+def discover_uc_tables(w: WorkspaceClient, catalog: str = None, schema: str = None, max_schemas: int = DEFAULT_MAX_SCHEMAS) -> list[dict[str, Any]]:
     """Discover Unity Catalog tables that could be queried.
 
     Args:
@@ -160,7 +145,7 @@ def discover_uc_tables(w: WorkspaceClient, catalog: str = None, schema: str = No
     return tables
 
 
-def discover_vector_search_indexes(w: WorkspaceClient) -> List[Dict[str, Any]]:
+def discover_vector_search_indexes(w: WorkspaceClient) -> list[dict[str, Any]]:
     """Discover Vector Search indexes for RAG applications."""
     indexes = []
 
@@ -191,7 +176,7 @@ def discover_vector_search_indexes(w: WorkspaceClient) -> List[Dict[str, Any]]:
     return indexes
 
 
-def discover_genie_spaces(w: WorkspaceClient) -> List[Dict[str, Any]]:
+def discover_genie_spaces(w: WorkspaceClient) -> list[dict[str, Any]]:
     """Discover Genie spaces for conversational data access."""
     spaces = []
 
@@ -213,7 +198,7 @@ def discover_genie_spaces(w: WorkspaceClient) -> List[Dict[str, Any]]:
 
 
 
-def discover_custom_mcp_servers(w: WorkspaceClient) -> List[Dict[str, Any]]:
+def discover_custom_mcp_servers(w: WorkspaceClient) -> list[dict[str, Any]]:
     """Discover custom MCP servers deployed as Databricks apps."""
     custom_servers = []
 
@@ -235,7 +220,7 @@ def discover_custom_mcp_servers(w: WorkspaceClient) -> List[Dict[str, Any]]:
     return custom_servers
 
 
-def discover_external_mcp_servers(w: WorkspaceClient) -> List[Dict[str, Any]]:
+def discover_external_mcp_servers(w: WorkspaceClient) -> list[dict[str, Any]]:
     """Discover external MCP servers configured via Unity Catalog connections."""
     external_servers = []
 
@@ -258,7 +243,7 @@ def discover_external_mcp_servers(w: WorkspaceClient) -> List[Dict[str, Any]]:
     return external_servers
 
 
-def format_output_markdown(results: Dict[str, List[Dict[str, Any]]]) -> str:
+def format_output_markdown(results: dict[str, list[dict[str, Any]]]) -> str:
     """Format discovery results as markdown."""
     lines = ["# Agent Tools and Data Sources Discovery\n"]
 

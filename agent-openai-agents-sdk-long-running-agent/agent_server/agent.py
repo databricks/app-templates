@@ -1,5 +1,6 @@
+from collections.abc import AsyncGenerator
+
 from databricks.sdk import WorkspaceClient
-from typing import AsyncGenerator
 
 import mlflow
 from agents import Agent, Runner, set_default_openai_api, set_default_openai_client

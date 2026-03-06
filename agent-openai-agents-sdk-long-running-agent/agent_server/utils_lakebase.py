@@ -6,7 +6,6 @@ resolves hostnames to instance names.
 """
 
 import logging
-from typing import Optional
 
 from databricks.sdk import WorkspaceClient
 
@@ -19,24 +18,8 @@ def _is_lakebase_hostname(value: str) -> bool:
 
 
 def resolve_lakebase_instance_name(
-    instance_name: str, workspace_client: Optional[WorkspaceClient] = None
+    instance_name: str, workspace_client: WorkspaceClient | None = None
 ) -> str:
-    """
-    Resolve a Lakebase instance name from a hostname if needed.
-
-    If the input is a hostname (e.g., from Databricks Apps valueFrom resolution),
-    this will resolve it to the actual instance name by listing database instances.
-
-    Args:
-        instance_name: Either an instance name or a hostname
-        workspace_client: Optional WorkspaceClient to use for resolution
-
-    Returns:
-        The resolved instance name
-
-    Raises:
-        ValueError: If the hostname cannot be resolved to an instance name
-    """
     if not _is_lakebase_hostname(instance_name):
         return instance_name
 

@@ -6,9 +6,10 @@ import json
 import logging
 import time
 import uuid
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator
+from typing import Any
 
 from fastapi import HTTPException, Query, Request
 from fastapi.responses import StreamingResponse

@@ -324,7 +324,7 @@ targets:
 | **"relation 'store' does not exist"** | Tables not initialized | Run `await store.setup()` locally first (Step 5) |
 | **"Unable to resolve Lakebase instance 'None'"** | Missing env var in deployed app | Add `LAKEBASE_INSTANCE_NAME` to databricks.yml `config.env` |
 | **"Unable to resolve Lakebase instance '...database.cloud.databricks.com'"** | Used value_from instead of value | Use `value: "<instance-name>"` not `value_from` for Lakebase |
-| **"permission denied for table store"** | Missing grants | The `database` resource in DAB should handle this; verify the resource is configured |
+| **"permission denied for table store"** | Missing grants | Run `uv run python scripts/grant_lakebase_permissions.py <sp-client-id>` to grant permissions |
 | **"Failed to connect to Lakebase"** | Wrong instance name | Verify instance name in databricks.yml and .env |
 | **Connection pool errors on exit** | Python cleanup race | Ignore `PythonFinalizationError` - it's harmless |
 | **App not updated after deploy** | Forgot to run bundle | Run `databricks bundle run agent_langgraph` after deploy |
@@ -332,14 +332,32 @@ targets:
 
 ---
 
-## Quick Reference: LakebaseClient API
+## Granting Permissions
 
-For manual permission management (usually not needed with DAB `database` resource):
+Memory templates include a `scripts/grant_lakebase_permissions.py` script that handles all permission grants. This is usually not needed for provisioned instances (the DAB `database` resource handles it), but is useful for troubleshooting or autoscaling setups.
+
+```bash
+# Get the SP client ID:
+databricks apps get <app-name> --output json | jq -r '.service_principal_client_id'
+
+# Provisioned:
+uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --instance-name <name>
+
+# Autoscaling:
+uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --project <project> --branch <branch>
+```
+
+The script reads defaults from `.env` and handles fresh branches gracefully (warns but doesn't fail if tables don't exist yet).
+
+### LakebaseClient API (for reference)
 
 ```python
 from databricks_ai_bridge.lakebase import LakebaseClient, SchemaPrivilege, TablePrivilege
 
+# Provisioned:
 client = LakebaseClient(instance_name="...")
+# Autoscaling:
+client = LakebaseClient(project="...", branch="...")
 
 # Create role (must do first)
 client.create_role(identity_name, "SERVICE_PRINCIPAL")

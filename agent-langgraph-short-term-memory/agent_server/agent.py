@@ -1,8 +1,9 @@
-import litellm
 import logging
 import os
+from datetime import datetime
 from typing import Any, AsyncGenerator, Optional, Sequence, TypedDict
 
+import litellm
 import mlflow
 from databricks.sdk import WorkspaceClient
 from databricks_langchain import (
@@ -14,9 +15,8 @@ from databricks_langchain import (
 from fastapi import HTTPException
 from langchain.agents import create_agent
 from langchain_core.messages import AnyMessage
+from langchain_core.tools import tool
 from langgraph.graph.message import add_messages
-from typing_extensions import Annotated
-
 from mlflow.genai.agent_server import invoke, stream
 from mlflow.types.responses import (
     ResponsesAgentRequest,
@@ -24,6 +24,7 @@ from mlflow.types.responses import (
     ResponsesAgentStreamEvent,
     to_chat_completions_input,
 )
+from typing_extensions import Annotated
 
 from agent_server.utils import (
     _get_lakebase_access_error_message,
@@ -37,6 +38,13 @@ mlflow.langchain.autolog()
 logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
 litellm.suppress_debug_info = True
 sp_workspace_client = WorkspaceClient()
+
+
+@tool
+def get_current_time() -> str:
+    """Get the current date and time."""
+    return datetime.now().isoformat()
+
 
 ############################################
 # Configuration
@@ -76,8 +84,10 @@ async def init_agent(
     workspace_client: Optional[WorkspaceClient] = None,
     checkpointer: Optional[Any] = None,
 ):
-    mcp_client = init_mcp_client(workspace_client or sp_workspace_client)
-    tools = await mcp_client.get_tools()
+    tools = [get_current_time]
+    # To use MCP server tools instead, uncomment the below lines:
+    # mcp_client = init_mcp_client(workspace_client or sp_workspace_client)
+    # tools.extend(await mcp_client.get_tools())
 
     model = ChatDatabricks(endpoint=LLM_ENDPOINT_NAME)
 
@@ -109,9 +119,6 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
 async def stream_handler(
     request: ResponsesAgentRequest,
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
-    # workspace_client = WorkspaceClient()
-    # Optionally use the user's workspace client for on-behalf-of authentication
-    # user_workspace_client = get_user_workspace_client()
     thread_id = _get_or_create_thread_id(request)
     mlflow.update_current_trace(metadata={"mlflow.trace.session": thread_id})
 
@@ -124,6 +131,8 @@ async def stream_handler(
     try:
         async with AsyncCheckpointSaver(instance_name=LAKEBASE_INSTANCE_NAME) as checkpointer:
             await checkpointer.setup()
+            # By default, uses service principal credentials.
+            # For on-behalf-of user authentication, pass get_user_workspace_client() to init_agent.
             agent = await init_agent(checkpointer=checkpointer)
 
             async for event in process_agent_astream_events(

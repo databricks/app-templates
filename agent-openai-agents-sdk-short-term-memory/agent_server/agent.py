@@ -1,11 +1,13 @@
-import litellm
 import logging
 import os
+from datetime import datetime
 from typing import AsyncGenerator
 
+import litellm
 import mlflow
-from agents import Agent, Runner, set_default_openai_api, set_default_openai_client
+from agents import Agent, Runner, function_tool, set_default_openai_api, set_default_openai_client
 from agents.tracing import set_trace_processors
+from databricks.sdk import WorkspaceClient
 from databricks_openai import AsyncDatabricksOpenAI
 from databricks_openai.agents import AsyncDatabricksSession, McpServer
 from mlflow.genai.agent_server import invoke, stream
@@ -14,7 +16,6 @@ from mlflow.types.responses import (
     ResponsesAgentResponse,
     ResponsesAgentStreamEvent,
 )
-
 from agent_server.utils import (
     deduplicate_input,
     get_databricks_host_from_env,
@@ -45,27 +46,32 @@ logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
 litellm.suppress_debug_info = True
 
 
-async def init_mcp_server():
+@function_tool
+def get_current_time() -> str:
+    """Get the current date and time."""
+    return datetime.now().isoformat()
+
+
+async def init_mcp_server(workspace_client: WorkspaceClient):
     return McpServer(
         url=f"{get_databricks_host_from_env()}/api/2.0/mcp/functions/system/ai",
         name="system.ai uc function mcp server",
+        workspace_client=workspace_client,
     )
 
 
-def create_coding_agent(mcp_server: McpServer) -> Agent:
+def create_agent(mcp_servers: list[McpServer] | None = None) -> Agent:
     return Agent(
-        name="code execution agent",
-        instructions="You are a code execution agent. You can execute code and return the results.",
+        name="Agent",
+        instructions="You are a helpful assistant.",
         model="databricks-gpt-5-2",
-        mcp_servers=[mcp_server],
+        tools=[get_current_time],
+        mcp_servers=mcp_servers or [],
     )
 
 
 @invoke()
 async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
-    # Optionally use the user's workspace client for on-behalf-of authentication
-    # user_workspace_client = get_user_workspace_client()
-
     # Create session for stateful, short-term conversation history with your Databricks Lakebase instance
     session_id = get_session_id(request)
     if session_id:
@@ -75,21 +81,24 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
         instance_name=LAKEBASE_INSTANCE_NAME,
     )
 
-    async with await init_mcp_server() as mcp_server:
-        agent = create_coding_agent(mcp_server)
-        messages = await deduplicate_input(request, session)
-        result = await Runner.run(agent, messages, session=session)
-        return ResponsesAgentResponse(
-            output=[item.to_input_item() for item in result.new_items],
-            custom_outputs={"session_id": session.session_id},
-        )
+    # To use MCP server tools, wrap the code below with this async context manager.
+    # By default, uses service principal credentials via WorkspaceClient().
+    # For on-behalf-of user authentication, use get_user_workspace_client() instead.
+    # async with await init_mcp_server(WorkspaceClient()) as mcp_server:
+    #     agent = create_agent(mcp_servers=[mcp_server])
+    agent = create_agent()
+    messages = await deduplicate_input(request, session)
+    result = await Runner.run(agent, messages, session=session)
+    return ResponsesAgentResponse(
+        output=[item.to_input_item() for item in result.new_items],
+        custom_outputs={"session_id": session.session_id},
+    )
 
 
 @stream()
-async def stream_handler(request: ResponsesAgentRequest) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
-    # Optionally use the user's workspace client for on-behalf-of authentication
-    # user_workspace_client = get_user_workspace_client()
-
+async def stream_handler(
+    request: ResponsesAgentRequest,
+) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
     # Create session for stateful, short-term conversation history with your Databricks Lakebase instance
     session_id = get_session_id(request)
     if session_id:
@@ -99,10 +108,14 @@ async def stream_handler(request: ResponsesAgentRequest) -> AsyncGenerator[Respo
         instance_name=LAKEBASE_INSTANCE_NAME,
     )
 
-    async with await init_mcp_server() as mcp_server:
-        agent = create_coding_agent(mcp_server)
-        messages = await deduplicate_input(request, session)
-        result = Runner.run_streamed(agent, input=messages, session=session)
+    # To use MCP server tools, wrap the code below with this async context manager.
+    # By default, uses service principal credentials via WorkspaceClient().
+    # For on-behalf-of user authentication, use get_user_workspace_client() instead.
+    # async with await init_mcp_server(WorkspaceClient()) as mcp_server:
+    #     agent = create_agent(mcp_servers=[mcp_server])
+    agent = create_agent()
+    messages = await deduplicate_input(request, session)
+    result = Runner.run_streamed(agent, input=messages, session=session)
 
-        async for event in process_agent_stream_events(result.stream_events()):
-            yield event
+    async for event in process_agent_stream_events(result.stream_events()):
+        yield event

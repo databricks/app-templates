@@ -33,6 +33,7 @@ class TemplateConfig:
     needs_lakebase_edit: bool = False  # Whether databricks.yml has lakebase placeholder
     pre_test_edits: list[FileEdit] = field(default_factory=list)
     has_evaluate: bool = True
+    validate_time: bool = True  # Whether to validate get_current_time tool output
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +155,7 @@ def build_templates(
                     genie_space_id,
                     serving_endpoint,
                 ),
+                "validate_time": False,
             },
         ),
         (

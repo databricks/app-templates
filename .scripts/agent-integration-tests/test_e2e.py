@@ -3,6 +3,7 @@ import time
 import traceback
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -29,7 +30,7 @@ from helpers import (
 )
 from template_config import TemplateConfig, build_templates
 
-CONVERSATIONAL_PAYLOAD = {"input": [{"role": "user", "content": "What is 2+2?"}]}
+CONVERSATIONAL_PAYLOAD = {"input": [{"role": "user", "content": "What time is it? Use the get_current_time tool."}]}
 NON_CONVERSATIONAL_PAYLOAD = {
     "document_text": (
         "Total assets: $2,300,000. Total liabilities: $1,200,000. "
@@ -41,6 +42,23 @@ NON_CONVERSATIONAL_PAYLOAD = {
         "Do the documents contain an income statement?",
     ],
 }
+
+
+def _assert_tool_time_in_result(result: dict):
+    """Assert the result contains a get_current_time tool output within 1 hour of now."""
+    for item in result.get("output", []):
+        if item.get("type") == "function_call_output":
+            output = item.get("output", "")
+            try:
+                tool_time = datetime.fromisoformat(output)
+                # Strip timezone if present so we always compare naive local times
+                tool_time = tool_time.replace(tzinfo=None)
+                diff = abs(datetime.now() - tool_time).total_seconds()
+                assert diff < 3600, f"Tool time {output} is {diff:.0f}s from now (max 3600s)"
+                return
+            except ValueError:
+                continue
+    assert False, f"No function_call_output with ISO datetime found in result: {result}"
 
 
 @contextmanager
@@ -85,19 +103,23 @@ def _query_endpoints(
         # curl: non-streaming /responses and /invocations
         result = query_endpoint(base_url, CONVERSATIONAL_PAYLOAD, "/responses", auth_headers)
         assert "output" in result, f"/responses missing 'output': {result}"
+        if template.validate_time:
+            _assert_tool_time_in_result(result)
 
         result = query_endpoint(base_url, CONVERSATIONAL_PAYLOAD, "/invocations", auth_headers)
         assert "output" in result, f"/invocations missing 'output': {result}"
+        if template.validate_time:
+            _assert_tool_time_in_result(result)
 
         # curl: streaming /responses and /invocations
         query_endpoint(base_url, CONVERSATIONAL_PAYLOAD, "/responses", auth_headers, stream=True)
         query_endpoint(base_url, CONVERSATIONAL_PAYLOAD, "/invocations", auth_headers, stream=True)
 
         # OpenAI SDK: non-streaming and streaming
-        output_text = query_with_openai_sdk(base_url, token, "What is 2+2?")
+        output_text = query_with_openai_sdk(base_url, token, "What time is it?")
         assert output_text, "OpenAI SDK returned empty response"
 
-        output_text = query_with_openai_sdk(base_url, token, "What is 3+3?", stream=True)
+        output_text = query_with_openai_sdk(base_url, token, "What time is it?", stream=True)
         assert output_text, "OpenAI SDK streaming returned empty response"
     else:
         result = query_endpoint(base_url, NON_CONVERSATIONAL_PAYLOAD, "/invocations", auth_headers)

@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import datetime
 from typing import Any, AsyncGenerator, Optional
 
 import mlflow
@@ -12,6 +13,7 @@ from databricks_langchain import (
 )
 from fastapi import HTTPException
 from langchain.agents import create_agent
+from langchain_core.tools import tool
 from langgraph.store.base import BaseStore
 from mlflow.genai.agent_server import invoke, stream
 from mlflow.types.responses import (
@@ -39,6 +41,13 @@ logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
 logging.getLogger("LiteLLM").setLevel(logging.WARNING)
 mlflow.langchain.autolog()
 sp_workspace_client = WorkspaceClient()
+
+
+@tool
+def get_current_time() -> str:
+    """Get the current date and time."""
+    return datetime.now().isoformat()
+
 
 ############################################
 # Configuration
@@ -84,8 +93,10 @@ def init_mcp_client(workspace_client: WorkspaceClient) -> DatabricksMultiServerM
 
 
 async def init_agent(store: BaseStore, workspace_client: Optional[WorkspaceClient] = None):
-    mcp_client = init_mcp_client(workspace_client or sp_workspace_client)
-    tools = await mcp_client.get_tools() + memory_tools()
+    tools = [get_current_time] + memory_tools()
+    # To use MCP server tools instead, replace the line above with:
+    # mcp_client = init_mcp_client(workspace_client or sp_workspace_client)
+    # tools.extend(await mcp_client.get_tools())
 
     return create_agent(
         model=ChatDatabricks(endpoint=LLM_ENDPOINT_NAME),
@@ -114,10 +125,7 @@ async def stream_handler(
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
     if session_id := get_session_id(request):
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
-    
-    # Optionally use the user's workspace client for on-behalf-of authentication
-    # NEEDS to be initialized during query time, not on agent initialization to have user creds.
-    # user_workspace_client = get_user_workspace_client()
+
     user_id = get_user_id(request)
 
     if not user_id:
@@ -138,6 +146,8 @@ async def stream_handler(
             if user_id:
                 config["configurable"]["user_id"] = user_id
 
+            # By default, uses service principal credentials (sp_workspace_client).
+            # For on-behalf-of user authentication, use get_user_workspace_client() instead.
             agent = await init_agent(workspace_client=sp_workspace_client, store=store)
             async for event in process_agent_astream_events(
                 agent.astream(messages, config, stream_mode=["updates", "messages"])

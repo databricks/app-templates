@@ -10,6 +10,8 @@ interface ConfigResponse {
   obo?: {
     enabled: boolean;
     requiredScopes: string[];
+    missingScopes: string[];
+    isSupervisorAgent: boolean;
   };
 }
 
@@ -21,6 +23,8 @@ interface AppConfigContextType {
   feedbackEnabled: boolean;
   oboEnabled: boolean;
   oboRequiredScopes: string[];
+  oboMissingScopes: string[];
+  oboIsSupervisorAgent: boolean;
 }
 
 const AppConfigContext = createContext<AppConfigContextType | undefined>(
@@ -48,6 +52,8 @@ export function AppConfigProvider({ children }: { children: ReactNode }) {
     feedbackEnabled: data?.features.feedback ?? false,
     oboEnabled: data?.obo?.enabled ?? false,
     oboRequiredScopes: data?.obo?.requiredScopes ?? [],
+    oboMissingScopes: data?.obo?.missingScopes ?? [],
+    oboIsSupervisorAgent: data?.obo?.isSupervisorAgent ?? false,
   };
 
   return (

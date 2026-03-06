@@ -16,13 +16,11 @@ from mlflow.types.responses import (
     ResponsesAgentResponse,
     ResponsesAgentStreamEvent,
 )
-from uuid_utils import uuid7
-
 from agent_server.utils import (
     deduplicate_input,
     get_databricks_host_from_env,
     get_session_id,
-    get_user_workspace_client,
+    get_user_workspace_client,  # noqa: F401 - referenced in commented example
     process_agent_stream_events,
     resolve_lakebase_instance_name,
 )

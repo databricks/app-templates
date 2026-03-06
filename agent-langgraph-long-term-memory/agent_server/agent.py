@@ -26,7 +26,7 @@ from mlflow.types.responses import (
 from agent_server.utils import (
     get_databricks_host_from_env,
     get_session_id,
-    get_user_workspace_client,
+    get_user_workspace_client,  # noqa: F401 - referenced in commented example
     process_agent_astream_events,
 )
 from agent_server.utils_memory import (
@@ -126,9 +126,6 @@ async def stream_handler(
     if session_id := get_session_id(request):
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
 
-    # By default, uses service principal credentials (sp_workspace_client).
-    # For on-behalf-of user authentication, use get_user_workspace_client() instead:
-    #   agent = await init_agent(workspace_client=get_user_workspace_client(), store=store)
     user_id = get_user_id(request)
 
     if not user_id:
@@ -149,6 +146,8 @@ async def stream_handler(
             if user_id:
                 config["configurable"]["user_id"] = user_id
 
+            # By default, uses service principal credentials (sp_workspace_client).
+            # For on-behalf-of user authentication, use get_user_workspace_client() instead.
             agent = await init_agent(workspace_client=sp_workspace_client, store=store)
             async for event in process_agent_astream_events(
                 agent.astream(messages, config, stream_mode=["updates", "messages"])

@@ -5,7 +5,6 @@ from typing import Any, AsyncGenerator, Optional, Sequence, TypedDict
 
 import litellm
 import mlflow
-import uuid_utils
 from databricks.sdk import WorkspaceClient
 from databricks_langchain import (
     AsyncCheckpointSaver,
@@ -120,8 +119,6 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
 async def stream_handler(
     request: ResponsesAgentRequest,
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
-    # By default, uses service principal credentials.
-    # For on-behalf-of user authentication, pass get_user_workspace_client() to init_agent.
     thread_id = _get_or_create_thread_id(request)
     mlflow.update_current_trace(metadata={"mlflow.trace.session": thread_id})
 
@@ -134,6 +131,8 @@ async def stream_handler(
     try:
         async with AsyncCheckpointSaver(instance_name=LAKEBASE_INSTANCE_NAME) as checkpointer:
             await checkpointer.setup()
+            # By default, uses service principal credentials.
+            # For on-behalf-of user authentication, pass get_user_workspace_client() to init_agent.
             agent = await init_agent(checkpointer=checkpointer)
 
             async for event in process_agent_astream_events(

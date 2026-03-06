@@ -24,6 +24,7 @@ resources:
             value_from: "experiment"
           # Autoscaling Lakebase config
           - name: LAKEBASE_AUTOSCALING_PROJECT
+            value: "<your-project-name>"
           - name: LAKEBASE_AUTOSCALING_BRANCH
             value: "<your-branch-name>"
 

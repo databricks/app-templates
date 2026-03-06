@@ -20,7 +20,7 @@ from agent_server.utils import (
     deduplicate_input,
     get_databricks_host_from_env,
     get_session_id,
-    get_user_workspace_client,  # noqa: F401 - referenced in commented example
+    get_user_workspace_client,
     process_agent_stream_events,
     resolve_lakebase_instance_name,
 )
@@ -35,7 +35,6 @@ if not _LAKEBASE_INSTANCE_NAME_RAW:
     )
 # Resolve hostname to instance name if needed (if given hostname of lakebase instead of name)
 LAKEBASE_INSTANCE_NAME = resolve_lakebase_instance_name(_LAKEBASE_INSTANCE_NAME_RAW)
-
 
 
 # NOTE: this will work for all databricks models OTHER than GPT-OSS, which uses a slightly different API

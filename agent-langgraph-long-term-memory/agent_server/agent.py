@@ -26,7 +26,7 @@ from mlflow.types.responses import (
 from agent_server.utils import (
     get_databricks_host_from_env,
     get_session_id,
-    get_user_workspace_client,  # noqa: F401 - referenced in commented example
+    get_user_workspace_client,
     process_agent_astream_events,
 )
 from agent_server.utils_memory import (

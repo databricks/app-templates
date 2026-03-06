@@ -51,6 +51,8 @@ def _assert_tool_time_in_result(result: dict):
             output = item.get("output", "")
             try:
                 tool_time = datetime.fromisoformat(output)
+                # Strip timezone if present so we always compare naive local times
+                tool_time = tool_time.replace(tzinfo=None)
                 diff = abs(datetime.now() - tool_time).total_seconds()
                 assert diff < 3600, f"Tool time {output} is {diff:.0f}s from now (max 3600s)"
                 return

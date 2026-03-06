@@ -9,8 +9,13 @@
 
    *Note: New apps should use the `agent-*` prefix (e.g., `agent-data-analyst`) unless the user specifies otherwise.*
 
-2. **If the user mentions memory, conversation history, or persistence:**
-   > "For memory capabilities, do you have an existing Lakebase instance? If so, what's the instance name?"
+2. **Lakebase instance (required for memory):**
+   > "This template requires Lakebase for memory. Are you using a **provisioned** Lakebase instance or an **autoscaling** Lakebase project/branch?"
+
+   - **Provisioned instance**: Use the **lakebase-setup** skill (configures `LAKEBASE_INSTANCE_NAME` in databricks.yml)
+   - **Autoscaling project/branch**: Follow `.claude/skills/add-tools/examples/lakebase-autoscaling.md` — this requires deploying the app first, then adding the postgres resource via API and granting table permissions to the app's service principal
+
+**Autoscaling keywords**: If the user mentions "autoscaling", "project", "branch", or "postgres" in the context of Lakebase/memory, use the **autoscaling** guide at `.claude/skills/add-tools/examples/lakebase-autoscaling.md`.
 
 **Then check authentication and profile configuration:**
 

@@ -7,6 +7,8 @@ description: "Configure Lakebase for agent memory storage. Use when: (1) Adding 
 
 > **Profile reminder:** All `databricks` CLI commands must include the profile from `.env`: `databricks <command> --profile <profile>` or `DATABRICKS_CONFIG_PROFILE=<profile> databricks <command>`
 
+> **Autoscaling Lakebase?** If the user mentions "autoscaling", "project", or "branch" in the context of Lakebase, they are using an **autoscaling** Lakebase instance (not provisioned). This skill covers **provisioned** instances only. For autoscaling, see `.claude/skills/add-tools/examples/lakebase-autoscaling.md` instead — it uses `LAKEBASE_AUTOSCALING_PROJECT` and `LAKEBASE_AUTOSCALING_BRANCH` env vars, deploys the app first, then adds the postgres resource via API for permissions and grants table access.
+
 ## Overview
 
 Lakebase provides persistent PostgreSQL storage for agents:

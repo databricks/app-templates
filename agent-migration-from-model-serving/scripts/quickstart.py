@@ -501,13 +501,17 @@ def create_mlflow_experiment(profile_name: str, username: str) -> tuple[str, str
 
 
 def check_lakebase_required() -> bool:
-    """Check if databricks.yml has LAKEBASE_INSTANCE_NAME configured."""
+    """Check if databricks.yml has Lakebase configuration (provisioned or autoscaling)."""
     databricks_yml = Path("databricks.yml")
     if not databricks_yml.exists():
         return False
 
     content = databricks_yml.read_text()
-    return "LAKEBASE_INSTANCE_NAME" in content
+    return (
+        "LAKEBASE_INSTANCE_NAME" in content
+        or "LAKEBASE_AUTOSCALING_PROJECT" in content
+        or "LAKEBASE_AUTOSCALING_BRANCH" in content
+    )
 
 
 def get_env_value(key: str) -> str:
@@ -522,6 +526,127 @@ def get_env_value(key: str) -> str:
     if match:
         return match.group(1).strip().strip('"').strip("'")
     return ""
+
+
+def get_workspace_client(profile_name: str):
+    """Create a WorkspaceClient with the given profile."""
+    try:
+        from databricks.sdk import WorkspaceClient
+
+        return WorkspaceClient(profile=profile_name)
+    except Exception:
+        return None
+
+
+def create_lakebase_instance(profile_name: str) -> dict:
+    """Create a new Lakebase autoscaling instance (project + branch).
+
+    Returns:
+        Dict with {"type": "autoscaling", "project": str, "branch": str}
+    """
+    w = get_workspace_client(profile_name)
+    if not w:
+        print_error("Could not connect to Databricks. Check your CLI profile.")
+        sys.exit(1)
+
+    name = input("Enter a name for the new Lakebase instance: ").strip()
+    if not name:
+        print_error("Instance name is required")
+        sys.exit(1)
+
+    print(f"\nCreating Lakebase autoscaling project '{name}'...")
+    try:
+        from databricks.sdk.service.postgres import Branch, BranchSpec, Project, ProjectSpec
+
+        project_op = w.postgres.create_project(
+            project=Project(spec=ProjectSpec(display_name=name)),
+            project_id=name,
+        )
+        project = project_op.wait()
+        project_short = project.name.removeprefix("projects/")
+        print_success(f"Created project: {project_short}")
+
+        # Create a default branch
+        branch_id = f"{name}-branch"
+        branch_op = w.postgres.create_branch(
+            parent=project.name,
+            branch=Branch(spec=BranchSpec(no_expiry=True)),
+            branch_id=branch_id,
+        )
+        branch = branch_op.wait()
+        branch_name = (
+            branch.name.split("/branches/")[-1]
+            if "/branches/" in branch.name
+            else branch_id
+        )
+        print_success(f"Created branch: {branch_name} (id: {branch.uid})")
+
+        return {"type": "autoscaling", "project": project_short, "branch": branch_name}
+    except Exception as e:
+        print_error(f"Failed to create Lakebase instance: {e}")
+        sys.exit(1)
+
+
+def select_lakebase_interactive(profile_name: str) -> dict:
+    """Interactive Lakebase setup.
+
+    Flow:
+    1. New or existing?
+    2. New -> Create autoscaling project + branch
+    3. Existing -> Provisioned or autoscaling?
+       - Provisioned -> Enter instance name
+       - Autoscaling -> Enter project + branch names
+
+    Returns:
+        Dict with either:
+        - {"type": "provisioned", "instance_name": str}
+        - {"type": "autoscaling", "project": str, "branch": str}
+    """
+    print("\nLakebase Setup")
+    print("  1) Create a new Lakebase instance")
+    print("  2) Use an existing Lakebase instance")
+    print()
+
+    while True:
+        choice = input("Enter your choice (1 or 2): ").strip()
+        if choice in ("1", "2"):
+            break
+        print_error("Please enter 1 or 2")
+
+    if choice == "1":
+        return create_lakebase_instance(profile_name)
+
+    # Existing instance
+    print("\nWhat type of Lakebase instance?")
+    print("  1) Provisioned")
+    print("  2) Autoscaling (recommended)")
+    print()
+
+    while True:
+        type_choice = input("Enter your choice (1 or 2): ").strip()
+        if type_choice in ("1", "2"):
+            break
+        print_error("Please enter 1 or 2")
+
+    if type_choice == "1":
+        name = input("\nEnter the provisioned Lakebase instance name: ").strip()
+        if not name:
+            print_error("Instance name is required")
+            sys.exit(1)
+        return {"type": "provisioned", "instance_name": name}
+
+    # Autoscaling - ask for project and branch
+    project = input("\nEnter the autoscaling project name: ").strip()
+    if not project:
+        print_error("Project name is required")
+        sys.exit(1)
+
+    branch = input("Enter the branch name: ").strip()
+    if not branch:
+        print_error("Branch name is required")
+        sys.exit(1)
+
+    return {"type": "autoscaling", "project": project, "branch": branch}
 
 
 def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> dict | None:
@@ -571,57 +696,49 @@ def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> dict | 
     return None
 
 
-def setup_lakebase(profile_name: str, username: str, lakebase_arg: str = None) -> str:
-    """Set up Lakebase instance for memory features."""
+def setup_lakebase(profile_name: str, lakebase_arg: str = None) -> dict:
+    """Set up Lakebase instance for memory features.
+
+    Returns:
+        Dict with either:
+        - {"type": "provisioned", "instance_name": str}
+        - {"type": "autoscaling", "project": str, "branch": str}
+    """
     print_step("Setting up Lakebase instance for memory...")
 
-    lakebase_name = None
-
-    # If --lakebase was provided, use it directly
+    # If --lakebase was provided, use it directly (provisioned mode)
     if lakebase_arg:
-        lakebase_name = lakebase_arg
-        print(f"Using provided Lakebase instance: {lakebase_name}")
+        print(f"Using provided Lakebase instance: {lakebase_arg}")
+        if not validate_lakebase_instance(profile_name, lakebase_arg):
+            sys.exit(1)
+        update_env_file("LAKEBASE_INSTANCE_NAME", lakebase_arg)
+        update_env_file("LAKEBASE_AUTOSCALING_PROJECT", "")
+        update_env_file("LAKEBASE_AUTOSCALING_BRANCH", "")
+        print_success(f"Lakebase instance name '{lakebase_arg}' saved to .env")
+        return {"type": "provisioned", "instance_name": lakebase_arg}
+
+    # Interactive selection
+    selection = select_lakebase_interactive(profile_name)
+
+    if selection["type"] == "provisioned":
+        instance_name = selection["instance_name"]
+        if not validate_lakebase_instance(profile_name, instance_name):
+            sys.exit(1)
+        update_env_file("LAKEBASE_INSTANCE_NAME", instance_name)
+        update_env_file("LAKEBASE_AUTOSCALING_PROJECT", "")
+        update_env_file("LAKEBASE_AUTOSCALING_BRANCH", "")
+        print_success(f"Lakebase provisioned instance '{instance_name}' saved to .env")
     else:
-        # Check if already set in .env
-        existing = get_env_value("LAKEBASE_INSTANCE_NAME")
-        if existing:
-            print(f"Found existing Lakebase instance in .env: {existing}")
-            new_value = input(
-                "Press Enter to keep this value, or enter a new instance name: "
-            ).strip()
-            lakebase_name = new_value if new_value else existing
-        else:
-            # Interactive mode - prompt for instance name
-            lakebase_name = input("Please enter your Lakebase instance name: ").strip()
+        project = selection["project"]
+        branch = selection["branch"]
+        update_env_file("LAKEBASE_AUTOSCALING_PROJECT", project)
+        update_env_file("LAKEBASE_AUTOSCALING_BRANCH", branch)
+        update_env_file("LAKEBASE_INSTANCE_NAME", "")
+        print_success(
+            f"Lakebase autoscaling config saved to .env (project: {project}, branch: {branch})"
+        )
 
-            if not lakebase_name:
-                print_error("Lakebase instance name is required for memory features")
-                sys.exit(1)
-
-    # Validate that the Lakebase instance exists and user has access
-    instance_info = validate_lakebase_instance(profile_name, lakebase_name)
-    if not instance_info:
-        sys.exit(1)
-
-    # Update .env with the Lakebase instance name
-    update_env_file("LAKEBASE_INSTANCE_NAME", lakebase_name)
-    print_success(f"Lakebase instance name '{lakebase_name}' saved to .env")
-
-    # Set up PostgreSQL connection environment variables
-    pg_host = instance_info.get("read_write_dns", "")
-    if pg_host:
-        update_env_file("PGHOST", pg_host)
-        print_success(f"PGHOST set to '{pg_host}'")
-    else:
-        print_error("Could not get read_write_dns from Lakebase instance")
-
-    update_env_file("PGUSER", username)
-    print_success(f"PGUSER set to '{username}'")
-
-    update_env_file("PGDATABASE", "databricks_postgres")
-    print_success("PGDATABASE set to 'databricks_postgres'")
-
-    return lakebase_name
+    return selection
 
 
 def update_databricks_yml_experiment(experiment_id: str) -> None:
@@ -641,21 +758,6 @@ def update_databricks_yml_experiment(experiment_id: str) -> None:
 
     yml_path.write_text(content)
     print_success("Updated databricks.yml with experiment ID")
-
-
-def update_databricks_yml_lakebase(lakebase_name: str) -> None:
-    """Update databricks.yml to replace lakebase placeholder with actual instance name."""
-    yml_path = Path("databricks.yml")
-    if not yml_path.exists():
-        return
-
-    content = yml_path.read_text()
-    if "<your-lakebase-instance-name>" not in content:
-        return
-
-    content = content.replace("<your-lakebase-instance-name>", lakebase_name)
-    yml_path.write_text(content)
-    print_success("Updated databricks.yml with Lakebase instance name")
 
 
 def main():
@@ -729,11 +831,10 @@ Examples:
         update_databricks_yml_experiment(experiment_id)
 
         # Step 6: Lakebase setup (if needed for memory features)
-        lakebase_name = None
+        lakebase_config = None
         lakebase_required = args.lakebase or check_lakebase_required()
         if lakebase_required:
-            lakebase_name = setup_lakebase(profile_name, username, args.lakebase)
-            update_databricks_yml_lakebase(lakebase_name)
+            lakebase_config = setup_lakebase(profile_name, args.lakebase)
 
         # Final summary
         host = get_databricks_host(profile_name)
@@ -750,11 +851,16 @@ Examples:
         if host and experiment_id:
             summary += f"\n  {host}/ml/experiments/{experiment_id}"
 
-        if lakebase_name:
-            summary += f"\n\n✓ Lakebase instance: {lakebase_name}"
-            summary += "\n✓ PostgreSQL variables set (PGHOST, PGUSER, PGDATABASE)"
-            if host:
-                summary += f"\n  {host}/lakebase/provisioned/{lakebase_name}"
+        if lakebase_config:
+            if lakebase_config["type"] == "provisioned":
+                lakebase_name = lakebase_config["instance_name"]
+                summary += f"\n\n✓ Lakebase provisioned instance: {lakebase_name}"
+                if host:
+                    summary += f"\n  {host}/lakebase/provisioned/{lakebase_name}"
+            else:
+                project = lakebase_config["project"]
+                branch = lakebase_config["branch"]
+                summary += f"\n\n✓ Lakebase autoscaling instance: {project} (branch: {branch})"
 
         summary += "\nNext step: Run 'uv run start-app' to start the agent locally\n"
         print(summary)

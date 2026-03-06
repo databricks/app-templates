@@ -574,7 +574,6 @@ def create_lakebase_instance(profile_name: str) -> dict:
             branch_id=branch_id,
         )
         branch = branch_op.wait()
-        # Extract branch name (e.g. "j-autoscaling5-branch") from full path
         branch_name = (
             branch.name.split("/branches/")[-1]
             if "/branches/" in branch.name

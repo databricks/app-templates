@@ -1,0 +1,41 @@
+{
+  "$schema": "https://databricks.github.io/appkit/schemas/template-plugins.schema.json",
+  "version": "1.0",
+  "plugins": {
+    "genie": {
+      "name": "genie",
+      "displayName": "Genie Plugin",
+      "description": "AI/BI Genie space integration for natural language data queries",
+      "package": "@databricks/appkit",
+      "resources": {
+        "required": [
+          {
+            "type": "genie_space",
+            "alias": "Genie Space",
+            "resourceKey": "genie-space",
+            "description": "Genie Space for AI-powered data queries. Space IDs configured via plugin config.",
+            "permission": "CAN_RUN",
+            "fields": {
+              "id": {
+                "env": "DATABRICKS_GENIE_SPACE_ID",
+                "description": "Default Genie Space ID"
+              }
+            }
+          }
+        ],
+        "optional": []
+      }
+    },
+    "server": {
+      "name": "server",
+      "displayName": "Server Plugin",
+      "description": "HTTP server with Express, static file serving, and Vite dev mode support",
+      "package": "@databricks/appkit",
+      "resources": {
+        "required": [],
+        "optional": []
+      },
+      "requiredByTemplate": true
+    }
+  }
+}

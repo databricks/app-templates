@@ -1,0 +1,57 @@
+{
+  "$schema": "https://databricks.github.io/appkit/schemas/template-plugins.schema.json",
+  "version": "1.0",
+  "plugins": {
+    "lakebase": {
+      "name": "lakebase",
+      "displayName": "Lakebase",
+      "description": "SQL query execution against Databricks Lakebase Autoscaling",
+      "package": "@databricks/appkit",
+      "resources": {
+        "required": [
+          {
+            "type": "postgres",
+            "alias": "Postgres",
+            "resourceKey": "postgres",
+            "description": "Lakebase Postgres database for persistent storage",
+            "permission": "CAN_CONNECT_AND_CREATE",
+            "fields": {
+              "branch": {
+                "description": "Full Lakebase Postgres branch resource name. Obtain by running `databricks postgres list-branches projects/{project-id}`, select the desired item from the output array and use its .name value.",
+                "examples": [
+                  "projects/{project-id}/branches/{branch-id}"
+                ]
+              },
+              "database": {
+                "description": "Full Lakebase Postgres database resource name. Obtain by running `databricks postgres list-databases {branch-name}`, select the desired item from the output array and use its .name value. Requires the branch resource name.",
+                "examples": [
+                  "projects/{project-id}/branches/{branch-id}/databases/{database-id}"
+                ]
+              },
+              "endpoint": {
+                "env": "LAKEBASE_ENDPOINT",
+                "description": "Lakebase endpoint resource name. Auto-injected at runtime via app.yaml valueFrom: postgres. For local development, obtain by running `databricks postgres list-endpoints {branch-name}`, select the desired item from the output array and use its .name value.",
+                "bundleIgnore": true,
+                "examples": [
+                  "projects/{project-id}/branches/{branch-id}/endpoints/{endpoint-id}"
+                ]
+              }
+            }
+          }
+        ],
+        "optional": []
+      }
+    },
+    "server": {
+      "name": "server",
+      "displayName": "Server Plugin",
+      "description": "HTTP server with Express, static file serving, and Vite dev mode support",
+      "package": "@databricks/appkit",
+      "resources": {
+        "required": [],
+        "optional": []
+      },
+      "requiredByTemplate": true
+    }
+  }
+}

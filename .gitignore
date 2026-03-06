@@ -192,4 +192,3 @@ mlflow.db
 !.claude/skills/enable-feedback/
 !.claude/AGENTS.md
 !.claude/CLAUDE.md
-/agent-langgraph-long-term-memory/e2e-chatbot-app-next

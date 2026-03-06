@@ -322,6 +322,20 @@ uv run quickstart    # first-time setup
 uv run start-app     # start agent server + chat UI
 ```
 
+## Granting Lakebase Permissions
+
+After deploying, the app's service principal needs Postgres-level permissions to access Lakebase tables. Use the included script to grant all required permissions at once:
+
+```bash
+# 1. Get the SP client ID from your deployed app
+databricks apps get <app-name> --profile <profile> --output json | jq -r '.service_principal_client_id'
+
+# 2. Grant permissions (reads LAKEBASE_INSTANCE_NAME from .env)
+DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permissions.py <sp-client-id>
+```
+
+This grants USAGE + CREATE on the `agent_server`, `ai_chatbot`, and `drizzle` schemas, and SELECT/INSERT/UPDATE/DELETE on all tables within them.
+
 ## Testing
 
 See `scripts/test_long_running_agent.py` for a Pytest suite that exercises all client modes (sync, stream, background + poll, background + stream with cursor resumption).
@@ -336,6 +350,7 @@ See `scripts/test_long_running_agent.py` for a Pytest suite that exercises all c
 | `agent_server/db/`                    | SQLAlchemy models, repository, Lakebase connection                   |
 | `agent_server/settings.py`            | Typed configuration (`TASK_TIMEOUT_SECONDS`, etc.)                   |
 | `databricks.yml`                      | Bundle config with Lakebase + MLflow + app resources                 |
+| `scripts/grant_lakebase_permissions.py` | Grants Lakebase Postgres permissions to app SP                     |
 | `scripts/test_long_running_agent.py`  | Pytest suite covering all client modes                               |
 
 ## References

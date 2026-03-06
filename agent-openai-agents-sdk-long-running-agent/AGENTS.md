@@ -52,6 +52,20 @@ If no profiles exist or `.env` is missing, guide the user through running `uv ru
 
 Use `uv run discover-tools` to show them available resources in their workspace, then help them select the right ones for their use case. **See the `add-tools` skill for how to connect tools and grant permissions.**
 
+## Granting Lakebase Permissions
+
+After deploying, grant the app's SP Postgres-level permissions to access Lakebase tables. Get the SP client ID then run the grant script:
+
+```bash
+# Get SP client ID
+databricks apps get <app-name> --profile <profile> --output json | jq -r '.service_principal_client_id'
+
+# Grant all permissions (reads LAKEBASE_INSTANCE_NAME from .env)
+DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permissions.py <sp-client-id>
+```
+
+This grants permissions on the `agent_server`, `ai_chatbot`, and `drizzle` schemas and their tables.
+
 ## Handling Deployment Errors
 
 **If `databricks bundle deploy` fails with "An app with the same name already exists":**
@@ -87,7 +101,8 @@ Ask the user: "I see there's an existing app with the same name. Would you like 
 | Setup | `uv run quickstart` |
 | Discover tools | `uv run discover-tools` |
 | Run locally | `uv run start-app` |
-| Deploy | `databricks bundle deploy && databricks bundle run agent_openai_agents_sdk` |
+| Deploy | `databricks bundle deploy --profile <profile> && databricks bundle run agent_openai_agents_sdk_long_running_agent --profile <profile>` |
+| Grant Lakebase perms | `DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permissions.py <sp-client-id>` |
 | View logs | `databricks apps logs <app-name> --follow` |
 
 ---
@@ -102,6 +117,7 @@ Ask the user: "I see there's an existing app with the same name. Would you like 
 | `databricks.yml` | Bundle config & resource permissions |
 | `scripts/quickstart.py` | One-command setup script |
 | `scripts/discover_tools.py` | Discovers available workspace resources |
+| `scripts/grant_lakebase_permissions.py` | Grants Lakebase Postgres permissions to app SP |
 
 ---
 

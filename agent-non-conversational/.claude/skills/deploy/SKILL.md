@@ -190,11 +190,12 @@ databricks apps get <app-name> --output json | jq -r '.url'
 
 ## Post-Deploy: Autoscaling Lakebase Resources
 
-If the agent uses **autoscaling Lakebase** (user mentions "autoscaling", "project", or "branch" in the context of Lakebase), you must add the postgres resource via API **after** deploying:
+If the agent uses **autoscaling Lakebase** (user mentions "autoscaling", "project", or "branch" in the context of Lakebase), you must add the postgres resource via API **after** deploying, then redeploy:
 
 1. Deploy the app first (`databricks bundle deploy` + `databricks bundle run`)
-2. Add the postgres resource via API
-3. Grant table permissions to the app's service principal
+2. Add the postgres resource via API (`PATCH /api/2.0/apps/<name>`)
+3. **Redeploy the app** (`databricks apps deploy`) — the app must be redeployed after adding the postgres resource so it picks up the database connection env vars injected by the resource (needed by the frontend/chat UI). Note: `databricks bundle run` does NOT redeploy — it only starts/restarts the app with the existing deployment, so new resource env vars won't be picked up. You must use `databricks apps deploy` instead.
+4. Grant table permissions to the app's service principal — fetch the SP client ID via `databricks apps get <name> --output json | jq -r '.service_principal_client_id'`
 
 **See `.claude/skills/add-tools/examples/lakebase-autoscaling.md` for complete steps.**
 

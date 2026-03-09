@@ -92,10 +92,10 @@ def main():
     )
 
     client = LakebaseClient(
-        instance_name=args.instance_name,
-        project=args.project,
-        branch=args.branch,
-        autoscaling_endpoint=args.autoscaling_endpoint,
+        instance_name=args.instance_name or None,
+        project=args.project or None,
+        branch=args.branch or None,
+        autoscaling_endpoint=args.autoscaling_endpoint or None,
     )
     sp_id = args.sp_client_id
 

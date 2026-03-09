@@ -15,7 +15,9 @@ Usage:
 Options:
     --profile NAME    Use specified Databricks profile (non-interactive)
     --host URL        Databricks workspace URL (for initial setup)
-    --lakebase NAME   Lakebase instance name (for memory features)
+    --lakebase-provisioned-name NAME   Provisioned Lakebase instance name
+    --lakebase-autoscaling-project NAME  Autoscaling Lakebase project name
+    --lakebase-autoscaling-branch NAME   Autoscaling Lakebase branch name
     -h, --help        Show this help message
 """
 
@@ -697,7 +699,12 @@ def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> dict | 
     return None
 
 
-def setup_lakebase(profile_name: str, lakebase_arg: str = None) -> dict:
+def setup_lakebase(
+    profile_name: str,
+    provisioned_name: str = None,
+    autoscaling_project: str = None,
+    autoscaling_branch: str = None,
+) -> dict:
     """Set up Lakebase instance for memory features.
 
     Returns:
@@ -707,16 +714,27 @@ def setup_lakebase(profile_name: str, lakebase_arg: str = None) -> dict:
     """
     print_step("Setting up Lakebase instance for memory...")
 
-    # If --lakebase was provided, use it directly (provisioned mode)
-    if lakebase_arg:
-        print(f"Using provided Lakebase instance: {lakebase_arg}")
-        if not validate_lakebase_instance(profile_name, lakebase_arg):
+    # If --lakebase-provisioned-name was provided, use it directly
+    if provisioned_name:
+        print(f"Using provided provisioned Lakebase instance: {provisioned_name}")
+        if not validate_lakebase_instance(profile_name, provisioned_name):
             sys.exit(1)
-        update_env_file("LAKEBASE_INSTANCE_NAME", lakebase_arg)
+        update_env_file("LAKEBASE_INSTANCE_NAME", provisioned_name)
         update_env_file("LAKEBASE_AUTOSCALING_PROJECT", "")
         update_env_file("LAKEBASE_AUTOSCALING_BRANCH", "")
-        print_success(f"Lakebase instance name '{lakebase_arg}' saved to .env")
-        return {"type": "provisioned", "instance_name": lakebase_arg}
+        print_success(f"Lakebase instance name '{provisioned_name}' saved to .env")
+        return {"type": "provisioned", "instance_name": provisioned_name}
+
+    # If --lakebase-autoscaling-project and --lakebase-autoscaling-branch were provided
+    if autoscaling_project and autoscaling_branch:
+        print(f"Using autoscaling Lakebase: project={autoscaling_project}, branch={autoscaling_branch}")
+        update_env_file("LAKEBASE_AUTOSCALING_PROJECT", autoscaling_project)
+        update_env_file("LAKEBASE_AUTOSCALING_BRANCH", autoscaling_branch)
+        update_env_file("LAKEBASE_INSTANCE_NAME", "")
+        print_success(
+            f"Lakebase autoscaling config saved to .env (project: {autoscaling_project}, branch: {autoscaling_branch})"
+        )
+        return {"type": "autoscaling", "project": autoscaling_project, "branch": autoscaling_branch}
 
     # Interactive selection
     selection = select_lakebase_interactive(profile_name)
@@ -740,6 +758,48 @@ def setup_lakebase(profile_name: str, lakebase_arg: str = None) -> dict:
         )
 
     return selection
+
+
+def update_databricks_yml_lakebase(lakebase_config: dict) -> None:
+    """Update databricks.yml to set the Lakebase config in the app's env vars."""
+    yml_path = Path("databricks.yml")
+    if not yml_path.exists():
+        return
+
+    content = yml_path.read_text()
+
+    if lakebase_config["type"] == "provisioned":
+        instance_name = lakebase_config["instance_name"]
+        # Replace LAKEBASE_INSTANCE_NAME placeholder value
+        content = re.sub(
+            r'(- name: LAKEBASE_INSTANCE_NAME\s+value: )"[^"]*"',
+            f'\\1"{instance_name}"',
+            content,
+        )
+        # Also handle value_from variant (replace with static value)
+        content = re.sub(
+            r'- name: LAKEBASE_INSTANCE_NAME\s+value_from: "[^"]*"',
+            f'- name: LAKEBASE_INSTANCE_NAME\n            value: "{instance_name}"',
+            content,
+        )
+    else:
+        project = lakebase_config["project"]
+        branch = lakebase_config["branch"]
+        # Replace LAKEBASE_AUTOSCALING_PROJECT placeholder value
+        content = re.sub(
+            r'(- name: LAKEBASE_AUTOSCALING_PROJECT\s+value: )"[^"]*"',
+            f'\\1"{project}"',
+            content,
+        )
+        # Replace LAKEBASE_AUTOSCALING_BRANCH placeholder value
+        content = re.sub(
+            r'(- name: LAKEBASE_AUTOSCALING_BRANCH\s+value: )"[^"]*"',
+            f'\\1"{branch}"',
+            content,
+        )
+
+    yml_path.write_text(content)
+    print_success("Updated databricks.yml with Lakebase config")
 
 
 def update_databricks_yml_experiment(experiment_id: str) -> None:
@@ -770,7 +830,8 @@ Examples:
     uv run quickstart                    # Interactive setup
     uv run quickstart --profile DEFAULT  # Use existing profile (non-interactive)
     uv run quickstart --host https://...  # Set up new profile with host
-    uv run quickstart --lakebase my-db   # Include Lakebase setup for memory
+    uv run quickstart --lakebase-provisioned-name my-db   # Provisioned Lakebase
+    uv run quickstart --lakebase-autoscaling-project proj --lakebase-autoscaling-branch br  # Autoscaling
         """,
     )
     parser.add_argument(
@@ -784,8 +845,18 @@ Examples:
         metavar="URL",
     )
     parser.add_argument(
-        "--lakebase",
-        help="Lakebase instance name (for memory features)",
+        "--lakebase-provisioned-name",
+        help="Provisioned Lakebase instance name (non-interactive)",
+        metavar="NAME",
+    )
+    parser.add_argument(
+        "--lakebase-autoscaling-project",
+        help="Autoscaling Lakebase project name (use with --lakebase-autoscaling-branch)",
+        metavar="NAME",
+    )
+    parser.add_argument(
+        "--lakebase-autoscaling-branch",
+        help="Autoscaling Lakebase branch name (use with --lakebase-autoscaling-project)",
         metavar="NAME",
     )
 
@@ -833,9 +904,20 @@ Examples:
 
         # Step 6: Lakebase setup (if needed for memory features)
         lakebase_config = None
-        lakebase_required = args.lakebase or check_lakebase_required()
+        lakebase_required = (
+            args.lakebase_provisioned_name
+            or (args.lakebase_autoscaling_project and args.lakebase_autoscaling_branch)
+            or check_lakebase_required()
+        )
         if lakebase_required:
-            lakebase_config = setup_lakebase(profile_name, args.lakebase)
+            lakebase_config = setup_lakebase(
+                profile_name,
+                provisioned_name=args.lakebase_provisioned_name,
+                autoscaling_project=args.lakebase_autoscaling_project,
+                autoscaling_branch=args.lakebase_autoscaling_branch,
+            )
+            # Step 6b: Update databricks.yml with Lakebase config
+            update_databricks_yml_lakebase(lakebase_config)
 
         # Final summary
         host = get_databricks_host(profile_name)

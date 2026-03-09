@@ -102,11 +102,21 @@ def clean_template(template_dir: Path):
             target.unlink()
 
 
-def run_quickstart(template_dir: Path, profile: str, lakebase: str | None = None):
-    """Run `uv run quickstart --profile <profile>`, optionally with --lakebase."""
+def run_quickstart(
+    template_dir: Path,
+    profile: str,
+    lakebase: str | None = None,
+    lakebase_autoscaling_project: str | None = None,
+    lakebase_autoscaling_branch: str | None = None,
+):
+    """Run `uv run quickstart --profile <profile>`."""
     cmd = ["uv", "run", "quickstart", "--profile", profile]
     if lakebase:
-        cmd.extend(["--lakebase", lakebase])
+        cmd.extend(["--lakebase-provisioned-name", lakebase])
+    if lakebase_autoscaling_project:
+        cmd.extend(["--lakebase-autoscaling-project", lakebase_autoscaling_project])
+    if lakebase_autoscaling_branch:
+        cmd.extend(["--lakebase-autoscaling-branch", lakebase_autoscaling_branch])
     result = _run_cmd(cmd, cwd=template_dir, timeout=QUICKSTART_TIMEOUT)
     assert result.returncode == 0, (
         f"quickstart failed in {template_dir.name}:\n"

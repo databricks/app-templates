@@ -21,7 +21,7 @@ test_e2e[template]
   |
   |-- 1. clean_template()         # Remove .venv/, uv.lock, .env, .bundle/, .databricks/
   |-- 2. setup log file            # Create logs/ dir, clear logs/{template}.log
-  |-- 3. run_quickstart()          # uv run quickstart --profile <p> [--lakebase <l>]
+  |-- 3. run_quickstart()          # uv run quickstart --profile <p> [--lakebase-provisioned-name <l>]
   |-- 4. apply_edits()             # Template-specific file edits (grouped by file)
   |
   |-- 5. +----------------------------------------------+
@@ -176,4 +176,4 @@ Each template writes a detailed log to `logs/{template-name}.log` (e.g. `logs/ag
 
 **Multiagent** (`agent-openai-agents-sdk-multiagent`): Has the most complex pre-test setup. Uncomments a SUBAGENTS block in `agent_server/agent.py` and enables 2 subagents (genie + serving_endpoint). Also replaces placeholders in `databricks.yml` (Genie space ID, serving endpoint; the knowledge assistant placeholder is filled with the serving endpoint value as a stand-in). Runs `agent-evaluate` after endpoint queries.
 
-**Lakebase memory templates** (`*-short-term-memory`, `*-long-term-memory`): The quickstart command receives `--lakebase` and handles all `databricks.yml` modifications: it sets the experiment ID in the app resource and replaces `<your-lakebase-instance-name>` placeholders with the actual instance name. During deploy, the app's service principal is granted Lakebase access. This applies to 3 templates across both LangGraph and OpenAI SDK families.
+**Lakebase memory templates** (`*-short-term-memory`, `*-long-term-memory`): The quickstart command receives `--lakebase-provisioned-name` (or `--lakebase-autoscaling-project` + `--lakebase-autoscaling-branch` for autoscaling) and handles all `databricks.yml` modifications: it sets the experiment ID in the app resource and replaces `<your-lakebase-instance-name>` placeholders with the actual instance name. During deploy, the app's service principal is granted Lakebase access. This applies to 3 templates across both LangGraph and OpenAI SDK families.

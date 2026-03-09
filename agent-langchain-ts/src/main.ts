@@ -5,7 +5,7 @@ import { createApp, agent, server } from "@databricks/appkit";
 import { basicTools } from "./tools.js";
 import { getMCPServers } from "./mcp-servers.js";
 
-await createApp({
+const app = await createApp({
   plugins: [
     agent({
       model: process.env.DATABRICKS_MODEL || "databricks-claude-sonnet-4-5",
@@ -16,6 +16,16 @@ await createApp({
       tools: basicTools,
       traceDestination: { type: "mlflow" },
     }),
-    server({ autoStart: true }),
+    server({
+      autoStart: false,
+    }),
   ],
 });
+
+// Databricks Apps platform expects /invocations at root
+app.server.extend((expressApp) => {
+  expressApp.post("/invocations", (req, res) => res.redirect(307, "/api/agent"));
+  expressApp.post("/responses", (req, res) => res.redirect(307, "/api/agent"));
+});
+
+await app.server.start();

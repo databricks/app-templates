@@ -48,6 +48,8 @@ export async function drainStreamToWriter(
       return { failed: true };
     }
     console.error('Mid-stream read error:', readError);
+  } finally {
+    reader.releaseLock();
   }
 
   return { failed: false };

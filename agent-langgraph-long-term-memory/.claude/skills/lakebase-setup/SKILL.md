@@ -334,7 +334,7 @@ targets:
 
 ## Granting Permissions
 
-Memory templates include a `scripts/grant_lakebase_permissions.py` script that handles all permission grants. This is usually not needed for provisioned instances (the DAB `database` resource handles it), but is useful for troubleshooting or autoscaling setups.
+Memory templates include a `scripts/grant_lakebase_permissions.py` script that handles all permission grants.
 
 ```bash
 # Get the SP client ID:

@@ -22,6 +22,7 @@ SCRIPTS_TO_SYNC = [
     ("quickstart.py", "scripts"),
     ("start_app.py", "scripts"),
     ("evaluate_agent.py", "agent_server"),
+    ("grant_lakebase_permissions.py", "scripts"),
 ]
 
 

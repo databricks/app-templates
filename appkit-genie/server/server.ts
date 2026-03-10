@@ -5,5 +5,5 @@ createApp({
     genie(),
     server(),
   ],
-}).then(async (appkit) => {
-}).catch(console.error);
+})
+  .catch(console.error);

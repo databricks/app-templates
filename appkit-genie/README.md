@@ -3,6 +3,7 @@
 A Databricks App powered by [AppKit](https://databricks.github.io/appkit/), featuring React, TypeScript, and Tailwind CSS.
 
 **Enabled plugins:**
+- **Genie** -- AI/BI Genie conversational interface for natural language data queries
 - **Server** -- Express HTTP server with static file serving and Vite dev mode
 
 ## Prerequisites
@@ -133,6 +134,8 @@ targets:
     workspace:
       host: https://your-workspace.cloud.databricks.com
 ```
+
+Make sure to replace all placeholder values in `databricks.yml` with your actual resource IDs.
 
 ### 2. Validate Bundle
 

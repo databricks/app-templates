@@ -4,20 +4,19 @@ bundle:
 variables:
   sql_warehouse_id:
     description: SQL Warehouse ID
-  postgres_branch:
-    description: Full Lakebase Postgres branch resource name. Obtain by running `databricks postgres list-branches projects/{project-id}`, select the desired item from the output array and use its .name value.
-  postgres_database:
-    description: Full Lakebase Postgres database resource name. Obtain by running `databricks postgres list-databases {branch-name}`, select the desired item from the output array and use its .name value. Requires the branch resource name.
+  genie_space_id:
+    description: Default Genie Space ID
+  genie_space_name:
+    description: Genie Space for AI-powered data queries. Space IDs configured via plugin config.
 
 resources:
   apps:
     app:
       name: "appkit-all-in-one"
-      description: "Full-stack Node.js app with SQL analytics dashboards and Lakebase Autoscaling (Postgres) CRUD"
+      description: "Full-stack Node.js app with SQL analytics dashboards and Genie AI conversations"
       source_code_path: ./
-      # Uncomment to enable on behalf of user API scopes. Available scopes: sql, dashboards.genie, files.files
-      # user_api_scopes:
-      #   - sql
+      user_api_scopes:
+        - dashboards.genie
 
       # The resources which this app has access to.
       resources:
@@ -25,11 +24,11 @@ resources:
           sql_warehouse:
             id: ${var.sql_warehouse_id}
             permission: CAN_USE
-        - name: postgres
-          postgres:
-            branch: ${var.postgres_branch}
-            database: ${var.postgres_database}
-            permission: CAN_CONNECT_AND_CREATE
+        - name: genie-space
+          genie_space:
+            name: ${var.genie_space_name}
+            space_id: ${var.genie_space_id}
+            permission: CAN_RUN
 
 targets:
   default:
@@ -39,5 +38,4 @@ targets:
 
     variables:
       sql_warehouse_id: placeholder
-      postgres_branch: placeholder
-      postgres_database: placeholder
+      genie_space_id: placeholder

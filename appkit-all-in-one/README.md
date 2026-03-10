@@ -4,7 +4,7 @@ A Databricks App powered by [AppKit](https://databricks.github.io/appkit/), feat
 
 **Enabled plugins:**
 - **Analytics** -- SQL query execution against Databricks SQL Warehouses
-- **Lakebase** -- Fully managed Postgres database for transactional (OLTP) workloads on Databricks
+- **Genie** -- AI/BI Genie conversational interface for natural language data queries
 - **Server** -- Express HTTP server with static file serving and Vite dev mode
 
 ## Prerequisites
@@ -30,10 +30,6 @@ DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
 DATABRICKS_APP_PORT=8000
 # ... other environment variables, depending on the plugins you use
 ```
-
-#### Lakebase Configuration
-
-The Lakebase plugin requires additional environment variables for PostgreSQL connectivity. To learn how to configure the Lakebase plugin, see the [Lakebase plugin documentation](https://databricks.github.io/appkit/docs/plugins/lakebase).
 
 ### CLI Authentication
 
@@ -138,11 +134,9 @@ targets:
   default:
     workspace:
       host: https://your-workspace.cloud.databricks.com
-    variables:
-      sql_warehouse_id: your-warehouse-id
 ```
 
-Make sure to set the `sql_warehouse_id` variable to your Databricks SQL Warehouse ID.
+Make sure to replace all placeholder values in `databricks.yml` with your actual resource IDs.
 
 ### 2. Validate Bundle
 

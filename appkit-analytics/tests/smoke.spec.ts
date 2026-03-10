@@ -27,6 +27,11 @@ const PLUGIN_PAGES: Record<string, PluginPage> = {
     path: '/lakebase',
     expectedTexts: ['Todo List'],
   },
+  genie: {
+    navLabel: 'Genie',
+    path: '/genie',
+    expectedTexts: ['Ask questions about your data using Databricks AI/BI Genie'],
+  },
 };
 
 const enabledPages = Object.entries(PLUGIN_PAGES).filter(

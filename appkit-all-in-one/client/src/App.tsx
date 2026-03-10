@@ -6,7 +6,7 @@ import {
   CardTitle,
 } from '@databricks/appkit-ui/react';
 import { AnalyticsPage } from './pages/analytics/AnalyticsPage';
-import { LakebasePage } from './pages/lakebase/LakebasePage';
+import { GeniePage } from './pages/genie/GeniePage';
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   `px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
@@ -27,8 +27,8 @@ function Layout() {
           <NavLink to="/analytics" className={navLinkClass}>
             Analytics
           </NavLink>
-          <NavLink to="/lakebase" className={navLinkClass}>
-            Lakebase
+          <NavLink to="/genie" className={navLinkClass}>
+            Genie
           </NavLink>
         </nav>
       </header>
@@ -46,7 +46,7 @@ const router = createBrowserRouter([
     children: [
       { path: '/', element: <HomePage /> },
       { path: '/analytics', element: <AnalyticsPage /> },
-      { path: '/lakebase', element: <LakebasePage /> },
+      { path: '/genie', element: <GeniePage /> },
     ],
   },
 ]);

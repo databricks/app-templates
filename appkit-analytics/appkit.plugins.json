@@ -24,7 +24,43 @@
           }
         ],
         "optional": []
+      },
+      "requiredByTemplate": true
+    },
+    "genie": {
+      "name": "genie",
+      "displayName": "Genie Plugin",
+      "description": "AI/BI Genie space integration for natural language data queries",
+      "package": "@databricks/appkit",
+      "resources": {
+        "required": [
+          {
+            "type": "genie_space",
+            "alias": "Genie Space",
+            "resourceKey": "genie-space",
+            "description": "Genie Space for AI-powered data queries. Space IDs configured via plugin config.",
+            "permission": "CAN_RUN",
+            "fields": {
+              "id": {
+                "env": "DATABRICKS_GENIE_SPACE_ID",
+                "description": "Default Genie Space ID"
+              }
+            }
+          }
+        ],
+        "optional": []
       }
+    },
+    "lakebase": {
+      "name": "lakebase",
+      "displayName": "Lakebase",
+      "description": "SQL query execution against Databricks Lakebase Autoscaling",
+      "package": "@databricks/appkit",
+      "resources": {
+        "required": [],
+        "optional": []
+      },
+      "onSetupMessage": "Configure environment variables before running or deploying the app.\nSee: https://databricks.github.io/appkit/docs/plugins/lakebase"
     },
     "server": {
       "name": "server",

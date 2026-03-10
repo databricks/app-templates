@@ -24,7 +24,33 @@
           }
         ],
         "optional": []
-      }
+      },
+      "requiredByTemplate": true
+    },
+    "genie": {
+      "name": "genie",
+      "displayName": "Genie Plugin",
+      "description": "AI/BI Genie space integration for natural language data queries",
+      "package": "@databricks/appkit",
+      "resources": {
+        "required": [
+          {
+            "type": "genie_space",
+            "alias": "Genie Space",
+            "resourceKey": "genie-space",
+            "description": "Genie Space for AI-powered data queries. Space IDs configured via plugin config.",
+            "permission": "CAN_RUN",
+            "fields": {
+              "id": {
+                "env": "DATABRICKS_GENIE_SPACE_ID",
+                "description": "Default Genie Space ID"
+              }
+            }
+          }
+        ],
+        "optional": []
+      },
+      "requiredByTemplate": true
     },
     "lakebase": {
       "name": "lakebase",
@@ -32,39 +58,10 @@
       "description": "SQL query execution against Databricks Lakebase Autoscaling",
       "package": "@databricks/appkit",
       "resources": {
-        "required": [
-          {
-            "type": "postgres",
-            "alias": "Postgres",
-            "resourceKey": "postgres",
-            "description": "Lakebase Postgres database for persistent storage",
-            "permission": "CAN_CONNECT_AND_CREATE",
-            "fields": {
-              "branch": {
-                "description": "Full Lakebase Postgres branch resource name. Obtain by running `databricks postgres list-branches projects/{project-id}`, select the desired item from the output array and use its .name value.",
-                "examples": [
-                  "projects/{project-id}/branches/{branch-id}"
-                ]
-              },
-              "database": {
-                "description": "Full Lakebase Postgres database resource name. Obtain by running `databricks postgres list-databases {branch-name}`, select the desired item from the output array and use its .name value. Requires the branch resource name.",
-                "examples": [
-                  "projects/{project-id}/branches/{branch-id}/databases/{database-id}"
-                ]
-              },
-              "endpoint": {
-                "env": "LAKEBASE_ENDPOINT",
-                "description": "Lakebase endpoint resource name. Auto-injected at runtime via app.yaml valueFrom: postgres. For local development, obtain by running `databricks postgres list-endpoints {branch-name}`, select the desired item from the output array and use its .name value.",
-                "bundleIgnore": true,
-                "examples": [
-                  "projects/{project-id}/branches/{branch-id}/endpoints/{endpoint-id}"
-                ]
-              }
-            }
-          }
-        ],
+        "required": [],
         "optional": []
-      }
+      },
+      "onSetupMessage": "Configure environment variables before running or deploying the app.\nSee: https://databricks.github.io/appkit/docs/plugins/lakebase"
     },
     "server": {
       "name": "server",

@@ -19,7 +19,7 @@ import { sql } from "@databricks/appkit-ui/js";
 import { useState } from 'react';
 
 export function AnalyticsPage() {
-  const { data, loading, error } = useAnalyticsQuery<{ value: string }[]>('hello_world', {
+  const { data, loading, error } = useAnalyticsQuery('hello_world', {
     message: sql.string('hello world'),
   });
 

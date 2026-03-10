@@ -6,6 +6,7 @@ import { join } from 'node:path';
 const APP_CONFIG = {
   name: 'appkit-genie',
   plugins: [
+    'genie',
   ],
 } as const;
 
@@ -25,6 +26,11 @@ const PLUGIN_PAGES: Record<string, PluginPage> = {
     navLabel: 'Lakebase',
     path: '/lakebase',
     expectedTexts: ['Todo List'],
+  },
+  genie: {
+    navLabel: 'Genie',
+    path: '/genie',
+    expectedTexts: ['Ask questions about your data using Databricks AI/BI Genie'],
   },
 };
 

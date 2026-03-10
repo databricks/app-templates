@@ -30,10 +30,10 @@
   "keywords": [],
   "author": "",
   "license": "Unlicensed",
-  "description": "Full-stack Node.js app with SQL analytics dashboards and Lakebase Autoscaling (Postgres) CRUD",
+  "description": "Full-stack Node.js app with SQL analytics dashboards and Genie AI conversations",
   "dependencies": {
-    "@databricks/appkit": "0.15.0",
-    "@databricks/appkit-ui": "0.15.0",
+    "@databricks/appkit": "0.18.0",
+    "@databricks/appkit-ui": "0.18.0",
     "@databricks/sdk-experimental": "^0.14.2",
     "clsx": "^2.1.1",
     "embla-carousel-react": "^8.6.0",

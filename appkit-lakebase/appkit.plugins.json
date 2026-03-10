@@ -24,8 +24,7 @@
           }
         ],
         "optional": []
-      },
-      "requiredByTemplate": true
+      }
     },
     "genie": {
       "name": "genie",
@@ -49,8 +48,7 @@
           }
         ],
         "optional": []
-      },
-      "requiredByTemplate": true
+      }
     },
     "lakebase": {
       "name": "lakebase",

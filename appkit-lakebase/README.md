@@ -1,11 +1,9 @@
-# appkit-all-in-one
+# appkit-lakebase
 
 A Databricks App powered by [AppKit](https://databricks.github.io/appkit/), featuring React, TypeScript, and Tailwind CSS.
 
 **Enabled plugins:**
-- **Analytics** -- SQL query execution against Databricks SQL Warehouses
 - **Lakebase** -- Fully managed Postgres database for transactional (OLTP) workloads on Databricks
-- **Genie** -- AI/BI Genie conversational interface for natural language data queries
 - **Server** -- Express HTTP server with static file serving and Vite dev mode
 
 ## Prerequisites
@@ -184,8 +182,6 @@ databricks bundle deploy -t prod
   * server.ts      # Server entry point
   * routes/        # Routes
 * shared/          # Shared types
-* config/          # Configuration
-  * queries/       # SQL query files
 * databricks.yml   # Bundle configuration
 * app.yaml         # App configuration
 * .env.example     # Environment variables example

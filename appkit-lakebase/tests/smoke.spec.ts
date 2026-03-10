@@ -4,11 +4,9 @@ import { join } from 'node:path';
 
 // ── Templated configuration (resolved by `databricks apps init`) ────────────
 const APP_CONFIG = {
-  name: 'appkit-all-in-one',
+  name: 'appkit-lakebase',
   plugins: [
-    'analytics',
     'lakebase',
-    'genie',
   ],
 } as const;
 

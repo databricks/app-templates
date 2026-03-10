@@ -37,19 +37,43 @@ def copy_skill(src: Path, dest: Path, substitutions: dict = None):
             shutil.copy2(item, dest / item.name)
 
 
+LAKEBASE_OPTIONS = (
+    "- `--lakebase-provisioned-name NAME`: Provisioned Lakebase instance name (memory templates)\n"
+    "- `--lakebase-autoscaling-project PROJECT`: Autoscaling Lakebase project name (memory templates)\n"
+    "- `--lakebase-autoscaling-branch BRANCH`: Autoscaling Lakebase branch name (memory templates)\n"
+)
+
+LAKEBASE_EXAMPLES = (
+    "\n"
+    "# Memory template with provisioned Lakebase\n"
+    "uv run quickstart --lakebase-provisioned-name my-instance\n"
+    "\n"
+    "# Memory template with autoscaling Lakebase\n"
+    "uv run quickstart --lakebase-autoscaling-project my-project --lakebase-autoscaling-branch production\n"
+)
+
+
 def sync_template(template: str, config: dict):
     """Sync all skills to a single template."""
     dest = REPO_ROOT / template / ".claude" / "skills"
     sdk = config["sdk"]
     subs = {"{{BUNDLE_NAME}}": config["bundle_name"]}
+    has_memory = config.get("has_memory", False)
 
     # Clear existing skills
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True)
 
+    # Quickstart skill (with lakebase options for memory templates)
+    quickstart_subs = {
+        "{{LAKEBASE_OPTIONS}}": LAKEBASE_OPTIONS if has_memory else "",
+        "{{LAKEBASE_EXAMPLES}}": LAKEBASE_EXAMPLES if has_memory else "",
+    }
+    copy_skill(SOURCE / "quickstart", dest / "quickstart", quickstart_subs)
+
     # Shared skills (no substitution needed)
-    for skill in ["quickstart", "run-locally", "discover-tools", "migrate-from-model-serving"]:
+    for skill in ["run-locally", "discover-tools", "migrate-from-model-serving"]:
         copy_skill(SOURCE / skill, dest / skill)
 
     # Deploy skill (with substitution)

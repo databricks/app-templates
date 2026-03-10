@@ -26,7 +26,7 @@ uv run quickstart
 **Options:**
 - `--profile NAME`: Use specified profile (non-interactive)
 - `--host URL`: Workspace URL for initial setup
-- `-h, --help`: Show help
+{{LAKEBASE_OPTIONS}}- `-h, --help`: Show help
 
 **Examples:**
 ```bash
@@ -38,7 +38,7 @@ uv run quickstart --profile DEFAULT
 
 # New workspace setup
 uv run quickstart --host https://your-workspace.cloud.databricks.com
-```
+{{LAKEBASE_EXAMPLES}}```
 
 ## What Quickstart Configures
 

@@ -9,11 +9,26 @@
 
    *Note: New apps should use the `agent-*` prefix (e.g., `agent-data-analyst`) unless the user specifies otherwise.*
 
-2. **Lakebase instance (required for memory):**
-   > "This template requires Lakebase for memory. Are you using a **provisioned** Lakebase instance or an **autoscaling** Lakebase project/branch?"
+2. **Lakebase instance (required for memory) — use `AskUserQuestion` tool:**
 
-   - **Provisioned instance**: Use the **lakebase-setup** skill (configures `LAKEBASE_INSTANCE_NAME` in databricks.yml)
-   - **Autoscaling project/branch**: Follow `.claude/skills/add-tools/examples/lakebase-autoscaling.md` — this requires deploying the app first, then adding the postgres resource via API and granting table permissions to the app's service principal
+   **Step A:** Use the `AskUserQuestion` tool to ask the user which type of Lakebase instance they are using:
+   - Option 1: **Provisioned** — "I have a provisioned Lakebase instance"
+   - Option 2: **Autoscaling** — "I have an autoscaling Lakebase project/branch"
+
+   **Step B (if Provisioned):** Use `AskUserQuestion` to ask:
+   > "What is your Lakebase instance name?"
+
+   Then pass it to quickstart: `uv run quickstart --lakebase-provisioned-name <instance-name>`
+   For post-deploy setup, see the **lakebase-setup** skill.
+
+   **Step B (if Autoscaling):** Use `AskUserQuestion` to ask:
+   > "What is your Lakebase project and branch? You can provide them separately (project name and branch name) or paste the full resource path (e.g. `project/my-project/branch/my-branch`)."
+
+   - If the user provides a resource path like `project/<project>/branch/<branch>`, parse out the project and branch components
+   - The user may also paste just a branch resource path like `project/<project-id>/branch/<branch-id>` — parse project and branch from the path segments
+
+   Then pass to quickstart: `uv run quickstart --lakebase-autoscaling-project <project> --lakebase-autoscaling-branch <branch>`
+   For post-deploy setup (adding postgres resource via API, granting permissions), see `.claude/skills/add-tools/examples/lakebase-autoscaling.md`.
 
 **Autoscaling keywords**: If the user mentions "autoscaling", "project", "branch", or "postgres" in the context of Lakebase/memory, use the **autoscaling** guide at `.claude/skills/add-tools/examples/lakebase-autoscaling.md`.
 

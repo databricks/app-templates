@@ -26,6 +26,9 @@ uv run quickstart
 **Options:**
 - `--profile NAME`: Use specified profile (non-interactive)
 - `--host URL`: Workspace URL for initial setup
+- `--lakebase-provisioned-name NAME`: Provisioned Lakebase instance name (memory templates)
+- `--lakebase-autoscaling-project PROJECT`: Autoscaling Lakebase project name (memory templates)
+- `--lakebase-autoscaling-branch BRANCH`: Autoscaling Lakebase branch name (memory templates)
 - `-h, --help`: Show help
 
 **Examples:**
@@ -38,6 +41,12 @@ uv run quickstart --profile DEFAULT
 
 # New workspace setup
 uv run quickstart --host https://your-workspace.cloud.databricks.com
+
+# Memory template with provisioned Lakebase
+uv run quickstart --lakebase-provisioned-name my-instance
+
+# Memory template with autoscaling Lakebase
+uv run quickstart --lakebase-autoscaling-project my-project --lakebase-autoscaling-branch production
 ```
 
 ## What Quickstart Configures

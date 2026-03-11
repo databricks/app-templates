@@ -38,4 +38,8 @@ TEMPLATES = {
         "sdk": ["langgraph", "openai"],
         "bundle_name": "agent_migration",
     },
+    "agent-supervisor-api": {
+        "sdk": "openai",
+        "bundle_name": "agent_supervisor_api",
+    },
 }

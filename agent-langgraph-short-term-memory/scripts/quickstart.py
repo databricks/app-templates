@@ -802,6 +802,39 @@ def update_databricks_yml_lakebase(lakebase_config: dict) -> None:
     print_success("Updated databricks.yml with Lakebase config")
 
 
+def update_app_yaml_lakebase(lakebase_config: dict) -> None:
+    """Update app.yaml to set the Lakebase config in the app's env vars."""
+    app_yaml_path = Path("app.yaml")
+    if not app_yaml_path.exists():
+        return
+
+    content = app_yaml_path.read_text()
+
+    if lakebase_config["type"] == "provisioned":
+        instance_name = lakebase_config["instance_name"]
+        content = re.sub(
+            r'(- name: LAKEBASE_INSTANCE_NAME\s+value: )"[^"]*"',
+            f'\\1"{instance_name}"',
+            content,
+        )
+    else:
+        project = lakebase_config["project"]
+        branch = lakebase_config["branch"]
+        content = re.sub(
+            r'(- name: LAKEBASE_AUTOSCALING_PROJECT\s+value: )"[^"]*"',
+            f'\\1"{project}"',
+            content,
+        )
+        content = re.sub(
+            r'(- name: LAKEBASE_AUTOSCALING_BRANCH\s+value: )"[^"]*"',
+            f'\\1"{branch}"',
+            content,
+        )
+
+    app_yaml_path.write_text(content)
+    print_success("Updated app.yaml with Lakebase config")
+
+
 def update_databricks_yml_experiment(experiment_id: str) -> None:
     """Update databricks.yml to set the experiment ID in the app resource."""
     yml_path = Path("databricks.yml")
@@ -916,8 +949,9 @@ Examples:
                 autoscaling_project=args.lakebase_autoscaling_project,
                 autoscaling_branch=args.lakebase_autoscaling_branch,
             )
-            # Step 6b: Update databricks.yml with Lakebase config
+            # Step 6b: Update databricks.yml and app.yaml with Lakebase config
             update_databricks_yml_lakebase(lakebase_config)
+            update_app_yaml_lakebase(lakebase_config)
 
         # Final summary
         host = get_databricks_host(profile_name)

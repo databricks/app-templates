@@ -29,12 +29,37 @@ def test_module_imports():
     assert hasattr(agent, "_get_client")
 
 
-def test_get_client_uses_mlflow_v1_base_url():
-    """_get_client configures DatabricksOpenAI with /mlflow/v1 base URL, not /serving-endpoints."""
+def test_ai_gateway_base_url():
+    """_ai_gateway_base_url derives the AI Gateway URL from workspace host + workspace ID."""
+    from agent_server.agent import _ai_gateway_base_url
+
+    mock_wc = MagicMock()
+    mock_wc.config.host = "https://my-workspace.cloud.databricks.com"
+    mock_wc.get_workspace_id.return_value = 1234567890
+
+    url = _ai_gateway_base_url(mock_wc)
+    assert url == "https://1234567890.ai-gateway.cloud.databricks.com/mlflow/v1"
+
+
+def test_ai_gateway_base_url_staging():
+    """Works for staging workspaces too."""
+    from agent_server.agent import _ai_gateway_base_url
+
+    mock_wc = MagicMock()
+    mock_wc.config.host = "https://eng-ml-inference.staging.cloud.databricks.com"
+    mock_wc.get_workspace_id.return_value = 1653573648247579
+
+    url = _ai_gateway_base_url(mock_wc)
+    assert url == "https://1653573648247579.ai-gateway.staging.cloud.databricks.com/mlflow/v1"
+
+
+def test_get_client_uses_ai_gateway_url():
+    """_get_client configures DatabricksOpenAI with the AI Gateway base URL."""
     from agent_server.agent import _get_client
 
     mock_wc = MagicMock()
-    mock_wc.config.host = "https://test.cloud.databricks.com"
+    mock_wc.config.host = "https://my-workspace.cloud.databricks.com"
+    mock_wc.get_workspace_id.return_value = 1234567890
 
     captured = {}
 
@@ -46,7 +71,7 @@ def test_get_client_uses_mlflow_v1_base_url():
          patch("agent_server.agent.DatabricksOpenAI", side_effect=fake_databricks_openai):
         _get_client()
 
-    assert captured["base_url"] == "https://test.cloud.databricks.com/mlflow/v1"
+    assert captured["base_url"] == "https://1234567890.ai-gateway.cloud.databricks.com/mlflow/v1"
     assert captured["workspace_client"] is mock_wc
 
 
@@ -93,9 +118,10 @@ def test_invoke_handler_calls_responses_create():
     """invoke_handler calls client.responses.create with correct params."""
     from agent_server.agent import MODEL, TOOLS
 
-    mock_output = [{"type": "message", "id": "msg_001", "role": "assistant", "content": [{"type": "output_text", "text": "hi"}]}]
+    mock_item = MagicMock()
+    mock_item.model_dump.return_value = {"type": "message", "id": "msg_001", "role": "assistant", "content": [{"type": "output_text", "text": "hi"}]}
     mock_response = MagicMock()
-    mock_response.output = mock_output
+    mock_response.output = [mock_item]
 
     mock_client = MagicMock()
     mock_client.responses.create.return_value = mock_response
@@ -110,11 +136,13 @@ def test_invoke_handler_calls_responses_create():
         from agent_server.agent import invoke_handler
         result = invoke_handler(req)
 
+    from agent_server.agent import _EXTRA_HEADERS
     mock_client.responses.create.assert_called_once_with(
         model=MODEL,
         input=[{"type": "message", "role": "user", "content": "hi"}],
         tools=TOOLS,
         stream=False,
+        extra_headers=_EXTRA_HEADERS,
     )
     assert isinstance(result, ResponsesAgentResponse)
     assert len(result.output) == 1
@@ -138,11 +166,13 @@ def test_stream_handler_calls_responses_create_streaming():
         from agent_server.agent import stream_handler
         stream_handler(req)  # Returns the iterator from client
 
+    from agent_server.agent import _EXTRA_HEADERS
     mock_client.responses.create.assert_called_once_with(
         model=MODEL,
         input=[{"type": "message", "role": "user", "content": "hi"}],
         tools=TOOLS,
         stream=True,
+        extra_headers=_EXTRA_HEADERS,
     )
 
 

@@ -67,15 +67,20 @@ Edit the `TOOLS` list in `agent_server/agent.py`. Supported tool types: `uc_func
 
 ## How the client is configured
 
-`DatabricksOpenAI` defaults to `{host}/serving-endpoints` as its base URL. The Supervisor API is a distinct endpoint served by AI Gateway at `{host}/mlflow/v1/responses`. The `_get_client()` helper in `agent_server/agent.py` overrides the base URL accordingly:
+`DatabricksOpenAI` defaults to `{host}/serving-endpoints` as its base URL. The Supervisor API is served by AI Gateway at a **dedicated subdomain**, not the workspace host:
+
+```
+https://<workspace_id>.ai-gateway.<domain>/mlflow/v1/responses
+```
+
+The `_ai_gateway_base_url()` helper in `agent_server/agent.py` derives this URL automatically from the workspace host and ID:
 
 ```python
-def _get_client() -> DatabricksOpenAI:
-    wc = WorkspaceClient()
-    return DatabricksOpenAI(
-        workspace_client=wc,
-        base_url=f"{wc.config.host}/mlflow/v1",
-    )
+def _ai_gateway_base_url(wc: WorkspaceClient) -> str:
+    host = wc.config.host          # e.g. https://my-workspace.cloud.databricks.com
+    workspace_id = wc.get_workspace_id()
+    domain = re.match(r"https://[^.]+\.(.+)", host).group(1)
+    return f"https://{workspace_id}.ai-gateway.{domain}/mlflow/v1"
 ```
 
 Authentication is handled automatically by the `WorkspaceClient` using your configured Databricks CLI credentials.

@@ -4,7 +4,6 @@ TEMPLATES = {
     "agent-langgraph": {
         "sdk": "langgraph",
         "bundle_name": "agent_langgraph",
-        "exclude_scripts": ["grant_lakebase_permissions.py"],
     },
     "agent-langgraph-short-term-memory": {
         "sdk": "langgraph",
@@ -19,12 +18,10 @@ TEMPLATES = {
     "agent-openai-agents-sdk": {
         "sdk": "openai",
         "bundle_name": "agent_openai_agents_sdk",
-        "exclude_scripts": ["grant_lakebase_permissions.py"],
     },
     "agent-openai-agents-sdk-multiagent": {
         "sdk": "openai",
         "bundle_name": "agent_openai_agents_sdk_multiagent",
-        "exclude_scripts": ["grant_lakebase_permissions.py"],
     },
     "agent-openai-agents-sdk-short-term-memory": {
         "sdk": "openai",
@@ -38,11 +35,10 @@ TEMPLATES = {
     "agent-non-conversational": {
         "sdk": "langgraph",
         "bundle_name": "agent_non_conversational",
-        "exclude_scripts": ["start_app.py", "evaluate_agent.py", "grant_lakebase_permissions.py"],
+        "exclude_scripts": ["start_app.py", "evaluate_agent.py"],
     },
     "agent-migration-from-model-serving": {
         "sdk": ["langgraph", "openai"],
         "bundle_name": "agent_migration",
-        "exclude_scripts": ["grant_lakebase_permissions.py"],
     },
 }

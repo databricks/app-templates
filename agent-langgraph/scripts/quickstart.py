@@ -621,8 +621,8 @@ def select_lakebase_interactive(profile_name: str) -> dict:
     # Existing instance
     print("\nWhat type of Lakebase instance?")
     print("  See https://docs.databricks.com/aws/en/oltp/#feature-comparison for details.")
-    print("  1) Provisioned")
-    print("  2) Autoscaling (recommended)")
+    print("  1) Autoscaling (recommended)")
+    print("  2) Provisioned")
     print()
 
     while True:
@@ -631,7 +631,7 @@ def select_lakebase_interactive(profile_name: str) -> dict:
             break
         print_error("Please enter 1 or 2")
 
-    if type_choice == "1":
+    if type_choice == "2":
         name = input("\nEnter the provisioned Lakebase instance name: ").strip()
         if not name:
             print_error("Instance name is required")
@@ -760,46 +760,99 @@ def setup_lakebase(
     return selection
 
 
+def _replace_lakebase_env_vars(content: str, lakebase_config: dict) -> str:
+    """Remove all Lakebase env var lines and insert only the relevant ones.
+
+    Handles both active and commented-out LAKEBASE_ env vars, plus their
+    associated comment lines (e.g. "# Autoscaling Lakebase config").
+    """
+    lines = content.splitlines()
+    result = []
+    insert_idx = None
+    skip_next_value = False
+
+    for line in lines:
+        if skip_next_value:
+            skip_next_value = False
+            if re.match(r"\s*(?:#\s*)?(?:value|value_from)\s*:", line):
+                continue
+            # Not a value line — fall through to normal processing
+
+        stripped = line.strip()
+
+        # Match lakebase section comments
+        bare = stripped.lstrip("#").strip().lower()
+        if bare in (
+            "autoscaling lakebase config",
+            "use for provisioned lakebase resource",
+            "provisioned lakebase config",
+        ):
+            if insert_idx is None:
+                insert_idx = len(result)
+            continue
+
+        # Match LAKEBASE_ env var lines (active or commented)
+        if re.search(r"- name: LAKEBASE_", stripped):
+            if insert_idx is None:
+                insert_idx = len(result)
+            skip_next_value = True
+            continue
+
+        result.append(line)
+
+    if insert_idx is None:
+        return content
+
+    # Detect indent from surrounding `- name:` env var lines
+    indent = "          "
+    for line in result:
+        m = re.match(r"^(\s+)- name: ", line)
+        if m:
+            indent = m.group(1)
+            break
+
+    # Build replacement block with only the relevant env vars
+    if lakebase_config["type"] == "provisioned":
+        new_lines = [
+            f"{indent}- name: LAKEBASE_INSTANCE_NAME",
+            f'{indent}  value: "{lakebase_config["instance_name"]}"',
+        ]
+    else:
+        new_lines = [
+            f"{indent}- name: LAKEBASE_AUTOSCALING_PROJECT",
+            f'{indent}  value: "{lakebase_config["project"]}"',
+            f"{indent}- name: LAKEBASE_AUTOSCALING_BRANCH",
+            f'{indent}  value: "{lakebase_config["branch"]}"',
+        ]
+
+    final = result[:insert_idx] + new_lines + result[insert_idx:]
+    return "\n".join(final) + "\n"
+
+
 def update_databricks_yml_lakebase(lakebase_config: dict) -> None:
-    """Update databricks.yml to set the Lakebase config in the app's env vars."""
+    """Update databricks.yml: keep only the relevant Lakebase env vars, remove the others."""
     yml_path = Path("databricks.yml")
     if not yml_path.exists():
         return
 
     content = yml_path.read_text()
+    updated = _replace_lakebase_env_vars(content, lakebase_config)
+    if updated != content:
+        yml_path.write_text(updated)
+        print_success("Updated databricks.yml with Lakebase config")
 
-    if lakebase_config["type"] == "provisioned":
-        instance_name = lakebase_config["instance_name"]
-        # Replace LAKEBASE_INSTANCE_NAME placeholder value
-        content = re.sub(
-            r'(- name: LAKEBASE_INSTANCE_NAME\s+value: )"[^"]*"',
-            f'\\1"{instance_name}"',
-            content,
-        )
-        # Also handle value_from variant (replace with static value)
-        content = re.sub(
-            r'- name: LAKEBASE_INSTANCE_NAME\s+value_from: "[^"]*"',
-            f'- name: LAKEBASE_INSTANCE_NAME\n            value: "{instance_name}"',
-            content,
-        )
-    else:
-        project = lakebase_config["project"]
-        branch = lakebase_config["branch"]
-        # Replace LAKEBASE_AUTOSCALING_PROJECT placeholder value
-        content = re.sub(
-            r'(- name: LAKEBASE_AUTOSCALING_PROJECT\s+value: )"[^"]*"',
-            f'\\1"{project}"',
-            content,
-        )
-        # Replace LAKEBASE_AUTOSCALING_BRANCH placeholder value
-        content = re.sub(
-            r'(- name: LAKEBASE_AUTOSCALING_BRANCH\s+value: )"[^"]*"',
-            f'\\1"{branch}"',
-            content,
-        )
 
-    yml_path.write_text(content)
-    print_success("Updated databricks.yml with Lakebase config")
+def update_app_yaml_lakebase(lakebase_config: dict) -> None:
+    """Update app.yaml: keep only the relevant Lakebase env vars, remove the others."""
+    app_yaml_path = Path("app.yaml")
+    if not app_yaml_path.exists():
+        return
+
+    content = app_yaml_path.read_text()
+    updated = _replace_lakebase_env_vars(content, lakebase_config)
+    if updated != content:
+        app_yaml_path.write_text(updated)
+        print_success("Updated app.yaml with Lakebase config")
 
 
 def update_databricks_yml_experiment(experiment_id: str) -> None:
@@ -916,8 +969,9 @@ Examples:
                 autoscaling_project=args.lakebase_autoscaling_project,
                 autoscaling_branch=args.lakebase_autoscaling_branch,
             )
-            # Step 6b: Update databricks.yml with Lakebase config
+            # Step 6b: Update databricks.yml and app.yaml with Lakebase config
             update_databricks_yml_lakebase(lakebase_config)
+            update_app_yaml_lakebase(lakebase_config)
 
         # Final summary
         host = get_databricks_host(profile_name)

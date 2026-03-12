@@ -634,6 +634,26 @@ class TestUpdateEnvFile:
         content = (tmp_path / ".env").read_text()
         assert "# This is a comment" in content
 
+    def test_replaces_commented_out_key(self, tmp_path):
+        (tmp_path / ".env").write_text(
+            "# Option 1: Provisioned\n# LAKEBASE_INSTANCE_NAME=\nOTHER=yes\n"
+        )
+        update_env_file("LAKEBASE_INSTANCE_NAME", "my-db")
+        content = (tmp_path / ".env").read_text()
+        assert "LAKEBASE_INSTANCE_NAME=my-db" in content
+        assert "# LAKEBASE_INSTANCE_NAME=" not in content
+        assert "OTHER=yes" in content
+        # Should not be appended at the end (replaced in-place)
+        lines = content.strip().split("\n")
+        assert lines[1] == "LAKEBASE_INSTANCE_NAME=my-db"
+
+    def test_replaces_commented_out_key_with_space(self, tmp_path):
+        (tmp_path / ".env").write_text("# LAKEBASE_AUTOSCALING_PROJECT=\n")
+        update_env_file("LAKEBASE_AUTOSCALING_PROJECT", "my-proj")
+        content = (tmp_path / ".env").read_text()
+        assert "LAKEBASE_AUTOSCALING_PROJECT=my-proj" in content
+        assert content.count("LAKEBASE_AUTOSCALING_PROJECT") == 1
+
 
 class TestSetupEnvFile:
     """Tests for setup_env_file (copies .env.example to .env)."""

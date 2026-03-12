@@ -130,7 +130,6 @@ def _run_main(argv, monkeypatch):
     mock_module.SequencePrivilege.USAGE = "SEQ_USAGE"
     mock_module.SequencePrivilege.SELECT = "SEQ_SELECT"
     mock_module.SequencePrivilege.UPDATE = "SEQ_UPDATE"
-    mock_module.SequencePrivilege.DELETE = "SEQ_DELETE"
 
     with patch("sys.argv", argv), patch.dict("sys.modules", {"databricks_ai_bridge.lakebase": mock_module}):
         main()

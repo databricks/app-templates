@@ -260,10 +260,18 @@ def update_env_file(key: str, value: str) -> None:
         # Replace existing key
         content = re.sub(pattern, f"{key}={value}", content, flags=re.MULTILINE)
     else:
-        # Add new key
-        if not content.endswith("\n"):
-            content += "\n"
-        content += f"{key}={value}\n"
+        # Check for commented-out version (e.g. "# LAKEBASE_INSTANCE_NAME=")
+        commented_pattern = rf"^#\s*{re.escape(key)}=.*$"
+        if re.search(commented_pattern, content, re.MULTILINE):
+            # Replace commented line with active value
+            content = re.sub(
+                commented_pattern, f"{key}={value}", content, count=1, flags=re.MULTILINE
+            )
+        else:
+            # Add new key
+            if not content.endswith("\n"):
+                content += "\n"
+            content += f"{key}={value}\n"
 
     env_file.write_text(content)
 
@@ -699,11 +707,14 @@ def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> dict | 
     return None
 
 
-def validate_lakebase_autoscaling(profile_name: str, project: str, branch: str) -> bool:
+def validate_lakebase_autoscaling(profile_name: str, project: str, branch: str) -> dict | None:
     """Validate that the Lakebase autoscaling project and branch exist.
 
-    Uses the postgres API (/api/2.0/postgres/) to verify the project and branch.
-    Returns True on success, False on failure.
+    Uses the postgres API (/api/2.0/postgres/) to verify the project and branch,
+    then fetches the endpoint host for PGHOST.
+
+    Returns a dict with {"host": str} on success (host may be empty if endpoint
+    not found), or None on failure.
     """
     print(f"Validating Lakebase autoscaling project '{project}', branch '{branch}'...")
 
@@ -734,7 +745,7 @@ def validate_lakebase_autoscaling(profile_name: str, project: str, branch: str) 
             print_error(
                 f"Failed to validate Lakebase project: {result.stderr.strip() if result.stderr else 'Unknown error'}"
             )
-        return False
+        return None
 
     # Validate branch exists within the project
     result = run_command(
@@ -763,10 +774,39 @@ def validate_lakebase_autoscaling(profile_name: str, project: str, branch: str) 
             print_error(
                 f"Failed to validate Lakebase branch: {result.stderr.strip() if result.stderr else 'Unknown error'}"
             )
-        return False
+        return None
 
     print_success(f"Lakebase autoscaling project '{project}', branch '{branch}' validated")
-    return True
+
+    # Fetch endpoint host for PGHOST
+    pg_host = ""
+    result = run_command(
+        [
+            "databricks",
+            "-p",
+            profile_name,
+            "api",
+            "get",
+            f"/api/2.0/postgres/projects/{project}/branches/{branch}/endpoints",
+            "--output",
+            "json",
+        ],
+        check=False,
+    )
+    if result.returncode == 0 and result.stdout:
+        try:
+            endpoints_data = json.loads(result.stdout)
+            endpoints = endpoints_data.get("endpoints", [])
+            if endpoints:
+                host = (
+                    endpoints[0].get("status", {}).get("hosts", {}).get("host", "")
+                )
+                if host:
+                    pg_host = host
+        except (json.JSONDecodeError, IndexError, KeyError):
+            pass
+
+    return {"host": pg_host}
 
 
 def setup_lakebase(
@@ -815,11 +855,20 @@ def setup_lakebase(
     # If --lakebase-autoscaling-project and --lakebase-autoscaling-branch were provided
     if autoscaling_project and autoscaling_branch:
         print(f"Using autoscaling Lakebase: project={autoscaling_project}, branch={autoscaling_branch}")
-        if not validate_lakebase_autoscaling(profile_name, autoscaling_project, autoscaling_branch):
+        branch_info = validate_lakebase_autoscaling(profile_name, autoscaling_project, autoscaling_branch)
+        if not branch_info:
             sys.exit(1)
         update_env_file("LAKEBASE_AUTOSCALING_PROJECT", autoscaling_project)
         update_env_file("LAKEBASE_AUTOSCALING_BRANCH", autoscaling_branch)
         update_env_file("LAKEBASE_INSTANCE_NAME", "")
+
+        # Set up PostgreSQL connection environment variables
+        pg_host = branch_info.get("host", "")
+        if pg_host:
+            update_env_file("PGHOST", pg_host)
+            print_success(f"PGHOST set to '{pg_host}'")
+        else:
+            print_error("Could not get endpoint host from Lakebase branch (PGHOST not set)")
 
         update_env_file("PGUSER", username)
         print_success(f"PGUSER set to '{username}'")
@@ -861,11 +910,20 @@ def setup_lakebase(
     else:
         project = selection["project"]
         branch = selection["branch"]
-        if not validate_lakebase_autoscaling(profile_name, project, branch):
+        branch_info = validate_lakebase_autoscaling(profile_name, project, branch)
+        if not branch_info:
             sys.exit(1)
         update_env_file("LAKEBASE_AUTOSCALING_PROJECT", project)
         update_env_file("LAKEBASE_AUTOSCALING_BRANCH", branch)
         update_env_file("LAKEBASE_INSTANCE_NAME", "")
+
+        # Set up PostgreSQL connection environment variables
+        pg_host = branch_info.get("host", "")
+        if pg_host:
+            update_env_file("PGHOST", pg_host)
+            print_success(f"PGHOST set to '{pg_host}'")
+        else:
+            print_error("Could not get endpoint host from Lakebase branch (PGHOST not set)")
 
         update_env_file("PGUSER", username)
         print_success(f"PGUSER set to '{username}'")

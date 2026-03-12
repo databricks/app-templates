@@ -176,7 +176,6 @@ def main():
                     SequencePrivilege.USAGE,
                     SequencePrivilege.SELECT,
                     SequencePrivilege.UPDATE,
-                    SequencePrivilege.DELETE,
                 ],
             )
         except Exception as e:

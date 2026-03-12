@@ -551,7 +551,7 @@ def create_lakebase_instance(profile_name: str) -> dict:
         print_error("Could not connect to Databricks. Check your CLI profile.")
         sys.exit(1)
 
-    name = input("Enter a name for the new Lakebase instance: ").strip()
+    name = input("Enter a name for the new Lakebase autoscaling project: ").strip()
     if not name:
         print_error("Instance name is required")
         sys.exit(1)

@@ -18,9 +18,11 @@ import pytest
 from quickstart import (
     _replace_lakebase_env_vars,
     _replace_lakebase_resource,
+    setup_env_file,
     update_app_yaml_lakebase,
     update_databricks_yml_experiment,
     update_databricks_yml_lakebase,
+    update_env_file,
 )
 
 # A minimal databricks.yml with experiment app resource (like agent-langgraph)
@@ -127,6 +129,15 @@ resources:
           experiment:
             experiment_id: ""
             permission: "CAN_MANAGE"
+        # Autoscaling postgres resource must be added via API after deploy
+        # See: .claude/skills/add-tools/examples/lakebase-autoscaling.md
+        #
+        # Use for provisioned lakebase resource
+        # - name: "database"
+        #   database:
+        #     instance_name: "<your-lakebase-instance-name>"
+        #     database_name: "databricks_postgres"
+        #     permission: "CAN_CONNECT_AND_CREATE"
 
 targets:
   dev:
@@ -578,3 +589,264 @@ class TestCombined:
         assert 'value: "my-proj"' in content
         assert 'value: "production"' in content
         assert "LAKEBASE_INSTANCE_NAME" not in content
+
+
+class TestUpdateEnvFile:
+    """Tests for update_env_file helper."""
+
+    def test_creates_new_file(self, tmp_path):
+        update_env_file("MY_KEY", "my_value")
+        content = (tmp_path / ".env").read_text()
+        assert "MY_KEY=my_value" in content
+
+    def test_updates_existing_key(self, tmp_path):
+        (tmp_path / ".env").write_text("MY_KEY=old_value\n")
+        update_env_file("MY_KEY", "new_value")
+        content = (tmp_path / ".env").read_text()
+        assert "MY_KEY=new_value" in content
+        assert "old_value" not in content
+
+    def test_adds_new_key(self, tmp_path):
+        (tmp_path / ".env").write_text("EXISTING=yes\n")
+        update_env_file("NEW_KEY", "new_value")
+        content = (tmp_path / ".env").read_text()
+        assert "EXISTING=yes" in content
+        assert "NEW_KEY=new_value" in content
+
+    def test_clears_value(self, tmp_path):
+        (tmp_path / ".env").write_text("MY_KEY=something\n")
+        update_env_file("MY_KEY", "")
+        content = (tmp_path / ".env").read_text()
+        assert "MY_KEY=" in content
+        assert "something" not in content
+
+    def test_preserves_other_keys(self, tmp_path):
+        (tmp_path / ".env").write_text("A=1\nB=2\nC=3\n")
+        update_env_file("B", "updated")
+        content = (tmp_path / ".env").read_text()
+        assert "A=1" in content
+        assert "B=updated" in content
+        assert "C=3" in content
+
+    def test_preserves_comments(self, tmp_path):
+        (tmp_path / ".env").write_text("# This is a comment\nMY_KEY=val\n")
+        update_env_file("MY_KEY", "new")
+        content = (tmp_path / ".env").read_text()
+        assert "# This is a comment" in content
+
+
+class TestSetupEnvFile:
+    """Tests for setup_env_file (copies .env.example to .env)."""
+
+    def test_copies_env_example(self, tmp_path):
+        (tmp_path / ".env.example").write_text("PROFILE=DEFAULT\nMLFLOW_EXPERIMENT_ID=\n")
+        setup_env_file()
+        assert (tmp_path / ".env").exists()
+        content = (tmp_path / ".env").read_text()
+        assert "PROFILE=DEFAULT" in content
+
+    def test_does_not_overwrite_existing(self, tmp_path):
+        (tmp_path / ".env.example").write_text("NEW=content\n")
+        (tmp_path / ".env").write_text("OLD=content\n")
+        setup_env_file()
+        content = (tmp_path / ".env").read_text()
+        assert "OLD=content" in content
+        assert "NEW=content" not in content
+
+    def test_creates_minimal_without_example(self, tmp_path):
+        setup_env_file()
+        assert (tmp_path / ".env").exists()
+        content = (tmp_path / ".env").read_text()
+        assert "DATABRICKS_CONFIG_PROFILE=DEFAULT" in content
+
+
+class TestHappyPathProvisionedOnRealTemplates:
+    """End-to-end happy path: provisioned Lakebase on real template files.
+
+    Simulates what quickstart does: copy .env.example -> .env, set experiment,
+    set lakebase config, and verify both .env and databricks.yml are correct.
+    """
+
+    MEMORY_TEMPLATES = [
+        "agent-langgraph-short-term-memory",
+        "agent-langgraph-long-term-memory",
+        "agent-openai-agents-sdk-short-term-memory",
+    ]
+
+    def test_provisioned_happy_path(self, tmp_path):
+        repo_root = Path(__file__).resolve().parents[1]
+
+        for template_name in self.MEMORY_TEMPLATES:
+            template_dir = repo_root / template_name
+            if not template_dir.exists():
+                continue
+
+            # Set up working directory
+            tdir = tmp_path / f"{template_name}-provisioned"
+            tdir.mkdir()
+
+            # Copy template files
+            for fname in ["databricks.yml", ".env.example"]:
+                src = template_dir / fname
+                if src.exists():
+                    (tdir / fname).write_text(src.read_text())
+            if (template_dir / "app.yaml").exists():
+                (tdir / "app.yaml").write_text((template_dir / "app.yaml").read_text())
+
+            os.chdir(tdir)
+
+            # Step 1: Copy .env.example to .env
+            setup_env_file()
+            assert (tdir / ".env").exists(), f"{template_name}: .env not created"
+
+            # Step 2: Set experiment ID
+            update_databricks_yml_experiment("12345")
+
+            # Step 3: Set provisioned lakebase in .env
+            update_env_file("LAKEBASE_INSTANCE_NAME", "my-provisioned-db")
+            update_env_file("LAKEBASE_AUTOSCALING_PROJECT", "")
+            update_env_file("LAKEBASE_AUTOSCALING_BRANCH", "")
+            update_env_file("PGHOST", "instance-abc.database.staging.cloud.databricks.com")
+            update_env_file("PGUSER", "test@databricks.com")
+            update_env_file("PGDATABASE", "databricks_postgres")
+
+            # Step 4: Set provisioned lakebase in databricks.yml
+            update_databricks_yml_lakebase(
+                {"type": "provisioned", "instance_name": "my-provisioned-db"}
+            )
+
+            # Verify .env
+            env_content = (tdir / ".env").read_text()
+            assert "LAKEBASE_INSTANCE_NAME=my-provisioned-db" in env_content, (
+                f"{template_name}: .env missing LAKEBASE_INSTANCE_NAME"
+            )
+            assert "PGHOST=instance-abc" in env_content, (
+                f"{template_name}: .env missing PGHOST"
+            )
+            assert "PGUSER=test@databricks.com" in env_content, (
+                f"{template_name}: .env missing PGUSER"
+            )
+            assert "PGDATABASE=databricks_postgres" in env_content, (
+                f"{template_name}: .env missing PGDATABASE"
+            )
+
+            # Verify databricks.yml
+            yml_content = (tdir / "databricks.yml").read_text()
+            assert 'experiment_id: "12345"' in yml_content, (
+                f"{template_name}: databricks.yml missing experiment_id"
+            )
+            assert "LAKEBASE_INSTANCE_NAME" in yml_content, (
+                f"{template_name}: databricks.yml missing LAKEBASE_INSTANCE_NAME"
+            )
+            assert 'value: "my-provisioned-db"' in yml_content, (
+                f"{template_name}: databricks.yml missing instance name value"
+            )
+            assert "LAKEBASE_AUTOSCALING_PROJECT" not in yml_content, (
+                f"{template_name}: databricks.yml should not have autoscaling project"
+            )
+            assert "LAKEBASE_AUTOSCALING_BRANCH" not in yml_content, (
+                f"{template_name}: databricks.yml should not have autoscaling branch"
+            )
+            # Should have database resource
+            assert "- name: 'database'" in yml_content, (
+                f"{template_name}: databricks.yml missing database resource"
+            )
+            assert "instance_name: 'my-provisioned-db'" in yml_content, (
+                f"{template_name}: databricks.yml missing instance_name in resource"
+            )
+
+
+class TestHappyPathAutoscalingOnRealTemplates:
+    """End-to-end happy path: autoscaling Lakebase on real template files."""
+
+    MEMORY_TEMPLATES = [
+        "agent-langgraph-short-term-memory",
+        "agent-langgraph-long-term-memory",
+        "agent-openai-agents-sdk-short-term-memory",
+    ]
+
+    def test_autoscaling_happy_path(self, tmp_path):
+        repo_root = Path(__file__).resolve().parents[1]
+
+        for template_name in self.MEMORY_TEMPLATES:
+            template_dir = repo_root / template_name
+            if not template_dir.exists():
+                continue
+
+            # Set up working directory
+            tdir = tmp_path / f"{template_name}-autoscaling"
+            tdir.mkdir()
+
+            # Copy template files
+            for fname in ["databricks.yml", ".env.example"]:
+                src = template_dir / fname
+                if src.exists():
+                    (tdir / fname).write_text(src.read_text())
+            if (template_dir / "app.yaml").exists():
+                (tdir / "app.yaml").write_text((template_dir / "app.yaml").read_text())
+
+            os.chdir(tdir)
+
+            # Step 1: Copy .env.example to .env
+            setup_env_file()
+            assert (tdir / ".env").exists(), f"{template_name}: .env not created"
+
+            # Step 2: Set experiment ID
+            update_databricks_yml_experiment("67890")
+
+            # Step 3: Set autoscaling lakebase in .env
+            update_env_file("LAKEBASE_AUTOSCALING_PROJECT", "j-autoscaling7")
+            update_env_file("LAKEBASE_AUTOSCALING_BRANCH", "production")
+            update_env_file("LAKEBASE_INSTANCE_NAME", "")
+            update_env_file("PGUSER", "test@databricks.com")
+            update_env_file("PGDATABASE", "databricks_postgres")
+
+            # Step 4: Set autoscaling lakebase in databricks.yml
+            update_databricks_yml_lakebase(
+                {"type": "autoscaling", "project": "j-autoscaling7", "branch": "production"}
+            )
+
+            # Verify .env
+            env_content = (tdir / ".env").read_text()
+            assert "LAKEBASE_AUTOSCALING_PROJECT=j-autoscaling7" in env_content, (
+                f"{template_name}: .env missing LAKEBASE_AUTOSCALING_PROJECT"
+            )
+            assert "LAKEBASE_AUTOSCALING_BRANCH=production" in env_content, (
+                f"{template_name}: .env missing LAKEBASE_AUTOSCALING_BRANCH"
+            )
+            assert "PGUSER=test@databricks.com" in env_content, (
+                f"{template_name}: .env missing PGUSER"
+            )
+            assert "PGDATABASE=databricks_postgres" in env_content, (
+                f"{template_name}: .env missing PGDATABASE"
+            )
+
+            # Verify databricks.yml
+            yml_content = (tdir / "databricks.yml").read_text()
+            assert 'experiment_id: "67890"' in yml_content, (
+                f"{template_name}: databricks.yml missing experiment_id"
+            )
+            assert "LAKEBASE_AUTOSCALING_PROJECT" in yml_content, (
+                f"{template_name}: databricks.yml missing LAKEBASE_AUTOSCALING_PROJECT"
+            )
+            assert 'value: "j-autoscaling7"' in yml_content, (
+                f"{template_name}: databricks.yml missing project value"
+            )
+            assert "LAKEBASE_AUTOSCALING_BRANCH" in yml_content, (
+                f"{template_name}: databricks.yml missing LAKEBASE_AUTOSCALING_BRANCH"
+            )
+            assert 'value: "production"' in yml_content, (
+                f"{template_name}: databricks.yml missing branch value"
+            )
+            assert "LAKEBASE_INSTANCE_NAME" not in yml_content, (
+                f"{template_name}: databricks.yml should not have provisioned instance name"
+            )
+            # Should NOT have database resource (autoscaling uses API)
+            lines_with_database = [
+                l
+                for l in yml_content.splitlines()
+                if "- name:" in l and "database" in l
+            ]
+            assert len(lines_with_database) == 0, (
+                f"{template_name}: databricks.yml should not have database resource"
+            )

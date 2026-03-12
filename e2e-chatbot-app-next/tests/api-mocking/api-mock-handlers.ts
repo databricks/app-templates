@@ -6,6 +6,9 @@ import {
   mockMcpApprovalDeniedStream,
   mockMlflowAgentServerStream,
   mockResponsesApiMultiDeltaTextStream,
+  mockResponsesApiNonStreamingResponse,
+  createMockImmediateStreamErrorResponse,
+  createMockMidStreamErrorResponse,
 } from '../helpers';
 import { TEST_PROMPTS } from '../prompts/routes';
 
@@ -191,6 +194,18 @@ function containsMcpApprovalResponse(body: unknown): {
 }
 
 // ============================================================================
+// Stream Error Trigger Detection
+// ============================================================================
+
+const FALLBACK_TEXT = 'Fallback response after stream error';
+const MID_STREAM_PARTIAL_TEXT = 'Partial text before';
+
+function inputContains(body: unknown, phrase: string): boolean {
+  const input = (body as { input?: unknown[] })?.input;
+  return JSON.stringify(input ?? '').toLowerCase().includes(phrase);
+}
+
+// ============================================================================
 // Mock Handlers
 // ============================================================================
 
@@ -250,12 +265,27 @@ export const handlers = [
       }
     }
 
+    // Stream error before first text chunk → streaming gets broken body, fallback generateText succeeds
+    if (inputContains(body, 'trigger stream error')) {
+      if (isStreaming) {
+        return createMockImmediateStreamErrorResponse();
+      }
+      return HttpResponse.json(
+        mockResponsesApiNonStreamingResponse(FALLBACK_TEXT),
+      );
+    }
+
+    // Mid-stream error → sends some text then the model fails
+    if (inputContains(body, 'trigger mid-stream error')) {
+      if (isStreaming) {
+        return createMockMidStreamErrorResponse(MID_STREAM_PARTIAL_TEXT);
+      }
+    }
+
     // Default response: split text into per-word chunks to replicate real streaming
-    // (one response.output_text.delta per token). This validates that interleaved
-    // raw and text-delta chunks produced by streamText are parsed correctly by the client.
-    // Pass streamTraceId so the response.output_item.done event includes trace data
-    // when the request contained databricks_options.return_trace === true
-    // (set by the AI SDK provider when providerOptions.databricks.includeTrace is true).
+    // (one response.output_text.delta per token). Pass streamTraceId so the
+    // response.output_item.done event includes trace data when the request
+    // contained databricks_options.return_trace === true.
     if (isStreaming) {
       return createMockStreamResponse(
         mockResponsesApiMultiDeltaTextStream(

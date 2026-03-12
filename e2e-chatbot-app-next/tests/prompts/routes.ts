@@ -6,6 +6,26 @@ export type TEST_NETWORK_COMMANDS = {
 };
 
 export const TEST_PROMPTS = {
+  STREAM_ERROR_BEFORE_TEXT: {
+    MESSAGE: {
+      id: generateUUID(),
+      createdAt: new Date().toISOString(),
+      role: 'user',
+      content: 'Trigger stream error',
+      parts: [{ type: 'text', text: 'Trigger stream error' }],
+    },
+    FALLBACK_TEXT: 'Fallback response after stream error',
+  },
+  STREAM_ERROR_MID_STREAM: {
+    MESSAGE: {
+      id: generateUUID(),
+      createdAt: new Date().toISOString(),
+      role: 'user',
+      content: 'Trigger mid-stream error',
+      parts: [{ type: 'text', text: 'Trigger mid-stream error' }],
+    },
+    PARTIAL_TEXT: 'Partial text before',
+  },
   // Test case for data-error mid-stream: stream should continue despite error
   DATA_ERROR_MID_STREAM: {
     MESSAGE: {

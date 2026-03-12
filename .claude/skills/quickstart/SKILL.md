@@ -46,6 +46,10 @@ Creates/updates `.env` with:
 - `DATABRICKS_CONFIG_PROFILE` - Selected CLI profile
 - `MLFLOW_TRACKING_URI` - Set to `databricks://<profile-name>` for local auth
 - `MLFLOW_EXPERIMENT_ID` - Auto-created experiment ID
+{{LAKEBASE_CONFIGURES_ENV}}
+Updates `databricks.yml`:
+- Sets `experiment_id` in the app's experiment resource
+{{LAKEBASE_CONFIGURES_YML}}
 
 ## Manual Authentication (Fallback)
 

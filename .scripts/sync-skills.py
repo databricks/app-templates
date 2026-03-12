@@ -52,6 +52,18 @@ LAKEBASE_EXAMPLES = (
     "uv run quickstart --lakebase-autoscaling-project my-project --lakebase-autoscaling-branch production\n"
 )
 
+LAKEBASE_CONFIGURES_ENV = (
+    "- `LAKEBASE_INSTANCE_NAME` - Provisioned Lakebase instance name (if `--lakebase-provisioned-name` provided)\n"
+    "- `LAKEBASE_AUTOSCALING_PROJECT` and `LAKEBASE_AUTOSCALING_BRANCH` - Autoscaling project/branch (if `--lakebase-autoscaling-project/branch` provided)\n"
+)
+
+LAKEBASE_CONFIGURES_YML = (
+    "\n"
+    "Updates `databricks.yml` and `app.yaml` (if Lakebase flags provided):\n"
+    "- Keeps only the env vars relevant to the selected Lakebase type (provisioned or autoscaling)\n"
+    "- Removes the env vars for the other type\n"
+)
+
 
 def sync_template(template: str, config: dict):
     """Sync all skills to a single template."""
@@ -69,6 +81,8 @@ def sync_template(template: str, config: dict):
     quickstart_subs = {
         "{{LAKEBASE_OPTIONS}}": LAKEBASE_OPTIONS if has_memory else "",
         "{{LAKEBASE_EXAMPLES}}": LAKEBASE_EXAMPLES if has_memory else "",
+        "{{LAKEBASE_CONFIGURES_ENV}}": LAKEBASE_CONFIGURES_ENV if has_memory else "",
+        "{{LAKEBASE_CONFIGURES_YML}}": LAKEBASE_CONFIGURES_YML if has_memory else "",
     }
     copy_skill(SOURCE / "quickstart", dest / "quickstart", quickstart_subs)
 

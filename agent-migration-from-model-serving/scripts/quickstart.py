@@ -245,7 +245,12 @@ def setup_env_file() -> None:
 
 
 def update_env_file(key: str, value: str) -> None:
-    """Update or add a key-value pair in .env."""
+    """Update or add a key-value pair in .env.
+
+    Priority: if a commented-out line (``# KEY=...``) exists, replace it
+    in-place so the value stays in its original position.  Any extra active
+    or commented duplicates are removed.
+    """
     env_file = Path(".env")
 
     if not env_file.exists():
@@ -254,24 +259,28 @@ def update_env_file(key: str, value: str) -> None:
 
     content = env_file.read_text()
 
-    # Check if key exists (with or without quotes, with any value)
-    pattern = rf"^{re.escape(key)}=.*$"
-    if re.search(pattern, content, re.MULTILINE):
-        # Replace existing key
-        content = re.sub(pattern, f"{key}={value}", content, flags=re.MULTILINE)
+    active_pattern = rf"^{re.escape(key)}=.*$"
+    commented_pattern = rf"^#\s*{re.escape(key)}=.*$"
+
+    has_active = re.search(active_pattern, content, re.MULTILINE)
+    has_commented = re.search(commented_pattern, content, re.MULTILINE)
+
+    if has_commented:
+        # Replace at the commented line's position. Remove all active and
+        # commented duplicates, then insert the value where the first
+        # commented line was.
+        insert_pos = has_commented.start()
+        content = re.sub(commented_pattern + r"\n?", "", content, flags=re.MULTILINE)
+        content = re.sub(active_pattern + r"\n?", "", content, flags=re.MULTILINE)
+        content = content[:insert_pos] + f"{key}={value}\n" + content[insert_pos:]
+    elif has_active:
+        # No commented line — replace the active line in-place
+        content = re.sub(active_pattern, f"{key}={value}", content, flags=re.MULTILINE)
     else:
-        # Check for commented-out version (e.g. "# LAKEBASE_INSTANCE_NAME=")
-        commented_pattern = rf"^#\s*{re.escape(key)}=.*$"
-        if re.search(commented_pattern, content, re.MULTILINE):
-            # Replace commented line with active value
-            content = re.sub(
-                commented_pattern, f"{key}={value}", content, count=1, flags=re.MULTILINE
-            )
-        else:
-            # Add new key
-            if not content.endswith("\n"):
-                content += "\n"
-            content += f"{key}={value}\n"
+        # Key doesn't exist at all — append
+        if not content.endswith("\n"):
+            content += "\n"
+        content += f"{key}={value}\n"
 
     env_file.write_text(content)
 

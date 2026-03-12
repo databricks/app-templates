@@ -654,6 +654,87 @@ class TestUpdateEnvFile:
         assert "LAKEBASE_AUTOSCALING_PROJECT=my-proj" in content
         assert content.count("LAKEBASE_AUTOSCALING_PROJECT") == 1
 
+    def test_active_line_removes_leftover_commented_line(self, tmp_path):
+        """When an active line exists alongside a commented-out version, the
+        commented version should be cleaned up."""
+        (tmp_path / ".env").write_text(
+            "# LAKEBASE_INSTANCE_NAME=\n"
+            "OTHER=yes\n"
+            "LAKEBASE_INSTANCE_NAME=old-db\n"
+        )
+        update_env_file("LAKEBASE_INSTANCE_NAME", "new-db")
+        content = (tmp_path / ".env").read_text()
+        assert "LAKEBASE_INSTANCE_NAME=new-db" in content
+        assert "# LAKEBASE_INSTANCE_NAME=" not in content
+        assert content.count("LAKEBASE_INSTANCE_NAME") == 1
+        assert "OTHER=yes" in content
+
+    def test_full_env_example_scenario(self, tmp_path):
+        """Simulates .env from .env.example with commented lakebase vars
+        plus active lines from a previous quickstart run."""
+        (tmp_path / ".env").write_text(
+            "# TODO: Update with your Lakebase instance\n"
+            "# Option 1: Provisioned instance (set instance name)\n"
+            "# LAKEBASE_INSTANCE_NAME=\n"
+            "# Option 2: Autoscaling instance (set project and branch)\n"
+            "# LAKEBASE_AUTOSCALING_PROJECT=\n"
+            "# LAKEBASE_AUTOSCALING_BRANCH=\n"
+            "\n"
+            "CHAT_APP_PORT=3000\n"
+            "LAKEBASE_INSTANCE_NAME=\n"
+            "LAKEBASE_AUTOSCALING_PROJECT=old-proj\n"
+            "LAKEBASE_AUTOSCALING_BRANCH=old-branch\n"
+        )
+        # Simulate autoscaling quickstart
+        update_env_file("LAKEBASE_AUTOSCALING_PROJECT", "new-proj")
+        update_env_file("LAKEBASE_AUTOSCALING_BRANCH", "production")
+        update_env_file("LAKEBASE_INSTANCE_NAME", "")
+        content = (tmp_path / ".env").read_text()
+        assert content.count("LAKEBASE_AUTOSCALING_PROJECT") == 1
+        assert content.count("LAKEBASE_AUTOSCALING_BRANCH") == 1
+        assert content.count("LAKEBASE_INSTANCE_NAME") == 1
+        assert "LAKEBASE_AUTOSCALING_PROJECT=new-proj" in content
+        assert "LAKEBASE_AUTOSCALING_BRANCH=production" in content
+        assert "# LAKEBASE_INSTANCE_NAME=" not in content
+        assert "# LAKEBASE_AUTOSCALING_PROJECT=" not in content
+        assert "# LAKEBASE_AUTOSCALING_BRANCH=" not in content
+        assert "CHAT_APP_PORT=3000" in content
+        # Values should be in the TODO section, not appended at the bottom
+        lines = content.strip().split("\n")
+        lakebase_idx = next(i for i, l in enumerate(lines) if l.startswith("LAKEBASE_INSTANCE_NAME="))
+        chat_idx = next(i for i, l in enumerate(lines) if l.startswith("CHAT_APP_PORT="))
+        assert lakebase_idx < chat_idx, "Lakebase vars should be in the TODO section, not appended after CHAT_APP_PORT"
+
+    def test_fresh_env_example_autoscaling(self, tmp_path):
+        """First quickstart run on a fresh .env copied from .env.example."""
+        (tmp_path / ".env").write_text(
+            "# TODO: Update with your Lakebase instance\n"
+            "# Option 1: Provisioned instance (set instance name)\n"
+            "# LAKEBASE_INSTANCE_NAME=\n"
+            "# Option 2: Autoscaling instance (set project and branch)\n"
+            "# LAKEBASE_AUTOSCALING_PROJECT=\n"
+            "# LAKEBASE_AUTOSCALING_BRANCH=\n"
+            "\n"
+            "CHAT_APP_PORT=3000\n"
+        )
+        update_env_file("LAKEBASE_AUTOSCALING_PROJECT", "my-proj")
+        update_env_file("LAKEBASE_AUTOSCALING_BRANCH", "production")
+        update_env_file("LAKEBASE_INSTANCE_NAME", "")
+        content = (tmp_path / ".env").read_text()
+        # All three should appear in-place where the commented lines were
+        lines = content.strip().split("\n")
+        assert "LAKEBASE_INSTANCE_NAME=" in lines
+        assert "LAKEBASE_AUTOSCALING_PROJECT=my-proj" in lines
+        assert "LAKEBASE_AUTOSCALING_BRANCH=production" in lines
+        # Should be before CHAT_APP_PORT, not appended
+        inst_idx = lines.index("LAKEBASE_INSTANCE_NAME=")
+        proj_idx = lines.index("LAKEBASE_AUTOSCALING_PROJECT=my-proj")
+        branch_idx = lines.index("LAKEBASE_AUTOSCALING_BRANCH=production")
+        chat_idx = lines.index("CHAT_APP_PORT=3000")
+        assert inst_idx < chat_idx
+        assert proj_idx < chat_idx
+        assert branch_idx < chat_idx
+
 
 class TestSetupEnvFile:
     """Tests for setup_env_file (copies .env.example to .env)."""

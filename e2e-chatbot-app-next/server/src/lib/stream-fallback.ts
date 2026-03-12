@@ -136,6 +136,7 @@ function writeGenerateTextResultToStream(
           toolCallId: part.toolCallId,
           toolName: part.toolName,
           input: part.input,
+          dynamic: part.dynamic,
         });
         break;
       }

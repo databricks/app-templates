@@ -807,7 +807,7 @@ class TestHappyPathProvisionedOnRealTemplates:
             update_env_file("LAKEBASE_INSTANCE_NAME", "my-provisioned-db")
             update_env_file("LAKEBASE_AUTOSCALING_PROJECT", "")
             update_env_file("LAKEBASE_AUTOSCALING_BRANCH", "")
-            update_env_file("PGHOST", "instance-abc.database.staging.cloud.databricks.com")
+            update_env_file("PGHOST", "instance-abc.database.cloud.databricks.com")
             update_env_file("PGUSER", "test@databricks.com")
             update_env_file("PGDATABASE", "databricks_postgres")
 
@@ -896,7 +896,7 @@ class TestHappyPathAutoscalingOnRealTemplates:
             update_databricks_yml_experiment("67890")
 
             # Step 3: Set autoscaling lakebase in .env
-            update_env_file("LAKEBASE_AUTOSCALING_PROJECT", "j-autoscaling7")
+            update_env_file("LAKEBASE_AUTOSCALING_PROJECT", "autoscaling-instance")
             update_env_file("LAKEBASE_AUTOSCALING_BRANCH", "production")
             update_env_file("LAKEBASE_INSTANCE_NAME", "")
             update_env_file("PGUSER", "test@databricks.com")
@@ -904,12 +904,12 @@ class TestHappyPathAutoscalingOnRealTemplates:
 
             # Step 4: Set autoscaling lakebase in databricks.yml
             update_databricks_yml_lakebase(
-                {"type": "autoscaling", "project": "j-autoscaling7", "branch": "production"}
+                {"type": "autoscaling", "project": "autoscaling-instance", "branch": "production"}
             )
 
             # Verify .env
             env_content = (tdir / ".env").read_text()
-            assert "LAKEBASE_AUTOSCALING_PROJECT=j-autoscaling7" in env_content, (
+            assert "LAKEBASE_AUTOSCALING_PROJECT=autoscaling-instance" in env_content, (
                 f"{template_name}: .env missing LAKEBASE_AUTOSCALING_PROJECT"
             )
             assert "LAKEBASE_AUTOSCALING_BRANCH=production" in env_content, (
@@ -930,7 +930,7 @@ class TestHappyPathAutoscalingOnRealTemplates:
             assert "LAKEBASE_AUTOSCALING_PROJECT" in yml_content, (
                 f"{template_name}: databricks.yml missing LAKEBASE_AUTOSCALING_PROJECT"
             )
-            assert 'value: "j-autoscaling7"' in yml_content, (
+            assert 'value: "autoscaling-instance"' in yml_content, (
                 f"{template_name}: databricks.yml missing project value"
             )
             assert "LAKEBASE_AUTOSCALING_BRANCH" in yml_content, (

@@ -17,6 +17,7 @@ import pytest
 
 from quickstart import (
     _replace_lakebase_env_vars,
+    _replace_lakebase_resource,
     update_app_yaml_lakebase,
     update_databricks_yml_experiment,
     update_databricks_yml_lakebase,
@@ -83,6 +84,15 @@ resources:
           experiment:
             experiment_id: ""
             permission: 'CAN_MANAGE'
+        # Autoscaling postgres resource must be added via API after deploy
+        # See: .claude/skills/add-tools/examples/lakebase-autoscaling.md
+        #
+        # Use for provisioned lakebase resource
+        # - name: 'database'
+        #   database:
+        #     instance_name: '<your-lakebase-instance-name>'
+        #     database_name: 'databricks_postgres'
+        #     permission: 'CAN_CONNECT_AND_CREATE'
 
 targets:
   dev:
@@ -320,6 +330,132 @@ class TestReplaceLakebaseEnvVars:
         assert "LAKEBASE_AUTOSCALING_PROJECT" not in result
 
 
+class TestReplaceLakebaseResource:
+    """Tests for _replace_lakebase_resource helper (database resource section)."""
+
+    def test_provisioned_uncomments_database_resource(self):
+        result = _replace_lakebase_resource(
+            LAKEBASE_YML, {"type": "provisioned", "instance_name": "my-db"}
+        )
+        assert "- name: 'database'" in result
+        assert "instance_name: 'my-db'" in result
+        assert "database_name: 'databricks_postgres'" in result
+        assert "permission: 'CAN_CONNECT_AND_CREATE'" in result
+        # Should not have commented-out resource
+        assert "# - name: 'database'" not in result
+
+    def test_provisioned_removes_autoscaling_comments(self):
+        result = _replace_lakebase_resource(
+            LAKEBASE_YML, {"type": "provisioned", "instance_name": "my-db"}
+        )
+        assert "Autoscaling postgres resource must be added via API" not in result
+
+    def test_autoscaling_removes_commented_resource(self):
+        result = _replace_lakebase_resource(
+            LAKEBASE_YML, {"type": "autoscaling", "project": "p", "branch": "b"}
+        )
+        assert "- name: 'database'" not in result
+        assert "# - name: 'database'" not in result
+        assert "instance_name:" not in result.replace("instance_name: agent", "")  # ignore bundle name
+        assert "Autoscaling postgres resource must be added via API" not in result
+
+    def test_preserves_experiment_resource(self):
+        result = _replace_lakebase_resource(
+            LAKEBASE_YML, {"type": "provisioned", "instance_name": "my-db"}
+        )
+        assert "- name: 'experiment'" in result
+        assert "experiment_id:" in result
+        assert "permission: 'CAN_MANAGE'" in result
+
+    def test_preserves_non_resource_content(self):
+        result = _replace_lakebase_resource(
+            LAKEBASE_YML, {"type": "provisioned", "instance_name": "x"}
+        )
+        assert "bundle:" in result
+        assert "targets:" in result
+        assert "mode: development" in result
+
+    def test_adds_resource_to_yml_without_lakebase_section(self):
+        """If no lakebase resource section exists, provisioned should add one."""
+        result = _replace_lakebase_resource(
+            MINIMAL_YML, {"type": "provisioned", "instance_name": "x"}
+        )
+        assert "- name: 'database'" in result
+        assert "instance_name: 'x'" in result
+
+    def test_noop_autoscaling_without_lakebase_resource(self):
+        """Autoscaling on a yml without lakebase resource should be a noop."""
+        result = _replace_lakebase_resource(
+            MINIMAL_YML, {"type": "autoscaling", "project": "p", "branch": "b"}
+        )
+        assert result == MINIMAL_YML
+
+    def test_idempotent_provisioned_twice(self):
+        """Running provisioned twice should update the instance name."""
+        step1 = _replace_lakebase_resource(
+            LAKEBASE_YML, {"type": "provisioned", "instance_name": "db-1"}
+        )
+        step2 = _replace_lakebase_resource(
+            step1, {"type": "provisioned", "instance_name": "db-2"}
+        )
+        assert "instance_name: 'db-2'" in step2
+        assert "db-1" not in step2
+
+    def test_idempotent_provisioned_then_autoscaling(self):
+        """Switching from provisioned to autoscaling should remove the database resource."""
+        step1 = _replace_lakebase_resource(
+            LAKEBASE_YML, {"type": "provisioned", "instance_name": "my-db"}
+        )
+        assert "- name: 'database'" in step1
+        step2 = _replace_lakebase_resource(
+            step1, {"type": "autoscaling", "project": "p", "branch": "b"}
+        )
+        assert "- name: 'database'" not in step2
+
+    def test_idempotent_autoscaling_then_provisioned(self):
+        """Switching from autoscaling to provisioned should add the database resource."""
+        step1 = _replace_lakebase_resource(
+            LAKEBASE_YML, {"type": "autoscaling", "project": "p", "branch": "b"}
+        )
+        assert "- name: 'database'" not in step1
+        step2 = _replace_lakebase_resource(
+            step1, {"type": "provisioned", "instance_name": "new-db"}
+        )
+        assert "- name: 'database'" in step2
+        assert "instance_name: 'new-db'" in step2
+
+    def test_against_real_template_files(self, tmp_path):
+        """Verify resource replacement works on actual template databricks.yml files."""
+        repo_root = Path(__file__).resolve().parents[1]
+        memory_templates = [
+            "agent-langgraph-short-term-memory",
+            "agent-langgraph-long-term-memory",
+            "agent-openai-agents-sdk-short-term-memory",
+        ]
+        for template_name in memory_templates:
+            yml_path = repo_root / template_name / "databricks.yml"
+            if not yml_path.exists():
+                continue
+            content = yml_path.read_text()
+
+            # Test provisioned
+            result = _replace_lakebase_resource(
+                content, {"type": "provisioned", "instance_name": "test-db"}
+            )
+            assert "- name: 'database'" in result, f"{template_name}: database resource not added"
+            assert "instance_name: 'test-db'" in result, f"{template_name}: instance name not set"
+            assert "# - name: 'database'" not in result, f"{template_name}: commented resource should be removed"
+
+            # Test autoscaling
+            result2 = _replace_lakebase_resource(
+                content, {"type": "autoscaling", "project": "p", "branch": "b"}
+            )
+            assert "# - name: 'database'" not in result2, f"{template_name}: commented resource should be removed"
+            # Make sure we didn't add an uncommented one either
+            lines_with_database = [l for l in result2.splitlines() if "- name:" in l and "database" in l]
+            assert len(lines_with_database) == 0, f"{template_name}: database resource should not exist for autoscaling"
+
+
 class TestUpdateDatabricksYmlLakebase:
     def test_provisioned_updates_file(self, tmp_path):
         (tmp_path / "databricks.yml").write_text(LAKEBASE_YML)
@@ -341,9 +477,10 @@ class TestUpdateDatabricksYmlLakebase:
         assert 'value: "production"' in content
         assert "LAKEBASE_INSTANCE_NAME" not in content
 
-    def test_noop_without_lakebase(self, tmp_path):
+    def test_noop_autoscaling_without_lakebase(self, tmp_path):
+        """Autoscaling on a yml without lakebase env vars should be a noop."""
         (tmp_path / "databricks.yml").write_text(MINIMAL_YML)
-        update_databricks_yml_lakebase({"type": "provisioned", "instance_name": "x"})
+        update_databricks_yml_lakebase({"type": "autoscaling", "project": "p", "branch": "b"})
         content = (tmp_path / "databricks.yml").read_text()
         assert content == MINIMAL_YML
 

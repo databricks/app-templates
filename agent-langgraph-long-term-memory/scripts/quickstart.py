@@ -875,14 +875,167 @@ def _replace_lakebase_env_vars(content: str, lakebase_config: dict) -> str:
     return "\n".join(final) + "\n"
 
 
+def _replace_lakebase_resource(content: str, lakebase_config: dict) -> str:
+    """Update the Lakebase database resource section in databricks.yml.
+
+    For provisioned: uncomments and fills in the database resource block.
+    For autoscaling: removes the commented-out provisioned resource block
+    (autoscaling postgres resource is added via API after deploy).
+    """
+    LAKEBASE_COMMENTS = {
+        "autoscaling postgres resource must be added via api after deploy",
+        "see: .claude/skills/add-tools/examples/lakebase-autoscaling.md",
+        "use for provisioned lakebase resource",
+    }
+
+    lines = content.splitlines()
+    result = []
+    i = 0
+    found_database = False
+    resource_indent = None
+
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        bare = stripped.lstrip("#").strip().lower()
+
+        # Skip lakebase-related comment lines in the resources section
+        if bare in LAKEBASE_COMMENTS or (bare == "" and stripped == "#"):
+            # Bare "#" line between lakebase resource comments — skip it
+            # But only if we're inside the lakebase resource area (near other lakebase comments)
+            # Check if next or previous lines are lakebase-related
+            is_lakebase_area = False
+            if bare in LAKEBASE_COMMENTS:
+                is_lakebase_area = True
+            elif stripped == "#":
+                # Check surrounding lines for lakebase context
+                for offset in [-1, 1]:
+                    neighbor_idx = i + offset
+                    if 0 <= neighbor_idx < len(lines):
+                        neighbor_bare = lines[neighbor_idx].strip().lstrip("#").strip().lower()
+                        if neighbor_bare in LAKEBASE_COMMENTS or "database" in neighbor_bare:
+                            is_lakebase_area = True
+                            break
+
+            if is_lakebase_area:
+                if resource_indent is None:
+                    for prev in reversed(result):
+                        m = re.match(r"^(\s+)- name:", prev)
+                        if m:
+                            resource_indent = m.group(1)
+                            break
+                i += 1
+                continue
+
+        # Match the commented-out database resource lines
+        if re.match(r"\s*#\s*- name: ['\"]?database['\"]?", stripped):
+            found_database = True
+            if resource_indent is None:
+                for prev in reversed(result):
+                    m = re.match(r"^(\s+)- name:", prev)
+                    if m:
+                        resource_indent = m.group(1)
+                        break
+            # Skip all subsequent commented lines that are part of this block
+            i += 1
+            while i < len(lines):
+                next_stripped = lines[i].strip()
+                if next_stripped.startswith("#") and (
+                    "database:" in next_stripped
+                    or "instance_name:" in next_stripped
+                    or "database_name:" in next_stripped
+                    or "permission:" in next_stripped
+                ):
+                    i += 1
+                else:
+                    break
+
+            # For provisioned, insert the uncommented resource block
+            if lakebase_config["type"] == "provisioned":
+                indent = resource_indent or "        "
+                instance_name = lakebase_config["instance_name"]
+                result.append(f"{indent}- name: 'database'")
+                result.append(f"{indent}  database:")
+                result.append(f"{indent}    instance_name: '{instance_name}'")
+                result.append(f"{indent}    database_name: 'databricks_postgres'")
+                result.append(f"{indent}    permission: 'CAN_CONNECT_AND_CREATE'")
+            continue
+
+        # Match an uncommented database resource (from a previous provisioned run)
+        if re.match(r"\s*- name: ['\"]?database['\"]?", stripped):
+            found_database = True
+            if resource_indent is None:
+                m = re.match(r"^(\s+)- name:", line)
+                if m:
+                    resource_indent = m.group(1)
+            # Skip all subsequent lines that are part of this block
+            i += 1
+            while i < len(lines):
+                next_stripped = lines[i].strip()
+                if next_stripped and not next_stripped.startswith("-") and not next_stripped.startswith("#"):
+                    i += 1
+                else:
+                    break
+
+            # For provisioned, insert the updated resource block
+            if lakebase_config["type"] == "provisioned":
+                indent = resource_indent or "        "
+                instance_name = lakebase_config["instance_name"]
+                result.append(f"{indent}- name: 'database'")
+                result.append(f"{indent}  database:")
+                result.append(f"{indent}    instance_name: '{instance_name}'")
+                result.append(f"{indent}    database_name: 'databricks_postgres'")
+                result.append(f"{indent}    permission: 'CAN_CONNECT_AND_CREATE'")
+            continue
+
+        result.append(line)
+        i += 1
+
+    # If provisioned but no existing database resource was found (e.g. after autoscaling
+    # removed it), append the resource block after the last resource entry
+    if lakebase_config["type"] == "provisioned" and not found_database:
+        # Find the last "- name:" line in the resources section to insert after
+        insert_idx = None
+        for idx in range(len(result) - 1, -1, -1):
+            if re.match(r"\s+- name:", result[idx]):
+                # Find the end of this resource block
+                insert_idx = idx + 1
+                while insert_idx < len(result):
+                    next_stripped = result[insert_idx].strip()
+                    if next_stripped and not next_stripped.startswith("-") and not next_stripped.startswith("#"):
+                        insert_idx += 1
+                    else:
+                        break
+                if resource_indent is None:
+                    m = re.match(r"^(\s+)- name:", result[idx])
+                    if m:
+                        resource_indent = m.group(1)
+                break
+
+        if insert_idx is not None:
+            indent = resource_indent or "        "
+            instance_name = lakebase_config["instance_name"]
+            new_lines = [
+                f"{indent}- name: 'database'",
+                f"{indent}  database:",
+                f"{indent}    instance_name: '{instance_name}'",
+                f"{indent}    database_name: 'databricks_postgres'",
+                f"{indent}    permission: 'CAN_CONNECT_AND_CREATE'",
+            ]
+            result = result[:insert_idx] + new_lines + result[insert_idx:]
+
+    return "\n".join(result) + "\n"
+
+
 def update_databricks_yml_lakebase(lakebase_config: dict) -> None:
-    """Update databricks.yml: keep only the relevant Lakebase env vars, remove the others."""
+    """Update databricks.yml: keep only the relevant Lakebase env vars and resources."""
     yml_path = Path("databricks.yml")
     if not yml_path.exists():
         return
 
     content = yml_path.read_text()
     updated = _replace_lakebase_env_vars(content, lakebase_config)
+    updated = _replace_lakebase_resource(updated, lakebase_config)
     if updated != content:
         yml_path.write_text(updated)
         print_success("Updated databricks.yml with Lakebase config")

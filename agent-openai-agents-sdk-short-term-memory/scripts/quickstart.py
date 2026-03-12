@@ -701,6 +701,7 @@ def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> dict | 
 
 def setup_lakebase(
     profile_name: str,
+    username: str,
     provisioned_name: str = None,
     autoscaling_project: str = None,
     autoscaling_branch: str = None,
@@ -717,12 +718,28 @@ def setup_lakebase(
     # If --lakebase-provisioned-name was provided, use it directly
     if provisioned_name:
         print(f"Using provided provisioned Lakebase instance: {provisioned_name}")
-        if not validate_lakebase_instance(profile_name, provisioned_name):
+        instance_info = validate_lakebase_instance(profile_name, provisioned_name)
+        if not instance_info:
             sys.exit(1)
         update_env_file("LAKEBASE_INSTANCE_NAME", provisioned_name)
         update_env_file("LAKEBASE_AUTOSCALING_PROJECT", "")
         update_env_file("LAKEBASE_AUTOSCALING_BRANCH", "")
         print_success(f"Lakebase instance name '{provisioned_name}' saved to .env")
+
+        # Set up PostgreSQL connection environment variables
+        pg_host = instance_info.get("read_write_dns", "")
+        if pg_host:
+            update_env_file("PGHOST", pg_host)
+            print_success(f"PGHOST set to '{pg_host}'")
+        else:
+            print_error("Could not get read_write_dns from Lakebase instance")
+
+        update_env_file("PGUSER", username)
+        print_success(f"PGUSER set to '{username}'")
+
+        update_env_file("PGDATABASE", "databricks_postgres")
+        print_success("PGDATABASE set to 'databricks_postgres'")
+
         return {"type": "provisioned", "instance_name": provisioned_name}
 
     # If --lakebase-autoscaling-project and --lakebase-autoscaling-branch were provided
@@ -731,6 +748,13 @@ def setup_lakebase(
         update_env_file("LAKEBASE_AUTOSCALING_PROJECT", autoscaling_project)
         update_env_file("LAKEBASE_AUTOSCALING_BRANCH", autoscaling_branch)
         update_env_file("LAKEBASE_INSTANCE_NAME", "")
+
+        update_env_file("PGUSER", username)
+        print_success(f"PGUSER set to '{username}'")
+
+        update_env_file("PGDATABASE", "databricks_postgres")
+        print_success("PGDATABASE set to 'databricks_postgres'")
+
         print_success(
             f"Lakebase autoscaling config saved to .env (project: {autoscaling_project}, branch: {autoscaling_branch})"
         )
@@ -741,18 +765,40 @@ def setup_lakebase(
 
     if selection["type"] == "provisioned":
         instance_name = selection["instance_name"]
-        if not validate_lakebase_instance(profile_name, instance_name):
+        instance_info = validate_lakebase_instance(profile_name, instance_name)
+        if not instance_info:
             sys.exit(1)
         update_env_file("LAKEBASE_INSTANCE_NAME", instance_name)
         update_env_file("LAKEBASE_AUTOSCALING_PROJECT", "")
         update_env_file("LAKEBASE_AUTOSCALING_BRANCH", "")
         print_success(f"Lakebase provisioned instance '{instance_name}' saved to .env")
+
+        # Set up PostgreSQL connection environment variables
+        pg_host = instance_info.get("read_write_dns", "")
+        if pg_host:
+            update_env_file("PGHOST", pg_host)
+            print_success(f"PGHOST set to '{pg_host}'")
+        else:
+            print_error("Could not get read_write_dns from Lakebase instance")
+
+        update_env_file("PGUSER", username)
+        print_success(f"PGUSER set to '{username}'")
+
+        update_env_file("PGDATABASE", "databricks_postgres")
+        print_success("PGDATABASE set to 'databricks_postgres'")
     else:
         project = selection["project"]
         branch = selection["branch"]
         update_env_file("LAKEBASE_AUTOSCALING_PROJECT", project)
         update_env_file("LAKEBASE_AUTOSCALING_BRANCH", branch)
         update_env_file("LAKEBASE_INSTANCE_NAME", "")
+
+        update_env_file("PGUSER", username)
+        print_success(f"PGUSER set to '{username}'")
+
+        update_env_file("PGDATABASE", "databricks_postgres")
+        print_success("PGDATABASE set to 'databricks_postgres'")
+
         print_success(
             f"Lakebase autoscaling config saved to .env (project: {project}, branch: {branch})"
         )
@@ -965,6 +1011,7 @@ Examples:
         if lakebase_required:
             lakebase_config = setup_lakebase(
                 profile_name,
+                username,
                 provisioned_name=args.lakebase_provisioned_name,
                 autoscaling_project=args.lakebase_autoscaling_project,
                 autoscaling_branch=args.lakebase_autoscaling_branch,

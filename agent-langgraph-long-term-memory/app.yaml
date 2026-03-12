@@ -13,7 +13,11 @@ env:
     value: "300"
   - name: MLFLOW_EXPERIMENT_ID
     valueFrom: experiment
+  # Autoscaling Lakebase config
   - name: LAKEBASE_AUTOSCALING_PROJECT
-    value: "j-provisioned-new"
+    value: "<your-project-name>"
   - name: LAKEBASE_AUTOSCALING_BRANCH
-    value: "j-provisioned-new-branch"
+    value: "<your-branch-name>"
+  # Use for provisioned lakebase resource
+  # - name: LAKEBASE_INSTANCE_NAME
+  #   value: "<your-lakebase-instance-name>"

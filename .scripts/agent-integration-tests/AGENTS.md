@@ -21,7 +21,7 @@ test_e2e[template]
   |
   |-- 1. clean_template()         # Remove .venv/, uv.lock, .env, .bundle/, .databricks/
   |-- 2. setup log file            # Create logs/ dir, clear logs/{template}.log
-  |-- 3. run_quickstart()          # uv run quickstart --profile <p> [--lakebase-provisioned-name <l>]
+  |-- 3. run_quickstart()          # uv run quickstart --profile <p> [--lakebase-provisioned-name <l> | --lakebase-autoscaling-project <proj> --lakebase-autoscaling-branch <br>]
   |-- 4. apply_edits()             # Template-specific file edits (grouped by file)
   |
   |-- 5. +----------------------------------------------+
@@ -53,7 +53,9 @@ Local and deploy phases run **in parallel** via `ThreadPoolExecutor`. Either pha
 | Flag | Default | Description |
 |---|---|---|
 | `--profile` | `dev` | Databricks CLI profile |
-| `--lakebase` | `bbqiu` | Lakebase instance name |
+| `--lakebase` | `bbqiu` | Lakebase provisioned instance name |
+| `--lakebase-project` | _(none)_ | Lakebase autoscaling project name (use instead of `--lakebase` for autoscaling) |
+| `--lakebase-branch` | _(none)_ | Lakebase autoscaling branch name (use with `--lakebase-project`) |
 | `--template` | _(all)_ | Run only specific templates (repeatable) |
 | `--genie-space-id` | `01f05202dbb51d74b6cccf1b1b1683eb` | Genie space ID for multiagent |
 | `--serving-endpoint` | `agents_dev-bbqiu-test-bb-2-25` | Serving endpoint for multiagent |
@@ -111,8 +113,11 @@ uv run pytest test_e2e.py -v -n0 -s
 # Keep deployed apps running for inspection
 uv run pytest test_e2e.py -v --template agent-langgraph --skip-local --no-destroy
 
-# Custom profile and lakebase
+# Custom profile and provisioned lakebase
 uv run pytest test_e2e.py -v -n 7 --profile staging --lakebase my-instance
+
+# Custom profile and autoscaling lakebase
+uv run pytest test_e2e.py -v -n 7 --profile staging --lakebase-project my-project --lakebase-branch production
 
 # Multiagent with custom Genie space and endpoint
 uv run pytest test_e2e.py -v --template agent-openai-agents-sdk-multiagent \

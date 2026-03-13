@@ -292,7 +292,7 @@ def test_e2e(template, repo_root, profile, lakebase, lakebase_project, lakebase_
                 raise AssertionError("Failures in parallel phases:\n" + "\n".join(errors))
     finally:
         revert_edits(originals)
-        # Restore files modified by quickstart to pre-quickstart state
+        # Restore databricks.yml to pre-quickstart state (quickstart replaces placeholders)
         if yml_original is not None:
             yml_path.write_text(yml_original)
         if app_yaml_original is not None:

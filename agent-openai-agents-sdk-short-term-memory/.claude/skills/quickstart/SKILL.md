@@ -26,6 +26,9 @@ uv run quickstart
 **Options:**
 - `--profile NAME`: Use specified profile (non-interactive)
 - `--host URL`: Workspace URL for initial setup
+- `--lakebase-provisioned-name NAME`: Provisioned Lakebase instance name (memory templates)
+- `--lakebase-autoscaling-project PROJECT`: Autoscaling Lakebase project name (memory templates)
+- `--lakebase-autoscaling-branch BRANCH`: Autoscaling Lakebase branch name (memory templates)
 - `-h, --help`: Show help
 
 **Examples:**
@@ -38,6 +41,12 @@ uv run quickstart --profile DEFAULT
 
 # New workspace setup
 uv run quickstart --host https://your-workspace.cloud.databricks.com
+
+# Memory template with provisioned Lakebase
+uv run quickstart --lakebase-provisioned-name my-instance
+
+# Memory template with autoscaling Lakebase
+uv run quickstart --lakebase-autoscaling-project my-project --lakebase-autoscaling-branch production
 ```
 
 ## What Quickstart Configures
@@ -46,6 +55,16 @@ Creates/updates `.env` with:
 - `DATABRICKS_CONFIG_PROFILE` - Selected CLI profile
 - `MLFLOW_TRACKING_URI` - Set to `databricks://<profile-name>` for local auth
 - `MLFLOW_EXPERIMENT_ID` - Auto-created experiment ID
+- `LAKEBASE_INSTANCE_NAME` - Provisioned Lakebase instance name (if `--lakebase-provisioned-name` provided)
+- `LAKEBASE_AUTOSCALING_PROJECT` and `LAKEBASE_AUTOSCALING_BRANCH` - Autoscaling project/branch (if `--lakebase-autoscaling-project/branch` provided)
+
+Updates `databricks.yml`:
+- Sets `experiment_id` in the app's experiment resource
+
+Updates `databricks.yml` and `app.yaml` (if Lakebase flags provided):
+- Keeps only the env vars relevant to the selected Lakebase type (provisioned or autoscaling)
+- Removes the env vars for the other type
+
 
 ## Manual Authentication (Fallback)
 

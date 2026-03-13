@@ -10,7 +10,8 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.129.0",
     "uvicorn>=0.41.0",
-    "databricks-langchain[memory]>=0.16.0",
+    "databricks-langchain[memory]>=0.17.0",
+    "databricks-sdk>=0.79.0",
     "databricks-agents>=1.9.3",
     "mlflow>=3.10.0",
     "langgraph>=1.0.9",

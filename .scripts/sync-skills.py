@@ -37,19 +37,57 @@ def copy_skill(src: Path, dest: Path, substitutions: dict = None):
             shutil.copy2(item, dest / item.name)
 
 
+LAKEBASE_OPTIONS = (
+    "- `--lakebase-provisioned-name NAME`: Provisioned Lakebase instance name (memory templates)\n"
+    "- `--lakebase-autoscaling-project PROJECT`: Autoscaling Lakebase project name (memory templates)\n"
+    "- `--lakebase-autoscaling-branch BRANCH`: Autoscaling Lakebase branch name (memory templates)\n"
+)
+
+LAKEBASE_EXAMPLES = (
+    "\n"
+    "# Memory template with provisioned Lakebase\n"
+    "uv run quickstart --lakebase-provisioned-name my-instance\n"
+    "\n"
+    "# Memory template with autoscaling Lakebase\n"
+    "uv run quickstart --lakebase-autoscaling-project my-project --lakebase-autoscaling-branch production\n"
+)
+
+LAKEBASE_CONFIGURES_ENV = (
+    "- `LAKEBASE_INSTANCE_NAME` - Provisioned Lakebase instance name (if `--lakebase-provisioned-name` provided)\n"
+    "- `LAKEBASE_AUTOSCALING_PROJECT` and `LAKEBASE_AUTOSCALING_BRANCH` - Autoscaling project/branch (if `--lakebase-autoscaling-project/branch` provided)\n"
+)
+
+LAKEBASE_CONFIGURES_YML = (
+    "\n"
+    "Updates `databricks.yml` and `app.yaml` (if Lakebase flags provided):\n"
+    "- Keeps only the env vars relevant to the selected Lakebase type (provisioned or autoscaling)\n"
+    "- Removes the env vars for the other type\n"
+)
+
+
 def sync_template(template: str, config: dict):
     """Sync all skills to a single template."""
     dest = REPO_ROOT / template / ".claude" / "skills"
     sdk = config["sdk"]
     subs = {"{{BUNDLE_NAME}}": config["bundle_name"]}
+    has_memory = config.get("has_memory", False)
 
     # Clear existing skills
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True)
 
+    # Quickstart skill (with lakebase options for memory templates)
+    quickstart_subs = {
+        "{{LAKEBASE_OPTIONS}}": LAKEBASE_OPTIONS if has_memory else "",
+        "{{LAKEBASE_EXAMPLES}}": LAKEBASE_EXAMPLES if has_memory else "",
+        "{{LAKEBASE_CONFIGURES_ENV}}": LAKEBASE_CONFIGURES_ENV if has_memory else "",
+        "{{LAKEBASE_CONFIGURES_YML}}": LAKEBASE_CONFIGURES_YML if has_memory else "",
+    }
+    copy_skill(SOURCE / "quickstart", dest / "quickstart", quickstart_subs)
+
     # Shared skills (no substitution needed)
-    for skill in ["quickstart", "run-locally", "discover-tools", "migrate-from-model-serving"]:
+    for skill in ["run-locally", "discover-tools", "migrate-from-model-serving"]:
         copy_skill(SOURCE / skill, dest / skill)
 
     # Deploy skill (with substitution)

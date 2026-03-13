@@ -47,6 +47,10 @@ Creates/updates `.env` with:
 - `MLFLOW_TRACKING_URI` - Set to `databricks://<profile-name>` for local auth
 - `MLFLOW_EXPERIMENT_ID` - Auto-created experiment ID
 
+Updates `databricks.yml`:
+- Sets `experiment_id` in the app's experiment resource
+
+
 ## Manual Authentication (Fallback)
 
 If quickstart fails:

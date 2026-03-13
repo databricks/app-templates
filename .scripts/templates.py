@@ -8,10 +8,12 @@ TEMPLATES = {
     "agent-langgraph-short-term-memory": {
         "sdk": "langgraph",
         "bundle_name": "agent_langgraph_short_term_memory",
+        "has_memory": True,
     },
     "agent-langgraph-long-term-memory": {
         "sdk": "langgraph",
         "bundle_name": "agent_langgraph_long_term_memory",
+        "has_memory": True,
     },
     "agent-openai-agents-sdk": {
         "sdk": "openai",
@@ -24,6 +26,7 @@ TEMPLATES = {
     "agent-openai-agents-sdk-short-term-memory": {
         "sdk": "openai",
         "bundle_name": "agent_openai_agents_sdk_short_term_memory",
+        "has_memory": True,
     },
     "agent-openai-agents-sdk-long-running-agent": {
         "sdk": "openai",

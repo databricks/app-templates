@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from helpers import (
     _log,
+    add_autoscaling_postgres_resource,
     apply_edits,
     bundle_deploy,
     bundle_destroy,
@@ -76,6 +77,13 @@ def phase(name: str):
     _log(f"Phase {name} completed")
 
 
+def _template_id(t: TemplateConfig) -> str:
+    """Generate a unique test ID for a template config."""
+    if t.lakebase_type:
+        return f"{t.name}[{t.lakebase_type}]"
+    return t.name
+
+
 def pytest_generate_tests(metafunc):
     """Build templates from CLI options and parametrize at collection time."""
     if "template" in metafunc.fixturenames:
@@ -87,7 +95,7 @@ def pytest_generate_tests(metafunc):
         template_filter = config.getoption("--template")
         if template_filter:
             templates = [t for t in templates if t.name in template_filter]
-        metafunc.parametrize("template", templates, ids=lambda t: t.name)
+        metafunc.parametrize("template", templates, ids=_template_id)
 
 
 def _query_endpoints(
@@ -153,17 +161,23 @@ def _run_deploy(
     template_dir: Path,
     profile: str,
     lakebase: str,
+    lakebase_project: str,
+    lakebase_branch: str,
     log_file: Path,
     no_destroy: bool = False,
 ):
     """Deploy phase: bundle deploy -> grant perms -> run -> wait -> query -> destroy."""
     set_log_file(log_file)
     _log(f"\n{'=' * 60}")
-    _log(f"DEPLOY PHASE: {template.name}")
+    _log(f"DEPLOY PHASE: {template.name} ({template.lakebase_type or 'no-lakebase'})")
     _log(f"{'=' * 60}")
     bundle_deploy(template_dir, profile, template.app_resource_key, template.dev_app_name)
-    if template.needs_lakebase_edit:
+    if template.lakebase_type == "provisioned":
         grant_lakebase_access(template.dev_app_name, lakebase, profile)
+    elif template.lakebase_type == "autoscaling":
+        add_autoscaling_postgres_resource(
+            template.dev_app_name, lakebase_project, lakebase_branch, profile
+        )
     bundle_run(template_dir, template.app_resource_key, profile)
     try:
         app_url, token = wait_for_app_ready(template.dev_app_name, profile)
@@ -196,7 +210,7 @@ def _run_deploy(
             _log("--no-destroy: skipping bundle destroy")
 
 
-def test_e2e(template, repo_root, profile, lakebase, request):
+def test_e2e(template, repo_root, profile, lakebase, lakebase_project, lakebase_branch, request):
     """Full e2e test: clean -> quickstart -> edits -> (local || deploy) -> revert."""
     os.environ["DATABRICKS_CONFIG_PROFILE"] = profile
 
@@ -212,19 +226,34 @@ def test_e2e(template, repo_root, profile, lakebase, request):
     # Setup log file for this template
     log_dir = Path(__file__).parent / "logs"
     log_dir.mkdir(exist_ok=True)
-    log_file = log_dir / f"{template.name}.log"
+    log_suffix = f"-{template.lakebase_type}" if template.lakebase_type else ""
+    log_file = log_dir / f"{template.name}{log_suffix}.log"
     log_file.write_text("")  # clear previous run
     set_log_file(log_file)
 
-    # Snapshot databricks.yml before quickstart (quickstart may modify it)
+    # Snapshot files before quickstart (quickstart may modify them)
     yml_path = template_dir / "databricks.yml"
     yml_original = yml_path.read_text() if yml_path.exists() else None
+    app_yaml_path = template_dir / "app.yaml"
+    app_yaml_original = app_yaml_path.read_text() if app_yaml_path.exists() else None
+    env_path = template_dir / ".env"
+    env_original = env_path.read_text() if env_path.exists() else None
 
     with phase("setup:clean"):
         clean_template(template_dir)
 
     with phase("setup:quickstart"):
-        run_quickstart(template_dir, profile, lakebase if template.needs_lakebase_edit else None)
+        if template.lakebase_type == "provisioned":
+            run_quickstart(template_dir, profile, lakebase=lakebase)
+        elif template.lakebase_type == "autoscaling":
+            run_quickstart(
+                template_dir,
+                profile,
+                lakebase_autoscaling_project=lakebase_project,
+                lakebase_autoscaling_branch=lakebase_branch,
+            )
+        else:
+            run_quickstart(template_dir, profile)
 
     with phase("setup:edits"):
         edits = list(template.pre_test_edits)
@@ -238,14 +267,18 @@ def test_e2e(template, repo_root, profile, lakebase, request):
 
         if skip_local:
             with phase("deploy"):
-                _run_deploy(template, template_dir, profile, lakebase, log_file, no_destroy)
+                _run_deploy(
+                    template, template_dir, profile, lakebase,
+                    lakebase_project, lakebase_branch, log_file, no_destroy,
+                )
             return
 
         # Run local and deploy in parallel
         with ThreadPoolExecutor(max_workers=2) as executor:
             local_future: Future = executor.submit(_run_local, template, template_dir, log_file)
             deploy_future: Future = executor.submit(
-                _run_deploy, template, template_dir, profile, lakebase, log_file, no_destroy
+                _run_deploy, template, template_dir, profile, lakebase,
+                lakebase_project, lakebase_branch, log_file, no_destroy,
             )
 
             errors: list[str] = []
@@ -259,6 +292,12 @@ def test_e2e(template, repo_root, profile, lakebase, request):
                 raise AssertionError("Failures in parallel phases:\n" + "\n".join(errors))
     finally:
         revert_edits(originals)
-        # Restore databricks.yml to pre-quickstart state (quickstart replaces placeholders)
+        # Restore files modified by quickstart to pre-quickstart state
         if yml_original is not None:
             yml_path.write_text(yml_original)
+        if app_yaml_original is not None:
+            app_yaml_path.write_text(app_yaml_original)
+        if env_original is not None:
+            env_path.write_text(env_original)
+        elif env_path.exists():
+            env_path.unlink()

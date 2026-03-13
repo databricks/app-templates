@@ -8,6 +8,8 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 DEFAULT_PROFILE = "dev"
 DEFAULT_LAKEBASE = "bbqiu"
+DEFAULT_LAKEBASE_PROJECT = ""
+DEFAULT_LAKEBASE_BRANCH = ""
 DEFAULT_GENIE_SPACE_ID = "01f05202dbb51d74b6cccf1b1b1683eb"
 DEFAULT_SERVING_ENDPOINT = "agents_dev-bbqiu-test-bb-2-25"
 
@@ -30,7 +32,7 @@ class TemplateConfig:
     dev_app_name: str  # e.g. "dev-agent-langgraph"
     app_resource_key: str  # DAB resource key under resources.apps
     is_conversational: bool = True  # /responses vs /invocations
-    needs_lakebase_edit: bool = False  # Whether databricks.yml has lakebase placeholder
+    lakebase_type: str = ""  # "provisioned", "autoscaling", or "" (no lakebase)
     pre_test_edits: list[FileEdit] = field(default_factory=list)
     has_evaluate: bool = True
     validate_time: bool = True  # Whether to validate get_current_time tool output
@@ -140,12 +142,18 @@ def build_templates(
 ) -> list[TemplateConfig]:
     configs: list[tuple[str, dict]] = [
         ("agent-langgraph", {}),
-        ("agent-langgraph-short-term-memory", {"needs_lakebase_edit": True}),
-        ("agent-langgraph-long-term-memory", {"needs_lakebase_edit": True}),
+        ("agent-langgraph-short-term-memory", {"lakebase_type": "provisioned"}),
+        ("agent-langgraph-long-term-memory", {"lakebase_type": "provisioned"}),
+        ("agent-langgraph-short-term-memory", {"lakebase_type": "autoscaling"}),
+        ("agent-langgraph-long-term-memory", {"lakebase_type": "autoscaling"}),
         ("agent-openai-agents-sdk", {}),
         (
             "agent-openai-agents-sdk-short-term-memory",
-            {"needs_lakebase_edit": True},
+            {"lakebase_type": "provisioned"},
+        ),
+        (
+            "agent-openai-agents-sdk-short-term-memory",
+            {"lakebase_type": "autoscaling"},
         ),
         (
             "agent-openai-agents-sdk-multiagent",

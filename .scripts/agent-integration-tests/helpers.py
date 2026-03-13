@@ -109,7 +109,7 @@ def run_quickstart(
     lakebase_autoscaling_project: str | None = None,
     lakebase_autoscaling_branch: str | None = None,
 ):
-    """Run `uv run quickstart --profile <profile>`."""
+    """Run `uv run quickstart --profile <profile>` with the appropriate lakebase args."""
     cmd = ["uv", "run", "quickstart", "--profile", profile]
     if lakebase:
         cmd.extend(["--lakebase-provisioned-name", lakebase])
@@ -636,3 +636,49 @@ def grant_lakebase_access(app_name: str, lakebase: str, profile: str):
             _log(f"Lakebase access granted to {sp_client_id}.")
     except Exception as exc:
         raise RuntimeError(f"grant_lakebase_access failed for {app_name}: {exc}") from exc
+
+
+def add_autoscaling_postgres_resource(
+    app_name: str, project: str, branch: str, profile: str
+):
+    """Add an autoscaling postgres resource to a deployed app via the SDK.
+
+    Autoscaling postgres resources cannot be declared in databricks.yml and must
+    be added via the API after the app is deployed.
+    """
+    from databricks.sdk import WorkspaceClient
+    from databricks.sdk.service.apps import (
+        App,
+        AppResource,
+        AppResourcePostgres,
+        AppResourcePostgresPostgresPermission,
+    )
+
+    try:
+        w = WorkspaceClient(profile=profile)
+        app = w.apps.get(app_name)
+        _log(f"Adding autoscaling postgres resource to {app_name}...")
+
+        postgres_resource = AppResource(
+            name="database",
+            postgres=AppResourcePostgres(
+                branch=f"projects/{project}/branches/{branch}",
+                database="databricks_postgres",
+                permission=AppResourcePostgresPostgresPermission.CAN_CONNECT_AND_CREATE,
+            ),
+        )
+
+        existing_resources = list(app.resources or [])
+        # Remove any existing database resource to avoid duplicates
+        existing_resources = [r for r in existing_resources if r.name != "database"]
+        existing_resources.append(postgres_resource)
+
+        w.apps.update(
+            app_name,
+            App(name=app_name, resources=existing_resources),
+        )
+        _log(f"Autoscaling postgres resource added to {app_name}.")
+    except Exception as exc:
+        raise RuntimeError(
+            f"add_autoscaling_postgres_resource failed for {app_name}: {exc}"
+        ) from exc

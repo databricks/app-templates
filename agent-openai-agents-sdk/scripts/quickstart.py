@@ -7,7 +7,7 @@ This script handles:
 - Databricks authentication (OAuth)
 - MLflow experiment creation
 - Environment variable configuration (.env)
-- Lakebase instance setup (for memory-enabled templates)
+- Lakebase setup (for chat UI conversation history, and agent memory in memory templates)
 
 Usage:
     uv run quickstart [OPTIONS]
@@ -18,6 +18,8 @@ Options:
     --lakebase-provisioned-name NAME   Provisioned Lakebase instance name
     --lakebase-autoscaling-project NAME  Autoscaling Lakebase project name
     --lakebase-autoscaling-branch NAME   Autoscaling Lakebase branch name
+    --skip-lakebase   Skip Lakebase setup (non-interactive / CI use)
+    --app-name NAME   Existing Databricks app name to bind this bundle to
     -h, --help        Show this help message
 """
 
@@ -466,8 +468,36 @@ def get_databricks_username(profile_name: str) -> str:
 
 
 def create_mlflow_experiment(profile_name: str, username: str) -> tuple[str, str]:
-    """Create an MLflow experiment and return (name, id)."""
-    print_step("Creating MLflow experiment...")
+    """Create (or reuse) an MLflow experiment and return (name, id)."""
+    print_step("Setting up MLflow experiment...")
+
+    # Check if we already have an experiment ID in .env (idempotency)
+    existing_id = get_env_value("MLFLOW_EXPERIMENT_ID")
+    if existing_id:
+        result = run_command(
+            [
+                "databricks",
+                "-p",
+                profile_name,
+                "experiments",
+                "get-experiment",
+                "--experiment-id",
+                existing_id,
+                "--output",
+                "json",
+            ],
+            check=False,
+        )
+        if result.returncode == 0:
+            try:
+                data = json.loads(result.stdout)
+                experiment = data.get("experiment", data)
+                name = experiment.get("name", f"/Users/{username}/agents-on-apps")
+                print_success(f"Reusing existing experiment '{name}' (ID: {existing_id})")
+                return name, existing_id
+            except (json.JSONDecodeError, KeyError):
+                pass
+        print("Existing experiment not found or invalid, creating a new one...")
 
     experiment_name = f"/Users/{username}/agents-on-apps"
 
@@ -545,6 +575,27 @@ def get_env_value(key: str) -> str:
     if match:
         return match.group(1).strip().strip('"').strip("'")
     return ""
+
+
+def get_existing_lakebase_config() -> dict | None:
+    """Read existing Lakebase config from .env, if any.
+
+    Returns:
+        Dict with either:
+        - {"type": "autoscaling", "project": str, "branch": str}
+        - {"type": "provisioned", "instance_name": str}
+        - None if no Lakebase config found
+    """
+    project = get_env_value("LAKEBASE_AUTOSCALING_PROJECT")
+    branch = get_env_value("LAKEBASE_AUTOSCALING_BRANCH")
+    if project and branch:
+        return {"type": "autoscaling", "project": project, "branch": branch}
+
+    instance_name = get_env_value("LAKEBASE_INSTANCE_NAME")
+    if instance_name:
+        return {"type": "provisioned", "instance_name": instance_name}
+
+    return None
 
 
 def get_workspace_client(profile_name: str):
@@ -824,15 +875,22 @@ def setup_lakebase(
     provisioned_name: str = None,
     autoscaling_project: str = None,
     autoscaling_branch: str = None,
+    purpose: str = "memory",
 ) -> dict:
-    """Set up Lakebase instance for memory features.
+    """Set up Lakebase instance.
+
+    Args:
+        purpose: "memory" for agent memory templates, "ui" for chat UI conversation history.
 
     Returns:
         Dict with either:
         - {"type": "provisioned", "instance_name": str}
         - {"type": "autoscaling", "project": str, "branch": str}
     """
-    print_step("Setting up Lakebase instance for memory...")
+    if purpose == "ui":
+        print_step("Setting up Lakebase for chat UI conversation history...")
+    else:
+        print_step("Setting up Lakebase instance for agent memory...")
 
     # If --lakebase-provisioned-name was provided, use it directly
     if provisioned_name:
@@ -1214,6 +1272,52 @@ def update_databricks_yml_experiment(experiment_id: str) -> None:
     print_success("Updated databricks.yml with experiment ID")
 
 
+def update_databricks_yml_app_name(app_name: str, budget_policy_id: str | None = None) -> str:
+    """Update the app name field in databricks.yml.
+
+    Args:
+        app_name: New app name to set (e.g. "agent-my-app")
+        budget_policy_id: Optional budget policy ID to set on the app
+
+    Returns:
+        The bundle resource key (resources.apps.<key>), or "" if file not found.
+    """
+    yml_path = Path("databricks.yml")
+    if not yml_path.exists():
+        return ""
+
+    content = yml_path.read_text()
+
+    # App names are always quoted (e.g. name: "agent-langgraph"); bundle names are not
+    updated = re.sub(
+        r'(\bname:\s+)["\']([^"\']*)["\']',
+        lambda m: f'{m.group(1)}"{app_name}"',
+        content,
+        count=1,
+        flags=re.MULTILINE,
+    )
+
+    # Optionally insert budget_policy_id after the name line
+    if budget_policy_id:
+        updated = re.sub(
+            rf'(\bname:\s+"{re.escape(app_name)}")',
+            f'\\1\n      budget_policy_id: "{budget_policy_id}"',
+            updated,
+            count=1,
+            flags=re.MULTILINE,
+        )
+
+    if updated != content:
+        yml_path.write_text(updated)
+        print_success(f"Updated databricks.yml app name to '{app_name}'")
+
+    # Extract bundle key from resources.apps section
+    match = re.search(r"resources:\s*\n\s+apps:\s*\n\s+(\w+):", content, re.MULTILINE)
+    if match:
+        return match.group(1)
+    return ""
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Quickstart setup for Databricks agent development",
@@ -1225,6 +1329,8 @@ Examples:
     uv run quickstart --host https://...  # Set up new profile with host
     uv run quickstart --lakebase-provisioned-name my-db   # Provisioned Lakebase
     uv run quickstart --lakebase-autoscaling-project proj --lakebase-autoscaling-branch br  # Autoscaling
+    uv run quickstart --app-name my-existing-app  # Bind to existing Databricks app
+    uv run quickstart --skip-lakebase    # Skip Lakebase setup
         """,
     )
     parser.add_argument(
@@ -1250,6 +1356,16 @@ Examples:
     parser.add_argument(
         "--lakebase-autoscaling-branch",
         help="Autoscaling Lakebase branch name (use with --lakebase-autoscaling-project)",
+        metavar="NAME",
+    )
+    parser.add_argument(
+        "--skip-lakebase",
+        action="store_true",
+        help="Skip Lakebase setup (non-interactive / CI use)",
+    )
+    parser.add_argument(
+        "--app-name",
+        help="Existing Databricks app name to bind this bundle to",
         metavar="NAME",
     )
 
@@ -1295,22 +1411,73 @@ Examples:
         # Step 5b: Update databricks.yml to use literal experiment ID
         update_databricks_yml_experiment(experiment_id)
 
-        # Step 6: Lakebase setup (if needed for memory features)
+        # Step 5c: Existing app binding (optional)
+        app_name = args.app_name
+        if not app_name:
+            print_step("Optional: Bind to an existing Databricks app")
+            print("If you created an app via the Databricks UI before cloning this template,")
+            print("you can bind this bundle to it to avoid a 'app already exists' error.")
+            answer = input(
+                "Enter the existing app name to bind to (or press Enter to skip): "
+            ).strip()
+            if answer:
+                app_name = answer
+
+        bundle_key = ""
+        if app_name:
+            bundle_key = update_databricks_yml_app_name(app_name)
+            print(f"\nTo bind this bundle to your existing app, run:")
+            if bundle_key:
+                print(f"  databricks bundle deployment bind {bundle_key} {app_name} --auto-approve")
+            print(f"  databricks bundle deploy")
+
+        # Step 6: Lakebase setup
         lakebase_config = None
-        lakebase_required = (
+        # Required if memory template (has LAKEBASE_* placeholders in databricks.yml) or flags
+        lakebase_memory_required = bool(
             args.lakebase_provisioned_name
             or (args.lakebase_autoscaling_project and args.lakebase_autoscaling_branch)
             or check_lakebase_required()
         )
-        if lakebase_required:
-            lakebase_config = setup_lakebase(
-                profile_name,
-                username,
-                provisioned_name=args.lakebase_provisioned_name,
-                autoscaling_project=args.lakebase_autoscaling_project,
-                autoscaling_branch=args.lakebase_autoscaling_branch,
-            )
-            # Step 6b: Update databricks.yml and app.yaml with Lakebase config
+
+        if lakebase_memory_required:
+            # Check for existing config (idempotency)
+            existing_lakebase = get_existing_lakebase_config()
+            if existing_lakebase and not args.lakebase_provisioned_name and not (
+                args.lakebase_autoscaling_project and args.lakebase_autoscaling_branch
+            ):
+                print_step("Reusing existing Lakebase config from .env")
+                lakebase_config = existing_lakebase
+            else:
+                lakebase_config = setup_lakebase(
+                    profile_name,
+                    username,
+                    provisioned_name=args.lakebase_provisioned_name,
+                    autoscaling_project=args.lakebase_autoscaling_project,
+                    autoscaling_branch=args.lakebase_autoscaling_branch,
+                    purpose="memory",
+                )
+        elif not args.skip_lakebase:
+            # Optional for non-memory templates — for UI chat history
+            existing_lakebase = get_existing_lakebase_config()
+            if existing_lakebase:
+                print_step("Reusing existing Lakebase config from .env")
+                lakebase_config = existing_lakebase
+            else:
+                print_step("Optional: Set up Lakebase for chat UI")
+                print("The built-in chat UI can save conversation history across sessions")
+                print("if connected to Lakebase. This is for the UI to persist chats —")
+                print("not for the agent itself.")
+                answer = input("Set up Lakebase for chat history? [Y/n]: ").strip().lower()
+                if answer != "n":
+                    lakebase_config = setup_lakebase(
+                        profile_name,
+                        username,
+                        purpose="ui",
+                    )
+
+        if lakebase_config:
+            # Update databricks.yml and app.yaml with Lakebase config
             update_databricks_yml_lakebase(lakebase_config)
             update_app_yaml_lakebase(lakebase_config)
 
@@ -1323,22 +1490,23 @@ Examples:
 ✓ Databricks authenticated with profile: {profile_name}
 ✓ Configuration files created (.env)
 
-✓ MLflow experiment created for tracing and evaluation: {experiment_name}
+✓ MLflow experiment set up for tracing and evaluation: {experiment_name}
 ✓ Experiment ID: {experiment_id}"""
 
         if host and experiment_id:
             summary += f"\n  {host}/ml/experiments/{experiment_id}"
 
         if lakebase_config:
+            lakebase_purpose = "agent memory" if lakebase_memory_required else "chat UI conversation history"
             if lakebase_config["type"] == "provisioned":
                 lakebase_name = lakebase_config["instance_name"]
-                summary += f"\n\n✓ Lakebase provisioned instance: {lakebase_name}"
+                summary += f"\n\n✓ Lakebase for {lakebase_purpose}: {lakebase_name}"
                 if host:
                     summary += f"\n  {host}/lakebase/provisioned/{lakebase_name}"
             else:
                 project = lakebase_config["project"]
                 branch = lakebase_config["branch"]
-                summary += f"\n\n✓ Lakebase autoscaling instance: {project} (branch: {branch})"
+                summary += f"\n\n✓ Lakebase for {lakebase_purpose}: {project} (branch: {branch})"
 
         summary += "\nNext step: Run 'uv run start-app' to start the agent locally\n"
         print(summary)

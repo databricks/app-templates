@@ -1,0 +1,6 @@
+display_name: "Secure_Flask_App"
+env:
+  - name: "SERVER_PORT"
+    value: "8000"
+  - name: "DATABRICKS_WAREHOUSE_ID"
+    valueFrom: "sql-warehouse"

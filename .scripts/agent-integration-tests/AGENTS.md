@@ -90,6 +90,8 @@ Local and deploy phases run **in parallel** via `ThreadPoolExecutor`. Either pha
 
 All commands must be run from the `.scripts/agent-integration-tests/` directory.
 
+**CRITICAL: Never pipe test output through `head`, `tail`, or other commands that truncate output.** Doing so sends SIGPIPE to pytest, killing it before cleanup runs and leaving template files (databricks.yml, app.yaml) in a modified state. Always run pytest directly and use `run_in_background` if you need to check on it later.
+
 **The default runs both local and deploy phases.** Only add `--skip-deploy` or `--skip-local` when the user explicitly asks for it.
 
 ```bash

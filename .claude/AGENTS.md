@@ -91,6 +91,8 @@ Tests live in `.scripts/agent-integration-tests/`. Run from that directory.
 
 **Default runs both local and deploy.** Only add `--skip-deploy` or `--skip-local` when the user explicitly asks.
 
+**CRITICAL: Never pipe test output through `head`, `tail`, or other truncating commands.** This sends SIGPIPE to pytest, killing it before cleanup and leaving template files dirty. Always run pytest directly and use `run_in_background` to check on it later.
+
 ```bash
 # DEFAULT: All templates in parallel (local + deploy)
 uv run pytest test_e2e.py -v -n 7

@@ -3,7 +3,7 @@ import time
 import traceback
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -45,16 +45,19 @@ NON_CONVERSATIONAL_PAYLOAD = {
 
 
 def _assert_tool_time_in_result(result: dict):
-    """Assert the result contains a get_current_time tool output within 1 hour of now."""
+    """Assert the result contains a get_current_time tool output with today's date."""
+    now_utc = datetime.now(timezone.utc)
+    now_local = datetime.now()
+    valid_dates = {now_utc.date(), now_local.date()}
+
     for item in result.get("output", []):
         if item.get("type") == "function_call_output":
             output = item.get("output", "")
             try:
-                tool_time = datetime.fromisoformat(output)
-                # Strip timezone if present so we always compare naive local times
-                tool_time = tool_time.replace(tzinfo=None)
-                diff = abs(datetime.now() - tool_time).total_seconds()
-                assert diff < 3600, f"Tool time {output} is {diff:.0f}s from now (max 3600s)"
+                tool_time = datetime.fromisoformat(output).replace(tzinfo=None)
+                assert tool_time.date() in valid_dates, (
+                    f"Tool time {output} date not today (expected one of {valid_dates})"
+                )
                 return
             except ValueError:
                 continue

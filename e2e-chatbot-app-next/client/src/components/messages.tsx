@@ -64,7 +64,7 @@ function PureMessages({
       style={{ overflowAnchor: 'none' }}
     >
       <Conversation className="mx-auto flex min-w-0 max-w-4xl flex-col gap-4 md:gap-6">
-        <ConversationContent className="flex flex-col gap-4 px-2 py-4 md:gap-6 md:px-4">
+        <ConversationContent className="flex flex-col gap-4 px-4 py-4 md:gap-6">
           {messages.map((message, index) => (
             <PreviewMessage
               key={message.id}

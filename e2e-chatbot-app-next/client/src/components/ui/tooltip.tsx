@@ -13,21 +13,31 @@ const TooltipTrigger = TooltipPrimitive.Trigger;
 
 const TooltipContent = React.forwardRef<
   React.ElementRef<typeof TooltipPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>
->(({ className, sideOffset = 4, ...props }, ref) => (
-  <TooltipPrimitive.Content
+  React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content> & { usePortal?: boolean }
+>(({ className, sideOffset = 4, usePortal = true, ...props }, ref) => {
+  const tooltipContent = <TooltipPrimitive.Content
     ref={ref}
     sideOffset={sideOffset}
     className={cn(
-      'fade-in-95 data-[state=closed]:fade-out-0 z-50 animate-in overflow-hidden rounded-lg  bg-tooltip px-2 py-1.5 text-tooltip-foreground text-base font-medium data-[state=closed]:animate-out',
+      'z-50 overflow-hidden rounded-lg bg-tooltip px-2 py-1.5 text-tooltip-foreground text-base font-medium',
       className,
     )}
     {...props}
   >
     {props.children}
     <TooltipArrow className='fill-tooltip' />
-  </TooltipPrimitive.Content>
-));
+  </TooltipPrimitive.Content>;
+
+  if (usePortal) {
+    return (
+      <TooltipPrimitive.Portal>
+        {tooltipContent}
+      </TooltipPrimitive.Portal>
+    );
+  }
+
+  return tooltipContent
+});
 TooltipContent.displayName = TooltipPrimitive.Content.displayName;
 
 export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider, TooltipArrow };

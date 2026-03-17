@@ -29,7 +29,9 @@ export function AppSidebar({
   preferredUsername: string | null;
 }) {
   const navigate = useNavigate();
-  const { setOpenMobile, open, toggleSidebar } = useSidebar();
+  const { setOpenMobile, open, openMobile, isMobile, toggleSidebar } = useSidebar();
+
+  const effectiveOpen = open || (isMobile && openMobile);
 
   return (
     <Sidebar
@@ -40,10 +42,10 @@ export function AppSidebar({
       <SidebarHeader
         className={cn(
           'h-[44px] flex-row items-center gap-2 px-2 py-0',
-          open ? 'justify-between' : 'justify-center',
+          effectiveOpen ? 'justify-between' : 'justify-center',
         )}
       >
-        {open && (
+        {effectiveOpen && (
           <Link
             to="/"
             onClick={() => setOpenMobile(false)}
@@ -57,10 +59,10 @@ export function AppSidebar({
 
         <Action
           onClick={toggleSidebar}
-          tooltip={open ? 'Collapse sidebar' : 'Expand sidebar'}
+          tooltip={effectiveOpen ? 'Collapse sidebar' : 'Expand sidebar'}
         >
           <DbIcon
-            icon={open ? SidebarCollapseIcon : SidebarExpandIcon}
+            icon={effectiveOpen ? SidebarCollapseIcon : SidebarExpandIcon}
             size={16}
             color="muted"
           />
@@ -87,9 +89,7 @@ export function AppSidebar({
                   </span>
                 </SidebarMenuButton>
               </TooltipTrigger>
-              {!open && (
-                <TooltipContent side="right">New chat</TooltipContent>
-              )}
+              <TooltipContent side="right" style={{ display: open ? 'none' : 'block' }}>New chat</TooltipContent>
             </Tooltip>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -97,7 +97,7 @@ export function AppSidebar({
 
       {/* ── Chat history ────────────────────────────────────────────────── */}
       <SidebarContent>
-        {open && <SidebarHistory user={user} />}
+        {effectiveOpen && <SidebarHistory user={user} />}
       </SidebarContent>
 
       {/* ── User nav ────────────────────────────────────────────────────── */}

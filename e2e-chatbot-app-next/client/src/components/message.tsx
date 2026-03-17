@@ -1,4 +1,3 @@
-import { motion } from 'framer-motion';
 import React, { memo, useState } from 'react';
 import { AnimatedAssistantIcon } from './animation-assistant-icon';
 import { Response } from './elements/response';
@@ -24,6 +23,7 @@ import equal from 'fast-deep-equal';
 import { cn, sanitizeText } from '@/lib/utils';
 import { MessageEditor } from './message-editor';
 import { MessageReasoning } from './message-reasoning';
+import { Shimmer } from './ui/shimmer';
 import type { UseChatHelpers } from '@ai-sdk/react';
 import type { ChatMessage, Feedback } from '@chat-template/core';
 import { useDataStream } from './data-stream-provider';
@@ -126,8 +126,8 @@ const PurePreviewMessage = ({
           'justify-start': message.role === 'assistant',
         })}
       >
-        {message.role === 'assistant' && (
-          <AnimatedAssistantIcon size={14} isLoading={isLoading} />
+        {partSegments.length === 0 && errorParts.length === 0 && message.role === 'assistant' && (
+          <AwaitingResponseMessage />
         )}
 
         <div
@@ -141,7 +141,9 @@ const PurePreviewMessage = ({
           {attachmentsFromMessage.length > 0 && (
             <div
               data-testid={`message-attachments`}
-              className="flex flex-row justify-end gap-2"
+              className={cn('flex flex-row justify-end gap-2', {
+                'justify-start': message.role === 'assistant',
+              })}
             >
               {attachmentsFromMessage.map((attachment) => (
                 <PreviewAttachment
@@ -186,16 +188,11 @@ const PurePreviewMessage = ({
                     <MessageContent
                       data-testid="message-content"
                       className={cn({
-                        'w-fit break-words rounded-2xl px-3 py-2 text-right text-white':
+                        'bg-secondary w-fit break-words rounded-2xl px-3 py-2 text-right text-base':
                           message.role === 'user',
-                        'bg-transparent px-0 py-0 text-left':
+                        'bg-transparent px-0 py-0 text-left text-base':
                           message.role === 'assistant',
                       })}
-                      style={
-                        message.role === 'user'
-                          ? { backgroundColor: '#006cff' }
-                          : undefined
-                      }
                     >
                       <Response>
                         {sanitizeText(joinMessagePartSegments(parts))}
@@ -430,37 +427,8 @@ export const AwaitingResponseMessage = () => {
       data-role={role}
     >
       <div className="flex items-start justify-start gap-3">
-        <AnimatedAssistantIcon size={14} isLoading={false} muted={true} />
-
-        <div className="flex w-full flex-col gap-2 md:gap-4">
-          <div className="p-0 text-muted-foreground text-sm">
-            <LoadingText>Thinking...</LoadingText>
-          </div>
-        </div>
+        <Shimmer className="flex items-center">Generating response</Shimmer>
       </div>
     </div>
-  );
-};
-
-const LoadingText = ({ children }: { children: React.ReactNode }) => {
-  return (
-    <motion.div
-      animate={{ backgroundPosition: ['100% 50%', '-100% 50%'] }}
-      transition={{
-        duration: 1.5,
-        repeat: Number.POSITIVE_INFINITY,
-        ease: 'linear',
-      }}
-      style={{
-        background:
-          'linear-gradient(90deg, hsl(var(--muted-foreground)) 0%, hsl(var(--muted-foreground)) 35%, hsl(var(--foreground)) 50%, hsl(var(--muted-foreground)) 65%, hsl(var(--muted-foreground)) 100%)',
-        backgroundSize: '200% 100%',
-        WebkitBackgroundClip: 'text',
-        backgroundClip: 'text',
-      }}
-      className="flex items-center text-transparent"
-    >
-      {children}
-    </motion.div>
   );
 };

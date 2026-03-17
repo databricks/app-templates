@@ -1,0 +1,63 @@
+bundle:
+  name: appkit-all-in-one
+
+variables:
+  sql_warehouse_id:
+    description: SQL Warehouse ID
+  files_path:
+    description: Volume path for file storage (e.g. /Volumes/catalog/schema/volume_name)
+  files_id:
+    description: Permission to write to volumes
+  genie_space_id:
+    description: Default Genie Space ID
+  genie_space_name:
+    description: Genie Space for AI-powered data queries. Space IDs configured via plugin config.
+  postgres_branch:
+    description: Full Lakebase Postgres branch resource name. Obtain by running `databricks postgres list-branches projects/{project-id}`, select the desired item from the output array and use its .name value.
+  postgres_database:
+    description: Full Lakebase Postgres database resource name. Obtain by running `databricks postgres list-databases {branch-name}`, select the desired item from the output array and use its .name value. Requires the branch resource name.
+
+resources:
+  apps:
+    app:
+      name: "appkit-all-in-one"
+      description: "Full-stack Node.js app with SQL analytics dashboards, file browser, Genie AI conversations, and Lakebase Autoscaling (Postgres) CRUD"
+      source_code_path: ./
+      user_api_scopes:
+        - dashboards.genie
+        - files.files
+
+      # The resources which this app has access to.
+      resources:
+        - name: sql-warehouse
+          sql_warehouse:
+            id: ${var.sql_warehouse_id}
+            permission: CAN_USE
+        - name: files
+          uc_securable:
+            securable_full_name: ${var.files_id}
+            securable_type: VOLUME
+            permission: WRITE_VOLUME
+        - name: genie-space
+          genie_space:
+            name: ${var.genie_space_name}
+            space_id: ${var.genie_space_id}
+            permission: CAN_RUN
+        - name: postgres
+          postgres:
+            branch: ${var.postgres_branch}
+            database: ${var.postgres_database}
+            permission: CAN_CONNECT_AND_CREATE
+
+targets:
+  default:
+    default: true
+    workspace:
+      host: https://your-workspace.cloud.databricks.com
+
+    variables:
+      sql_warehouse_id: placeholder
+      files_path: placeholder
+      genie_space_id: placeholder
+      postgres_branch: placeholder
+      postgres_database: placeholder

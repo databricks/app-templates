@@ -109,7 +109,7 @@ def run_quickstart(
     lakebase_autoscaling_project: str | None = None,
     lakebase_autoscaling_branch: str | None = None,
 ):
-    """Run `uv run quickstart --profile <profile>` with the appropriate lakebase args."""
+    """Run `uv run quickstart --profile <profile>`."""
     cmd = ["uv", "run", "quickstart", "--profile", profile]
     if lakebase:
         cmd.extend(["--lakebase-provisioned-name", lakebase])
@@ -583,11 +583,16 @@ def _try_sql(client, sql: str):
         _log(f"  SQL warning: {exc!r} for: {sql}")
 
 
-def grant_lakebase_access(app_name: str, lakebase: str, profile: str):
+def grant_lakebase_access(
+    app_name: str,
+    profile: str,
+    instance_name: str | None = None,
+    project: str | None = None,
+    branch: str | None = None,
+):
     """Grant the app's service principal Lakebase access.
 
-    Assumes the SP's postgres role already exists (created by the ``database``
-    resource in databricks.yml at deploy time).
+    Pass instance_name for provisioned, or project+branch for autoscaling.
     """
     from databricks_ai_bridge.lakebase import SchemaPrivilege, SequencePrivilege, TablePrivilege
 
@@ -601,7 +606,11 @@ def grant_lakebase_access(app_name: str, lakebase: str, profile: str):
         sp_client_id = data.get("service_principal_client_id", "")
         assert sp_client_id, f"No service_principal_client_id found for app {app_name}"
 
-        with LakebaseClient(instance_name=lakebase) as client:
+        with LakebaseClient(
+            instance_name=instance_name,
+            project=project,
+            branch=branch,
+        ) as client:
             _log(f"Granting lakebase access to SP {sp_client_id}...")
             quoted_sp = f'"{sp_client_id}"'
 
@@ -659,11 +668,19 @@ def add_autoscaling_postgres_resource(
         app = w.apps.get(app_name)
         _log(f"Adding autoscaling postgres resource to {app_name}...")
 
+        # Look up the database resource ID via the postgres API
+        branch_path = f"projects/{project}/branches/{branch}"
+        resp = w.api_client.do("GET", f"/api/2.0/postgres/{branch_path}/databases")
+        databases = resp.get("databases", [])
+        assert databases, f"No databases found for {branch_path}"
+        database_name = databases[0]["name"]  # e.g. projects/.../databases/db-xxxx
+        _log(f"  Found database: {database_name}")
+
         postgres_resource = AppResource(
             name="database",
             postgres=AppResourcePostgres(
-                branch=f"projects/{project}/branches/{branch}",
-                database="databricks_postgres",
+                branch=branch_path,
+                database=database_name,
                 permission=AppResourcePostgresPostgresPermission.CAN_CONNECT_AND_CREATE,
             ),
         )

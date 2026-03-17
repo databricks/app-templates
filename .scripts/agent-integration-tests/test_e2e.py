@@ -173,10 +173,16 @@ def _run_deploy(
     _log(f"{'=' * 60}")
     bundle_deploy(template_dir, profile, template.app_resource_key, template.dev_app_name)
     if template.lakebase_type == "provisioned":
-        grant_lakebase_access(template.dev_app_name, lakebase, profile)
+        grant_lakebase_access(
+            template.dev_app_name, profile, instance_name=lakebase,
+        )
     elif template.lakebase_type == "autoscaling":
         add_autoscaling_postgres_resource(
             template.dev_app_name, lakebase_project, lakebase_branch, profile
+        )
+        grant_lakebase_access(
+            template.dev_app_name, profile,
+            project=lakebase_project, branch=lakebase_branch,
         )
     bundle_run(template_dir, template.app_resource_key, profile)
     try:

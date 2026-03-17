@@ -78,6 +78,7 @@ export default function ChatPage() {
   return (
     <Chat
       key={chat.id}
+      title={chat.title}
       id={chat.id}
       initialMessages={messages}
       initialChatModel={modelId}

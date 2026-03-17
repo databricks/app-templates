@@ -35,6 +35,7 @@ export function Chat({
   isReadonly,
   initialLastContext,
   feedback = {},
+  title,
 }: {
   id: string;
   initialMessages: ChatMessage[];
@@ -44,6 +45,7 @@ export function Chat({
   session: ClientSession;
   initialLastContext?: LanguageModelUsage;
   feedback?: FeedbackMap;
+  title?: string;
 }) {
   const { visibilityType } = useChatVisibility({
     chatId: id,
@@ -286,7 +288,7 @@ export function Chat({
   if (messages.length === 0) {
     return (
       <div className="flex h-dvh min-w-0 flex-col bg-background">
-        <ChatHeader />
+        <ChatHeader empty />
         <div className="flex min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4">
           <div className="m-auto flex w-full max-w-4xl flex-col">
             <Greeting />
@@ -300,7 +302,7 @@ export function Chat({
   return (
     <>
       <div className="overscroll-behavior-contain flex h-dvh min-w-0 touch-pan-y flex-col bg-background">
-        <ChatHeader />
+        <ChatHeader title={title} />
 
         <Messages
           status={status}

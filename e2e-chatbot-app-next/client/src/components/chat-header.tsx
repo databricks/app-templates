@@ -11,20 +11,29 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { PlusIcon, CloudOffIcon } from './icons';
+import { cn } from '../lib/utils';
 
 const DOCS_URL =
   'https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app';
 
-export function ChatHeader() {
+export function ChatHeader({ title, empty }: { title?: string, empty?: boolean }) {
   const navigate = useNavigate();
   const { chatHistoryEnabled, feedbackEnabled } = useConfig();
 
   return (
-    <header className="sticky top-0 flex h-[60px] items-center gap-2 bg-background px-4">
+    <header className={cn("sticky top-0 flex h-[60px] items-center gap-2 bg-background px-4", {
+      "border-b border-border md:pb-2": !empty,
+    })}>
       {/* Toggle visible on mobile only — desktop toggle lives inside the sidebar */}
       <div className="md:hidden">
         <SidebarToggle forceOpenIcon />
       </div>
+
+      {title &&
+        <h4 className="text-[16px] font-medium truncate">
+          {title}
+        </h4>
+      }
 
       {/* New Chat button — mobile only; desktop uses the sidebar rail */}
       <Button

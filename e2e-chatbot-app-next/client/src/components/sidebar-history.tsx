@@ -23,6 +23,7 @@ import {
 import {
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupContentHeader,
   SidebarMenu,
   useSidebar,
 } from '@/components/ui/sidebar';
@@ -179,9 +180,9 @@ export function SidebarHistory({ user }: { user?: ClientUser | null }) {
   if (isLoading) {
     return (
       <SidebarGroup>
-        <div className="px-2 py-1 text-sidebar-foreground/50 text-xs">
+        <SidebarGroupContentHeader>
           Today
-        </div>
+        </SidebarGroupContentHeader>
         <SidebarGroupContent>
           <div className="flex flex-col">
             {[44, 32, 28, 64, 52].map((item) => (
@@ -209,7 +210,7 @@ export function SidebarHistory({ user }: { user?: ClientUser | null }) {
     return (
       <SidebarGroup>
         <SidebarGroupContent>
-          <div className="flex w-full flex-row items-center justify-center gap-2 px-2 text-sm text-zinc-500">
+          <div className="flex w-full flex-row items-center justify-center gap-2 px-2 text-sm text-muted-foreground">
             {chatHistoryEnabled
               ? 'Your conversations will appear here once you start chatting!'
               : 'Chat history is disabled - conversations are not saved'}
@@ -236,9 +237,9 @@ export function SidebarHistory({ user }: { user?: ClientUser | null }) {
                   <div className="flex flex-col gap-6">
                     {groupedChats.today.length > 0 && (
                       <div>
-                        <div className="px-2 py-1 text-sidebar-foreground/50 text-xs">
+                        <SidebarGroupContentHeader>
                           Today
-                        </div>
+                        </SidebarGroupContentHeader>
                         {groupedChats.today.map((chat) => (
                           <ChatItem
                             key={chat.id}
@@ -256,9 +257,9 @@ export function SidebarHistory({ user }: { user?: ClientUser | null }) {
 
                     {groupedChats.yesterday.length > 0 && (
                       <div>
-                        <div className="px-2 py-1 text-sidebar-foreground/50 text-xs">
+                        <SidebarGroupContentHeader>
                           Yesterday
-                        </div>
+                        </SidebarGroupContentHeader>
                         {groupedChats.yesterday.map((chat) => (
                           <ChatItem
                             key={chat.id}
@@ -276,9 +277,9 @@ export function SidebarHistory({ user }: { user?: ClientUser | null }) {
 
                     {groupedChats.lastWeek.length > 0 && (
                       <div>
-                        <div className="px-2 py-1 text-sidebar-foreground/50 text-xs">
+                        <SidebarGroupContentHeader>
                           Last 7 days
-                        </div>
+                        </SidebarGroupContentHeader>
                         {groupedChats.lastWeek.map((chat) => (
                           <ChatItem
                             key={chat.id}
@@ -296,9 +297,9 @@ export function SidebarHistory({ user }: { user?: ClientUser | null }) {
 
                     {groupedChats.lastMonth.length > 0 && (
                       <div>
-                        <div className="px-2 py-1 text-sidebar-foreground/50 text-xs">
+                        <SidebarGroupContentHeader>
                           Last 30 days
-                        </div>
+                        </SidebarGroupContentHeader>
                         {groupedChats.lastMonth.map((chat) => (
                           <ChatItem
                             key={chat.id}
@@ -316,9 +317,9 @@ export function SidebarHistory({ user }: { user?: ClientUser | null }) {
 
                     {groupedChats.older.length > 0 && (
                       <div>
-                        <div className="px-2 py-1 text-sidebar-foreground/50 text-xs">
+                        <SidebarGroupContentHeader>
                           Older than last month
-                        </div>
+                        </SidebarGroupContentHeader>
                         {groupedChats.older.map((chat) => (
                           <ChatItem
                             key={chat.id}

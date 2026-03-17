@@ -1,20 +1,25 @@
 import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 
 import { SidebarHistory } from '@/components/sidebar-history';
 import { SidebarUserNav } from '@/components/sidebar-user-nav';
-import { Button } from '@/components/ui/button';
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { Link } from 'react-router-dom';
-import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
-import { PlusIcon } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { DbIcon } from '@/components/ui/db-icon';
+import { NewChatIcon, SidebarCollapseIcon, SidebarExpandIcon } from '@/components/icons';
+import { cn } from '@/lib/utils';
 import type { ClientSession } from '@chat-template/auth';
+import { Button } from './ui/button';
+import { Action } from './elements/actions';
 
 export function AppSidebar({
   user,
@@ -24,48 +29,78 @@ export function AppSidebar({
   preferredUsername: string | null;
 }) {
   const navigate = useNavigate();
-  const { setOpenMobile } = useSidebar();
+  const { setOpenMobile, open, toggleSidebar } = useSidebar();
 
   return (
-    <Sidebar className="group-data-[side=left]:border-r-0">
-      <SidebarHeader>
+    <Sidebar
+      collapsible="icon"
+      className="group-data-[side=left]:border-r-0"
+    >
+      {/* ── Header: app title + collapse toggle ────────────────────────── */}
+      <SidebarHeader
+        className={cn(
+          'h-[44px] flex-row items-center gap-2 px-2 py-0',
+          open ? 'justify-between' : 'justify-center',
+        )}
+      >
+        {open && (
+          <Link
+            to="/"
+            onClick={() => setOpenMobile(false)}
+            className="flex items-center overflow-hidden px-1"
+          >
+            <span className="text-base font-semibold text-foreground">
+              Chatbot
+            </span>
+          </Link>
+        )}
+
+        <Action
+          onClick={toggleSidebar}
+          tooltip={open ? 'Collapse sidebar' : 'Expand sidebar'}
+        >
+          <DbIcon
+            icon={open ? SidebarCollapseIcon : SidebarExpandIcon}
+            size={16}
+            color="muted"
+          />
+        </Action>
+      </SidebarHeader>
+
+      {/* ── Nav: New Chat item ───────────────────────────────────────────── */}
+      <div className="px-2 pt-2">
         <SidebarMenu>
-          <div className="flex flex-row items-center justify-between">
-            <Link
-              to="/"
-              onClick={() => {
-                setOpenMobile(false);
-              }}
-              className="flex flex-row items-center gap-3"
-            >
-              <span className="cursor-pointer rounded-md px-2 font-semibold text-lg hover:bg-muted">
-                Chatbot
-              </span>
-            </Link>
+          <SidebarMenuItem>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="tertiary"
+                <SidebarMenuButton
                   type="button"
-                  className="h-8 p-1 md:h-fit md:p-2"
+                  className="h-8 p-1 md:p-2 cursor-pointer"
                   onClick={() => {
                     setOpenMobile(false);
                     navigate('/');
                   }}
                 >
-                  <PlusIcon />
-                </Button>
+                  <DbIcon icon={NewChatIcon} size={16} color="default" />
+                  <span className="group-data-[collapsible=icon]:hidden">
+                    New chat
+                  </span>
+                </SidebarMenuButton>
               </TooltipTrigger>
-              <TooltipContent align="end" className="hidden md:block">
-                New Chat
-              </TooltipContent>
+              {!open && (
+                <TooltipContent side="right">New chat</TooltipContent>
+              )}
             </Tooltip>
-          </div>
+          </SidebarMenuItem>
         </SidebarMenu>
-      </SidebarHeader>
+      </div>
+
+      {/* ── Chat history ────────────────────────────────────────────────── */}
       <SidebarContent>
-        <SidebarHistory user={user} />
+        {open && <SidebarHistory user={user} />}
       </SidebarContent>
+
+      {/* ── User nav ────────────────────────────────────────────────────── */}
       <SidebarFooter>
         {user && (
           <SidebarUserNav user={user} preferredUsername={preferredUsername} />

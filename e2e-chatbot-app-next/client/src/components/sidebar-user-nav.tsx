@@ -12,6 +12,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from '@/components/ui/sidebar';
 import { useSession } from '@/contexts/SessionContext';
 import { getAiGradientStyle } from './animation-assistant-icon';
@@ -32,6 +33,7 @@ export function SidebarUserNav({
       ? 'authenticated'
       : 'unauthenticated';
   const { setTheme, resolvedTheme } = useTheme();
+  const { open } = useSidebar();
 
   // Use preferred username from Databricks Apps if available, otherwise fall back to existing logic
   const displayName =
@@ -43,7 +45,7 @@ export function SidebarUserNav({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             {status === 'loading' ? (
-              <SidebarMenuButton className="h-10 justify-between bg-background data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground">
+              <SidebarMenuButton className="h-10 justify-between bg-sidebar data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground">
                 <div className="flex flex-row gap-2">
                   <div className="size-6 animate-pulse rounded-full bg-zinc-500/30" />
                   <span className="animate-pulse rounded-md bg-zinc-500/30 text-transparent">
@@ -57,18 +59,23 @@ export function SidebarUserNav({
             ) : (
               <SidebarMenuButton
                 data-testid="user-nav-button"
-                className="h-10 bg-background data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+                className="h-10 bg-sidebar data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground cursor-pointer"
+                tooltip={!open ? displayName : undefined}
               >
                 <div
                   style={{ ...getAiGradientStyle().styling }}
-                  className="flex size-6 items-center justify-center rounded-full"
+                  className="flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
                 >
                   {displayName.charAt(0)}
                 </div>
-                <span data-testid="user-email" className="truncate">
-                  {displayName}
-                </span>
-                <ChevronUp className="ml-auto" />
+                {open && (
+                  <>
+                    <span data-testid="user-email" className="truncate">
+                      {displayName}
+                    </span>
+                    <ChevronUp className="ml-auto" />
+                  </>
+                )}
               </SidebarMenuButton>
             )}
           </DropdownMenuTrigger>
@@ -86,7 +93,6 @@ export function SidebarUserNav({
             >
               {`Toggle ${resolvedTheme === 'light' ? 'dark' : 'light'} mode`}
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>

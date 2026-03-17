@@ -8,11 +8,9 @@ import { useAppConfig } from '@/contexts/AppConfigContext';
 import {
   ChevronDown,
   ChevronUp,
-  CopyIcon,
-  PencilLineIcon,
-  ThumbsUp,
-  ThumbsDown,
 } from 'lucide-react';
+import { DbIcon } from './ui/db-icon';
+import { PencilIcon, CopyIcon, ThumbsUpIcon, ThumbsDownIcon } from './icons';
 
 function PureMessageActions({
   message,
@@ -111,19 +109,19 @@ function PureMessageActions({
   if (message.role === 'user') {
     return (
       <Actions className="-mr-0.5 justify-end">
-        <div className="relative">
+        <div className="relative flex items-center gap-1">
           {setMode && (
             <Action
               tooltip="Edit"
               onClick={() => setMode('edit')}
-              className="-left-10 absolute top-0 opacity-0 transition-opacity group-hover/message:opacity-100"
+              className="opacity-0 transition-opacity group-hover/message:opacity-100"
               data-testid="message-edit-button"
             >
-              <PencilLineIcon />
+              <DbIcon icon={PencilIcon} />
             </Action>
           )}
           <Action tooltip="Copy" onClick={handleCopy}>
-            <CopyIcon />
+            <DbIcon icon={CopyIcon} />
           </Action>
         </div>
       </Actions>
@@ -138,7 +136,7 @@ function PureMessageActions({
         className={feedback === 'thumbs_up' ? 'text-green-600' : ''}
         data-testid="thumbs-up-button"
       >
-        <ThumbsUp />
+        <DbIcon icon={ThumbsUpIcon} />
       </Action>
       <Action
         tooltip="Thumbs down"
@@ -146,7 +144,7 @@ function PureMessageActions({
         className={feedback === 'thumbs_down' ? 'text-red-600' : ''}
         data-testid="thumbs-down-button"
       >
-        <ThumbsDown />
+        <DbIcon icon={ThumbsDownIcon} />
       </Action>
     </>
   );

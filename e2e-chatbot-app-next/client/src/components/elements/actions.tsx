@@ -27,7 +27,7 @@ export const Action = ({
   children,
   label,
   className,
-  variant = 'ghost',
+  variant = 'tertiary',
   size = 'sm',
   iconOnly = true,
   ...props
@@ -35,8 +35,8 @@ export const Action = ({
   const button = (
     <Button
       className={cn(
-        'relative text-muted-foreground hover:text-foreground',
-        iconOnly ? 'size-9 p-1.5' : 'h-9 px-2.5',
+        'relative text-muted-foreground hover:text-foreground rounded-lg',
+        iconOnly ? 'size-6 p-1.5' : 'h-9 px-2.5',
         className,
       )}
       size={size}

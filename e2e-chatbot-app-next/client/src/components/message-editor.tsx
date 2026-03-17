@@ -62,8 +62,6 @@ export function MessageEditor({
 
       <div className="flex flex-row justify-end gap-2">
         <Button
-          variant="outline"
-          className="h-fit px-3 py-2"
           onClick={() => {
             setMode('view');
           }}
@@ -72,8 +70,7 @@ export function MessageEditor({
         </Button>
         <Button
           data-testid="message-editor-send-button"
-          variant="default"
-          className="h-fit px-3 py-2"
+          variant="primary"
           disabled={isSubmitting}
           onClick={async () => {
             setIsSubmitting(true);

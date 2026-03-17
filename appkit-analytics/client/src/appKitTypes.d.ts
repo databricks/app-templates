@@ -11,7 +11,7 @@ declare module "@databricks/appkit-ui/react" {
           /** any - use sql.*() */
           message: SQLTypeMarker;
         };
-        result: unknown;
+        result: Array<{ value: string }>;
       };
     mocked_sales: {
         name: "mocked_sales";
@@ -19,7 +19,7 @@ declare module "@databricks/appkit-ui/react" {
           /** any - use sql.*() */
           max_month_num: SQLTypeMarker;
         };
-        result: unknown;
+        result: Array<{ month: string; month_num: number; revenue: number; expenses: number; customers: number }>;
       };
   }
 }

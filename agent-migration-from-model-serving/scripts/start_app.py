@@ -209,7 +209,7 @@ class ProcessManager:
             self.frontend_log.close()
 
     def run(self, backend_args=None):
-        load_dotenv(dotenv_path=".env", override=True)
+        load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env", override=True)
         if not os.environ.get("DATABRICKS_APP_NAME"):
             self.check_ports()
 

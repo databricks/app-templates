@@ -1,9 +1,11 @@
 """Agent server entry point. load_dotenv must run before agent imports (auth config)."""
 # ruff: noqa: E402
+from pathlib import Path
+
 from dotenv import load_dotenv
 
 # Load env vars from .env before any other imports (agent needs auth config)
-load_dotenv(dotenv_path=".env", override=True)
+load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env", override=True)
 
 import logging
 

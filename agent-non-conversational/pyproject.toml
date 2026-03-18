@@ -34,3 +34,4 @@ dev = [
 quickstart = "scripts.quickstart:main"
 start-server = "agent_server.start_server:main"
 agent-evaluate = "agent_server.evaluate_agent:evaluate"
+preflight = "scripts.preflight:main"

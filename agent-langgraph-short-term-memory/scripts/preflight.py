@@ -17,9 +17,9 @@ import sys
 import time
 
 # How long to wait for the server to start (seconds)
-SERVER_START_TIMEOUT = 120
+SERVER_START_TIMEOUT = 60
 # How long to wait for a response from the agent (seconds)
-REQUEST_TIMEOUT = 120
+REQUEST_TIMEOUT = 60
 
 
 def find_free_port() -> int:

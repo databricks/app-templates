@@ -154,7 +154,7 @@ async def stream_handler(
     except Exception as e:
         error_msg = str(e).lower()
         # Check for Lakebase access/connection errors
-        if any(keyword in error_msg for keyword in ["permission"]):
+        if any(keyword in error_msg for keyword in ["lakebase", "pg_hba", "postgres", "database instance"]):
             logger.error(f"Lakebase access error: {e}")
             lakebase_desc = LAKEBASE_INSTANCE_NAME or f"{LAKEBASE_AUTOSCALING_PROJECT}/{LAKEBASE_AUTOSCALING_BRANCH}"
             raise HTTPException(

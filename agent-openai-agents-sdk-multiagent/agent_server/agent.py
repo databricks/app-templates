@@ -108,8 +108,6 @@ assert SUBAGENTS, (
 # Client setup
 # ---------------------------------------------------------------------------
 
-logger = logging.getLogger(__name__)
-
 # NOTE: this will work for all databricks models OTHER than GPT-OSS, which uses a slightly different API
 set_default_openai_client(AsyncDatabricksOpenAI())
 set_default_openai_api("chat_completions")

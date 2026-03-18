@@ -108,6 +108,8 @@ assert SUBAGENTS, (
 # Client setup
 # ---------------------------------------------------------------------------
 
+logger = logging.getLogger(__name__)
+
 # NOTE: this will work for all databricks models OTHER than GPT-OSS, which uses a slightly different API
 set_default_openai_client(AsyncDatabricksOpenAI())
 set_default_openai_api("chat_completions")
@@ -195,7 +197,12 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
-    async with await init_mcp_server() as mcp_server:
+    try:
+        mcp_ctx = await init_mcp_server()
+    except Exception:
+        logger.warning("MCP server unavailable. Continuing without MCP tools.", exc_info=True)
+        mcp_ctx = nullcontext()
+    async with mcp_ctx as mcp_server:
         agent = create_orchestrator_agent(mcp_server)
         messages = [i.model_dump() for i in request.input]
         result = await Runner.run(agent, messages)
@@ -208,7 +215,12 @@ async def stream_handler(request: ResponsesAgentRequest) -> AsyncGenerator[Respo
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
-    async with await init_mcp_server() as mcp_server:
+    try:
+        mcp_ctx = await init_mcp_server()
+    except Exception:
+        logger.warning("MCP server unavailable. Continuing without MCP tools.", exc_info=True)
+        mcp_ctx = nullcontext()
+    async with mcp_ctx as mcp_server:
         agent = create_orchestrator_agent(mcp_server)
         messages = [i.model_dump() for i in request.input]
         result = Runner.run_streamed(agent, input=messages)

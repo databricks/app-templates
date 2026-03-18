@@ -25,6 +25,8 @@ from agent_server.utils import (
     resolve_lakebase_instance_name,
 )
 
+logger = logging.getLogger(__name__)
+
 # Lakebase configuration for persistent session storage
 _LAKEBASE_INSTANCE_NAME_RAW = os.environ.get("LAKEBASE_INSTANCE_NAME") or None
 LAKEBASE_AUTOSCALING_PROJECT = os.getenv("LAKEBASE_AUTOSCALING_PROJECT") or None
@@ -91,8 +93,12 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
     # To use MCP server tools, wrap the code below with this async context manager.
     # By default, uses service principal credentials via WorkspaceClient().
     # For on-behalf-of user authentication, use get_user_workspace_client() instead.
-    # async with await init_mcp_server(WorkspaceClient()) as mcp_server:
-    #     agent = create_agent(mcp_servers=[mcp_server])
+    # try:
+    #     async with await init_mcp_server(WorkspaceClient()) as mcp_server:
+    #         agent = create_agent(mcp_servers=[mcp_server])
+    # except Exception:
+    #     logger.warning("MCP server unavailable. Continuing without MCP tools.", exc_info=True)
+    #     agent = create_agent()
     agent = create_agent()
     messages = await deduplicate_input(request, session)
     result = await Runner.run(agent, messages, session=session)
@@ -120,8 +126,12 @@ async def stream_handler(
     # To use MCP server tools, wrap the code below with this async context manager.
     # By default, uses service principal credentials via WorkspaceClient().
     # For on-behalf-of user authentication, use get_user_workspace_client() instead.
-    # async with await init_mcp_server(WorkspaceClient()) as mcp_server:
-    #     agent = create_agent(mcp_servers=[mcp_server])
+    # try:
+    #     async with await init_mcp_server(WorkspaceClient()) as mcp_server:
+    #         agent = create_agent(mcp_servers=[mcp_server])
+    # except Exception:
+    #     logger.warning("MCP server unavailable. Continuing without MCP tools.", exc_info=True)
+    #     agent = create_agent()
     agent = create_agent()
     messages = await deduplicate_input(request, session)
     result = Runner.run_streamed(agent, input=messages, session=session)

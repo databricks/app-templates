@@ -23,6 +23,8 @@ from agent_server.utils import (
     process_agent_stream_events,
 )
 
+logger = logging.getLogger(__name__)
+
 # NOTE: this will work for all databricks models OTHER than GPT-OSS, which uses a slightly different API
 set_default_openai_client(AsyncDatabricksOpenAI())
 set_default_openai_api("chat_completions")
@@ -63,8 +65,12 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
     # To use MCP server tools, wrap the code below with this async context manager.
     # By default, uses service principal credentials via WorkspaceClient().
     # For on-behalf-of user authentication, use get_user_workspace_client() instead.
-    # async with await init_mcp_server(WorkspaceClient()) as mcp_server:
-    #     agent = create_agent(mcp_servers=[mcp_server])
+    # try:
+    #     async with await init_mcp_server(WorkspaceClient()) as mcp_server:
+    #         agent = create_agent(mcp_servers=[mcp_server])
+    # except Exception:
+    #     logger.warning("MCP server unavailable. Continuing without MCP tools.", exc_info=True)
+    #     agent = create_agent()
     agent = create_agent()
     messages = [i.model_dump() for i in request.input]
     result = await Runner.run(agent, messages)
@@ -80,8 +86,12 @@ async def stream_handler(
     # To use MCP server tools, wrap the code below with this async context manager.
     # By default, uses service principal credentials via WorkspaceClient().
     # For on-behalf-of user authentication, use get_user_workspace_client() instead.
-    # async with await init_mcp_server(WorkspaceClient()) as mcp_server:
-    #     agent = create_agent(mcp_servers=[mcp_server])
+    # try:
+    #     async with await init_mcp_server(WorkspaceClient()) as mcp_server:
+    #         agent = create_agent(mcp_servers=[mcp_server])
+    # except Exception:
+    #     logger.warning("MCP server unavailable. Continuing without MCP tools.", exc_info=True)
+    #     agent = create_agent()
     agent = create_agent()
     messages = [i.model_dump() for i in request.input]
     result = Runner.run_streamed(agent, input=messages)

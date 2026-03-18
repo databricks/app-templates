@@ -1,0 +1,34 @@
+bundle:
+  name: appkit-files
+
+variables:
+  files_path:
+    description: Volume path for file storage (e.g. /Volumes/catalog/schema/volume_name)
+  files_id:
+    description: Permission to write to volumes
+
+resources:
+  apps:
+    app:
+      name: "appkit-files"
+      description: "Node.js app with file browser for Databricks Volumes"
+      source_code_path: ./
+      user_api_scopes:
+        - files.files
+
+      # The resources which this app has access to.
+      resources:
+        - name: files
+          uc_securable:
+            securable_full_name: ${var.files_id}
+            securable_type: VOLUME
+            permission: WRITE_VOLUME
+
+targets:
+  default:
+    default: true
+    workspace:
+      host: https://your-workspace.cloud.databricks.com
+
+    variables:
+      files_path: placeholder

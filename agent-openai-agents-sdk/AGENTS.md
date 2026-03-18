@@ -12,10 +12,14 @@
 2. **If the user mentions memory, conversation history, or persistence:**
    > "For memory capabilities, do you have an existing Lakebase instance? If so, what's the instance name?"
 
-**Then check authentication and profile configuration:**
+**Then set up the environment using quickstart:**
 
-1. Read the `.env` file to find `DATABRICKS_CONFIG_PROFILE` (e.g., `dev`)
-2. Run `databricks auth profiles` to verify the profile is configured and valid
+1. **Read the quickstart skill** at `.claude/skills/quickstart/SKILL.md` — it contains all available CLI flags, what the script configures, and fallback instructions.
+2. **Check if `.env` exists.** If it does, the environment is already configured — read it to find `DATABRICKS_CONFIG_PROFILE` and skip to verifying auth. If `.env` does not exist, run quickstart:
+   ```bash
+   uv run quickstart --profile <profile-name>
+   ```
+3. Run `databricks auth profiles` to verify the profile is configured and valid.
 
 **CRITICAL: All `databricks` CLI commands must include the profile from `.env`.** Either use `--profile` or set the env var:
 
@@ -25,18 +29,7 @@ databricks <command> --profile <profile>
 DATABRICKS_CONFIG_PROFILE=<profile> databricks <command>
 ```
 
-For example, if `.env` has `DATABRICKS_CONFIG_PROFILE=dev`:
-```bash
-databricks bundle deploy --profile dev
-databricks bundle run <bundle_name> --profile dev
-databricks apps get <app-name> --profile dev
-databricks apps logs <app-name> --follow --profile dev
-databricks auth token --profile dev
-```
-
 > **Why this matters:** Without the profile, the CLI may target the wrong workspace, causing "not found" errors for experiments, apps, or other resources.
-
-If no profiles exist or `.env` is missing, guide the user through running `uv run quickstart` to set up authentication and configuration. See the **quickstart** skill for details.
 
 ## Understanding User Goals
 

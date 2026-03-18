@@ -12,11 +12,12 @@ import {
 } from '@/components/ui/tooltip';
 import { PlusIcon, CloudOffIcon } from './icons';
 import { cn } from '../lib/utils';
+import { Skeleton } from './ui/skeleton';
 
 const DOCS_URL =
   'https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app';
 
-export function ChatHeader({ title, empty }: { title?: string, empty?: boolean }) {
+export function ChatHeader({ title, empty, isLoadingTitle }: { title?: string, empty?: boolean, isLoadingTitle?: boolean }) {
   const navigate = useNavigate();
   const { chatHistoryEnabled, feedbackEnabled } = useConfig();
 
@@ -29,23 +30,15 @@ export function ChatHeader({ title, empty }: { title?: string, empty?: boolean }
         <SidebarToggle forceOpenIcon />
       </div>
 
-      {title &&
+      {(title || isLoadingTitle) &&
         <h4 className="text-[16px] font-medium truncate">
-          {title}
+          {isLoadingTitle ?
+            <Skeleton className="w-32 h-6 bg-border" /> :
+            title
+          }
         </h4>
       }
 
-      {/* New Chat button — mobile only; desktop uses the sidebar rail */}
-      <Button
-        variant="default"
-        className="order-2 ml-auto h-8 px-2 md:hidden"
-        onClick={() => {
-          navigate('/');
-        }}
-      >
-        <PlusIcon />
-        <span>New Chat</span>
-      </Button>
 
       <div className="ml-auto flex items-center gap-2">
         {!chatHistoryEnabled && (
@@ -88,6 +81,17 @@ export function ChatHeader({ title, empty }: { title?: string, empty?: boolean }
             </Tooltip>
           </TooltipProvider>
         )}
+        {/* New Chat button — mobile only; desktop uses the sidebar rail */}
+        <Button
+          variant="default"
+          className="order-2 ml-auto h-8 px-2 md:hidden"
+          onClick={() => {
+            navigate('/');
+          }}
+        >
+          <PlusIcon />
+          <span>New Chat</span>
+        </Button>
       </div>
     </header>
   );

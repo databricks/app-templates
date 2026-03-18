@@ -123,6 +123,8 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       return res.status(response.status).json(response.json);
     }
 
+    let titlePromise: Promise<string | null> | undefined;
+
     if (!chat) {
       // Only create new chat if we have a message (not a continuation)
       if (isDatabaseAvailable() && message) {
@@ -133,24 +135,25 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           visibility: selectedVisibilityType,
         });
 
-        generateTitleFromUserMessage({ message })
-          .then((title) =>
-            updateChatTitleById({
-              chatId: id,
-              title,
-            }),
-          )
-          .catch((error) => {
+        titlePromise = generateTitleFromUserMessage({ message })
+          .then(async (title) => {
+            await updateChatTitleById({ chatId: id, title });
+            return title;
+          })
+          .catch(async (error) => {
             console.error('Error generating title:', error);
             const textFromUserMessage = message?.parts.find(
               (part) => part.type === 'text',
             )?.text;
             if (textFromUserMessage) {
-              updateChatTitleById({
-                chatId: id,
-                title: truncatePreserveWords(textFromUserMessage, 128),
-              });
+              const fallback = truncatePreserveWords(
+                textFromUserMessage,
+                128,
+              );
+              await updateChatTitleById({ chatId: id, title: fallback });
+              return fallback;
             }
+            return null;
           });
       }
     } else {
@@ -330,6 +333,12 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
 
           finalUsage = fallbackResult?.usage;
           traceId = fallbackResult?.traceId ?? null;
+        }
+        if (titlePromise) {
+          const generatedTitle = await titlePromise;
+          if (generatedTitle) {
+            writer.write({ type: 'data-title', data: generatedTitle });
+          }
         }
 
         // Write traceId so the client knows whether feedback is supported.

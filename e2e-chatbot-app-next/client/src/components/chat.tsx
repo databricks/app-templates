@@ -94,6 +94,12 @@ export function Chat({
     mutate(unstable_serialize(getChatHistoryPaginationKey));
   }, [mutate]);
 
+  // For new chats, the title arrives via a `data-title` stream part
+  // once backend title generation completes — no separate fetch needed.
+  const [streamTitle, setStreamTitle] = useState<string | undefined>();
+  const [titlePending, setTitlePending] = useState(false);
+  const displayTitle = title ?? streamTitle;
+
   const {
     messages,
     setMessages,
@@ -111,9 +117,11 @@ export function Chat({
     resume: id !== undefined && initialMessages.length > 0, // Enable automatic stream resumption
     transport: new ChatTransport({
       onStreamPart: (part) => {
-        // As soon as we recive a stream part, we fetch the chat history again for new chats
         if (isNewChat && !didFetchHistoryOnNewChat.current) {
           fetchChatHistory();
+          if (chatHistoryEnabled) {
+            setTitlePending(true);
+          }
           didFetchHistoryOnNewChat.current = true;
         }
         // Reset resume attempts when we successfully receive stream parts
@@ -168,6 +176,11 @@ export function Chat({
       if (dataPart.type === 'data-usage') {
         setUsage(dataPart.data as LanguageModelUsage);
       }
+      if (dataPart.type === 'data-title') {
+        setStreamTitle(dataPart.data as string);
+        setTitlePending(false);
+        fetchChatHistory();
+      }
     },
     onFinish: ({
       isAbort,
@@ -175,8 +188,8 @@ export function Chat({
       isError,
       messages: finishedMessages,
     }) => {
-      // Reset state for next message
       didFetchHistoryOnNewChat.current = false;
+      setTitlePending(false);
 
       // If user aborted, don't try to resume
       if (isAbort) {
@@ -302,7 +315,7 @@ export function Chat({
   return (
     <>
       <div className="overscroll-behavior-contain flex h-dvh min-w-0 touch-pan-y flex-col bg-background">
-        <ChatHeader title={title} />
+        <ChatHeader title={displayTitle} isLoadingTitle={titlePending && !displayTitle} />
 
         <Messages
           status={status}

@@ -1,6 +1,7 @@
 import { isToday, isYesterday, subMonths, subWeeks } from 'date-fns';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
+import { getChatIdFromPathname } from '@/lib/navigation';
 
 type ClientUser = {
   email: string;
@@ -100,7 +101,7 @@ export function getChatHistoryPaginationKey(
 
 export function SidebarHistory({ user }: { user?: ClientUser | null }) {
   const { setOpenMobile } = useSidebar();
-  const { id } = useParams();
+  const { id: routeId } = useParams();
   const { chatHistoryEnabled } = useConfig();
 
   const {
@@ -109,9 +110,14 @@ export function SidebarHistory({ user }: { user?: ClientUser | null }) {
     isValidating,
     isLoading,
     mutate,
-  } = useSWRInfinite<ChatHistory>(getChatHistoryPaginationKey, fetcher, {
+  } = useSWRInfinite<ChatHistory>(chatHistoryEnabled ? getChatHistoryPaginationKey : () => null, fetcher, {
     fallbackData: [],
   });
+
+  // After a soft navigation (replaceState), useParams() still returns the old
+  // route. Fall back to parsing window.location which is already up-to-date
+  // by the time this component re-renders from the history SWR mutation.
+  const id = routeId ?? getChatIdFromPathname();
 
   const navigate = useNavigate();
   const [deleteId, setDeleteId] = useState<string | null>(null);

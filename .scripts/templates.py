@@ -35,7 +35,7 @@ TEMPLATES = {
     "agent-non-conversational": {
         "sdk": "langgraph",
         "bundle_name": "agent_non_conversational",
-        "exclude_scripts": ["start_app.py", "evaluate_agent.py"],
+        "exclude_scripts": ["start_app.py", "evaluate_agent.py", "preflight.py"],
     },
     "agent-migration-from-model-serving": {
         "sdk": ["langgraph", "openai"],

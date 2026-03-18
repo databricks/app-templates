@@ -88,7 +88,7 @@ def check_health(base_url: str) -> bool:
         return False
 
 
-def check_invocations(base_url: str) -> bool:
+def check_invocations(base_url: str, retries: int = 2) -> bool:
     import urllib.request
     import urllib.error
 
@@ -96,22 +96,28 @@ def check_invocations(base_url: str) -> bool:
         {"input": [{"role": "user", "content": "Say hello in one word."}]}
     ).encode()
 
-    try:
-        req = urllib.request.Request(
-            f"{base_url}/invocations",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
-            data = json.loads(resp.read())
-            # Check that we got a response with output
-            if "output" in data and len(data["output"]) > 0:
-                return True
-            print(f"  Unexpected response shape: {json.dumps(data)[:200]}")
-            return False
-    except Exception as e:
-        print(f"  Invocations request failed: {e}")
-        return False
+    for attempt in range(retries + 1):
+        try:
+            req = urllib.request.Request(
+                f"{base_url}/invocations",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+                data = json.loads(resp.read())
+                # Check that we got a response with output
+                if "output" in data and len(data["output"]) > 0:
+                    return True
+                print(f"  Unexpected response shape: {json.dumps(data)[:200]}")
+                return False
+        except Exception as e:
+            if attempt < retries:
+                print(f"   Attempt {attempt + 1} failed ({e}), retrying...")
+                time.sleep(3)
+            else:
+                print(f"  Invocations request failed: {e}")
+                return False
+    return False
 
 
 def main():

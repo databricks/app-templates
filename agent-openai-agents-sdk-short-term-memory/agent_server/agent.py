@@ -25,8 +25,6 @@ from agent_server.utils import (
     resolve_lakebase_instance_name,
 )
 
-logger = logging.getLogger(__name__)
-
 # Lakebase configuration for persistent session storage
 _LAKEBASE_INSTANCE_NAME_RAW = os.environ.get("LAKEBASE_INSTANCE_NAME") or None
 LAKEBASE_AUTOSCALING_PROJECT = os.getenv("LAKEBASE_AUTOSCALING_PROJECT") or None

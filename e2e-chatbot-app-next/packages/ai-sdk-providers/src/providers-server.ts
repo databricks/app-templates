@@ -334,10 +334,12 @@ const getEndpointDetails = async (servingEndpoint: string) => {
   }
 
   if (isOboEnabled) {
+    const saNote = isSupervisorAgent
+      ? `\n  → This is a Supervisor Agent. It may require additional scopes for downstream tools (e.g., sql, dashboards.genie). Full scope discovery for Supervisor Agents is coming soon.`
+      : '';
     console.warn(
-      `⚠ OBO detected on endpoint "${servingEndpoint}". Required user authorization scopes: ${JSON.stringify(userApiScopes)}\n` +
+      `⚠ OBO detected on endpoint "${servingEndpoint}". Required user authorization scopes: ${JSON.stringify(userApiScopes)}${saNote}\n` +
       `  → Add scopes to your app via the Databricks UI or in databricks.yml\n` +
-      `  → Note: UC function scopes are not yet supported.\n` +
       `  → See: https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth`,
     );
   }

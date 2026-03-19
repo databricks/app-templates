@@ -22,7 +22,7 @@ const OBO_DOCS_URL =
 
 export function ChatHeader({ title, empty, isLoadingTitle }: { title?: string, empty?: boolean, isLoadingTitle?: boolean }) {
   const navigate = useNavigate();
-  const { chatHistoryEnabled, feedbackEnabled, oboMissingScopes } = useConfig();
+  const { chatHistoryEnabled, feedbackEnabled, oboMissingScopes, oboIsSupervisorAgent } = useConfig();
 
   return (
     <>
@@ -106,8 +106,12 @@ export function ChatHeader({ title, empty, isLoadingTitle }: { title?: string, e
             <p className="text-sm text-red-700 dark:text-red-400">
               This endpoint requires on-behalf-of user authorization. Add these
               scopes to your app:{' '}
-              <strong>{oboMissingScopes.join(', ')}</strong>.{' '}
-              Note: UC function scopes are not yet supported.{' '}
+              <strong>{oboMissingScopes.join(', ')}</strong>.
+              {oboIsSupervisorAgent && (
+                <>{' '}Your Supervisor Agent may also require additional scopes
+                for its downstream tools (e.g., <code>sql</code>, <code>dashboards.genie</code>).
+                Full scope discovery for Supervisor Agents is coming soon.</>
+              )}{' '}
               <a
                 href={OBO_DOCS_URL}
                 target="_blank"

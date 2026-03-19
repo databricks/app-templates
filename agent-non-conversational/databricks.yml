@@ -4,8 +4,9 @@ bundle:
 resources:
   apps:
     agent_non_conversational:
-      name: "agent-non-conversational"
+      name: "agent-dhruv-offsite-demo"
       description: "Non-conversational agent application"
+      budget_policy_id: "7da2ca5b-25b8-3e87-9a2c-f86eb19d101c"
       source_code_path: ./
       config:
         command: ["uv", "run", "start-server"]
@@ -21,7 +22,7 @@ resources:
       resources:
         - name: 'experiment'
           experiment:
-            experiment_id: ""
+            experiment_id: "2333333030218702"
             permission: 'CAN_MANAGE'
 
 targets:

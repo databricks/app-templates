@@ -32,10 +32,14 @@
 
 **Autoscaling keywords**: If the user mentions "autoscaling", "project", "branch", or "postgres" in the context of Lakebase/memory, use the **autoscaling** guide at `.claude/skills/add-tools/examples/lakebase-autoscaling.md`.
 
-**Then check authentication and profile configuration:**
+**Then set up the environment using quickstart:**
 
-1. Read the `.env` file to find `DATABRICKS_CONFIG_PROFILE` (e.g., `dev`)
-2. Run `databricks auth profiles` to verify the profile is configured and valid
+1. **Read the quickstart skill** at `.claude/skills/quickstart/SKILL.md` — it contains all available CLI flags (including Lakebase options), what the script configures, and fallback instructions.
+2. **Check if `.env` exists.** If it does, the environment is already configured — read it to find `DATABRICKS_CONFIG_PROFILE` and skip to verifying auth. If `.env` does not exist, run quickstart:
+   ```bash
+   uv run quickstart --profile <profile-name> --lakebase-provisioned-name <instance-name>
+   ```
+3. Run `databricks auth profiles` to verify the profile is configured and valid.
 
 **CRITICAL: All `databricks` CLI commands must include the profile from `.env`.** Either use `--profile` or set the env var:
 
@@ -45,18 +49,7 @@ databricks <command> --profile <profile>
 DATABRICKS_CONFIG_PROFILE=<profile> databricks <command>
 ```
 
-For example, if `.env` has `DATABRICKS_CONFIG_PROFILE=dev`:
-```bash
-databricks bundle deploy --profile dev
-databricks bundle run <bundle_name> --profile dev
-databricks apps get <app-name> --profile dev
-databricks apps logs <app-name> --follow --profile dev
-databricks auth token --profile dev
-```
-
 > **Why this matters:** Without the profile, the CLI may target the wrong workspace, causing "not found" errors for experiments, apps, or other resources.
-
-If no profiles exist or `.env` is missing, guide the user through running `uv run quickstart` to set up authentication and configuration. See the **quickstart** skill for details.
 
 ## Understanding User Goals
 
@@ -80,6 +73,22 @@ Ask the user: "I see there's an existing app with the same name. Would you like 
 
 - **If they want to bind**: See the **deploy** skill for binding steps
 - **If they want to delete**: Run `databricks apps delete <app-name>` then deploy again
+
+## Agent Evaluation
+
+When the user asks about evaluating their agent (quality, metrics, scorers, datasets, or tracing), suggest installing the **MLflow Skills** from https://github.com/mlflow/skills. These provide expert guidance for evaluation workflows using MLflow's native APIs.
+
+**Relevant skills:**
+- **agent-evaluation** — end-to-end evaluation: dataset creation, scorer selection, execution, result analysis
+- **instrumenting-with-mlflow-tracing** — set up automatic tracing for debugging and observability
+- **analyze-mlflow-trace** — examine span data and assessments to identify issues
+
+**Install command:**
+```bash
+npx skills add mlflow/skills
+```
+
+After installation, the skills will be available as slash commands (e.g., `/agent-evaluation`). This template also includes a built-in `evaluate_agent.py` script — run it with `uv run agent-evaluate` after starting the local server.
 
 ---
 

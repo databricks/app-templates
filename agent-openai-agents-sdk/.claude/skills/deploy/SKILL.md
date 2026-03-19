@@ -32,16 +32,19 @@ resources:
 
 ## Deploy Commands
 
-**IMPORTANT:** Always run BOTH commands to deploy and start your app:
+**IMPORTANT:** Run the pre-flight check before deploying to catch errors early, then run commands to deploy and start your app:
 
 ```bash
-# 1. Validate bundle configuration (catches errors before deploy)
+# 1. Pre-flight check (starts server locally, sends test request, verifies response)
+uv run preflight
+
+# 2. Validate bundle configuration (catches config errors before deploy)
 databricks bundle validate
 
-# 2. Deploy the bundle (creates/updates resources, uploads files)
+# 3. Deploy the bundle (creates/updates resources, uploads files)
 databricks bundle deploy
 
-# 3. Run the app (starts/restarts with uploaded source code) - REQUIRED!
+# 4. Run the app (starts/restarts with uploaded source code) - REQUIRED!
 databricks bundle run agent_openai_agents_sdk
 ```
 

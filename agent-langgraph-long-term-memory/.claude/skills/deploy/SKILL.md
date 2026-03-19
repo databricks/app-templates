@@ -32,7 +32,7 @@ resources:
 
 ## Deploy Commands
 
-**IMPORTANT:** Run the pre-flight check before deploying to catch errors early, then run commands to deploy and start you app:
+**IMPORTANT:** Run the pre-flight check before deploying to catch errors early, then run commands to deploy and start your app:
 
 ```bash
 # 1. Pre-flight check (starts server locally, sends test request, verifies response)

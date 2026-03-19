@@ -9,12 +9,14 @@ Usage:
 
 import json
 import os
-import select
-import signal
 import socket
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
+
+_IS_WINDOWS = sys.platform == "win32"
 
 # How long to wait for the server to start (seconds)
 SERVER_START_TIMEOUT = 60
@@ -29,31 +31,47 @@ def find_free_port() -> int:
 
 
 def start_server(port: int) -> subprocess.Popen:
+    popen_kwargs = {}
+    if _IS_WINDOWS:
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        popen_kwargs["preexec_fn"] = os.setsid
+
     proc = subprocess.Popen(
         ["uv", "run", "start-server", "--port", str(port)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
         text=True,
-        preexec_fn=os.setsid,
+        **popen_kwargs,
     )
+
+    import threading
+
+    lines_queue: list[str] = []
+    def _reader():
+        for line in iter(proc.stderr.readline, ""):
+            lines_queue.append(line)
+
+    t = threading.Thread(target=_reader, daemon=True)
+    t.start()
 
     deadline = time.time() + SERVER_START_TIMEOUT
     while time.time() < deadline:
         if proc.poll() is not None:
-            stderr = proc.stderr.read() if proc.stderr else ""
+            t.join(timeout=2)
+            stderr = "".join(lines_queue)
             print(f"  Server exited early (code {proc.returncode})")
             if stderr:
-                # Print last 20 lines of stderr for debugging
-                lines = stderr.strip().splitlines()
-                for line in lines[-20:]:
+                for line in stderr.strip().splitlines()[-20:]:
                     print(f"    {line}")
             sys.exit(1)
 
-        ready = select.select([proc.stderr], [], [], 1.0)[0]
-        if ready:
-            line = proc.stderr.readline()
+        while lines_queue:
+            line = lines_queue.pop(0)
             if "Uvicorn running on" in line or "Application startup complete" in line:
                 return proc
+
+        time.sleep(0.5)
 
     stop_server(proc)
     print(f"  Server did not start within {SERVER_START_TIMEOUT}s")
@@ -61,23 +79,22 @@ def start_server(port: int) -> subprocess.Popen:
 
 
 def stop_server(proc: subprocess.Popen):
-    try:
-        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-    except ProcessLookupError:
-        pass
+    if _IS_WINDOWS:
+        proc.terminate()
+    else:
+        import signal
+
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except ProcessLookupError:
+            pass
     try:
         proc.wait(timeout=10)
     except subprocess.TimeoutExpired:
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        proc.kill()
 
 
 def check_health(base_url: str) -> bool:
-    import urllib.request
-    import urllib.error
-
     try:
         req = urllib.request.Request(f"{base_url}/health")
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -89,9 +106,6 @@ def check_health(base_url: str) -> bool:
 
 
 def check_invocations(base_url: str, retries: int = 2) -> bool:
-    import urllib.request
-    import urllib.error
-
     payload = json.dumps(
         {"input": [{"role": "user", "content": "Say hello in one word."}]}
     ).encode()

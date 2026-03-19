@@ -12,6 +12,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -44,8 +45,6 @@ def start_server(port: int) -> subprocess.Popen:
         text=True,
         **popen_kwargs,
     )
-
-    import threading
 
     lines_queue: list[str] = []
     def _reader():

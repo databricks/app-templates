@@ -24,11 +24,11 @@ Copyright Databricks, Inc.
 License - https://github.com/databricks/databricks-sql-python/blob/main/LICENSE
 
 databricks/databricks-ai-bridge (databricks-langchain) - https://github.com/databricks/databricks-ai-bridge
-Copyright Databricks, Inc.
-License - https://github.com/databricks/databricks-ai-bridge/blob/main/LICENSE
+Copyright (2024) Databricks, Inc.
+License - https://github.com/databricks/databricks-ai-bridge/blob/main/LICENSE.txt
 
 mlflow/mlflow - https://github.com/mlflow/mlflow
-Copyright mlflow authors
+Copyright 2018 Databricks, Inc.
 License - https://github.com/mlflow/mlflow/blob/master/LICENSE.txt
 Notice - https://github.com/mlflow/mlflow/blob/master/NOTICE.txt
 
@@ -45,7 +45,7 @@ Copyright Jeremiah Lowin
 License - https://github.com/jlowin/fastmcp/blob/main/LICENSE
 
 Kludex/python-multipart - https://github.com/Kludex/python-multipart
-Copyright python-multipart authors
+Copyright 2012 Andrew Dunham
 License - https://github.com/Kludex/python-multipart/blob/master/LICENSE.txt
 
 Tinche/aiofiles - https://github.com/Tinche/aiofiles
@@ -69,7 +69,7 @@ Copyright Joe Bell
 License - https://github.com/joe-bell/cva/blob/main/LICENSE
 
 facultyai/dash-bootstrap-components - https://github.com/facultyai/dash-bootstrap-components
-Copyright Faculty AI
+Copyright 2018-2025 Faculty Science Limited; Copyright 2025-2026 the dash-bootstrap-components maintainers
 License - https://github.com/facultyai/dash-bootstrap-components/blob/main/LICENSE
 
 huggingface/huggingface_hub - https://github.com/huggingface/huggingface_hub
@@ -100,11 +100,11 @@ Copyright (c) 2023 Plotly, Inc
 License - https://github.com/plotly/dash/blob/dev/LICENSE
 
 tiangolo/fastapi - https://github.com/tiangolo/fastapi
-Copyright Sebastian Ramirez
+Copyright (c) 2018 Sebastián Ramírez
 License - https://github.com/tiangolo/fastapi/blob/master/LICENSE
 
 pydantic/pydantic - https://github.com/pydantic/pydantic
-Copyright pydantic authors
+Copyright (c) 2017 to present Pydantic Services Inc. and individual contributors
 License - https://github.com/pydantic/pydantic/blob/main/LICENSE
 
 modelcontextprotocol/python-sdk (mcp) - https://github.com/modelcontextprotocol/python-sdk
@@ -124,11 +124,11 @@ Copyright OpenAI
 License - https://github.com/openai/openai-agents-python/blob/main/LICENSE
 
 plotly/plotly.py - https://github.com/plotly/plotly.py
-Copyright (c) Plotly, Inc
+Copyright (c) 2016-2024 Plotly Technologies Inc.
 License - https://github.com/plotly/plotly.py/blob/master/LICENSE.txt
 
 plotly/dash-ag-grid - https://github.com/plotly/dash-ag-grid
-Copyright Plotly, Inc
+Copyright (c) 2023-2024 Plotly Technologies Inc.
 License - https://github.com/plotly/dash-ag-grid/blob/dev/LICENSE
 
 posit-dev/py-shiny - https://github.com/posit-dev/py-shiny
@@ -152,11 +152,11 @@ Copyright (c) Colin McDonnell
 License - https://github.com/colinhacks/zod/blob/main/LICENSE
 
 date-fns/date-fns - https://github.com/date-fns/date-fns
-Copyright (c) date-fns authors
+Copyright (c) 2021 Sasha Koss and Lesha Koss
 License - https://github.com/date-fns/date-fns/blob/main/LICENSE.md
 
 radix-ui/primitives - https://github.com/radix-ui/primitives
-Copyright (c) Radix UI
+Copyright (c) 2022 WorkOS
 License - https://github.com/radix-ui/primitives/blob/main/LICENSE
 
 lukeed/clsx - https://github.com/lukeed/clsx
@@ -164,7 +164,7 @@ Copyright (c) Luke Edwards
 License - https://github.com/lukeed/clsx/blob/master/license
 
 framer/motion - https://github.com/framer/motion
-Copyright (c) Framer B.V.
+Copyright (c) 2024 Motion B.V.
 License - https://github.com/framer/motion/blob/main/LICENSE.md
 
 pacocoursey/next-themes - https://github.com/pacocoursey/next-themes
@@ -172,7 +172,7 @@ Copyright (c) Paco Coursey
 License - https://github.com/pacocoursey/next-themes/blob/main/LICENSE
 
 react-syntax-highlighter/react-syntax-highlighter - https://github.com/react-syntax-highlighter/react-syntax-highlighter
-Copyright (c) react-syntax-highlighter authors
+Copyright (c) 2019 Conor Hastings
 License - https://github.com/react-syntax-highlighter/react-syntax-highlighter/blob/master/LICENSE
 
 emilkowalski/sonner - https://github.com/emilkowalski/sonner
@@ -200,7 +200,7 @@ Copyright (c) Evgeny Poberezkin
 License - https://github.com/epoberezkin/fast-deep-equal/blob/master/LICENSE
 
 remix-run/react-router - https://github.com/remix-run/react-router
-Copyright (c) React Training LLC
+Copyright (c) React Training LLC 2015-2019; Copyright (c) Remix Software Inc. 2020-2021; Copyright (c) Shopify Inc. 2022-2023
 License - https://github.com/remix-run/react-router/blob/main/LICENSE.md
 
 chartjs/Chart.js - https://github.com/chartjs/Chart.js
@@ -208,27 +208,23 @@ Copyright (c) Chart.js contributors
 License - https://github.com/chartjs/Chart.js/blob/master/LICENSE.md
 
 reactchartjs/react-chartjs-2 - https://github.com/reactchartjs/react-chartjs-2
-Copyright (c) react-chartjs-2 authors
+Copyright 2020 Jeremy Ayerst
 License - https://github.com/reactchartjs/react-chartjs-2/blob/master/LICENSE
-
-porsager/postgres - https://github.com/porsager/postgres
-Copyright (c) Rasmus Porsager
-License - https://github.com/porsager/postgres/blob/master/LICENSE
 
 langchain-ai/langchainjs - https://github.com/langchain-ai/langchainjs
 Copyright LangChain, Inc.
 License - https://github.com/langchain-ai/langchainjs/blob/main/LICENSE
 
 sqlalchemy/sqlalchemy - https://github.com/sqlalchemy/sqlalchemy
-Copyright SQLAlchemy authors
+Copyright 2005-2026 SQLAlchemy authors and contributors
 License - https://github.com/sqlalchemy/sqlalchemy/blob/main/LICENSE
 
 pydantic/pydantic-settings - https://github.com/pydantic/pydantic-settings
-Copyright pydantic-settings authors
+Copyright (c) 2022 Samuel Colvin and other contributors
 License - https://github.com/pydantic/pydantic-settings/blob/main/LICENSE
 
 BerriAI/litellm - https://github.com/BerriAI/litellm
-Copyright BerriAI
+Copyright (c) 2023 Berri AI
 License - https://github.com/BerriAI/litellm/blob/main/LICENSE
 
 davidjerleke/embla-carousel - https://github.com/davidjerleke/embla-carousel
@@ -240,11 +236,11 @@ Copyright (c) Brian Vaughn
 License - https://github.com/bvaughn/react-resizable-panels/blob/main/LICENSE.md
 
 jamiebuilds/tailwindcss-animate - https://github.com/jamiebuilds/tailwindcss-animate
-Copyright (c) Jamie Builds
+Copyright (c) 2020 Jamie Kyle
 License - https://github.com/jamiebuilds/tailwindcss-animate/blob/main/LICENSE
 
 Wombosvideo/tw-animate-css - https://github.com/Wombosvideo/tw-animate-css
-Copyright (c) tw-animate-css authors
+Copyright (c) 2025 Wombosvideo
 License - https://github.com/Wombosvideo/tw-animate-css/blob/main/LICENSE
 
 express-rate-limit/express-rate-limit - https://github.com/express-rate-limit/express-rate-limit
@@ -282,11 +278,8 @@ aminalaee/uuid-utils - https://github.com/aminalaee/uuid-utils
 Copyright (c) Amin Alaee
 License - https://github.com/aminalaee/uuid-utils/blob/main/LICENSE
 
-________________
-This Software contains code from the following open source projects, licensed under the BSD 2-clause license:
-
 motdotla/dotenv - https://github.com/motdotla/dotenv
-Copyright (c) Scott Motte
+Copyright (c) 2015 Scott Motte
 License - https://github.com/motdotla/dotenv/blob/master/LICENSE
 
 ________________
@@ -307,5 +300,11 @@ ________________
 This Software contains code from the following open source projects, licensed under the PSF-based license (BSD-compatible):
 
 matplotlib/matplotlib - https://github.com/matplotlib/matplotlib
-Copyright (c) matplotlib Development Team
+Copyright (c) Matplotlib Development Team
 License - https://github.com/matplotlib/matplotlib/blob/main/LICENSE/LICENSE
+
+________________
+This Software contains code from the following open source projects, licensed under the Unlicense:
+
+porsager/postgres - https://github.com/porsager/postgres
+License - https://github.com/porsager/postgres/blob/master/LICENSE

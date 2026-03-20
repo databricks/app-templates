@@ -5,16 +5,13 @@ description: "Replace the client-side agent loop with Databricks Supervisor API 
 
 # Use the Databricks Supervisor API
 
-> **Beta Feature:** The Supervisor API requires **AI Gateway (Beta) preview** to be enabled in your workspace. Contact your Databricks account team if it's not available.
-
-The Supervisor API lets Databricks run the tool-selection and synthesis loop server-side. Instead of your agent calling tools and looping, you declare hosted tools and call `responses.create()` — Databricks handles the rest.
+The Supervisor API lets Databricks run the tool-selection and synthesis loop server-side. Instead of your agent managing tool calls and looping, you declare hosted tools and call `responses.create()` — Databricks handles the rest.
 
 ## When to Use
 
-Use the Supervisor API when you want Databricks to manage the full agent loop (tool calls, retries, synthesis) for hosted tools: Genie spaces, UC functions, agent endpoints, or MCP servers via UC connections.
+Use the Supervisor API when you want Databricks to manage the full agent loop for hosted tools: Genie spaces, UC functions, agent endpoints, or MCP servers via UC connections.
 
-**Limitations (Beta):**
-- Usage tracking is not supported
+**Limitations:**
 - Cannot mix hosted tools with client-side function tools in the same request
 - Inference parameters (e.g., `temperature`, `top_p`) are not supported when tools are passed
 
@@ -26,7 +23,7 @@ Add to `pyproject.toml` if not already present:
 [project]
 dependencies = [
     ...
-    "databricks-openai>=0.9.0",
+    "databricks-openai>=0.14.0",
     "databricks-sdk>=0.55.0",
 ]
 ```
@@ -82,11 +79,14 @@ TOOLS = [
 
 Replace your existing invoke/stream handlers with the Supervisor API pattern. Remove any MCP client setup, LangGraph agents, or OpenAI Agents SDK runner code — the Supervisor API replaces the client-side loop entirely.
 
-```python
-import re
+`use_ai_gateway=True` automatically resolves the correct AI Gateway endpoint for the workspace.
 
+When deployed on Databricks Apps, the platform forwards the authenticated user's token via `x-forwarded-access-token`. Pass this to the Supervisor API so tool calls (e.g., Genie queries) run on behalf of the user rather than the app's service principal.
+
+```python
 import mlflow
 from databricks.sdk import WorkspaceClient
+from databricks.sdk.config import Config
 from databricks_openai import DatabricksOpenAI
 from mlflow.genai.agent_server import invoke, stream
 from mlflow.types.responses import (
@@ -99,15 +99,24 @@ mlflow.openai.autolog()
 MODEL = "databricks-claude-sonnet-4-5"
 TOOLS = [...]  # From Step 2
 
+# Resolve and cache the AI Gateway URL once at module load
+_wc = WorkspaceClient()
+_client = DatabricksOpenAI(workspace_client=_wc, use_ai_gateway=True)
+_ai_gateway_base_url = str(_client.base_url)
 
-def _get_client() -> DatabricksOpenAI:
-    """Create a DatabricksOpenAI client pointed at the AI Gateway."""
-    wc = WorkspaceClient()
-    host = wc.config.host  # e.g. https://my-workspace.cloud.databricks.com
-    workspace_id = wc.get_workspace_id()
-    domain = re.match(r"https://[^.]+\.(.+)", host).group(1)
-    base_url = f"https://{workspace_id}.ai-gateway.{domain}/mlflow/v1"
-    return DatabricksOpenAI(workspace_client=wc, base_url=base_url)
+
+def _get_client(obo_token: str | None = None) -> DatabricksOpenAI:
+    """Return a client using the OBO token if provided, else service principal."""
+    if obo_token:
+        obo_wc = WorkspaceClient(
+            config=Config(host=_wc.config.host, token=obo_token)
+        )
+        return DatabricksOpenAI(workspace_client=obo_wc, base_url=_ai_gateway_base_url)
+    return _client
+
+
+def _obo_token(request: ResponsesAgentRequest) -> str | None:
+    return (request.custom_inputs or {}).get("x-forwarded-access-token")
 
 
 @invoke()
@@ -115,7 +124,7 @@ def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
     mlflow.update_current_trace(
         metadata={"mlflow.trace.session": request.context.conversation_id}
     )
-    response = _get_client().responses.create(
+    response = _get_client(_obo_token(request)).responses.create(
         model=MODEL,
         input=[i.model_dump() for i in request.input],
         tools=TOOLS,
@@ -129,13 +138,15 @@ def stream_handler(request: ResponsesAgentRequest):
     mlflow.update_current_trace(
         metadata={"mlflow.trace.session": request.context.conversation_id}
     )
-    return _get_client().responses.create(
+    return _get_client(_obo_token(request)).responses.create(
         model=MODEL,
         input=[i.model_dump() for i in request.input],
         tools=TOOLS,
         stream=True,
     )
 ```
+
+> **OBO note:** The `x-forwarded-access-token` is injected into `custom_inputs` by the app server middleware. No changes are needed to the client — the token arrives automatically when users call your deployed app.
 
 ## Step 4: Grant Permissions in `databricks.yml`
 
@@ -166,7 +177,7 @@ databricks bundle deploy && databricks bundle run {{BUNDLE_NAME}}  # Deploy
 
 ## Troubleshooting
 
-**"AI Gateway not available"** — Enable AI Gateway (Beta) preview in workspace settings, or contact your Databricks account team.
+**"Please ensure AI Gateway V2 is enabled"** — AI Gateway must be enabled for the workspace. Contact your Databricks account team.
 
 **"Cannot mix hosted and client-side tools"** — Remove any `function`-type tools (Python callables) from `TOOLS`. All tools must be hosted types (`genie`, `uc_function`, `agent_endpoint`, `mcp`).
 

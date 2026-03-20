@@ -231,7 +231,9 @@ Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tool
 
    After deploying, you need to ensure your app has access to the necessary Lakebase tables for memory. The Lakebase instance is already configured as a resource in `databricks.yml`, but you'll need to grant Postgres-level permissions on schemas and tables that were created during local testing.
 
-   Run the following SQL commands on your Lakebase instance (replace `app-sp-id` with your app's service principal UUID):
+   > **Autoscaling Lakebase instances:** If your Lakebase instance is autoscaling (not provisioned), the postgres resource is **not yet supported** as a resource dependency in `databricks.yml`. After `databricks bundle run`, you must manually add the postgres resource to your app via the Databricks API, grant permissions, and then redeploy the app. See the [autoscaling Lakebase setup guide](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/lakebase) for detailed steps. Note that `databricks bundle deploy` will overwrite app resources, so you must re-add the postgres resource after each bundle deploy.
+
+   **For provisioned Lakebase instances**, run the following SQL commands on your Lakebase instance (replace `app-sp-id` with your app's service principal UUID):
 
    ```sql
    DO $$
@@ -300,6 +302,35 @@ Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tool
      ```
 
 For future updates, run `databricks bundle deploy` and `databricks bundle run agent_langgraph_short_term_memory` to redeploy.
+
+### Common Issues
+
+- **`databricks bundle deploy` fails with "An app with the same name already exists"**
+
+  This happens when an app with the same name was previously created outside of DABs. To fix, bind the existing app to your bundle:
+
+  ```bash
+  # 1. Get the existing app's config (note the budget_policy_id if present)
+  databricks apps get <app-name> --output json | jq '{name, budget_policy_id, description}'
+
+  # 2. Update databricks.yml to include budget_policy_id if it was returned above
+
+  # 3. Bind the existing app to your bundle
+  databricks bundle deployment bind agent_langgraph_short_term_memory <app-name> --auto-approve
+
+  # 4. Deploy
+  databricks bundle deploy
+  ```
+
+  Alternatively, delete the existing app and deploy fresh: `databricks apps delete <app-name>` (this permanently removes the app's URL and service principal).
+
+- **`databricks bundle deploy` fails with "Provider produced inconsistent result after apply"**
+
+  The existing app has server-side configuration (like `budget_policy_id`) that doesn't match your `databricks.yml`. Run `databricks apps get <app-name> --output json` and sync any missing fields to your `databricks.yml`.
+
+- **App is running old code after `databricks bundle deploy`**
+
+  `bundle deploy` only uploads files and configures resources. You must run `databricks bundle run agent_langgraph_short_term_memory` to actually start/restart the app with the new code.
 
 ### FAQ
 

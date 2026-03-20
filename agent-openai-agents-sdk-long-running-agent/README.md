@@ -355,6 +355,35 @@ See `scripts/test_long_running_agent.py` for a Pytest suite that exercises all c
 | `scripts/grant_lakebase_permissions.py` | Grants Lakebase Postgres permissions to app SP                     |
 | `scripts/test_long_running_agent.py`  | Pytest suite covering all client modes                               |
 
+## Common Issues
+
+- **`databricks bundle deploy` fails with "An app with the same name already exists"**
+
+  This happens when an app with the same name was previously created outside of DABs. To fix, bind the existing app to your bundle:
+
+  ```bash
+  # 1. Get the existing app's config (note the budget_policy_id if present)
+  databricks apps get <app-name> --output json | jq '{name, budget_policy_id, description}'
+
+  # 2. Update databricks.yml to include budget_policy_id if it was returned above
+
+  # 3. Bind the existing app to your bundle
+  databricks bundle deployment bind agent_openai_agents_sdk_long_running_agent <app-name> --auto-approve
+
+  # 4. Deploy
+  databricks bundle deploy
+  ```
+
+  Alternatively, delete the existing app and deploy fresh: `databricks apps delete <app-name>` (this permanently removes the app's URL and service principal).
+
+- **`databricks bundle deploy` fails with "Provider produced inconsistent result after apply"**
+
+  The existing app has server-side configuration (like `budget_policy_id`) that doesn't match your `databricks.yml`. Run `databricks apps get <app-name> --output json` and sync any missing fields to your `databricks.yml`.
+
+- **App is running old code after `databricks bundle deploy`**
+
+  `bundle deploy` only uploads files and configures resources. You must run `databricks bundle run agent_openai_agents_sdk_long_running_agent` to actually start/restart the app with the new code.
+
 ## References
 
 - [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses)

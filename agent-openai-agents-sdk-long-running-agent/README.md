@@ -59,7 +59,7 @@ A custom `LongRunningAgentServer` class extends MLflow's `AgentServer` with:
 | Persistence          | None                              | Lakebase PostgreSQL                   |
 | Stream resumption    | Not possible                      | Cursor-based via `starting_after=N`   |
 | Server class         | MLflow `AgentServer`              | `LongRunningAgentServer` (extends it) |
-| Deployment           | `databricks sync` + `apps deploy` | Databricks Asset Bundles              |
+| Deployment           | Databricks Asset Bundles          | Databricks Asset Bundles              |
 | Retrieve endpoint    | N/A                               | `GET /responses/{id}`                 |
 
 ---

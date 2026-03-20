@@ -197,39 +197,37 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
 ## Deploying to Databricks Apps
 
-0. **Create a Databricks App**:
-   Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/tutorial) installed and configured.
+This template uses [Databricks Asset Bundles (DABs)](https://docs.databricks.com/aws/en/dev-tools/bundles/) for deployment. The `databricks.yml` file defines the app configuration and resource permissions.
+
+Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/tutorial) installed and configured.
+
+1. **Validate the bundle configuration**
+
+   Catch any configuration errors before deploying:
 
    ```bash
-   databricks apps create agent-openai-agents-sdk-multiagent
+   databricks bundle validate
    ```
 
-1. **Set up authentication to Databricks resources**
+2. **Deploy the bundle**
 
-   For this example, you need to add an MLflow Experiment as a resource to your app. Grant the App's Service Principal (SP) permission to edit the experiment by clicking `edit` on your app home page. See the [Databricks Apps MLflow experiment documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/mlflow) for more information.
+   This uploads your code and configures resources (MLflow experiment, serving endpoints, etc.) defined in `databricks.yml`:
 
-   To grant access to other resources like serving endpoints, genie spaces, UC Functions, and Vector Search Indexes, click `edit` on your app home page to grant the App's SP permission. See the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources).
+   ```bash
+   databricks bundle deploy
+   ```
 
-   For resources that are not supported yet, see the [Agent Framework authentication documentation](https://docs.databricks.com/aws/en/generative-ai/agent-framework/deploy-agent#automatic-authentication-passthrough) for the correct permission level to grant to your app SP.
+3. **Start or restart the app**
+
+   ```bash
+   databricks bundle run agent_openai_agents_sdk_multiagent
+   ```
+
+   > **Note:** `bundle deploy` only uploads files and configures resources. `bundle run` is **required** to actually start/restart the app with the new code.
+
+   To grant access to additional resources (serving endpoints, genie spaces, UC Functions, Vector Search), add them to `databricks.yml` and redeploy. See the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources).
 
    **On-behalf-of (OBO) User Authentication**: Use `get_user_workspace_client()` from `agent_server.utils` to authenticate as the requesting user instead of the app service principal. See the [OBO authentication documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#retrieve-user-authorization-credentials).
-
-2. **Sync local files to your workspace**
-
-   See the [Databricks Apps deploy documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy?language=Databricks+CLI#deploy-the-app).
-
-   ```bash
-   DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
-   databricks sync . "/Users/$DATABRICKS_USERNAME/agent-openai-agents-sdk-multiagent"
-   ```
-
-3. **Deploy your Databricks App**
-
-   See the [Databricks Apps deploy documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy?language=Databricks+CLI#deploy-the-app).
-
-   ```bash
-   databricks apps deploy agent-openai-agents-sdk-multiagent --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/agent-openai-agents-sdk-multiagent
-   ```
 
 4. **Query your agent hosted on Databricks Apps**
 
@@ -260,7 +258,7 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
         -d '{ "input": [{ "role": "user", "content": "hi" }] }'
      ```
 
-For future updates to the agent, sync and redeploy your agent.
+For future updates, run `databricks bundle deploy` and `databricks bundle run agent_openai_agents_sdk_multiagent` to redeploy.
 
 ### FAQ
 

@@ -271,7 +271,7 @@ Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tool
    **Using the Databricks OpenAI client (Python):**
 
    ```bash
-   pip install databricks-openai
+   uv pip install databricks-openai
    ```
 
    ```python

@@ -263,43 +263,76 @@ Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tool
 
 6. **Query your agent hosted on Databricks Apps**
 
-   Databricks Apps are _only_ queryable via OAuth token. You cannot use a PAT to query your agent. Generate an [OAuth token with your credentials using the Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/authentication#u2m-auth):
+   You must use a Databricks OAuth token to query agents hosted on Databricks Apps. See [Query an agent](https://docs.databricks.com/aws/en/generative-ai/agent-framework/query-agent) for full details.
+
+   **Using the Databricks OpenAI client (Python):**
 
    ```bash
+   pip install databricks-openai
+   ```
+
+   ```python
+   from databricks.sdk import WorkspaceClient
+   from databricks_openai import DatabricksOpenAI
+
+   w = WorkspaceClient()
+   client = DatabricksOpenAI(workspace_client=w)
+
+   # Non-streaming
+   response = client.responses.create(
+       model="apps/<app-name>",
+       input=[{"role": "user", "content": "hi"}],
+   )
+   print(response)
+
+   # Streaming
+   streaming_response = client.responses.create(
+       model="apps/<app-name>",
+       input=[{"role": "user", "content": "hi"}],
+       stream=True,
+   )
+   for chunk in streaming_response:
+       print(chunk)
+
+   # With custom inputs (e.g., thread ID for stateful conversations)
+   response = client.responses.create(
+       model="apps/<app-name>",
+       input=[{"role": "user", "content": "What did we discuss?"}],
+       extra_body={"custom_inputs": {"thread_id": "<thread-id>"}},
+   )
+   ```
+
+   **Using curl:**
+
+   ```bash
+   # Generate an OAuth token
    databricks auth login --host <https://host.databricks.com>
    databricks auth token
    ```
 
-   Send a request to the `/invocations` endpoint:
+   ```bash
+   # Streaming request
+   curl --request POST \
+     --url <app-url>.databricksapps.com/responses \
+     --header "Authorization: Bearer <oauth-token>" \
+     --header "Content-Type: application/json" \
+     --data '{
+       "input": [{ "role": "user", "content": "hi" }],
+       "stream": true
+     }'
+   ```
 
-   - Example streaming request:
-
-     ```bash
-     curl -X POST <app-url.databricksapps.com>/invocations \
-        -H "Authorization: Bearer <oauth token>" \
-        -H "Content-Type: application/json" \
-        -d '{ "input": [{ "role": "user", "content": "hi" }], "stream": true }'
-     ```
-
-   - Example non-streaming request:
-
-     ```bash
-     curl -X POST <app-url.databricksapps.com>/invocations \
-        -H "Authorization: Bearer <oauth token>" \
-        -H "Content-Type: application/json" \
-        -d '{ "input": [{ "role": "user", "content": "hi" }] }'
-     ```
-   - Example request with thread ID (for stateful agent):
-
-     ```bash
-     curl -X POST <app-url.databricksapps.com>/invocations \
-        -H "Authorization: Bearer <oauth token>" \
-        -H "Content-Type: application/json" \
-        -d '{
-            "input": [{"role": "user", "content": "What did we discuss?"}],
-            "custom_inputs": {"thread_id": "<thread-id>"}
-        }'
-     ```
+   ```bash
+   # Request with thread ID (for stateful conversations)
+   curl --request POST \
+     --url <app-url>.databricksapps.com/responses \
+     --header "Authorization: Bearer <oauth-token>" \
+     --header "Content-Type: application/json" \
+     --data '{
+       "input": [{ "role": "user", "content": "What did we discuss?" }],
+       "custom_inputs": { "thread_id": "<thread-id>" }
+     }'
+   ```
 
 For future updates, run `databricks bundle deploy` and `databricks bundle run agent_langgraph_short_term_memory` to redeploy.
 

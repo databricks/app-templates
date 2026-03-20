@@ -178,70 +178,149 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
 ## Deploying to Databricks Apps
 
-0. **Create a Databricks App**:
-   Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/tutorial) installed and configured.
+This template uses [Databricks Asset Bundles (DABs)](https://docs.databricks.com/aws/en/dev-tools/bundles/) for deployment. The `databricks.yml` file defines the app configuration and resource permissions.
+
+Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/tutorial) installed and configured.
+
+1. **Run the pre-flight check**
+
+   Start the agent locally, send a test request, and verify the response to catch configuration and code errors early:
 
    ```bash
-   databricks apps create agent-openai-agents-sdk
+   uv run preflight
    ```
 
-1. **Set up authentication to Databricks resources**
+2. **Validate the bundle configuration**
 
-   For this example, you need to add an MLflow Experiment as a resource to your app. Grant the App's Service Principal (SP) permission to edit the experiment by clicking `edit` on your app home page. See the [Databricks Apps MLflow experiment documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/mlflow) for more information.
+   Catch any configuration errors before deploying:
 
-   To grant access to other resources like serving endpoints, genie spaces, UC Functions, and Vector Search Indexes, click `edit` on your app home page to grant the App's SP permission. See the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources).
+   ```bash
+   databricks bundle validate
+   ```
 
-   For resources that are not supported yet, see the [Agent Framework authentication documentation](https://docs.databricks.com/aws/en/generative-ai/agent-framework/deploy-agent#automatic-authentication-passthrough) for the correct permission level to grant to your app SP.
+3. **Deploy the bundle**
+
+   This uploads your code and configures resources (MLflow experiment, serving endpoints, etc.) defined in `databricks.yml`:
+
+   ```bash
+   databricks bundle deploy
+   ```
+
+4. **Start or restart the app**
+
+   ```bash
+   databricks bundle run agent_openai_agents_sdk_short_term_memory
+   ```
+
+   > **Note:** `bundle deploy` only uploads files and configures resources. `bundle run` is **required** to actually start/restart the app with the new code.
+
+   To grant access to additional resources (serving endpoints, genie spaces, UC Functions, Vector Search), add them to `databricks.yml` and redeploy. See the [Databricks Apps resources documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources).
 
    **On-behalf-of (OBO) User Authentication**: Use `get_user_workspace_client()` from `agent_server.utils` to authenticate as the requesting user instead of the app service principal. See the [OBO authentication documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#retrieve-user-authorization-credentials).
 
-2. **Sync local files to your workspace**
+5. **Query your agent hosted on Databricks Apps**
 
-   See the [Databricks Apps deploy documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy?language=Databricks+CLI#deploy-the-app).
+   You must use a Databricks OAuth token to query agents hosted on Databricks Apps. See [Query an agent](https://docs.databricks.com/aws/en/generative-ai/agent-framework/query-agent) for full details.
+
+   **Using the Databricks OpenAI client (Python):**
 
    ```bash
-   DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
-   databricks sync . "/Users/$DATABRICKS_USERNAME/agent-openai-agents-sdk"
+   uv pip install databricks-openai
    ```
 
-3. **Deploy your Databricks App**
+   ```python
+   from databricks.sdk import WorkspaceClient
+   from databricks_openai import DatabricksOpenAI
 
-   See the [Databricks Apps deploy documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy?language=Databricks+CLI#deploy-the-app).
+   w = WorkspaceClient()
+   client = DatabricksOpenAI(workspace_client=w)
 
-   ```bash
-   databricks apps deploy agent-openai-agents-sdk --source-code-path /Workspace/Users/$DATABRICKS_USERNAME/agent-openai-agents-sdk
+   # Non-streaming
+   response = client.responses.create(
+       model="apps/<app-name>",
+       input=[{"role": "user", "content": "hi"}],
+   )
+   print(response)
+
+   # Streaming
+   streaming_response = client.responses.create(
+       model="apps/<app-name>",
+       input=[{"role": "user", "content": "hi"}],
+       stream=True,
+   )
+   for chunk in streaming_response:
+       print(chunk)
+
+   # With custom inputs (e.g., session ID for stateful conversations)
+   response = client.responses.create(
+       model="apps/<app-name>",
+       input=[{"role": "user", "content": "What did we discuss?"}],
+       extra_body={"custom_inputs": {"session_id": "<session-id>"}},
+   )
    ```
 
-4. **Query your agent hosted on Databricks Apps**
-
-   Databricks Apps are _only_ queryable via OAuth token. You cannot use a PAT to query your agent. Generate an [OAuth token with your credentials using the Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/authentication#u2m-auth):
+   **Using curl:**
 
    ```bash
+   # Generate an OAuth token
    databricks auth login --host <https://host.databricks.com>
    databricks auth token
    ```
 
-   Send a request to the `/invocations` endpoint:
+   ```bash
+   # Streaming request
+   curl --request POST \
+     --url <app-url>.databricksapps.com/responses \
+     --header "Authorization: Bearer <oauth-token>" \
+     --header "Content-Type: application/json" \
+     --data '{
+       "input": [{ "role": "user", "content": "hi" }],
+       "stream": true
+     }'
+   ```
 
-   - Example streaming request:
+   ```bash
+   # Request with session ID (for stateful conversations)
+   curl --request POST \
+     --url <app-url>.databricksapps.com/responses \
+     --header "Authorization: Bearer <oauth-token>" \
+     --header "Content-Type: application/json" \
+     --data '{
+       "input": [{ "role": "user", "content": "What did we discuss?" }],
+       "custom_inputs": { "session_id": "<session-id>" }
+     }'
+   ```
 
-     ```bash
-     curl -X POST <app-url.databricksapps.com>/invocations \
-        -H "Authorization: Bearer <oauth token>" \
-        -H "Content-Type: application/json" \
-        -d '{ "input": [{ "role": "user", "content": "hi" }], "stream": true }'
-     ```
+For future updates, run `databricks bundle deploy` and `databricks bundle run agent_openai_agents_sdk_short_term_memory` to redeploy.
 
-   - Example non-streaming request:
+### Common Issues
 
-     ```bash
-     curl -X POST <app-url.databricksapps.com>/invocations \
-        -H "Authorization: Bearer <oauth token>" \
-        -H "Content-Type: application/json" \
-        -d '{ "input": [{ "role": "user", "content": "hi" }] }'
-     ```
+- **`databricks bundle deploy` fails with "An app with the same name already exists"**
 
-For future updates to the agent, sync and redeploy your agent.
+  This happens when an app with the same name was previously created outside of DABs. To fix, bind the existing app to your bundle:
+
+  ```bash
+  # 1. Get the existing app's config (note the budget_policy_id if present)
+  databricks apps get <app-name> --output json | jq '{name, budget_policy_id, description}'
+
+  # 2. Update databricks.yml to include budget_policy_id if it was returned above
+
+  # 3. Bind the existing app to your bundle
+  databricks bundle deployment bind agent_openai_agents_sdk_short_term_memory <app-name> --auto-approve
+
+  # 4. Deploy
+  databricks bundle deploy
+  ```
+
+  Alternatively, delete the existing app and deploy fresh: `databricks apps delete <app-name>` (this permanently removes the app's URL and service principal).
+
+- **`databricks bundle deploy` fails with "Provider produced inconsistent result after apply"**
+
+  The existing app has server-side configuration (like `budget_policy_id`) that doesn't match your `databricks.yml`. Run `databricks apps get <app-name> --output json` and sync any missing fields to your `databricks.yml`.
+
+- **App is running old code after `databricks bundle deploy`**
+
+  `bundle deploy` only uploads files and configures resources. You must run `databricks bundle run agent_openai_agents_sdk_short_term_memory` to actually start/restart the app with the new code.
 
 ### FAQ
 

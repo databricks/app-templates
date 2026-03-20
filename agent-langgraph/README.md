@@ -172,7 +172,15 @@ This template uses [Databricks Asset Bundles (DABs)](https://docs.databricks.com
 
 Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/tutorial) installed and configured.
 
-1. **Validate the bundle configuration**
+1. **Run the pre-flight check**
+
+   Start the agent locally, send a test request, and verify the response to catch configuration and code errors early:
+
+   ```bash
+   uv run preflight
+   ```
+
+2. **Validate the bundle configuration**
 
    Catch any configuration errors before deploying:
 
@@ -180,7 +188,7 @@ Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tool
    databricks bundle validate
    ```
 
-2. **Deploy the bundle**
+3. **Deploy the bundle**
 
    This uploads your code and configures resources (MLflow experiment, serving endpoints, etc.) defined in `databricks.yml`:
 
@@ -188,7 +196,7 @@ Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tool
    databricks bundle deploy
    ```
 
-3. **Start or restart the app**
+4. **Start or restart the app**
 
    ```bash
    databricks bundle run agent_langgraph
@@ -200,7 +208,7 @@ Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tool
 
    **On-behalf-of (OBO) User Authentication**: Use `get_user_workspace_client()` from `agent_server.utils` to authenticate as the requesting user instead of the app service principal. See the [OBO authentication documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth?language=Streamlit#retrieve-user-authorization-credentials).
 
-4. **Query your agent hosted on Databricks Apps**
+5. **Query your agent hosted on Databricks Apps**
 
    Databricks Apps are _only_ queryable via OAuth token. You cannot use a PAT to query your agent. Generate an [OAuth token with your credentials using the Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/authentication#u2m-auth):
 

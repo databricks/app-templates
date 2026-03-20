@@ -19,6 +19,59 @@ Copyright (2023) Databricks, Inc.
 License - https://github.com/databricks/databricks-sdk-py/blob/main/LICENSE
 Notice - https://github.com/databricks/databricks-sdk-py/blob/main/NOTICE
 
+databricks/databricks-sql-python - https://github.com/databricks/databricks-sql-python
+Copyright Databricks, Inc.
+License - https://github.com/databricks/databricks-sql-python/blob/main/LICENSE
+
+databricks/databricks-ai-bridge (databricks-langchain) - https://github.com/databricks/databricks-ai-bridge
+Copyright Databricks, Inc.
+License - https://github.com/databricks/databricks-ai-bridge/blob/main/LICENSE
+
+mlflow/mlflow - https://github.com/mlflow/mlflow
+Copyright mlflow authors
+License - https://github.com/mlflow/mlflow/blob/master/LICENSE.txt
+Notice - https://github.com/mlflow/mlflow/blob/master/NOTICE.txt
+
+openai/openai-python - https://github.com/openai/openai-python
+Copyright OpenAI
+License - https://github.com/openai/openai-python/blob/main/LICENSE
+
+huggingface/tokenizers - https://github.com/huggingface/tokenizers
+Copyright Hugging Face
+License - https://github.com/huggingface/tokenizers/blob/main/LICENSE
+
+jlowin/fastmcp - https://github.com/jlowin/fastmcp
+Copyright Jeremiah Lowin
+License - https://github.com/jlowin/fastmcp/blob/main/LICENSE
+
+Kludex/python-multipart - https://github.com/Kludex/python-multipart
+Copyright python-multipart authors
+License - https://github.com/Kludex/python-multipart/blob/master/LICENSE.txt
+
+Tinche/aiofiles - https://github.com/Tinche/aiofiles
+Copyright aiofiles authors
+License - https://github.com/Tinche/aiofiles/blob/main/LICENSE
+
+vercel/ai (Vercel AI SDK) - https://github.com/vercel/ai
+Copyright Vercel, Inc.
+License - https://github.com/vercel/ai/blob/main/LICENSE
+
+vercel/streamdown - https://github.com/vercel/streamdown
+Copyright Vercel, Inc.
+License - https://github.com/vercel/streamdown/blob/main/LICENSE
+
+drizzle-team/drizzle-orm - https://github.com/drizzle-team/drizzle-orm
+Copyright Drizzle Team
+License - https://github.com/drizzle-team/drizzle-orm/blob/main/LICENSE
+
+joe-bell/cva (class-variance-authority) - https://github.com/joe-bell/cva
+Copyright Joe Bell
+License - https://github.com/joe-bell/cva/blob/main/LICENSE
+
+facultyai/dash-bootstrap-components - https://github.com/facultyai/dash-bootstrap-components
+Copyright Faculty AI
+License - https://github.com/facultyai/dash-bootstrap-components/blob/main/LICENSE
+
 ________________
 This Software contains code from the following open source projects, licensed under the MIT license:
 
@@ -26,9 +79,158 @@ plotly/dash - https://github.com/plotly/dash
 Copyright (c) 2023 Plotly, Inc
 License - https://github.com/plotly/dash/blob/dev/LICENSE
 
+tiangolo/fastapi - https://github.com/tiangolo/fastapi
+Copyright Sebastian Ramirez
+License - https://github.com/tiangolo/fastapi/blob/master/LICENSE
+
+pydantic/pydantic - https://github.com/pydantic/pydantic
+Copyright pydantic authors
+License - https://github.com/pydantic/pydantic/blob/main/LICENSE
+
+modelcontextprotocol/python-sdk (mcp) - https://github.com/modelcontextprotocol/python-sdk
+Copyright Anthropic, PBC
+License - https://github.com/modelcontextprotocol/python-sdk/blob/main/LICENSE
+
+langchain-ai/langgraph - https://github.com/langchain-ai/langgraph
+Copyright LangChain, Inc.
+License - https://github.com/langchain-ai/langgraph/blob/main/LICENSE
+
+langchain-ai/langchain-mcp-adapters - https://github.com/langchain-ai/langchain-mcp-adapters
+Copyright LangChain, Inc.
+License - https://github.com/langchain-ai/langchain-mcp-adapters/blob/main/LICENSE
+
+openai/openai-agents-python - https://github.com/openai/openai-agents-python
+Copyright OpenAI
+License - https://github.com/openai/openai-agents-python/blob/main/LICENSE
+
+plotly/plotly.py - https://github.com/plotly/plotly.py
+Copyright (c) Plotly, Inc
+License - https://github.com/plotly/plotly.py/blob/master/LICENSE.txt
+
+plotly/dash-ag-grid - https://github.com/plotly/dash-ag-grid
+Copyright Plotly, Inc
+License - https://github.com/plotly/dash-ag-grid/blob/dev/LICENSE
+
+posit-dev/py-shiny - https://github.com/posit-dev/py-shiny
+Copyright Posit Software, PBC
+License - https://github.com/posit-dev/py-shiny/blob/main/LICENSE
+
+facebook/react - https://github.com/facebook/react
+Copyright (c) Meta Platforms, Inc. and affiliates
+License - https://github.com/facebook/react/blob/main/LICENSE
+
+expressjs/express - https://github.com/expressjs/express
+Copyright (c) TJ Holowaychuk
+License - https://github.com/expressjs/express/blob/master/LICENSE
+
+expressjs/cors - https://github.com/expressjs/cors
+Copyright (c) Troy Goode
+License - https://github.com/expressjs/cors/blob/master/LICENSE
+
+colinhacks/zod - https://github.com/colinhacks/zod
+Copyright (c) Colin McDonnell
+License - https://github.com/colinhacks/zod/blob/main/LICENSE
+
+date-fns/date-fns - https://github.com/date-fns/date-fns
+Copyright (c) date-fns authors
+License - https://github.com/date-fns/date-fns/blob/main/LICENSE.md
+
+radix-ui/primitives - https://github.com/radix-ui/primitives
+Copyright (c) Radix UI
+License - https://github.com/radix-ui/primitives/blob/main/LICENSE
+
+lukeed/clsx - https://github.com/lukeed/clsx
+Copyright (c) Luke Edwards
+License - https://github.com/lukeed/clsx/blob/master/license
+
+framer/motion - https://github.com/framer/motion
+Copyright (c) Framer B.V.
+License - https://github.com/framer/motion/blob/main/LICENSE.md
+
+pacocoursey/next-themes - https://github.com/pacocoursey/next-themes
+Copyright (c) Paco Coursey
+License - https://github.com/pacocoursey/next-themes/blob/main/LICENSE
+
+react-syntax-highlighter/react-syntax-highlighter - https://github.com/react-syntax-highlighter/react-syntax-highlighter
+Copyright (c) react-syntax-highlighter authors
+License - https://github.com/react-syntax-highlighter/react-syntax-highlighter/blob/master/LICENSE
+
+emilkowalski/sonner - https://github.com/emilkowalski/sonner
+Copyright (c) Emil Kowalski
+License - https://github.com/emilkowalski/sonner/blob/main/LICENSE
+
+vercel/swr - https://github.com/vercel/swr
+Copyright (c) Vercel, Inc.
+License - https://github.com/vercel/swr/blob/main/LICENSE
+
+dcastil/tailwind-merge - https://github.com/dcastil/tailwind-merge
+Copyright (c) Dany Castillo
+License - https://github.com/dcastil/tailwind-merge/blob/v2/LICENSE
+
+stackblitz-labs/use-stick-to-bottom - https://github.com/stackblitz-labs/use-stick-to-bottom
+Copyright (c) StackBlitz
+License - https://github.com/stackblitz-labs/use-stick-to-bottom/blob/main/LICENSE
+
+juliencrn/usehooks-ts - https://github.com/juliencrn/usehooks-ts
+Copyright (c) Julien Caron
+License - https://github.com/juliencrn/usehooks-ts/blob/master/LICENSE
+
+epoberezkin/fast-deep-equal - https://github.com/epoberezkin/fast-deep-equal
+Copyright (c) Evgeny Poberezkin
+License - https://github.com/epoberezkin/fast-deep-equal/blob/master/LICENSE
+
+remix-run/react-router - https://github.com/remix-run/react-router
+Copyright (c) React Training LLC
+License - https://github.com/remix-run/react-router/blob/main/LICENSE.md
+
+chartjs/Chart.js - https://github.com/chartjs/Chart.js
+Copyright (c) Chart.js contributors
+License - https://github.com/chartjs/Chart.js/blob/master/LICENSE.md
+
+reactchartjs/react-chartjs-2 - https://github.com/reactchartjs/react-chartjs-2
+Copyright (c) react-chartjs-2 authors
+License - https://github.com/reactchartjs/react-chartjs-2/blob/master/LICENSE
+
+porsager/postgres - https://github.com/porsager/postgres
+Copyright (c) Rasmus Porsager
+License - https://github.com/porsager/postgres/blob/master/LICENSE
+
 ________________
 This Software contains code from the following open source projects, licensed under the BSD 3-clause license:
 
 pallets/flask - https://github.com/pallets/flask
 Copyright 2010 Pallets
 License - https://github.com/pallets/flask/blob/main/LICENSE.txt
+
+encode/uvicorn - https://github.com/encode/uvicorn
+Copyright (c) Encode OSS Ltd.
+License - https://github.com/encode/uvicorn/blob/master/LICENSE.md
+
+theskumar/python-dotenv - https://github.com/theskumar/python-dotenv
+Copyright (c) Saurabh Kumar
+License - https://github.com/theskumar/python-dotenv/blob/main/LICENSE
+
+pandas-dev/pandas - https://github.com/pandas-dev/pandas
+Copyright (c) pandas contributors
+License - https://github.com/pandas-dev/pandas/blob/main/LICENSE
+
+________________
+This Software contains code from the following open source projects, licensed under the BSD 2-clause license:
+
+motdotla/dotenv - https://github.com/motdotla/dotenv
+Copyright (c) Scott Motte
+License - https://github.com/motdotla/dotenv/blob/master/LICENSE
+
+________________
+This Software contains code from the following open source projects, licensed under the ISC license:
+
+lucide-icons/lucide - https://github.com/lucide-icons/lucide
+Copyright (c) Lucide contributors
+License - https://github.com/lucide-icons/lucide/blob/main/LICENSE
+
+________________
+This Software contains code from the following open source projects, licensed under the LGPL 3.0 license:
+
+psycopg/psycopg - https://github.com/psycopg/psycopg
+Copyright (c) Daniele Varrazzo and psycopg contributors
+License - https://github.com/psycopg/psycopg/blob/master/LICENSE.txt

@@ -72,6 +72,26 @@ facultyai/dash-bootstrap-components - https://github.com/facultyai/dash-bootstra
 Copyright Faculty AI
 License - https://github.com/facultyai/dash-bootstrap-components/blob/main/LICENSE
 
+huggingface/huggingface_hub - https://github.com/huggingface/huggingface_hub
+Copyright Hugging Face
+License - https://github.com/huggingface/huggingface_hub/blob/main/LICENSE
+
+josdejong/mathjs - https://github.com/josdejong/mathjs
+Copyright (c) Jos de Jong
+License - https://github.com/josdejong/mathjs/blob/develop/LICENSE
+
+open-telemetry/opentelemetry-js - https://github.com/open-telemetry/opentelemetry-js
+Copyright OpenTelemetry Authors
+License - https://github.com/open-telemetry/opentelemetry-js/blob/main/LICENSE
+
+Arize-ai/openinference - https://github.com/Arize-ai/openinference
+Copyright Arize AI
+License - https://github.com/Arize-ai/openinference/blob/main/LICENSE
+
+jd/tenacity - https://github.com/jd/tenacity
+Copyright tenacity authors
+License - https://github.com/jd/tenacity/blob/main/LICENSE
+
 ________________
 This Software contains code from the following open source projects, licensed under the MIT license:
 
@@ -195,6 +215,42 @@ porsager/postgres - https://github.com/porsager/postgres
 Copyright (c) Rasmus Porsager
 License - https://github.com/porsager/postgres/blob/master/LICENSE
 
+langchain-ai/langchainjs - https://github.com/langchain-ai/langchainjs
+Copyright LangChain, Inc.
+License - https://github.com/langchain-ai/langchainjs/blob/main/LICENSE
+
+sqlalchemy/sqlalchemy - https://github.com/sqlalchemy/sqlalchemy
+Copyright SQLAlchemy authors
+License - https://github.com/sqlalchemy/sqlalchemy/blob/main/LICENSE
+
+pydantic/pydantic-settings - https://github.com/pydantic/pydantic-settings
+Copyright pydantic-settings authors
+License - https://github.com/pydantic/pydantic-settings/blob/main/LICENSE
+
+BerriAI/litellm - https://github.com/BerriAI/litellm
+Copyright BerriAI
+License - https://github.com/BerriAI/litellm/blob/main/LICENSE
+
+davidjerleke/embla-carousel - https://github.com/davidjerleke/embla-carousel
+Copyright (c) David Jerleke
+License - https://github.com/davidjerleke/embla-carousel/blob/master/LICENSE
+
+bvaughn/react-resizable-panels - https://github.com/bvaughn/react-resizable-panels
+Copyright (c) Brian Vaughn
+License - https://github.com/bvaughn/react-resizable-panels/blob/main/LICENSE.md
+
+jamiebuilds/tailwindcss-animate - https://github.com/jamiebuilds/tailwindcss-animate
+Copyright (c) Jamie Builds
+License - https://github.com/jamiebuilds/tailwindcss-animate/blob/main/LICENSE
+
+Wombosvideo/tw-animate-css - https://github.com/Wombosvideo/tw-animate-css
+Copyright (c) tw-animate-css authors
+License - https://github.com/Wombosvideo/tw-animate-css/blob/main/LICENSE
+
+express-rate-limit/express-rate-limit - https://github.com/express-rate-limit/express-rate-limit
+Copyright (c) express-rate-limit authors
+License - https://github.com/express-rate-limit/express-rate-limit/blob/main/license.md
+
 ________________
 This Software contains code from the following open source projects, licensed under the BSD 3-clause license:
 
@@ -213,6 +269,18 @@ License - https://github.com/theskumar/python-dotenv/blob/main/LICENSE
 pandas-dev/pandas - https://github.com/pandas-dev/pandas
 Copyright (c) pandas contributors
 License - https://github.com/pandas-dev/pandas/blob/main/LICENSE
+
+numpy/numpy - https://github.com/numpy/numpy
+Copyright (c) NumPy Developers
+License - https://github.com/numpy/numpy/blob/main/LICENSE.txt
+
+python-websockets/websockets - https://github.com/python-websockets/websockets
+Copyright (c) Aymeric Augustin
+License - https://github.com/python-websockets/websockets/blob/main/LICENSE
+
+aminalaee/uuid-utils - https://github.com/aminalaee/uuid-utils
+Copyright (c) Amin Alaee
+License - https://github.com/aminalaee/uuid-utils/blob/main/LICENSE
 
 ________________
 This Software contains code from the following open source projects, licensed under the BSD 2-clause license:
@@ -234,3 +302,10 @@ This Software contains code from the following open source projects, licensed un
 psycopg/psycopg - https://github.com/psycopg/psycopg
 Copyright (c) Daniele Varrazzo and psycopg contributors
 License - https://github.com/psycopg/psycopg/blob/master/LICENSE.txt
+
+________________
+This Software contains code from the following open source projects, licensed under the PSF-based license (BSD-compatible):
+
+matplotlib/matplotlib - https://github.com/matplotlib/matplotlib
+Copyright (c) matplotlib Development Team
+License - https://github.com/matplotlib/matplotlib/blob/main/LICENSE/LICENSE

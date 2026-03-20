@@ -5,6 +5,7 @@ import { useSession } from '@/contexts/SessionContext';
 import { useChatData } from '@/hooks/useChatData';
 import type { LanguageModelUsage } from 'ai';
 import type { LanguageModelV3Usage } from '@ai-sdk/provider';
+import { ChatHeader } from '../components/chat-header';
 
 // Convert V3 usage format (from db) to flat usage format (for ai package)
 function fromV3Usage(
@@ -62,8 +63,9 @@ export default function ChatPage() {
   // Show loading if no data or if data doesn't match current ID (stale data)
   if (!chatData || chatData.chat.id !== id) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-muted-foreground">Loading chat...</div>
+      <div className="flex h-screen justify-center flex-col">
+        <ChatHeader empty />
+        <div className="text-muted-foreground flex-1 flex items-center justify-center">Loading chat...</div>
       </div>
     );
   }
@@ -78,6 +80,7 @@ export default function ChatPage() {
   return (
     <Chat
       key={chat.id}
+      title={chat.title}
       id={chat.id}
       initialMessages={messages}
       initialChatModel={modelId}

@@ -9,6 +9,8 @@ import {
   type HTMLAttributes,
   type KeyboardEventHandler,
 } from 'react';
+import { DbIcon } from '../ui/db-icon';
+import { ChevronDownIcon, ChevronUpIcon } from '../icons';
 
 type PromptInputProps = HTMLAttributes<HTMLFormElement>;
 
@@ -133,7 +135,7 @@ export const PromptInputSubmit = ({
   children,
   ...props
 }: PromptInputSubmitProps) => {
-  let Icon = <SendIcon className="size-4" />;
+  let Icon = <DbIcon icon={ChevronDownIcon} className="size-4" />;
 
   if (status === 'submitted') {
     Icon = <Loader2Icon className="size-4 animate-spin" />;

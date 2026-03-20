@@ -25,6 +25,7 @@ import { ChatTransport } from '../lib/ChatTransport';
 import type { ClientSession } from '@chat-template/auth';
 import { softNavigateToChatId } from '@/lib/navigation';
 import { useAppConfig } from '@/contexts/AppConfigContext';
+import { Greeting } from './greeting';
 
 export function Chat({
   id,
@@ -34,6 +35,7 @@ export function Chat({
   isReadonly,
   initialLastContext,
   feedback = {},
+  title,
 }: {
   id: string;
   initialMessages: ChatMessage[];
@@ -43,6 +45,7 @@ export function Chat({
   session: ClientSession;
   initialLastContext?: LanguageModelUsage;
   feedback?: FeedbackMap;
+  title?: string;
 }) {
   const { visibilityType } = useChatVisibility({
     chatId: id,
@@ -91,6 +94,12 @@ export function Chat({
     mutate(unstable_serialize(getChatHistoryPaginationKey));
   }, [mutate]);
 
+  // For new chats, the title arrives via a `data-title` stream part
+  // once backend title generation completes — no separate fetch needed.
+  const [streamTitle, setStreamTitle] = useState<string | undefined>();
+  const [titlePending, setTitlePending] = useState(false);
+  const displayTitle = title ?? streamTitle;
+
   const {
     messages,
     setMessages,
@@ -108,9 +117,11 @@ export function Chat({
     resume: id !== undefined && initialMessages.length > 0, // Enable automatic stream resumption
     transport: new ChatTransport({
       onStreamPart: (part) => {
-        // As soon as we recive a stream part, we fetch the chat history again for new chats
         if (isNewChat && !didFetchHistoryOnNewChat.current) {
           fetchChatHistory();
+          if (chatHistoryEnabled) {
+            setTitlePending(true);
+          }
           didFetchHistoryOnNewChat.current = true;
         }
         // Reset resume attempts when we successfully receive stream parts
@@ -165,6 +176,11 @@ export function Chat({
       if (dataPart.type === 'data-usage') {
         setUsage(dataPart.data as LanguageModelUsage);
       }
+      if (dataPart.type === 'data-title') {
+        setStreamTitle(dataPart.data as string);
+        setTitlePending(false);
+        fetchChatHistory();
+      }
     },
     onFinish: ({
       isAbort,
@@ -172,8 +188,8 @@ export function Chat({
       isError,
       messages: finishedMessages,
     }) => {
-      // Reset state for next message
       didFetchHistoryOnNewChat.current = false;
+      setTitlePending(false);
 
       // If user aborted, don't try to resume
       if (isAbort) {
@@ -268,10 +284,38 @@ export function Chat({
 
   const [attachments, setAttachments] = useState<Array<Attachment>>([]);
 
+  const inputElement = <MultimodalInput
+    chatId={id}
+    input={input}
+    setInput={setInput}
+    status={status}
+    stop={stop}
+    attachments={attachments}
+    setAttachments={setAttachments}
+    messages={messages}
+    setMessages={setMessages}
+    sendMessage={sendMessage}
+    selectedVisibilityType={visibilityType}
+  />
+
+  if (messages.length === 0) {
+    return (
+      <div className="flex h-dvh min-w-0 flex-col bg-background">
+        <ChatHeader empty />
+        <div className="flex min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4">
+          <div className="m-auto flex w-full max-w-4xl flex-col">
+            <Greeting />
+            {inputElement}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="overscroll-behavior-contain flex h-dvh min-w-0 touch-pan-y flex-col bg-background">
-        <ChatHeader />
+        <ChatHeader title={displayTitle} isLoadingTitle={titlePending && !displayTitle} />
 
         <Messages
           status={status}
@@ -285,21 +329,11 @@ export function Chat({
           feedback={feedback}
         />
 
+
+
         <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 border-t-0 bg-background px-2 pb-3 md:px-4 md:pb-4">
           {!isReadonly && (
-            <MultimodalInput
-              chatId={id}
-              input={input}
-              setInput={setInput}
-              status={status}
-              stop={stop}
-              attachments={attachments}
-              setAttachments={setAttachments}
-              messages={messages}
-              setMessages={setMessages}
-              sendMessage={sendMessage}
-              selectedVisibilityType={visibilityType}
-            />
+            inputElement
           )}
         </div>
       </div>

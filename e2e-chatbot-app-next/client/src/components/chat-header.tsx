@@ -1,10 +1,8 @@
 import { useNavigate } from 'react-router-dom';
-import { useWindowSize } from 'usehooks-ts';
 
 import { SidebarToggle } from '@/components/sidebar-toggle';
 import { Button } from '@/components/ui/button';
-import { useSidebar } from './ui/sidebar';
-import { PlusIcon, CloudOffIcon, MessageSquareOff } from 'lucide-react';
+import { MessageSquareOff } from 'lucide-react';
 import { useConfig } from '@/hooks/use-config';
 import {
   Tooltip,
@@ -12,33 +10,35 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { PlusIcon, CloudOffIcon } from './icons';
+import { cn } from '../lib/utils';
+import { Skeleton } from './ui/skeleton';
 
 const DOCS_URL =
   'https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app';
 
-export function ChatHeader() {
+export function ChatHeader({ title, empty, isLoadingTitle }: { title?: string, empty?: boolean, isLoadingTitle?: boolean }) {
   const navigate = useNavigate();
-  const { open } = useSidebar();
   const { chatHistoryEnabled, feedbackEnabled } = useConfig();
 
-  const { width: windowWidth } = useWindowSize();
-
   return (
-    <header className="sticky top-0 flex items-center gap-2 bg-background px-2 py-1.5 md:px-2">
-      <SidebarToggle />
+    <header className={cn("sticky top-0 flex h-[60px] items-center gap-2 bg-background px-4", {
+      "border-b border-border md:pb-2": !empty,
+    })}>
+      {/* Toggle visible on mobile only — desktop toggle lives inside the sidebar */}
+      <div className="md:hidden">
+        <SidebarToggle forceOpenIcon />
+      </div>
 
-      {(!open || windowWidth < 768) && (
-        <Button
-          variant="outline"
-          className="order-2 ml-auto h-8 px-2 md:order-1 md:ml-0 md:h-fit md:px-2"
-          onClick={() => {
-            navigate('/');
-          }}
-        >
-          <PlusIcon />
-          <span className="md:sr-only">New Chat</span>
-        </Button>
-      )}
+      {(title || isLoadingTitle) &&
+        <h4 className="text-[16px] font-medium truncate">
+          {isLoadingTitle ?
+            <Skeleton className="w-32 h-6 bg-border" /> :
+            title
+          }
+        </h4>
+      }
+
 
       <div className="ml-auto flex items-center gap-2">
         {!chatHistoryEnabled && (
@@ -49,7 +49,7 @@ export function ChatHeader() {
                   href={DOCS_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 rounded-full bg-muted px-2 py-1 text-muted-foreground text-xs hover:text-foreground"
+                  className="flex items-center gap-1.5 rounded-lg border-border border-1 bg-muted px-2 py-1 text-foreground text-xs hover:text-foreground"
                 >
                   <CloudOffIcon className="h-3 w-3" />
                   <span className="hidden sm:inline">Ephemeral</span>
@@ -69,7 +69,7 @@ export function ChatHeader() {
                   href={DOCS_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 rounded-full bg-muted px-2 py-1 text-muted-foreground text-xs hover:text-foreground"
+                  className="flex items-center gap-1.5 rounded-lg border-border border-1 bg-muted px-2 py-1 text-foreground text-xs hover:text-foreground"
                 >
                   <MessageSquareOff className="h-3 w-3" />
                   <span className="hidden sm:inline">Feedback disabled</span>
@@ -81,6 +81,17 @@ export function ChatHeader() {
             </Tooltip>
           </TooltipProvider>
         )}
+        {/* New Chat button — mobile only; desktop uses the sidebar rail */}
+        <Button
+          variant="default"
+          className="order-2 ml-auto h-8 px-2 md:hidden"
+          onClick={() => {
+            navigate('/');
+          }}
+        >
+          <PlusIcon />
+          <span>New Chat</span>
+        </Button>
       </div>
     </header>
   );

@@ -4,6 +4,7 @@ import type { UseChatHelpers } from '@ai-sdk/react';
 import type { VisibilityType } from './visibility-selector';
 import type { ChatMessage } from '@chat-template/core';
 import { Suggestion } from './elements/suggestion';
+import { LightbulbIcon } from '@/components/icons';
 import { softNavigateToChatId } from '@/lib/navigation';
 import { useAppConfig } from '@/contexts/AppConfigContext';
 
@@ -23,7 +24,7 @@ function PureSuggestedActions({ chatId, sendMessage }: SuggestedActionsProps) {
   return (
     <div
       data-testid="suggested-actions"
-      className="grid w-full gap-2 sm:grid-cols-2"
+      className="flex w-full flex-col"
     >
       {suggestedActions.map((suggestedAction, index) => (
         <motion.div
@@ -32,9 +33,11 @@ function PureSuggestedActions({ chatId, sendMessage }: SuggestedActionsProps) {
           exit={{ opacity: 0, y: 20 }}
           transition={{ delay: 0.05 * index }}
           key={suggestedAction}
+          className="border-b border-border"
         >
           <Suggestion
             suggestion={suggestedAction}
+            variant="tertiary"
             onClick={(suggestion) => {
               softNavigateToChatId(chatId, chatHistoryEnabled);
               sendMessage({
@@ -42,8 +45,9 @@ function PureSuggestedActions({ chatId, sendMessage }: SuggestedActionsProps) {
                 parts: [{ type: 'text', text: suggestion }],
               });
             }}
-            className="h-auto w-full whitespace-normal p-3 text-left"
+            className="h-auto w-full justify-start gap-2 rounded-none border-0 bg-transparent py-2 pl-0 text-left text-sm font-normal text-muted-foreground hover:bg-transparent hover:text-foreground"
           >
+            <LightbulbIcon size={16} className="shrink-0 text-muted-foreground" aria-hidden />
             {suggestedAction}
           </Suggestion>
         </motion.div>

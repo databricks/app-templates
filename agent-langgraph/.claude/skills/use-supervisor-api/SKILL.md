@@ -9,7 +9,7 @@ The Supervisor API lets Databricks run the tool-selection and synthesis loop ser
 
 ## When to Use
 
-Use the Supervisor API when you want Databricks to manage the full agent loop for hosted tools: Genie spaces, UC functions, agent endpoints, or MCP servers via UC connections.
+Use the Supervisor API when you want Databricks to manage the full agent loop for hosted tools: Genie spaces, UC functions, KA (Knowledge Assistant) agent endpoints, or MCP servers via UC connections.
 
 **Limitations:**
 - Cannot mix hosted tools with client-side function tools in the same request
@@ -54,13 +54,15 @@ TOOLS = [
             "description": "Executes a custom UC function",
         },
     },
-    # Agent endpoint — delegates to another agent
+    # KA (Knowledge Assistant) endpoint — delegates to a Knowledge Assistant agent
+    # Note: agent_endpoint only supports KA endpoints, not arbitrary agent serving endpoints.
+    # KA endpoints use a specific ka_query protocol; regular LangGraph/OpenAI agents do not.
     {
         "type": "agent_endpoint",
         "agent_endpoint": {
-            "name": "my-sub-agent",
-            "description": "A specialized sub-agent",
-            "endpoint_name": "<serving-endpoint-name>",
+            "name": "my-ka-agent",
+            "description": "A Knowledge Assistant agent",
+            "endpoint_name": "<ka-serving-endpoint-name>",
         },
     },
     # MCP server via UC connection
@@ -156,7 +158,7 @@ For each hosted tool, grant the corresponding resource access. See the **add-too
 |-----------|-------------------|
 | `genie` | `genie_space` with `CAN_RUN` |
 | `uc_function` | `uc_securable` (FUNCTION) with `EXECUTE` |
-| `agent_endpoint` | `serving_endpoint` with `CAN_QUERY` |
+| `agent_endpoint` | `serving_endpoint` with `CAN_QUERY` (KA endpoints only) |
 | `mcp` | `uc_securable` (CONNECTION) with `USE_CONNECTION` |
 
 Also grant `CAN_QUERY` on the `MODEL` serving endpoint:

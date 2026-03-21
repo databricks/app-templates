@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import datetime
 from typing import Any, AsyncGenerator, Optional
 
 import mlflow
@@ -12,6 +13,7 @@ from databricks_langchain import (
 )
 from fastapi import HTTPException
 from langchain.agents import create_agent
+from langchain_core.tools import tool
 from langgraph.store.base import BaseStore
 from mlflow.genai.agent_server import invoke, stream
 from mlflow.types.responses import (
@@ -21,54 +23,90 @@ from mlflow.types.responses import (
     to_chat_completions_input,
 )
 
+from agent_server.utils import (
+    get_databricks_host_from_env,
+    get_session_id,
+    get_user_workspace_client,
+    process_agent_astream_events,
+)
+from agent_server.utils_agent_memory import agent_memory_tools, read_agent_instructions
 from agent_server.utils_memory import (
     get_lakebase_access_error_message,
     get_user_id,
     memory_tools,
     resolve_lakebase_instance_name,
 )
-from agent_server.utils_agent_memory import agent_memory_tools, read_agent_instructions
-from agent_server.utils import (
-    get_databricks_host_from_env,
-    get_user_workspace_client,
-    process_agent_astream_events,
-)
 
 logger = logging.getLogger(__name__)
+logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
+logging.getLogger("LiteLLM").setLevel(logging.WARNING)
 mlflow.langchain.autolog()
 sp_workspace_client = WorkspaceClient()
+
+
+@tool
+def get_current_time() -> str:
+    """Get the current date and time."""
+    return datetime.now().isoformat()
+
 
 ############################################
 # Configuration
 ############################################
 LLM_ENDPOINT_NAME = "databricks-claude-sonnet-4-5"
-_LAKEBASE_INSTANCE_NAME_RAW = os.getenv("LAKEBASE_INSTANCE_NAME", "")
+_LAKEBASE_INSTANCE_NAME_RAW = os.getenv("LAKEBASE_INSTANCE_NAME") or None
 EMBEDDING_ENDPOINT = "databricks-gte-large-en"
 EMBEDDING_DIMS = 1024
 UC_VOLUME = os.getenv("UC_VOLUME", "")
+LAKEBASE_AUTOSCALING_PROJECT = os.getenv("LAKEBASE_AUTOSCALING_PROJECT") or None
+LAKEBASE_AUTOSCALING_BRANCH = os.getenv("LAKEBASE_AUTOSCALING_BRANCH") or None
 
-if not _LAKEBASE_INSTANCE_NAME_RAW:
+############################################
+
+_has_autoscaling = LAKEBASE_AUTOSCALING_PROJECT and LAKEBASE_AUTOSCALING_BRANCH
+if not _LAKEBASE_INSTANCE_NAME_RAW and not _has_autoscaling:
     raise ValueError(
-        "LAKEBASE_INSTANCE_NAME environment variable is required but not set. "
-        "Please set it in your environment:\n"
-        "  LAKEBASE_INSTANCE_NAME=<your-lakebase-instance-name>\n"
+        "Lakebase configuration is required but not set. "
+        "Please set one of the following in your environment:\n"
+        "  Option 1 (provisioned): LAKEBASE_INSTANCE_NAME=<your-instance-name>\n"
+        "  Option 2 (autoscaling): LAKEBASE_AUTOSCALING_PROJECT=<project> and LAKEBASE_AUTOSCALING_BRANCH=<branch>\n"
     )
 
 # Resolve hostname to instance name if needed (if given hostname of lakebase instead of name)
-LAKEBASE_INSTANCE_NAME = resolve_lakebase_instance_name(_LAKEBASE_INSTANCE_NAME_RAW)
+LAKEBASE_INSTANCE_NAME = resolve_lakebase_instance_name(_LAKEBASE_INSTANCE_NAME_RAW) if _LAKEBASE_INSTANCE_NAME_RAW else None
 
 SYSTEM_PROMPT = """You are a helpful assistant. Use the available tools to answer questions.
 
-## User Memory (per-user, private)
+You have access to memory tools that allow you to remember information about users:
 - Use get_user_memory to search for previously saved information about the user
 - Use save_user_memory to remember important facts, preferences, or details the user shares
 - Use delete_user_memory to forget specific information when asked
 
+Always check for relevant memories at the start of a conversation to provide personalized responses.
+
+## When to save memories
+
+**Always save** when the user explicitly asks you to remember something. Trigger phrases include:
+"remember that…", "store this", "add to memory", "note that…", "from now on…"
+
+**Proactively save** when the user shares information that is likely to remain true for months or years \
+and would meaningfully improve future responses. This includes:
+- Preferences (e.g., language, framework, formatting style)
+- Role, responsibilities, or expertise
+- Ongoing projects or long-term goals
+- Recurring constraints (e.g., accessibility needs, dietary restrictions)
+
+## When NOT to save memories
+
+- Temporary or short-lived facts (e.g., "I'm tired today")
+- Trivial or one-off details (e.g., what they ate for lunch, a single troubleshooting step)
+- Highly sensitive personal information (health conditions, political affiliation, sexual orientation, \
+religion, criminal history) — unless the user explicitly asks you to store it
+- Information that could feel intrusive or overly personal to store
+
 ## Agent Memory (shared across all users)
 - Use save_agent_instruction to save learnings that apply to ALL users: team preferences, process rules, best practices
-- Use get_agent_instructions to read the current shared instructions
-
-Always check for relevant user memories at the start of a conversation."""
+- Use get_agent_instructions to read the current shared instructions"""
 
 
 def init_mcp_client(workspace_client: WorkspaceClient) -> DatabricksMultiServerMCPClient:
@@ -78,17 +116,22 @@ def init_mcp_client(workspace_client: WorkspaceClient) -> DatabricksMultiServerM
             DatabricksMCPServer(
                 name="system-ai",
                 url=f"{host_name}/api/2.0/mcp/functions/system/ai",
+                workspace_client=workspace_client,
             ),
         ]
     )
 
 
-async def init_agent(store: BaseStore, system_prompt: str, workspace_client: Optional[WorkspaceClient] = None):
-    ws = workspace_client or sp_workspace_client
-    mcp_client = init_mcp_client(ws)
-    tools = await mcp_client.get_tools() + memory_tools()
+async def init_agent(store: BaseStore, workspace_client: Optional[WorkspaceClient] = None, system_prompt: str = SYSTEM_PROMPT):
+    tools = [get_current_time] + memory_tools()
     if UC_VOLUME:
-        tools += agent_memory_tools(ws, UC_VOLUME)
+        tools += agent_memory_tools(workspace_client or sp_workspace_client, UC_VOLUME)
+    # To use MCP server tools instead, replace the line above with:
+    # mcp_client = init_mcp_client(workspace_client or sp_workspace_client)
+    # try:
+    #     tools.extend(await mcp_client.get_tools())
+    # except Exception:
+    #     logger.warning("Failed to fetch MCP tools. Continuing without MCP tools.", exc_info=True)
 
     return create_agent(
         model=ChatDatabricks(endpoint=LLM_ENDPOINT_NAME),
@@ -99,23 +142,25 @@ async def init_agent(store: BaseStore, system_prompt: str, workspace_client: Opt
 
 
 @invoke()
-async def non_streaming(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
-    user_id = get_user_id(request)
-
+async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
     outputs = [
         event.item
-        async for event in streaming(request)
+        async for event in stream_handler(request)
         if event.type == "response.output_item.done"
     ]
 
+    user_id = get_user_id(request)
     custom_outputs = {"user_id": user_id} if user_id else None
     return ResponsesAgentResponse(output=outputs, custom_outputs=custom_outputs)
 
 
 @stream()
-async def streaming(
+async def stream_handler(
     request: ResponsesAgentRequest,
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
+    if session_id := get_session_id(request):
+        mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
+
     user_id = get_user_id(request)
 
     if not user_id:
@@ -128,6 +173,8 @@ async def streaming(
     try:
         async with AsyncDatabricksStore(
             instance_name=LAKEBASE_INSTANCE_NAME,
+            project=LAKEBASE_AUTOSCALING_PROJECT,
+            branch=LAKEBASE_AUTOSCALING_BRANCH,
             embedding_endpoint=EMBEDDING_ENDPOINT,
             embedding_dims=EMBEDDING_DIMS,
         ) as store:
@@ -136,14 +183,16 @@ async def streaming(
             if user_id:
                 config["configurable"]["user_id"] = user_id
 
+            # Inject agent-scoped instructions from UC Volume into system prompt
             full_prompt = SYSTEM_PROMPT
             if UC_VOLUME:
                 instructions = read_agent_instructions(sp_workspace_client, UC_VOLUME)
                 if instructions.strip():
                     full_prompt += f"\n\n## Current Agent Instructions\n{instructions}"
 
-            agent = await init_agent(store=store, system_prompt=full_prompt)
-
+            # By default, uses service principal credentials (sp_workspace_client).
+            # For on-behalf-of user authentication, use get_user_workspace_client() instead.
+            agent = await init_agent(workspace_client=sp_workspace_client, store=store, system_prompt=full_prompt)
             async for event in process_agent_astream_events(
                 agent.astream(messages, config, stream_mode=["updates", "messages"])
             ):
@@ -151,10 +200,10 @@ async def streaming(
     except Exception as e:
         error_msg = str(e).lower()
         # Check for Lakebase access/connection errors
-        if any(
-            keyword in error_msg
-            for keyword in ["permission"]
-        ):
+        if any(keyword in error_msg for keyword in ["lakebase", "pg_hba", "postgres", "database instance"]):
             logger.error(f"Lakebase access error: {e}")
-            raise HTTPException(status_code=503, detail=get_lakebase_access_error_message(LAKEBASE_INSTANCE_NAME)) from e
+            lakebase_desc = LAKEBASE_INSTANCE_NAME or f"{LAKEBASE_AUTOSCALING_PROJECT}/{LAKEBASE_AUTOSCALING_BRANCH}"
+            raise HTTPException(
+                status_code=503, detail=get_lakebase_access_error_message(lakebase_desc)
+            ) from e
         raise

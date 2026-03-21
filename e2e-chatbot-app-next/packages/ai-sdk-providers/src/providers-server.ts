@@ -76,12 +76,9 @@ const API_PROXY = process.env.API_PROXY;
 // Cache for endpoint details to check task type and OBO scopes
 const endpointDetailsCache = new Map<
   string,
-  { task: string | undefined; userApiScopes: string[]; isOboEnabled: boolean; timestamp: number }
+  { task: string | undefined; userApiScopes: string[]; isOboEnabled: boolean; isSupervisorAgent: boolean; timestamp: number }
 >();
 const ENDPOINT_DETAILS_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-
-// Cached OBO status — set by getEndpointDetails, read by the provider fetch
-let cachedOboEnabled = false;
 
 /**
  * Checks if context should be injected based on cached endpoint details.
@@ -256,13 +253,12 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
     fetch: async (...[input, init]: Parameters<typeof fetch>) => {
       const headers = new Headers(init?.headers);
 
-      // If the user's OBO token is present and the endpoint supports OBO,
-      // use the user's token for Authorization so the endpoint sees the
-      // user's identity for on-behalf-of authorization.
+      // If the user's OBO token is present, use it for Authorization so the
+      // endpoint sees the user's identity. Keep the header around so
+      // downstream agent apps can also read it directly.
       const userToken = headers.get('x-forwarded-access-token');
-      if (userToken && cachedOboEnabled) {
+      if (userToken) {
         headers.set('Authorization', `Bearer ${userToken}`);
-        headers.delete('x-forwarded-access-token');
       } else {
         const currentToken = await getProviderToken();
         headers.set('Authorization', `Bearer ${currentToken}`);
@@ -326,7 +322,6 @@ const getEndpointDetails = async (servingEndpoint: string) => {
   const isSupervisorAgent = data.tile_endpoint_metadata?.problem_type === 'MULTI_AGENT_SUPERVISOR';
   const userApiScopes = data.auth_policy?.user_auth_policy?.api_scopes ?? [];
   const isOboEnabled = userApiScopes.length > 0 || isSupervisorAgent;
-  cachedOboEnabled = isOboEnabled;
 
   // serving.serving-endpoints is always needed for OBO (to call the endpoint as the user)
   if (isOboEnabled && !userApiScopes.includes('serving.serving-endpoints')) {
@@ -340,7 +335,7 @@ const getEndpointDetails = async (servingEndpoint: string) => {
     console.warn(
       `⚠ OBO detected on endpoint "${servingEndpoint}". Required user authorization scopes: ${JSON.stringify(userApiScopes)}${saNote}\n` +
       `  → Add scopes to your app via the Databricks UI or in databricks.yml\n` +
-      `  → See: https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth`,
+      `  → See: https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app#enable-user-authorization`,
     );
   }
 
@@ -348,6 +343,7 @@ const getEndpointDetails = async (servingEndpoint: string) => {
     task: data.task as string | undefined,
     userApiScopes,
     isOboEnabled,
+    isSupervisorAgent,
     timestamp: Date.now(),
   };
   endpointDetailsCache.set(servingEndpoint, returnValue);
@@ -366,7 +362,7 @@ export async function getEndpointOboInfo(): Promise<{ enabled: boolean; required
     return {
       enabled: details.isOboEnabled,
       requiredScopes: details.userApiScopes,
-      isSupervisorAgent: details.isOboEnabled && details.userApiScopes.length === 0,
+      isSupervisorAgent: details.isSupervisorAgent,
     };
   } catch {
     return { enabled: false, requiredScopes: [], isSupervisorAgent: false };

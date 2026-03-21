@@ -1,10 +1,7 @@
-import logging
-from datetime import datetime
 from typing import AsyncGenerator
 
-import litellm
 import mlflow
-from agents import Agent, Runner, function_tool, set_default_openai_api, set_default_openai_client
+from agents import Agent, Runner, set_default_openai_api, set_default_openai_client
 from agents.tracing import set_trace_processors
 from databricks.sdk import WorkspaceClient
 from databricks_openai import AsyncDatabricksOpenAI
@@ -17,84 +14,75 @@ from mlflow.types.responses import (
 )
 
 from agent_server.utils import (
-    build_mcp_url,
-    get_session_id,
     get_user_workspace_client,
-    process_agent_stream_events,
+    process_agent_stream_events, build_mcp_url,
 )
-
-logger = logging.getLogger(__name__)
 
 # NOTE: this will work for all databricks models OTHER than GPT-OSS, which uses a slightly different API
 set_default_openai_client(AsyncDatabricksOpenAI())
 set_default_openai_api("chat_completions")
 set_trace_processors([])  # only use mlflow for trace processing
 mlflow.openai.autolog()
-logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
-litellm.suppress_debug_info = True
 
 
-@function_tool
-def get_current_time() -> str:
-    """Get the current date and time."""
-    return datetime.now().isoformat()
+MEMORY_MCP_HOST = "https://eng-ml-agent-platform.staging.cloud.databricks.com"
+memory_ws_client = WorkspaceClient(host=MEMORY_MCP_HOST, profile="agent-platform")
 
 
-async def init_mcp_server(workspace_client: WorkspaceClient):
+async def init_memory_mcp_server():
     return McpServer(
-        url=build_mcp_url("/api/2.0/mcp/functions/system/ai", workspace_client=workspace_client),
-        name="system.ai UC function MCP server",
-        workspace_client=workspace_client,
+        url=f"{MEMORY_MCP_HOST}/api/2.0/mcp/sql",
+        name="memory-mcp",
+        workspace_client=memory_ws_client,
+        params={
+            "headers": {"x-databricks-traffic-id": "testenv://liteswap/jenny_memory"},
+        },
     )
 
 
-def create_agent(mcp_servers: list[McpServer] | None = None) -> Agent:
+MEMORY_STORE = "test-embed"
+
+SYSTEM_PROMPT = f"""You are a helpful assistant with long-term memory.
+
+## Important: Check agent memory before every response
+Before responding to the user, ALWAYS call search_memory with memory_store="{MEMORY_STORE}", scope="agent", query="response preferences and procedures" to load any shared instructions that affect how you should respond.
+
+Also call search_memory with scope="user" to check for personal context about the current user.
+
+## Memory Tools
+- write_memory: Save info. scope="user" for personal facts, scope="agent" for shared rules/procedures.
+- search_memory: Search past memories. scope="user"/"agent"/"both".
+- Always use memory_store="{MEMORY_STORE}" for all memory operations."""
+
+
+def create_agent(mcp_server: McpServer) -> Agent:
     return Agent(
-        name="Agent",
-        instructions="You are a helpful assistant.",
-        model="databricks-gpt-5-2",
-        tools=[get_current_time],
-        mcp_servers=mcp_servers or [],
+        name="Memory agent",
+        instructions=SYSTEM_PROMPT,
+        model="databricks-claude-sonnet-4-5",
+        mcp_servers=[mcp_server],
     )
 
 
 @invoke()
-async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
-    if session_id := get_session_id(request):
-        mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
-    # To use MCP server tools, wrap the code below with this async context manager.
-    # By default, uses service principal credentials via WorkspaceClient().
-    # For on-behalf-of user authentication, use get_user_workspace_client() instead.
-    # try:
-    #     async with await init_mcp_server(WorkspaceClient()) as mcp_server:
-    #         agent = create_agent(mcp_servers=[mcp_server])
-    # except Exception:
-    #     logger.warning("MCP server unavailable. Continuing without MCP tools.", exc_info=True)
-    #     agent = create_agent()
-    agent = create_agent()
-    messages = [i.model_dump() for i in request.input]
-    result = await Runner.run(agent, messages)
-    return ResponsesAgentResponse(output=[item.to_input_item() for item in result.new_items])
+async def invoke(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
+    # Optionally use the user's workspace client for on-behalf-of authentication
+    # user_workspace_client = get_user_workspace_client()
+    async with await init_memory_mcp_server() as mcp_server:
+        agent = create_agent(mcp_server)
+        messages = [i.model_dump() for i in request.input]
+        result = await Runner.run(agent, messages)
+        return ResponsesAgentResponse(output=[item.to_input_item() for item in result.new_items])
 
 
 @stream()
-async def stream_handler(
-    request: ResponsesAgentRequest,
-) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
-    if session_id := get_session_id(request):
-        mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
-    # To use MCP server tools, wrap the code below with this async context manager.
-    # By default, uses service principal credentials via WorkspaceClient().
-    # For on-behalf-of user authentication, use get_user_workspace_client() instead.
-    # try:
-    #     async with await init_mcp_server(WorkspaceClient()) as mcp_server:
-    #         agent = create_agent(mcp_servers=[mcp_server])
-    # except Exception:
-    #     logger.warning("MCP server unavailable. Continuing without MCP tools.", exc_info=True)
-    #     agent = create_agent()
-    agent = create_agent()
-    messages = [i.model_dump() for i in request.input]
-    result = Runner.run_streamed(agent, input=messages)
+async def stream(request: ResponsesAgentRequest) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
+    # Optionally use the user's workspace client for on-behalf-of authentication
+    # user_workspace_client = get_user_workspace_client()
+    async with await init_memory_mcp_server() as mcp_server:
+        agent = create_agent(mcp_server)
+        messages = [i.model_dump() for i in request.input]
+        result = Runner.run_streamed(agent, input=messages)
 
-    async for event in process_agent_stream_events(result.stream_events()):
-        yield event
+        async for event in process_agent_stream_events(result.stream_events()):
+            yield event

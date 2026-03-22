@@ -4,7 +4,7 @@ from typing import AsyncGenerator
 
 import litellm
 import mlflow
-from agents import Agent, Runner, function_tool, set_default_openai_api, set_default_openai_client
+from agents import Agent, ModelSettings, Runner, function_tool, set_default_openai_api, set_default_openai_client
 from agents.tracing import set_trace_processors
 from databricks.sdk import WorkspaceClient
 from databricks_openai import AsyncDatabricksOpenAI
@@ -44,36 +44,45 @@ MEMORY_MCP_HOST = "https://eng-ml-agent-platform.staging.cloud.databricks.com"
 memory_ws_client = WorkspaceClient(host=MEMORY_MCP_HOST, profile="agent-platform")
 MEMORY_STORE = "test-embed"
 
-MEMORY_SYSTEM_PROMPT = f"""You are a helpful assistant with long-term memory.
+MEMORY_SYSTEM_PROMPT = f"""You are a helpful assistant with long-term memory. You proactively remember things about users.
 
-## Important: Check agent memory before every response
-Before responding to the user, ALWAYS call search_memory with memory_store="{MEMORY_STORE}", scope="agent", query="response preferences and procedures" to load any shared instructions that affect how you should respond.
+Always use memory_store="{MEMORY_STORE}" for all memory operations.
 
-Also call search_memory with scope="user" to check for personal context about the current user.
+## Before every response
+1. Call search_memory scope="agent", query="response preferences and procedures" to load shared instructions.
+2. Call search_memory scope="user" to check for personal context about the current user.
 
-## Memory Tools
-- write_memory: Save info. scope="user" for personal facts, scope="agent" for shared rules/procedures.
-- search_memory: Search past memories. scope="user"/"agent"/"both".
-- Always use memory_store="{MEMORY_STORE}" for all memory operations."""
+## Saving memories
+Proactively save anything the user shares about themselves (location, role, preferences, interests, etc.) using write_memory. Use scope="user" for personal facts, scope="agent" for shared rules that apply to all users.
+
+## Conversation history
+Refer to the current chat history for questions about this session. Only search memory for info from previous sessions."""
 
 
-async def init_mcp_server(workspace_client: WorkspaceClient = None):
-    return McpServer(
+async def init_mcp_servers():
+    memory = McpServer(
         url=f"{MEMORY_MCP_HOST}/api/2.0/mcp/sql",
         name="memory-mcp",
         workspace_client=memory_ws_client,
         params={
-            "headers": {"x-databricks-traffic-id": "testenv://liteswap/jenny_memory"},
+            "headers": {"x-databricks-traffic-id": "testenv://liteswap/jennymemorysa"},
         },
     )
+    github = McpServer(
+        url=f"{MEMORY_MCP_HOST}/api/2.0/mcp/external/github_demo",
+        name="github-mcp",
+        workspace_client=memory_ws_client,
+    )
+    return memory, github
 
 
 def create_agent(mcp_servers: list[McpServer] | None = None) -> Agent:
     return Agent(
-        name="Memory agent",
+        name="Code review agent",
         instructions=MEMORY_SYSTEM_PROMPT,
-        model="databricks-claude-sonnet-4-5",
+        model="databricks-gpt-5-2",
         mcp_servers=mcp_servers or [],
+        model_settings=ModelSettings(parallel_tool_calls=False),
     )
 
 
@@ -81,8 +90,9 @@ def create_agent(mcp_servers: list[McpServer] | None = None) -> Agent:
 async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
     if session_id := get_session_id(request):
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
-    async with await init_mcp_server() as mcp_server:
-        agent = create_agent(mcp_servers=[mcp_server])
+    memory_srv, github_srv = await init_mcp_servers()
+    async with memory_srv as mem, github_srv as gh:
+        agent = create_agent(mcp_servers=[mem, gh])
         messages = [i.model_dump() for i in request.input]
         result = await Runner.run(agent, messages)
         return ResponsesAgentResponse(output=[item.to_input_item() for item in result.new_items])
@@ -94,8 +104,9 @@ async def stream_handler(
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
     if session_id := get_session_id(request):
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
-    async with await init_mcp_server() as mcp_server:
-        agent = create_agent(mcp_servers=[mcp_server])
+    memory_srv, github_srv = await init_mcp_servers()
+    async with memory_srv as mem, github_srv as gh:
+        agent = create_agent(mcp_servers=[mem, gh])
         messages = [i.model_dump() for i in request.input]
         result = Runner.run_streamed(agent, input=messages)
 

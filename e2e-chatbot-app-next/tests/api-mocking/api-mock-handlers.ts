@@ -311,15 +311,21 @@ export const handlers = [
   // Mock fetching endpoint details
   // Returns agent/v1/responses to enable context injection testing
   // Includes auth_policy to simulate an OBO-enabled endpoint
-  http.get(/\/api\/2\.0\/serving-endpoints\/[^/]+$/, () => {
+  // SA endpoints get tile_endpoint_metadata with MULTI_AGENT_SUPERVISOR
+  http.get(/\/api\/2\.0\/serving-endpoints\/([^/]+)$/, ({ params }) => {
+    const endpointName = (params as Record<string, string>)[0] ?? '';
+    const isSupervisorAgent = endpointName.includes('supervisor');
     return HttpResponse.json({
-      name: 'test-endpoint',
+      name: endpointName || 'test-endpoint',
       task: 'agent/v1/responses',
       auth_policy: {
         user_auth_policy: {
-          api_scopes: ['serving.serving-endpoints'],
+          api_scopes: isSupervisorAgent ? [] : ['serving.serving-endpoints'],
         },
       },
+      ...(isSupervisorAgent && {
+        tile_endpoint_metadata: { problem_type: 'MULTI_AGENT_SUPERVISOR' },
+      }),
     });
   }),
 

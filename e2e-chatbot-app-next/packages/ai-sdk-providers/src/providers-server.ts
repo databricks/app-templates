@@ -354,18 +354,18 @@ const getEndpointDetails = async (servingEndpoint: string) => {
  * Returns OBO info for the configured serving endpoint.
  * Detects OBO via auth_policy scopes or Supervisor Agent type.
  */
-export async function getEndpointOboInfo(): Promise<{ enabled: boolean; requiredScopes: string[]; isSupervisorAgent: boolean }> {
+export async function getEndpointOboInfo(): Promise<{ isEndpointOboEnabled: boolean; endpointRequiredScopes: string[]; isSupervisorAgent: boolean }> {
   const servingEndpoint = process.env.DATABRICKS_SERVING_ENDPOINT;
-  if (!servingEndpoint) return { enabled: false, requiredScopes: [], isSupervisorAgent: false };
+  if (!servingEndpoint) return { isEndpointOboEnabled: false, endpointRequiredScopes: [], isSupervisorAgent: false };
   try {
     const details = await getEndpointDetails(servingEndpoint);
     return {
-      enabled: details.isOboEnabled,
-      requiredScopes: details.userApiScopes,
+      isEndpointOboEnabled: details.isOboEnabled,
+      endpointRequiredScopes: details.userApiScopes,
       isSupervisorAgent: details.isSupervisorAgent,
     };
   } catch {
-    return { enabled: false, requiredScopes: [], isSupervisorAgent: false };
+    return { isEndpointOboEnabled: false, endpointRequiredScopes: [], isSupervisorAgent: false };
   }
 }
 

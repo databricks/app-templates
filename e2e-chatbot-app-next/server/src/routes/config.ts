@@ -35,15 +35,15 @@ function getScopesFromToken(token: string): string[] {
 configRouter.get('/', async (req: Request, res: Response) => {
   const oboInfo = await getEndpointOboInfo();
 
-  let missingScopes = oboInfo.requiredScopes;
+  let missingScopes = oboInfo.endpointRequiredScopes;
 
   // If the user has an OBO token, check which scopes are already present
   const userToken = req.headers['x-forwarded-access-token'] as string | undefined;
-  if (userToken && oboInfo.enabled) {
+  if (userToken && oboInfo.isEndpointOboEnabled) {
     const tokenScopes = getScopesFromToken(userToken);
     // A required scope like "sql.statement-execution" is satisfied by
     // an exact match OR by its parent prefix (e.g. "sql")
-    missingScopes = oboInfo.requiredScopes.filter(required => {
+    missingScopes = oboInfo.endpointRequiredScopes.filter(required => {
       const parent = required.split('.')[0];
       return !tokenScopes.some(ts => ts === required || ts === parent);
     });
@@ -55,8 +55,8 @@ configRouter.get('/', async (req: Request, res: Response) => {
       feedback: !!process.env.MLFLOW_EXPERIMENT_ID,
     },
     obo: {
-      enabled: oboInfo.enabled,
-      requiredScopes: oboInfo.requiredScopes,
+      isEndpointOboEnabled: oboInfo.isEndpointOboEnabled,
+      endpointRequiredScopes: oboInfo.endpointRequiredScopes,
       missingScopes,
       isSupervisorAgent: oboInfo.isSupervisorAgent,
     },

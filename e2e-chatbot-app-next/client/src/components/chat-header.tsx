@@ -20,6 +20,36 @@ const DOCS_URL =
 const OBO_DOCS_URL =
   'https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app#enable-user-authorization';
 
+function OboScopeBanner({ missingScopes, isSupervisorAgent }: { missingScopes: string[], isSupervisorAgent: boolean }) {
+  if (missingScopes.length === 0) return null;
+
+  return (
+    <div className="w-full border-b border-red-500/20 bg-red-50 dark:bg-red-950/20 px-4 py-2.5">
+      <div className="flex items-center gap-2">
+        <TriangleAlert className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
+        <p className="text-sm text-red-700 dark:text-red-400">
+          This endpoint requires on-behalf-of user authorization. Add these
+          scopes to your app:{' '}
+          <strong>{missingScopes.join(', ')}</strong>.
+          {isSupervisorAgent && (
+            <>{' '}Your Supervisor Agent may also require additional scopes
+            for its downstream tools (e.g., <code>sql</code>, <code>dashboards.genie</code>).
+            Full scope discovery for Supervisor Agents is coming soon.</>
+          )}{' '}
+          <a
+            href={OBO_DOCS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 underline hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+          >
+            Learn more
+          </a>
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function ChatHeader({ title, empty, isLoadingTitle }: { title?: string, empty?: boolean, isLoadingTitle?: boolean }) {
   const navigate = useNavigate();
   const { chatHistoryEnabled, feedbackEnabled, oboMissingScopes, oboIsSupervisorAgent } = useConfig();
@@ -42,7 +72,6 @@ export function ChatHeader({ title, empty, isLoadingTitle }: { title?: string, e
             }
           </h4>
         }
-
 
         <div className="ml-auto flex items-center gap-2">
           {!chatHistoryEnabled && (
@@ -99,31 +128,7 @@ export function ChatHeader({ title, empty, isLoadingTitle }: { title?: string, e
         </div>
       </header>
 
-      {oboMissingScopes.length > 0 && (
-        <div className="w-full border-b border-red-500/20 bg-red-50 dark:bg-red-950/20 px-4 py-2.5">
-          <div className="flex items-center gap-2">
-            <TriangleAlert className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
-            <p className="text-sm text-red-700 dark:text-red-400">
-              This endpoint requires on-behalf-of user authorization. Add these
-              scopes to your app:{' '}
-              <strong>{oboMissingScopes.join(', ')}</strong>.
-              {oboIsSupervisorAgent && (
-                <>{' '}Your Supervisor Agent may also require additional scopes
-                for its downstream tools (e.g., <code>sql</code>, <code>dashboards.genie</code>).
-                Full scope discovery for Supervisor Agents is coming soon.</>
-              )}{' '}
-              <a
-                href={OBO_DOCS_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 underline hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-              >
-                Learn more
-              </a>
-            </p>
-          </div>
-        </div>
-      )}
+      <OboScopeBanner missingScopes={oboMissingScopes} isSupervisorAgent={oboIsSupervisorAgent} />
     </>
   );
 }

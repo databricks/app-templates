@@ -21,8 +21,6 @@ interface AppConfigContextType {
   error: Error | undefined;
   chatHistoryEnabled: boolean;
   feedbackEnabled: boolean;
-  oboEnabled: boolean;
-  oboRequiredScopes: string[];
   oboMissingScopes: string[];
   oboIsSupervisorAgent: boolean;
 }
@@ -50,8 +48,6 @@ export function AppConfigProvider({ children }: { children: ReactNode }) {
     // Default to true until loaded to avoid breaking existing behavior
     chatHistoryEnabled: data?.features.chatHistory ?? true,
     feedbackEnabled: data?.features.feedback ?? false,
-    oboEnabled: data?.obo?.enabled ?? false,
-    oboRequiredScopes: data?.obo?.requiredScopes ?? [],
     oboMissingScopes: data?.obo?.missingScopes ?? [],
     oboIsSupervisorAgent: data?.obo?.isSupervisorAgent ?? false,
   };

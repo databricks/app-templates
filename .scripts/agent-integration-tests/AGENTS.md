@@ -65,14 +65,6 @@ Local and deploy phases run **in parallel** via `ThreadPoolExecutor`. Either pha
 | `--skip-deploy` | `False` | Skip deployment testing |
 | `--no-destroy` | `False` | Keep deployed app running after test (skip `bundle destroy`) |
 
-### `test_quickstart_e2e.py` flags (additional)
-
-| Flag | Default | Description |
-|---|---|---|
-| `--scenario` | _(all)_ | Run only specific quickstart scenarios: `fresh-and-idempotent`, `existing-app`, `lakebase-idempotent` (repeatable) |
-| `--quickstart-only` | `False` | Skip deploy; only validate quickstart output (~1-2 min per scenario) |
-| `--git-ref` | _(none)_ | Test quickstart against a specific git ref (branch/commit) instead of working tree |
-
 ## File Structure
 
 ```
@@ -82,7 +74,6 @@ Local and deploy phases run **in parallel** via `ThreadPoolExecutor`. Either pha
 |-- lakebase_inspect.py       # Standalone utility to inspect a Lakebase instance (schemas, rows, permissions)
 |-- template_config.py        # TemplateConfig/FileEdit dataclasses, databricks.yml parser, 7 template definitions, REPO_ROOT
 |-- test_e2e.py               # Single test_e2e() parametrized across templates; orchestrates setup/local/deploy/cleanup phases
-|-- test_quickstart_e2e.py    # Quickstart journey tests: 3 scenarios covering fresh run, idempotency, existing-app binding
 |-- logs/                     # Runtime directory: per-template and per-scenario log files
 +-- pyproject.toml            # Dependencies (pytest, pytest-xdist, openai, requests, databricks-sdk, databricks-ai-bridge[memory])
 ```
@@ -95,9 +86,7 @@ Local and deploy phases run **in parallel** via `ThreadPoolExecutor`. Either pha
 
 **`test_e2e.py`** is the test orchestrator. `test_e2e()` is parametrized across all templates and runs the full pipeline: setup (clean, quickstart, edits) -> parallel local + deploy -> cleanup (revert edits, restore `databricks.yml`). `_query_endpoints` is the shared endpoint validation logic used by both local and deploy phases. `_run_local` and `_run_deploy` are the per-phase entry points submitted to the thread pool.
 
-**`test_quickstart_e2e.py`** tests the developer setup journey. Three scenarios: `fresh-and-idempotent` (first run creates experiment, second run reuses it), `existing-app` (pre-created app is bound on deploy), and `lakebase-idempotent` (re-run reuses Lakebase config from `.env`). Each scenario copies the template via `git_copy_template` (uses `git ls-files` to respect `.gitignore` while including uncommitted changes), runs quickstart with a unique app name (`qs-{initials}-{hex6}`), validates `.env` and `databricks.yml` output, then optionally deploys and waits for the app to reach RUNNING state.
-
-**`conftest.py`** registers CLI options and exposes `profile`, `lakebase`, and `repo_root` as pytest fixtures. Also registers `--quickstart-only`, `--git-ref`, and `--scenario` for `test_quickstart_e2e.py`.
+**`conftest.py`** registers CLI options and exposes `profile`, `lakebase`, and `repo_root` as pytest fixtures.
 
 ## How to Run
 
@@ -135,27 +124,6 @@ uv run pytest test_e2e.py -v -n 7 --profile staging --lakebase-project my-projec
 # Multiagent with custom Genie space and endpoint
 uv run pytest test_e2e.py -v --template agent-openai-agents-sdk-multiagent \
   --genie-space-id <UUID> --serving-endpoint <NAME>
-```
-
-### Quickstart e2e tests
-
-```bash
-cd .scripts/agent-integration-tests
-
-# All 3 scenarios (quickstart + deploy) — ~8 min each
-uv run pytest test_quickstart_e2e.py -v
-
-# Quickstart only — no deploy (~1-2 min per scenario)
-uv run pytest test_quickstart_e2e.py -v --quickstart-only
-
-# Single scenario
-uv run pytest test_quickstart_e2e.py -v --scenario fresh-and-idempotent
-
-# Test against a specific git branch (e.g. main)
-uv run pytest test_quickstart_e2e.py -v --git-ref main --scenario fresh-and-idempotent
-
-# Keep apps running for inspection
-uv run pytest test_quickstart_e2e.py -v --scenario existing-app --no-destroy
 ```
 
 ### Parallelism with pytest-xdist

@@ -35,6 +35,24 @@ def pytest_addoption(parser):
         default=False,
         help="Skip bundle destroy (keep app running for inspection)",
     )
+    # Quickstart e2e test options
+    parser.addoption(
+        "--quickstart-only",
+        action="store_true",
+        default=False,
+        help="Skip deploy phase in quickstart e2e tests (only validate quickstart output)",
+    )
+    parser.addoption(
+        "--git-ref",
+        default=None,
+        help="Test quickstart against a specific git ref (branch/commit) instead of working tree",
+    )
+    parser.addoption(
+        "--scenario",
+        action="append",
+        default=None,
+        help="Run only specific quickstart e2e scenarios (repeatable): fresh-and-idempotent, existing-app, lakebase-idempotent",
+    )
 
 
 @pytest.fixture

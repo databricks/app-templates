@@ -10,7 +10,6 @@ dependencies = [
     "mlflow>=3.10.0",
     "databricks-agents>=1.9.3",
     "python-dotenv>=1.2.1",
-    "ruamel.yaml>=0.18.0",
 ]
 
 [tool.uv]
@@ -25,6 +24,13 @@ dev = [
     "hatchling>=1.28.0",
     "pytest>=9.0.2",
 ]
+
+setup = [
+    "ruamel.yaml>=0.18.0",
+]
+
+[tool.uv]
+default-groups = ["dev", "setup"]
 
 [project.scripts]
 quickstart = "scripts.quickstart:main"

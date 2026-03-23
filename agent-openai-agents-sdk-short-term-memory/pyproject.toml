@@ -13,7 +13,6 @@ dependencies = [
     "mlflow>=3.10.0",
     "openai-agents>=0.4.1",
     "python-dotenv>=1.2.1",
-    "ruamel.yaml>=0.18.0",
     "uuid-utils>=0.10.0",
     "databricks-openai[memory]>=0.13.0",
     "databricks-sdk>=0.79.0",
@@ -35,6 +34,13 @@ dev = [
     "hatchling>=1.28.0",
     "pytest>=9.0.2",
 ]
+
+setup = [
+    "ruamel.yaml>=0.18.0",
+]
+
+[tool.uv]
+default-groups = ["dev", "setup"]
 
 
 [project.scripts]

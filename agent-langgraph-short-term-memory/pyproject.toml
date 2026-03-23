@@ -17,7 +17,6 @@ dependencies = [
     "langgraph>=1.0.9",
     "langchain-mcp-adapters>=0.2.1",
     "python-dotenv>=1.2.1",
-    "ruamel.yaml>=0.18.0",
 ]
 
 [build-system]
@@ -29,6 +28,13 @@ dev = [
     "hatchling>=1.28.0",
     "pytest>=9.0.2",
 ]
+
+setup = [
+    "ruamel.yaml>=0.18.0",
+]
+
+[tool.uv]
+default-groups = ["dev", "setup"]
 
 
 [project.scripts]

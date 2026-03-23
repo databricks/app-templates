@@ -16,7 +16,6 @@ dependencies = [
     "mlflow>=3.10.0",
     "openai-agents>=0.4.1",
     "python-dotenv",
-    "ruamel.yaml>=0.18.0",
     "sqlalchemy[asyncio]>=2.0",
     "pydantic-settings>=2.0",
     "litellm>=1.82.0",
@@ -33,6 +32,13 @@ dev = [
     "pytest-playwright>=0.6.0",
     "pytest-xdist>=3.8.0",
 ]
+
+setup = [
+    "ruamel.yaml>=0.18.0",
+]
+
+[tool.uv]
+default-groups = ["dev", "setup"]
 
 
 [tool.pytest.ini_options]

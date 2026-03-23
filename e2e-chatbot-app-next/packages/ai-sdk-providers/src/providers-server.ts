@@ -80,6 +80,11 @@ const endpointDetailsCache = new Map<
 >();
 const ENDPOINT_DETAILS_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
+/** Clear cached endpoint details (test-only). */
+export function clearEndpointDetailsCache() {
+  endpointDetailsCache.clear();
+}
+
 /**
  * Checks if context should be injected based on cached endpoint details.
  * Returns true if API_PROXY is set or if the endpoint task type is agent/v2/chat or agent/v1/responses.

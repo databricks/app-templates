@@ -13,6 +13,17 @@ import {
 import { TEST_PROMPTS } from '../prompts/routes';
 
 // ============================================================================
+// OBO Mock State Management
+// ============================================================================
+
+/** Controls whether the mock serving endpoint returns Supervisor Agent metadata. */
+let mockSupervisorAgentMode = false;
+
+export function setMockSupervisorAgentMode(enabled: boolean) {
+  mockSupervisorAgentMode = enabled;
+}
+
+// ============================================================================
 // MLflow Assessment State Management
 // ============================================================================
 
@@ -314,16 +325,16 @@ export const handlers = [
   // SA endpoints get tile_endpoint_metadata with MULTI_AGENT_SUPERVISOR
   http.get(/\/api\/2\.0\/serving-endpoints\/([^/]+)$/, ({ params }) => {
     const endpointName = (params as Record<string, string>)[0] ?? '';
-    const isSupervisorAgent = endpointName.includes('supervisor');
+    const isSA = mockSupervisorAgentMode || endpointName.includes('supervisor');
     return HttpResponse.json({
       name: endpointName || 'test-endpoint',
       task: 'agent/v1/responses',
       auth_policy: {
         user_auth_policy: {
-          api_scopes: isSupervisorAgent ? [] : ['serving.serving-endpoints'],
+          api_scopes: isSA ? [] : ['serving.serving-endpoints'],
         },
       },
-      ...(isSupervisorAgent && {
+      ...(isSA && {
         tile_endpoint_metadata: { problem_type: 'MULTI_AGENT_SUPERVISOR' },
       }),
     });

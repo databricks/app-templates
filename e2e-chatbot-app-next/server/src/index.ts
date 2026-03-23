@@ -171,6 +171,7 @@ async function startServer() {
         resetCapturedRequests,
         getLastCapturedRequest,
         resetMlflowAssessmentStore,
+        setMockSupervisorAgentMode,
       } = await import(handlersPath);
 
       // Test-only endpoint to get captured requests (for context injection testing)
@@ -197,6 +198,15 @@ async function startServer() {
       // Test-only endpoint to reset MLflow assessment store
       app.post('/api/test/reset-mlflow-store', (_req, res) => {
         resetMlflowAssessmentStore();
+        res.json({ success: true });
+      });
+
+      // Test-only endpoint to toggle Supervisor Agent mock mode and clear cache
+      app.post('/api/test/set-supervisor-mode', async (req, res) => {
+        const { enabled } = req.body as { enabled: boolean };
+        setMockSupervisorAgentMode(enabled);
+        const { clearEndpointDetailsCache } = await import('@chat-template/ai-sdk-providers');
+        clearEndpointDetailsCache();
         res.json({ success: true });
       });
 

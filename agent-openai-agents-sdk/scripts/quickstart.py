@@ -28,6 +28,7 @@ import json
 import os
 import platform
 import re
+import sys
 import secrets
 import shutil
 import subprocess
@@ -481,7 +482,6 @@ def create_mlflow_experiment(profile_name: str, username: str) -> tuple[str, str
                 profile_name,
                 "experiments",
                 "get-experiment",
-                "--experiment-id",
                 existing_id,
                 "--output",
                 "json",
@@ -1288,7 +1288,11 @@ def update_databricks_yml_app_name(app_name: str, budget_policy_id: str | None =
 
     content = yml_path.read_text()
 
-    # App names are always quoted (e.g. name: "agent-langgraph"); bundle names are not
+    # Replace the first quoted `name:` value with the new app name.
+    # In databricks.yml, the bundle name is unquoted (e.g. `name: agent_langgraph`)
+    # while the app name is always quoted (e.g. `name: "agent-langgraph"`).
+    # The regex matches `name: "..."` or `name: '...'` (but not `name: unquoted`),
+    # so count=1 reliably targets the app name without touching the bundle name.
     updated = re.sub(
         r'(\bname:\s+)["\']([^"\']*)["\']',
         lambda m: f'{m.group(1)}"{app_name}"',
@@ -1311,7 +1315,9 @@ def update_databricks_yml_app_name(app_name: str, budget_policy_id: str | None =
         yml_path.write_text(updated)
         print_success(f"Updated databricks.yml app name to '{app_name}'")
 
-    # Extract bundle key from resources.apps section
+    # Extract the DAB resource key from resources.apps.<key>: in databricks.yml.
+    # We avoid a YAML library here to keep the script dependency-free (stdlib only);
+    # PyYAML would also mangle comments and formatting on any write back.
     match = re.search(r"resources:\s*\n\s+apps:\s*\n\s+(\w+):", content, re.MULTILINE)
     if match:
         return match.group(1)
@@ -1413,7 +1419,7 @@ Examples:
 
         # Step 5c: Existing app binding (optional)
         app_name = args.app_name
-        if not app_name:
+        if not app_name and sys.stdin.isatty():
             print_step("Optional: Bind to an existing Databricks app")
             print("If you created an app via the Databricks UI before cloning this template,")
             print("you can bind this bundle to it to avoid a 'app already exists' error.")

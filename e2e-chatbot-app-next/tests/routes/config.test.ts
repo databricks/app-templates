@@ -46,7 +46,7 @@ test.describe('/api/config', () => {
     expect(data1).toEqual(data2);
   });
 
-  test('GET /api/config returns OBO info with endpoint scopes', async ({
+  test('GET /api/config returns OBO info', async ({
     adaContext,
   }) => {
     const response = await adaContext.request.get('/api/config');
@@ -54,9 +54,8 @@ test.describe('/api/config', () => {
 
     const data = await response.json();
     expect(data).toHaveProperty('obo');
-    expect(data.obo.isEndpointOboEnabled).toBe(true);
-    // The mock endpoint declares serving.serving-endpoints
-    expect(data.obo.endpointRequiredScopes).toContain('serving.serving-endpoints');
+    expect(data.obo).toHaveProperty('missingScopes');
+    expect(data.obo).toHaveProperty('isSupervisorAgent');
     expect(data.obo.isSupervisorAgent).toBe(false);
   });
 

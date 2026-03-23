@@ -8,8 +8,6 @@ interface ConfigResponse {
     feedback: boolean;
   };
   obo?: {
-    isEndpointOboEnabled: boolean;
-    endpointRequiredScopes: string[];
     missingScopes: string[];
     isSupervisorAgent: boolean;
   };

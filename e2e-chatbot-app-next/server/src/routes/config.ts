@@ -55,8 +55,6 @@ configRouter.get('/', async (req: Request, res: Response) => {
       feedback: !!process.env.MLFLOW_EXPERIMENT_ID,
     },
     obo: {
-      isEndpointOboEnabled: oboInfo.isEndpointOboEnabled,
-      endpointRequiredScopes: oboInfo.endpointRequiredScopes,
       missingScopes,
       isSupervisorAgent: oboInfo.isSupervisorAgent,
     },

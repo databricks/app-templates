@@ -2,8 +2,8 @@
 # 1. Checks prerequisites (uv, node, npm, databricks CLI) and validates Node.js version
 # 2. Creates .env from .env.example (or from scratch)
 # 3. Sets up Databricks authentication (validates/creates profile)
-# 4. Gets Databricks username via current-user API
-# 5. Creates MLflow experiment via `databricks experiments create-experiment`
+# 4. Gets Databricks username via Databricks SDK (current_user.me())
+# 5. Creates MLflow experiment via Databricks SDK (experiments.create_experiment)
 # 6. Updates .env with: DATABRICKS_CONFIG_PROFILE, MLFLOW_TRACKING_URI, MLFLOW_EXPERIMENT_ID
 # 7. Updates databricks.yml: sets experiment_id in app resource
 # 8. (If lakebase needed) Sets up lakebase (provisioned or autoscaling)
@@ -986,64 +986,68 @@ class TestHappyPathAutoscalingOnRealTemplates:
             )
 
 
+def _mock_workspace_client(get_experiment_result=None, get_experiment_raises=False,
+                            create_experiment_id="99999"):
+    """Build a mock WorkspaceClient for experiment tests."""
+    mock_w = MagicMock()
+    if get_experiment_raises:
+        mock_w.experiments.get_experiment.side_effect = Exception("not found")
+    else:
+        mock_exp = MagicMock()
+        mock_exp.experiment = get_experiment_result
+        mock_w.experiments.get_experiment.return_value = mock_exp
+    mock_create = MagicMock()
+    mock_create.experiment_id = create_experiment_id
+    mock_w.experiments.create_experiment.return_value = mock_create
+    return mock_w
+
+
 class TestExperimentIdempotency:
     """Tests for experiment reuse logic in create_mlflow_experiment."""
 
     def test_reuses_existing_id_in_env(self, tmp_path):
         """When .env has a valid experiment ID, returns it without creating a new one."""
         (tmp_path / ".env").write_text("MLFLOW_EXPERIMENT_ID=12345\n")
-        experiment_json = json.dumps(
-            {"experiment": {"name": "/Users/test/agents-on-apps", "experiment_id": "12345"}}
-        )
-        with patch("quickstart.run_command") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout=experiment_json)
+        existing_exp = MagicMock(name_="/Users/test/agents-on-apps", experiment_id="12345")
+        existing_exp.name = "/Users/test/agents-on-apps"
+        mock_w = _mock_workspace_client(get_experiment_result=existing_exp)
+        with patch("quickstart.get_workspace_client", return_value=mock_w):
             name, exp_id = create_mlflow_experiment("DEFAULT", "test@example.com")
 
         assert exp_id == "12345"
         assert name == "/Users/test/agents-on-apps"
-        # Should call get-experiment, not create-experiment
-        calls = mock_run.call_args_list
-        assert any("get-experiment" in str(c) for c in calls)
-        assert not any("create-experiment" in str(c) for c in calls)
+        mock_w.experiments.get_experiment.assert_called_once_with(experiment_id="12345")
+        mock_w.experiments.create_experiment.assert_not_called()
 
     def test_creates_new_if_id_missing(self, tmp_path):
         """When .env has no MLFLOW_EXPERIMENT_ID, creates a new experiment."""
         (tmp_path / ".env").write_text("DATABRICKS_CONFIG_PROFILE=DEFAULT\n")
-        create_json = json.dumps({"experiment_id": "99999"})
-        with patch("quickstart.run_command") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout=create_json)
+        mock_w = _mock_workspace_client(create_experiment_id="99999")
+        with patch("quickstart.get_workspace_client", return_value=mock_w):
             name, exp_id = create_mlflow_experiment("DEFAULT", "test@example.com")
 
         assert exp_id == "99999"
-        calls = mock_run.call_args_list
-        assert any("create-experiment" in str(c) for c in calls)
+        mock_w.experiments.get_experiment.assert_not_called()
+        mock_w.experiments.create_experiment.assert_called_once()
 
     def test_creates_new_if_experiment_deleted(self, tmp_path):
-        """When .env has ID but get-experiment fails, creates a new experiment."""
+        """When .env has ID but get_experiment fails, creates a new experiment."""
         (tmp_path / ".env").write_text("MLFLOW_EXPERIMENT_ID=deleted-id\n")
-        create_json = json.dumps({"experiment_id": "new-id"})
-
-        def side_effect(cmd, **kwargs):
-            if "get-experiment" in cmd:
-                return MagicMock(returncode=1, stdout="", stderr="RESOURCE_DOES_NOT_EXIST")
-            # create-experiment succeeds
-            return MagicMock(returncode=0, stdout=create_json)
-
-        with patch("quickstart.run_command", side_effect=side_effect):
+        mock_w = _mock_workspace_client(get_experiment_raises=True, create_experiment_id="new-id")
+        with patch("quickstart.get_workspace_client", return_value=mock_w):
             name, exp_id = create_mlflow_experiment("DEFAULT", "test@example.com")
 
         assert exp_id == "new-id"
+        mock_w.experiments.create_experiment.assert_called_once()
 
     def test_still_updates_yml_on_reuse(self, tmp_path):
         """Even when reusing an experiment, databricks.yml gets the experiment_id set."""
-        (tmp_path / ".databricks.yml.bak") if False else None  # no-op
         (tmp_path / "databricks.yml").write_text(MINIMAL_YML)
         (tmp_path / ".env").write_text("MLFLOW_EXPERIMENT_ID=12345\n")
-        experiment_json = json.dumps(
-            {"experiment": {"name": "/Users/test/agents-on-apps", "experiment_id": "12345"}}
-        )
-        with patch("quickstart.run_command") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout=experiment_json)
+        existing_exp = MagicMock()
+        existing_exp.name = "/Users/test/agents-on-apps"
+        mock_w = _mock_workspace_client(get_experiment_result=existing_exp)
+        with patch("quickstart.get_workspace_client", return_value=mock_w):
             _, exp_id = create_mlflow_experiment("DEFAULT", "test@example.com")
 
         # The test verifies create_mlflow_experiment returns the ID correctly;

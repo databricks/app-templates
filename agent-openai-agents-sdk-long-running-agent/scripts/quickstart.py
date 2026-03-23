@@ -475,11 +475,10 @@ def get_databricks_host(profile_name: str) -> str:
 def get_databricks_username(profile_name: str) -> str:
     """Get the current Databricks username."""
     try:
-        result = run_command(
-            ["databricks", "-p", profile_name, "current-user", "me", "--output", "json"]
-        )
-        user_data = json.loads(result.stdout)
-        return user_data.get("userName", "")
+        w = get_workspace_client(profile_name)
+        if w:
+            return w.current_user.me().user_name or ""
+        raise RuntimeError("Could not connect to Databricks workspace")
     except Exception as e:
         print_error(f"Failed to get Databricks username: {e}")
         print_troubleshooting_api()
@@ -490,74 +489,40 @@ def create_mlflow_experiment(profile_name: str, username: str) -> tuple[str, str
     """Create (or reuse) an MLflow experiment and return (name, id)."""
     print_step("Setting up MLflow experiment...")
 
+    w = get_workspace_client(profile_name)
+    if not w:
+        print_error("Could not connect to Databricks workspace")
+        print_troubleshooting_api()
+        sys.exit(1)
+
     # Check if we already have an experiment ID in .env (idempotency)
     existing_id = get_env_value("MLFLOW_EXPERIMENT_ID")
     if existing_id:
-        result = run_command(
-            [
-                "databricks",
-                "-p",
-                profile_name,
-                "experiments",
-                "get-experiment",
-                existing_id,
-                "--output",
-                "json",
-            ],
-            check=False,
-        )
-        if result.returncode == 0:
-            try:
-                data = json.loads(result.stdout)
-                experiment = data.get("experiment", data)
-                name = experiment.get("name", f"/Users/{username}/agents-on-apps")
-                print_success(f"Reusing existing experiment '{name}' (ID: {existing_id})")
-                return name, existing_id
-            except (json.JSONDecodeError, KeyError):
-                pass
+        try:
+            exp = w.experiments.get_experiment(experiment_id=existing_id).experiment
+            if exp and exp.name:
+                print_success(f"Reusing existing experiment '{exp.name}' (ID: {existing_id})")
+                return exp.name, existing_id
+        except Exception:
+            pass
         print("Existing experiment not found or invalid, creating a new one...")
 
     experiment_name = f"/Users/{username}/agents-on-apps"
 
     try:
         # Try to create with default name
-        result = run_command(
-            [
-                "databricks",
-                "-p",
-                profile_name,
-                "experiments",
-                "create-experiment",
-                experiment_name,
-                "--output",
-                "json",
-            ],
-            check=False,
-        )
-
-        if result.returncode == 0:
-            experiment_id = json.loads(result.stdout).get("experiment_id", "")
+        try:
+            experiment_id = w.experiments.create_experiment(name=experiment_name).experiment_id or ""
             print_success(f"Created experiment '{experiment_name}' with ID: {experiment_id}")
             return experiment_name, experiment_id
+        except Exception:
+            pass
 
         # Name already exists, try with random suffix
         print("Experiment name already exists, creating with random suffix...")
         random_suffix = secrets.token_hex(4)
         experiment_name = f"/Users/{username}/agents-on-apps-{random_suffix}"
-
-        result = run_command(
-            [
-                "databricks",
-                "-p",
-                profile_name,
-                "experiments",
-                "create-experiment",
-                experiment_name,
-                "--output",
-                "json",
-            ]
-        )
-        experiment_id = json.loads(result.stdout).get("experiment_id", "")
+        experiment_id = w.experiments.create_experiment(name=experiment_name).experiment_id or ""
         print_success(f"Created experiment '{experiment_name}' with ID: {experiment_id}")
         return experiment_name, experiment_id
 

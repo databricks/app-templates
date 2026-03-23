@@ -15,6 +15,7 @@ dependencies = [
     "mlflow>=3.10.0",
     "openai-agents>=0.4.1",
     "python-dotenv>=1.2.1",
+    "ruamel.yaml>=0.18.0",
 ]
 
 [build-system]

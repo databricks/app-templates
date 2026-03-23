@@ -17,6 +17,7 @@ dependencies = [
     "databricks-agents>=1.4.0",
     "pydantic>=2.11",
     "python-dotenv",
+    "ruamel.yaml>=0.18.0",
 ]
 
 [build-system]

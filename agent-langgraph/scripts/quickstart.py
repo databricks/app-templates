@@ -35,6 +35,24 @@ import subprocess
 import sys
 from pathlib import Path
 
+from ruamel.yaml import YAML
+from ruamel.yaml.scalarstring import DoubleQuotedScalarString
+
+
+def _load_yml(path: Path):
+    """Load a YAML file in round-trip mode (preserves comments and formatting)."""
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    yaml.indent(sequence=4, offset=2)
+    with open(path) as f:
+        return yaml, yaml.load(f)
+
+
+def _save_yml(yaml: YAML, data, path: Path) -> None:
+    """Write YAML back to file using the same loader instance (preserves formatting)."""
+    with open(path, "w") as f:
+        yaml.dump(data, f)
+
 
 def print_header(text: str) -> None:
     """Print a section header."""
@@ -1259,16 +1277,13 @@ def update_databricks_yml_experiment(experiment_id: str) -> None:
     if not yml_path.exists():
         return
 
-    content = yml_path.read_text()
-
-    # Set the experiment_id in the app's experiment resource
-    content = re.sub(
-        r'(experiment_id: )"[^"]*"',
-        f'\\1"{experiment_id}"',
-        content,
-    )
-
-    yml_path.write_text(content)
+    yaml, data = _load_yml(yml_path)
+    apps = data.get("resources", {}).get("apps", {})
+    for app_val in apps.values():
+        for resource in app_val.get("resources", []):
+            if "experiment" in resource:
+                resource["experiment"]["experiment_id"] = DoubleQuotedScalarString(experiment_id)
+    _save_yml(yaml, data, yml_path)
     print_success("Updated databricks.yml with experiment ID")
 
 
@@ -1286,42 +1301,24 @@ def update_databricks_yml_app_name(app_name: str, budget_policy_id: str | None =
     if not yml_path.exists():
         return ""
 
-    content = yml_path.read_text()
+    yaml, data = _load_yml(yml_path)
+    apps = data.get("resources", {}).get("apps", {})
+    if not apps:
+        return ""
 
-    # Replace the first quoted `name:` value with the new app name.
-    # In databricks.yml, the bundle name is unquoted (e.g. `name: agent_langgraph`)
-    # while the app name is always quoted (e.g. `name: "agent-langgraph"`).
-    # The regex matches `name: "..."` or `name: '...'` (but not `name: unquoted`),
-    # so count=1 reliably targets the app name without touching the bundle name.
-    updated = re.sub(
-        r'(\bname:\s+)["\']([^"\']*)["\']',
-        lambda m: f'{m.group(1)}"{app_name}"',
-        content,
-        count=1,
-        flags=re.MULTILINE,
-    )
+    app_key = next(iter(apps))
+    app_map = apps[app_key]
+    app_map["name"] = DoubleQuotedScalarString(app_name)
 
-    # Optionally insert budget_policy_id after the name line
     if budget_policy_id:
-        updated = re.sub(
-            rf'(\bname:\s+"{re.escape(app_name)}")',
-            f'\\1\n      budget_policy_id: "{budget_policy_id}"',
-            updated,
-            count=1,
-            flags=re.MULTILINE,
-        )
+        if "budget_policy_id" not in app_map:
+            app_map.insert(1, "budget_policy_id", DoubleQuotedScalarString(budget_policy_id))
+        else:
+            app_map["budget_policy_id"] = DoubleQuotedScalarString(budget_policy_id)
 
-    if updated != content:
-        yml_path.write_text(updated)
-        print_success(f"Updated databricks.yml app name to '{app_name}'")
-
-    # Extract the DAB resource key from resources.apps.<key>: in databricks.yml.
-    # We avoid a YAML library here to keep the script dependency-free (stdlib only);
-    # PyYAML would also mangle comments and formatting on any write back.
-    match = re.search(r"resources:\s*\n\s+apps:\s*\n\s+(\w+):", content, re.MULTILINE)
-    if match:
-        return match.group(1)
-    return ""
+    _save_yml(yaml, data, yml_path)
+    print_success(f"Updated databricks.yml app name to '{app_name}'")
+    return app_key
 
 
 def main():

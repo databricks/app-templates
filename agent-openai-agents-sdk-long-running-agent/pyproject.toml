@@ -16,6 +16,7 @@ dependencies = [
     "mlflow>=3.10.0",
     "openai-agents>=0.4.1",
     "python-dotenv",
+    "ruamel.yaml>=0.18.0",
     "sqlalchemy[asyncio]>=2.0",
     "pydantic-settings>=2.0",
     "litellm>=1.82.0",

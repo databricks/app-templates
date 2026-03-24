@@ -13,6 +13,24 @@ import {
 import { TEST_PROMPTS } from '../prompts/routes';
 
 // ============================================================================
+// OBO Mock State Management
+// ============================================================================
+
+/** Controls whether the mock serving endpoint returns Supervisor Agent metadata. */
+let mockSupervisorAgentMode = false;
+
+export function setMockSupervisorAgentMode(enabled: boolean) {
+  mockSupervisorAgentMode = enabled;
+}
+
+/** Captures headers from the last request to the serving endpoint. */
+let lastServingRequestHeaders: Record<string, string> = {};
+
+export function getLastServingRequestHeaders(): Record<string, string> {
+  return lastServingRequestHeaders;
+}
+
+// ============================================================================
 // MLflow Assessment State Management
 // ============================================================================
 
@@ -213,6 +231,7 @@ export const handlers = [
   // Mock chat completions (FMAPI - llm/v1/chat)
   // Use RegExp for better URL matching - matches any URL containing /serving-endpoints/ and ending with /chat/completions
   http.post(/\/serving-endpoints\/[^/]+\/chat\/completions$/, async (req) => {
+    lastServingRequestHeaders = Object.fromEntries(req.request.headers.entries());
     const body = await req.request.clone().json();
     captureRequestContext(req.request.url, body);
     if ((body as { stream?: boolean })?.stream) {
@@ -226,7 +245,9 @@ export const handlers = [
 
   // Mock responses endpoint (agent/v1/responses)
   // URL pattern: {host}/serving-endpoints/responses
-  http.post(/\/serving-endpoints\/responses$/, async (req) => {
+  http.post(/\/serving-endpoints\/(?:[^/]+\/)?responses$/, async (req) => {
+    // Capture headers for token forwarding tests
+    lastServingRequestHeaders = Object.fromEntries(req.request.headers.entries());
     const body = await req.request.clone().json();
     captureRequestContext(req.request.url, body);
     const isStreaming = (body as { stream?: boolean })?.stream;
@@ -310,10 +331,22 @@ export const handlers = [
 
   // Mock fetching endpoint details
   // Returns agent/v1/responses to enable context injection testing
-  http.get(/\/api\/2\.0\/serving-endpoints\/[^/]+$/, () => {
+  // Includes auth_policy to simulate an OBO-enabled endpoint
+  // SA endpoints get tile_endpoint_metadata with MULTI_AGENT_SUPERVISOR
+  http.get(/\/api\/2\.0\/serving-endpoints\/([^/]+)$/, ({ params }) => {
+    const endpointName = (params as Record<string, string>)[0] ?? '';
+    const isSA = mockSupervisorAgentMode || endpointName.includes('supervisor');
     return HttpResponse.json({
-      name: 'test-endpoint',
+      name: endpointName || 'test-endpoint',
       task: 'agent/v1/responses',
+      auth_policy: {
+        user_auth_policy: {
+          api_scopes: isSA ? [] : ['serving.serving-endpoints'],
+        },
+      },
+      ...(isSA && {
+        tile_endpoint_metadata: { problem_type: 'MULTI_AGENT_SUPERVISOR' },
+      }),
     });
   }),
 

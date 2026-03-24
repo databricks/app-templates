@@ -73,12 +73,17 @@ const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true';
 
 const API_PROXY = process.env.API_PROXY;
 
-// Cache for endpoint details to check task type
+// Cache for endpoint details to check task type and OBO scopes
 const endpointDetailsCache = new Map<
   string,
-  { task: string | undefined; timestamp: number }
+  { task: string | undefined; userApiScopes: string[]; isOboEnabled: boolean; isSupervisorAgent: boolean; timestamp: number }
 >();
 const ENDPOINT_DETAILS_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+/** Clear cached endpoint details (test-only). */
+export function clearEndpointDetailsCache() {
+  endpointDetailsCache.clear();
+}
 
 /**
  * Checks if context should be injected based on cached endpoint details.
@@ -251,10 +256,19 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
     baseURL: `${hostname}/serving-endpoints`,
     formatUrl: ({ baseUrl, path }) => API_PROXY ?? `${baseUrl}${path}`,
     fetch: async (...[input, init]: Parameters<typeof fetch>) => {
-      // Always get fresh token for each request (will use cache if valid)
-      const currentToken = await getProviderToken();
       const headers = new Headers(init?.headers);
-      headers.set('Authorization', `Bearer ${currentToken}`);
+
+      // If the user's OBO token is present, use it for Authorization so the
+      // endpoint sees the user's identity. Keep the header around so
+      // downstream agent apps can also read it directly.
+      const userToken = headers.get('x-forwarded-access-token');
+      if (userToken) {
+        headers.set('Authorization', `Bearer ${userToken}`);
+      } else {
+        const currentToken = await getProviderToken();
+        headers.set('Authorization', `Bearer ${currentToken}`);
+      }
+
       if (API_PROXY) {
         headers.set('x-mlflow-return-trace-id', 'true');
       }
@@ -271,7 +285,20 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
   return provider;
 }
 
-// Get the task type of the serving endpoint
+// Response type for serving endpoint details
+interface EndpointDetailsResponse {
+  task: string | undefined;
+  auth_policy?: {
+    user_auth_policy: {
+      api_scopes: string[];
+    };
+  };
+  tile_endpoint_metadata?: {
+    problem_type: string;
+  };
+}
+
+// Get the task type and OBO scopes of the serving endpoint
 const getEndpointDetails = async (servingEndpoint: string) => {
   const cached = endpointDetailsCache.get(servingEndpoint);
   if (
@@ -294,14 +321,58 @@ const getEndpointDetails = async (servingEndpoint: string) => {
       headers,
     },
   );
-  const data = (await response.json()) as { task: string | undefined };
+  const data = (await response.json()) as EndpointDetailsResponse;
+
+  // Detect OBO: either explicit auth_policy scopes, or Supervisor Agent (always OBO)
+  const isSupervisorAgent = data.tile_endpoint_metadata?.problem_type === 'MULTI_AGENT_SUPERVISOR';
+  const userApiScopes = data.auth_policy?.user_auth_policy?.api_scopes ?? [];
+  const isOboEnabled = userApiScopes.length > 0 || isSupervisorAgent;
+
+  // serving.serving-endpoints is always needed for OBO (to call the endpoint as the user)
+  if (isOboEnabled && !userApiScopes.includes('serving.serving-endpoints')) {
+    userApiScopes.push('serving.serving-endpoints');
+  }
+
+  if (isOboEnabled) {
+    const saNote = isSupervisorAgent
+      ? `\n  → This is a Supervisor Agent. It may require additional scopes for downstream tools (e.g., sql, dashboards.genie). Full scope discovery for Supervisor Agents is coming soon.`
+      : '';
+    console.warn(
+      `⚠ OBO detected on endpoint "${servingEndpoint}". Required user authorization scopes: ${JSON.stringify(userApiScopes)}${saNote}\n` +
+      `  → Add scopes to your app via the Databricks UI or in databricks.yml\n` +
+      `  → See: https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app#enable-user-authorization`,
+    );
+  }
+
   const returnValue = {
     task: data.task as string | undefined,
+    userApiScopes,
+    isOboEnabled,
+    isSupervisorAgent,
     timestamp: Date.now(),
   };
   endpointDetailsCache.set(servingEndpoint, returnValue);
   return returnValue;
 };
+
+/**
+ * Returns OBO info for the configured serving endpoint.
+ * Detects OBO via auth_policy scopes or Supervisor Agent type.
+ */
+export async function getEndpointOboInfo(): Promise<{ isEndpointOboEnabled: boolean; endpointRequiredScopes: string[]; isSupervisorAgent: boolean }> {
+  const servingEndpoint = process.env.DATABRICKS_SERVING_ENDPOINT;
+  if (!servingEndpoint) return { isEndpointOboEnabled: false, endpointRequiredScopes: [], isSupervisorAgent: false };
+  try {
+    const details = await getEndpointDetails(servingEndpoint);
+    return {
+      isEndpointOboEnabled: details.isOboEnabled,
+      endpointRequiredScopes: details.userApiScopes,
+      isSupervisorAgent: details.isSupervisorAgent,
+    };
+  } catch {
+    return { isEndpointOboEnabled: false, endpointRequiredScopes: [], isSupervisorAgent: false };
+  }
+}
 
 // Create a smart provider wrapper that handles OAuth initialization
 interface SmartProvider {

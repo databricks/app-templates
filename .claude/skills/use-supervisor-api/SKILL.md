@@ -38,19 +38,17 @@ Define your tools as a list of dicts. Run `uv run discover-tools` to find availa
 TOOLS = [
     # Genie space — natural language queries over structured data
     {
-        "type": "genie",
-        "genie": {
-            "name": "my-genie-space",
+        "type": "genie_space",
+        "genie_space": {
             "description": "Query sales data using natural language",
             "space_id": "<genie-space-id>",
         },
     },
     # UC function — SQL or Python UDF
     {
-        "type": "uc_function",
-        "uc_function": {
+        "type": "unity_catalog_function",
+        "unity_catalog_function": {
             "name": "<catalog>.<schema>.<function_name>",
-            "name_alias": "my_function",
             "description": "Executes a custom UC function",
         },
     },
@@ -65,11 +63,10 @@ TOOLS = [
             "endpoint_name": "<ka-serving-endpoint-name>",
         },
     },
-    # MCP server via UC connection
+    # External MCP server via UC connection
     {
-        "type": "mcp",
-        "mcp": {
-            "name": "my-mcp-server",
+        "type": "external_mcp_server",
+        "external_mcp_server": {
             "description": "An external MCP server",
             "connection_name": "<uc-connection-name>",
         },
@@ -156,10 +153,10 @@ For each hosted tool, grant the corresponding resource access. See the **add-too
 
 | Tool type | Resource to grant |
 |-----------|-------------------|
-| `genie` | `genie_space` with `CAN_RUN` |
-| `uc_function` | `uc_securable` (FUNCTION) with `EXECUTE` |
+| `genie_space` | `genie_space` with `CAN_RUN` |
+| `unity_catalog_function` | `uc_securable` (FUNCTION) with `EXECUTE` |
 | `agent_endpoint` | `serving_endpoint` with `CAN_QUERY` (KA endpoints only) |
-| `mcp` | `uc_securable` (CONNECTION) with `USE_CONNECTION` |
+| `external_mcp_server` | `uc_securable` (CONNECTION) with `USE_CONNECTION` |
 
 Also grant `CAN_QUERY` on the `MODEL` serving endpoint:
 
@@ -181,6 +178,6 @@ databricks bundle deploy && databricks bundle run {{BUNDLE_NAME}}  # Deploy
 
 **"Please ensure AI Gateway V2 is enabled"** — AI Gateway must be enabled for the workspace. Contact your Databricks account team.
 
-**"Cannot mix hosted and client-side tools"** — Remove any `function`-type tools (Python callables) from `TOOLS`. All tools must be hosted types (`genie`, `uc_function`, `agent_endpoint`, `mcp`).
+**"Cannot mix hosted and client-side tools"** — Remove any `function`-type tools (Python callables) from `TOOLS`. All tools must be hosted types (`genie_space`, `unity_catalog_function`, `agent_endpoint`, `external_mcp_server`).
 
 **"Parameter not supported when tools are provided"** — Remove `temperature`, `top_p`, or other inference parameters from the `responses.create()` call.

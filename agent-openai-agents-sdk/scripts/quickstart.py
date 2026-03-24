@@ -937,10 +937,18 @@ def setup_lakebase(
         update_env_file("PGDATABASE", "databricks_postgres")
         print_success("PGDATABASE set to 'databricks_postgres'")
 
+        # Fetch database ID for the postgres resource in databricks.yml
+        database_id = _fetch_autoscaling_database_id(profile_name, autoscaling_project, autoscaling_branch)
+
         print_success(
             f"Lakebase autoscaling config saved to .env (project: {autoscaling_project}, branch: {autoscaling_branch})"
         )
-        return {"type": "autoscaling", "project": autoscaling_project, "branch": autoscaling_branch}
+        return {
+            "type": "autoscaling",
+            "project": autoscaling_project,
+            "branch": autoscaling_branch,
+            "database_id": database_id,
+        }
 
     # Interactive selection
     selection = select_lakebase_interactive(profile_name)
@@ -992,11 +1000,55 @@ def setup_lakebase(
         update_env_file("PGDATABASE", "databricks_postgres")
         print_success("PGDATABASE set to 'databricks_postgres'")
 
+        # Fetch database ID for the postgres resource in databricks.yml
+        database_id = _fetch_autoscaling_database_id(profile_name, project, branch)
+
         print_success(
             f"Lakebase autoscaling config saved to .env (project: {project}, branch: {branch})"
         )
+        selection["database_id"] = database_id
 
     return selection
+
+
+def _fetch_autoscaling_database_id(profile_name: str, project: str, branch: str) -> str:
+    """Fetch the first database ID for an autoscaling Lakebase branch.
+
+    Returns the database ID string, or empty string if not found.
+    """
+    result = run_command(
+        [
+            "databricks",
+            "-p",
+            profile_name,
+            "api",
+            "get",
+            f"/api/2.0/postgres/projects/{project}/branches/{branch}/databases",
+            "--output",
+            "json",
+        ],
+        check=False,
+    )
+    if result.returncode == 0 and result.stdout:
+        try:
+            data = json.loads(result.stdout)
+            databases = data.get("databases", [])
+            if databases:
+                # The database name is a full resource path like
+                # "projects/{project}/branches/{branch}/databases/{id}"
+                db_name = databases[0].get("name", "")
+                if db_name:
+                    # Extract just the database ID from the full path
+                    parts = db_name.split("/databases/")
+                    if len(parts) == 2:
+                        database_id = parts[1]
+                        print_success(f"Found Lakebase database ID: {database_id}")
+                        return database_id
+        except (json.JSONDecodeError, IndexError, KeyError):
+            pass
+
+    print_error("Could not fetch database ID for Lakebase branch (postgres resource may need manual update)")
+    return ""
 
 
 def _replace_lakebase_env_vars(content: str, lakebase_config: dict) -> str:
@@ -1069,23 +1121,36 @@ def _replace_lakebase_env_vars(content: str, lakebase_config: dict) -> str:
 
 
 def _replace_lakebase_resource(content: str, lakebase_config: dict) -> str:
-    """Update the Lakebase database resource section in databricks.yml.
+    """Update the Lakebase database/postgres resource section in databricks.yml.
 
-    For provisioned: uncomments and fills in the database resource block.
-    For autoscaling: removes the commented-out provisioned resource block
-    (autoscaling postgres resource is added via API after deploy).
+    For provisioned: uncomments and fills in the database resource block,
+    removes any postgres resource block.
+    For autoscaling: fills in the postgres resource block with actual values,
+    removes any database resource block.
     """
     LAKEBASE_COMMENTS = {
+        "autoscaling postgres resource",
+        "use for provisioned lakebase resource",
+        # Backward compat: old comment text from pre-native-postgres templates
         "autoscaling postgres resource must be added via api after deploy",
         "see: .claude/skills/add-tools/examples/lakebase-autoscaling.md",
-        "use for provisioned lakebase resource",
     }
 
     lines = content.splitlines()
     result = []
     i = 0
     found_database = False
+    found_postgres = False
     resource_indent = None
+
+    def _detect_indent():
+        nonlocal resource_indent
+        if resource_indent is None:
+            for prev in reversed(result):
+                m = re.match(r"^(\s+)- name:", prev)
+                if m:
+                    resource_indent = m.group(1)
+                    break
 
     while i < len(lines):
         line = lines[i]
@@ -1094,9 +1159,6 @@ def _replace_lakebase_resource(content: str, lakebase_config: dict) -> str:
 
         # Skip lakebase-related comment lines in the resources section
         if bare in LAKEBASE_COMMENTS or (bare == "" and stripped == "#"):
-            # Bare "#" line between lakebase resource comments — skip it
-            # But only if we're inside the lakebase resource area (near other lakebase comments)
-            # Check if next or previous lines are lakebase-related
             is_lakebase_area = False
             if bare in LAKEBASE_COMMENTS:
                 is_lakebase_area = True
@@ -1106,29 +1168,19 @@ def _replace_lakebase_resource(content: str, lakebase_config: dict) -> str:
                     neighbor_idx = i + offset
                     if 0 <= neighbor_idx < len(lines):
                         neighbor_bare = lines[neighbor_idx].strip().lstrip("#").strip().lower()
-                        if neighbor_bare in LAKEBASE_COMMENTS or "database" in neighbor_bare:
+                        if neighbor_bare in LAKEBASE_COMMENTS or "database" in neighbor_bare or "postgres" in neighbor_bare:
                             is_lakebase_area = True
                             break
 
             if is_lakebase_area:
-                if resource_indent is None:
-                    for prev in reversed(result):
-                        m = re.match(r"^(\s+)- name:", prev)
-                        if m:
-                            resource_indent = m.group(1)
-                            break
+                _detect_indent()
                 i += 1
                 continue
 
         # Match the commented-out database resource lines
         if re.match(r"\s*#\s*- name: ['\"]?database['\"]?", stripped):
             found_database = True
-            if resource_indent is None:
-                for prev in reversed(result):
-                    m = re.match(r"^(\s+)- name:", prev)
-                    if m:
-                        resource_indent = m.group(1)
-                        break
+            _detect_indent()
             # Skip all subsequent commented lines that are part of this block
             i += 1
             while i < len(lines):
@@ -1181,31 +1233,80 @@ def _replace_lakebase_resource(content: str, lakebase_config: dict) -> str:
                 result.append(f"{indent}    permission: 'CAN_CONNECT_AND_CREATE'")
             continue
 
+        # Match the commented-out postgres resource lines
+        if re.match(r"\s*#\s*- name: ['\"]?postgres['\"]?", stripped):
+            found_postgres = True
+            _detect_indent()
+            # Skip all subsequent commented lines that are part of this block
+            i += 1
+            while i < len(lines):
+                next_stripped = lines[i].strip()
+                if next_stripped.startswith("#") and (
+                    "postgres:" in next_stripped
+                    or "branch:" in next_stripped
+                    or "database:" in next_stripped
+                    or "permission:" in next_stripped
+                ):
+                    i += 1
+                else:
+                    break
+
+            # For autoscaling, insert the uncommented postgres resource block
+            if lakebase_config["type"] == "autoscaling":
+                indent = resource_indent or "        "
+                project = lakebase_config["project"]
+                branch = lakebase_config["branch"]
+                database_id = lakebase_config.get("database_id", "")
+                result.append(f"{indent}- name: 'postgres'")
+                result.append(f"{indent}  postgres:")
+                result.append(f'{indent}    branch: "projects/{project}/branches/{branch}"')
+                result.append(f'{indent}    database: "projects/{project}/branches/{branch}/databases/{database_id}"')
+                result.append(f"{indent}    permission: 'CAN_CONNECT_AND_CREATE'")
+            continue
+
+        # Match an uncommented postgres resource (from a previous autoscaling run or template default)
+        if re.match(r"\s*- name: ['\"]?postgres['\"]?", stripped):
+            found_postgres = True
+            if resource_indent is None:
+                m = re.match(r"^(\s+)- name:", line)
+                if m:
+                    resource_indent = m.group(1)
+            # Skip all subsequent lines that are part of this block
+            i += 1
+            while i < len(lines):
+                next_stripped = lines[i].strip()
+                if next_stripped and not next_stripped.startswith("-") and not next_stripped.startswith("#"):
+                    i += 1
+                else:
+                    break
+
+            # For autoscaling, insert the updated postgres resource block
+            if lakebase_config["type"] == "autoscaling":
+                indent = resource_indent or "        "
+                project = lakebase_config["project"]
+                branch = lakebase_config["branch"]
+                database_id = lakebase_config.get("database_id", "")
+                result.append(f"{indent}- name: 'postgres'")
+                result.append(f"{indent}  postgres:")
+                result.append(f'{indent}    branch: "projects/{project}/branches/{branch}"')
+                result.append(f'{indent}    database: "projects/{project}/branches/{branch}/databases/{database_id}"')
+                result.append(f"{indent}    permission: 'CAN_CONNECT_AND_CREATE'")
+            continue
+
         result.append(line)
         i += 1
 
     # If provisioned but no existing database resource was found (e.g. after autoscaling
-    # removed it), append the resource block after the last resource entry
+    # removed it), append the resource block after the last resource entry.
     if lakebase_config["type"] == "provisioned" and not found_database:
-        # Find the last "- name:" line in the resources section to insert after
-        insert_idx = None
-        for idx in range(len(result) - 1, -1, -1):
-            if re.match(r"\s+- name:", result[idx]):
-                # Find the end of this resource block
-                insert_idx = idx + 1
-                while insert_idx < len(result):
-                    next_stripped = result[insert_idx].strip()
-                    if next_stripped and not next_stripped.startswith("-") and not next_stripped.startswith("#"):
-                        insert_idx += 1
-                    else:
-                        break
-                if resource_indent is None:
+        insert_idx = _find_last_resource_insert_idx(result)
+        if insert_idx is not None:
+            if resource_indent is None:
+                for idx in range(insert_idx - 1, -1, -1):
                     m = re.match(r"^(\s+)- name:", result[idx])
                     if m:
                         resource_indent = m.group(1)
-                break
-
-        if insert_idx is not None:
+                        break
             indent = resource_indent or "        "
             instance_name = lakebase_config["instance_name"]
             new_lines = [
@@ -1217,7 +1318,49 @@ def _replace_lakebase_resource(content: str, lakebase_config: dict) -> str:
             ]
             result = result[:insert_idx] + new_lines + result[insert_idx:]
 
+    # If autoscaling but no existing postgres resource was found (e.g. after provisioned
+    # removed it), append the resource block after the last resource entry.
+    # Only do this if we found some lakebase resource (database or comments), indicating
+    # this is a lakebase-enabled template.
+    if lakebase_config["type"] == "autoscaling" and not found_postgres and found_database:
+        insert_idx = _find_last_resource_insert_idx(result)
+        if insert_idx is not None:
+            if resource_indent is None:
+                for idx in range(insert_idx - 1, -1, -1):
+                    m = re.match(r"^(\s+)- name:", result[idx])
+                    if m:
+                        resource_indent = m.group(1)
+                        break
+            indent = resource_indent or "        "
+            project = lakebase_config["project"]
+            branch = lakebase_config["branch"]
+            database_id = lakebase_config.get("database_id", "")
+            new_lines = [
+                f"{indent}- name: 'postgres'",
+                f"{indent}  postgres:",
+                f'{indent}    branch: "projects/{project}/branches/{branch}"',
+                f'{indent}    database: "projects/{project}/branches/{branch}/databases/{database_id}"',
+                f"{indent}    permission: 'CAN_CONNECT_AND_CREATE'",
+            ]
+            result = result[:insert_idx] + new_lines + result[insert_idx:]
+
     return "\n".join(result) + "\n"
+
+
+def _find_last_resource_insert_idx(lines: list[str]) -> int | None:
+    """Find the index after the last resource block entry in the lines list."""
+    for idx in range(len(lines) - 1, -1, -1):
+        if re.match(r"\s+- name:", lines[idx]):
+            # Find the end of this resource block
+            insert_idx = idx + 1
+            while insert_idx < len(lines):
+                next_stripped = lines[insert_idx].strip()
+                if next_stripped and not next_stripped.startswith("-") and not next_stripped.startswith("#"):
+                    insert_idx += 1
+                else:
+                    break
+            return insert_idx
+    return None
 
 
 def update_databricks_yml_lakebase(lakebase_config: dict) -> None:

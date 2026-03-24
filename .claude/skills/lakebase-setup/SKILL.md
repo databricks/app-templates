@@ -38,11 +38,13 @@ Lakebase provides persistent PostgreSQL storage for agents:
 ## Complete Setup Workflow
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────────┐
-│  1. Add dependency  →  2. Get instance  →  3. Configure DAB  →  4. Configure .env   │
-│  5. Initialize tables  →  6. Deploy  →  7. Grant SP permissions  →  8. Run          │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────┐
+│  1. Add dependency  →  2. Get instance  →  3. Configure DAB              │
+│  4. Configure .env  →  5. Deploy  →  6. Grant SP permissions  →  7. Run  │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
+
+> **Shortcut:** If using a pre-configured memory template, `uv run quickstart` with Lakebase flags handles steps 2-4 automatically. You still need to do steps 5-7 manually.
 
 ---
 
@@ -98,6 +100,8 @@ databricks api get /api/2.0/postgres/projects/<project-name>/branches/<branch-na
 ---
 
 ## Step 3: Configure databricks.yml (Lakebase Resource)
+
+> **Note:** If you ran `uv run quickstart` with Lakebase flags (`--lakebase-provisioned-name` or `--lakebase-autoscaling-project`/`--lakebase-autoscaling-branch`), the quickstart already configured `databricks.yml` for you — including fetching the database ID for autoscaling. Manual configuration is only needed if you didn't use quickstart or need to change values.
 
 ### Option A: Provisioned
 
@@ -215,71 +219,9 @@ EMBEDDING_DIMS=1024
 ---
 
 ## Step 5: Initialize Tables
+## Step 5: Deploy
 
-### Option A: LangGraph Memory Templates (public schema)
-
-**Before deploying**, initialize the Lakebase tables. The `AsyncDatabricksStore` creates tables on first use, but you need to do this locally first:
-
-**Provisioned:**
-```bash
-DATABRICKS_CONFIG_PROFILE=<profile> uv run python -c "$(cat <<'EOF'
-import asyncio
-from databricks_langchain import AsyncDatabricksStore
-
-async def setup():
-    async with AsyncDatabricksStore(
-        instance_name="<your-instance-name>",
-        embedding_endpoint="databricks-gte-large-en",
-        embedding_dims=1024,
-    ) as store:
-        await store.setup()
-        print("Tables created!")
-
-asyncio.run(setup())
-EOF
-)"
-```
-
-**Autoscaling:**
-```bash
-DATABRICKS_CONFIG_PROFILE=<profile> uv run python -c "$(cat <<'EOF'
-import asyncio
-from databricks_langchain import AsyncDatabricksStore
-
-async def setup():
-    async with AsyncDatabricksStore(
-        project="<your-project-name>",
-        branch="<your-branch-name>",
-        embedding_endpoint="databricks-gte-large-en",
-        embedding_dims=1024,
-    ) as store:
-        await store.setup()
-        print("Tables created!")
-
-asyncio.run(setup())
-EOF
-)"
-```
-
-This creates these tables in the `public` schema:
-- `store` - Key-value storage for memories
-- `store_vectors` - Vector embeddings for semantic search
-- `store_migrations` - Schema migration tracking
-- `vector_migrations` - Vector schema migration tracking
-
-### Option B: Long-Running Agent Templates (agent_server schema)
-
-The long-running agent uses SQLAlchemy with a custom `agent_server` schema. Tables are created automatically on app startup via `CREATE SCHEMA IF NOT EXISTS agent_server` and `Base.metadata.create_all`. No manual table initialization is needed.
-
-Tables created in the `agent_server` schema:
-- `responses` - Response status tracking for background agent tasks
-- `messages` - Stream events and output items for responses
-
----
-
-## Step 6: Deploy
-
-Deploy the app first so the service principal is created:
+Deploy the app so the service principal and resources are created:
 
 ```bash
 DATABRICKS_CONFIG_PROFILE=<profile> databricks bundle deploy
@@ -287,7 +229,9 @@ DATABRICKS_CONFIG_PROFILE=<profile> databricks bundle deploy
 
 ---
 
-## Step 7: Grant SP Permissions (CRITICAL for deployed apps)
+## Step 6: Grant SP Permissions (CRITICAL)
+
+> **WARNING:** You MUST complete this step before running the app. Without it, the app will fail with database migration errors like `CREATE TABLE IF NOT EXISTS "drizzle"."__drizzle_migrations"` — permission denied.
 
 After deploying, the app's service principal needs Postgres roles to access Lakebase tables. The DAB resource grants basic connectivity, but you must also grant Postgres-level schema and table permissions.
 
@@ -300,16 +244,28 @@ DATABRICKS_CONFIG_PROFILE=<profile> databricks apps get <app-name> --output json
 
 ```bash
 # Provisioned:
-uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --instance-name <name>
+DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permissions.py <sp-client-id> \
+  --memory-type <type> --instance-name <name>
 
 # Autoscaling:
-uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --project <project> --branch <branch>
+DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permissions.py <sp-client-id> \
+  --memory-type <type> --project <project> --branch <branch>
 ```
 
+**Memory type by template:**
+
+| Template | `--memory-type` value |
+|----------|-----------------------|
+| `agent-langgraph-short-term-memory` | `langgraph-short-term` |
+| `agent-langgraph-long-term-memory` | `langgraph-long-term` |
+| `agent-openai-agents-sdk-short-term-memory` | `openai-short-term` |
+| `agent-openai-agents-sdk-long-running-agent` | `long-running-agent` |
+
+The script handles fresh branches gracefully (warns but doesn't fail if tables don't exist yet — they'll be created on first app startup).
 
 ---
 
-## Step 8: Run Your App
+## Step 7: Run Your App
 
 ```bash
 DATABRICKS_CONFIG_PROFILE=<profile> databricks bundle run {{BUNDLE_NAME}}
@@ -444,6 +400,7 @@ targets:
 | **App not updated after deploy** | Forgot to run bundle | Run `databricks bundle run <app>` after deploy |
 | **value_from not resolving** | Resource name mismatch | Ensure `value_from` value matches `name` in databricks.yml resources |
 | **"Invalid postgres resource parameters"** | Missing `database` field in postgres resource | Add full `database` path: `projects/<project>/branches/<branch>/databases/<db-id>` |
+| **`CREATE TABLE IF NOT EXISTS "drizzle"."__drizzle_migrations"` fails** | Grant step was skipped — SP lacks Postgres permissions | Run `grant_lakebase_permissions.py` with `--memory-type`, then restart the app |
 
 ---
 

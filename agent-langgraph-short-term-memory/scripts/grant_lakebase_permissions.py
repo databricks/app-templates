@@ -13,7 +13,7 @@ Usage:
     # Autoscaling instance:
     uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type <type> --project <project> --branch <branch>
 
-    # Memory types: langgraph-short-term, langgraph-long-term, openai-short-term
+    # Memory types: langgraph-short-term, langgraph-long-term, openai-short-term, long-running-agent
 """
 
 import argparse
@@ -25,24 +25,36 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-# Per-memory-type table definitions for public schema.
-MEMORY_TYPE_TABLES: dict[str, list[str]] = {
-    "langgraph-short-term": [
-        "checkpoint_migrations",
-        "checkpoint_writes",
-        "checkpoints",
-        "checkpoint_blobs",
-    ],
-    "langgraph-long-term": [
-        "store_migrations",
-        "store",
-        "store_vectors",
-        "vector_migrations",
-    ],
-    "openai-short-term": [
-        "agent_sessions",
-        "agent_messages",
-    ],
+# Per-memory-type schema -> table definitions.
+MEMORY_TYPE_SCHEMAS: dict[str, dict[str, list[str]]] = {
+    "langgraph-short-term": {
+        "public": [
+            "checkpoint_migrations",
+            "checkpoint_writes",
+            "checkpoints",
+            "checkpoint_blobs",
+        ],
+    },
+    "langgraph-long-term": {
+        "public": [
+            "store_migrations",
+            "store",
+            "store_vectors",
+            "vector_migrations",
+        ],
+    },
+    "openai-short-term": {
+        "public": [
+            "agent_sessions",
+            "agent_messages",
+        ],
+    },
+    "long-running-agent": {
+        "agent_server": [
+            "responses",
+            "messages",
+        ],
+    },
 }
 
 # Memory types that need sequence privileges on public schema
@@ -68,7 +80,7 @@ def main():
     parser.add_argument(
         "--memory-type",
         required=True,
-        choices=list(MEMORY_TYPE_TABLES.keys()),
+        choices=list(MEMORY_TYPE_SCHEMAS.keys()),
         help="Memory type to grant permissions for",
     )
     parser.add_argument(
@@ -123,7 +135,7 @@ def main():
 
     # Build schema -> tables map for the selected memory type
     schema_tables: dict[str, list[str]] = {
-        "public": MEMORY_TYPE_TABLES[memory_type],
+        **MEMORY_TYPE_SCHEMAS[memory_type],
         **SHARED_SCHEMAS,
     }
 

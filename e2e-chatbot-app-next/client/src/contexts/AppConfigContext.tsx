@@ -9,7 +9,6 @@ interface ConfigResponse {
   };
   obo?: {
     missingScopes: string[];
-    isSupervisorAgent: boolean;
   };
 }
 
@@ -20,7 +19,6 @@ interface AppConfigContextType {
   chatHistoryEnabled: boolean;
   feedbackEnabled: boolean;
   oboMissingScopes: string[];
-  oboIsSupervisorAgent: boolean;
 }
 
 const AppConfigContext = createContext<AppConfigContextType | undefined>(
@@ -47,7 +45,6 @@ export function AppConfigProvider({ children }: { children: ReactNode }) {
     chatHistoryEnabled: data?.features.chatHistory ?? true,
     feedbackEnabled: data?.features.feedback ?? false,
     oboMissingScopes: data?.obo?.missingScopes ?? [],
-    oboIsSupervisorAgent: data?.obo?.isSupervisorAgent ?? false,
   };
 
   return (

@@ -16,13 +16,6 @@ import { TEST_PROMPTS } from '../prompts/routes';
 // OBO Mock State Management
 // ============================================================================
 
-/** Controls whether the mock serving endpoint returns Supervisor Agent metadata. */
-let mockSupervisorAgentMode = false;
-
-export function setMockSupervisorAgentMode(enabled: boolean) {
-  mockSupervisorAgentMode = enabled;
-}
-
 /** Captures headers from the last request to the serving endpoint. */
 let lastServingRequestHeaders: Record<string, string> = {};
 
@@ -332,21 +325,16 @@ export const handlers = [
   // Mock fetching endpoint details
   // Returns agent/v1/responses to enable context injection testing
   // Includes auth_policy to simulate an OBO-enabled endpoint
-  // SA endpoints get tile_endpoint_metadata with MULTI_AGENT_SUPERVISOR
   http.get(/\/api\/2\.0\/serving-endpoints\/([^/]+)$/, ({ params }) => {
     const endpointName = (params as Record<string, string>)[0] ?? '';
-    const isSA = mockSupervisorAgentMode || endpointName.includes('supervisor');
     return HttpResponse.json({
       name: endpointName || 'test-endpoint',
       task: 'agent/v1/responses',
       auth_policy: {
         user_auth_policy: {
-          api_scopes: isSA ? [] : ['serving.serving-endpoints'],
+          api_scopes: ['serving.serving-endpoints'],
         },
       },
-      ...(isSA && {
-        tile_endpoint_metadata: { problem_type: 'MULTI_AGENT_SUPERVISOR' },
-      }),
     });
   }),
 

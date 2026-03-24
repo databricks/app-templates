@@ -31,6 +31,7 @@ TEMPLATES = {
     "agent-openai-agents-sdk-long-running-agent": {
         "sdk": "openai",
         "bundle_name": "agent_openai_agents_sdk_long_running_agent",
+        "has_lakebase": True,
     },
     "agent-non-conversational": {
         "sdk": "langgraph",

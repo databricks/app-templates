@@ -172,6 +172,7 @@ async function startServer() {
         getLastCapturedRequest,
         resetMlflowAssessmentStore,
         setMockSupervisorAgentMode,
+        getLastServingRequestHeaders,
       } = await import(handlersPath);
 
       // Test-only endpoint to get captured requests (for context injection testing)
@@ -208,6 +209,11 @@ async function startServer() {
         const { clearEndpointDetailsCache } = await import('@chat-template/ai-sdk-providers');
         clearEndpointDetailsCache();
         res.json({ success: true });
+      });
+
+      // Test-only endpoint to read headers from the last serving endpoint request
+      app.get('/api/test/serving-request-headers', (_req, res) => {
+        res.json(getLastServingRequestHeaders());
       });
 
       console.log(

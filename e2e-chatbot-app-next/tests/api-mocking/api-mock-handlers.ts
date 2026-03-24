@@ -23,6 +23,13 @@ export function setMockSupervisorAgentMode(enabled: boolean) {
   mockSupervisorAgentMode = enabled;
 }
 
+/** Captures headers from the last request to the serving endpoint. */
+let lastServingRequestHeaders: Record<string, string> = {};
+
+export function getLastServingRequestHeaders(): Record<string, string> {
+  return lastServingRequestHeaders;
+}
+
 // ============================================================================
 // MLflow Assessment State Management
 // ============================================================================
@@ -224,6 +231,7 @@ export const handlers = [
   // Mock chat completions (FMAPI - llm/v1/chat)
   // Use RegExp for better URL matching - matches any URL containing /serving-endpoints/ and ending with /chat/completions
   http.post(/\/serving-endpoints\/[^/]+\/chat\/completions$/, async (req) => {
+    lastServingRequestHeaders = Object.fromEntries(req.request.headers.entries());
     const body = await req.request.clone().json();
     captureRequestContext(req.request.url, body);
     if ((body as { stream?: boolean })?.stream) {
@@ -237,7 +245,9 @@ export const handlers = [
 
   // Mock responses endpoint (agent/v1/responses)
   // URL pattern: {host}/serving-endpoints/responses
-  http.post(/\/serving-endpoints\/responses$/, async (req) => {
+  http.post(/\/serving-endpoints\/(?:[^/]+\/)?responses$/, async (req) => {
+    // Capture headers for token forwarding tests
+    lastServingRequestHeaders = Object.fromEntries(req.request.headers.entries());
     const body = await req.request.clone().json();
     captureRequestContext(req.request.url, body);
     const isStreaming = (body as { stream?: boolean })?.stream;

@@ -20,7 +20,7 @@ const DOCS_URL =
 const OBO_DOCS_URL =
   'https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app#enable-user-authorization';
 
-function OboScopeBanner({ missingScopes, isSupervisorAgent }: { missingScopes: string[], isSupervisorAgent: boolean }) {
+function OboScopeBanner({ missingScopes }: { missingScopes: string[] }) {
   if (missingScopes.length === 0) return null;
 
   return (
@@ -30,12 +30,7 @@ function OboScopeBanner({ missingScopes, isSupervisorAgent }: { missingScopes: s
         <p className="text-sm text-red-700 dark:text-red-400">
           This endpoint requires on-behalf-of user authorization. Add these
           scopes to your app:{' '}
-          <strong>{missingScopes.join(', ')}</strong>.
-          {isSupervisorAgent && (
-            <>{' '}Your Supervisor Agent may also require additional scopes
-            for its downstream tools (e.g., <code>sql</code>, <code>dashboards.genie</code>).
-            Full scope discovery for Supervisor Agents is coming soon.</>
-          )}{' '}
+          <strong>{missingScopes.join(', ')}</strong>.{' '}
           <a
             href={OBO_DOCS_URL}
             target="_blank"
@@ -52,7 +47,7 @@ function OboScopeBanner({ missingScopes, isSupervisorAgent }: { missingScopes: s
 
 export function ChatHeader({ title, empty, isLoadingTitle }: { title?: string, empty?: boolean, isLoadingTitle?: boolean }) {
   const navigate = useNavigate();
-  const { chatHistoryEnabled, feedbackEnabled, oboMissingScopes, oboIsSupervisorAgent } = useConfig();
+  const { chatHistoryEnabled, feedbackEnabled, oboMissingScopes } = useConfig();
 
   return (
     <>
@@ -128,7 +123,7 @@ export function ChatHeader({ title, empty, isLoadingTitle }: { title?: string, e
         </div>
       </header>
 
-      <OboScopeBanner missingScopes={oboMissingScopes} isSupervisorAgent={oboIsSupervisorAgent} />
+      <OboScopeBanner missingScopes={oboMissingScopes} />
     </>
   );
 }

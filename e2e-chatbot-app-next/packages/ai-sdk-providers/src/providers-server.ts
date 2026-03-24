@@ -80,11 +80,6 @@ const endpointDetailsCache = new Map<
 >();
 const ENDPOINT_DETAILS_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-/** Clear cached endpoint details (test-only). */
-export function clearEndpointDetailsCache() {
-  endpointDetailsCache.clear();
-}
-
 /**
  * Checks if context should be injected based on cached endpoint details.
  * Returns true if API_PROXY is set or if the endpoint task type is agent/v2/chat or agent/v1/responses.
@@ -359,18 +354,17 @@ const getEndpointDetails = async (servingEndpoint: string) => {
  * Returns OBO info for the configured serving endpoint.
  * Detects OBO via auth_policy scopes or Supervisor Agent type.
  */
-export async function getEndpointOboInfo(): Promise<{ isEndpointOboEnabled: boolean; endpointRequiredScopes: string[]; isSupervisorAgent: boolean }> {
+export async function getEndpointOboInfo(): Promise<{ isEndpointOboEnabled: boolean; endpointRequiredScopes: string[] }> {
   const servingEndpoint = process.env.DATABRICKS_SERVING_ENDPOINT;
-  if (!servingEndpoint) return { isEndpointOboEnabled: false, endpointRequiredScopes: [], isSupervisorAgent: false };
+  if (!servingEndpoint) return { isEndpointOboEnabled: false, endpointRequiredScopes: [] };
   try {
     const details = await getEndpointDetails(servingEndpoint);
     return {
       isEndpointOboEnabled: details.isOboEnabled,
       endpointRequiredScopes: details.userApiScopes,
-      isSupervisorAgent: details.isSupervisorAgent,
     };
   } catch {
-    return { isEndpointOboEnabled: false, endpointRequiredScopes: [], isSupervisorAgent: false };
+    return { isEndpointOboEnabled: false, endpointRequiredScopes: [] };
   }
 }
 

@@ -1,9 +1,5 @@
 import { test, expect } from '../fixtures';
 
-async function setSupervisorMode(request: typeof test extends any ? any : never, enabled: boolean) {
-  await request.post('/api/test/set-supervisor-mode', { data: { enabled } });
-}
-
 test.describe('OBO Scope Banner', () => {
   test('shows banner when user token is missing required scopes', async ({
     adaContext,
@@ -30,20 +26,6 @@ test.describe('OBO Scope Banner', () => {
     const link = adaContext.page.locator('a[href*="enable-user-authorization"]');
     await expect(link).toBeVisible();
     await expect(link).toHaveText('Learn more');
-  });
-
-  test('SA banner shows supervisor-specific messaging', async ({
-    adaContext,
-  }) => {
-    // Enable supervisor agent mode and clear cache
-    await setSupervisorMode(adaContext.request, true);
-
-    await adaContext.page.goto('/');
-    const saBanner = adaContext.page.locator('text=Supervisor Agent');
-    await expect(saBanner).toBeVisible();
-
-    // Clean up: restore normal mode
-    await setSupervisorMode(adaContext.request, false);
   });
 
   test('banner hidden when user token has all required scopes', async ({

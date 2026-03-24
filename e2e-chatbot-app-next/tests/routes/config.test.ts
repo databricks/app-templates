@@ -55,8 +55,6 @@ test.describe('/api/config', () => {
     const data = await response.json();
     expect(data).toHaveProperty('obo');
     expect(data.obo).toHaveProperty('missingScopes');
-    expect(data.obo).toHaveProperty('isSupervisorAgent');
-    expect(data.obo.isSupervisorAgent).toBe(false);
   });
 
   test('GET /api/config shows missing scopes when user token lacks required scopes', async ({

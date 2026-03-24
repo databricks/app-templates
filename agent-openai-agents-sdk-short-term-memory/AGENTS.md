@@ -28,9 +28,9 @@
    - The user may also paste just a branch resource path like `project/<project-id>/branch/<branch-id>` — parse project and branch from the path segments
 
    Then pass to quickstart: `uv run quickstart --lakebase-autoscaling-project <project> --lakebase-autoscaling-branch <branch>`
-   For post-deploy setup (adding postgres resource via API, granting permissions), see `.claude/skills/add-tools/examples/lakebase-autoscaling.md`.
+   For post-deploy setup (postgres resource config, granting permissions), see `.claude/skills/add-tools/examples/lakebase-autoscaling.yaml`.
 
-**Autoscaling keywords**: If the user mentions "autoscaling", "project", "branch", or "postgres" in the context of Lakebase/memory, use the **autoscaling** guide at `.claude/skills/add-tools/examples/lakebase-autoscaling.md`.
+**Autoscaling keywords**: If the user mentions "autoscaling", "project", "branch", or "postgres" in the context of Lakebase/memory, use the **autoscaling** guide at `.claude/skills/add-tools/examples/lakebase-autoscaling.yaml`.
 
 **Then set up the environment using quickstart:**
 

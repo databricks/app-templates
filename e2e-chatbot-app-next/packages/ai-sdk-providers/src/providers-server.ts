@@ -76,14 +76,9 @@ const API_PROXY = process.env.API_PROXY;
 // Cache for endpoint details to check task type and OBO scopes
 const endpointDetailsCache = new Map<
   string,
-  { task: string | undefined; userApiScopes: string[]; isOboEnabled: boolean; isSupervisorAgent: boolean; timestamp: number }
+  { task: string | undefined; userApiScopes: string[]; isOboEnabled: boolean; timestamp: number }
 >();
 const ENDPOINT_DETAILS_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-
-/** Clear cached endpoint details (test-only). */
-export function clearEndpointDetailsCache() {
-  endpointDetailsCache.clear();
-}
 
 /**
  * Checks if context should be injected based on cached endpoint details.
@@ -323,7 +318,9 @@ const getEndpointDetails = async (servingEndpoint: string) => {
   );
   const data = (await response.json()) as EndpointDetailsResponse;
 
-  // Detect OBO: either explicit auth_policy scopes, or Supervisor Agent (always OBO)
+  // Detect OBO: either explicit auth_policy scopes, or Supervisor Agent (always OBO).
+  // TODO: Remove the isSupervisorAgent special case once the serving endpoint details API
+  // returns the full set of required scopes for Supervisor Agents.
   const isSupervisorAgent = data.tile_endpoint_metadata?.problem_type === 'MULTI_AGENT_SUPERVISOR';
   const userApiScopes = data.auth_policy?.user_auth_policy?.api_scopes ?? [];
   const isOboEnabled = userApiScopes.length > 0 || isSupervisorAgent;
@@ -334,11 +331,8 @@ const getEndpointDetails = async (servingEndpoint: string) => {
   }
 
   if (isOboEnabled) {
-    const saNote = isSupervisorAgent
-      ? `\n  → This is a Supervisor Agent. It may require additional scopes for downstream tools (e.g., sql, dashboards.genie). Full scope discovery for Supervisor Agents is coming soon.`
-      : '';
     console.warn(
-      `⚠ OBO detected on endpoint "${servingEndpoint}". Required user authorization scopes: ${JSON.stringify(userApiScopes)}${saNote}\n` +
+      `⚠ OBO detected on endpoint "${servingEndpoint}". Required user authorization scopes: ${JSON.stringify(userApiScopes)}\n` +
       `  → Add scopes to your app via the Databricks UI or in databricks.yml\n` +
       `  → See: https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app#enable-user-authorization`,
     );
@@ -348,7 +342,6 @@ const getEndpointDetails = async (servingEndpoint: string) => {
     task: data.task as string | undefined,
     userApiScopes,
     isOboEnabled,
-    isSupervisorAgent,
     timestamp: Date.now(),
   };
   endpointDetailsCache.set(servingEndpoint, returnValue);
@@ -359,18 +352,17 @@ const getEndpointDetails = async (servingEndpoint: string) => {
  * Returns OBO info for the configured serving endpoint.
  * Detects OBO via auth_policy scopes or Supervisor Agent type.
  */
-export async function getEndpointOboInfo(): Promise<{ isEndpointOboEnabled: boolean; endpointRequiredScopes: string[]; isSupervisorAgent: boolean }> {
+export async function getEndpointOboInfo(): Promise<{ isEndpointOboEnabled: boolean; endpointRequiredScopes: string[] }> {
   const servingEndpoint = process.env.DATABRICKS_SERVING_ENDPOINT;
-  if (!servingEndpoint) return { isEndpointOboEnabled: false, endpointRequiredScopes: [], isSupervisorAgent: false };
+  if (!servingEndpoint) return { isEndpointOboEnabled: false, endpointRequiredScopes: [] };
   try {
     const details = await getEndpointDetails(servingEndpoint);
     return {
       isEndpointOboEnabled: details.isOboEnabled,
       endpointRequiredScopes: details.userApiScopes,
-      isSupervisorAgent: details.isSupervisorAgent,
     };
   } catch {
-    return { isEndpointOboEnabled: false, endpointRequiredScopes: [], isSupervisorAgent: false };
+    return { isEndpointOboEnabled: false, endpointRequiredScopes: [] };
   }
 }
 

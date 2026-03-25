@@ -56,7 +56,6 @@ configRouter.get('/', async (req: Request, res: Response) => {
     },
     obo: {
       missingScopes,
-      isSupervisorAgent: oboInfo.isSupervisorAgent,
     },
   });
 });

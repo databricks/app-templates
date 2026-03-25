@@ -16,6 +16,7 @@ from grant_lakebase_permissions import (
     MEMORY_TYPE_SCHEMAS,
     NEEDS_SEQUENCES,
     SHARED_SCHEMAS,
+    SHARED_SEQUENCE_SCHEMAS,
     main,
 )
 
@@ -67,6 +68,9 @@ class TestDataStructures:
         assert "drizzle" in SHARED_SCHEMAS
         assert "Chat" in SHARED_SCHEMAS["ai_chatbot"]
         assert "__drizzle_migrations" in SHARED_SCHEMAS["drizzle"]
+
+    def test_shared_sequence_schemas(self):
+        assert "drizzle" in SHARED_SEQUENCE_SCHEMAS
 
     def test_no_table_overlap_between_memory_types(self):
         all_tables = []
@@ -205,8 +209,10 @@ class TestGrantCalls:
         # Should have shared schema tables
         assert "ai_chatbot.Chat" in tables
         assert "drizzle.__drizzle_migrations" in tables
-        # No sequence grants for langgraph-short-term
-        mock_client.grant_all_sequences_in_schema.assert_not_called()
+        # Should have shared sequence grants (drizzle) only
+        assert mock_client.grant_all_sequences_in_schema.call_count == 1
+        seq_call = mock_client.grant_all_sequences_in_schema.call_args
+        assert seq_call.kwargs["schemas"] == ["drizzle"]
 
     def test_langgraph_long_term_grants(self, monkeypatch):
         mock_client, _ = _run_main(
@@ -223,8 +229,10 @@ class TestGrantCalls:
         assert "public.agent_sessions" not in tables
         # Should have shared schemas
         assert "ai_chatbot.Chat" in tables
-        # No sequence grants for langgraph-long-term
-        mock_client.grant_all_sequences_in_schema.assert_not_called()
+        # Should have shared sequence grants (drizzle) only
+        assert mock_client.grant_all_sequences_in_schema.call_count == 1
+        seq_call = mock_client.grant_all_sequences_in_schema.call_args
+        assert seq_call.kwargs["schemas"] == ["drizzle"]
 
     def test_openai_short_term_grants(self, monkeypatch):
         mock_client, _ = _run_main(
@@ -239,8 +247,11 @@ class TestGrantCalls:
         assert "public.store" not in tables
         # Should have shared schemas
         assert "ai_chatbot.Chat" in tables
-        # SHOULD have sequence grants (openai-short-term needs them)
-        mock_client.grant_all_sequences_in_schema.assert_called_once()
+        # Should have sequence grants: drizzle (shared) + public (per-type)
+        assert mock_client.grant_all_sequences_in_schema.call_count == 2
+        seq_schemas = [c.kwargs["schemas"][0] for c in mock_client.grant_all_sequences_in_schema.call_args_list]
+        assert "drizzle" in seq_schemas
+        assert "public" in seq_schemas
 
     def test_long_running_agent_grants(self, monkeypatch):
         mock_client, _ = _run_main(
@@ -255,8 +266,11 @@ class TestGrantCalls:
         assert "public.agent_sessions" not in tables
         # Should have shared schemas
         assert "ai_chatbot.Chat" in tables
-        # SHOULD have sequence grants (long-running-agent needs them)
-        mock_client.grant_all_sequences_in_schema.assert_called_once()
+        # Should have sequence grants: drizzle (shared) + agent_server (per-type)
+        assert mock_client.grant_all_sequences_in_schema.call_count == 2
+        seq_schemas = [c.kwargs["schemas"][0] for c in mock_client.grant_all_sequences_in_schema.call_args_list]
+        assert "drizzle" in seq_schemas
+        assert "agent_server" in seq_schemas
 
     def test_schemas_granted_for_all_types(self, monkeypatch):
         """All memory types should grant their own schemas + ai_chatbot + drizzle."""

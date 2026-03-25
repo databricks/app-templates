@@ -63,6 +63,11 @@ NEEDS_SEQUENCES = {
     "long-running-agent": ["agent_server"],
 }
 
+# Shared schemas that need sequence privileges for all memory types.
+# Drizzle uses __drizzle_migrations with id SERIAL PRIMARY KEY, which
+# requires USAGE, SELECT, UPDATE on the backing sequence.
+SHARED_SEQUENCE_SCHEMAS = ["drizzle"]
+
 # Shared schemas granted for all memory types (chat UI persistence)
 SHARED_SCHEMAS: dict[str, list[str]] = {
     "ai_chatbot": ["Chat", "Message", "User", "Vote"],
@@ -180,25 +185,29 @@ def main():
         except Exception as e:
             print(f"  Warning: table grant failed (may not exist yet): {e}")
 
-    # 3. Grant sequence privileges if needed (auto-increment columns).
+    # 3. Grant sequence privileges (auto-increment columns).
     # Note: DELETE is not a valid privilege for sequences, so we grant only
     # USAGE, SELECT, UPDATE.
+    # All memory types need drizzle sequences (Chat UI uses SERIAL PRIMARY KEY).
+    # Some memory types need additional per-type sequences.
+    seq_schemas = list(SHARED_SEQUENCE_SCHEMAS)
     if memory_type in NEEDS_SEQUENCES:
-        seq_schemas = NEEDS_SEQUENCES[memory_type]
-        for schema in seq_schemas:
-            print(f"Granting sequence privileges on '{schema}' schema...")
-            try:
-                client.grant_all_sequences_in_schema(
-                    grantee=sp_id,
-                    schemas=[schema],
-                    privileges=[
-                        SequencePrivilege.USAGE,
-                        SequencePrivilege.SELECT,
-                        SequencePrivilege.UPDATE,
-                    ],
-                )
-            except Exception as e:
-                print(f"  Warning: sequence grant failed (may not exist yet): {e}")
+        seq_schemas.extend(NEEDS_SEQUENCES[memory_type])
+
+    for schema in seq_schemas:
+        print(f"Granting sequence privileges on '{schema}' schema...")
+        try:
+            client.grant_all_sequences_in_schema(
+                grantee=sp_id,
+                schemas=[schema],
+                privileges=[
+                    SequencePrivilege.USAGE,
+                    SequencePrivilege.SELECT,
+                    SequencePrivilege.UPDATE,
+                ],
+            )
+        except Exception as e:
+            print(f"  Warning: sequence grant failed (may not exist yet): {e}")
 
     print(
         "\nPermission grants complete. If some grants failed because tables don't "

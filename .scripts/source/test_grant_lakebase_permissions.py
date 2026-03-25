@@ -50,8 +50,11 @@ class TestDataStructures:
         assert "agent_sessions" in tables
         assert "agent_messages" in tables
 
-    def test_only_openai_needs_sequences(self):
-        assert NEEDS_SEQUENCES == {"openai-short-term"}
+    def test_only_openai_and_long_running_need_sequences(self):
+        assert NEEDS_SEQUENCES == {
+            "openai-short-term": ["public"],
+            "long-running-agent": ["agent_server"],
+        }
 
     def test_shared_schemas(self):
         assert "ai_chatbot" in SHARED_SCHEMAS
@@ -195,7 +198,7 @@ class TestGrantCalls:
         # Should have shared schema tables
         assert "ai_chatbot.Chat" in tables
         assert "drizzle.__drizzle_migrations" in tables
-        # No sequence grants
+        # No sequence grants for langgraph-short-term
         mock_client.grant_all_sequences_in_schema.assert_not_called()
 
     def test_langgraph_long_term_grants(self, monkeypatch):
@@ -213,7 +216,7 @@ class TestGrantCalls:
         assert "public.agent_sessions" not in tables
         # Should have shared schemas
         assert "ai_chatbot.Chat" in tables
-        # No sequence grants
+        # No sequence grants for langgraph-long-term
         mock_client.grant_all_sequences_in_schema.assert_not_called()
 
     def test_openai_short_term_grants(self, monkeypatch):

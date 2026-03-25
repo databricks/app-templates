@@ -181,9 +181,8 @@ def main():
             print(f"  Warning: table grant failed (may not exist yet): {e}")
 
     # 3. Grant sequence privileges if needed (auto-increment columns).
-    # Note: GRANT ALL on sequences fails because DELETE is invalid for sequences.
-    # Also, grant_all_sequences_in_schema silently skips sequences owned by other
-    # users. So we also grant on individual sequences by name as a fallback.
+    # Note: DELETE is not a valid privilege for sequences, so we grant only
+    # USAGE, SELECT, UPDATE.
     if memory_type in NEEDS_SEQUENCES:
         seq_schemas = NEEDS_SEQUENCES[memory_type]
         for schema in seq_schemas:
@@ -199,34 +198,12 @@ def main():
                     ],
                 )
             except Exception as e:
-                print(f"  Warning: bulk sequence grant failed (may not exist yet): {e}")
-
-            # Also grant on individual sequences by name (the bulk grant above
-            # silently skips sequences owned by other users)
-            try:
-                seqs = client.execute(
-                    "SELECT sequencename FROM pg_sequences WHERE schemaname = %s;",
-                    (schema,),
-                )
-                for seq in seqs or []:
-                    qualified = f"{schema}.{seq['sequencename']}"
-                    try:
-                        client.execute(
-                            f'GRANT USAGE, SELECT, UPDATE ON SEQUENCE {qualified} '
-                            f'TO "{sp_id}";'
-                        )
-                    except Exception as e:
-                        print(f"  Warning: grant on {qualified} failed: {e}")
-            except Exception as e:
-                print(f"  Warning: could not list sequences in '{schema}': {e}")
+                print(f"  Warning: sequence grant failed (may not exist yet): {e}")
 
     print(
         "\nPermission grants complete. If some grants failed because tables don't "
         "exist yet, that's expected on a fresh branch — they'll be created on first "
         "agent usage. Re-run this script after the first run to grant remaining permissions."
-        "\n\nNote: Sequence grants silently fail for sequences owned by other users. "
-        "If you see 'permission denied for sequence' errors, the sequence may need to "
-        "be dropped and recreated by the app's service principal."
     )
 
 

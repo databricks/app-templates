@@ -57,8 +57,11 @@ MEMORY_TYPE_SCHEMAS: dict[str, dict[str, list[str]]] = {
     },
 }
 
-# Memory types that need sequence privileges on public schema
-NEEDS_SEQUENCES = {"openai-short-term"}
+# Memory types that need sequence privileges (auto-increment columns)
+NEEDS_SEQUENCES = {
+    "openai-short-term": ["public"],
+    "long-running-agent": ["agent_server"],
+}
 
 # Shared schemas granted for all memory types (chat UI persistence)
 SHARED_SCHEMAS: dict[str, list[str]] = {
@@ -177,21 +180,25 @@ def main():
         except Exception as e:
             print(f"  Warning: table grant failed (may not exist yet): {e}")
 
-    # 3. Grant sequence privileges if needed (e.g. OpenAI SDK session tables)
+    # 3. Grant sequence privileges if needed (auto-increment columns).
+    # Note: DELETE is not a valid privilege for sequences, so we grant only
+    # USAGE, SELECT, UPDATE.
     if memory_type in NEEDS_SEQUENCES:
-        print("Granting sequence privileges on 'public' schema...")
-        try:
-            client.grant_all_sequences_in_schema(
-                grantee=sp_id,
-                schemas=["public"],
-                privileges=[
-                    SequencePrivilege.USAGE,
-                    SequencePrivilege.SELECT,
-                    SequencePrivilege.UPDATE,
-                ],
-            )
-        except Exception as e:
-            print(f"  Warning: sequence grant failed (may not exist yet): {e}")
+        seq_schemas = NEEDS_SEQUENCES[memory_type]
+        for schema in seq_schemas:
+            print(f"Granting sequence privileges on '{schema}' schema...")
+            try:
+                client.grant_all_sequences_in_schema(
+                    grantee=sp_id,
+                    schemas=[schema],
+                    privileges=[
+                        SequencePrivilege.USAGE,
+                        SequencePrivilege.SELECT,
+                        SequencePrivilege.UPDATE,
+                    ],
+                )
+            except Exception as e:
+                print(f"  Warning: sequence grant failed (may not exist yet): {e}")
 
     print(
         "\nPermission grants complete. If some grants failed because tables don't "

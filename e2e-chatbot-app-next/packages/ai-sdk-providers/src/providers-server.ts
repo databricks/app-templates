@@ -318,7 +318,9 @@ const getEndpointDetails = async (servingEndpoint: string) => {
   );
   const data = (await response.json()) as EndpointDetailsResponse;
 
-  // Detect OBO: either explicit auth_policy scopes, or Supervisor Agent (always OBO)
+  // Detect OBO: either explicit auth_policy scopes, or Supervisor Agent (always OBO).
+  // TODO: Remove the isSupervisorAgent special case once the serving endpoint details API
+  // returns the full set of required scopes for Supervisor Agents.
   const isSupervisorAgent = data.tile_endpoint_metadata?.problem_type === 'MULTI_AGENT_SUPERVISOR';
   const userApiScopes = data.auth_policy?.user_auth_policy?.api_scopes ?? [];
   const isOboEnabled = userApiScopes.length > 0 || isSupervisorAgent;

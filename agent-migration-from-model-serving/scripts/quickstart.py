@@ -28,7 +28,6 @@ import json
 import os
 import platform
 import re
-import sys
 import secrets
 import shutil
 import subprocess
@@ -579,6 +578,18 @@ def get_existing_lakebase_config() -> dict | None:
         return {"type": "provisioned", "instance_name": instance_name}
 
     return None
+
+
+def validate_lakebase_config(profile_name: str, config: dict) -> bool:
+    """Validate that an existing Lakebase config from .env is accessible in the current workspace."""
+    if config["type"] == "provisioned":
+        return validate_lakebase_instance(profile_name, config["instance_name"]) is not None
+    elif config["type"] == "autoscaling":
+        return (
+            validate_lakebase_autoscaling(profile_name, config["project"], config["branch"])
+            is not None
+        )
+    return False
 
 
 def get_workspace_client(profile_name: str):
@@ -1236,6 +1247,27 @@ def update_app_yaml_lakebase(lakebase_config: dict) -> None:
         print_success("Updated app.yaml with Lakebase config")
 
 
+def get_databricks_yml_experiment_id() -> str:
+    """Read the experiment_id already written into databricks.yml, if any.
+
+    Returns the experiment_id string, or "" if not set / file missing.
+    Useful for re-running quickstart against a previously-configured app so we
+    can skip experiment creation and reuse the existing ID.
+    """
+    yml_path = Path("databricks.yml")
+    if not yml_path.exists():
+        return ""
+    _, data = _load_yml(yml_path)
+    apps = data.get("resources", {}).get("apps", {})
+    for app_val in apps.values():
+        for resource in app_val.get("resources", []):
+            if "experiment" in resource:
+                exp_id = resource["experiment"].get("experiment_id", "")
+                if exp_id and str(exp_id).strip():
+                    return str(exp_id).strip()
+    return ""
+
+
 def update_databricks_yml_experiment(experiment_id: str) -> None:
     """Update databricks.yml to set the experiment ID in the app resource."""
     yml_path = Path("databricks.yml")
@@ -1370,6 +1402,15 @@ Examples:
         username = get_databricks_username(profile_name)
         print(f"Username: {username}")
 
+        # Seed MLFLOW_EXPERIMENT_ID from databricks.yml if not already in .env.
+        # This handles the case where the user created the app via the Databricks UI,
+        # downloaded the template (which has the experiment_id in databricks.yml already),
+        # and is now running quickstart for the first time locally.
+        if not get_env_value("MLFLOW_EXPERIMENT_ID"):
+            yml_experiment_id = get_databricks_yml_experiment_id()
+            if yml_experiment_id:
+                update_env_file("MLFLOW_EXPERIMENT_ID", yml_experiment_id)
+
         experiment_name, experiment_id = create_mlflow_experiment(profile_name, username)
 
         # Step 5: Update .env with experiment ID
@@ -1413,7 +1454,7 @@ Examples:
             existing_lakebase = get_existing_lakebase_config()
             if existing_lakebase and not args.lakebase_provisioned_name and not (
                 args.lakebase_autoscaling_project and args.lakebase_autoscaling_branch
-            ):
+            ) and validate_lakebase_config(profile_name, existing_lakebase):
                 print_step("Reusing existing Lakebase config from .env")
                 lakebase_config = existing_lakebase
             else:
@@ -1428,7 +1469,7 @@ Examples:
         elif not args.skip_lakebase:
             # Optional for non-memory templates — for UI chat history
             existing_lakebase = get_existing_lakebase_config()
-            if existing_lakebase:
+            if existing_lakebase and validate_lakebase_config(profile_name, existing_lakebase):
                 print_step("Reusing existing Lakebase config from .env")
                 lakebase_config = existing_lakebase
             else:

@@ -1047,8 +1047,12 @@ def _fetch_autoscaling_database_id(profile_name: str, project: str, branch: str)
         except (json.JSONDecodeError, IndexError, KeyError):
             pass
 
-    print_error("Could not fetch database ID for Lakebase branch (postgres resource may need manual update)")
-    return ""
+    print_error(
+        "Could not fetch database ID for Lakebase branch.\n"
+        "  The database resource path in databricks.yml requires a valid database ID.\n"
+        "  You can find it by running: databricks api get /api/2.0/postgres/projects/{project}/branches/{branch}/databases"
+    )
+    sys.exit(1)
 
 
 def _replace_lakebase_env_vars(content: str, lakebase_config: dict) -> str:
@@ -1256,7 +1260,7 @@ def _replace_lakebase_resource(content: str, lakebase_config: dict) -> str:
                 indent = resource_indent or "        "
                 project = lakebase_config["project"]
                 branch = lakebase_config["branch"]
-                database_id = lakebase_config.get("database_id", "")
+                database_id = lakebase_config.get("database_id") or "<your-database-id>"
                 result.append(f"{indent}- name: 'postgres'")
                 result.append(f"{indent}  postgres:")
                 result.append(f'{indent}    branch: "projects/{project}/branches/{branch}"')
@@ -1285,7 +1289,7 @@ def _replace_lakebase_resource(content: str, lakebase_config: dict) -> str:
                 indent = resource_indent or "        "
                 project = lakebase_config["project"]
                 branch = lakebase_config["branch"]
-                database_id = lakebase_config.get("database_id", "")
+                database_id = lakebase_config.get("database_id") or "<your-database-id>"
                 result.append(f"{indent}- name: 'postgres'")
                 result.append(f"{indent}  postgres:")
                 result.append(f'{indent}    branch: "projects/{project}/branches/{branch}"')
@@ -1334,7 +1338,7 @@ def _replace_lakebase_resource(content: str, lakebase_config: dict) -> str:
             indent = resource_indent or "        "
             project = lakebase_config["project"]
             branch = lakebase_config["branch"]
-            database_id = lakebase_config.get("database_id", "")
+            database_id = lakebase_config.get("database_id") or "<your-database-id>"
             new_lines = [
                 f"{indent}- name: 'postgres'",
                 f"{indent}  postgres:",

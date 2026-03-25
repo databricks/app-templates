@@ -21,6 +21,7 @@ from quickstart import (
     _replace_lakebase_env_vars,
     _replace_lakebase_resource,
     create_mlflow_experiment,
+    get_databricks_yml_experiment_id,
     get_existing_lakebase_config,
     setup_env_file,
     update_app_yaml_lakebase,
@@ -28,6 +29,7 @@ from quickstart import (
     update_databricks_yml_experiment,
     update_databricks_yml_lakebase,
     update_env_file,
+    validate_lakebase_config,
 )
 
 # A minimal databricks.yml for testing app name updates
@@ -1210,3 +1212,60 @@ class TestLakebaseForNonMemoryTemplate:
             assert "instance_name: 'ui-db'" in content, (
                 f"{template_name}: instance name not set"
             )
+
+
+class TestGetDatabricksYmlExperimentId:
+    """Tests for get_databricks_yml_experiment_id — reads already-set experiment_id from YAML."""
+
+    def test_returns_id_when_set(self, tmp_path):
+        yml = MINIMAL_YML.replace('experiment_id: ""', 'experiment_id: "555"')
+        (tmp_path / "databricks.yml").write_text(yml)
+        assert get_databricks_yml_experiment_id() == "555"
+
+    def test_returns_empty_when_placeholder(self, tmp_path):
+        (tmp_path / "databricks.yml").write_text(MINIMAL_YML)
+        assert get_databricks_yml_experiment_id() == ""
+
+    def test_returns_empty_when_file_missing(self, tmp_path):
+        assert get_databricks_yml_experiment_id() == ""
+
+    def test_returns_id_for_lakebase_template(self, tmp_path):
+        yml = LAKEBASE_YML.replace('experiment_id: ""', 'experiment_id: "999"')
+        (tmp_path / "databricks.yml").write_text(yml)
+        assert get_databricks_yml_experiment_id() == "999"
+
+
+class TestValidateLakebaseConfig:
+    """Tests for validate_lakebase_config — validates .env lakebase before reusing."""
+
+    def test_provisioned_valid(self):
+        config = {"type": "provisioned", "instance_name": "my-db"}
+        with patch("quickstart.validate_lakebase_instance", return_value={"read_write_dns": "host"}):
+            assert validate_lakebase_config("DEFAULT", config) is True
+
+    def test_provisioned_invalid(self):
+        config = {"type": "provisioned", "instance_name": "missing-db"}
+        with patch("quickstart.validate_lakebase_instance", return_value=None):
+            assert validate_lakebase_config("DEFAULT", config) is False
+
+    def test_autoscaling_valid(self):
+        config = {"type": "autoscaling", "project": "proj", "branch": "main"}
+        with patch("quickstart.validate_lakebase_autoscaling", return_value={"host": "pg.example.com"}):
+            assert validate_lakebase_config("DEFAULT", config) is True
+
+    def test_autoscaling_invalid(self):
+        config = {"type": "autoscaling", "project": "proj", "branch": "deleted-branch"}
+        with patch("quickstart.validate_lakebase_autoscaling", return_value=None):
+            assert validate_lakebase_config("DEFAULT", config) is False
+
+    def test_provisioned_calls_correct_validator(self):
+        config = {"type": "provisioned", "instance_name": "my-db"}
+        with patch("quickstart.validate_lakebase_instance", return_value={}) as mock_validate:
+            validate_lakebase_config("my-profile", config)
+        mock_validate.assert_called_once_with("my-profile", "my-db")
+
+    def test_autoscaling_calls_correct_validator(self):
+        config = {"type": "autoscaling", "project": "proj", "branch": "br"}
+        with patch("quickstart.validate_lakebase_autoscaling", return_value={}) as mock_validate:
+            validate_lakebase_config("my-profile", config)
+        mock_validate.assert_called_once_with("my-profile", "proj", "br")

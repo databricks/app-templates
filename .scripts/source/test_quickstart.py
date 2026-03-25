@@ -2,28 +2,63 @@
 # 1. Checks prerequisites (uv, node, npm, databricks CLI) and validates Node.js version
 # 2. Creates .env from .env.example (or from scratch)
 # 3. Sets up Databricks authentication (validates/creates profile)
-# 4. Gets Databricks username via current-user API
-# 5. Creates MLflow experiment via `databricks experiments create-experiment`
+# 4. Gets Databricks username via Databricks SDK (current_user.me())
+# 5. Creates MLflow experiment via Databricks SDK (experiments.create_experiment)
 # 6. Updates .env with: DATABRICKS_CONFIG_PROFILE, MLFLOW_TRACKING_URI, MLFLOW_EXPERIMENT_ID
 # 7. Updates databricks.yml: sets experiment_id in app resource
 # 8. (If lakebase needed) Sets up lakebase (provisioned or autoscaling)
 # 9. (If lakebase needed) Updates databricks.yml: keeps only relevant lakebase env vars, removes the others
 # 10. (If lakebase needed) Updates .env with LAKEBASE_INSTANCE_NAME or LAKEBASE_AUTOSCALING_PROJECT + BRANCH
 
+import json
 import os
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from quickstart import (
     _replace_lakebase_env_vars,
     _replace_lakebase_resource,
+    create_mlflow_experiment,
+    get_databricks_yml_experiment_id,
+    get_existing_lakebase_config,
     setup_env_file,
     update_app_yaml_lakebase,
+    update_databricks_yml_app_name,
     update_databricks_yml_experiment,
     update_databricks_yml_lakebase,
     update_env_file,
+    validate_lakebase_config,
 )
+
+# A minimal databricks.yml for testing app name updates
+MINIMAL_YML_WITH_APP_NAME = """\
+bundle:
+  name: agent_langgraph
+
+resources:
+  apps:
+    agent_langgraph:
+      name: "agent-langgraph"
+      description: "LangGraph agent application"
+      source_code_path: ./
+      config:
+        command: ["uv", "run", "start-app"]
+        env:
+          - name: MLFLOW_EXPERIMENT_ID
+            value_from: "experiment"
+
+      resources:
+        - name: 'experiment'
+          experiment:
+            experiment_id: ""
+            permission: 'CAN_MANAGE'
+
+targets:
+  dev:
+    mode: development
+"""
 
 # A minimal databricks.yml with experiment app resource (like agent-langgraph)
 MINIMAL_YML = """\
@@ -951,3 +986,286 @@ class TestHappyPathAutoscalingOnRealTemplates:
             assert len(lines_with_database) == 0, (
                 f"{template_name}: databricks.yml should not have database resource"
             )
+
+
+def _mock_workspace_client(get_experiment_result=None, get_experiment_raises=False,
+                            create_experiment_id="99999"):
+    """Build a mock WorkspaceClient for experiment tests."""
+    mock_w = MagicMock()
+    if get_experiment_raises:
+        mock_w.experiments.get_experiment.side_effect = Exception("not found")
+    else:
+        mock_exp = MagicMock()
+        mock_exp.experiment = get_experiment_result
+        mock_w.experiments.get_experiment.return_value = mock_exp
+    mock_create = MagicMock()
+    mock_create.experiment_id = create_experiment_id
+    mock_w.experiments.create_experiment.return_value = mock_create
+    return mock_w
+
+
+class TestExperimentIdempotency:
+    """Tests for experiment reuse logic in create_mlflow_experiment."""
+
+    def test_reuses_existing_id_in_env(self, tmp_path):
+        """When .env has a valid experiment ID, returns it without creating a new one."""
+        (tmp_path / ".env").write_text("MLFLOW_EXPERIMENT_ID=12345\n")
+        existing_exp = MagicMock(name_="/Users/test/agents-on-apps", experiment_id="12345")
+        existing_exp.name = "/Users/test/agents-on-apps"
+        mock_w = _mock_workspace_client(get_experiment_result=existing_exp)
+        with patch("quickstart.get_workspace_client", return_value=mock_w):
+            name, exp_id = create_mlflow_experiment("DEFAULT", "test@example.com")
+
+        assert exp_id == "12345"
+        assert name == "/Users/test/agents-on-apps"
+        mock_w.experiments.get_experiment.assert_called_once_with(experiment_id="12345")
+        mock_w.experiments.create_experiment.assert_not_called()
+
+    def test_creates_new_if_id_missing(self, tmp_path):
+        """When .env has no MLFLOW_EXPERIMENT_ID, creates a new experiment."""
+        (tmp_path / ".env").write_text("DATABRICKS_CONFIG_PROFILE=DEFAULT\n")
+        mock_w = _mock_workspace_client(create_experiment_id="99999")
+        with patch("quickstart.get_workspace_client", return_value=mock_w):
+            name, exp_id = create_mlflow_experiment("DEFAULT", "test@example.com")
+
+        assert exp_id == "99999"
+        mock_w.experiments.get_experiment.assert_not_called()
+        mock_w.experiments.create_experiment.assert_called_once()
+
+    def test_creates_new_if_experiment_deleted(self, tmp_path):
+        """When .env has ID but get_experiment fails, creates a new experiment."""
+        (tmp_path / ".env").write_text("MLFLOW_EXPERIMENT_ID=deleted-id\n")
+        mock_w = _mock_workspace_client(get_experiment_raises=True, create_experiment_id="new-id")
+        with patch("quickstart.get_workspace_client", return_value=mock_w):
+            name, exp_id = create_mlflow_experiment("DEFAULT", "test@example.com")
+
+        assert exp_id == "new-id"
+        mock_w.experiments.create_experiment.assert_called_once()
+
+    def test_still_updates_yml_on_reuse(self, tmp_path):
+        """Even when reusing an experiment, databricks.yml gets the experiment_id set."""
+        (tmp_path / "databricks.yml").write_text(MINIMAL_YML)
+        (tmp_path / ".env").write_text("MLFLOW_EXPERIMENT_ID=12345\n")
+        existing_exp = MagicMock()
+        existing_exp.name = "/Users/test/agents-on-apps"
+        mock_w = _mock_workspace_client(get_experiment_result=existing_exp)
+        with patch("quickstart.get_workspace_client", return_value=mock_w):
+            _, exp_id = create_mlflow_experiment("DEFAULT", "test@example.com")
+
+        # The test verifies create_mlflow_experiment returns the ID correctly;
+        # the caller (main) is responsible for calling update_databricks_yml_experiment
+        assert exp_id == "12345"
+        # Explicitly verify update_databricks_yml_experiment works after reuse
+        update_databricks_yml_experiment(exp_id)
+        content = (tmp_path / "databricks.yml").read_text()
+        assert 'experiment_id: "12345"' in content
+
+
+class TestUpdateDatabricksYmlAppName:
+    """Tests for update_databricks_yml_app_name."""
+
+    def test_sets_app_name(self, tmp_path):
+        (tmp_path / "databricks.yml").write_text(MINIMAL_YML_WITH_APP_NAME)
+        bundle_key = update_databricks_yml_app_name("agent-my-new-app")
+        content = (tmp_path / "databricks.yml").read_text()
+        assert 'name: "agent-my-new-app"' in content
+        # Bundle name should not be changed (it's unquoted)
+        assert "name: agent_langgraph" in content
+
+    def test_returns_bundle_key(self, tmp_path):
+        (tmp_path / "databricks.yml").write_text(MINIMAL_YML_WITH_APP_NAME)
+        bundle_key = update_databricks_yml_app_name("agent-my-new-app")
+        assert bundle_key == "agent_langgraph"
+
+    def test_adds_budget_policy_id(self, tmp_path):
+        (tmp_path / "databricks.yml").write_text(MINIMAL_YML_WITH_APP_NAME)
+        update_databricks_yml_app_name("agent-my-app", budget_policy_id="abc-123")
+        content = (tmp_path / "databricks.yml").read_text()
+        assert 'budget_policy_id: "abc-123"' in content
+
+    def test_no_budget_policy_id_when_none(self, tmp_path):
+        (tmp_path / "databricks.yml").write_text(MINIMAL_YML_WITH_APP_NAME)
+        update_databricks_yml_app_name("agent-my-app", budget_policy_id=None)
+        content = (tmp_path / "databricks.yml").read_text()
+        assert "budget_policy_id" not in content
+
+    def test_handles_missing_file(self, tmp_path):
+        result = update_databricks_yml_app_name("agent-my-app")
+        assert result == ""
+        assert not (tmp_path / "databricks.yml").exists()
+
+    def test_against_real_template_files(self, tmp_path):
+        repo_root = Path(__file__).resolve().parents[1]
+        templates = [
+            "agent-langgraph",
+            "agent-langgraph-short-term-memory",
+            "agent-openai-agents-sdk",
+            "agent-non-conversational",
+        ]
+        for template_name in templates:
+            yml_path = repo_root / template_name / "databricks.yml"
+            if not yml_path.exists():
+                continue
+            tdir = tmp_path / template_name
+            tdir.mkdir()
+            (tdir / "databricks.yml").write_text(yml_path.read_text())
+            os.chdir(tdir)
+
+            bundle_key = update_databricks_yml_app_name("agent-test-app")
+            content = (tdir / "databricks.yml").read_text()
+            assert 'name: "agent-test-app"' in content, (
+                f"{template_name}: app name not updated"
+            )
+            assert bundle_key != "", f"{template_name}: bundle key not found"
+
+
+class TestLakebaseIdempotency:
+    """Tests for get_existing_lakebase_config."""
+
+    def test_detects_existing_autoscaling_config(self, tmp_path):
+        (tmp_path / ".env").write_text(
+            "LAKEBASE_AUTOSCALING_PROJECT=my-project\n"
+            "LAKEBASE_AUTOSCALING_BRANCH=production\n"
+        )
+        result = get_existing_lakebase_config()
+        assert result == {"type": "autoscaling", "project": "my-project", "branch": "production"}
+
+    def test_detects_existing_provisioned_config(self, tmp_path):
+        (tmp_path / ".env").write_text("LAKEBASE_INSTANCE_NAME=my-instance\n")
+        result = get_existing_lakebase_config()
+        assert result == {"type": "provisioned", "instance_name": "my-instance"}
+
+    def test_returns_none_when_not_configured(self, tmp_path):
+        (tmp_path / ".env").write_text("DATABRICKS_CONFIG_PROFILE=DEFAULT\n")
+        result = get_existing_lakebase_config()
+        assert result is None
+
+    def test_returns_none_when_no_env_file(self, tmp_path):
+        result = get_existing_lakebase_config()
+        assert result is None
+
+    def test_autoscaling_requires_both_project_and_branch(self, tmp_path):
+        """Only project set without branch should not return autoscaling config."""
+        (tmp_path / ".env").write_text("LAKEBASE_AUTOSCALING_PROJECT=my-project\n")
+        result = get_existing_lakebase_config()
+        # No branch set, so autoscaling config is incomplete
+        assert result is None
+
+    def test_autoscaling_takes_priority_over_provisioned(self, tmp_path):
+        """When both are set, autoscaling takes priority."""
+        (tmp_path / ".env").write_text(
+            "LAKEBASE_AUTOSCALING_PROJECT=proj\n"
+            "LAKEBASE_AUTOSCALING_BRANCH=br\n"
+            "LAKEBASE_INSTANCE_NAME=inst\n"
+        )
+        result = get_existing_lakebase_config()
+        assert result is not None
+        assert result["type"] == "autoscaling"
+
+
+class TestLakebaseForNonMemoryTemplate:
+    """Tests that Lakebase setup works on non-memory templates (for UI chat history)."""
+
+    def test_provisioned_adds_database_resource_to_minimal_yml(self):
+        result = _replace_lakebase_resource(
+            MINIMAL_YML, {"type": "provisioned", "instance_name": "mydb"}
+        )
+        assert "- name: 'database'" in result
+        assert "instance_name: 'mydb'" in result
+        assert "database_name: 'databricks_postgres'" in result
+
+    def test_autoscaling_noop_on_minimal_yml(self):
+        result = _replace_lakebase_resource(
+            MINIMAL_YML, {"type": "autoscaling", "project": "p", "branch": "b"}
+        )
+        assert result == MINIMAL_YML
+
+    def test_env_vars_noop_on_minimal_yml(self):
+        """Non-memory templates have no LAKEBASE_ env vars in databricks.yml — noop."""
+        result = _replace_lakebase_env_vars(
+            MINIMAL_YML, {"type": "provisioned", "instance_name": "mydb"}
+        )
+        assert result == MINIMAL_YML
+
+    def test_against_real_non_memory_templates(self, tmp_path):
+        """Provisioned Lakebase can be added to real non-memory template databricks.yml."""
+        repo_root = Path(__file__).resolve().parents[1]
+        non_memory_templates = [
+            "agent-langgraph",
+            "agent-openai-agents-sdk",
+            "agent-non-conversational",
+        ]
+        for template_name in non_memory_templates:
+            yml_path = repo_root / template_name / "databricks.yml"
+            if not yml_path.exists():
+                continue
+            tdir = tmp_path / template_name
+            tdir.mkdir()
+            (tdir / "databricks.yml").write_text(yml_path.read_text())
+            os.chdir(tdir)
+
+            update_databricks_yml_lakebase({"type": "provisioned", "instance_name": "ui-db"})
+            content = (tdir / "databricks.yml").read_text()
+            assert "- name: 'database'" in content, (
+                f"{template_name}: database resource not added"
+            )
+            assert "instance_name: 'ui-db'" in content, (
+                f"{template_name}: instance name not set"
+            )
+
+
+class TestGetDatabricksYmlExperimentId:
+    """Tests for get_databricks_yml_experiment_id — reads already-set experiment_id from YAML."""
+
+    def test_returns_id_when_set(self, tmp_path):
+        yml = MINIMAL_YML.replace('experiment_id: ""', 'experiment_id: "555"')
+        (tmp_path / "databricks.yml").write_text(yml)
+        assert get_databricks_yml_experiment_id() == "555"
+
+    def test_returns_empty_when_placeholder(self, tmp_path):
+        (tmp_path / "databricks.yml").write_text(MINIMAL_YML)
+        assert get_databricks_yml_experiment_id() == ""
+
+    def test_returns_empty_when_file_missing(self, tmp_path):
+        assert get_databricks_yml_experiment_id() == ""
+
+    def test_returns_id_for_lakebase_template(self, tmp_path):
+        yml = LAKEBASE_YML.replace('experiment_id: ""', 'experiment_id: "999"')
+        (tmp_path / "databricks.yml").write_text(yml)
+        assert get_databricks_yml_experiment_id() == "999"
+
+
+class TestValidateLakebaseConfig:
+    """Tests for validate_lakebase_config — validates .env lakebase before reusing."""
+
+    def test_provisioned_valid(self):
+        config = {"type": "provisioned", "instance_name": "my-db"}
+        with patch("quickstart.validate_lakebase_instance", return_value={"read_write_dns": "host"}):
+            assert validate_lakebase_config("DEFAULT", config) is True
+
+    def test_provisioned_invalid(self):
+        config = {"type": "provisioned", "instance_name": "missing-db"}
+        with patch("quickstart.validate_lakebase_instance", return_value=None):
+            assert validate_lakebase_config("DEFAULT", config) is False
+
+    def test_autoscaling_valid(self):
+        config = {"type": "autoscaling", "project": "proj", "branch": "main"}
+        with patch("quickstart.validate_lakebase_autoscaling", return_value={"host": "pg.example.com"}):
+            assert validate_lakebase_config("DEFAULT", config) is True
+
+    def test_autoscaling_invalid(self):
+        config = {"type": "autoscaling", "project": "proj", "branch": "deleted-branch"}
+        with patch("quickstart.validate_lakebase_autoscaling", return_value=None):
+            assert validate_lakebase_config("DEFAULT", config) is False
+
+    def test_provisioned_calls_correct_validator(self):
+        config = {"type": "provisioned", "instance_name": "my-db"}
+        with patch("quickstart.validate_lakebase_instance", return_value={}) as mock_validate:
+            validate_lakebase_config("my-profile", config)
+        mock_validate.assert_called_once_with("my-profile", "my-db")
+
+    def test_autoscaling_calls_correct_validator(self):
+        config = {"type": "autoscaling", "project": "proj", "branch": "br"}
+        with patch("quickstart.validate_lakebase_autoscaling", return_value={}) as mock_validate:
+            validate_lakebase_config("my-profile", config)
+        mock_validate.assert_called_once_with("my-profile", "proj", "br")

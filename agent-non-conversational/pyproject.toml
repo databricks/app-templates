@@ -30,6 +30,13 @@ dev = [
     "httpx>=0.24.0",
 ]
 
+setup = [
+    "ruamel.yaml>=0.18.0",
+]
+
+[tool.uv]
+default-groups = ["dev", "setup"]
+
 [project.scripts]
 quickstart = "scripts.quickstart:main"
 start-server = "agent_server.start_server:main"

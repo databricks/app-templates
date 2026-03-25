@@ -33,6 +33,13 @@ dev = [
     "pytest-xdist>=3.8.0",
 ]
 
+setup = [
+    "ruamel.yaml>=0.18.0",
+]
+
+[tool.uv]
+default-groups = ["dev", "setup"]
+
 
 [tool.pytest.ini_options]
 base_url = "http://localhost:8000"

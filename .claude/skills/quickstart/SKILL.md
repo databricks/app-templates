@@ -26,7 +26,9 @@ uv run quickstart
 **Options:**
 - `--profile NAME`: Use specified profile (non-interactive)
 - `--host URL`: Workspace URL for initial setup
-{{LAKEBASE_OPTIONS}}- `-h, --help`: Show help
+{{LAKEBASE_OPTIONS}}- `--skip-lakebase`: Skip Lakebase setup (non-interactive / CI use)
+- `--app-name NAME`: Existing Databricks app name to bind this bundle to
+- `-h, --help`: Show help
 
 **Examples:**
 ```bash
@@ -38,6 +40,12 @@ uv run quickstart --profile DEFAULT
 
 # New workspace setup
 uv run quickstart --host https://your-workspace.cloud.databricks.com
+
+# Bind to an existing app created via the Databricks UI
+uv run quickstart --app-name my-existing-app
+
+# Skip Lakebase setup (CI / non-interactive)
+uv run quickstart --profile DEFAULT --skip-lakebase
 {{LAKEBASE_EXAMPLES}}```
 
 ## What Quickstart Configures
@@ -49,7 +57,30 @@ Creates/updates `.env` with:
 {{LAKEBASE_CONFIGURES_ENV}}
 Updates `databricks.yml`:
 - Sets `experiment_id` in the app's experiment resource
+- Updates app `name` field if `--app-name` is provided
 {{LAKEBASE_CONFIGURES_YML}}
+
+## Existing App
+
+If you created an app via the Databricks UI before cloning a template, use `--app-name` to bind the bundle to it:
+
+```bash
+uv run quickstart --app-name my-existing-app
+```
+
+Quickstart will update `databricks.yml` with the app name and print the binding command:
+```bash
+databricks bundle deployment bind <KEY> my-existing-app --auto-approve
+databricks bundle deploy
+```
+
+This avoids the "An app with the same name already exists" error on first deploy.
+
+## Idempotency
+
+Re-running quickstart is safe:
+- **Experiment**: If `MLFLOW_EXPERIMENT_ID` is already in `.env` and the experiment still exists, it is reused (no duplicate created).
+- **Lakebase**: If Lakebase config is already in `.env`, the interactive prompt is skipped and the existing config is reused.
 
 ## Manual Authentication (Fallback)
 

@@ -108,8 +108,10 @@ def run_quickstart(
     lakebase: str | None = None,
     lakebase_autoscaling_project: str | None = None,
     lakebase_autoscaling_branch: str | None = None,
-):
-    """Run `uv run quickstart --profile <profile>`."""
+    app_name: str | None = None,
+    skip_lakebase: bool = False,
+) -> subprocess.CompletedProcess:
+    """Run `uv run quickstart --profile <profile>`. Returns the completed process."""
     cmd = ["uv", "run", "quickstart", "--profile", profile]
     if lakebase:
         cmd.extend(["--lakebase-provisioned-name", lakebase])
@@ -117,12 +119,107 @@ def run_quickstart(
         cmd.extend(["--lakebase-autoscaling-project", lakebase_autoscaling_project])
     if lakebase_autoscaling_branch:
         cmd.extend(["--lakebase-autoscaling-branch", lakebase_autoscaling_branch])
+    if app_name:
+        cmd.extend(["--app-name", app_name])
+    if skip_lakebase:
+        cmd.append("--skip-lakebase")
     result = _run_cmd(cmd, cwd=template_dir, timeout=QUICKSTART_TIMEOUT)
     assert result.returncode == 0, (
         f"quickstart failed in {template_dir.name}:\n"
         f"stdout: {result.stdout}\n"
         f"stderr: {result.stderr}"
     )
+    return result
+
+
+def git_copy_template(template_name: str, dest: Path, git_ref: str | None = None) -> Path:
+    """Copy a template directory to dest using git-tracked files only.
+
+    Without git_ref: uses `git ls-files` so uncommitted modifications to tracked
+    files are included (important for testing in-progress changes).
+
+    With git_ref: uses `git archive` to extract files at a specific commit/branch.
+    """
+    import io
+    import tarfile
+
+    from template_config import REPO_ROOT
+
+    template_dest = dest / template_name
+    template_dest.mkdir(parents=True)
+
+    if git_ref:
+        result = subprocess.run(
+            ["git", "archive", git_ref, "--", template_name],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            check=True,
+        )
+        with tarfile.open(fileobj=io.BytesIO(result.stdout)) as tar:
+            for member in tar.getmembers():
+                member.name = str(Path(member.name).relative_to(template_name))
+                tar.extract(member, template_dest)
+    else:
+        result = subprocess.run(
+            ["git", "ls-files", template_name],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        for rel_path in result.stdout.strip().splitlines():
+            src = REPO_ROOT / rel_path
+            dst = template_dest / Path(rel_path).relative_to(template_name)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+
+    return template_dest
+
+
+def read_env_value(env_file: Path, key: str) -> str | None:
+    """Read a single key from a .env file. Returns None if not found."""
+    import re
+
+    if not env_file.exists():
+        return None
+    content = env_file.read_text()
+    match = re.search(rf"^{re.escape(key)}=(.*)$", content, re.MULTILINE)
+    return match.group(1).strip() if match else None
+
+
+def databricks_create_app(app_name: str, profile: str):
+    """Create a bare Databricks App (no compute) to simulate a UI-created app.
+
+    Uses --no-compute so the app is in STOPPED state immediately, avoiding the
+    'compute is in STARTING state' error when bundle deploy tries to update it.
+    """
+    result = _run_cmd(
+        ["databricks", "apps", "create", app_name, "-p", profile, "--no-compute", "--no-wait"],
+        timeout=60,
+    )
+    assert result.returncode == 0, f"Failed to create app {app_name}: {result.stderr}"
+
+
+def start_app(app_name: str, profile: str):
+    """Start a Databricks App without waiting. Let wait_for_app_ready() poll for readiness."""
+    result = _run_cmd(
+        ["databricks", "apps", "start", app_name, "--no-wait", "-p", profile],
+        timeout=60,
+    )
+    assert result.returncode == 0, f"Failed to start app {app_name}: {result.stderr}"
+
+
+def databricks_delete_app(app_name: str, profile: str):
+    """Delete a Databricks App. Best-effort: logs warning on failure, never raises."""
+    try:
+        result = _run_cmd(
+            ["databricks", "apps", "delete", app_name, "-p", profile],
+            timeout=60,
+        )
+        if result.returncode != 0:
+            _log(f"WARNING: Failed to delete app {app_name}: {result.stderr}")
+    except Exception as exc:
+        _log(f"WARNING: Error deleting app {app_name}: {exc}")
 
 
 def apply_edits(edits: list[FileEdit], template_dir: Path) -> list[tuple[Path, str]]:
@@ -431,6 +528,14 @@ def bundle_deploy(
             time.sleep(POLL_INTERVAL)
             return True
 
+        if "is not terminal" in stderr or "not terminal with state" in stderr:
+            _log(
+                f"bundle deploy attempt {attempt}/{max_attempts} failed in "
+                f"{template_dir.name} (app transitioning), waiting {POLL_INTERVAL}s..."
+            )
+            time.sleep(POLL_INTERVAL)
+            return True
+
         return False
 
     _run_with_retries(
@@ -439,6 +544,39 @@ def bundle_deploy(
         label="bundle deploy",
         recover=recover,
     )
+
+
+def bundle_run_nowait(template_dir: Path, resource_key: str, profile: str):
+    """Trigger `databricks bundle run` to start the app, then return quickly.
+
+    Despite --no-wait, the CLI may still poll briefly for startup. We cap
+    the wait at 90s and swallow timeout errors — the app start was initiated
+    on the server side and will continue even if the CLI process is killed.
+    Use wait_for_app_ready() after this to poll until RUNNING.
+    """
+    import subprocess as _subprocess
+
+    try:
+        _run_cmd(
+            [
+                "databricks",
+                "bundle",
+                "run",
+                resource_key,
+                "--no-wait",
+                "--target",
+                "dev",
+                "-p",
+                profile,
+            ],
+            cwd=template_dir,
+            timeout=90,
+        )
+    except _subprocess.TimeoutExpired:
+        _log(
+            f"bundle run --no-wait for {resource_key} timed out after 90s "
+            f"— app start was initiated, polling via wait_for_app_ready()"
+        )
 
 
 def bundle_run(template_dir: Path, resource_key: str, profile: str):

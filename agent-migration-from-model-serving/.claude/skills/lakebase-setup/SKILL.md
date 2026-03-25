@@ -9,6 +9,18 @@ description: "Configure Lakebase for agent memory storage. Use when: (1) Adding 
 
 > **Autoscaling Lakebase?** If the user mentions "autoscaling", "project", or "branch" in the context of Lakebase, they are using an **autoscaling** Lakebase instance (not provisioned). This skill covers **provisioned** instances only. For autoscaling, see `.claude/skills/add-tools/examples/lakebase-autoscaling.md` instead — it uses `LAKEBASE_AUTOSCALING_PROJECT` and `LAKEBASE_AUTOSCALING_BRANCH` env vars, deploys the app first, then adds the postgres resource via API for permissions and grants table access.
 
+## Use Cases
+
+Lakebase is used for three distinct purposes across the agent templates:
+
+| Use case | Templates | Description |
+|----------|-----------|-------------|
+| **Chat UI conversation history** | All templates | The built-in chat UI (`e2e-chatbot-app-next`) can persist conversations across page refreshes and browser sessions. This is purely UI-side persistence — the agent itself is stateless. |
+| **Agent short-term memory** | `agent-langgraph-short-term-memory`, `agent-openai-agents-sdk-short-term-memory` | Conversation threads within a session via `AsyncCheckpointSaver` (LangGraph) or `AsyncDatabricksSession` (OpenAI SDK). The agent remembers what was said earlier in the same conversation. |
+| **Agent long-term memory** | `agent-langgraph-long-term-memory` | User facts across sessions via `AsyncDatabricksStore`. The agent remembers things about a user from previous conversations. |
+
+> **Note:** When the quickstart prompts for Lakebase on a non-memory template, it's for **chat UI history** only — not for the agent. Memory templates always require Lakebase.
+
 ## Overview
 
 Lakebase provides persistent PostgreSQL storage for agents:

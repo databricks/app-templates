@@ -10,4 +10,5 @@ dependencies = [
     "openai>=1.75",
     "databricks-sdk>=0.40",
     "databricks-ai-bridge[memory]",
+    "ruamel.yaml>=0.18.0",
 ]

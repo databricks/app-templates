@@ -27,6 +27,13 @@ dev = [
     "pytest>=9.0.2",
 ]
 
+setup = [
+    "ruamel.yaml>=0.18.0",
+]
+
+[tool.uv]
+default-groups = ["dev", "setup"]
+
 
 [project.scripts]
 quickstart = "scripts.quickstart:main"

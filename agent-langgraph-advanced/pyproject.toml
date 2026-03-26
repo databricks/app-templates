@@ -1,0 +1,54 @@
+[project]
+name = "agent-server"
+version = "0.1.0"
+description = "MLflow-compatible agent server with FastAPI"
+readme = "README.md"
+authors = [
+    { name = "Agent Developer", email = "developer@example.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.129.0",
+    "uvicorn>=0.41.0",
+    "databricks-langchain[memory]>=0.17.0",
+    "databricks-ai-bridge[server]>=0.15.0",
+    "databricks-sdk>=0.79.0",
+    "databricks-agents>=1.9.3",
+    "mlflow>=3.10.1",
+    "langgraph>=1.0.9",
+    "langchain-mcp-adapters>=0.2.1",
+    "python-dotenv>=1.2.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "hatchling>=1.28.0",
+    "pytest>=9.0.2",
+    "pytest-xdist>=3.8.0",
+]
+
+setup = [
+    "ruamel.yaml>=0.18.0",
+]
+
+[tool.uv]
+default-groups = ["dev", "setup"]
+
+[tool.uv.sources]
+databricks-ai-bridge = { path = "/Users/bryan.qiu/databricks-ai-bridge", editable = true }
+
+[tool.pytest.ini_options]
+base_url = "http://localhost:8000"
+addopts = "-n 7"
+
+[project.scripts]
+quickstart = "scripts.quickstart:main"
+start-app = "scripts.start_app:main"
+start-server = "agent_server.start_server:main"
+agent-evaluate = "agent_server.evaluate_agent:evaluate"
+discover-tools = "scripts.discover_tools:main"
+preflight = "scripts.preflight:main"

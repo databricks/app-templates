@@ -46,7 +46,7 @@ resources:
         # TODO: Set your serving endpoint name
         - name: 'serving_endpoint'
           serving_endpoint:
-            name: '<YOUR-SERVING-ENDPOINT>'
+            name: 'databricks-gpt-5-4'
             permission: 'CAN_QUERY'
 
         # NOTE: App-to-app permissions are not yet supported as bundle resources.

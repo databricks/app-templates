@@ -71,7 +71,7 @@ SUBAGENTS = [
         ),
     },
     {
-        "name": "app_agent",
+        "name": "agent-code-analyzer",
         "type": "app",
         "endpoint": "agent-code-analyzer",  # TODO: set to your Databricks App name
         "description": (
@@ -92,16 +92,16 @@ SUBAGENTS = [
             "RAG-based Q&A, and extracting info from unstructured sources."
         ),
     },
-    # {
-    #     "name": "serving_endpoint",
-    #     "type": "serving_endpoint",
-    #     "endpoint": "<YOUR-SERVING-ENDPOINT>",
-    #     "description": (
-    #         "Query a model hosted on a Databricks Model Serving endpoint. "
-    #         "Use this for questions best answered by the serving model. "
-    #         "The endpoint must have task type agent/v1/responses."
-    #     ),
-    # },
+    {
+        "name": "Master Prompt Agent",
+        "type": "serving_endpoint",
+        "endpoint": "databricks-gpt-5-4",
+        "description": (
+            "Query a model hosted on a Databricks Model Serving endpoint. "
+            "Use this for generate master prompt instructions as per user query."
+            "The endpoint must have task type agent/v1/responses."
+        ),
+    },
 ]
 
 assert SUBAGENTS, (

@@ -27,20 +27,20 @@ resources:
       resources:
         - name: 'experiment'
           experiment:
-            experiment_id: ""
+            experiment_id: "3517595242439019"
             permission: 'CAN_MANAGE'
 
         # TODO: Set your Genie space ID
         - name: 'genie_space'
           genie_space:
             name: 'Genie Space'
-            space_id: '<YOUR-GENIE-SPACE-ID>'
+            space_id: '01f1194369d51722bebd39bfdaf266d7'
             permission: 'CAN_RUN'
 
         # TODO: Set your knowledge-assistant serving endpoint name
         - name: 'knowledge_assistant'
           serving_endpoint:
-            name: '<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>'
+            name: 'ka-6a709152-endpoint'
             permission: 'CAN_QUERY'
 
         # TODO: Set your serving endpoint name

@@ -58,35 +58,40 @@ from agent_server.utils import (
 
 SUBAGENTS = [
     # Uncomment and configure the subagents you need. You must enable at least one.
-    #
-    # {
-    #     "name": "genie",
-    #     "type": "genie",
-    #     "space_id": "<YOUR-GENIE-SPACE-ID>",  # UUID from the Genie space URL
-    #     "description": (
-    #         "Query a Genie space for structured data analysis. "
-    #         "Use this for questions about data, metrics, and tables."
-    #     ),
-    # },
-    # {
-    #     "name": "app_agent",
-    #     "type": "app",
-    #     "endpoint": "<YOUR-APP-AGENT-NAME>",  # TODO: set to your Databricks App name
-    #     "description": (
-    #         "Query a specialist agent deployed as a Databricks App. "
-    #         "Use this for questions the specialist app agent handles."
-    #     ),
-    # },
-    # {
-    #     "name": "knowledge_assistant",
-    #     "type": "serving_endpoint",
-    #     "endpoint": "<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>",  # flat name, NOT a Vector Search index
-    #     "description": (
-    #         "Query the knowledge-assistant endpoint on Model Serving. "
-    #         "Use this for knowledge-base / documentation lookups. "
-    #         "The endpoint must have task type agent/v1/responses."
-    #     ),
-    # },
+    
+    {
+        "name": "genie",
+        "type": "genie",
+        "space_id": "01f1194369d51722bebd39bfdaf266d7",  # UUID from the Genie space URL
+        "description": (
+            "Query a Genie space for structured data analysis. "
+            "Use this for questions about data, metrics, and tables."
+            "Query structured data and generate charts/visualizations. "
+            "Use this for SQL queries, metrics, dashboards, bar charts, line charts, pie charts, stack bar charts, histogram charts, funnel charts, etc. , trends, and any tabular data analysis."
+        ),
+    },
+    {
+        "name": "app_agent",
+        "type": "app",
+        "endpoint": "agent-code-analyzer",  # TODO: set to your Databricks App name
+        "description": (
+            "Query a specialist agent deployed as a Databricks App. "
+            "Use this this agent questions about the codebase, get explanations of code snippets, and generate new code based on the codebase. Use this for software development, code analysis, and any code-related questions. Prefer this for code-related questions. Additionally, it helps to fix bugs and suggest improvements in the codebase if the user asks for it or provides github repository links."
+        ),
+    },
+    {
+        "name": "knowledge_assistant",
+        "type": "serving_endpoint",
+        "endpoint": "ka-6a709152-endpoint",  # flat name, NOT a Vector Search index
+        "description": (
+            "Query the knowledge-assistant endpoint on Model Serving. "
+            # "Use this for knowledge-base / documentation lookups. "
+            "The endpoint must have task type agent/v1/responses."
+            "Search through documents, PDFs, knowledge bases, and "
+            "unstructured text. Use this for document summarization, "
+            "RAG-based Q&A, and extracting info from unstructured sources."
+        ),
+    },
     # {
     #     "name": "serving_endpoint",
     #     "type": "serving_endpoint",
@@ -170,13 +175,39 @@ def create_orchestrator_agent(mcp_server: McpServer) -> Agent:
     return Agent(
         name="Orchestrator",
         instructions=(
-            "You are an orchestrator agent. Route the user's request to the "
-            "most appropriate tool or data source:\n"
-            "- Use the Genie MCP tools for questions about structured data.\n"
-            "- Use query_app_agent for questions that the specialist app agent handles.\n"
-            "- Use query_knowledge_assistant for knowledge-base / documentation lookups.\n"
-            "- Use query_serving_endpoint for questions best answered by the serving model.\n"
-            "If unsure, ask the user for clarification."
+            # "You are an orchestrator agent. Route the user's request to the "
+            # "most appropriate tool or data source:\n"
+            # "- Use the Genie MCP tools for questions about structured data.\n"
+            # "- Use query_app_agent for questions that the specialist app agent handles.\n"
+            # "- Use query_knowledge_assistant for knowledge-base / documentation lookups.\n"
+            # "- Use query_serving_endpoint for questions best answered by the serving model.\n"
+            # "If unsure, ask the user for clarification."
+            "You are the AI Orchestrator for Gilead Organization. "
+            "Your role is to understand the user's intent and route their "
+            "request to the most appropriate specialist agent.\n\n"
+
+            "## Routing Rules:\n"
+            "- **Structured Data / Charts / Visualization**: Use the Genie MCP tools "
+            "for any question about sales data, revenue metrics, KPIs, dashboards, "
+            "charts, bar graphs, trend analysis, or any SQL-queryable data.\n"
+            "- **Documents / Knowledge Base / Unstructured Data**: Use "
+            "query_knowledge_assistant for questions about policies, SOPs, reports, "
+            "PDFs, compliance documents, or any text-based knowledge lookup.\n"
+            "- **Business Operations / Custom Logic**: Use query_custom_business_agent "
+            "for workflow triggers, compliance checks, custom calculations, "
+            "or domain-specific business operations.\n\n"
+
+            "## Business Context:\n"
+            "- Our company deals with [YOUR INDUSTRY/DOMAIN].\n"
+            "- Key data tables include: [sales, inventory, customers, etc.].\n"
+            "- Key document repositories cover: [HR policies, product docs, etc.].\n\n"
+
+            "## Response Guidelines:\n"
+            "- Always be professional and concise.\n"
+            "- When returning chart data, describe what the chart shows.\n"
+            "- When citing documents, mention the source.\n"
+            "- If unsure which agent to use, ask the user for clarification.\n"
+            "- Never fabricate data — only use what the specialist agents return."
         ),
         model="databricks-claude-sonnet-4-5",  # TODO: change model if desired
         mcp_servers=[mcp_server] if mcp_server else [],

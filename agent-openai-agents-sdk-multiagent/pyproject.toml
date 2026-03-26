@@ -43,3 +43,6 @@ start-server = "agent_server.start_server:main"
 agent-evaluate = "agent_server.evaluate_agent:evaluate"
 discover-tools = "scripts.discover_tools:main"
 preflight = "scripts.preflight:main"
+
+cd agent-openai-agents-sdk-multiagent
+uv add python-a2a        # A2A protocol SDK

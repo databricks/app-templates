@@ -7,7 +7,7 @@ description: "Configure Lakebase for agent memory storage. Use when: (1) Adding 
 
 > **Profile reminder:** All `databricks` CLI commands must include the profile from `.env`: `databricks <command> --profile <profile>` or `DATABRICKS_CONFIG_PROFILE=<profile> databricks <command>`
 
-> **Autoscaling Lakebase?** If the user mentions "autoscaling", "project", or "branch" in the context of Lakebase, they are using an **autoscaling** Lakebase instance (not provisioned). This skill covers **provisioned** instances only. For autoscaling, see `.claude/skills/add-tools/examples/lakebase-autoscaling.md` instead — it uses `LAKEBASE_AUTOSCALING_PROJECT` and `LAKEBASE_AUTOSCALING_BRANCH` env vars, deploys the app first, then adds the postgres resource via API for permissions and grants table access.
+> **Two types of Lakebase:** Databricks supports **provisioned** instances (with instance name) and **autoscaling** instances (project/branch model). This skill covers both. Make sure you know which Lakebase instance the user is using, ask the user which type they are using if unclear.
 
 ## Use Cases
 
@@ -26,21 +26,25 @@ Lakebase is used for three distinct purposes across the agent templates:
 Lakebase provides persistent PostgreSQL storage for agents:
 - **Short-term memory** (LangGraph): Conversation history within a thread (`AsyncCheckpointSaver`)
 - **Long-term memory** (LangGraph): User facts across sessions (`AsyncDatabricksStore`)
+- **Short-term memory** (OpenAI SDK): Conversation history via `AsyncDatabricksSession`
 - **Long-running agent persistence** (OpenAI SDK): Background task state via custom SQLAlchemy tables (`agent_server` schema)
 
 > **Note:** For pre-configured memory templates, see:
 > - `agent-langgraph-short-term-memory` - Conversation history within a session
 > - `agent-langgraph-long-term-memory` - User facts that persist across sessions
+> - `agent-openai-agents-sdk-short-term-memory` - Conversation history (OpenAI SDK)
 > - `agent-openai-agents-sdk-long-running-agent` - Background tasks with Lakebase persistence
 
 ## Complete Setup Workflow
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  1. Add dependency  →  2. Get instance  →  3. Configure DAB               │
-│  4. Configure .env  →  5. Initialize tables  →  6. Deploy + Run      │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────┐
+│  1. Add dependency  →  2. Get instance  →  3. Configure DAB              │
+│  4. Configure .env  →  5. Deploy  →  6. Grant SP permissions  →  7. Run  │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
+
+> **Shortcut:** If using a pre-configured memory template, `uv run quickstart` with Lakebase flags handles steps 2-4 automatically. You still need to do steps 5-7 manually.
 
 ---
 
@@ -64,30 +68,51 @@ uv sync
 
 ## Step 2: Create or Get Lakebase Instance
 
-### Option A: Create New Instance (via Databricks UI)
+### Option A: Provisioned Instance
 
 1. Go to your Databricks workspace
 2. Navigate to **Compute** → **Lakebase**
-3. Click **Create Instance**
-4. Note the instance name
+3. Click **Create Instance** (or use an existing one)
+4. Note the **instance name**
 
-### Option B: Use Existing Instance
+### Option B: Autoscaling Instance
 
-If you have an existing instance, note its name for the next step.
+Autoscaling uses a **project/branch** model. You need three values:
+- **Project name** (e.g., `my-project`)
+- **Branch name** (e.g., `my-branch`)
+- **Database ID** (e.g., `db-xxxx-xxxxxxxxxx`)
+
+Find these via the postgres API:
+
+```bash
+# List projects
+databricks api get /api/2.0/postgres/projects --profile <profile>
+
+# List branches for a project
+databricks api get /api/2.0/postgres/projects/<project-name>/branches --profile <profile>
+
+# List databases for a branch
+databricks api get /api/2.0/postgres/projects/<project-name>/branches/<branch-name>/databases --profile <profile>
+```
+
+**Important:** The database ID is the internal ID (e.g., `db-xxxx-xxxxxxxxxx`), NOT `databricks_postgres`.
 
 ---
 
 ## Step 3: Configure databricks.yml (Lakebase Resource)
 
-Add the Lakebase `database` resource to your app in `databricks.yml`:
+> **Note:** If you ran `uv run quickstart` with Lakebase flags (`--lakebase-provisioned-name` or `--lakebase-autoscaling-project`/`--lakebase-autoscaling-branch`), the quickstart already configured `databricks.yml` for you — including fetching the database ID for autoscaling. Manual configuration is only needed if you didn't use quickstart or need to change values.
+
+### Option A: Provisioned
+
+Add the `database` resource to your app in `databricks.yml`:
 
 ```yaml
 resources:
   apps:
-    agent_langgraph:
+    your_app:
       name: "your-app-name"
       source_code_path: ./
-
       resources:
         # ... other resources (experiment, UC functions, etc.) ...
 
@@ -102,21 +127,42 @@ resources:
 **Important:**
 - The `instance_name: '<your-lakebase-instance-name>'` must match the actual Lakebase instance name
 - Using the `database` resource type automatically grants the app's service principal access to Lakebase
+See `.claude/skills/add-tools/examples/lakebase.yaml` for the YAML snippet.
+
+### Option B: Autoscaling
+
+Add the `postgres` resource to your app in `databricks.yml`:
+
+```yaml
+resources:
+  apps:
+    your_app:
+      name: "your-app-name"
+      source_code_path: ./
+      resources:
+        # ... other resources (experiment, UC functions, etc.) ...
+
+        # Autoscaling Lakebase instance for long-term memory
+        - name: 'postgres'
+          postgres:
+            branch: "projects/<project-name>/branches/<branch-name>"
+            database: "projects/<project-name>/branches/<branch-name>/databases/<database-id>"
+            permission: 'CAN_CONNECT_AND_CREATE'
+```
+
+**Important:** The `branch` and `database` fields use full resource path format.
+
+See `.claude/skills/add-tools/examples/lakebase-autoscaling.yaml` for the YAML snippet.
 
 ### Add Environment Variables to databricks.yml config block
 
-Add the Lakebase environment variables to the `config.env` section of your app in `databricks.yml`:
-
+**Provisioned:**
 ```yaml
       config:
-        command: ["uv", "run", "start-app"]
         env:
-          # ... other env vars ...
-
           # Lakebase instance name - resolved from database resource at deploy time
           - name: LAKEBASE_INSTANCE_NAME
             value_from: "database"
-
           # Static values for embedding configuration
           - name: EMBEDDING_ENDPOINT
             value: "databricks-gte-large-en"
@@ -124,9 +170,21 @@ Add the Lakebase environment variables to the `config.env` section of your app i
             value: "1024"
 ```
 
-**Important:**
-- The `LAKEBASE_INSTANCE_NAME` uses `value_from: "database"` which resolves from the `database` resource at deploy time
-- The `database` resource handles permissions; the `config.env` provides the instance name to your code
+**Autoscaling:**
+```yaml
+      config:
+        env:
+          # Autoscaling Lakebase config
+          - name: LAKEBASE_AUTOSCALING_PROJECT
+            value: "<your-project-name>"
+          - name: LAKEBASE_AUTOSCALING_BRANCH
+            value: "<your-branch-name>"
+          # Static values for embedding configuration
+          - name: EMBEDDING_ENDPOINT
+            value: "databricks-gte-large-en"
+          - name: EMBEDDING_DIMS
+            value: "1024"
+```
 
 ---
 
@@ -134,9 +192,17 @@ Add the Lakebase environment variables to the `config.env` section of your app i
 
 For local development, add to `.env`:
 
+**Provisioned:**
 ```bash
-# Lakebase configuration for long-term memory
 LAKEBASE_INSTANCE_NAME=<your-instance-name>
+EMBEDDING_ENDPOINT=databricks-gte-large-en
+EMBEDDING_DIMS=1024
+```
+
+**Autoscaling:**
+```bash
+LAKEBASE_AUTOSCALING_PROJECT=<your-project-name>
+LAKEBASE_AUTOSCALING_BRANCH=<your-branch-name>
 EMBEDDING_ENDPOINT=databricks-gte-large-en
 EMBEDDING_DIMS=1024
 ```
@@ -148,117 +214,60 @@ EMBEDDING_DIMS=1024
 | `databricks-gte-large-en` | 1024 |
 | `databricks-bge-large-en` | 1024 |
 
-> **Note:** `.env` is only for local development. When deployed, the app gets `LAKEBASE_INSTANCE_NAME` from the `value_from` reference in the `databricks.yml` config block.
+> **Note:** `.env` is only for local development. When deployed, the app gets values from `databricks.yml` config env.
 
 ---
 
-## Step 5: Initialize Tables
+        embedding_dims=1024,
+## Step 5: Deploy
 
-### Option A: LangGraph Memory Templates (public schema)
-
-**Before deploying**, initialize the Lakebase tables. The `AsyncDatabricksStore` creates tables on first use, but you need to do this locally first:
+Deploy the app so the service principal and resources are created:
 
 ```bash
-DATABRICKS_CONFIG_PROFILE=<profile> uv run python -c "$(cat <<'EOF'
-import asyncio
-from databricks_langchain import AsyncDatabricksStore
-
-async def setup():
-    async with AsyncDatabricksStore(
-        instance_name="<your-instance-name>",
-        embedding_endpoint="databricks-gte-large-en",
-        embedding_dims=1024,
-    ) as store:
-        await store.setup()
-        print("Tables created!")
-
-asyncio.run(setup())
-EOF
-)"
+DATABRICKS_CONFIG_PROFILE=<profile> databricks bundle deploy
 ```
-
-This creates these tables in the `public` schema:
-- `store` - Key-value storage for memories
-- `store_vectors` - Vector embeddings for semantic search
-- `store_migrations` - Schema migration tracking
-- `vector_migrations` - Vector schema migration tracking
-
-### Option B: Long-Running Agent Templates (agent_server schema)
-
-The long-running agent uses SQLAlchemy with a custom `agent_server` schema. Tables are created automatically on app startup via `CREATE SCHEMA IF NOT EXISTS agent_server` and `Base.metadata.create_all`. No manual table initialization is needed.
-
-Tables created in the `agent_server` schema:
-- `responses` - Response status tracking for background agent tasks
-- `messages` - Stream events and output items for responses
 
 ---
 
-## Step 6: Grant SP Permissions (CRITICAL for deployed apps)
+## Step 6: Grant SP Permissions (CRITICAL)
 
-After deploying, the app's service principal needs Postgres roles to access Lakebase tables. The DAB `database` resource with `CAN_CONNECT_AND_CREATE` grants basic connectivity, but you must also grant Postgres-level schema and table permissions.
+> **WARNING:** You MUST complete this step before running the app. Without it, the app will fail with database migration errors like `CREATE TABLE IF NOT EXISTS "drizzle"."__drizzle_migrations"` — permission denied.
+
+After deploying, the app's service principal needs Postgres roles to access Lakebase tables. The DAB resource grants basic connectivity, but you must also grant Postgres-level schema and table permissions.
 
 **Step 1:** Get the app's service principal client ID:
 ```bash
 DATABRICKS_CONFIG_PROFILE=<profile> databricks apps get <app-name> --output json | jq -r '.service_principal_client_id'
 ```
 
-**Step 2:** Grant permissions using `LakebaseClient`:
+**Step 2:** Grant permissions using the grant script:
 
 ```bash
-DATABRICKS_CONFIG_PROFILE=<profile> uv run python -c "
-from databricks_ai_bridge.lakebase import LakebaseClient, SchemaPrivilege, TablePrivilege
+# Provisioned:
+DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permissions.py <sp-client-id> \
+  --memory-type <type> --instance-name <name>
 
-client = LakebaseClient(instance_name='<your-instance-name>')
-sp_id = '<service-principal-client-id>'  # UUID from step 1
-
-# Create role (must do first)
-client.create_role(sp_id, 'SERVICE_PRINCIPAL')
-
-# Grant schema privileges
-client.grant_schema(
-    grantee=sp_id,
-    schemas=['<schema-name>'],  # 'public' for LangGraph, 'agent_server' for long-running agent
-    privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE],
-)
-
-# Grant table privileges
-client.grant_table(
-    grantee=sp_id,
-    tables=['<schema>.<table1>', '<schema>.<table2>'],
-    privileges=[TablePrivilege.SELECT, TablePrivilege.INSERT, TablePrivilege.UPDATE, TablePrivilege.DELETE],
-)
-
-print('Done!')
-"
+# Autoscaling:
+DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permissions.py <sp-client-id> \
+  --memory-type <type> --project <project> --branch <branch>
 ```
 
-### LangGraph Memory Templates
+**Memory type by template:**
 
-Grant on `public` schema:
-```python
-client.grant_schema(grantee=sp_id, schemas=['public'], privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE])
-client.grant_table(grantee=sp_id, tables=['public.store', 'public.store_vectors'], privileges=[TablePrivilege.SELECT, TablePrivilege.INSERT, TablePrivilege.UPDATE, TablePrivilege.DELETE])
-```
+| Template | `--memory-type` value |
+|----------|-----------------------|
+| `agent-langgraph-short-term-memory` | `langgraph-short-term` |
+| `agent-langgraph-long-term-memory` | `langgraph-long-term` |
+| `agent-openai-agents-sdk-short-term-memory` | `openai-short-term` |
+| `agent-openai-agents-sdk-long-running-agent` | `long-running-agent` |
 
-### Long-Running Agent Templates
-
-Grant on `agent_server` schema:
-```python
-client.grant_schema(grantee=sp_id, schemas=['agent_server'], privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE])
-client.grant_table(grantee=sp_id, tables=['agent_server.responses', 'agent_server.messages'], privileges=[TablePrivilege.SELECT, TablePrivilege.INSERT, TablePrivilege.UPDATE, TablePrivilege.DELETE])
-```
+The script handles fresh branches gracefully (warns but doesn't fail if tables don't exist yet — they'll be created on first app startup).
 
 ---
 
-## Step 7: Deploy and Run Your App
-
-**IMPORTANT:** Always run both `deploy` AND `run` commands:
+## Step 7: Run Your App
 
 ```bash
-# Deploy resources and upload files
-DATABRICKS_CONFIG_PROFILE=<profile> databricks bundle deploy
-
-# Start/restart the app with new code (REQUIRED!)
 DATABRICKS_CONFIG_PROFILE=<profile> databricks bundle run {{BUNDLE_NAME}}
 ```
 
@@ -266,17 +275,15 @@ DATABRICKS_CONFIG_PROFILE=<profile> databricks bundle run {{BUNDLE_NAME}}
 
 ---
 
-## Complete Example: databricks.yml with Lakebase
+## Complete Examples: databricks.yml with Lakebase
+
+### Provisioned Lakebase
 
 ```yaml
 bundle:
   name: agent_langgraph
 
 resources:
-  experiments:
-    agent_langgraph_experiment:
-      name: /Users/${workspace.current_user.userName}/${bundle.name}-${bundle.target}
-
   apps:
     agent_langgraph:
       name: "my-agent-app"
@@ -295,13 +302,12 @@ resources:
             value: "3000"
           - name: CHAT_PROXY_TIMEOUT_SECONDS
             value: "300"
-          # Reference experiment resource
           - name: MLFLOW_EXPERIMENT_ID
             value_from: "experiment"
           # Lakebase instance name (resolved from database resource)
           - name: LAKEBASE_INSTANCE_NAME
             value_from: "database"
-          # Embedding configuration
+          # Static values for embedding configuration
           - name: EMBEDDING_ENDPOINT
             value: "databricks-gte-large-en"
           - name: EMBEDDING_DIMS
@@ -310,14 +316,67 @@ resources:
       resources:
         - name: 'experiment'
           experiment:
-            experiment_id: "${resources.experiments.agent_langgraph_experiment.id}"
+            experiment_id: ""
             permission: 'CAN_MANAGE'
-
-        # Lakebase instance for long-term memory
         - name: 'database'
           database:
             instance_name: '<your-lakebase-instance-name>'
             database_name: 'databricks_postgres'
+            permission: 'CAN_CONNECT_AND_CREATE'
+
+targets:
+  dev:
+    mode: development
+    default: true
+```
+
+### Autoscaling Lakebase
+
+```yaml
+bundle:
+  name: agent_langgraph
+
+resources:
+  apps:
+    agent_langgraph:
+      name: "my-agent-app"
+      description: "Agent with long-term memory"
+      source_code_path: ./
+      config:
+        command: ["uv", "run", "start-app"]
+        env:
+          - name: MLFLOW_TRACKING_URI
+            value: "databricks"
+          - name: MLFLOW_REGISTRY_URI
+            value: "databricks-uc"
+          - name: API_PROXY
+            value: "http://localhost:8000/invocations"
+          - name: CHAT_APP_PORT
+            value: "3000"
+          - name: CHAT_PROXY_TIMEOUT_SECONDS
+            value: "300"
+          - name: MLFLOW_EXPERIMENT_ID
+            value_from: "experiment"
+          # Autoscaling Lakebase config
+          - name: LAKEBASE_AUTOSCALING_PROJECT
+            value: "<your-project-name>"
+          - name: LAKEBASE_AUTOSCALING_BRANCH
+            value: "<your-branch-name>"
+          # Static values for embedding configuration
+          - name: EMBEDDING_ENDPOINT
+            value: "databricks-gte-large-en"
+          - name: EMBEDDING_DIMS
+            value: "1024"
+
+      resources:
+        - name: 'experiment'
+          experiment:
+            experiment_id: ""
+            permission: 'CAN_MANAGE'
+        - name: 'postgres'
+          postgres:
+            branch: "projects/<your-project-name>/branches/<your-branch-name>"
+            database: "projects/<your-project-name>/branches/<your-branch-name>/databases/<your-database-id>"
             permission: 'CAN_CONNECT_AND_CREATE'
 
 targets:
@@ -333,35 +392,19 @@ targets:
 | Issue | Cause | Solution |
 |-------|-------|----------|
 | **"embedding_dims is required when embedding_endpoint is specified"** | Missing `embedding_dims` parameter | Add `embedding_dims=1024` to AsyncDatabricksStore |
-| **"relation 'store' does not exist"** | Tables not initialized | Run `await store.setup()` locally first (Step 5) |
+| **"relation 'store' does not exist"** | Tables not initialized | The app creates tables on first use; ensure SP has CREATE permission |
 | **"Unable to resolve Lakebase instance 'None'"** | Missing env var in deployed app | Add `LAKEBASE_INSTANCE_NAME` to databricks.yml `config.env` |
-| **"Unable to resolve Lakebase instance '...database.cloud.databricks.com'"** | Used value_from instead of value | Use `value: "<instance-name>"` not `value_from` for Lakebase |
 | **"permission denied for table store"** | Missing grants | Run `uv run python scripts/grant_lakebase_permissions.py <sp-client-id>` to grant permissions |
-| **"Failed to connect to Lakebase"** | Wrong instance name | Verify instance name in databricks.yml and .env |
+| **"Failed to connect to Lakebase"** | Wrong instance name or project/branch | Verify values in databricks.yml and .env |
 | **Connection pool errors on exit** | Python cleanup race | Ignore `PythonFinalizationError` - it's harmless |
-| **App not updated after deploy** | Forgot to run bundle | Run `databricks bundle run agent_langgraph` after deploy |
+| **App not updated after deploy** | Forgot to run bundle | Run `databricks bundle run <app>` after deploy |
 | **value_from not resolving** | Resource name mismatch | Ensure `value_from` value matches `name` in databricks.yml resources |
+| **"Invalid postgres resource parameters"** | Missing `database` field in postgres resource | Add full `database` path: `projects/<project>/branches/<branch>/databases/<db-id>` |
+| **`CREATE TABLE IF NOT EXISTS "drizzle"."__drizzle_migrations"` fails** | Grant step was skipped — SP lacks Postgres permissions | Run `grant_lakebase_permissions.py` with `--memory-type`, then restart the app |
 
 ---
 
-## Granting Permissions
-
-Memory templates include a `scripts/grant_lakebase_permissions.py` script that handles all permission grants.
-
-```bash
-# Get the SP client ID:
-databricks apps get <app-name> --output json | jq -r '.service_principal_client_id'
-
-# Provisioned:
-uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --instance-name <name>
-
-# Autoscaling:
-uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --project <project> --branch <branch>
-```
-
-The script reads defaults from `.env` and handles fresh branches gracefully (warns but doesn't fail if tables don't exist yet).
-
-### LakebaseClient API (for reference)
+## LakebaseClient API (for reference)
 
 ```python
 from databricks_ai_bridge.lakebase import LakebaseClient, SchemaPrivilege, TablePrivilege

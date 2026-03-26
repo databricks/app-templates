@@ -9,8 +9,21 @@
 
    *Note: New apps should use the `agent-*` prefix (e.g., `agent-data-analyst`) unless the user specifies otherwise.*
 
-2. **If the user mentions memory, conversation history, or persistence:**
-   > "For memory capabilities, do you have an existing Lakebase instance? If so, what's the instance name?"
+2. **Lakebase instance (required for persistence) — use `AskUserQuestion` tool:**
+
+   **Step A:** Use the `AskUserQuestion` tool to ask the user which type of Lakebase instance they are using:
+   - Option 1: **Provisioned** — "I have a provisioned Lakebase instance"
+   - Option 2: **Autoscaling** — "I have an autoscaling Lakebase project/branch"
+
+   **Step B (if Provisioned):** Use `AskUserQuestion` to ask:
+   > "What is your Lakebase instance name?"
+
+   Then pass it to quickstart: `uv run quickstart --lakebase-provisioned-name <instance-name>`
+
+   **Step B (if Autoscaling):** Use `AskUserQuestion` to ask:
+   > "What is your Lakebase project and branch?"
+
+   Then pass to quickstart: `uv run quickstart --lakebase-autoscaling-project <project> --lakebase-autoscaling-branch <branch>`
 
 **Then set up the environment using quickstart:**
 
@@ -53,8 +66,11 @@ After deploying, grant the app's SP Postgres-level permissions to access Lakebas
 # Get SP client ID
 databricks apps get <app-name> --profile <profile> --output json | jq -r '.service_principal_client_id'
 
-# Grant all permissions (reads LAKEBASE_INSTANCE_NAME from .env)
-DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permissions.py <sp-client-id>
+# Provisioned:
+DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --instance-name <name>
+
+# Autoscaling:
+DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --project <project> --branch <branch>
 ```
 
 This grants permissions on the `agent_server`, `ai_chatbot`, and `drizzle` schemas and their tables.

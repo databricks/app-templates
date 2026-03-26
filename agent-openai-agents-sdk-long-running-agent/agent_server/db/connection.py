@@ -5,9 +5,9 @@ Uses AsyncLakebaseSQLAlchemy from databricks-ai-bridge for OAuth token handling:
 - pool_recycle=14 min ensures connections don't outlive token cache
 - Engine created at startup, disposed at shutdown (on_event lifecycle)
 
-When running in Databricks Apps, LAKEBASE_INSTANCE_NAME may be a hostname
-(from valueFrom: "database") rather than an instance name. resolve_lakebase_instance_name
-in agent_server.db.utils_lakebase resolves hostnames to instance names.
+Supports two Lakebase modes:
+- Provisioned: LAKEBASE_INSTANCE_NAME env var (may be a hostname from valueFrom: "database")
+- Autoscaling: LAKEBASE_AUTOSCALING_PROJECT + LAKEBASE_AUTOSCALING_BRANCH env vars
 """
 
 import logging
@@ -30,8 +30,10 @@ _lakebase: AsyncLakebaseSQLAlchemy | None = None
 
 
 def is_db_configured() -> bool:
-    """Check if database is configured (LAKEBASE_INSTANCE_NAME set)."""
-    return bool(os.getenv("LAKEBASE_INSTANCE_NAME"))
+    """Check if database is configured (provisioned or autoscaling)."""
+    has_provisioned = bool(os.getenv("LAKEBASE_INSTANCE_NAME"))
+    has_autoscaling = bool(os.getenv("LAKEBASE_AUTOSCALING_PROJECT")) and bool(os.getenv("LAKEBASE_AUTOSCALING_BRANCH"))
+    return has_provisioned or has_autoscaling
 
 
 async def init_db() -> None:
@@ -39,21 +41,35 @@ async def init_db() -> None:
     global _session_factory, _engine, _lakebase
 
     if not is_db_configured():
-        logger.debug("[DB] Skipping: database not configured (LAKEBASE_INSTANCE_NAME not set)")
+        logger.debug("[DB] Skipping: database not configured (set LAKEBASE_INSTANCE_NAME or LAKEBASE_AUTOSCALING_PROJECT/BRANCH)")
         return
 
     instance_name = os.getenv("LAKEBASE_INSTANCE_NAME")
-    if not instance_name:
-        raise ValueError("LAKEBASE_INSTANCE_NAME environment variable is required")
+    autoscaling_project = os.getenv("LAKEBASE_AUTOSCALING_PROJECT") or None
+    autoscaling_branch = os.getenv("LAKEBASE_AUTOSCALING_BRANCH") or None
 
-    instance_name = resolve_lakebase_instance_name(instance_name)
-
-    _lakebase = AsyncLakebaseSQLAlchemy(
-        instance_name=instance_name,
-        pool_size=10,
-        max_overflow=0,
-        pool_pre_ping=True,
-    )
+    if instance_name:
+        instance_name = resolve_lakebase_instance_name(instance_name)
+        _lakebase = AsyncLakebaseSQLAlchemy(
+            instance_name=instance_name,
+            pool_size=10,
+            max_overflow=0,
+            pool_pre_ping=True,
+        )
+    elif autoscaling_project and autoscaling_branch:
+        _lakebase = AsyncLakebaseSQLAlchemy(
+            project=autoscaling_project,
+            branch=autoscaling_branch,
+            pool_size=10,
+            max_overflow=0,
+            pool_pre_ping=True,
+        )
+    else:
+        raise ValueError(
+            "Lakebase not configured. Set one of:\n"
+            "  Option 1 (provisioned): LAKEBASE_INSTANCE_NAME=<your-instance-name>\n"
+            "  Option 2 (autoscaling): LAKEBASE_AUTOSCALING_PROJECT=<project> and LAKEBASE_AUTOSCALING_BRANCH=<branch>"
+        )
     _engine = _lakebase.engine
 
     # Force Postgres to kill any query exceeding db_statement_timeout_ms.
@@ -103,7 +119,7 @@ def get_async_session():
     @asynccontextmanager
     async def _session_cm():
         if _session_factory is None:
-            raise RuntimeError("Database not configured (LAKEBASE_INSTANCE_NAME required)")
+            raise RuntimeError("Database not configured (set LAKEBASE_INSTANCE_NAME or LAKEBASE_AUTOSCALING_PROJECT/BRANCH)")
         async with _session_factory() as session:
             yield session
 

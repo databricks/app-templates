@@ -710,7 +710,7 @@ def capture_app_logs(app_name: str, profile: str) -> str:
 # Lakebase
 # ---------------------------------------------------------------------------
 
-_MANAGED_SCHEMAS = ["public", "drizzle", "ai_chatbot"]
+_MANAGED_SCHEMAS = ["public", "drizzle", "ai_chatbot", "agent_server"]
 
 
 def _try_sql(client, sql: str):
@@ -721,13 +721,22 @@ def _try_sql(client, sql: str):
         _log(f"  SQL warning: {exc!r} for: {sql}")
 
 
-def grant_lakebase_access(app_name: str, lakebase: str, profile: str):
+def grant_lakebase_access(
+    app_name: str,
+    profile: str,
+    instance_name: str | None = None,
+    lakebase_project: str | None = None,
+    lakebase_branch: str | None = None,
+):
     """Grant the app's service principal Lakebase access.
 
     Assumes the SP's postgres role already exists (created by the ``database``
     resource in databricks.yml at deploy time).
+
+    Pass either ``instance_name`` (provisioned) or both
+    ``lakebase_project`` and ``lakebase_branch`` (autoscaling).
     """
-    from databricks_ai_bridge.lakebase import SchemaPrivilege, SequencePrivilege, TablePrivilege
+    from databricks_ai_bridge.lakebase import SchemaPrivilege, TablePrivilege
 
     try:
         result = _run_cmd(
@@ -739,14 +748,31 @@ def grant_lakebase_access(app_name: str, lakebase: str, profile: str):
         sp_client_id = data.get("service_principal_client_id", "")
         assert sp_client_id, f"No service_principal_client_id found for app {app_name}"
 
-        with LakebaseClient(instance_name=lakebase) as client:
+        if instance_name:
+            client_ctx = LakebaseClient(instance_name=instance_name)
+        elif lakebase_project and lakebase_branch:
+            client_ctx = LakebaseClient(project=lakebase_project, branch=lakebase_branch)
+        else:
+            raise ValueError("Either lakebase instance name or autoscaling project/branch required")
+
+        with client_ctx as client:
             _log(f"Granting lakebase access to SP {sp_client_id}...")
             quoted_sp = f'"{sp_client_id}"'
+
+            # Ensure the SP's postgres role exists
+            try:
+                client.create_role(sp_client_id, "SERVICE_PRINCIPAL")
+                _log(f"  Created role for SP {sp_client_id}")
+            except Exception as exc:
+                if "already exists" in str(exc).lower():
+                    _log(f"  Role already exists for SP {sp_client_id}")
+                else:
+                    _log(f"  Role creation warning: {exc}")
 
             # Grant CREATE on database so the SP can create schemas
             _try_sql(client, f"GRANT CREATE ON DATABASE databricks_postgres TO {quoted_sp};")
 
-            # Grant schema/table/sequence privileges on each managed schema that exists
+            # Find managed schemas that exist
             rows = client.execute(
                 "SELECT schema_name FROM information_schema.schemata WHERE schema_name = ANY(%s);",
                 (_MANAGED_SCHEMAS,),
@@ -755,6 +781,7 @@ def grant_lakebase_access(app_name: str, lakebase: str, profile: str):
             _log(f"  Existing managed schemas: {existing_schemas}")
 
             if existing_schemas:
+                # SDK-level grants (schema + tables)
                 client.grant_schema(
                     grantee=sp_client_id,
                     privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE],
@@ -765,11 +792,96 @@ def grant_lakebase_access(app_name: str, lakebase: str, profile: str):
                     privileges=[TablePrivilege.ALL],
                     schemas=existing_schemas,
                 )
-                client.grant_all_sequences_in_schema(
-                    grantee=sp_client_id,
-                    privileges=[SequencePrivilege.ALL],
-                    schemas=existing_schemas,
+
+                # Raw SQL grants for tables and sequences.
+                # Note: GRANT ALL on sequences includes DELETE which is invalid
+                # for sequences (SQLSTATE 0LP01). Use specific privileges instead.
+                for schema in existing_schemas:
+                    _try_sql(
+                        client,
+                        f"GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA {schema} TO {quoted_sp};",
+                    )
+                    _try_sql(
+                        client,
+                        f"GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA {schema} TO {quoted_sp};",
+                    )
+
+                # Workaround for Lakebase bug: the on_create_sequence event trigger
+                # only grants to databricks_superuser (not to individual users like
+                # on_create_table does). So bulk sequence grants silently skip
+                # sequences owned by other users. SET ROLE to databricks_superuser
+                # (which HAS been granted on all sequences) to execute grants with
+                # that role's privileges.
+                _log("  Attempting sequence grants via SET ROLE databricks_superuser...")
+                try:
+                    client.execute("SET ROLE databricks_superuser;")
+                    for schema in existing_schemas:
+                        _try_sql(
+                            client,
+                            f"GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA {schema} TO {quoted_sp};",
+                        )
+                    # Also grant on individual sequences by name as a fallback
+                    seq_rows = client.execute(
+                        "SELECT schemaname, sequencename FROM pg_sequences WHERE schemaname = ANY(%s);",
+                        ([s for s in existing_schemas],),
+                    )
+                    if seq_rows:
+                        for seq in seq_rows:
+                            _try_sql(
+                                client,
+                                f"GRANT USAGE, SELECT, UPDATE ON SEQUENCE "
+                                f"{seq['schemaname']}.{seq['sequencename']} TO {quoted_sp};",
+                            )
+                        _log(f"  Granted on {len(seq_rows)} individual sequence(s) via databricks_superuser")
+                    client.execute("RESET ROLE;")
+                except Exception as exc:
+                    _log(f"  SET ROLE databricks_superuser failed: {exc}")
+                    # Try RESET ROLE in case SET ROLE succeeded but grants failed
+                    try:
+                        client.execute("RESET ROLE;")
+                    except Exception:
+                        pass
+                    # Fall back to granting as current user (individual sequences)
+                    seq_rows = client.execute(
+                        "SELECT schemaname, sequencename FROM pg_sequences WHERE schemaname = ANY(%s);",
+                        ([s for s in existing_schemas],),
+                    )
+                    if seq_rows:
+                        for seq in seq_rows:
+                            _try_sql(
+                                client,
+                                f"GRANT USAGE, SELECT, UPDATE ON SEQUENCE "
+                                f"{seq['schemaname']}.{seq['sequencename']} TO {quoted_sp};",
+                            )
+                        _log(f"  Granted on {len(seq_rows)} individual sequence(s) as current user (fallback)")
+
+                # Log sequences owned by other users for debugging
+                current_user = client.execute("SELECT current_user;")[0]["current_user"]
+                stale_seqs = client.execute(
+                    "SELECT schemaname, sequencename, sequenceowner FROM pg_sequences "
+                    "WHERE schemaname = ANY(%s) AND sequenceowner NOT IN (%s, %s);",
+                    ([s for s in existing_schemas], current_user, sp_client_id),
                 )
+                if stale_seqs:
+                    for seq in stale_seqs:
+                        _log(
+                            f"  INFO: sequence {seq['schemaname']}.{seq['sequencename']} "
+                            f"is owned by {seq['sequenceowner']}"
+                        )
+
+                # Grant default privileges so future tables/sequences created
+                # in these schemas are automatically accessible to the SP
+                for schema in existing_schemas:
+                    _try_sql(
+                        client,
+                        f"ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} "
+                        f"GRANT SELECT, INSERT, UPDATE ON TABLES TO {quoted_sp};",
+                    )
+                    _try_sql(
+                        client,
+                        f"ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} "
+                        f"GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO {quoted_sp};",
+                    )
 
             _log(f"Lakebase access granted to {sp_client_id}.")
     except Exception as exc:

@@ -60,7 +60,7 @@ See the `examples/` directory for complete YAML snippets:
 | `serving-endpoint.yaml` | Model serving endpoint | Model inference |
 | `genie-space.yaml` | Genie space | Natural language data |
 | `lakebase.yaml` | Lakebase database | Agent memory storage (provisioned) |
-| `lakebase-autoscaling.md` | Lakebase autoscaling postgres | Agent memory storage (autoscaling) |
+| `lakebase-autoscaling.yaml` | Lakebase autoscaling postgres | Agent memory storage (autoscaling) |
 | `experiment.yaml` | MLflow experiment | Tracing (already configured) |
 | `custom-mcp-server.md` | Custom MCP apps | Apps starting with `mcp-*` |
 

@@ -37,9 +37,13 @@ resources:
           experiment:
             experiment_id: ""
             permission: 'CAN_MANAGE'
-        # Autoscaling postgres resource must be added via API after deploy
-        # See: .claude/skills/add-tools/examples/lakebase-autoscaling.md
-        #
+        # Autoscaling postgres resource
+        # See: .claude/skills/add-tools/examples/lakebase-autoscaling.yaml
+        - name: 'postgres'
+          postgres:
+            branch: "projects/<your-project-name>/branches/<your-branch-name>"
+            database: "projects/<your-project-name>/branches/<your-branch-name>/databases/<your-database-id>"
+            permission: 'CAN_CONNECT_AND_CREATE'
         # Use for provisioned lakebase resource
         # - name: 'database'
         #   database:

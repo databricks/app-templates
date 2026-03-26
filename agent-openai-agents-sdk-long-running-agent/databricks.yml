@@ -22,22 +22,35 @@ resources:
             value: "300"
           - name: MLFLOW_EXPERIMENT_ID
             value_from: "experiment"
-          - name: LAKEBASE_INSTANCE_NAME
-            value: "bbqiu"
+          # Autoscaling Lakebase config
+          - name: LAKEBASE_AUTOSCALING_PROJECT
+            value: "<your-project-name>"
+          - name: LAKEBASE_AUTOSCALING_BRANCH
+            value: "<your-branch-name>"
+          # Use for provisioned lakebase resource
+          # - name: LAKEBASE_INSTANCE_NAME
+          #   value_from: "database"
           - name: LOG_LEVEL
             value: "INFO"
       # Resources which this app has access to
       resources:
         - name: 'experiment'
           experiment:
-            experiment_id: "3623023838891645"
+            experiment_id: ""
             permission: 'CAN_MANAGE'
+        # Autoscaling postgres resource
         # See: .claude/skills/add-tools/examples/lakebase-autoscaling.yaml
-        - name: 'database'
-          database:
-            instance_name: 'bbqiu'
-            database_name: 'databricks_postgres'
+        - name: 'postgres'
+          postgres:
+            branch: "projects/<your-project-name>/branches/<your-branch-name>"
+            database: "projects/<your-project-name>/branches/<your-branch-name>/databases/<your-database-id>"
             permission: 'CAN_CONNECT_AND_CREATE'
+        # Use for provisioned lakebase resource
+        # - name: 'database'
+        #   database:
+        #     instance_name: '<your-lakebase-instance-name>'
+        #     database_name: 'databricks_postgres'
+        #     permission: 'CAN_CONNECT_AND_CREATE'
 
 targets:
   dev:

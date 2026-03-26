@@ -71,7 +71,7 @@ SUBAGENTS = [
         ),
     },
     {
-        "name": "agent-code-analyzer",
+        "name": "agent_code_analyzer",
         "type": "app",
         "endpoint": "agent-code-analyzer",  # TODO: set to your Databricks App name
         "description": (
@@ -93,9 +93,9 @@ SUBAGENTS = [
         ),
     },
     {
-        "name": "Master Prompt Agent",
+        "name": "master_prompt_agent",
         "type": "serving_endpoint",
-        "endpoint": "databricks-gpt-5-4",
+        "endpoint": "https://dbc-5c6e6e7d-7beb.cloud.databricks.com/serving-endpoints/databricks-gpt-5-4/invocations",
         "description": (
             "Query a model hosted on a Databricks Model Serving endpoint. "
             "Use this for generate master prompt instructions as per user query."

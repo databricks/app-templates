@@ -1,0 +1,103 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.11, pytest-9.0.2, pluggy-1.6.0 -- /Users/bryan.qiu/worktrees/appt3/agent-openai-agents-advanced/.venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/bryan.qiu/worktrees/appt3/agent-openai-agents-advanced
+configfile: pyproject.toml
+plugins: anyio-4.12.1, xdist-3.8.0, langsmith-0.7.20
+collecting ... collected 7 items / 4 deselected / 3 selected
+
+scripts/test_long_running_agent.py::test_background_stream 
+[background_stream] SSE events:
+  {'response': {'id': 'resp_36b9476a27df48e89d68d8aa', 'created_at': 1774564514.6792672, 'error': None, 'incomplete_details': None, 'instructions': None, 'metadata': None, 'model': 'databricks-gpt-5-2', 'object': 'response', 'output': [], 'parallel_tool_calls': False, 'temperature': None, 'tool_choice': 'auto', 'tools': [], 'top_p': None, 'background': None, 'completed_at': None, 'conversation': None, 'max_output_tokens': None, 'max_tool_calls': None, 'previous_response_id': None, 'prompt': None, 'prompt_cache_key': None, 'prompt_cache_retention': None, 'reasoning': None, 'safety_identifier': None, 'service_tier': None, 'status': None, 'text': None, 'top_logprobs': None, 'truncation': None, 'usage': None, 'user': None}, 'sequence_number': 0, 'type': 'response.created'}
+  {'item': {'arguments': '', 'call_id': 'call_SLHc1yaXh2WOPTkaUwXe9HnU', 'name': 'get_current_time', 'type': 'function_call', 'id': '31f050c7-3fa3-44ea-addc-c22f73769622', 'namespace': None, 'status': None, 'provider_data': {'model': 'databricks-gpt-5-2', 'response_id': 'chatcmpl-DNnaExFU6owKOd5uoC1fybERpTWmc'}}, 'output_index': 0, 'sequence_number': 1, 'type': 'response.output_item.added'}
+  {'delta': '{}', 'item_id': '31f050c7-3fa3-44ea-addc-c22f73769622', 'output_index': 0, 'sequence_number': 2, 'type': 'response.function_call_arguments.delta'}
+  {'item': {'arguments': '{}', 'call_id': 'call_SLHc1yaXh2WOPTkaUwXe9HnU', 'name': 'get_current_time', 'type': 'function_call', 'id': '31f050c7-3fa3-44ea-addc-c22f73769622', 'namespace': None, 'status': None, 'provider_data': {'model': 'databricks-gpt-5-2', 'response_id': 'chatcmpl-DNnaExFU6owKOd5uoC1fybERpTWmc'}}, 'output_index': 0, 'sequence_number': 3, 'type': 'response.output_item.done'}
+  {'response': {'id': 'resp_36b9476a27df48e89d68d8aa', 'created_at': 1774564514.6792672, 'error': None, 'incomplete_details': None, 'instructions': None, 'metadata': None, 'model': 'databricks-gpt-5-2', 'object': 'response', 'output': [{'arguments': '{}', 'call_id': 'call_SLHc1yaXh2WOPTkaUwXe9HnU', 'name': 'get_current_time', 'type': 'function_call', 'id': 'resp_36b9476a27df48e89d68d8aa', 'namespace': None, 'status': None, 'provider_data': {'model': 'databricks-gpt-5-2', 'response_id': 'chatcmpl-DNnaExFU6owKOd5uoC1fybERpTWmc'}}], 'parallel_tool_calls': False, 'temperature': None, 'tool_choice': 'auto', 'tools': [], 'top_p': None, 'background': None, 'completed_at': None, 'conversation': None, 'max_output_tokens': None, 'max_tool_calls': None, 'previous_response_id': None, 'prompt': None, 'prompt_cache_key': None, 'prompt_cache_retention': None, 'reasoning': None, 'safety_identifier': None, 'service_tier': None, 'status': None, 'text': None, 'top_logprobs': None, 'truncation': None, 'usage': {'input_tokens': 134, 'input_tokens_details': {'cached_tokens': 0}, 'output_tokens': 14, 'output_tokens_details': {'reasoning_tokens': 0}, 'total_tokens': 148}, 'user': None}, 'sequence_number': 4, 'type': 'response.completed'}
+  {'item': {'id': None, 'content': None, 'role': None, 'status': None, 'type': 'function_call_output', 'phase': None, 'call_id': 'call_SLHc1yaXh2WOPTkaUwXe9HnU', 'output': '2026-03-26T15:35:14.716393'}, 'output_index': None, 'sequence_number': 5, 'type': 'response.output_item.done'}
+  {'response': {'id': 'resp_36b9476a27df48e89d68d8aa', 'created_at': 1774564515.4455, 'error': None, 'incomplete_details': None, 'instructions': None, 'metadata': None, 'model': 'databricks-gpt-5-2', 'object': 'response', 'output': [], 'parallel_tool_calls': False, 'temperature': None, 'tool_choice': 'auto', 'tools': [], 'top_p': None, 'background': None, 'completed_at': None, 'conversation': None, 'max_output_tokens': None, 'max_tool_calls': None, 'previous_response_id': None, 'prompt': None, 'prompt_cache_key': None, 'prompt_cache_retention': None, 'reasoning': None, 'safety_identifier': None, 'service_tier': None, 'status': None, 'text': None, 'top_logprobs': None, 'truncation': None, 'usage': None, 'user': None}, 'sequence_number': 6, 'type': 'response.created'}
+  {'item': {'id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'content': [], 'role': 'assistant', 'status': 'in_progress', 'type': 'message', 'phase': None, 'provider_data': {'model': 'databricks-gpt-5-2', 'response_id': 'chatcmpl-DNnaFt53VmK47HSMp0PfblzAftOra'}}, 'output_index': 0, 'sequence_number': 7, 'type': 'response.output_item.added'}
+  {'content_index': 0, 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'output_index': 0, 'part': {'annotations': [], 'text': '', 'type': 'output_text', 'logprobs': []}, 'sequence_number': 8, 'type': 'response.content_part.added'}
+  {'content_index': 0, 'delta': '', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 9, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': 'It', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 10, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': '’s', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 11, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': ' **', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 12, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': '15', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 13, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': ':', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 14, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': '35', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 15, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': '**', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 16, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': ' (', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 17, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': '3', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 18, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': ':', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 19, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': '35', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 20, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': ' PM', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 21, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': ')', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 22, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': ' right', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 23, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': ' now', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 24, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': ' (', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 25, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': 'based', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 26, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': ' on', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 27, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': ' the', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 28, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': ' current', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 29, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': ' system', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 30, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': ' time', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 31, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': ':', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 32, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': ' **', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 33, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': '202', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 34, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': '6', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 35, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': '-', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 36, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': '03', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 37, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': '-', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 38, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': '26', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 39, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': ' ', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 40, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': '15', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 41, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': ':', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 42, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': '35', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 43, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': ':', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 44, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': '14', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 45, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': '**', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 46, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'delta': ').', 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'logprobs': [], 'output_index': 0, 'sequence_number': 47, 'type': 'response.output_text.delta'}
+  {'content_index': 0, 'item_id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'output_index': 0, 'part': {'annotations': [], 'text': 'It’s **15:35** (3:35 PM) right now (based on the current system time: **2026-03-26 15:35:14**).', 'type': 'output_text', 'logprobs': []}, 'sequence_number': 48, 'type': 'response.content_part.done'}
+  {'item': {'id': '789bbf45-fece-4426-9df9-ad5a2872270b', 'content': [{'annotations': [], 'text': 'It’s **15:35** (3:35 PM) right now (based on the current system time: **2026-03-26 15:35:14**).', 'type': 'output_text', 'logprobs': []}], 'role': 'assistant', 'status': 'completed', 'type': 'message', 'phase': None, 'provider_data': {'model': 'databricks-gpt-5-2', 'response_id': 'chatcmpl-DNnaFt53VmK47HSMp0PfblzAftOra'}}, 'output_index': 0, 'sequence_number': 49, 'type': 'response.output_item.done'}
+  {'response': {'id': 'resp_36b9476a27df48e89d68d8aa', 'created_at': 1774564515.4455, 'error': None, 'incomplete_details': None, 'instructions': None, 'metadata': None, 'model': 'databricks-gpt-5-2', 'object': 'response', 'output': [{'id': 'resp_36b9476a27df48e89d68d8aa', 'content': [{'annotations': [], 'text': 'It’s **15:35** (3:35 PM) right now (based on the current system time: **2026-03-26 15:35:14**).', 'type': 'output_text', 'logprobs': []}], 'role': 'assistant', 'status': 'completed', 'type': 'message', 'phase': None, 'provider_data': {'model': 'databricks-gpt-5-2', 'response_id': 'chatcmpl-DNnaFt53VmK47HSMp0PfblzAftOra'}}], 'parallel_tool_calls': False, 'temperature': None, 'tool_choice': 'auto', 'tools': [], 'top_p': None, 'background': None, 'completed_at': None, 'conversation': None, 'max_output_tokens': None, 'max_tool_calls': None, 'previous_response_id': None, 'prompt': None, 'prompt_cache_key': None, 'prompt_cache_retention': None, 'reasoning': None, 'safety_identifier': None, 'service_tier': None, 'status': None, 'text': None, 'top_logprobs': None, 'truncation': None, 'usage': {'input_tokens': 175, 'input_tokens_details': {'cached_tokens': 0}, 'output_tokens': 41, 'output_tokens_details': {'reasoning_tokens': 0}, 'total_tokens': 216}, 'user': None}, 'sequence_number': 50, 'type': 'response.completed'}
+
+[background_stream] full output: It’s **15:35** (3:35 PM) right now (based on the current system time: **2026-03-26 15:35:14**).
+PASSED
+scripts/test_long_running_agent.py::test_background_stream_retrieve_with_cursor 
+[background_stream_cursor] resumed output: It’s **15:35** (3:35 PM) on **2026-03-26**.
+PASSED
+scripts/test_long_running_agent.py::test_background_stream_retrieve_poll 
+[background_stream_retrieve_poll] output: It’s **15:35** (3:35 PM) right now.
+PASSED
+
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/_pytest/config/__init__.py:1428
+  /Users/bryan.qiu/worktrees/appt3/agent-openai-agents-advanced/.venv/lib/python3.12/site-packages/_pytest/config/__init__.py:1428: PytestConfigWarning: Unknown config option: base_url
+  
+    self._warn_or_fail_if_strict(f"Unknown config option: {key}\n")
+
+scripts/test_long_running_agent.py::test_background_stream
+  /Users/bryan.qiu/worktrees/appt3/agent-openai-agents-advanced/.venv/lib/python3.12/site-packages/pydantic/main.py:464: UserWarning: Pydantic serializer warnings:
+    PydanticSerializationUnexpectedValue(Expected `literal['message']` - serialized value may not be as expected [field_name='type', input_value='function_call_output', input_type=str])
+    PydanticSerializationUnexpectedValue(Expected `ResponseFileSearchToolCall` - serialized value may not be as expected [field_name='item', input_value=ResponseOutputMessage(id=...-03-26T15:35:14.716393'), input_type=ResponseOutputMessage])
+    PydanticSerializationUnexpectedValue(Expected `ResponseFunctionToolCall` - serialized value may not be as expected [field_name='item', input_value=ResponseOutputMessage(id=...-03-26T15:35:14.716393'), input_type=ResponseOutputMessage])
+    PydanticSerializationUnexpectedValue(Expected `ResponseFunctionWebSearch` - serialized value may not be as expected [field_name='item', input_value=ResponseOutputMessage(id=...-03-26T15:35:14.716393'), input_type=ResponseOutputMessage])
+    PydanticSerializationUnexpectedValue(Expected `ResponseComputerToolCall` - serialized value may not be as expected [field_name='item', input_value=ResponseOutputMessage(id=...-03-26T15:35:14.716393'), input_type=ResponseOutputMessage])
+    PydanticSerializationUnexpectedValue(Expected `ResponseReasoningItem` - serialized value may not be as expected [field_name='item', input_value=ResponseOutputMessage(id=...-03-26T15:35:14.716393'), input_type=ResponseOutputMessage])
+    PydanticSerializationUnexpectedValue(Expected `ResponseToolSearchCall` - serialized value may not be as expected [field_name='item', input_value=ResponseOutputMessage(id=...-03-26T15:35:14.716393'), input_type=ResponseOutputMessage])
+    PydanticSerializationUnexpectedValue(Expected `ResponseToolSearchOutputItem` - serialized value may not be as expected [field_name='item', input_value=ResponseOutputMessage(id=...-03-26T15:35:14.716393'), input_type=ResponseOutputMessage])
+    PydanticSerializationUnexpectedValue(Expected `ResponseCompactionItem` - serialized value may not be as expected [field_name='item', input_value=ResponseOutputMessage(id=...-03-26T15:35:14.716393'), input_type=ResponseOutputMessage])
+    PydanticSerializationUnexpectedValue(Expected `ImageGenerationCall` - serialized value may not be as expected [field_name='item', input_value=ResponseOutputMessage(id=...-03-26T15:35:14.716393'), input_type=ResponseOutputMessage])
+    PydanticSerializationUnexpectedValue(Expected `ResponseCodeInterpreterToolCall` - serialized value may not be as expected [field_name='item', input_value=ResponseOutputMessage(id=...-03-26T15:35:14.716393'), input_type=ResponseOutputMessage])
+    PydanticSerializationUnexpectedValue(Expected `LocalShellCall` - serialized value may not be as expected [field_name='item', input_value=ResponseOutputMessage(id=...-03-26T15:35:14.716393'), input_type=ResponseOutputMessage])
+    PydanticSerializationUnexpectedValue(Expected `ResponseFunctionShellToolCall` - serialized value may not be as expected [field_name='item', input_value=ResponseOutputMessage(id=...-03-26T15:35:14.716393'), input_type=ResponseOutputMessage])
+    PydanticSerializationUnexpectedValue(Expected `ResponseFunctionShellToolCallOutput` - serialized value may not be as expected [field_name='item', input_value=ResponseOutputMessage(id=...-03-26T15:35:14.716393'), input_type=ResponseOutputMessage])
+    PydanticSerializationUnexpectedValue(Expected `ResponseApplyPatchToolCall` - serialized value may not be as expected [field_name='item', input_value=ResponseOutputMessage(id=...-03-26T15:35:14.716393'), input_type=ResponseOutputMessage])
+    PydanticSerializationUnexpectedValue(Expected `ResponseApplyPatchToolCallOutput` - serialized value may not be as expected [field_name='item', input_value=ResponseOutputMessage(id=...-03-26T15:35:14.716393'), input_type=ResponseOutputMessage])
+    PydanticSerializationUnexpectedValue(Expected `McpCall` - serialized value may not be as expected [field_name='item', input_value=ResponseOutputMessage(id=...-03-26T15:35:14.716393'), input_type=ResponseOutputMessage])
+    PydanticSerializationUnexpectedValue(Expected `McpListTools` - serialized value may not be as expected [field_name='item', input_value=ResponseOutputMessage(id=...-03-26T15:35:14.716393'), input_type=ResponseOutputMessage])
+    PydanticSerializationUnexpectedValue(Expected `McpApprovalRequest` - serialized value may not be as expected [field_name='item', input_value=ResponseOutputMessage(id=...-03-26T15:35:14.716393'), input_type=ResponseOutputMessage])
+    PydanticSerializationUnexpectedValue(Expected `ResponseCustomToolCall` - serialized value may not be as expected [field_name='item', input_value=ResponseOutputMessage(id=...-03-26T15:35:14.716393'), input_type=ResponseOutputMessage])
+    return self.__pydantic_serializer__.to_python(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================= 3 passed, 4 deselected, 2 warnings in 41.47s =================

@@ -1,0 +1,59 @@
+bundle:
+  name: agent_openai_agents_advanced
+
+resources:
+  apps:
+    agent_openai_agents_advanced:
+      name: "bryan"
+      description: "OpenAI Agents SDK agent with short-term memory and long-running
+        background task support"
+      source_code_path: ./
+      config:
+        command: ["uv", "run", "start-app"]
+        env:
+          - name: MLFLOW_TRACKING_URI
+            value: "databricks"
+          - name: MLFLOW_REGISTRY_URI
+            value: "databricks-uc"
+          - name: API_PROXY
+            value: "http://localhost:8000/invocations"
+          - name: CHAT_APP_PORT
+            value: "3000"
+          - name: CHAT_PROXY_TIMEOUT_SECONDS
+            value: "300"
+          - name: MLFLOW_EXPERIMENT_ID
+            value_from: "experiment"
+          - name: LAKEBASE_AUTOSCALING_PROJECT
+            value: "bryan-test-12312411"
+          - name: LAKEBASE_AUTOSCALING_BRANCH
+            value: "bryan-test-12312411-branch"
+          - name: LOG_LEVEL
+            value: "INFO"
+      # Resources which this app has access to
+      resources:
+        - name: 'experiment'
+          experiment:
+            experiment_id: "3370752722200944"
+            permission: 'CAN_MANAGE'
+        # See: .claude/skills/add-tools/examples/lakebase-autoscaling.yaml
+        - name: 'postgres'
+          postgres:
+            branch: "projects/bryan-test-12312411/branches/bryan-test-12312411-branch"
+            database: "projects/bryan-test-12312411/branches/bryan-test-12312411-branch/databases/db-8ceg-qg9ga18y0e"
+            permission: 'CAN_CONNECT_AND_CREATE'
+
+targets:
+  dev:
+    mode: development
+    default: true
+    # workspace:
+    #   host: https://...
+
+  prod:
+    mode: production
+    # workspace:
+    #   host: https://...
+    resources:
+      apps:
+        agent_openai_agents_advanced:
+          name: agent-openai-agents-adv

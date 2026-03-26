@@ -10,8 +10,12 @@ from dotenv import load_dotenv
 # Load env vars from .env before any other imports (agent needs auth config)
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env", override=True)
 
+import logging
+
 from databricks_ai_bridge.long_running import LongRunningAgentServer
 from mlflow.genai.agent_server import setup_mlflow_git_based_version_tracking
+
+logger = logging.getLogger(__name__)
 
 # Need to import the agent to register the functions with the server
 import agent_server.agent  # noqa: F401
@@ -46,7 +50,11 @@ _original_lifespan = app.router.lifespan_context
 @asynccontextmanager
 async def _lifespan(app):
     await run_lakebase_setup(LAKEBASE_CONFIG)
-    async with _original_lifespan(app):
+    try:
+        async with _original_lifespan(app):
+            yield
+    except Exception as exc:
+        logger.warning("Long-running DB initialization failed: %s. Background mode disabled.", exc)
         yield
 
 

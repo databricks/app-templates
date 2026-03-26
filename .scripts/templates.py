@@ -5,14 +5,9 @@ TEMPLATES = {
         "sdk": "langgraph",
         "bundle_name": "agent_langgraph",
     },
-    "agent-langgraph-short-term-memory": {
+    "agent-langgraph-advanced": {
         "sdk": "langgraph",
-        "bundle_name": "agent_langgraph_short_term_memory",
-        "has_memory": True,
-    },
-    "agent-langgraph-long-term-memory": {
-        "sdk": "langgraph",
-        "bundle_name": "agent_langgraph_long_term_memory",
+        "bundle_name": "agent_langgraph_advanced",
         "has_memory": True,
     },
     "agent-openai-agents-sdk": {
@@ -23,15 +18,10 @@ TEMPLATES = {
         "sdk": "openai",
         "bundle_name": "agent_openai_agents_sdk_multiagent",
     },
-    "agent-openai-agents-sdk-short-term-memory": {
+    "agent-openai-advanced": {
         "sdk": "openai",
-        "bundle_name": "agent_openai_agents_sdk_short_term_memory",
+        "bundle_name": "agent_openai_advanced",
         "has_memory": True,
-    },
-    "agent-openai-agents-sdk-long-running-agent": {
-        "sdk": "openai",
-        "bundle_name": "agent_openai_agents_sdk_long_running_agent",
-        "has_lakebase": True,
     },
     "agent-non-conversational": {
         "sdk": "langgraph",

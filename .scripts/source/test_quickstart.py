@@ -2,8 +2,8 @@
 # 1. Checks prerequisites (uv, node, npm, databricks CLI) and validates Node.js version
 # 2. Creates .env from .env.example (or from scratch)
 # 3. Sets up Databricks authentication (validates/creates profile)
-# 4. Gets Databricks username via Databricks SDK (current_user.me())
-# 5. Creates MLflow experiment via Databricks SDK (experiments.create_experiment)
+# 4. Gets Databricks username via current-user API
+# 5. Creates MLflow experiment via `databricks experiments create-experiment`
 # 6. Updates .env with: DATABRICKS_CONFIG_PROFILE, MLFLOW_TRACKING_URI, MLFLOW_EXPERIMENT_ID
 # 7. Updates databricks.yml: sets experiment_id in app resource
 # 8. (If lakebase needed) Sets up lakebase (provisioned or autoscaling)
@@ -89,17 +89,17 @@ targets:
     mode: development
 """
 
-# A databricks.yml with lakebase env vars (like agent-langgraph-short-term-memory)
+# A databricks.yml with lakebase env vars (like agent-langgraph-advanced)
 # Default state: autoscaling active, provisioned commented out
 LAKEBASE_YML = """\
 bundle:
-  name: agent_langgraph_short_term_memory
+  name: agent_langgraph_advanced
 
 resources:
   apps:
-    agent_langgraph_short_term_memory:
-      name: "agent-langgraph-stm"
-      description: "LangGraph agent application with short-term memory"
+    agent_langgraph_advanced:
+      name: "agent-langgraph-advanced"
+      description: "LangGraph agent application with short-term and long-term memory"
       source_code_path: ./
       config:
         command: ["uv", "run", "start-app"]
@@ -136,15 +136,15 @@ targets:
     mode: development
 """
 
-# Double-quoted variant (like agent-langgraph-long-term-memory)
+# Double-quoted variant (like agent-langgraph-advanced with double-quoted YAML keys)
 DOUBLE_QUOTED_YML = """\
 bundle:
-  name: agent_langgraph_long_term_memory
+  name: agent_openai_advanced
 
 resources:
   apps:
-    agent_langgraph_long_term_memory:
-      name: "agent-langgraph-ltm"
+    agent_openai_advanced:
+      name: "agent-openai-advanced"
       config:
         env:
           - name: MLFLOW_EXPERIMENT_ID
@@ -234,10 +234,9 @@ class TestUpdateDatabricksYmlExperiment:
         repo_root = Path(__file__).resolve().parents[1]
         templates_with_experiment = [
             "agent-langgraph",
-            "agent-langgraph-short-term-memory",
-            "agent-langgraph-long-term-memory",
+            "agent-langgraph-advanced",
             "agent-openai-agents-sdk",
-            "agent-openai-agents-sdk-short-term-memory",
+            "agent-openai-advanced",
             "agent-openai-agents-sdk-multiagent",
             "agent-non-conversational",
         ]
@@ -305,7 +304,7 @@ class TestReplaceLakebaseEnvVars:
             LAKEBASE_YML, {"type": "autoscaling", "project": "p", "branch": "b"}
         )
         assert "bundle:" in result
-        assert "agent_langgraph_short_term_memory" in result
+        assert "agent_langgraph_advanced" in result
         assert "targets:" in result
         assert "mode: development" in result
 
@@ -474,9 +473,8 @@ class TestReplaceLakebaseResource:
         """Verify resource replacement works on actual template databricks.yml files."""
         repo_root = Path(__file__).resolve().parents[1]
         memory_templates = [
-            "agent-langgraph-short-term-memory",
-            "agent-langgraph-long-term-memory",
-            "agent-openai-agents-sdk-short-term-memory",
+            "agent-langgraph-advanced",
+            "agent-openai-advanced",
         ]
         for template_name in memory_templates:
             yml_path = repo_root / template_name / "databricks.yml"
@@ -538,9 +536,8 @@ class TestUpdateDatabricksYmlLakebase:
         """Verify lakebase replacement works on actual template databricks.yml files."""
         repo_root = Path(__file__).resolve().parents[1]
         memory_templates = [
-            "agent-langgraph-short-term-memory",
-            "agent-langgraph-long-term-memory",
-            "agent-openai-agents-sdk-short-term-memory",
+            "agent-langgraph-advanced",
+            "agent-openai-advanced",
         ]
         for template_name in memory_templates:
             yml_path = repo_root / template_name / "databricks.yml"
@@ -804,9 +801,8 @@ class TestHappyPathProvisionedOnRealTemplates:
     """
 
     MEMORY_TEMPLATES = [
-        "agent-langgraph-short-term-memory",
-        "agent-langgraph-long-term-memory",
-        "agent-openai-agents-sdk-short-term-memory",
+        "agent-langgraph-advanced",
+        "agent-openai-advanced",
     ]
 
     def test_provisioned_happy_path(self, tmp_path):
@@ -896,9 +892,8 @@ class TestHappyPathAutoscalingOnRealTemplates:
     """End-to-end happy path: autoscaling Lakebase on real template files."""
 
     MEMORY_TEMPLATES = [
-        "agent-langgraph-short-term-memory",
-        "agent-langgraph-long-term-memory",
-        "agent-openai-agents-sdk-short-term-memory",
+        "agent-langgraph-advanced",
+        "agent-openai-advanced",
     ]
 
     def test_autoscaling_happy_path(self, tmp_path):
@@ -1098,8 +1093,9 @@ class TestUpdateDatabricksYmlAppName:
         repo_root = Path(__file__).resolve().parents[1]
         templates = [
             "agent-langgraph",
-            "agent-langgraph-short-term-memory",
+            "agent-langgraph-advanced",
             "agent-openai-agents-sdk",
+            "agent-openai-advanced",
             "agent-non-conversational",
         ]
         for template_name in templates:

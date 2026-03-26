@@ -86,7 +86,7 @@ Add the Lakebase database resource to your app:
 ```yaml
 resources:
   apps:
-    agent_openai_agents_sdk_short_term_memory:
+    agent_openai_advanced:
       name: "your-app-name"
       source_code_path: ./
 

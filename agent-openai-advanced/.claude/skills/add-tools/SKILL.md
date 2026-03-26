@@ -33,7 +33,7 @@ agent = Agent(
 ```yaml
 resources:
   apps:
-    agent_openai_agents_advanced:
+    agent_openai_advanced:
       resources:
         - name: 'my_genie_space'
           genie_space:

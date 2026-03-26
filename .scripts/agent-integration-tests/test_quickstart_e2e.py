@@ -14,7 +14,7 @@ and deployment binding.
 |----|----------|---------------|----------|
 | fresh-and-idempotent | agent-langgraph | Normal first run + re-run reuses same experiment | Yes |
 | existing-app | agent-langgraph | Pre-created app → quickstart binds it on deploy | Yes |
-| lakebase-idempotent | agent-langgraph-short-term-memory | Re-run reuses existing Lakebase config | No |
+| lakebase-idempotent | agent-langgraph-advanced | Re-run reuses existing Lakebase config | No |
 
 ## Usage
 
@@ -324,14 +324,14 @@ def _run_lakebase_idempotent(
     """Scenario C: Lakebase idempotency — re-running quickstart reuses existing config.
 
     Steps:
-    1. Copy agent-langgraph-short-term-memory via git ls-files
+    1. Copy agent-langgraph-advanced via git ls-files
     2. First quickstart run: configures Lakebase, writes LAKEBASE_INSTANCE_NAME to .env
     3. Second quickstart run (no --lakebase flag): should reuse config from .env
     4. Assert same LAKEBASE_INSTANCE_NAME after both runs
 
     No deployment — this tests quickstart behavior only.
     """
-    template_name = "agent-langgraph-short-term-memory"
+    template_name = "agent-langgraph-advanced"
     app_name = _unique_app_name(template_name)
     workdir = git_copy_template(template_name, tmp_path, git_ref)
 

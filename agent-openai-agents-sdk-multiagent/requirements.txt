@@ -1,1 +1,4 @@
 uv
+databricks-sdk
+openai
+

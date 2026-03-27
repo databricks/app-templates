@@ -1,5 +1,4 @@
 uv
 databricks-sdk
 openai
-databricks_cli
 

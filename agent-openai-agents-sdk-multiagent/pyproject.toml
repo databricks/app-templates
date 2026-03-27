@@ -15,6 +15,7 @@ dependencies = [
     "mlflow>=3.10.0",
     "openai-agents>=0.4.1",
     "python-dotenv>=1.2.1",
+    "a2a-sdk>=0.2.7",
 ]
 
 [build-system]
@@ -44,5 +45,3 @@ agent-evaluate = "agent_server.evaluate_agent:evaluate"
 discover-tools = "scripts.discover_tools:main"
 preflight = "scripts.preflight:main"
 
-cd agent-openai-agents-sdk-multiagent
-uv add python-a2a        # A2A protocol SDK

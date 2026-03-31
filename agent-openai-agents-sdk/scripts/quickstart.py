@@ -761,9 +761,47 @@ def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> dict | 
     return None
 
 
+def _create_lakebase_project(profile_name: str, project: str):
+    """Create a Lakebase autoscaling project via the SDK."""
+    from databricks.sdk.service.postgres import Project, ProjectSpec
+
+    w = get_workspace_client(profile_name)
+    if not w:
+        print_error("Could not connect to Databricks. Check your CLI profile.")
+        return False
+    print(f"Creating Lakebase autoscaling project '{project}'...")
+    project_op = w.postgres.create_project(
+        project=Project(spec=ProjectSpec(display_name=project)),
+        project_id=project,
+    )
+    project_op.wait()
+    print_success(f"Created project: {project}")
+    return True
+
+
+def _create_lakebase_branch(profile_name: str, project: str, branch: str):
+    """Create a Lakebase autoscaling branch via the SDK."""
+    from databricks.sdk.service.postgres import Branch, BranchSpec
+
+    w = get_workspace_client(profile_name)
+    if not w:
+        print_error("Could not connect to Databricks. Check your CLI profile.")
+        return False
+    print(f"Creating Lakebase autoscaling branch '{branch}' in project '{project}'...")
+    branch_op = w.postgres.create_branch(
+        parent=f"projects/{project}",
+        branch=Branch(spec=BranchSpec(no_expiry=True)),
+        branch_id=branch,
+    )
+    branch_op.wait()
+    print_success(f"Created branch: {branch}")
+    return True
+
+
 def validate_lakebase_autoscaling(profile_name: str, project: str, branch: str) -> dict | None:
     """Validate that the Lakebase autoscaling project and branch exist.
 
+    If the project or branch doesn't exist, attempts to create it automatically.
     Uses the postgres API (/api/2.0/postgres/) to verify the project and branch,
     then fetches the endpoint host for PGHOST.
 
@@ -772,7 +810,7 @@ def validate_lakebase_autoscaling(profile_name: str, project: str, branch: str) 
     """
     print(f"Validating Lakebase autoscaling project '{project}', branch '{branch}'...")
 
-    # Validate project exists
+    # Validate project exists — create if not found
     result = run_command(
         [
             "databricks",
@@ -790,18 +828,22 @@ def validate_lakebase_autoscaling(profile_name: str, project: str, branch: str) 
     if result.returncode != 0:
         error_msg = result.stderr.lower() if result.stderr else ""
         if "not found" in error_msg or "404" in error_msg:
-            print_error(
-                f"Lakebase autoscaling project '{project}' not found. Please check the project name."
-            )
+            try:
+                if not _create_lakebase_project(profile_name, project):
+                    return None
+            except Exception as e:
+                print_error(f"Failed to create Lakebase project '{project}': {e}")
+                return None
         elif "permission" in error_msg or "forbidden" in error_msg or "unauthorized" in error_msg:
             print_error(f"No permission to access Lakebase project '{project}'")
+            return None
         else:
             print_error(
                 f"Failed to validate Lakebase project: {result.stderr.strip() if result.stderr else 'Unknown error'}"
             )
-        return None
+            return None
 
-    # Validate branch exists within the project
+    # Validate branch exists — create if not found
     result = run_command(
         [
             "databricks",
@@ -819,16 +861,20 @@ def validate_lakebase_autoscaling(profile_name: str, project: str, branch: str) 
     if result.returncode != 0:
         error_msg = result.stderr.lower() if result.stderr else ""
         if "not found" in error_msg or "404" in error_msg:
-            print_error(
-                f"Lakebase autoscaling branch '{branch}' not found in project '{project}'. Please check the branch name."
-            )
+            try:
+                if not _create_lakebase_branch(profile_name, project, branch):
+                    return None
+            except Exception as e:
+                print_error(f"Failed to create Lakebase branch '{branch}': {e}")
+                return None
         elif "permission" in error_msg or "forbidden" in error_msg or "unauthorized" in error_msg:
             print_error(f"No permission to access Lakebase branch '{branch}'")
+            return None
         else:
             print_error(
                 f"Failed to validate Lakebase branch: {result.stderr.strip() if result.stderr else 'Unknown error'}"
             )
-        return None
+            return None
 
     print_success(f"Lakebase autoscaling project '{project}', branch '{branch}' validated")
 

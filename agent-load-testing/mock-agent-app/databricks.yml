@@ -1,0 +1,118 @@
+bundle:
+  name: agent-openai-load-test
+
+variables:
+  app_name:
+    description: "App name for deployment"
+    default: "agent-openai-load-test-medium"
+  workers:
+    description: "Number of uvicorn workers"
+    default: "4"
+
+resources:
+  apps:
+    load_test_app:
+      name: ${var.app_name}
+      description: "Mock agent for load testing Apps throughput"
+      source_code_path: .
+      config:
+        command: ["/bin/bash", "./scripts/start-app.sh"]
+        env:
+          - name: MLFLOW_TRACKING_URI
+            value: "databricks"
+          - name: UVICORN_WORKERS
+            value: ${var.workers}
+          - name: MOCK_CHUNK_DELAY_MS
+            value: "10"
+          - name: MOCK_CHUNK_COUNT
+            value: "80"
+
+targets:
+  medium:
+    default: true
+    mode: development
+    variables:
+      app_name: "agent-openai-load-test-medium"
+
+  large:
+    mode: development
+    variables:
+      app_name: "agent-openai-load-test-large"
+
+  medium-eu:
+    mode: development
+    workspace:
+      host: https://eng-ml-inference-team-eu-central-1.cloud.databricks.com
+    variables:
+      app_name: "agent-load-test-medium"
+
+  large-eu:
+    mode: development
+    workspace:
+      host: https://eng-ml-inference-team-eu-central-1.cloud.databricks.com
+    variables:
+      app_name: "agent-load-test-large"
+
+  medium-w2-eu:
+    mode: development
+    workspace:
+      host: https://eng-ml-inference-team-eu-central-1.cloud.databricks.com
+    variables:
+      app_name: "agent-load-test-medium-w2"
+      workers: "2"
+
+  medium-w4-eu:
+    mode: development
+    workspace:
+      host: https://eng-ml-inference-team-eu-central-1.cloud.databricks.com
+    variables:
+      app_name: "agent-load-test-medium-w4"
+      workers: "4"
+
+  medium-w6-eu:
+    mode: development
+    workspace:
+      host: https://eng-ml-inference-team-eu-central-1.cloud.databricks.com
+    variables:
+      app_name: "agent-load-test-medium-w6"
+      workers: "6"
+
+  medium-w8-eu:
+    mode: development
+    workspace:
+      host: https://eng-ml-inference-team-eu-central-1.cloud.databricks.com
+    variables:
+      app_name: "agent-load-test-medium-w8"
+      workers: "8"
+
+  large-w6-eu:
+    mode: development
+    workspace:
+      host: https://eng-ml-inference-team-eu-central-1.cloud.databricks.com
+    variables:
+      app_name: "agent-load-test-large-w6"
+      workers: "6"
+
+  large-w8-eu:
+    mode: development
+    workspace:
+      host: https://eng-ml-inference-team-eu-central-1.cloud.databricks.com
+    variables:
+      app_name: "agent-load-test-large-w8"
+      workers: "8"
+
+  large-w10-eu:
+    mode: development
+    workspace:
+      host: https://eng-ml-inference-team-eu-central-1.cloud.databricks.com
+    variables:
+      app_name: "agent-load-test-large-w10"
+      workers: "10"
+
+  large-w12-eu:
+    mode: development
+    workspace:
+      host: https://eng-ml-inference-team-eu-central-1.cloud.databricks.com
+    variables:
+      app_name: "agent-load-test-large-w12"
+      workers: "12"

@@ -87,7 +87,7 @@ def sync_template(template: str, config: dict):
     copy_skill(SOURCE / "quickstart", dest / "quickstart", quickstart_subs)
 
     # Shared skills (no substitution needed)
-    for skill in ["run-locally", "discover-tools", "migrate-from-model-serving"]:
+    for skill in ["run-locally", "discover-tools", "create-tools", "migrate-from-model-serving"]:
         copy_skill(SOURCE / skill, dest / skill)
 
     # Long-running server skill — skip for advanced templates (already have it) and non-conversational

@@ -24,10 +24,10 @@ RETURN SELECT CONCAT(
 Via CLI:
 
 ```bash
-databricks sql-statements execute \
-  --warehouse-id <warehouse-id> \
-  --statement "CREATE OR REPLACE FUNCTION catalog.schema.my_func(...) ..." \
-  --profile <profile>
+databricks api post /api/2.0/sql/statements --json '{
+  "warehouse_id": "<warehouse-id>",
+  "statement": "CREATE OR REPLACE FUNCTION catalog.schema.my_func(...) ..."
+}' --profile <profile>
 ```
 
 ## Option 2: Python function

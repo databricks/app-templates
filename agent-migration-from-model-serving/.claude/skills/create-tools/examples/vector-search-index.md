@@ -11,54 +11,57 @@ Vector Search indexes let agents search unstructured data (documents, knowledge 
 ## Step 1: Create a Vector Search endpoint (if needed)
 
 ```bash
-databricks vector-search endpoints create \
-  --name my-vs-endpoint \
-  --endpoint-type STANDARD \
-  --profile <profile>
+databricks vector-search-endpoints create-endpoint my-vs-endpoint STANDARD --profile <profile>
 ```
 
 Verify it exists:
 
 ```bash
-databricks vector-search endpoints list --profile <profile>
+databricks vector-search-endpoints list-endpoints --profile <profile>
 ```
 
 ## Step 2: Create the index with managed embeddings
 
 ```bash
-databricks vector-search indexes create-delta-sync-index \
-  --name <catalog>.<schema>.<index-name> \
-  --primary-key-column id \
-  --endpoint-name my-vs-endpoint \
-  --source-table-name <catalog>.<schema>.<source-table> \
-  --embedding-source-column content \
-  --embedding-model-endpoint-name databricks-bge-large-en \
-  --pipeline-type TRIGGERED \
+databricks vector-search-indexes create-index \
+  <catalog>.<schema>.<index-name> \
+  my-vs-endpoint \
+  id \
+  DELTA_SYNC \
+  --json '{
+    "delta_sync_index_spec": {
+      "source_table": "<catalog>.<schema>.<source-table>",
+      "pipeline_type": "TRIGGERED",
+      "embedding_source_columns": [
+        {
+          "name": "content",
+          "embedding_model_endpoint_name": "databricks-bge-large-en"
+        }
+      ]
+    }
+  }' \
   --profile <profile>
 ```
 
 Key parameters:
-- `--primary-key-column`: Unique row identifier in your source table
-- `--embedding-source-column`: The text column to embed and search
-- `--embedding-model-endpoint-name`: Use `databricks-bge-large-en` or another embedding endpoint
-- `--pipeline-type`: `TRIGGERED` (manual sync) or `CONTINUOUS` (auto-sync on table changes)
+- Positional args: `NAME`, `ENDPOINT_NAME`, `PRIMARY_KEY`, `INDEX_TYPE`
+- `source_table`: The Delta table to index
+- `embedding_source_columns.name`: The text column to embed and search
+- `embedding_model_endpoint_name`: Use `databricks-bge-large-en` or another embedding endpoint
+- `pipeline_type`: `TRIGGERED` (manual sync) or `CONTINUOUS` (auto-sync on table changes)
 
 ## Step 3: Sync the index
 
 For `TRIGGERED` pipelines, start the initial sync:
 
 ```bash
-databricks vector-search indexes sync \
-  --index-name <catalog>.<schema>.<index-name> \
-  --profile <profile>
+databricks vector-search-indexes sync-index <catalog>.<schema>.<index-name> --profile <profile>
 ```
 
 ## Verify
 
 ```bash
-databricks vector-search indexes get \
-  --index-name <catalog>.<schema>.<index-name> \
-  --profile <profile>
+databricks vector-search-indexes get-index <catalog>.<schema>.<index-name> --profile <profile>
 ```
 
 Check that `status.ready` is `true` before connecting your agent.

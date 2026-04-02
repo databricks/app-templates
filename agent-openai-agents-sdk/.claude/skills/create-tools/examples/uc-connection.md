@@ -4,7 +4,7 @@ Unity Catalog HTTP connections let you register external MCP servers so Databric
 
 ## Create the connection
 
-### Option 1: Managed OAuth (Google Drive, SharePoint, Atlassian)
+### Option 1: Managed OAuth (Glean, GitHub, Atlassian, Google Drive, SharePoint)
 
 For supported providers, Databricks manages the OAuth credentials. Create the connection in the Databricks UI:
 
@@ -15,7 +15,9 @@ For supported providers, Databricks manages the OAuth credentials. Create the co
 5. Select the provider from the **OAuth Provider** drop-down
 6. Configure scopes as needed
 
-See [external MCP docs](https://docs.databricks.com/aws/en/generative-ai/mcp/external-mcp) for supported providers and scopes.
+You can also install pre-built integrations from the **Databricks Marketplace**.
+
+See [external MCP docs](https://docs.databricks.com/aws/en/generative-ai/mcp/external-mcp) for the full list of supported providers, scopes, and setup methods.
 
 ### Option 2: CLI with bearer token
 

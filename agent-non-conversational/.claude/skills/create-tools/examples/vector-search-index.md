@@ -4,8 +4,10 @@ Vector Search indexes let agents search unstructured data (documents, knowledge 
 
 ## Prerequisites
 
+- Unity Catalog enabled in your workspace
+- Serverless compute enabled
 - A Delta table in Unity Catalog with a text column containing the content to search
-- A Vector Search endpoint (or create one below)
+- Change Data Feed enabled on the source table (for standard endpoints)
 - The index must use **Databricks-managed embeddings** for the managed MCP server
 
 ## Step 1: Create a Vector Search endpoint (if needed)
@@ -35,7 +37,7 @@ databricks vector-search-indexes create-index \
       "embedding_source_columns": [
         {
           "name": "content",
-          "embedding_model_endpoint_name": "databricks-bge-large-en"
+          "embedding_model_endpoint_name": "databricks-gte-large-en"
         }
       ]
     }
@@ -47,7 +49,7 @@ Key parameters:
 - Positional args: `NAME`, `ENDPOINT_NAME`, `PRIMARY_KEY`, `INDEX_TYPE`
 - `source_table`: The Delta table to index
 - `embedding_source_columns.name`: The text column to embed and search
-- `embedding_model_endpoint_name`: Use `databricks-bge-large-en` or another embedding endpoint
+- `embedding_model_endpoint_name`: Use `databricks-gte-large-en` (recommended) or another embedding endpoint
 - `pipeline_type`: `TRIGGERED` (manual sync) or `CONTINUOUS` (auto-sync on table changes)
 
 ## Step 3: Sync the index

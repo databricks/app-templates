@@ -181,12 +181,8 @@ class _MockCompletions:
         # Final chunk: finish_reason = tool_calls
         chunks.append(_make_chunk(chunk_id, finish_reason="tool_calls"))
 
-        # Add delays between chunks
-        delayed_chunks = []
-        for chunk in chunks:
-            delayed_chunks.append(chunk)
-
-        return MockAsyncStream(delayed_chunks)
+        # Tool call chunks stream instantly (no delay)
+        return MockAsyncStream(chunks)
 
     async def _stream_text_response(self):
         """Simulate LLM summarizing the tool output."""

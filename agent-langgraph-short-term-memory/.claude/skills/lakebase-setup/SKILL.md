@@ -218,7 +218,7 @@ EMBEDDING_DIMS=1024
 
 ---
 
-        embedding_dims=1024,
+## Step 5: Initialize Tables
 ## Step 5: Deploy
 
 Deploy the app so the service principal and resources are created:

@@ -24,7 +24,7 @@ https://<workspace>.databricks.com/genie/rooms/<space-id>?o=...
 To list all Genie spaces via CLI:
 
 ```bash
-databricks api get /api/2.0/genie/spaces --profile <profile>
+databricks genie list-spaces --profile <profile>
 ```
 
 ## Next step

@@ -1,6 +1,6 @@
 # Create a Genie Space
 
-Genie spaces let agents query structured data in Unity Catalog tables using natural language. A Genie space holds up to 25 tables that Genie keeps in context.
+Genie spaces let agents query structured data in Unity Catalog tables using natural language. A Genie space can include up to 30 tables or views.
 
 ## Create via Databricks UI
 
@@ -8,9 +8,10 @@ Genie spaces let agents query structured data in Unity Catalog tables using natu
 2. Click **New** to create a new Genie space.
 3. Add the Unity Catalog tables or views your agent needs to query.
 4. Configure instructions to guide how Genie interprets queries (optional but recommended).
-5. Share the space with the app's service principal:
+5. Configure a default SQL warehouse: go to **Configure** > **Settings** > **Default warehouse**.
+6. Share the space with the app's service principal:
    - Click **Share** in the top right
-   - Add the service principal with **Can Run** permission
+   - Enter the service principal name, click **Add**, and set the permission level to **CAN RUN**
    - To find your app's service principal: `databricks apps get <app-name> --output json --profile <profile> | jq -r '.service_principal_name'`
 
 ## Find the space ID

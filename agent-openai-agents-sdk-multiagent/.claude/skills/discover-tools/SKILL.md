@@ -42,7 +42,8 @@ uv run discover-tools --profile DEFAULT
 ## Next Steps
 
 After discovering tools:
-1. **Create resources** if they don't exist yet - See **create-tools** skill
-2. **Add MCP servers to your agent** - See **modify-agent** skill for SDK-specific code examples
-3. **Grant permissions** in `databricks.yml` - See **add-tools** skill for YAML snippets
-4. **Test locally** with `uv run start-app` - See **run-locally** skill
+1. **Add MCP servers to your agent** - See **modify-agent** skill for SDK-specific code examples
+2. **Grant permissions** in `databricks.yml` - See **add-tools** skill for YAML snippets
+3. **Test locally** with `uv run start-app` - See **run-locally** skill
+
+Need a resource that doesn't exist yet? See the **create-tools** skill.

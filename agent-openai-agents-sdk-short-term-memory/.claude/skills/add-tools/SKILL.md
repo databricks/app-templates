@@ -79,6 +79,20 @@ databricks apps update-permissions <mcp-server-app-name> \
 
 See `examples/custom-mcp-server.md` for detailed steps.
 
+## MCP Error Handling
+
+MCP tool calls can fail (network issues, permission errors, timeouts). The OpenAI Agents SDK catches tool errors by default and returns the error message to the LLM. To customize timeout behavior for MCP servers:
+
+```python
+mcp_server = McpServer(
+    url=f"{host}/api/2.0/mcp/genie/{space_id}",
+    name="genie",
+    timeout=60.0,  # Increase timeout for slow tools like Genie (default: 20s)
+)
+```
+
+For local function tools, see `create-tools` skill > `examples/local-python-tools.md` for `failure_error_function` patterns.
+
 ## Important Notes
 
 - **MLflow experiment**: Already configured in template, no action needed

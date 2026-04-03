@@ -99,10 +99,25 @@ env:
 
 **Critical:** Every `value_from` value must match a `name` field in `databricks.yml` resources.
 
+## MCP Error Handling
+
+MCP tool calls can fail (network issues, permission errors, timeouts). Use `handle_tool_error` on MCP servers to catch errors and return them to the LLM instead of crashing the agent:
+
+```python
+DatabricksMCPServer(
+    name="genie",
+    url=f"{host}/api/2.0/mcp/genie/{space_id}",
+    handle_tool_error=True,   # Return error messages to LLM instead of raising
+    timeout=60.0,             # Increase timeout for slow tools like Genie
+)
+```
+
+For local function tools, see `create-tools` skill > `examples/local-python-tools.md` for `@tool(handle_tool_error=True)` patterns.
+
 ## Important Notes
 
 - **MLflow experiment**: Already configured in template, no action needed
 - **Multiple resources**: Add multiple entries under `resources:` list
 - **Permission types vary**: Each resource type has specific permission values
-- **Deploy + Run after changes**: Run both `databricks bundle deploy` AND `databricks bundle run agent_langgraph`
+- **Deploy + Run after changes**: Run both `databricks bundle deploy` AND `databricks bundle run agent_langgraph_long_term_memory`
 - **value_from matching**: Ensure `config.env` `value_from` values match `databricks.yml` resource `name` values

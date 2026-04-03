@@ -53,6 +53,49 @@ def calculate_discount(price: float, percent: float) -> str:
 tools = [get_current_time, calculate_discount]
 ```
 
+## Error handling
+
+Both SDKs handle tool errors gracefully by default — the error message is returned to the LLM so it can retry or respond to the user. For custom error messages, use the patterns below.
+
+### OpenAI Agents SDK
+
+`@function_tool` includes a built-in `default_tool_error_function` that catches exceptions and returns `"An error occurred while running the tool. Error: {error}"` to the LLM. To customize:
+
+```python
+from agents import RunContextWrapper, function_tool
+
+def handle_api_error(ctx: RunContextWrapper, error: Exception) -> str:
+    """Return a helpful error message the LLM can act on."""
+    return f"Tool failed: {error}. Try a different query or ask the user for clarification."
+
+@function_tool(failure_error_function=handle_api_error)
+def call_external_api(query: str) -> str:
+    """Call an external API."""
+    # If this raises, handle_api_error returns a message to the LLM
+    ...
+```
+
+### LangGraph
+
+LangGraph tools raise by default. To return errors to the LLM instead of crashing, raise `ToolException` and set `handle_tool_error`:
+
+```python
+from langchain_core.tools import tool, ToolException
+
+@tool
+def call_external_api(query: str) -> str:
+    """Call an external API."""
+    try:
+        ...
+    except Exception as e:
+        raise ToolException(f"API call failed: {e}. Try a different query.")
+
+# Enable error handling on the tool
+call_external_api.handle_tool_error = True
+```
+
+Set `handle_tool_error=True` for a generic message, or assign a string/callable for custom messages. Only `ToolException` is caught — other exceptions still raise.
+
 ## Tips
 
 - The docstring becomes the tool description the LLM sees — make it clear and specific

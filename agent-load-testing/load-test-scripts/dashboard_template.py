@@ -156,13 +156,20 @@ def generate_dashboard(
                 ramp_data[label] = extract_ramp_data(result_subdir, step_size)
 
     # --- Compute per-config peak QPS and users at peak ---
-    peak_info = {}  # label -> {peak_qps, users_at_peak}
+    peak_info = {}  # label -> {peak_qps, users_at_peak, peak_success_qps}
     for label, steps in ramp_data.items():
         if steps:
             best_step = max(steps, key=lambda s: s["qps"])
-            peak_info[label] = {"peak_qps": best_step["qps"], "users_at_peak": best_step["users"]}
+            # Peak successful QPS: highest QPS * (1 - fail_pct/100)
+            best_success = max(steps, key=lambda s: s["qps"] * (1 - s.get("fail_pct", 0) / 100))
+            success_qps = round(best_success["qps"] * (1 - best_success.get("fail_pct", 0) / 100), 1)
+            peak_info[label] = {
+                "peak_qps": best_step["qps"],
+                "users_at_peak": best_step["users"],
+                "peak_success_qps": success_qps,
+            }
         else:
-            peak_info[label] = {"peak_qps": 0, "users_at_peak": 0}
+            peak_info[label] = {"peak_qps": 0, "users_at_peak": 0, "peak_success_qps": 0}
 
     # For configs without ramp data, fall back to aggregate QPS
     for r in ok_results:
@@ -170,12 +177,12 @@ def generate_dashboard(
             peak_info[r["label"]] = {"peak_qps": r["qps"], "users_at_peak": 0}
 
     # Best config = highest peak QPS from ramp data
-    best_config = max(ok_results, key=lambda r: peak_info[r["label"]]["peak_qps"])
+    best_config = max(ok_results, key=lambda r: peak_info[r["label"]]["peak_success_qps"])
     best_peak = peak_info[best_config["label"]]
 
-    # Global peak across all configs
-    global_peak_label = max(peak_info, key=lambda l: peak_info[l]["peak_qps"])
-    global_peak_qps = peak_info[global_peak_label]["peak_qps"]
+    # Global peak across all configs (excluding failures)
+    global_peak_label = max(peak_info, key=lambda l: peak_info[l]["peak_success_qps"])
+    global_peak_qps = peak_info[global_peak_label]["peak_success_qps"]
     global_peak_users = peak_info[global_peak_label]["users_at_peak"]
 
     lowest_latency = min(ok_results, key=lambda r: int(r["p50"]))
@@ -296,6 +303,7 @@ def generate_dashboard(
   <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
     <div class="tab-bar" style="margin-bottom:0">
       <button class="tab-btn active" onclick="toggleRamp('all', 'qps', this)">QPS</button>
+      <button class="tab-btn" onclick="toggleRamp('all', 'success_qps', this)">QPS (excl. failures)</button>
       <button class="tab-btn" onclick="toggleRamp('all', 'latency', this)">Latency</button>
       <button class="tab-btn" onclick="toggleRamp('all', 'failures', this)">Failures</button>
     </div>
@@ -316,6 +324,7 @@ def generate_dashboard(
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
       <div class="tab-bar" style="margin-bottom:0">
         <button class="tab-btn active" onclick="toggleRamp('{group_name}', 'qps', this)">QPS</button>
+        <button class="tab-btn" onclick="toggleRamp('{group_name}', 'success_qps', this)">QPS (excl. failures)</button>
         <button class="tab-btn" onclick="toggleRamp('{group_name}', 'latency', this)">Latency</button>
         <button class="tab-btn" onclick="toggleRamp('{group_name}', 'failures', this)">Failures</button>
       </div>
@@ -334,6 +343,7 @@ def generate_dashboard(
         for label, steps in group_configs.items():
             ramp_js_data[group_name][label] = {
                 "qps": [s["qps"] for s in steps],
+                "success_qps": [round(s["qps"] * (1 - s.get("fail_pct", 0) / 100), 1) for s in steps],
                 "p50": [s["p50"] for s in steps],
                 "p95": [s["p95"] for s in steps],
                 "fail_pct": [s.get("fail_pct", 0) for s in steps],
@@ -342,6 +352,7 @@ def generate_dashboard(
     # --- Chart data arrays ---
     chart_labels = [r["label"] for r in ok_results]
     chart_peak_qps = [peak_info[r["label"]]["peak_qps"] for r in ok_results]
+    chart_peak_success_qps = [peak_info[r["label"]]["peak_success_qps"] for r in ok_results]
     chart_avg_qps = [float(r.get("qps", 0)) for r in ok_results]
     chart_p50 = [int(r["p50"]) for r in ok_results]
     chart_p95 = [int(r["p95"]) for r in ok_results]
@@ -508,14 +519,14 @@ def generate_dashboard(
 <!-- KPIs -->
 <div class="kpi-grid">
   <div class="kpi kpi-green">
-    <div class="kpi-label">Best Config (Peak QPS)</div>
+    <div class="kpi-label">Best Config (Peak Successful QPS)</div>
     <div class="kpi-value">{best_config['label']}</div>
-    <div class="kpi-detail">{best_peak['peak_qps']:.1f} QPS @ {best_peak['users_at_peak']} users</div>
+    <div class="kpi-detail">{best_peak['peak_success_qps']:.1f} QPS @ {best_peak['users_at_peak']} users</div>
   </div>
   <div class="kpi kpi-purple">
-    <div class="kpi-label">Peak QPS</div>
+    <div class="kpi-label">Peak Successful QPS</div>
     <div class="kpi-value">{global_peak_qps:.1f}</div>
-    <div class="kpi-detail">queries/sec &mdash; {global_peak_label} @ {global_peak_users} users</div>
+    <div class="kpi-detail">queries/sec (excl. failures) &mdash; {global_peak_label} @ {global_peak_users} users</div>
   </div>
   <div class="kpi kpi-blue">
     <div class="kpi-label">Lowest Latency (p50)</div>
@@ -532,7 +543,7 @@ def generate_dashboard(
 <!-- Charts Row 1: QPS + Latency -->
 <div class="grid grid-2" style="margin-bottom: 20px;">
   <div class="card">
-    <h2>QPS by Config (Median &amp; Peak)</h2>
+    <h2>QPS by Config (Median, Peak excl. Failures, Peak)</h2>
     <div class="chart-container">
       <canvas id="chartQPS"></canvas>
     </div>
@@ -637,7 +648,15 @@ new Chart(document.getElementById('chartQPS'), {{
         borderRadius: 6,
       }},
       {{
-        label: 'Peak QPS',
+        label: 'Peak QPS (excl. failures)',
+        data: {json.dumps(chart_peak_success_qps)},
+        backgroundColor: 'rgba(34,197,94,0.25)',
+        borderColor: '#22c55e',
+        borderWidth: 1.5,
+        borderRadius: 6,
+      }},
+      {{
+        label: 'Peak QPS (all)',
         data: {json.dumps(chart_peak_qps)},
         backgroundColor: 'rgba(168,85,247,0.25)',
         borderColor: '#a855f7',
@@ -777,7 +796,7 @@ function makeRampChart(canvasId, data, mode, maxUsers) {{
   const visibleCount = cutoff === -1 ? rampUsers.length : cutoff;
   const visibleUsers = rampUsers.slice(0, visibleCount);
 
-  const dataKey = mode === 'qps' ? 'qps' : mode === 'failures' ? 'fail_pct' : 'p50';
+  const dataKey = mode === 'qps' ? 'qps' : mode === 'success_qps' ? 'success_qps' : mode === 'failures' ? 'fail_pct' : 'p50';
   const datasets = Object.entries(data).map(([label, d], i) => ({{
     label: label,
     data: (d[dataKey] || d.qps).slice(0, visibleCount),
@@ -790,8 +809,8 @@ function makeRampChart(canvasId, data, mode, maxUsers) {{
     fill: false,
   }}));
 
-  const yLabels = {{ qps: 'QPS (queries/sec)', latency: 'p50 Latency (ms)', failures: 'Per-Step Failure Rate (failures/sec as % of requests/sec)' }};
-  const tooltipSuffix = {{ qps: ' QPS', latency: 'ms', failures: '% failures' }};
+  const yLabels = {{ qps: 'QPS (queries/sec)', success_qps: 'Successful QPS (queries/sec, excluding failures)', latency: 'p50 Latency (ms)', failures: 'Per-Step Failure Rate (failures/sec as % of requests/sec)' }};
+  const tooltipSuffix = {{ qps: ' QPS', success_qps: ' QPS', latency: 'ms', failures: '% failures' }};
 
   canvas._chart = new Chart(canvas, {{
     type: 'line',

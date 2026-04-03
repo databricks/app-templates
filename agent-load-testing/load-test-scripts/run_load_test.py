@@ -133,7 +133,7 @@ def get_token(host: str, client_id: str = None, client_secret: str = None) -> st
     return data["access_token"]
 
 
-def refresh_token(host: str = None, client_id: str = None, client_secret: str = None) -> str | None:
+def refresh_token(host: str = None, client_id: str = None, client_secret: str = None):
     """Refresh the auth token. Returns new token or None on failure."""
     # M2M OAuth — always works, no expiry issues
     if client_id and client_secret and host:
@@ -162,7 +162,7 @@ def refresh_token(host: str = None, client_id: str = None, client_secret: str = 
     return None
 
 
-def detect_compute_size(app_url: str, token: str) -> str | None:
+def detect_compute_size(app_url: str, token: str):
     """Auto-detect compute size from Databricks app metadata.
 
     Extracts the app name from the URL and calls `databricks apps get` to read
@@ -412,7 +412,7 @@ def parse_summary(stats_file: Path, label: str) -> dict:
             "total_requests": total,
             "failures": fails,
             "fail_pct": (fails / total * 100) if total else 0,
-            "qps": float(r["Requests/s"]),
+            "avg_qps": float(r["Requests/s"]),
             "p50": r["50%"],
             "p95": r["95%"],
             "p99": r["99%"],
@@ -426,6 +426,35 @@ def parse_summary(stats_file: Path, label: str) -> dict:
             "ttft_p99": r["99%"],
         })
 
+    # Compute peak QPS from history CSV (max QPS at any ramp step)
+    history_file = stats_file.parent / "results_stats_history.csv"
+    peak_qps = 0.0
+    peak_users = 0
+    if history_file.exists():
+        with open(history_file) as f:
+            history_rows = list(csv.DictReader(f))
+        from collections import defaultdict
+        by_users = defaultdict(list)
+        for hr in history_rows:
+            uc = int(hr["User Count"])
+            qps_str = hr.get("Requests/s", "N/A")
+            if uc > 0 and qps_str != "N/A":
+                qps_val = float(qps_str)
+                if qps_val > 0:
+                    by_users[uc].append(qps_val)
+        # Take the last QPS sample at each user count, find the max
+        for uc in sorted(by_users.keys()):
+            last_qps = by_users[uc][-1]
+            if last_qps > peak_qps:
+                peak_qps = last_qps
+                peak_users = uc
+
+    summary["peak_qps"] = round(peak_qps, 1)
+    summary["peak_users"] = peak_users
+
+    # Use peak QPS as the primary "qps" value for display
+    summary["qps"] = summary["peak_qps"] if peak_qps > 0 else summary.get("avg_qps", 0)
+
     return summary
 
 
@@ -434,14 +463,15 @@ def print_summary_table(results: list[dict]):
     print(f"\n{'='*90}")
     print(f"  LOAD TEST RESULTS SUMMARY")
     print(f"{'='*90}")
-    print(f"  {'Label':<25} {'QPS':>6} {'Reqs':>8} {'Fail%':>7} {'p50':>6} {'p95':>6} {'p99':>6} {'TTFT p50':>9}")
-    print(f"  {'-'*25} {'-'*6} {'-'*8} {'-'*7} {'-'*6} {'-'*6} {'-'*6} {'-'*9}")
+    print(f"  {'Label':<25} {'Peak QPS':>9} {'@ Users':>8} {'Reqs':>8} {'Fail%':>7} {'p50':>6} {'p95':>6} {'p99':>6} {'TTFT p50':>9}")
+    print(f"  {'-'*25} {'-'*9} {'-'*8} {'-'*8} {'-'*7} {'-'*6} {'-'*6} {'-'*6} {'-'*9}")
 
     for r in results:
         if r["status"] == "OK":
             print(
                 f"  {r['label']:<25} "
-                f"{r['qps']:>6.1f} "
+                f"{r['peak_qps']:>9.1f} "
+                f"{r['peak_users']:>8} "
                 f"{r['total_requests']:>8,} "
                 f"{r['fail_pct']:>6.1f}% "
                 f"{r['p50']:>5}ms "
@@ -627,6 +657,7 @@ Examples:
 
     # Save test config so the dashboard can read it later
     test_config = {
+        "run_name": run_name,
         "max_users": args.max_users,
         "step_size": args.step_size,
         "step_duration": args.step_duration,
@@ -687,7 +718,7 @@ Examples:
 
         # Print individual result
         if summary["status"] == "OK":
-            print(f"\n  ✓ {label}: QPS={summary['qps']:.1f} | "
+            print(f"\n  ✓ {label}: Peak QPS={summary['peak_qps']:.1f} @ {summary['peak_users']} users | "
                   f"p50={summary['p50']}ms | p95={summary['p95']}ms | "
                   f"Fail={summary['fail_pct']:.1f}%")
         print(f"  Results: {output_dir}/")

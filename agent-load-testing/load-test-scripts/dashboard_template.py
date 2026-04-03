@@ -88,10 +88,14 @@ def extract_ramp_data(result_dir: Path, step_size: int = 20) -> list[dict]:
         if uc > 0 and qps_str != "N/A" and p50 != "N/A":
             qps = float(qps_str)
             if qps > 0:
+                # Per-step failure rate: Failures/s ÷ Requests/s (not cumulative)
+                fails_s = float(r.get("Failures/s", 0)) if r.get("Failures/s", "N/A") != "N/A" else 0
+                fail_pct = round(fails_s / qps * 100, 1) if qps > 0 else 0
                 by_users[uc].append({
                     "qps": round(qps, 1),
                     "p50": int(p50),
                     "p95": int(r["95%"]) if r["95%"] != "N/A" else 0,
+                    "fail_pct": fail_pct,
                 })
 
     steps = []
@@ -130,6 +134,10 @@ def generate_dashboard(
         Path to the generated dashboard.html.
     """
     metadata = metadata or {}
+
+    # Infer run_name from output directory if not in metadata
+    if not metadata.get("run_name"):
+        metadata["run_name"] = output_dir.resolve().name
 
     # Filter to successful results only
     ok_results = [r for r in results if r.get("status") == "OK"]
@@ -258,14 +266,40 @@ def generate_dashboard(
     ramp_charts_html = ""
     ramp_charts_js = ""
 
+    # Get all user counts (use first non-empty config) — needed for slider bounds
+    all_user_counts = []
+    for steps in ramp_data.values():
+        if steps:
+            all_user_counts = [s["users"] for s in steps]
+            break
+
+    max_users_val = all_user_counts[-1] if all_user_counts else 100
+    min_users_val = all_user_counts[0] if all_user_counts else 20
+    step_val = (all_user_counts[1] - all_user_counts[0]) if len(all_user_counts) >= 2 else 20
+
+    def _slider_html(group_name: str) -> str:
+        return (
+            f'<div class="slider-row">'
+            f'<label for="slider_{group_name}" style="color:var(--muted);font-size:12px;white-space:nowrap">Max users:</label>'
+            f'<input type="range" id="slider_{group_name}" min="{min_users_val}" max="{max_users_val}" '
+            f'value="{max_users_val}" step="{step_val}" '
+            f'oninput="onSlider(\'{group_name}\', this.value)">'
+            f'<span id="sliderVal_{group_name}" style="color:var(--text);font-size:13px;min-width:48px;text-align:right">{max_users_val}</span>'
+            f'</div>'
+        )
+
     if len(groups) == 1 and "all" in groups:
         # Single chart for all configs
-        ramp_charts_html = """
+        ramp_charts_html = f"""
 <div class="card" style="margin-bottom: 20px;">
   <h2>QPS Ramp Progression</h2>
-  <div class="tab-bar">
-    <button class="tab-btn active" onclick="toggleRamp('all', 'qps', this)">QPS</button>
-    <button class="tab-btn" onclick="toggleRamp('all', 'latency', this)">Latency</button>
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+    <div class="tab-bar" style="margin-bottom:0">
+      <button class="tab-btn active" onclick="toggleRamp('all', 'qps', this)">QPS</button>
+      <button class="tab-btn" onclick="toggleRamp('all', 'latency', this)">Latency</button>
+      <button class="tab-btn" onclick="toggleRamp('all', 'failures', this)">Failures</button>
+    </div>
+    {_slider_html('all')}
   </div>
   <div class="chart-container-tall">
     <canvas id="chartRamp_all"></canvas>
@@ -279,9 +313,13 @@ def generate_dashboard(
             cards.append(f"""
   <div class="card">
     <h2>{display_name} Compute &mdash; QPS vs Users</h2>
-    <div class="tab-bar">
-      <button class="tab-btn active" onclick="toggleRamp('{group_name}', 'qps', this)">QPS</button>
-      <button class="tab-btn" onclick="toggleRamp('{group_name}', 'latency', this)">Latency</button>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+      <div class="tab-bar" style="margin-bottom:0">
+        <button class="tab-btn active" onclick="toggleRamp('{group_name}', 'qps', this)">QPS</button>
+        <button class="tab-btn" onclick="toggleRamp('{group_name}', 'latency', this)">Latency</button>
+        <button class="tab-btn" onclick="toggleRamp('{group_name}', 'failures', this)">Failures</button>
+      </div>
+      {_slider_html(group_name)}
     </div>
     <div class="chart-container-tall">
       <canvas id="chartRamp_{group_name}"></canvas>
@@ -298,18 +336,13 @@ def generate_dashboard(
                 "qps": [s["qps"] for s in steps],
                 "p50": [s["p50"] for s in steps],
                 "p95": [s["p95"] for s in steps],
+                "fail_pct": [s.get("fail_pct", 0) for s in steps],
             }
-
-    # Get all user counts (use first non-empty config)
-    all_user_counts = []
-    for steps in ramp_data.values():
-        if steps:
-            all_user_counts = [s["users"] for s in steps]
-            break
 
     # --- Chart data arrays ---
     chart_labels = [r["label"] for r in ok_results]
     chart_peak_qps = [peak_info[r["label"]]["peak_qps"] for r in ok_results]
+    chart_avg_qps = [float(r.get("qps", 0)) for r in ok_results]
     chart_p50 = [int(r["p50"]) for r in ok_results]
     chart_p95 = [int(r["p95"]) for r in ok_results]
     chart_ttft_p50 = [int(r.get("ttft_p50", 0)) for r in ok_results]
@@ -438,11 +471,37 @@ def generate_dashboard(
   }}
   .tab-btn:hover {{ color: var(--text); background: var(--border); }}
   .tab-btn.active {{ background: var(--accent); color: white; }}
+
+  .slider-row {{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }}
+  .slider-row input[type="range"] {{
+    -webkit-appearance: none;
+    appearance: none;
+    width: 160px;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+  }}
+  .slider-row input[type="range"]::-webkit-slider-thumb {{
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }}
 </style>
 </head>
 <body>
 
 <h1>Databricks Apps Load Testing Dashboard</h1>
+{f'<p style="color:var(--muted);font-size:18px;font-weight:500;margin-bottom:8px">{metadata["run_name"]}</p>' if metadata.get("run_name") else ""}
 <p class="subtitle">Apps tested: {url_list_html}</p>
 {"<p class='meta'>" + meta_html + "</p>" if meta_html else ""}
 
@@ -473,7 +532,7 @@ def generate_dashboard(
 <!-- Charts Row 1: QPS + Latency -->
 <div class="grid grid-2" style="margin-bottom: 20px;">
   <div class="card">
-    <h2>Peak QPS by Config</h2>
+    <h2>QPS by Config (Median &amp; Peak)</h2>
     <div class="chart-container">
       <canvas id="chartQPS"></canvas>
     </div>
@@ -563,25 +622,35 @@ const labels = {json.dumps(chart_labels)};
 const barColors = {json.dumps(bar_colors)};
 const barColorsAlpha = {json.dumps(bar_colors_alpha)};
 
-// --- Peak QPS Bar Chart ---
+// --- QPS Bar Chart (Median + Peak side by side) ---
 new Chart(document.getElementById('chartQPS'), {{
   type: 'bar',
   data: {{
     labels: labels,
-    datasets: [{{
-      label: 'Peak QPS',
-      data: {json.dumps(chart_peak_qps)},
-      backgroundColor: barColorsAlpha,
-      borderColor: barColors,
-      borderWidth: 2,
-      borderRadius: 6,
-    }}]
+    datasets: [
+      {{
+        label: 'Median QPS',
+        data: {json.dumps(chart_avg_qps)},
+        backgroundColor: barColorsAlpha,
+        borderColor: barColors,
+        borderWidth: 2,
+        borderRadius: 6,
+      }},
+      {{
+        label: 'Peak QPS',
+        data: {json.dumps(chart_peak_qps)},
+        backgroundColor: 'rgba(168,85,247,0.25)',
+        borderColor: '#a855f7',
+        borderWidth: 1.5,
+        borderRadius: 6,
+      }}
+    ]
   }},
   options: {{
     ...chartDefaults,
     plugins: {{
       ...chartDefaults.plugins,
-      tooltip: {{ callbacks: {{ label: ctx => ctx.parsed.y + ' QPS' }} }},
+      tooltip: {{ callbacks: {{ label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y + ' QPS' }} }},
     }},
     scales: {{
       ...chartDefaults.scales,
@@ -692,14 +761,26 @@ const rampGroups = {json.dumps(ramp_js_data)};
 const rampUsers = {json.dumps(all_user_counts)};
 const rampPalette = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#a855f7', '#ec4899', '#14b8a6'];
 
-function makeRampChart(canvasId, data, mode) {{
+// Per-group state: current mode and max users
+const rampState = {{}};
+Object.keys(rampGroups).forEach(group => {{
+  rampState[group] = {{ mode: 'qps', maxUsers: rampUsers[rampUsers.length - 1] || 100 }};
+}});
+
+function makeRampChart(canvasId, data, mode, maxUsers) {{
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
   if (canvas._chart) canvas._chart.destroy();
 
+  // Slice data up to maxUsers
+  const cutoff = rampUsers.findIndex(u => u > maxUsers);
+  const visibleCount = cutoff === -1 ? rampUsers.length : cutoff;
+  const visibleUsers = rampUsers.slice(0, visibleCount);
+
+  const dataKey = mode === 'qps' ? 'qps' : mode === 'failures' ? 'fail_pct' : 'p50';
   const datasets = Object.entries(data).map(([label, d], i) => ({{
     label: label,
-    data: mode === 'qps' ? d.qps : d.p50,
+    data: (d[dataKey] || d.qps).slice(0, visibleCount),
     borderColor: rampPalette[i % rampPalette.length],
     backgroundColor: rampPalette[i % rampPalette.length] + '22',
     borderWidth: 2.5,
@@ -709,9 +790,12 @@ function makeRampChart(canvasId, data, mode) {{
     fill: false,
   }}));
 
+  const yLabels = {{ qps: 'QPS (queries/sec)', latency: 'p50 Latency (ms)', failures: 'Per-Step Failure Rate (failures/sec as % of requests/sec)' }};
+  const tooltipSuffix = {{ qps: ' QPS', latency: 'ms', failures: '% failures' }};
+
   canvas._chart = new Chart(canvas, {{
     type: 'line',
-    data: {{ labels: rampUsers, datasets }},
+    data: {{ labels: visibleUsers, datasets }},
     options: {{
       ...chartDefaults,
       interaction: {{ mode: 'index', intersect: false }},
@@ -720,7 +804,7 @@ function makeRampChart(canvasId, data, mode) {{
         x: {{ ...chartDefaults.scales.x, title: {{ display: true, text: 'Concurrent Users', color: COLORS.muted }} }},
         y: {{
           ...chartDefaults.scales.y,
-          title: {{ display: true, text: mode === 'qps' ? 'QPS (queries/sec)' : 'p50 Latency (ms)', color: COLORS.muted }},
+          title: {{ display: true, text: yLabels[mode] || yLabels.qps, color: COLORS.muted }},
           beginAtZero: true,
         }},
       }},
@@ -728,7 +812,7 @@ function makeRampChart(canvasId, data, mode) {{
         ...chartDefaults.plugins,
         tooltip: {{
           callbacks: {{
-            label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y + (mode === 'qps' ? ' QPS' : 'ms')
+            label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y + (tooltipSuffix[mode] || '')
           }}
         }}
       }}
@@ -736,15 +820,28 @@ function makeRampChart(canvasId, data, mode) {{
   }});
 }}
 
+function refreshRamp(group) {{
+  const s = rampState[group];
+  makeRampChart('chartRamp_' + group, rampGroups[group], s.mode, s.maxUsers);
+}}
+
 function toggleRamp(group, mode, btn) {{
   btn.parentElement.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  makeRampChart('chartRamp_' + group, rampGroups[group], mode);
+  rampState[group].mode = mode;
+  refreshRamp(group);
+}}
+
+function onSlider(group, value) {{
+  const maxU = parseInt(value);
+  rampState[group].maxUsers = maxU;
+  document.getElementById('sliderVal_' + group).textContent = maxU;
+  refreshRamp(group);
 }}
 
 // Initialize all ramp charts
 Object.keys(rampGroups).forEach(group => {{
-  makeRampChart('chartRamp_' + group, rampGroups[group], 'qps');
+  refreshRamp(group);
 }});
 </script>
 </body>

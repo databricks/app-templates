@@ -110,6 +110,7 @@ After installation, the skills will be available as slash commands (e.g., `/agen
 |------|-------|------|
 | Setup, auth, first-time | **quickstart** | `.claude/skills/quickstart/SKILL.md` |
 | Find tools/resources | **discover-tools** | `.claude/skills/discover-tools/SKILL.md` |
+| Create tool resources | **create-tools** | `.claude/skills/create-tools/SKILL.md` |
 | Deploy to Databricks | **deploy** | `.claude/skills/deploy/SKILL.md` |
 | Add tools & permissions | **add-tools** | `.claude/skills/add-tools/SKILL.md` |
 | Run/test locally | **run-locally** | `.claude/skills/run-locally/SKILL.md` |

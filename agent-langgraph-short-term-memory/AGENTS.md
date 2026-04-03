@@ -108,6 +108,7 @@ After installation, the skills will be available as slash commands (e.g., `/agen
 | Lakebase configuration | **lakebase-setup** | `.claude/skills/lakebase-setup/SKILL.md` |
 | Memory patterns | **agent-memory** | `.claude/skills/agent-memory/SKILL.md` |
 | Find tools/resources | **discover-tools** | `.claude/skills/discover-tools/SKILL.md` |
+| Create tool resources | **create-tools** | `.claude/skills/create-tools/SKILL.md` |
 | Deploy to Databricks | **deploy** | `.claude/skills/deploy/SKILL.md` |
 | Add tools & permissions | **add-tools** | `.claude/skills/add-tools/SKILL.md` |
 | Run/test locally | **run-locally** | `.claude/skills/run-locally/SKILL.md` |

@@ -1,0 +1,4 @@
+Flask-WTF==1.2.2
+Flask-CORS==6.0.1
+MarkupSafe==3.0.3
+pandas==2.3.3

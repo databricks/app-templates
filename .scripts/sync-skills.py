@@ -93,6 +93,9 @@ def sync_template(template: str, config: dict):
     # Deploy skill (with substitution)
     copy_skill(SOURCE / "deploy", dest / "deploy", subs)
 
+    # Supervisor API skill (with substitution for bundle name in deploy command)
+    copy_skill(SOURCE / "use-supervisor-api", dest / "use-supervisor-api", subs)
+
     # SDK-specific skills (with substitution for bundle name references)
     if isinstance(sdk, list):
         # Multiple SDKs: copy skills for each, keeping SDK suffix in name

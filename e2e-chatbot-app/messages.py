@@ -41,11 +41,11 @@ class UserMessage(Message):
 
 
 class AssistantResponse(Message):
-    def __init__(self, messages, request_id):
+    def __init__(self, messages, request_id, trace_id=None):
         super().__init__()
         self.messages = messages
-        # Request ID tracked to enable submitting feedback on assistant responses via the feedback endpoint
         self.request_id = request_id
+        self.trace_id = trace_id
 
     def to_input_messages(self):
         return self.messages
@@ -55,8 +55,8 @@ class AssistantResponse(Message):
             for msg in self.messages:
                 render_message(msg)
 
-            if self.request_id is not None:
-                render_assistant_message_feedback(idx, self.request_id)
+            if self.trace_id is not None:
+                render_assistant_message_feedback(idx, self.trace_id)
 
 
 def render_message(msg):
@@ -78,18 +78,14 @@ def render_message(msg):
 
 
 @st.fragment
-def render_assistant_message_feedback(i, request_id):
+def render_assistant_message_feedback(i, trace_id):
     """Render feedback UI for assistant messages."""
     from model_serving_utils import submit_feedback
-    import os
     
     def save_feedback(index):
-        serving_endpoint = os.getenv('SERVING_ENDPOINT')
-        if serving_endpoint:
-            submit_feedback(
-                endpoint=serving_endpoint,
-                request_id=request_id,
-                rating=st.session_state[f"feedback_{index}"]
-            )
+        submit_feedback(
+            trace_id=trace_id,
+            rating=st.session_state[f"feedback_{index}"],
+        )
     
     st.feedback("thumbs", key=f"feedback_{i}", on_change=save_feedback, args=[i])

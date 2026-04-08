@@ -23,6 +23,16 @@ def _get_endpoint_task_type(endpoint_name: str) -> str:
     except Exception:
         return "chat/completions"
 
+def _extract_trace_id(response):
+    """Extract trace_id from a Databricks model serving response."""
+    try:
+        return (response.get("databricks_output", {})
+                .get("trace", {})
+                .get("info", {})
+                .get("trace_id"))
+    except (AttributeError, TypeError):
+        return None
+
 def _convert_to_responses_format(messages):
     """Convert chat messages to ResponsesAgent API format."""
     input_messages = []
@@ -116,8 +126,8 @@ def _query_responses_endpoint_stream(endpoint_name: str, messages: list[dict[str
 
 def query_endpoint(endpoint_name, messages, return_traces):
     """
-    Query an endpoint, returning the string message content and request
-    ID for feedback
+    Query an endpoint, returning the string message content, request
+    ID, and trace_id for feedback
     """
     task_type = _get_endpoint_task_type(endpoint_name)
     
@@ -137,8 +147,9 @@ def _query_chat_endpoint(endpoint_name, messages, return_traces):
         inputs=inputs,
     )
     request_id = res.get("databricks_output", {}).get("databricks_request_id")
+    trace_id = _extract_trace_id(res)
     if "messages" in res:
-        return res["messages"], request_id
+        return res["messages"], request_id, trace_id
     elif "choices" in res:
         choice_message = res["choices"][0]["message"]
         choice_content = choice_message.get("content")
@@ -150,11 +161,11 @@ def _query_chat_endpoint(endpoint_name, messages, return_traces):
                 "role": choice_message.get("role"),
                 "content": combined_content
             }
-            return [reformatted_message], request_id
+            return [reformatted_message], request_id, trace_id
         
         # Case 2: The content is a simple string
         elif isinstance(choice_content, str):
-            return [choice_message], request_id
+            return [choice_message], request_id, trace_id
 
     _throw_unexpected_endpoint_format()
 
@@ -178,6 +189,7 @@ def _query_responses_endpoint(endpoint_name, messages, return_traces):
     # Extract messages from the response
     result_messages = []
     request_id = response.get("databricks_output", {}).get("databricks_request_id")
+    trace_id = _extract_trace_id(response)
     
     # Process the output items from ResponsesAgent response
     output_items = response.get("output", [])
@@ -231,40 +243,21 @@ def _query_responses_endpoint(endpoint_name, messages, return_traces):
                 "tool_call_id": call_id
             })
     
-    return result_messages or [{"role": "assistant", "content": "No response found"}], request_id
+    return result_messages or [{"role": "assistant", "content": "No response found"}], request_id, trace_id
 
-def submit_feedback(endpoint, request_id, rating):
-    """Submit feedback to the agent."""
-    rating_string = "positive" if rating == 1 else "negative"
-    text_assessments = [] if rating is None else [{
-        "ratings": {
-            "answer_correct": {"value": rating_string},
-        },
-        "free_text_comment": None
-    }]
+def submit_feedback(trace_id, rating, user_id="chatbot-user"):
+    """Submit feedback on an agent response using MLflow trace feedback."""
+    import mlflow
+    from mlflow.entities import AssessmentSource
 
-    proxy_payload = {
-        "dataframe_records": [
-            {
-                "source": json.dumps({
-                    "id": "e2e-chatbot-app",  # Or extract from auth
-                    "type": "human"
-                }),
-                "request_id": request_id,
-                "text_assessments": json.dumps(text_assessments),
-                "retrieval_assessments": json.dumps([]),
-            }
-        ]
-    }
-    w = WorkspaceClient()
-    return w.api_client.do(
-        method='POST',
-        path=f"/serving-endpoints/{endpoint}/served-models/feedback/invocations",
-        body=proxy_payload,
+    mlflow.set_tracking_uri("databricks")
+
+    is_correct = rating == 1
+    mlflow.log_feedback(
+        trace_id=trace_id,
+        name="User feedback",
+        value=is_correct,
+        source=AssessmentSource(source_type="HUMAN", source_id=user_id),
     )
 
 
-def endpoint_supports_feedback(endpoint_name):
-    w = WorkspaceClient()
-    endpoint = w.serving_endpoints.get(endpoint_name)
-    return "feedback" in [entity.name for entity in endpoint.config.served_entities]

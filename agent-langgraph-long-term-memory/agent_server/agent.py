@@ -29,6 +29,7 @@ from agent_server.utils import (
     get_user_workspace_client,
     process_agent_astream_events,
 )
+from agent_server.utils_agent_memory import agent_memory_tools, read_agent_instructions
 from agent_server.utils_memory import (
     get_lakebase_access_error_message,
     get_user_id,
@@ -56,6 +57,7 @@ LLM_ENDPOINT_NAME = "databricks-claude-sonnet-4-5"
 _LAKEBASE_INSTANCE_NAME_RAW = os.getenv("LAKEBASE_INSTANCE_NAME") or None
 EMBEDDING_ENDPOINT = "databricks-gte-large-en"
 EMBEDDING_DIMS = 1024
+UC_VOLUME = os.getenv("UC_VOLUME", "")
 LAKEBASE_AUTOSCALING_PROJECT = os.getenv("LAKEBASE_AUTOSCALING_PROJECT") or None
 LAKEBASE_AUTOSCALING_BRANCH = os.getenv("LAKEBASE_AUTOSCALING_BRANCH") or None
 
@@ -100,7 +102,11 @@ and would meaningfully improve future responses. This includes:
 - Trivial or one-off details (e.g., what they ate for lunch, a single troubleshooting step)
 - Highly sensitive personal information (health conditions, political affiliation, sexual orientation, \
 religion, criminal history) — unless the user explicitly asks you to store it
-- Information that could feel intrusive or overly personal to store"""
+- Information that could feel intrusive or overly personal to store
+
+## Agent Memory (shared across all users)
+- Use save_agent_instruction to save learnings that apply to ALL users: team preferences, process rules, best practices
+- Use get_agent_instructions to read the current shared instructions"""
 
 
 def init_mcp_client(workspace_client: WorkspaceClient) -> DatabricksMultiServerMCPClient:
@@ -116,8 +122,10 @@ def init_mcp_client(workspace_client: WorkspaceClient) -> DatabricksMultiServerM
     )
 
 
-async def init_agent(store: BaseStore, workspace_client: Optional[WorkspaceClient] = None):
+async def init_agent(store: BaseStore, workspace_client: Optional[WorkspaceClient] = None, system_prompt: str = SYSTEM_PROMPT):
     tools = [get_current_time] + memory_tools()
+    if UC_VOLUME:
+        tools += agent_memory_tools(workspace_client or sp_workspace_client, UC_VOLUME)
     # To use MCP server tools instead, replace the line above with:
     # mcp_client = init_mcp_client(workspace_client or sp_workspace_client)
     # try:
@@ -128,7 +136,7 @@ async def init_agent(store: BaseStore, workspace_client: Optional[WorkspaceClien
     return create_agent(
         model=ChatDatabricks(endpoint=LLM_ENDPOINT_NAME),
         tools=tools,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=system_prompt,
         store=store,
     )
 
@@ -175,9 +183,16 @@ async def stream_handler(
             if user_id:
                 config["configurable"]["user_id"] = user_id
 
+            # Inject agent-scoped instructions from UC Volume into system prompt
+            full_prompt = SYSTEM_PROMPT
+            if UC_VOLUME:
+                instructions = read_agent_instructions(sp_workspace_client, UC_VOLUME)
+                if instructions.strip():
+                    full_prompt += f"\n\n## Current Agent Instructions\n{instructions}"
+
             # By default, uses service principal credentials (sp_workspace_client).
             # For on-behalf-of user authentication, use get_user_workspace_client() instead.
-            agent = await init_agent(workspace_client=sp_workspace_client, store=store)
+            agent = await init_agent(workspace_client=sp_workspace_client, store=store, system_prompt=full_prompt)
             async for event in process_agent_astream_events(
                 agent.astream(messages, config, stream_mode=["updates", "messages"])
             ):

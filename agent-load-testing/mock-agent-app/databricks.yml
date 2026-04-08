@@ -53,6 +53,14 @@ targets:
     variables:
       app_name: "agent-load-test-large"
 
+  medium-w3-eu:
+    mode: development
+    workspace:
+      host: https://eng-ml-inference-team-eu-central-1.cloud.databricks.com
+    variables:
+      app_name: "agent-load-test-medium-w3"
+      workers: "3"
+
   medium-w2-eu:
     mode: development
     workspace:

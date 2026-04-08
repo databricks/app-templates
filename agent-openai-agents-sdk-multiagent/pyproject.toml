@@ -15,6 +15,7 @@ dependencies = [
     "mlflow>=3.10.0",
     "openai-agents>=0.4.1",
     "python-dotenv>=1.2.1",
+    "a2a-sdk>=0.2.7",
 ]
 
 [build-system]
@@ -43,3 +44,4 @@ start-server = "agent_server.start_server:main"
 agent-evaluate = "agent_server.evaluate_agent:evaluate"
 discover-tools = "scripts.discover_tools:main"
 preflight = "scripts.preflight:main"
+

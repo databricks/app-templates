@@ -42,10 +42,9 @@ databricks connections create --json '{
   "options": {
     "host": "https://mcp.example.com",
     "base_path": "/mcp",
-    "http_auth_type": "OAUTH_M2M",
-    "oauth_client_id": "<client-id>",
-    "oauth_client_secret": "<client-secret>",
-    "oauth_token_url": "https://auth.example.com/oauth/token",
+    "client_id": "<client-id>",
+    "client_secret": "<client-secret>",
+    "token_endpoint": "https://auth.example.com/oauth/token",
     "oauth_scope": "read write"
   }
 }' --profile <profile>

@@ -52,12 +52,11 @@ TOOLS = [
             "description": "Executes a custom UC function",
         },
     },
-    # KA (Knowledge Assistant) endpoint — delegates to a Knowledge Assistant agent
-    # Note: agent_endpoint only supports KA endpoints, not arbitrary agent serving endpoints.
-    # KA endpoints use a specific ka_query protocol; regular LangGraph/OpenAI agents do not.
+    # Serving endpoint — delegates to a KA (Knowledge Assistant) agent endpoint
+    # Note: only supports KA endpoints, not arbitrary agent serving endpoints.
     {
-        "type": "agent_endpoint",
-        "agent_endpoint": {
+        "type": "serving_endpoint",
+        "serving_endpoint": {
             "name": "my-ka-agent",
             "description": "A Knowledge Assistant agent",
             "endpoint_name": "<ka-serving-endpoint-name>",
@@ -69,6 +68,21 @@ TOOLS = [
         "external_mcp_server": {
             "description": "An external MCP server",
             "connection_name": "<uc-connection-name>",
+        },
+    },
+    # Databricks Apps MCP server
+    {
+        "type": "databricks_apps_mcp",
+        "databricks_apps_mcp": {
+            "description": "An MCP server running as a Databricks App",
+            "app_name": "<databricks-app-name>",
+        },
+    },
+    # Code interpreter — sandboxed Python REPL (no external resource needed)
+    {
+        "type": "code_interpreter",
+        "code_interpreter": {
+            "description": "Execute Python code for data analysis",
         },
     },
 ]
@@ -155,8 +169,10 @@ For each hosted tool, grant the corresponding resource access. See the **add-too
 |-----------|-------------------|
 | `genie_space` | `genie_space` with `CAN_RUN` |
 | `unity_catalog_function` | `uc_securable` (FUNCTION) with `EXECUTE` |
-| `agent_endpoint` | `serving_endpoint` with `CAN_QUERY` (KA endpoints only) |
+| `serving_endpoint` | `serving_endpoint` with `CAN_QUERY` (KA endpoints only) |
 | `external_mcp_server` | `uc_securable` (CONNECTION) with `USE_CONNECTION` |
+| `databricks_apps_mcp` | *(Databricks App access)* |
+| `code_interpreter` | *(no external resource — sandboxed REPL)* |
 
 Also grant `CAN_QUERY` on the `MODEL` serving endpoint:
 
@@ -178,6 +194,12 @@ databricks bundle deploy && databricks bundle run agent_openai_agents_sdk  # Dep
 
 **"Please ensure AI Gateway V2 is enabled"** — AI Gateway must be enabled for the workspace. Contact your Databricks account team.
 
-**"Cannot mix hosted and client-side tools"** — Remove any `function`-type tools (Python callables) from `TOOLS`. All tools must be hosted types (`genie_space`, `unity_catalog_function`, `agent_endpoint`, `external_mcp_server`).
+**"Cannot mix hosted and client-side tools"** — Remove any `function`-type tools (Python callables) from `TOOLS`. All tools must be hosted types (`genie_space`, `unity_catalog_function`, `serving_endpoint`, `external_mcp_server`, `databricks_apps_mcp`, `code_interpreter`).
 
 **"Parameter not supported when tools are provided"** — Remove `temperature`, `top_p`, or other inference parameters from the `responses.create()` call.
+
+## Background Mode (Long-Running Tasks)
+
+If your agent needs to run long-running tasks that may exceed HTTP timeout limits (e.g., complex multi-tool workflows, large data analysis), you can enable **background mode**. This submits the request asynchronously, polls for completion, and streams the result back to the frontend.
+
+See the **supervisor-api-background-mode** skill for full implementation details.

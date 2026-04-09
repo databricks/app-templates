@@ -219,3 +219,4 @@ sketch
 !.claude/skills/agent-memory/
 !.claude/skills/migrate-from-model-serving/
 !.claude/skills/use-supervisor-api/
+!.claude/skills/supervisor-api-background-mode/

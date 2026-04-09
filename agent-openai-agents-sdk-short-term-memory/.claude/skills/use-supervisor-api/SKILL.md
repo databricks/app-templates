@@ -187,7 +187,7 @@ Also grant `CAN_QUERY` on the `MODEL` serving endpoint:
 
 ```bash
 uv run start-app       # Test locally
-databricks bundle deploy && databricks bundle run agent_openai_agents_sdk_multiagent  # Deploy
+databricks bundle deploy && databricks bundle run agent_openai_agents_sdk_short_term_memory  # Deploy
 ```
 
 ## Troubleshooting

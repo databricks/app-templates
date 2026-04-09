@@ -7,6 +7,8 @@ description: "Add tools to your agent and grant required permissions in databric
 
 > **Profile reminder:** All `databricks` CLI commands must include the profile from `.env`: `databricks <command> --profile <profile>`
 
+> Don't have the resource yet? See **create-tools** skill first.
+
 **After adding any MCP server to your agent, you MUST grant the app access in `databricks.yml`.**
 
 Without this, you'll get permission errors when the agent tries to use the resource.
@@ -76,6 +78,20 @@ databricks apps update-permissions <mcp-server-app-name> \
 ```
 
 See `examples/custom-mcp-server.md` for detailed steps.
+
+## MCP Error Handling
+
+MCP tool calls can fail (network issues, permission errors, timeouts). The OpenAI Agents SDK catches tool errors by default and returns the error message to the LLM. To customize timeout behavior for MCP servers:
+
+```python
+mcp_server = McpServer(
+    url=f"{host}/api/2.0/mcp/genie/{space_id}",
+    name="genie",
+    timeout=60.0,  # Increase timeout for slow tools like Genie (default: 20s)
+)
+```
+
+For local function tools, see `create-tools` skill > `examples/local-python-tools.md` for `failure_error_function` patterns.
 
 ## Important Notes
 

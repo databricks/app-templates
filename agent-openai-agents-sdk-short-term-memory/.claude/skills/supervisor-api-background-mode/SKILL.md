@@ -5,14 +5,14 @@ description: "Enable Supervisor API background mode for long-running agent tasks
 
 # Supervisor API Background Mode
 
-**Prerequisite:** Follow the **use-supervisor-api** skill first to set up the Supervisor API with hosted tools and permissions. This skill extends that setup with background mode support.
+**Prerequisite:** Follow the **supervisor-api** skill first to set up the Supervisor API with hosted tools and permissions. This skill extends that setup with background mode support.
 
 Background mode submits the request asynchronously (`background=True`), polls for completion, and streams the result back to the frontend. Use this when agent tasks may exceed HTTP timeout limits (complex multi-tool workflows, large data analysis, etc.).
 
 ## Before Starting
 
 Use the `AskUserQuestion` tool to ask: "How often should the agent poll for background task completion?" with options:
-- **Every 2 seconds (Recommended)** — Fast response times, good for interactive use
+- **Every 2 seconds** — Fast response times, good for interactive use
 - **Every 10 seconds** — Balanced between responsiveness and API load
 - **Every 30 seconds** — Lower API load, suitable for very long-running tasks
 
@@ -245,7 +245,7 @@ Replace the base Supervisor API handlers with async background mode handlers. Th
 - Poll with `poll_background_response()` instead of reading the response directly
 - Convert output items to stream events with `output_item_to_stream_events()`
 
-Include your `TOOLS` list from the **use-supervisor-api** skill's Step 2 if you have hosted tools.
+Include your `TOOLS` list from the **supervisor-api** skill's Step 2 if you have hosted tools.
 
 ```python
 import logging
@@ -276,7 +276,7 @@ logger.setLevel(logging.INFO)
 
 MODEL = "databricks-claude-sonnet-4"
 SYSTEM_INSTRUCTIONS = "You are a helpful assistant."
-TOOLS = [...]  # Your hosted tools from use-supervisor-api Step 2
+TOOLS = [...]  # Your hosted tools from supervisor-api Step 2
 
 
 def build_input(request: ResponsesAgentRequest) -> list[dict]:

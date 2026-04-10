@@ -1,5 +1,5 @@
 ---
-name: use-supervisor-api
+name: supervisor-api
 description: "Replace the client-side agent loop with Databricks Supervisor API (hosted tools). Use when: (1) User asks about Supervisor API, (2) User wants Databricks to run the agent loop server-side, (3) Connecting Genie spaces, UC functions, agent endpoints, or MCP servers as hosted tools."
 ---
 
@@ -187,7 +187,7 @@ Also grant `CAN_QUERY` on the `MODEL` serving endpoint:
 
 ```bash
 uv run start-app       # Test locally
-databricks bundle deploy && databricks bundle run {{BUNDLE_NAME}}  # Deploy
+databricks bundle deploy && databricks bundle run agent_langgraph  # Deploy
 ```
 
 ## Troubleshooting

@@ -56,7 +56,7 @@ def sync_template(template: str, config: dict):
     copy_skill(SOURCE / "deploy", dest / "deploy", subs)
 
     # Supervisor API skills (with substitution for bundle name in deploy command)
-    copy_skill(SOURCE / "use-supervisor-api", dest / "use-supervisor-api", subs)
+    copy_skill(SOURCE / "supervisor-api", dest / "supervisor-api", subs)
     copy_skill(SOURCE / "supervisor-api-background-mode", dest / "supervisor-api-background-mode", subs)
 
     # SDK-specific skills (with substitution for bundle name references)

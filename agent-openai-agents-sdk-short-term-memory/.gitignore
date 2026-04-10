@@ -215,6 +215,7 @@ sketch
 !.claude/skills/run-locally/
 !.claude/skills/modify-agent/
 !.claude/skills/agent-openai-memory/
+!.claude/skills/load-testing/
 
 **/.env
 **/.env.local

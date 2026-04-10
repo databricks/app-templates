@@ -21,11 +21,13 @@ See [Create an App from a Template](https://docs.databricks.com/aws/en/dev-tools
 
 | Template | Description | Dependencies |
 |----------|-------------|--------------|
-| `agent-openai-agents-sdk` | A conversational agent backend and UI using OpenAI Agents SDK and MLflow AgentServer | MLflow experiment |
-| `agent-langgraph` | A conversational agent backend and UI using LangGraph and MLflow AgentServer | MLflow experiment |
-| `agent-langgraph-short-term-memory` | LangGraph agent with conversation history | MLflow experiment, Database |
-| `agent-langgraph-long-term-memory` | LangGraph agent with persistent user memory | MLflow experiment, Database |
-| `agent-non-conversational` | A non-conversational GenAI agent that processes structured questions and provides answers with detailed reasoning | MLflow experiment |
+| `agent-langgraph` | A conversational agent using LangGraph and MLflow AgentServer | MLflow experiment |
+| `agent-langgraph-advanced` | LangGraph agent with short-term memory, long-term memory, and long-running background tasks | MLflow experiment, Database |
+| `agent-openai-agents-sdk` | A conversational agent using OpenAI Agents SDK and MLflow AgentServer | MLflow experiment |
+| `agent-openai-advanced` | OpenAI Agents SDK agent with short-term memory and long-running background tasks | MLflow experiment, Database |
+| `agent-openai-agents-sdk-multiagent` | Multi-agent orchestrator using OpenAI Agents SDK with Genie and serving endpoint subagents | MLflow experiment |
+| `agent-non-conversational` | A non-conversational agent that processes structured questions and provides answers with detailed reasoning | MLflow experiment |
+| `agent-migration-from-model-serving` | Template for migrating a ResponsesAgent from Model Serving to Databricks Apps | MLflow experiment |
 | `e2e-chatbot-app-next` | A chat UI that queries a remote agent endpoint or foundation model | Serving endpoint |
 | `mcp-server-hello-world` | A basic MCP server | None |
 | `mcp-server-open-api-spec` | An MCP server that exposes REST API operations from an OpenAPI specification stored in a Unity Catalog volume | UC volume |

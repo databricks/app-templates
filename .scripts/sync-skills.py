@@ -87,7 +87,7 @@ def sync_template(template: str, config: dict):
     copy_skill(SOURCE / "quickstart", dest / "quickstart", quickstart_subs)
 
     # Shared skills (no substitution needed)
-    for skill in ["run-locally", "discover-tools", "migrate-from-model-serving"]:
+    for skill in ["run-locally", "discover-tools", "migrate-from-model-serving", "load-testing"]:
         copy_skill(SOURCE / skill, dest / skill)
 
     # Deploy skill (with substitution)
@@ -113,18 +113,6 @@ def sync_template(template: str, config: dict):
             copy_skill(SOURCE / "agent-openai-memory", dest / "agent-memory")
 
 
-def sync_load_testing():
-    """Sync the load-testing skill to agent-load-testing (standalone, not a standard template)."""
-    template = "agent-load-testing"
-    template_path = REPO_ROOT / template
-    if not template_path.exists():
-        print(f"Skipping {template} (directory not found)")
-        return
-    print(f"Syncing {template}...")
-    dest = template_path / ".claude" / "skills" / "load-testing"
-    copy_skill(SOURCE / "load-testing", dest)
-
-
 def main():
     """Sync skills to all templates."""
     for template, config in TEMPLATES.items():
@@ -134,9 +122,6 @@ def main():
             continue
         print(f"Syncing {template}...")
         sync_template(template, config)
-
-    # Sync standalone templates that aren't in TEMPLATES registry
-    sync_load_testing()
 
     print("Done!")
 

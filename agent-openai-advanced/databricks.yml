@@ -1,0 +1,72 @@
+bundle:
+  name: agent_openai_advanced
+
+resources:
+  apps:
+    agent_openai_advanced:
+      name: "agent-openai-advanced"
+      description: "OpenAI Agents SDK agent with short-term memory and long-running
+        background task support"
+      source_code_path: ./
+      config:
+        command: ["uv", "run", "start-app"]
+        env:
+          - name: MLFLOW_TRACKING_URI
+            value: "databricks"
+          - name: MLFLOW_REGISTRY_URI
+            value: "databricks-uc"
+          - name: API_PROXY
+            value: "http://localhost:8000/invocations"
+          - name: CHAT_APP_PORT
+            value: "3000"
+          - name: CHAT_PROXY_TIMEOUT_SECONDS
+            value: "300"
+          - name: MLFLOW_EXPERIMENT_ID
+            value_from: "experiment"
+          - name: LAKEBASE_AUTOSCALING_ENDPOINT
+            value_from: "postgres"
+          # Autoscaling Lakebase config
+          - name: LAKEBASE_AUTOSCALING_PROJECT
+            value: "<your-project-name>"
+          - name: LAKEBASE_AUTOSCALING_BRANCH
+            value: "<your-branch-name>"
+          - name: LOG_LEVEL
+            value: "INFO"
+          # Use for provisioned lakebase resource
+          # - name: LAKEBASE_INSTANCE_NAME
+          #   value: "<your-lakebase-instance-name>"
+      # Resources which this app has access to
+      resources:
+        - name: 'experiment'
+          experiment:
+            experiment_id: ""
+            permission: 'CAN_MANAGE'
+        # Autoscaling postgres resource
+        # See: .claude/skills/add-tools/examples/lakebase-autoscaling.yaml
+        - name: 'postgres'
+          postgres:
+            branch: "projects/<your-project-name>/branches/<your-branch-name>"
+            database: "projects/<your-project-name>/branches/<your-branch-name>/databases/<your-database-id>"
+            permission: 'CAN_CONNECT_AND_CREATE'
+        # Use for provisioned lakebase resource
+        # - name: 'database'
+        #   database:
+        #     instance_name: '<your-lakebase-instance-name>'
+        #     database_name: 'databricks_postgres'
+        #     permission: 'CAN_CONNECT_AND_CREATE'
+
+targets:
+  dev:
+    mode: development
+    default: true
+    # workspace:
+    #   host: https://...
+
+  prod:
+    mode: production
+    # workspace:
+    #   host: https://...
+    resources:
+      apps:
+        agent_openai_advanced:
+          name: agent-openai-adv

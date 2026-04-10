@@ -1,0 +1,59 @@
+[project]
+name = "agent-server-advanced"
+version = "0.1.0"
+description = "MLflow-compatible agent server with short-term memory and long-running background task support"
+readme = "README.md"
+authors = [
+    { name = "Agent Developer", email = "developer@example.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "tenacity>=8.0.0",
+    "fastapi>=0.129.0",
+    "uvicorn>=0.41.0",
+    "mlflow>=3.10.1",
+    "openai-agents>=0.4.1",
+    "python-dotenv>=1.2.1",
+    "uuid-utils>=0.10.0",
+    "databricks-openai[memory]>=0.13.0",
+    "databricks-sdk>=0.79.0",
+    "databricks-agents>=1.9.3",
+    "databricks-ai-bridge[server] @ git+https://github.com/databricks/databricks-ai-bridge.git@4e3a2e4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["agent_server", "scripts"]
+
+[dependency-groups]
+dev = [
+    "hatchling>=1.28.0",
+    "pytest>=9.0.2",
+    "pytest-xdist>=3.8.0",
+]
+
+setup = [
+    "ruamel.yaml>=0.18.0",
+]
+
+[tool.uv]
+prerelease = "allow"
+default-groups = ["dev", "setup"]
+
+[tool.pytest.ini_options]
+base_url = "http://localhost:8000"
+addopts = "-n 7"
+
+[project.scripts]
+quickstart = "scripts.quickstart:main"
+start-app = "scripts.start_app:main"
+start-server = "agent_server.start_server:main"
+agent-evaluate = "agent_server.evaluate_agent:evaluate"
+discover-tools = "scripts.discover_tools:main"
+preflight = "scripts.preflight:main"

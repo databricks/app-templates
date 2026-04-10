@@ -215,6 +215,8 @@ sketch
 !.claude/skills/run-locally/
 !.claude/skills/modify-agent/
 !.claude/skills/agent-openai-memory/
+!.claude/skills/supervisor-api/
+!.claude/skills/supervisor-api-background-mode/
 
 **/.env
 **/.env.local

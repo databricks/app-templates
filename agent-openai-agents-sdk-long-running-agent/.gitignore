@@ -215,6 +215,8 @@ sketch
 !.claude/skills/run-locally/
 !.claude/skills/modify-agent/
 !.claude/skills/migrate-from-model-serving/
+!.claude/skills/supervisor-api/
+!.claude/skills/supervisor-api-background-mode/
 !.claude/skills/agent-memory/
 !.claude/skills/lakebase-setup/
 

@@ -189,6 +189,8 @@ mlflow.db
 !.claude/skills/agent-langgraph-memory/
 !.claude/skills/agent-openai-memory/
 !.claude/skills/migrate-from-model-serving/
+!.claude/skills/supervisor-api/
+!.claude/skills/supervisor-api-background-mode/
 !.claude/skills/enable-feedback/
 !.claude/AGENTS.md
 !.claude/CLAUDE.md

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import select
 import shutil
 import signal
@@ -19,10 +20,10 @@ from template_config import FileEdit
 # Constants
 # ---------------------------------------------------------------------------
 POLL_INTERVAL = 30  # seconds between polls
-MAX_POLLS = 10  # max number of polls before giving up
+MAX_POLLS = 20  # max number of polls before giving up (10 min for cold starts)
 QUERY_TIMEOUT = 120  # seconds for HTTP requests
-BUNDLE_TIMEOUT = 300  # seconds for bundle deploy/run/destroy commands
-QUICKSTART_TIMEOUT = 300  # seconds for quickstart command
+BUNDLE_TIMEOUT = 600  # seconds for bundle deploy/run/destroy commands (10 min for parallel runs)
+QUICKSTART_TIMEOUT = 600  # seconds for quickstart command (10 min for parallel runs)
 EVALUATE_TIMEOUT = 900  # seconds for agent-evaluate
 SERVER_START_TIMEOUT = 60  # seconds to wait for local server to start
 
@@ -76,7 +77,13 @@ def _run_with_retries(
     True to retry or False to give up.
     """
     for attempt in range(1, max_attempts + 1):
-        result = _run_cmd(cmd, cwd=cwd, timeout=timeout)
+        try:
+            result = _run_cmd(cmd, cwd=cwd, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _log(f"  timed out after {timeout}s")
+            if attempt < max_attempts and recover and recover(f"timed out after {timeout}s", attempt, max_attempts):
+                continue
+            raise
         if result.returncode == 0:
             return result
         if attempt < max_attempts and recover and recover(result.stderr, attempt, max_attempts):
@@ -92,14 +99,122 @@ def _run_with_retries(
 # ---------------------------------------------------------------------------
 
 
+def copy_template(template_dir: Path, app_name_suffix: str = "-p") -> Path:
+    """Copy a template directory to a temporary location for isolated parallel runs.
+
+    After copying, patches the app name in databricks.yml with the given suffix
+    so the copy deploys to a different app than the original.
+    Returns the path to the temporary copy.
+    """
+    import tempfile
+
+    tmp_parent = Path(tempfile.mkdtemp(prefix=f"{template_dir.name}-"))
+    tmp_dir = tmp_parent / template_dir.name
+    shutil.copytree(
+        template_dir,
+        tmp_dir,
+        ignore=shutil.ignore_patterns(".venv", ".bundle", ".databricks", ".env", "__pycache__", "*.pyc"),
+    )
+
+    # Patch the app name in databricks.yml so it doesn't collide with the original
+    yml_path = tmp_dir / "databricks.yml"
+    if yml_path.exists():
+        text = yml_path.read_text()
+        # Match the app name line under resources.apps.<key>:
+        #   name: "some-app-name"  or  name: "${bundle.target}-some-suffix"
+        patched = re.sub(
+            r'(^\s*apps:\s*\n\s*\w+:\s*\n\s*name:\s*")(.*?)(")',
+            lambda m: m.group(1) + m.group(2) + app_name_suffix + m.group(3),
+            text,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        yml_path.write_text(patched)
+
+    return tmp_dir
+
+
 def clean_template(template_dir: Path):
-    """Remove local dev artifacts (.venv/, uv.lock, .env) and bundle state."""
-    for name in [".venv", "uv.lock", ".env", ".bundle", ".databricks"]:
+    """Remove local dev artifacts (.env, uv.lock) and bundle state.
+
+    Keeps .venv/ intact to avoid full reinstalls — uv will sync it on next run.
+    """
+    for name in [".env", ".bundle", ".databricks"]:
         target = template_dir / name
-        if target.is_dir():
-            shutil.rmtree(target)
-        elif target.is_file():
-            target.unlink()
+        try:
+            if target.is_dir():
+                shutil.rmtree(target)
+            elif target.is_file():
+                target.unlink()
+        except FileNotFoundError:
+            pass  # Already removed by another parallel worker
+
+
+def uv_sync(template_dir: Path):
+    """Run `uv sync` to create/update the venv before quickstart.
+
+    Tries online first; falls back to UV_OFFLINE=true on failure (useful when
+    git+ deps are cached locally and the network fetch hangs or fails).
+    """
+    result = _run_cmd(["uv", "sync"], cwd=template_dir, timeout=QUICKSTART_TIMEOUT)
+    if result.returncode == 0:
+        return
+    _log(f"  uv sync failed online, retrying with UV_OFFLINE=true...")
+    env = os.environ.copy()
+    env["UV_OFFLINE"] = "true"
+    result = _run_cmd(["uv", "sync"], cwd=template_dir, timeout=QUICKSTART_TIMEOUT, env=env)
+    assert result.returncode == 0, (
+        f"uv sync failed in {template_dir.name}:\n"
+        f"stdout: {result.stdout}\n"
+        f"stderr: {result.stderr}"
+    )
+
+
+_GIT_DEP_URL = "git+https://github.com/databricks/databricks-ai-bridge.git@bbqiu/long-running-agent-server"
+
+
+def _strip_uv_sources(template_dir: Path) -> str | None:
+    """Temporarily strip [tool.uv.sources] and swap in git+ dep for deploy.
+
+    Returns the original content so it can be restored, or None if no change.
+    Also deletes uv.lock since it may contain local paths.
+
+    When stripping sources, also replaces plain `databricks-ai-bridge[server]>=X`
+    with the git+ URL so deploy gets the unreleased version (since PyPI won't
+    have the long_running branch).
+    """
+    pyproject = template_dir / "pyproject.toml"
+    if not pyproject.exists():
+        return None
+    original = pyproject.read_text()
+    stripped = re.sub(
+        r"\n\[tool\.uv\.sources\]\n(?:.*\n)*?(?=\n\[|\Z)",
+        "\n",
+        original,
+    )
+    # Replace plain version spec with git+ URL for deploy
+    stripped = re.sub(
+        r'"databricks-ai-bridge\[server\][^"]*"',
+        f'"databricks-ai-bridge[server] @ {_GIT_DEP_URL}"',
+        stripped,
+    )
+    if stripped == original:
+        return None
+    pyproject.write_text(stripped)
+    lock = template_dir / "uv.lock"
+    if lock.exists():
+        lock.unlink()
+    _log(f"Stripped [tool.uv.sources] from {pyproject.name} for deploy")
+    return original
+
+
+def _restore_uv_sources(template_dir: Path, original: str | None):
+    """Restore pyproject.toml after deploy."""
+    if original is None:
+        return
+    pyproject = template_dir / "pyproject.toml"
+    pyproject.write_text(original)
+    _log(f"Restored [tool.uv.sources] in {pyproject.name}")
 
 
 def run_quickstart(
@@ -130,6 +245,7 @@ def run_quickstart(
         f"stderr: {result.stderr}"
     )
     return result
+
 
 
 def git_copy_template(template_name: str, dest: Path, git_ref: str | None = None) -> Path:
@@ -296,6 +412,8 @@ def start_server(template_dir: Path, port: int = 0) -> tuple[subprocess.Popen, i
         ready = select.select([proc.stderr], [], [], 1.0)[0]
         if ready:
             line = proc.stderr.readline()
+            if line.strip():
+                _log(f"  server: {line.rstrip()}")
             if "Uvicorn running on" in line or "Application startup complete" in line:
                 _log(f"Server started on port {port}")
                 return proc, port
@@ -519,7 +637,7 @@ def bundle_deploy(
             )
             return True
 
-        if "does not exist or is deleted" in stderr:
+        if "does not exist" in stderr:
             _log(
                 f"bundle deploy attempt {attempt}/{max_attempts} failed in "
                 f"{template_dir.name} (stale state), unbinding and retrying..."
@@ -536,14 +654,27 @@ def bundle_deploy(
             time.sleep(POLL_INTERVAL)
             return True
 
+        if "DELETING" in stderr:
+            _log(
+                f"bundle deploy attempt {attempt}/{max_attempts} failed in "
+                f"{template_dir.name} (compute deleting), waiting {POLL_INTERVAL}s..."
+            )
+            time.sleep(POLL_INTERVAL)
+            return True
+
         return False
 
-    _run_with_retries(
-        ["databricks", "bundle", "deploy", "--target", "dev", "-p", profile],
-        cwd=template_dir,
-        label="bundle deploy",
-        recover=recover,
-    )
+    # Strip [tool.uv.sources] so deploy doesn't upload uv.lock with local paths
+    pyproject_backup = _strip_uv_sources(template_dir)
+    try:
+        _run_with_retries(
+            ["databricks", "bundle", "deploy", "--target", "dev", "-p", profile],
+            cwd=template_dir,
+            label="bundle deploy",
+            recover=recover,
+        )
+    finally:
+        _restore_uv_sources(template_dir, pyproject_backup)
 
 
 def bundle_run_nowait(template_dir: Path, resource_key: str, profile: str):
@@ -570,11 +701,11 @@ def bundle_run_nowait(template_dir: Path, resource_key: str, profile: str):
                 profile,
             ],
             cwd=template_dir,
-            timeout=90,
+            timeout=BUNDLE_TIMEOUT,
         )
     except _subprocess.TimeoutExpired:
         _log(
-            f"bundle run --no-wait for {resource_key} timed out after 90s "
+            f"bundle run --no-wait for {resource_key} timed out after {BUNDLE_TIMEOUT}s "
             f"— app start was initiated, polling via wait_for_app_ready()"
         )
 
@@ -781,17 +912,24 @@ def grant_lakebase_access(
             _log(f"  Existing managed schemas: {existing_schemas}")
 
             if existing_schemas:
-                # SDK-level grants (schema + tables)
-                client.grant_schema(
-                    grantee=sp_client_id,
-                    privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE],
-                    schemas=existing_schemas,
-                )
-                client.grant_all_tables_in_schema(
-                    grantee=sp_client_id,
-                    privileges=[TablePrivilege.ALL],
-                    schemas=existing_schemas,
-                )
+                # SDK-level grants (schema + tables) — best-effort, may fail
+                # on autoscaling if tables are owned by other users
+                try:
+                    client.grant_schema(
+                        grantee=sp_client_id,
+                        privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE],
+                        schemas=existing_schemas,
+                    )
+                except Exception as exc:
+                    _log(f"  Schema grant warning: {exc}")
+                try:
+                    client.grant_all_tables_in_schema(
+                        grantee=sp_client_id,
+                        privileges=[TablePrivilege.ALL],
+                        schemas=existing_schemas,
+                    )
+                except Exception as exc:
+                    _log(f"  Table grant warning: {exc}")
 
                 # Raw SQL grants for tables and sequences.
                 # Note: GRANT ALL on sequences includes DELETE which is invalid

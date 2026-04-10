@@ -89,7 +89,7 @@ After installation, the skills will be available as slash commands (e.g., `/agen
 
 **Note:** All agent skills are located in `.claude/skills/` directory.
 
-> **Adding Memory?** The **lakebase-setup** and **agent-memory** skills help you add conversation history or persistent user memory to this agent. For pre-configured memory, see the `agent-langgraph-short-term-memory` or `agent-langgraph-long-term-memory` templates.
+> **Adding Memory?** The **lakebase-setup** and **agent-memory** skills help you add conversation history or persistent user memory to this agent. For pre-configured memory, see the `agent-langgraph-advanced` template.
 
 ---
 

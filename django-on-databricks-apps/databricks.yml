@@ -1,0 +1,30 @@
+bundle:
+  name: django-on-databricks-apps
+
+resources:
+  postgres_projects:
+    django:
+      project_id: django
+
+  postgres_branches:
+    development:
+      branch_id: development
+      parent: ${resources.postgres_projects.django.id}
+      is_protected: false
+      no_expiry: true
+
+  apps:
+    django_app:
+      name: django-postgres-app
+      source_code_path: ./django-postgres-app
+      description: Django app with Lakebase Autoscaling
+      resources:
+        - name: postgres
+          postgres:
+            branch: ${resources.postgres_branches.development.name}
+            database: ${resources.postgres_branches.development.name}/databases/django-app
+            permission: CAN_CONNECT_AND_CREATE
+
+targets:
+  dev:
+    default: true

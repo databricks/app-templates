@@ -218,3 +218,4 @@ sketch
 !.claude/skills/lakebase-setup/
 !.claude/skills/agent-memory/
 !.claude/skills/migrate-from-model-serving/
+!.claude/skills/load-testing/

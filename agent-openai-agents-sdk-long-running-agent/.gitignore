@@ -217,6 +217,7 @@ sketch
 !.claude/skills/migrate-from-model-serving/
 !.claude/skills/agent-memory/
 !.claude/skills/lakebase-setup/
+!.claude/skills/load-testing/
 
 **/.env
 **/.env.local

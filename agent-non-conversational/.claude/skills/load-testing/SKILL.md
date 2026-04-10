@@ -13,12 +13,6 @@ description: "Load test a Databricks App to find its maximum QPS. Use when: (1) 
 - `load-test-scripts/dashboard_template.py` — Generates an interactive HTML dashboard (Chart.js) from test results
 - `load-test-runs/<run-name>/dashboard.html` — Self-contained dashboard with KPI cards, bar charts, ramp progression, and a results table
 
-**What this skill creates:**
-- `load-test-scripts/run_load_test.py` — CLI orchestrator that ramps concurrent users and measures QPS per app
-- `load-test-scripts/locustfile.py` — Locust test that sends SSE streaming requests and tracks TTFT
-- `load-test-scripts/dashboard_template.py` — Generates an interactive HTML dashboard (Chart.js) from test results
-- `load-test-runs/<run-name>/dashboard.html` — Self-contained dashboard with KPI cards, bar charts, ramp progression, and a results table
-
 ## Before You Start — Gather Context
 
 Before beginning, use the `AskUserQuestion` tool to collect the following from the user:

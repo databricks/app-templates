@@ -11,7 +11,7 @@ dependencies = [
     "fastapi>=0.129.0",
     "uvicorn>=0.41.0",
     "databricks-langchain[memory]>=0.17.0",
-    "databricks-ai-bridge[server] @ git+https://github.com/databricks/databricks-ai-bridge.git@03034b7487dd00fc408ef1d196f30d9d34bda88e",
+    "databricks-ai-bridge[agent-server]>=0.18.0",
     "databricks-sdk>=0.79.0",
     "databricks-agents>=1.9.3",
     "mlflow>=3.10.1",

@@ -1,6 +1,7 @@
 import logging
 import os
-from typing import Any, AsyncGenerator, AsyncIterator
+from dataclasses import dataclass
+from typing import Any, AsyncGenerator, AsyncIterator, Optional
 from uuid import uuid4
 
 from agents.models.chatcmpl_stream_handler import FAKE_RESPONSES_ID
@@ -12,6 +13,14 @@ from mlflow.types.responses import ResponsesAgentRequest, ResponsesAgentStreamEv
 from uuid_utils import uuid7
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class LakebaseConfig:
+    instance_name: Optional[str]
+    autoscaling_endpoint: Optional[str]
+    autoscaling_project: Optional[str]
+    autoscaling_branch: Optional[str]
 
 
 def _is_lakebase_hostname(value: str) -> bool:
@@ -59,8 +68,8 @@ def resolve_lakebase_instance_name(
     )
 
 
-def init_lakebase_config() -> tuple[str | None, str | None, str | None, str | None]:
-    """Read lakebase env vars and return (instance_name, autoscaling_endpoint, project, branch).
+def init_lakebase_config() -> LakebaseConfig:
+    """Read lakebase env vars and return a LakebaseConfig.
 
     Validates that at least one mode (endpoint, provisioned, or autoscaling) is configured.
     Priority: autoscaling_endpoint > instance_name > project+branch.
@@ -84,11 +93,15 @@ def init_lakebase_config() -> tuple[str | None, str | None, str | None, str | No
 
     # Priority: endpoint > project+branch > instance_name (mutually exclusive in the library)
     if endpoint:
-        return None, endpoint, None, None
+        return LakebaseConfig(instance_name=None, autoscaling_endpoint=endpoint, autoscaling_project=None, autoscaling_branch=None)
     elif has_autoscaling:
-        return None, None, project, branch
+        return LakebaseConfig(instance_name=None, autoscaling_endpoint=None, autoscaling_project=project, autoscaling_branch=branch)
     else:
-        return resolve_lakebase_instance_name(raw_name), None, None, None
+        return LakebaseConfig(instance_name=resolve_lakebase_instance_name(raw_name), autoscaling_endpoint=None, autoscaling_project=None, autoscaling_branch=None)
+
+
+# Module-level singleton — initialized once at import time, shared by agent.py and start_server.py
+lakebase_config = init_lakebase_config()
 
 
 def get_session_id(request: ResponsesAgentRequest) -> str:

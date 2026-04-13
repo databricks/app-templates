@@ -16,26 +16,22 @@ from databricks_ai_bridge.long_running import LongRunningAgentServer
 from databricks_openai.agents import AsyncDatabricksSession
 from mlflow.genai.agent_server import setup_mlflow_git_based_version_tracking
 
-from agent_server.utils import init_lakebase_config, replace_fake_id
+from agent_server.utils import lakebase_config, replace_fake_id
 
 # Need to import the agent to register the functions with the server
 import agent_server.agent  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
-LAKEBASE_INSTANCE_NAME, LAKEBASE_AUTOSCALING_ENDPOINT, LAKEBASE_AUTOSCALING_PROJECT, LAKEBASE_AUTOSCALING_BRANCH = (
-    init_lakebase_config()
-)
-
 
 async def run_lakebase_session_setup() -> None:
     """Create session tables at startup so per-request _ensure_tables is a no-op."""
     session = AsyncDatabricksSession(
         session_id="__startup__",
-        instance_name=LAKEBASE_INSTANCE_NAME,
-        autoscaling_endpoint=LAKEBASE_AUTOSCALING_ENDPOINT,
-        project=LAKEBASE_AUTOSCALING_PROJECT,
-        branch=LAKEBASE_AUTOSCALING_BRANCH,
+        instance_name=lakebase_config.instance_name,
+        autoscaling_endpoint=lakebase_config.autoscaling_endpoint,
+        project=lakebase_config.autoscaling_project,
+        branch=lakebase_config.autoscaling_branch,
     )
     # _ensure_tables is private API — needed to create tables at startup rather than per-request.
     # If this breaks on a databricks-openai upgrade, replace with the public equivalent.
@@ -51,10 +47,10 @@ class AgentServer(LongRunningAgentServer):
 agent_server = AgentServer(
     "ResponsesAgent",
     enable_chat_proxy=True,
-    db_instance_name=LAKEBASE_INSTANCE_NAME,
-    db_autoscaling_endpoint=LAKEBASE_AUTOSCALING_ENDPOINT,
-    db_project=LAKEBASE_AUTOSCALING_PROJECT,
-    db_branch=LAKEBASE_AUTOSCALING_BRANCH,
+    db_instance_name=lakebase_config.instance_name,
+    db_autoscaling_endpoint=lakebase_config.autoscaling_endpoint,
+    db_project=lakebase_config.autoscaling_project,
+    db_branch=lakebase_config.autoscaling_branch,
     task_timeout_seconds=float(os.getenv("TASK_TIMEOUT_SECONDS", "3600")),
     poll_interval_seconds=float(os.getenv("POLL_INTERVAL_SECONDS", "1.0")),
 )

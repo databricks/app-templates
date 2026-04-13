@@ -8,7 +8,6 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "tenacity>=8.0.0",
     "fastapi>=0.129.0",
     "uvicorn>=0.41.0",
     "mlflow>=3.10.1",
@@ -18,7 +17,7 @@ dependencies = [
     "databricks-openai[memory]>=0.13.0",
     "databricks-sdk>=0.79.0",
     "databricks-agents>=1.9.3",
-    "databricks-ai-bridge[server] @ git+https://github.com/databricks/databricks-ai-bridge.git@4e3a2e4",
+    "databricks-ai-bridge[agent-server]>=0.18.0",
 ]
 
 [build-system]

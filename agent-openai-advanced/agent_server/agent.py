@@ -20,12 +20,8 @@ from agent_server.utils import (
     get_databricks_host_from_env,
     get_session_id,
     get_user_workspace_client,
-    init_lakebase_config,
+    lakebase_config,
     process_agent_stream_events,
-)
-
-LAKEBASE_INSTANCE_NAME, LAKEBASE_AUTOSCALING_ENDPOINT, LAKEBASE_AUTOSCALING_PROJECT, LAKEBASE_AUTOSCALING_BRANCH = (
-    init_lakebase_config()
 )
 
 
@@ -69,10 +65,10 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
     session = AsyncDatabricksSession(
         session_id=session_id,
-        instance_name=LAKEBASE_INSTANCE_NAME,
-        autoscaling_endpoint=LAKEBASE_AUTOSCALING_ENDPOINT,
-        project=LAKEBASE_AUTOSCALING_PROJECT,
-        branch=LAKEBASE_AUTOSCALING_BRANCH,
+        instance_name=lakebase_config.instance_name,
+        autoscaling_endpoint=lakebase_config.autoscaling_endpoint,
+        project=lakebase_config.autoscaling_project,
+        branch=lakebase_config.autoscaling_branch,
         create_tables=False,  # Tables created at startup in start_server.py
     )
 
@@ -104,10 +100,10 @@ async def stream_handler(
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
     session = AsyncDatabricksSession(
         session_id=session_id,
-        instance_name=LAKEBASE_INSTANCE_NAME,
-        autoscaling_endpoint=LAKEBASE_AUTOSCALING_ENDPOINT,
-        project=LAKEBASE_AUTOSCALING_PROJECT,
-        branch=LAKEBASE_AUTOSCALING_BRANCH,
+        instance_name=lakebase_config.instance_name,
+        autoscaling_endpoint=lakebase_config.autoscaling_endpoint,
+        project=lakebase_config.autoscaling_project,
+        branch=lakebase_config.autoscaling_branch,
         create_tables=False,  # Tables created at startup in start_server.py
     )
 

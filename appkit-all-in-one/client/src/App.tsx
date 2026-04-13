@@ -9,6 +9,7 @@ import { AnalyticsPage } from './pages/analytics/AnalyticsPage';
 import { LakebasePage } from './pages/lakebase/LakebasePage';
 import { GeniePage } from './pages/genie/GeniePage';
 import { FilesPage } from './pages/files/FilesPage';
+import { ServingPage } from './pages/serving/ServingPage';
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   `px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
@@ -38,6 +39,9 @@ function Layout() {
           <NavLink to="/files" className={navLinkClass}>
             Files
           </NavLink>
+          <NavLink to="/serving" className={navLinkClass}>
+            Serving
+          </NavLink>
         </nav>
       </header>
 
@@ -57,6 +61,7 @@ const router = createBrowserRouter([
       { path: '/lakebase', element: <LakebasePage /> },
       { path: '/genie', element: <GeniePage /> },
       { path: '/files', element: <FilesPage /> },
+      { path: '/serving', element: <ServingPage /> },
     ],
   },
 ]);

@@ -1,0 +1,31 @@
+bundle:
+  name: appkit-serving
+
+variables:
+  serving_endpoint_name:
+    description: Serving endpoint name
+
+resources:
+  apps:
+    app:
+      name: "appkit-serving"
+      description: "Node.js app with Databricks Model Serving endpoint integration"
+      source_code_path: ./
+      user_api_scopes:
+        - serving.serving-endpoints
+
+      # The resources which this app has access to.
+      resources:
+        - name: serving-endpoint
+          serving_endpoint:
+            name: ${var.serving_endpoint_name}
+            permission: CAN_QUERY
+
+targets:
+  default:
+    default: true
+    workspace:
+      host: https://your-workspace.cloud.databricks.com
+
+    variables:
+      serving_endpoint_name: placeholder

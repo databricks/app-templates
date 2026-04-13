@@ -9,6 +9,8 @@ Everything else is standard Django.
 import os
 from pathlib import Path
 
+from utils import get_schema_name
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Security
@@ -110,13 +112,6 @@ ASGI_APPLICATION = "config.asgi.application"
 #
 # The "lakebase" engine extends Django's PostgreSQL backend to inject
 # OAuth tokens via the Databricks SDK. No password is needed in settings.
-
-
-def get_schema_name():
-    """Build schema name following Databricks Apps convention."""
-    pgappname = os.environ.get("PGAPPNAME", "my_app")
-    pguser = os.environ.get("PGUSER", "").replace("-", "")
-    return f"{pgappname}_schema_{pguser}"
 
 
 DATABASES = {

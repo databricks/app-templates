@@ -1,7 +1,7 @@
-from config.settings import get_schema_name
 from django.core.management.base import BaseCommand
 from django.db import connection
 from psycopg.sql import SQL, Identifier
+from utils import get_schema_name
 
 
 class Command(BaseCommand):

@@ -153,6 +153,31 @@
         "optional": []
       },
       "requiredByTemplate": true
+    },
+    "serving": {
+      "name": "serving",
+      "displayName": "Model Serving Plugin",
+      "description": "Authenticated proxy to Databricks Model Serving endpoints",
+      "package": "@databricks/appkit",
+      "resources": {
+        "required": [
+          {
+            "type": "serving_endpoint",
+            "alias": "Serving Endpoint",
+            "resourceKey": "serving-endpoint",
+            "description": "Model Serving endpoint for inference",
+            "permission": "CAN_QUERY",
+            "fields": {
+              "name": {
+                "env": "DATABRICKS_SERVING_ENDPOINT_NAME",
+                "description": "Serving endpoint name"
+              }
+            }
+          }
+        ],
+        "optional": []
+      },
+      "requiredByTemplate": true
     }
   }
 }

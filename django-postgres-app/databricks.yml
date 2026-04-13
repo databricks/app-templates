@@ -16,7 +16,7 @@ resources:
   apps:
     django_app:
       name: django-postgres-app
-      source_code_path: ./django-postgres-app
+      source_code_path: .
       description: Django app with Lakebase Autoscaling
       resources:
         - name: postgres

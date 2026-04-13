@@ -5,13 +5,12 @@ A template for deploying Django applications on [Databricks Apps](https://www.da
 ## Project structure
 
 ```
-databricks.yml              # Databricks Asset Bundle: Lakebase project, branch, and app
-django-postgres-app/
-  app.yaml                  # Databricks Apps runtime configuration
-  entrypoint.sh             # Startup script: collectstatic, migrate, uvicorn
-  config/settings.py        # Django settings (database, CSRF, static files)
-  lakebase/base.py          # Custom DB backend: injects OAuth tokens via Databricks SDK
-  todos/                    # Sample Django app (CRUD todo list)
+databricks.yml            # Databricks Asset Bundle: Lakebase project, branch, and app
+app.yaml                  # Databricks Apps runtime configuration
+entrypoint.sh             # Startup script: collectstatic, migrate, uvicorn
+config/settings.py        # Django settings (database, CSRF, static files)
+lakebase/base.py          # Custom DB backend: injects OAuth tokens via Databricks SDK
+todos/                    # Sample Django app (CRUD todo list)
 ```
 
 ## Note on SECRET_KEY
@@ -73,12 +72,9 @@ databricks bundle run django_app -p <PROFILE> -t dev
 databricks api get /api/2.0/postgres/projects/django/branches/development/endpoints -p <PROFILE>
 ```
 
-2. Navigate to the app directory and start the app with `run-local`, passing connection details as environment variables.
+2. Start the app with `run-local`, passing connection details as environment variables.
 
 ```console
-# change directory
-cd django-postgres-app
-
 # run the app code (assuming you have a virtual environment .venv there)
 PATH=".venv/bin:$PATH" databricks apps run-local -p <PROFILE> \
   --env PGENDPOINT=<ENDPOINT NAME> \

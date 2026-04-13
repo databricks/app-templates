@@ -55,6 +55,9 @@ def _csrf_trusted_origins():
 
 CSRF_TRUSTED_ORIGINS = _csrf_trusted_origins()
 
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+
 # Application definition
 INSTALLED_APPS = [
     "django.contrib.admin",

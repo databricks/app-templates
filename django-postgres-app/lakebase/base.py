@@ -35,9 +35,12 @@ _token_lock = threading.Lock()
 
 def _get_workspace_client():
     global _workspace_client
-    if _workspace_client is None:
-        _workspace_client = WorkspaceClient()
-    return _workspace_client
+    if _workspace_client is not None:
+        return _workspace_client
+    with _token_lock:
+        if _workspace_client is None:
+            _workspace_client = WorkspaceClient()
+        return _workspace_client
 
 
 def _get_token(endpoint):

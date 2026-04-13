@@ -200,12 +200,7 @@
         <form method="POST" action="{% url 'todos:add' %}">
           {% csrf_token %}
           <div class="form-group">
-            <input
-              type="text"
-              name="task"
-              placeholder="What do you need to do?"
-              required
-            />
+            {{ form.task }}
             <button type="submit" class="btn btn-primary">Add Todo</button>
           </div>
         </form>

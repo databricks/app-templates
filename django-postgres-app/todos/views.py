@@ -2,21 +2,23 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.contrib import messages
 from django.views.decorators.http import require_POST
 
+from .forms import TodoForm
 from .models import Todo
 
 
 def index(request):
     """List all todos."""
     todos = Todo.objects.all()
-    return render(request, "todos/index.html", {"todos": todos})
+    form = TodoForm()
+    return render(request, "todos/index.html", {"todos": todos, "form": form})
 
 
 @require_POST
 def add(request):
     """Add a new todo."""
-    task = request.POST.get("task", "").strip()
-    if task:
-        Todo.objects.create(task=task)
+    form = TodoForm(request.POST)
+    if form.is_valid():
+        form.save()
         messages.success(request, "Todo added successfully!")
     else:
         messages.error(request, "Please enter a task.")

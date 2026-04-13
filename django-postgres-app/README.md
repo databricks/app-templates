@@ -64,6 +64,53 @@ databricks bundle deploy -p <PROFILE> -t dev
 databricks bundle run django_app -p <PROFILE> -t dev
 ```
 
+## Deploy as a git-backed app
+
+Instead of syncing files to a workspace folder, you can deploy directly from a Git repository. The app reads code from a Git reference (branch, tag, or commit) each time you deploy. See the [Databricks docs](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy) for full details.
+
+### 1. Create the app and configure the Git repository
+
+In the Databricks UI:
+
+1. Go to **Compute → Apps** and click **Create app**.
+2. In the **Configure Git repository** step, enter your repository URL (e.g. `https://github.com/org/repo`) and select the Git provider.
+3. For private repositories, click **Configure Git credential** on the app details page to give the app's service principal access. Public repositories do not require a credential.
+4. Click **Create app**.
+
+Or with the CLI:
+
+```console
+databricks apps create my-app-name \
+  --git-url https://github.com/org/repo \
+  --git-provider github
+```
+
+### 2. Deploy from Git
+
+In the Databricks UI:
+
+1. On the app details page, click **Deploy** and select **From Git**.
+2. Enter the **Git reference** (`main`, a tag like `v1.0.0`, or a commit SHA).
+3. Select the **Reference type** (branch, tag, or commit).
+4. (Optional) Set **Source code path** if the app lives in a subdirectory of the repo (e.g. `django-postgres-app/`).
+5. Click **Deploy**.
+
+Or with the CLI:
+
+```console
+databricks apps deploy my-app-name \
+  --git-reference main \
+  --git-reference-type branch
+```
+
+To deploy from a subdirectory, add `--source-code-path django-postgres-app/`.
+
+### 3. Redeploy after changes
+
+Push your changes to the Git repository, then click **Deploy** again (or re-run the CLI deploy command). Databricks pulls the latest commit from the configured reference.
+
+> **Note:** The Lakebase database still needs to be created separately as described in the DABs deployment section above. Git-backed deployment only changes how the app source code is delivered—resource provisioning remains the same.
+
 ## Run locally
 
 1. Look up the `host` and endpoint `name`:

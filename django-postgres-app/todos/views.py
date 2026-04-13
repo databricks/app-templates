@@ -30,7 +30,7 @@ def toggle(request, todo_id):
     """Toggle the completed status of a todo."""
     todo = get_object_or_404(Todo, pk=todo_id)
     todo.completed = not todo.completed
-    todo.save()
+    todo.save(update_fields=["completed"])
     messages.success(request, "Todo updated successfully!")
     return redirect("todos:index")
 

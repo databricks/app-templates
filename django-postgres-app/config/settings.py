@@ -20,7 +20,7 @@ SECRET_KEY = os.environ.get(
     "SECRET_KEY",
     "django-insecure-change-me-in-production",
 )
-DEBUG = os.environ.get("DEBUG", "False") == "True"
+DEBUG = os.environ.get("DEBUG", "").lower() in ("true", "1", "yes")
 # Databricks Apps run behind a reverse proxy and aren't directly exposed to the
 # public internet, so we accept all hosts at the Django layer. If you deploy this
 # outside Databricks Apps, replace # \"*\" with your real domain(s) to re‑enable

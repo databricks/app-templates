@@ -7,7 +7,7 @@ A template for deploying Django applications on [Databricks Apps](https://www.da
 ```
 databricks.yml            # Databricks Asset Bundle: Lakebase project, branch, and app
 app.yaml                  # Databricks Apps runtime configuration
-entrypoint.sh             # Startup script: collectstatic, migrate, uvicorn
+entrypoint.sh             # Startup script: collectstatic, ensure_schema, migrate, gunicorn
 config/settings.py        # Django settings (database, CSRF, static files)
 lakebase/base.py          # Custom DB backend: injects OAuth tokens via Databricks SDK
 todos/                    # Sample Django app (CRUD todo list)

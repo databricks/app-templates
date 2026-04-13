@@ -1,5 +1,5 @@
 [project]
-name = "django-on-databricks-apps"
+name = "django-postgres-app"
 version = "0.1.0"
 description = "Django app on Databricks Apps with Lakebase Autoscaling"
 readme = "README.md"

@@ -125,8 +125,6 @@ DATABASES = {
             "sslmode": os.environ.get("PGSSLMODE", "require"),
             "options": f"-c search_path={get_schema_name()}",
         },
-        "CONN_MAX_AGE": 600,
-        "CONN_HEALTH_CHECKS": True,
     }
 }
 

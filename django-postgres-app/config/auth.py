@@ -13,7 +13,7 @@ wires that header into Django's RemoteUser infrastructure so that:
 
 import os
 
-from django.contrib.auth import authenticate, login
+from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.backends import RemoteUserBackend
 
 
@@ -33,9 +33,6 @@ class DatabricksAppsMiddleware:
                 request.user = user
                 login(request, user)
         elif not email and request.user.is_authenticated:
-            # Header gone (e.g. local testing) — log out.
-            from django.contrib.auth import logout
-
             logout(request)
         return self.get_response(request)
 

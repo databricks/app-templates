@@ -11,15 +11,15 @@ def index(request):
     return render(request, "todos/index.html", {"todos": todos})
 
 
+@require_POST
 def add(request):
     """Add a new todo."""
-    if request.method == "POST":
-        task = request.POST.get("task", "").strip()
-        if task:
-            Todo.objects.create(task=task)
-            messages.success(request, "Todo added successfully!")
-        else:
-            messages.error(request, "Please enter a task.")
+    task = request.POST.get("task", "").strip()
+    if task:
+        Todo.objects.create(task=task)
+        messages.success(request, "Todo added successfully!")
+    else:
+        messages.error(request, "Please enter a task.")
     return redirect("todos:index")
 
 

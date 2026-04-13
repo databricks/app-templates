@@ -211,16 +211,41 @@ Terminal statuses: `completed`, `failed`. Stop polling/streaming when you see ei
 
 Configure these in `.env` for local development, and in `databricks.yml` `config.env` for deployed apps.
 
+**Authentication & tracing:**
+
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `DATABRICKS_CONFIG_PROFILE` | Databricks CLI auth profile | `DEFAULT` |
 | `MLFLOW_EXPERIMENT_ID` | MLflow experiment for tracing | _(set by quickstart)_ |
+
+**Lakebase (required for memory and background mode):**
+
+Lakebase powers both memory (short-term and long-term) and background mode persistence. Configure either a provisioned instance OR an autoscaling project/branch — not both.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
 | `LAKEBASE_INSTANCE_NAME` | Provisioned Lakebase instance name | _(option 1)_ |
 | `LAKEBASE_AUTOSCALING_PROJECT` | Autoscaling Lakebase project | _(option 2)_ |
 | `LAKEBASE_AUTOSCALING_BRANCH` | Autoscaling Lakebase branch | _(option 2)_ |
 | `DATABRICKS_EMBEDDING_ENDPOINT` | Embedding model for long-term memory vector search | `databricks-gte-large-en` |
-| `TASK_TIMEOUT_SECONDS` | Max seconds for background agent tasks | `3600` |
-| `POLL_INTERVAL_SECONDS` | Poll interval when streaming retrieve results | `1` |
+
+If no Lakebase variables are set, memory features and background mode are both disabled. The server falls back to stateless, standard request handling only.
+
+**Background mode (LongRunningAgentServer):**
+
+These settings control the `LongRunningAgentServer` behavior. They are read as environment variables in `agent_server/start_server.py` and passed to the server constructor.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `TASK_TIMEOUT_SECONDS` | Max duration (in seconds) for a background agent task before it is marked as failed | `3600` (1 hour) |
+| `POLL_INTERVAL_SECONDS` | How often (in seconds) the server checks for new events when serving a `GET /responses/{id}?stream=true` request | `1` |
+
+The server constructor also accepts two additional settings that are not currently exposed as environment variables. To change them, edit `agent_server/start_server.py` directly:
+
+| Constructor param | Description | Default |
+|-------------------|-------------|---------|
+| `db_statement_timeout_ms` | Timeout (in ms) for individual Lakebase SQL statements | `5000` |
+| `cleanup_timeout_seconds` | Time (in seconds) allowed for graceful DB cleanup on shutdown. Must be greater than `db_statement_timeout_ms / 1000` | `7.0` |
 
 ### Agent model
 
@@ -231,6 +256,18 @@ LLM_ENDPOINT_NAME = "databricks-claude-sonnet-4-5"
 ```
 
 Change this to any [Databricks Model Serving endpoint](https://docs.databricks.com/aws/en/generative-ai/external-models/) (e.g., `databricks-meta-llama-4-maverick`, `databricks-claude-sonnet-4-5`).
+
+### Server customization
+
+The server is defined in `agent_server/start_server.py` as a subclass of `LongRunningAgentServer`:
+
+```python
+class AgentServer(LongRunningAgentServer):
+    def transform_stream_event(self, event, response_id):
+        return replace_fake_id(event, response_id)
+```
+
+You can override `transform_stream_event` to modify SSE events before they are sent to the client (or persisted for background mode retrieval). The base `LongRunningAgentServer` extends MLflow's `AgentServer`, so all standard server features (custom routes, middleware, etc.) are available.
 
 ## Quick start
 

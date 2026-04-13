@@ -64,7 +64,8 @@ def _get_token(endpoint):
             endpoint=endpoint
         )
         _cached_token = credential.token
-        _token_expires_at = credential.expire_time.seconds
+        # expire_time is a protobuf Timestamp; .seconds is Unix epoch seconds.
+        _token_expires_at = float(credential.expire_time.seconds)
         return _cached_token
 
 

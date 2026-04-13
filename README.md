@@ -57,7 +57,7 @@ A collection of templates for building full-stack Databricks Apps with [AppKit](
 
 | Template | Description | Dependencies |
 |----------|-------------|--------------|
-| `appkit-all-in-one` | Full-stack Node.js app with SQL analytics dashboards, file browser, Genie AI conversations, and Lakebase Autoscaling (Postgres) CRUD | SQL warehouse, Volume, Genie Space, Database |
+| `appkit-all-in-one` | Full-stack Node.js app with SQL analytics dashboards, file browser, Genie AI conversations, Lakebase Autoscaling (Postgres) CRUD, and Model Serving | SQL warehouse, Volume, Genie Space, Database, Serving Endpoint |
 | `appkit-analytics` | Node.js app with SQL analytics dashboards and charts | SQL warehouse |
 | `appkit-genie` | Node.js app with AI/BI Genie for natural language data queries | Genie Space |
 | `appkit-files` | Node.js app with file browser for Databricks Volumes | Volume |

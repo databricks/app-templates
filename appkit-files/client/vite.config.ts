@@ -6,7 +6,10 @@ import path from 'node:path';
 // https://vite.dev/config/
 export default defineConfig({
   root: __dirname,
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+  ],
   server: {
     middlewareMode: true,
   },

@@ -4,4 +4,4 @@ python manage.py collectstatic --noinput
 python manage.py ensure_schema
 python manage.py migrate --noinput
 PORT="${DATABRICKS_APP_PORT:-8000}"
-exec uvicorn config.asgi:application --host 0.0.0.0 --port "$PORT"
+exec gunicorn config.wsgi:application --bind "0.0.0.0:$PORT"

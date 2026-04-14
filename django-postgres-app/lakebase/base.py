@@ -30,6 +30,7 @@ _TOKEN_REFRESH_MARGIN_SECONDS = 30
 _cached_token = None
 _token_expires_at = 0.0
 _workspace_client = None
+_client_lock = threading.Lock()
 _token_lock = threading.Lock()
 
 
@@ -37,7 +38,7 @@ def _get_workspace_client():
     global _workspace_client
     if _workspace_client is not None:
         return _workspace_client
-    with _token_lock:
+    with _client_lock:
         if _workspace_client is None:
             _workspace_client = WorkspaceClient()
         return _workspace_client

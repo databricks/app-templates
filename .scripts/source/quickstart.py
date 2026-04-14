@@ -16,8 +16,7 @@ Options:
     --profile NAME    Use specified Databricks profile (non-interactive)
     --host URL        Databricks workspace URL (for initial setup)
     --lakebase-provisioned-name NAME   Provisioned Lakebase instance name
-    --lakebase-autoscaling-project NAME  Autoscaling Lakebase project name
-    --lakebase-autoscaling-branch NAME   Autoscaling Lakebase branch name
+    --lakebase-autoscaling-endpoint NAME  Autoscaling Lakebase endpoint name
     --skip-lakebase   Skip Lakebase setup (non-interactive / CI use)
     --app-name NAME   Existing Databricks app name to bind this bundle to
     -h, --help        Show this help message
@@ -540,8 +539,7 @@ def check_lakebase_required() -> bool:
     content = databricks_yml.read_text()
     return (
         "LAKEBASE_INSTANCE_NAME" in content
-        or "LAKEBASE_AUTOSCALING_PROJECT" in content
-        or "LAKEBASE_AUTOSCALING_BRANCH" in content
+        or "LAKEBASE_AUTOSCALING_ENDPOINT" in content
     )
 
 
@@ -564,14 +562,13 @@ def get_existing_lakebase_config() -> dict | None:
 
     Returns:
         Dict with either:
-        - {"type": "autoscaling", "project": str, "branch": str}
+        - {"type": "autoscaling", "endpoint": str}
         - {"type": "provisioned", "instance_name": str}
         - None if no Lakebase config found
     """
-    project = get_env_value("LAKEBASE_AUTOSCALING_PROJECT")
-    branch = get_env_value("LAKEBASE_AUTOSCALING_BRANCH")
-    if project and branch:
-        return {"type": "autoscaling", "project": project, "branch": branch}
+    endpoint = get_env_value("LAKEBASE_AUTOSCALING_ENDPOINT")
+    if endpoint:
+        return {"type": "autoscaling", "endpoint": endpoint}
 
     instance_name = get_env_value("LAKEBASE_INSTANCE_NAME")
     if instance_name:
@@ -586,7 +583,7 @@ def validate_lakebase_config(profile_name: str, config: dict) -> bool:
         return validate_lakebase_instance(profile_name, config["instance_name"]) is not None
     elif config["type"] == "autoscaling":
         return (
-            validate_lakebase_autoscaling(profile_name, config["project"], config["branch"])
+            validate_lakebase_autoscaling_endpoint(profile_name, config["endpoint"])
             is not None
         )
     return False
@@ -602,11 +599,39 @@ def get_workspace_client(profile_name: str):
         return None
 
 
+def get_app_resources(profile_name: str, app_name: str) -> list[dict]:
+    """Fetch resources from an existing Databricks app.
+
+    Returns the resources list from the apps API, or empty list on failure.
+    """
+    print(f"Fetching resources from app '{app_name}'...")
+    result = run_command(
+        ["databricks", "-p", profile_name, "apps", "get", app_name, "--output", "json"],
+        check=False,
+    )
+    if result.returncode != 0:
+        print(
+            f"  Could not fetch app details: "
+            f"{result.stderr.strip() if result.stderr else 'Unknown error'}"
+        )
+        return []
+    try:
+        data = json.loads(result.stdout)
+        resources = data.get("resources", [])
+        if resources:
+            print_success(f"Found {len(resources)} resource(s) in app '{app_name}'")
+        else:
+            print(f"  App '{app_name}' has no resources configured")
+        return resources
+    except (json.JSONDecodeError, KeyError):
+        return []
+
+
 def create_lakebase_instance(profile_name: str) -> dict:
     """Create a new Lakebase autoscaling instance (project + branch).
 
     Returns:
-        Dict with {"type": "autoscaling", "project": str, "branch": str}
+        Dict with {"type": "autoscaling", "endpoint": str}
     """
     w = get_workspace_client(profile_name)
     if not w:
@@ -643,12 +668,58 @@ def create_lakebase_instance(profile_name: str) -> dict:
             if "/branches/" in branch.name
             else branch_id
         )
-        print_success(f"Created branch: {branch_name} (id: {branch.uid})")
+        print_success(f"Created branch: {branch_name}")
 
-        return {"type": "autoscaling", "project": project_short, "branch": branch_name}
+        # Fetch the endpoint name for the created branch
+        endpoint_name = _fetch_autoscaling_endpoint_name(profile_name, project_short, branch_name)
+        if not endpoint_name:
+            print_error(
+                "Could not determine endpoint name for the created Lakebase instance.\n"
+                "  Please find the endpoint name in the Databricks UI and use:\n"
+                f"  uv run quickstart --lakebase-autoscaling-endpoint <endpoint-name>"
+            )
+            sys.exit(1)
+
+        return {"type": "autoscaling", "endpoint": endpoint_name}
     except Exception as e:
         print_error(f"Failed to create Lakebase instance: {e}")
         sys.exit(1)
+
+
+def _fetch_autoscaling_endpoint_name(profile_name: str, project: str, branch: str) -> str:
+    """Fetch the endpoint name for an autoscaling Lakebase branch.
+
+    Returns the endpoint name string, or empty string if not found.
+    """
+    result = run_command(
+        [
+            "databricks",
+            "-p",
+            profile_name,
+            "api",
+            "get",
+            f"/api/2.0/postgres/projects/{project}/branches/{branch}/endpoints",
+            "--output",
+            "json",
+        ],
+        check=False,
+    )
+    if result.returncode == 0 and result.stdout:
+        try:
+            data = json.loads(result.stdout)
+            endpoints = data.get("endpoints", [])
+            if endpoints:
+                endpoint_name = endpoints[0].get("name", "")
+                if endpoint_name:
+                    # Extract just the endpoint ID from the full path
+                    # e.g. "projects/p/branches/b/endpoints/ep-name" -> "ep-name"
+                    parts = endpoint_name.split("/endpoints/")
+                    if len(parts) == 2:
+                        return parts[1]
+                    return endpoint_name
+        except (json.JSONDecodeError, IndexError, KeyError):
+            pass
+    return ""
 
 
 def select_lakebase_interactive(profile_name: str) -> dict:
@@ -656,15 +727,13 @@ def select_lakebase_interactive(profile_name: str) -> dict:
 
     Flow:
     1. New or existing?
-    2. New -> Create autoscaling project + branch
-    3. Existing -> Provisioned or autoscaling?
-       - Provisioned -> Enter instance name
-       - Autoscaling -> Enter project + branch names
+    2. New -> Create autoscaling project + branch, return endpoint
+    3. Existing -> Autoscaling endpoint or provisioned?
 
     Returns:
         Dict with either:
         - {"type": "provisioned", "instance_name": str}
-        - {"type": "autoscaling", "project": str, "branch": str}
+        - {"type": "autoscaling", "endpoint": str}
     """
     print("\nLakebase Setup")
     print("  1) Create a new Lakebase instance")
@@ -700,18 +769,13 @@ def select_lakebase_interactive(profile_name: str) -> dict:
             sys.exit(1)
         return {"type": "provisioned", "instance_name": name}
 
-    # Autoscaling - ask for project and branch
-    project = input("\nEnter the autoscaling project name: ").strip()
-    if not project:
-        print_error("Project name is required")
+    # Autoscaling - ask for endpoint name
+    endpoint = input("\nEnter the autoscaling Lakebase endpoint name: ").strip()
+    if not endpoint:
+        print_error("Endpoint name is required")
         sys.exit(1)
 
-    branch = input("Enter the branch name: ").strip()
-    if not branch:
-        print_error("Branch name is required")
-        sys.exit(1)
-
-    return {"type": "autoscaling", "project": project, "branch": branch}
+    return {"type": "autoscaling", "endpoint": endpoint}
 
 
 def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> dict | None:
@@ -761,56 +825,15 @@ def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> dict | 
     return None
 
 
-def _create_lakebase_project(profile_name: str, project: str):
-    """Create a Lakebase autoscaling project via the SDK."""
-    from databricks.sdk.service.postgres import Project, ProjectSpec
+def validate_lakebase_autoscaling_endpoint(profile_name: str, endpoint: str) -> dict | None:
+    """Validate that the Lakebase autoscaling endpoint exists.
 
-    w = get_workspace_client(profile_name)
-    if not w:
-        print_error("Could not connect to Databricks. Check your CLI profile.")
-        return False
-    print(f"Creating Lakebase autoscaling project '{project}'...")
-    project_op = w.postgres.create_project(
-        project=Project(spec=ProjectSpec(display_name=project)),
-        project_id=project,
-    )
-    project_op.wait()
-    print_success(f"Created project: {project}")
-    return True
+    Uses the postgres API to verify the endpoint.
 
-
-def _create_lakebase_branch(profile_name: str, project: str, branch: str):
-    """Create a Lakebase autoscaling branch via the SDK."""
-    from databricks.sdk.service.postgres import Branch, BranchSpec
-
-    w = get_workspace_client(profile_name)
-    if not w:
-        print_error("Could not connect to Databricks. Check your CLI profile.")
-        return False
-    print(f"Creating Lakebase autoscaling branch '{branch}' in project '{project}'...")
-    branch_op = w.postgres.create_branch(
-        parent=f"projects/{project}",
-        branch=Branch(spec=BranchSpec(no_expiry=True)),
-        branch_id=branch,
-    )
-    branch_op.wait()
-    print_success(f"Created branch: {branch}")
-    return True
-
-
-def validate_lakebase_autoscaling(profile_name: str, project: str, branch: str) -> dict | None:
-    """Validate that the Lakebase autoscaling project and branch exist.
-
-    If the project or branch doesn't exist, attempts to create it automatically.
-    Uses the postgres API (/api/2.0/postgres/) to verify the project and branch,
-    then fetches the endpoint host for PGHOST.
-
-    Returns a dict with {"host": str} on success (host may be empty if endpoint
-    not found), or None on failure.
+    Returns a dict with {"endpoint": str} on success, or None on failure.
     """
-    print(f"Validating Lakebase autoscaling project '{project}', branch '{branch}'...")
+    print(f"Validating Lakebase autoscaling endpoint '{endpoint}'...")
 
-    # Validate project exists — create if not found
     result = run_command(
         [
             "databricks",
@@ -818,103 +841,34 @@ def validate_lakebase_autoscaling(profile_name: str, project: str, branch: str) 
             profile_name,
             "api",
             "get",
-            f"/api/2.0/postgres/projects/{project}",
+            f"/api/2.0/postgres/endpoints/{endpoint}",
             "--output",
             "json",
         ],
         check=False,
     )
 
-    if result.returncode != 0:
-        error_msg = result.stderr.lower() if result.stderr else ""
-        if "not found" in error_msg or "404" in error_msg:
-            try:
-                if not _create_lakebase_project(profile_name, project):
-                    return None
-            except Exception as e:
-                print_error(f"Failed to create Lakebase project '{project}': {e}")
-                return None
-        elif "permission" in error_msg or "forbidden" in error_msg or "unauthorized" in error_msg:
-            print_error(f"No permission to access Lakebase project '{project}'")
-            return None
-        else:
-            print_error(
-                f"Failed to validate Lakebase project: {result.stderr.strip() if result.stderr else 'Unknown error'}"
-            )
-            return None
+    if result.returncode == 0:
+        print_success(f"Lakebase autoscaling endpoint '{endpoint}' validated")
+        return {"endpoint": endpoint}
 
-    # Validate branch exists — create if not found
-    result = run_command(
-        [
-            "databricks",
-            "-p",
-            profile_name,
-            "api",
-            "get",
-            f"/api/2.0/postgres/projects/{project}/branches/{branch}",
-            "--output",
-            "json",
-        ],
-        check=False,
-    )
-
-    if result.returncode != 0:
-        error_msg = result.stderr.lower() if result.stderr else ""
-        if "not found" in error_msg or "404" in error_msg:
-            try:
-                if not _create_lakebase_branch(profile_name, project, branch):
-                    return None
-            except Exception as e:
-                print_error(f"Failed to create Lakebase branch '{branch}': {e}")
-                return None
-        elif "permission" in error_msg or "forbidden" in error_msg or "unauthorized" in error_msg:
-            print_error(f"No permission to access Lakebase branch '{branch}'")
-            return None
-        else:
-            print_error(
-                f"Failed to validate Lakebase branch: {result.stderr.strip() if result.stderr else 'Unknown error'}"
-            )
-            return None
-
-    print_success(f"Lakebase autoscaling project '{project}', branch '{branch}' validated")
-
-    # Fetch endpoint host for PGHOST
-    pg_host = ""
-    result = run_command(
-        [
-            "databricks",
-            "-p",
-            profile_name,
-            "api",
-            "get",
-            f"/api/2.0/postgres/projects/{project}/branches/{branch}/endpoints",
-            "--output",
-            "json",
-        ],
-        check=False,
-    )
-    if result.returncode == 0 and result.stdout:
-        try:
-            endpoints_data = json.loads(result.stdout)
-            endpoints = endpoints_data.get("endpoints", [])
-            if endpoints:
-                host = (
-                    endpoints[0].get("status", {}).get("hosts", {}).get("host", "")
-                )
-                if host:
-                    pg_host = host
-        except (json.JSONDecodeError, IndexError, KeyError):
-            pass
-
-    return {"host": pg_host}
+    error_msg = result.stderr.lower() if result.stderr else ""
+    if "not found" in error_msg or "404" in error_msg:
+        print_error(f"Lakebase autoscaling endpoint '{endpoint}' not found.")
+    elif "permission" in error_msg or "forbidden" in error_msg or "unauthorized" in error_msg:
+        print_error(f"No permission to access Lakebase endpoint '{endpoint}'")
+    else:
+        print_error(
+            f"Failed to validate Lakebase endpoint: {result.stderr.strip() if result.stderr else 'Unknown error'}"
+        )
+    return None
 
 
 def setup_lakebase(
     profile_name: str,
     username: str,
     provisioned_name: str = None,
-    autoscaling_project: str = None,
-    autoscaling_branch: str = None,
+    autoscaling_endpoint: str = None,
     purpose: str = "memory",
 ) -> dict:
     """Set up Lakebase instance.
@@ -925,7 +879,7 @@ def setup_lakebase(
     Returns:
         Dict with either:
         - {"type": "provisioned", "instance_name": str}
-        - {"type": "autoscaling", "project": str, "branch": str}
+        - {"type": "autoscaling", "endpoint": str}
     """
     if purpose == "ui":
         print_step("Setting up Lakebase for chat UI conversation history...")
@@ -939,8 +893,7 @@ def setup_lakebase(
         if not instance_info:
             sys.exit(1)
         update_env_file("LAKEBASE_INSTANCE_NAME", provisioned_name)
-        update_env_file("LAKEBASE_AUTOSCALING_PROJECT", "")
-        update_env_file("LAKEBASE_AUTOSCALING_BRANCH", "")
+        update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", "")
         print_success(f"Lakebase instance name '{provisioned_name}' saved to .env")
 
         # Set up PostgreSQL connection environment variables
@@ -959,23 +912,14 @@ def setup_lakebase(
 
         return {"type": "provisioned", "instance_name": provisioned_name}
 
-    # If --lakebase-autoscaling-project and --lakebase-autoscaling-branch were provided
-    if autoscaling_project and autoscaling_branch:
-        print(f"Using autoscaling Lakebase: project={autoscaling_project}, branch={autoscaling_branch}")
-        branch_info = validate_lakebase_autoscaling(profile_name, autoscaling_project, autoscaling_branch)
-        if not branch_info:
+    # If --lakebase-autoscaling-endpoint was provided
+    if autoscaling_endpoint:
+        print(f"Using autoscaling Lakebase endpoint: {autoscaling_endpoint}")
+        endpoint_info = validate_lakebase_autoscaling_endpoint(profile_name, autoscaling_endpoint)
+        if not endpoint_info:
             sys.exit(1)
-        update_env_file("LAKEBASE_AUTOSCALING_PROJECT", autoscaling_project)
-        update_env_file("LAKEBASE_AUTOSCALING_BRANCH", autoscaling_branch)
+        update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", autoscaling_endpoint)
         update_env_file("LAKEBASE_INSTANCE_NAME", "")
-
-        # Set up PostgreSQL connection environment variables
-        pg_host = branch_info.get("host", "")
-        if pg_host:
-            update_env_file("PGHOST", pg_host)
-            print_success(f"PGHOST set to '{pg_host}'")
-        else:
-            print_error("Could not get endpoint host from Lakebase branch (PGHOST not set)")
 
         update_env_file("PGUSER", username)
         print_success(f"PGUSER set to '{username}'")
@@ -983,17 +927,12 @@ def setup_lakebase(
         update_env_file("PGDATABASE", "databricks_postgres")
         print_success("PGDATABASE set to 'databricks_postgres'")
 
-        # Fetch database ID for the postgres resource in databricks.yml
-        database_id = _fetch_autoscaling_database_id(profile_name, autoscaling_project, autoscaling_branch)
-
         print_success(
-            f"Lakebase autoscaling config saved to .env (project: {autoscaling_project}, branch: {autoscaling_branch})"
+            f"Lakebase autoscaling endpoint saved to .env: {autoscaling_endpoint}"
         )
         return {
             "type": "autoscaling",
-            "project": autoscaling_project,
-            "branch": autoscaling_branch,
-            "database_id": database_id,
+            "endpoint": autoscaling_endpoint,
         }
 
     # Interactive selection
@@ -1005,8 +944,7 @@ def setup_lakebase(
         if not instance_info:
             sys.exit(1)
         update_env_file("LAKEBASE_INSTANCE_NAME", instance_name)
-        update_env_file("LAKEBASE_AUTOSCALING_PROJECT", "")
-        update_env_file("LAKEBASE_AUTOSCALING_BRANCH", "")
+        update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", "")
         print_success(f"Lakebase provisioned instance '{instance_name}' saved to .env")
 
         # Set up PostgreSQL connection environment variables
@@ -1023,22 +961,12 @@ def setup_lakebase(
         update_env_file("PGDATABASE", "databricks_postgres")
         print_success("PGDATABASE set to 'databricks_postgres'")
     else:
-        project = selection["project"]
-        branch = selection["branch"]
-        branch_info = validate_lakebase_autoscaling(profile_name, project, branch)
-        if not branch_info:
+        endpoint = selection["endpoint"]
+        endpoint_info = validate_lakebase_autoscaling_endpoint(profile_name, endpoint)
+        if not endpoint_info:
             sys.exit(1)
-        update_env_file("LAKEBASE_AUTOSCALING_PROJECT", project)
-        update_env_file("LAKEBASE_AUTOSCALING_BRANCH", branch)
+        update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", endpoint)
         update_env_file("LAKEBASE_INSTANCE_NAME", "")
-
-        # Set up PostgreSQL connection environment variables
-        pg_host = branch_info.get("host", "")
-        if pg_host:
-            update_env_file("PGHOST", pg_host)
-            print_success(f"PGHOST set to '{pg_host}'")
-        else:
-            print_error("Could not get endpoint host from Lakebase branch (PGHOST not set)")
 
         update_env_file("PGUSER", username)
         print_success(f"PGUSER set to '{username}'")
@@ -1046,59 +974,11 @@ def setup_lakebase(
         update_env_file("PGDATABASE", "databricks_postgres")
         print_success("PGDATABASE set to 'databricks_postgres'")
 
-        # Fetch database ID for the postgres resource in databricks.yml
-        database_id = _fetch_autoscaling_database_id(profile_name, project, branch)
-
         print_success(
-            f"Lakebase autoscaling config saved to .env (project: {project}, branch: {branch})"
+            f"Lakebase autoscaling endpoint saved to .env: {endpoint}"
         )
-        selection["database_id"] = database_id
 
     return selection
-
-
-def _fetch_autoscaling_database_id(profile_name: str, project: str, branch: str) -> str:
-    """Fetch the first database ID for an autoscaling Lakebase branch.
-
-    Returns the database ID string, or empty string if not found.
-    """
-    result = run_command(
-        [
-            "databricks",
-            "-p",
-            profile_name,
-            "api",
-            "get",
-            f"/api/2.0/postgres/projects/{project}/branches/{branch}/databases",
-            "--output",
-            "json",
-        ],
-        check=False,
-    )
-    if result.returncode == 0 and result.stdout:
-        try:
-            data = json.loads(result.stdout)
-            databases = data.get("databases", [])
-            if databases:
-                # The database name is a full resource path like
-                # "projects/{project}/branches/{branch}/databases/{id}"
-                db_name = databases[0].get("name", "")
-                if db_name:
-                    # Extract just the database ID from the full path
-                    parts = db_name.split("/databases/")
-                    if len(parts) == 2:
-                        database_id = parts[1]
-                        print_success(f"Found Lakebase database ID: {database_id}")
-                        return database_id
-        except (json.JSONDecodeError, IndexError, KeyError):
-            pass
-
-    print_error(
-        "Could not fetch database ID for Lakebase branch.\n"
-        "  The database resource path in databricks.yml requires a valid database ID.\n"
-        "  You can find it by running: databricks api get /api/2.0/postgres/projects/{project}/branches/{branch}/databases"
-    )
-    sys.exit(1)
 
 
 def _replace_lakebase_env_vars(content: str, lakebase_config: dict) -> str:
@@ -1160,14 +1040,31 @@ def _replace_lakebase_env_vars(content: str, lakebase_config: dict) -> str:
         ]
     else:
         new_lines = [
-            f"{indent}- name: LAKEBASE_AUTOSCALING_PROJECT",
-            f'{indent}  value: "{lakebase_config["project"]}"',
-            f"{indent}- name: LAKEBASE_AUTOSCALING_BRANCH",
-            f'{indent}  value: "{lakebase_config["branch"]}"',
+            f"{indent}- name: LAKEBASE_AUTOSCALING_ENDPOINT",
+            f'{indent}  value_from: "postgres"',
         ]
 
     final = result[:insert_idx] + new_lines + result[insert_idx:]
     return "\n".join(final) + "\n"
+
+
+def _build_postgres_resource_lines(indent: str, lakebase_config: dict) -> list[str]:
+    """Build the postgres resource YAML lines from a lakebase config dict.
+
+    Supports both endpoint-based and branch+database-based configs.
+    """
+    lines = [
+        f"{indent}- name: 'postgres'",
+        f"{indent}  postgres:",
+    ]
+    if "endpoint" in lakebase_config:
+        lines.append(f'{indent}    endpoint: "{lakebase_config["endpoint"]}"')
+    if "branch" in lakebase_config:
+        lines.append(f'{indent}    branch: "{lakebase_config["branch"]}"')
+    if "database" in lakebase_config:
+        lines.append(f'{indent}    database: "{lakebase_config["database"]}"')
+    lines.append(f"{indent}    permission: 'CAN_CONNECT_AND_CREATE'")
+    return lines
 
 
 def _replace_lakebase_resource(content: str, lakebase_config: dict) -> str:
@@ -1184,6 +1081,7 @@ def _replace_lakebase_resource(content: str, lakebase_config: dict) -> str:
         # Backward compat: old comment text from pre-native-postgres templates
         "autoscaling postgres resource must be added via api after deploy",
         "see: .claude/skills/add-tools/examples/lakebase-autoscaling.md",
+        "see: .claude/skills/add-tools/examples/lakebase-autoscaling.yaml",
     }
 
     lines = content.splitlines()
@@ -1294,6 +1192,7 @@ def _replace_lakebase_resource(content: str, lakebase_config: dict) -> str:
                 if next_stripped.startswith("#") and (
                     "postgres:" in next_stripped
                     or "branch:" in next_stripped
+                    or "endpoint:" in next_stripped
                     or "database:" in next_stripped
                     or "permission:" in next_stripped
                 ):
@@ -1304,14 +1203,7 @@ def _replace_lakebase_resource(content: str, lakebase_config: dict) -> str:
             # For autoscaling, insert the uncommented postgres resource block
             if lakebase_config["type"] == "autoscaling":
                 indent = resource_indent or "        "
-                project = lakebase_config["project"]
-                branch = lakebase_config["branch"]
-                database_id = lakebase_config.get("database_id") or "<your-database-id>"
-                result.append(f"{indent}- name: 'postgres'")
-                result.append(f"{indent}  postgres:")
-                result.append(f'{indent}    branch: "projects/{project}/branches/{branch}"')
-                result.append(f'{indent}    database: "projects/{project}/branches/{branch}/databases/{database_id}"')
-                result.append(f"{indent}    permission: 'CAN_CONNECT_AND_CREATE'")
+                result.extend(_build_postgres_resource_lines(indent, lakebase_config))
             continue
 
         # Match an uncommented postgres resource (from a previous autoscaling run or template default)
@@ -1333,14 +1225,7 @@ def _replace_lakebase_resource(content: str, lakebase_config: dict) -> str:
             # For autoscaling, insert the updated postgres resource block
             if lakebase_config["type"] == "autoscaling":
                 indent = resource_indent or "        "
-                project = lakebase_config["project"]
-                branch = lakebase_config["branch"]
-                database_id = lakebase_config.get("database_id") or "<your-database-id>"
-                result.append(f"{indent}- name: 'postgres'")
-                result.append(f"{indent}  postgres:")
-                result.append(f'{indent}    branch: "projects/{project}/branches/{branch}"')
-                result.append(f'{indent}    database: "projects/{project}/branches/{branch}/databases/{database_id}"')
-                result.append(f"{indent}    permission: 'CAN_CONNECT_AND_CREATE'")
+                result.extend(_build_postgres_resource_lines(indent, lakebase_config))
             continue
 
         result.append(line)
@@ -1382,16 +1267,7 @@ def _replace_lakebase_resource(content: str, lakebase_config: dict) -> str:
                         resource_indent = m.group(1)
                         break
             indent = resource_indent or "        "
-            project = lakebase_config["project"]
-            branch = lakebase_config["branch"]
-            database_id = lakebase_config.get("database_id") or "<your-database-id>"
-            new_lines = [
-                f"{indent}- name: 'postgres'",
-                f"{indent}  postgres:",
-                f'{indent}    branch: "projects/{project}/branches/{branch}"',
-                f'{indent}    database: "projects/{project}/branches/{branch}/databases/{database_id}"',
-                f"{indent}    permission: 'CAN_CONNECT_AND_CREATE'",
-            ]
+            new_lines = _build_postgres_resource_lines(indent, lakebase_config)
             result = result[:insert_idx] + new_lines + result[insert_idx:]
 
     return "\n".join(result) + "\n"
@@ -1521,7 +1397,7 @@ Examples:
     uv run quickstart --profile DEFAULT  # Use existing profile (non-interactive)
     uv run quickstart --host https://...  # Set up new profile with host
     uv run quickstart --lakebase-provisioned-name my-db   # Provisioned Lakebase
-    uv run quickstart --lakebase-autoscaling-project proj --lakebase-autoscaling-branch br  # Autoscaling
+    uv run quickstart --lakebase-autoscaling-endpoint my-endpoint  # Autoscaling
     uv run quickstart --app-name my-existing-app  # Bind to existing Databricks app
     uv run quickstart --skip-lakebase    # Skip Lakebase setup
         """,
@@ -1542,13 +1418,8 @@ Examples:
         metavar="NAME",
     )
     parser.add_argument(
-        "--lakebase-autoscaling-project",
-        help="Autoscaling Lakebase project name (use with --lakebase-autoscaling-branch)",
-        metavar="NAME",
-    )
-    parser.add_argument(
-        "--lakebase-autoscaling-branch",
-        help="Autoscaling Lakebase branch name (use with --lakebase-autoscaling-project)",
+        "--lakebase-autoscaling-endpoint",
+        help="Autoscaling Lakebase endpoint name",
         metavar="NAME",
     )
     parser.add_argument(
@@ -1626,27 +1497,91 @@ Examples:
                 app_name = answer
 
         bundle_key = ""
+        lakebase_config = None
         if app_name:
             bundle_key = update_databricks_yml_app_name(app_name)
+
+            # Fetch resources from the existing app and use them in databricks.yml
+            app_resources = get_app_resources(profile_name, app_name)
+            for resource in app_resources:
+                if "experiment" in resource:
+                    app_exp_id = resource["experiment"].get("experiment_id", "")
+                    if app_exp_id:
+                        experiment_id = app_exp_id
+                        update_env_file("MLFLOW_EXPERIMENT_ID", experiment_id)
+                        update_databricks_yml_experiment(experiment_id)
+                        print_success(f"Using experiment ID from app: {app_exp_id}")
+
+                if "postgres" in resource:
+                    pg = resource["postgres"]
+                    lakebase_config = {"type": "autoscaling"}
+                    for key in ("endpoint", "branch", "database"):
+                        if pg.get(key):
+                            lakebase_config[key] = pg[key]
+
+                    # Try to resolve endpoint name for local dev .env
+                    if "endpoint" not in lakebase_config and "branch" in lakebase_config:
+                        branch_path = lakebase_config["branch"]
+                        parts = branch_path.split("/")
+                        if (
+                            len(parts) >= 4
+                            and parts[0] == "projects"
+                            and parts[2] == "branches"
+                        ):
+                            endpoint_name = _fetch_autoscaling_endpoint_name(
+                                profile_name, parts[1], parts[3]
+                            )
+                            if endpoint_name:
+                                update_env_file(
+                                    "LAKEBASE_AUTOSCALING_ENDPOINT", endpoint_name
+                                )
+                                print_success(
+                                    f"Lakebase endpoint '{endpoint_name}' saved to .env"
+                                )
+                    elif "endpoint" in lakebase_config:
+                        update_env_file(
+                            "LAKEBASE_AUTOSCALING_ENDPOINT", lakebase_config["endpoint"]
+                        )
+                    update_env_file("LAKEBASE_INSTANCE_NAME", "")
+                    print_success("Using postgres resource from app")
+
+                if "database" in resource:
+                    db = resource["database"]
+                    instance_name = db.get("instance_name", "")
+                    if instance_name:
+                        lakebase_config = {
+                            "type": "provisioned",
+                            "instance_name": instance_name,
+                        }
+                        update_env_file("LAKEBASE_INSTANCE_NAME", instance_name)
+                        update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", "")
+                        print_success(
+                            f"Using database resource from app: {instance_name}"
+                        )
+
             print(f"\nTo bind this bundle to your existing app, run:")
             if bundle_key:
-                print(f"  databricks bundle deployment bind {bundle_key} {app_name} --auto-approve")
+                print(
+                    f"  databricks bundle deployment bind {bundle_key} {app_name} --auto-approve"
+                )
             print(f"  databricks bundle deploy")
 
         # Step 6: Lakebase setup
-        lakebase_config = None
-        # Required if memory template (has LAKEBASE_* placeholders in databricks.yml) or flags
+        # lakebase_config may already be set from app resources above
         lakebase_memory_required = bool(
             args.lakebase_provisioned_name
-            or (args.lakebase_autoscaling_project and args.lakebase_autoscaling_branch)
+            or args.lakebase_autoscaling_endpoint
             or check_lakebase_required()
         )
 
-        if lakebase_memory_required:
+        if lakebase_config:
+            # Already got config from app resources — skip interactive setup
+            print_step("Using Lakebase config from app resources")
+        elif lakebase_memory_required:
             # Check for existing config (idempotency)
             existing_lakebase = get_existing_lakebase_config()
             if existing_lakebase and not args.lakebase_provisioned_name and not (
-                args.lakebase_autoscaling_project and args.lakebase_autoscaling_branch
+                args.lakebase_autoscaling_endpoint
             ) and validate_lakebase_config(profile_name, existing_lakebase):
                 print_step("Reusing existing Lakebase config from .env")
                 lakebase_config = existing_lakebase
@@ -1655,8 +1590,7 @@ Examples:
                     profile_name,
                     username,
                     provisioned_name=args.lakebase_provisioned_name,
-                    autoscaling_project=args.lakebase_autoscaling_project,
-                    autoscaling_branch=args.lakebase_autoscaling_branch,
+                    autoscaling_endpoint=args.lakebase_autoscaling_endpoint,
                     purpose="memory",
                 )
         elif not args.skip_lakebase:
@@ -1706,9 +1640,12 @@ Examples:
                 if host:
                     summary += f"\n  {host}/lakebase/provisioned/{lakebase_name}"
             else:
-                project = lakebase_config["project"]
-                branch = lakebase_config["branch"]
-                summary += f"\n\n✓ Lakebase for {lakebase_purpose}: {project} (branch: {branch})"
+                if "endpoint" in lakebase_config:
+                    summary += f"\n\n✓ Lakebase for {lakebase_purpose}: endpoint {lakebase_config['endpoint']}"
+                elif "branch" in lakebase_config:
+                    summary += f"\n\n✓ Lakebase for {lakebase_purpose}: {lakebase_config['branch']}"
+                else:
+                    summary += f"\n\n✓ Lakebase for {lakebase_purpose}: autoscaling"
 
         summary += "\nNext step: Run 'uv run start-app' to start the agent locally\n"
         print(summary)

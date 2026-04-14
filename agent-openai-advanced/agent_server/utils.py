@@ -4,7 +4,10 @@ from dataclasses import dataclass
 from typing import Any, AsyncGenerator, AsyncIterator, Optional
 from uuid import uuid4
 
-from agents.models.chatcmpl_stream_handler import FAKE_RESPONSES_ID
+try:
+    from agents.models.fake_id import FAKE_RESPONSES_ID
+except ImportError:
+    FAKE_RESPONSES_ID = "__fake_id__"
 from agents.result import StreamEvent
 from databricks.sdk import WorkspaceClient
 from databricks_openai.agents import AsyncDatabricksSession

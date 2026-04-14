@@ -1,6 +1,6 @@
 # Django on Databricks Apps
 
-A template for deploying Django applications on [Databricks Apps](https://www.databricks.com/product/databricks-apps) with [Lakebase Autoscaling](https://docs.databricks.com/aws/en/oltp/projects/) as the PostgreSQL backend. It stays close to standard Django, adding code only where necessary to interface with Lakebase.
+This template deploys a Django application on [Databricks Apps](https://www.databricks.com/product/databricks-apps) with [Lakebase Autoscaling](https://docs.databricks.com/aws/en/oltp/projects/) as the PostgreSQL backend. It stays close to standard Django, adding code only where necessary to interface with Lakebase.
 
 ## Project structure
 
@@ -43,7 +43,7 @@ DABs do not yet support `postgres_databases` as a resource type. Create it via t
 databricks api get /api/2.0/postgres/projects/django/branches/development/roles -p <PROFILE>
 ```
 
-1. Note the role `name` field, which should look something like `projects/django/branches/development/roles/rol-xxxx-xxxxxxxx`. Then, create the database:
+2. Note the role `name` field, which should look something like `projects/django/branches/development/roles/rol-xxxx-xxxxxxxx`. Then, create the database:
 
 ```console
 databricks api post \

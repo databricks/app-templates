@@ -102,8 +102,9 @@ def _run_with_retries(
 def copy_template(template_dir: Path, app_name_suffix: str = "-p") -> Path:
     """Copy a template directory to a temporary location for isolated parallel runs.
 
-    After copying, patches the app name in databricks.yml with the given suffix
-    so the copy deploys to a different app than the original.
+    After copying, patches both the bundle name and app name in databricks.yml
+    with the given suffix so the copy deploys to a different workspace path and
+    app than the original (avoiding terraform state races).
     Returns the path to the temporary copy.
     """
     import tempfile
@@ -116,16 +117,25 @@ def copy_template(template_dir: Path, app_name_suffix: str = "-p") -> Path:
         ignore=shutil.ignore_patterns(".venv", ".bundle", ".databricks", ".env", "__pycache__", "*.pyc"),
     )
 
-    # Patch the app name in databricks.yml so it doesn't collide with the original
     yml_path = tmp_dir / "databricks.yml"
     if yml_path.exists():
         text = yml_path.read_text()
-        # Match the app name line under resources.apps.<key>:
+        # Patch bundle name so it uses a separate workspace path and terraform state
+        # e.g. bundle.name: "agent_langgraph_advanced" -> "agent_langgraph_advanced_p"
+        suffix_underscore = app_name_suffix.replace("-", "_")
+        patched = re.sub(
+            r'(^\s*name:\s*")([\w]+)(")',
+            lambda m: m.group(1) + m.group(2) + suffix_underscore + m.group(3),
+            text,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        # Patch the app name under resources.apps.<key>:
         #   name: "some-app-name"  or  name: "${bundle.target}-some-suffix"
         patched = re.sub(
             r'(^\s*apps:\s*\n\s*\w+:\s*\n\s*name:\s*")(.*?)(")',
             lambda m: m.group(1) + m.group(2) + app_name_suffix + m.group(3),
-            text,
+            patched,
             count=1,
             flags=re.MULTILINE,
         )
@@ -601,7 +611,9 @@ def bundle_deploy(
     """
 
     def recover(stderr: str, attempt: int, max_attempts: int) -> bool:
-        if "terraform init" in stderr:
+        # Normalize newlines for multi-line error messages
+        stderr_flat = " ".join(stderr.split())
+        if "terraform init" in stderr_flat:
             _log(
                 f"bundle deploy attempt {attempt}/{max_attempts} failed in "
                 f"{template_dir.name} (terraform init error), retrying in {POLL_INTERVAL}s..."
@@ -609,7 +621,7 @@ def bundle_deploy(
             time.sleep(POLL_INTERVAL)
             return True
 
-        if "already exists" in stderr:
+        if "already exists" in stderr_flat:
             _log(
                 f"bundle deploy attempt {attempt}/{max_attempts} failed in "
                 f"{template_dir.name} (app already exists), unbinding and binding..."
@@ -634,7 +646,7 @@ def bundle_deploy(
             )
             return True
 
-        if "does not exist" in stderr:
+        if "does not exist" in stderr_flat:
             _log(
                 f"bundle deploy attempt {attempt}/{max_attempts} failed in "
                 f"{template_dir.name} (stale state), unbinding and retrying..."
@@ -643,7 +655,7 @@ def bundle_deploy(
             time.sleep(POLL_INTERVAL)
             return True
 
-        if "is not terminal" in stderr or "not terminal with state" in stderr:
+        if "is not terminal" in stderr_flat or "not terminal with state" in stderr_flat:
             _log(
                 f"bundle deploy attempt {attempt}/{max_attempts} failed in "
                 f"{template_dir.name} (app transitioning), waiting {POLL_INTERVAL}s..."
@@ -651,7 +663,7 @@ def bundle_deploy(
             time.sleep(POLL_INTERVAL)
             return True
 
-        if "DELETING" in stderr:
+        if "DELETING" in stderr_flat:
             _log(
                 f"bundle deploy attempt {attempt}/{max_attempts} failed in "
                 f"{template_dir.name} (compute deleting), waiting {POLL_INTERVAL}s..."

@@ -419,22 +419,8 @@ def test_e2e(template, repo_root, profile, lakebase_provisioned_name, lakebase_a
     env_path = template_dir / ".env"
 
     try:
-        # Deploy-only: skip setup (clean/quickstart/edits) — assume template is
-        # already configured from a prior local run or manual setup.
-        if skip_local:
-            with phase("setup:edits"):
-                edits = list(template.pre_test_edits)
-                originals = apply_edits(edits, template_dir)
-            try:
-                with phase("deploy"):
-                    _run_deploy(
-                        template, template_dir, profile, lakebase_provisioned_name,
-                        log_file, no_destroy, lakebase_autoscaling_endpoint,
-                    )
-                return
-            finally:
-                revert_edits(originals)
-
+        # Always run setup (clean/quickstart) so experiment IDs and lakebase
+        # config are populated, even when only deploying.
         with phase("setup:clean"):
             clean_template(template_dir)
 
@@ -459,6 +445,14 @@ def test_e2e(template, repo_root, profile, lakebase_provisioned_name, lakebase_a
             originals = apply_edits(edits, template_dir)
 
         try:
+            if skip_local:
+                with phase("deploy"):
+                    _run_deploy(
+                        template, template_dir, profile, lakebase_provisioned_name,
+                        log_file, no_destroy, lakebase_autoscaling_endpoint,
+                    )
+                return
+
             if skip_deploy:
                 with phase("local"):
                     _run_local(template, template_dir, log_file)

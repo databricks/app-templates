@@ -408,18 +408,19 @@ class TestReplaceLakebaseResource:
         assert "- name: 'database'" in result
         assert "instance_name: 'x'" in result
 
-    def test_autoscaling_fills_endpoint(self):
+    def test_autoscaling_fills_branch_and_database(self):
         result = _replace_lakebase_resource(
-            LAKEBASE_YML, {"type": "autoscaling", "endpoint": "my-ep"}
+            LAKEBASE_YML, {"type": "autoscaling", "branch": "projects/p/branches/b", "database": "projects/p/branches/b/databases/db-1"}
         )
         assert "- name: 'postgres'" in result
-        assert 'endpoint: "my-ep"' in result
+        assert 'branch: "projects/p/branches/b"' in result
+        assert 'database: "projects/p/branches/b/databases/db-1"' in result
         assert "permission: 'CAN_CONNECT_AND_CREATE'" in result
 
     def test_noop_autoscaling_without_lakebase_resource(self):
         """Autoscaling on a yml without lakebase resource should be a noop."""
         result = _replace_lakebase_resource(
-            MINIMAL_YML, {"type": "autoscaling", "endpoint": "ep"}
+            MINIMAL_YML, {"type": "autoscaling", "branch": "projects/p/branches/b", "database": "projects/p/branches/b/databases/db-1"}
         )
         assert result == MINIMAL_YML
 
@@ -441,16 +442,17 @@ class TestReplaceLakebaseResource:
         )
         assert "- name: 'database'" in step1
         step2 = _replace_lakebase_resource(
-            step1, {"type": "autoscaling", "endpoint": "my-ep"}
+            step1, {"type": "autoscaling", "branch": "projects/p/branches/b", "database": "projects/p/branches/b/databases/db-1"}
         )
         assert "- name: 'database'" not in step2
         assert "- name: 'postgres'" in step2
-        assert 'endpoint: "my-ep"' in step2
+        assert 'branch: "projects/p/branches/b"' in step2
+        assert 'database: "projects/p/branches/b/databases/db-1"' in step2
 
     def test_idempotent_autoscaling_then_provisioned(self):
         """Switching from autoscaling to provisioned should add the database resource."""
         step1 = _replace_lakebase_resource(
-            LAKEBASE_YML, {"type": "autoscaling", "endpoint": "ep"}
+            LAKEBASE_YML, {"type": "autoscaling", "branch": "projects/p/branches/b", "database": "projects/p/branches/b/databases/db-1"}
         )
         assert "- name: 'database'" not in step1
         step2 = _replace_lakebase_resource(
@@ -511,18 +513,19 @@ class TestUpdateDatabricksYmlLakebase:
     def test_autoscaling_updates_file(self, tmp_path):
         (tmp_path / "databricks.yml").write_text(LAKEBASE_YML)
         update_databricks_yml_lakebase(
-            {"type": "autoscaling", "endpoint": "my-endpoint"}
+            {"type": "autoscaling", "branch": "projects/p/branches/b", "database": "projects/p/branches/b/databases/db-1"}
         )
         content = (tmp_path / "databricks.yml").read_text()
         assert "LAKEBASE_AUTOSCALING_ENDPOINT" in content
         assert 'value_from: "postgres"' in content
-        assert 'endpoint: "my-endpoint"' in content
+        assert 'branch: "projects/p/branches/b"' in content
+        assert 'database: "projects/p/branches/b/databases/db-1"' in content
         assert "LAKEBASE_INSTANCE_NAME" not in content
 
     def test_noop_autoscaling_without_lakebase(self, tmp_path):
         """Autoscaling on a yml without lakebase env vars should be a noop."""
         (tmp_path / "databricks.yml").write_text(MINIMAL_YML)
-        update_databricks_yml_lakebase({"type": "autoscaling", "endpoint": "ep"})
+        update_databricks_yml_lakebase({"type": "autoscaling", "branch": "projects/p/branches/b", "database": "projects/p/branches/b/databases/db-1"})
         content = (tmp_path / "databricks.yml").read_text()
         assert content == MINIMAL_YML
 

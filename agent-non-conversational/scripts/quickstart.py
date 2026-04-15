@@ -687,11 +687,12 @@ def create_lakebase_instance(profile_name: str) -> dict:
         )
         print_success(f"Created branch: {branch_name}")
 
-        # Fetch the endpoint info for the created branch
-        endpoint_path, endpoint_host = _fetch_autoscaling_endpoint_info(
-            profile_name, project_short, branch_name
+        # Fetch the endpoint info (which also resolves branch/database paths)
+        endpoint_info = validate_lakebase_autoscaling_endpoint(
+            profile_name,
+            f"projects/{project_short}/branches/{branch_name}/endpoints/primary",
         )
-        if not endpoint_path:
+        if not endpoint_info:
             print_error(
                 "Could not determine endpoint name for the created Lakebase instance.\n"
                 "  Please find the endpoint name in the Databricks UI and use:\n"
@@ -699,7 +700,13 @@ def create_lakebase_instance(profile_name: str) -> dict:
             )
             sys.exit(1)
 
-        return {"type": "autoscaling", "endpoint": endpoint_path, "host": endpoint_host}
+        return {
+            "type": "autoscaling",
+            "endpoint": endpoint_info["endpoint"],
+            "host": endpoint_info["host"],
+            "branch": endpoint_info["branch"],
+            "database": endpoint_info["database"],
+        }
     except Exception as e:
         print_error(f"Failed to create Lakebase instance: {e}")
         sys.exit(1)
@@ -849,9 +856,11 @@ def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> dict | 
 def validate_lakebase_autoscaling_endpoint(profile_name: str, endpoint: str) -> dict | None:
     """Validate that the Lakebase autoscaling endpoint exists.
 
-    Uses the postgres API to verify the endpoint.
+    Uses the postgres API to verify the endpoint, then fetches the branch and
+    database paths needed for the DAB postgres resource in databricks.yml.
 
-    Returns a dict with {"endpoint": str, "host": str} on success, or None on failure.
+    Returns a dict with {"endpoint": str, "host": str, "branch": str, "database": str}
+    on success, or None on failure.
     """
     print(f"Validating Lakebase autoscaling endpoint '{endpoint}'...")
 
@@ -876,26 +885,61 @@ def validate_lakebase_autoscaling_endpoint(profile_name: str, endpoint: str) -> 
         check=False,
     )
 
-    if result.returncode == 0:
-        print_success(f"Lakebase autoscaling endpoint '{endpoint}' validated")
-        host = ""
-        try:
-            data = json.loads(result.stdout)
-            host = data.get("status", {}).get("hosts", {}).get("host", "")
-        except (json.JSONDecodeError, KeyError):
-            pass
-        return {"endpoint": endpoint, "host": host}
+    if result.returncode != 0:
+        error_msg = result.stderr.lower() if result.stderr else ""
+        if "not found" in error_msg or "404" in error_msg:
+            print_error(f"Lakebase autoscaling endpoint '{endpoint}' not found.")
+        elif "permission" in error_msg or "forbidden" in error_msg or "unauthorized" in error_msg:
+            print_error(f"No permission to access Lakebase endpoint '{endpoint}'")
+        else:
+            print_error(
+                f"Failed to validate Lakebase endpoint: {result.stderr.strip() if result.stderr else 'Unknown error'}"
+            )
+        return None
 
-    error_msg = result.stderr.lower() if result.stderr else ""
-    if "not found" in error_msg or "404" in error_msg:
-        print_error(f"Lakebase autoscaling endpoint '{endpoint}' not found.")
-    elif "permission" in error_msg or "forbidden" in error_msg or "unauthorized" in error_msg:
-        print_error(f"No permission to access Lakebase endpoint '{endpoint}'")
-    else:
-        print_error(
-            f"Failed to validate Lakebase endpoint: {result.stderr.strip() if result.stderr else 'Unknown error'}"
+    print_success(f"Lakebase autoscaling endpoint '{endpoint}' validated")
+    host = ""
+    branch = ""
+    try:
+        data = json.loads(result.stdout)
+        host = data.get("status", {}).get("hosts", {}).get("host", "")
+        branch = data.get("parent", "")
+    except (json.JSONDecodeError, KeyError):
+        pass
+
+    # Fetch database name from the branch
+    database = ""
+    if branch:
+        db_result = run_command(
+            [
+                "databricks",
+                "-p",
+                profile_name,
+                "api",
+                "get",
+                f"/api/2.0/postgres/{branch}/databases",
+                "--output",
+                "json",
+            ],
+            check=False,
         )
-    return None
+        if db_result.returncode == 0 and db_result.stdout:
+            try:
+                db_data = json.loads(db_result.stdout)
+                databases = db_data.get("databases", [])
+                if databases:
+                    database = databases[0].get("name", "")
+            except (json.JSONDecodeError, IndexError, KeyError):
+                pass
+
+    if not branch or not database:
+        print_error(
+            "Could not resolve branch/database from endpoint. "
+            "Please check the endpoint configuration."
+        )
+        return None
+
+    return {"endpoint": endpoint, "host": host, "branch": branch, "database": database}
 
 
 def setup_lakebase(
@@ -973,6 +1017,8 @@ def setup_lakebase(
             "type": "autoscaling",
             "endpoint": autoscaling_endpoint,
             "host": pg_host,
+            "branch": endpoint_info["branch"],
+            "database": endpoint_info["database"],
         }
 
     # Interactive selection
@@ -1022,6 +1068,9 @@ def setup_lakebase(
         print_success(
             f"Lakebase autoscaling endpoint saved to .env: {endpoint}"
         )
+        # Merge branch/database from endpoint validation into selection
+        selection["branch"] = endpoint_info["branch"]
+        selection["database"] = endpoint_info["database"]
 
     return selection
 
@@ -1096,14 +1145,12 @@ def _replace_lakebase_env_vars(content: str, lakebase_config: dict) -> str:
 def _build_postgres_resource_lines(indent: str, lakebase_config: dict) -> list[str]:
     """Build the postgres resource YAML lines from a lakebase config dict.
 
-    Supports both endpoint-based and branch+database-based configs.
+    DAB requires branch and database fields (not endpoint) for postgres resources.
     """
     lines = [
         f"{indent}- name: 'postgres'",
         f"{indent}  postgres:",
     ]
-    if "endpoint" in lakebase_config:
-        lines.append(f'{indent}    endpoint: "{lakebase_config["endpoint"]}"')
     if "branch" in lakebase_config:
         lines.append(f'{indent}    branch: "{lakebase_config["branch"]}"')
     if "database" in lakebase_config:

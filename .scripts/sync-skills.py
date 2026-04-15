@@ -90,6 +90,10 @@ def sync_template(template: str, config: dict):
     for skill in ["run-locally", "discover-tools", "migrate-from-model-serving"]:
         copy_skill(SOURCE / skill, dest / skill)
 
+    # Long-running server skill — skip for advanced templates (already have it) and non-conversational
+    if not has_memory and template != "agent-non-conversational":
+        copy_skill(SOURCE / "long-running-server", dest / "long-running-server")
+
     # Deploy skill (with substitution)
     copy_skill(SOURCE / "deploy", dest / "deploy", subs)
 

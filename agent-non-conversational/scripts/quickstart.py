@@ -687,9 +687,11 @@ def create_lakebase_instance(profile_name: str) -> dict:
         )
         print_success(f"Created branch: {branch_name}")
 
-        # Fetch the endpoint name for the created branch
-        endpoint_name = _fetch_autoscaling_endpoint_name(profile_name, project_short, branch_name)
-        if not endpoint_name:
+        # Fetch the endpoint info for the created branch
+        endpoint_path, endpoint_host = _fetch_autoscaling_endpoint_info(
+            profile_name, project_short, branch_name
+        )
+        if not endpoint_path:
             print_error(
                 "Could not determine endpoint name for the created Lakebase instance.\n"
                 "  Please find the endpoint name in the Databricks UI and use:\n"
@@ -697,16 +699,22 @@ def create_lakebase_instance(profile_name: str) -> dict:
             )
             sys.exit(1)
 
-        return {"type": "autoscaling", "endpoint": endpoint_name}
+        return {"type": "autoscaling", "endpoint": endpoint_path, "host": endpoint_host}
     except Exception as e:
         print_error(f"Failed to create Lakebase instance: {e}")
         sys.exit(1)
 
 
-def _fetch_autoscaling_endpoint_name(profile_name: str, project: str, branch: str) -> str:
-    """Fetch the endpoint name for an autoscaling Lakebase branch.
+def _fetch_autoscaling_endpoint_info(
+    profile_name: str, project: str, branch: str
+) -> tuple[str, str]:
+    """Fetch endpoint info for an autoscaling Lakebase branch.
 
-    Returns the endpoint name string, or empty string if not found.
+    Returns (endpoint_path, host) where:
+    - endpoint_path is the full resource path (e.g. "projects/{id}/branches/{id}/endpoints/{id}")
+    - host is the connection hostname (e.g. "ep-xxx.database.us-west-2.cloud.databricks.com")
+
+    Returns ("", "") if not found.
     """
     result = run_command(
         [
@@ -726,14 +734,13 @@ def _fetch_autoscaling_endpoint_name(profile_name: str, project: str, branch: st
             data = json.loads(result.stdout)
             endpoints = data.get("endpoints", [])
             if endpoints:
-                # Use the uid field (e.g. "ep-steep-lab-d185d9o5") which is
-                # the value the SDK needs to resolve the endpoint host.
-                uid = endpoints[0].get("uid", "")
-                if uid:
-                    return uid
+                ep = endpoints[0]
+                name = ep.get("name", "")
+                host = ep.get("status", {}).get("hosts", {}).get("host", "")
+                return name, host
         except (json.JSONDecodeError, IndexError, KeyError):
             pass
-    return ""
+    return "", ""
 
 
 def select_lakebase_interactive(profile_name: str) -> dict:
@@ -844,9 +851,16 @@ def validate_lakebase_autoscaling_endpoint(profile_name: str, endpoint: str) -> 
 
     Uses the postgres API to verify the endpoint.
 
-    Returns a dict with {"endpoint": str} on success, or None on failure.
+    Returns a dict with {"endpoint": str, "host": str} on success, or None on failure.
     """
     print(f"Validating Lakebase autoscaling endpoint '{endpoint}'...")
+
+    # endpoint can be a full resource path (projects/p/branches/b/endpoints/e)
+    # or a legacy short name — build the API path accordingly
+    if endpoint.startswith("projects/"):
+        api_path = f"/api/2.0/postgres/{endpoint}"
+    else:
+        api_path = f"/api/2.0/postgres/endpoints/{endpoint}"
 
     result = run_command(
         [
@@ -855,7 +869,7 @@ def validate_lakebase_autoscaling_endpoint(profile_name: str, endpoint: str) -> 
             profile_name,
             "api",
             "get",
-            f"/api/2.0/postgres/endpoints/{endpoint}",
+            api_path,
             "--output",
             "json",
         ],
@@ -864,7 +878,13 @@ def validate_lakebase_autoscaling_endpoint(profile_name: str, endpoint: str) -> 
 
     if result.returncode == 0:
         print_success(f"Lakebase autoscaling endpoint '{endpoint}' validated")
-        return {"endpoint": endpoint}
+        host = ""
+        try:
+            data = json.loads(result.stdout)
+            host = data.get("status", {}).get("hosts", {}).get("host", "")
+        except (json.JSONDecodeError, KeyError):
+            pass
+        return {"endpoint": endpoint, "host": host}
 
     error_msg = result.stderr.lower() if result.stderr else ""
     if "not found" in error_msg or "404" in error_msg:
@@ -935,6 +955,11 @@ def setup_lakebase(
         update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", autoscaling_endpoint)
         update_env_file("LAKEBASE_INSTANCE_NAME", "")
 
+        pg_host = endpoint_info.get("host", "")
+        if pg_host:
+            update_env_file("PGHOST", pg_host)
+            print_success(f"PGHOST set to '{pg_host}'")
+
         update_env_file("PGUSER", username)
         print_success(f"PGUSER set to '{username}'")
 
@@ -947,6 +972,7 @@ def setup_lakebase(
         return {
             "type": "autoscaling",
             "endpoint": autoscaling_endpoint,
+            "host": pg_host,
         }
 
     # Interactive selection
@@ -981,6 +1007,11 @@ def setup_lakebase(
             sys.exit(1)
         update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", endpoint)
         update_env_file("LAKEBASE_INSTANCE_NAME", "")
+
+        pg_host = endpoint_info.get("host", "")
+        if pg_host:
+            update_env_file("PGHOST", pg_host)
+            print_success(f"PGHOST set to '{pg_host}'")
 
         update_env_file("PGUSER", username)
         print_success(f"PGUSER set to '{username}'")
@@ -1510,7 +1541,7 @@ Examples:
                         if pg.get(key):
                             lakebase_config[key] = pg[key]
 
-                    # Resolve endpoint name for local dev .env via API
+                    # Resolve endpoint path and host for local dev .env via API
                     if "branch" in lakebase_config:
                         branch_path = lakebase_config["branch"]
                         parts = branch_path.split("/")
@@ -1519,18 +1550,23 @@ Examples:
                             and parts[0] == "projects"
                             and parts[2] == "branches"
                         ):
-                            endpoint_name = _fetch_autoscaling_endpoint_name(
+                            endpoint_path, endpoint_host = _fetch_autoscaling_endpoint_info(
                                 profile_name, parts[1], parts[3]
                             )
-                            if endpoint_name:
-                                lakebase_config["endpoint"] = endpoint_name
+                            if endpoint_path:
+                                lakebase_config["endpoint"] = endpoint_path
+                                lakebase_config["host"] = endpoint_host
                                 update_env_file(
-                                    "LAKEBASE_AUTOSCALING_ENDPOINT", endpoint_name
+                                    "LAKEBASE_AUTOSCALING_ENDPOINT", endpoint_path
                                 )
                                 print_success(
-                                    f"Lakebase endpoint '{endpoint_name}' saved to .env"
+                                    f"Lakebase endpoint '{endpoint_path}' saved to .env"
                                 )
+                                if endpoint_host:
+                                    update_env_file("PGHOST", endpoint_host)
+                                    print_success(f"PGHOST set to '{endpoint_host}'")
                     update_env_file("LAKEBASE_INSTANCE_NAME", "")
+                    update_env_file("PGDATABASE", "databricks_postgres")
                     print_success("Using postgres resource from app")
 
                 if "database" in resource:
@@ -1543,6 +1579,16 @@ Examples:
                         }
                         update_env_file("LAKEBASE_INSTANCE_NAME", instance_name)
                         update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", "")
+                        # Resolve PGHOST from the provisioned instance
+                        instance_info = validate_lakebase_instance(
+                            profile_name, instance_name
+                        )
+                        if instance_info:
+                            pg_host = instance_info.get("read_write_dns", "")
+                            if pg_host:
+                                update_env_file("PGHOST", pg_host)
+                                print_success(f"PGHOST set to '{pg_host}'")
+                        update_env_file("PGDATABASE", "databricks_postgres")
                         print_success(
                             f"Using database resource from app: {instance_name}"
                         )
@@ -1558,6 +1604,11 @@ Examples:
         print_step("Getting Databricks username...")
         username = get_databricks_username(profile_name)
         print(f"Username: {username}")
+
+        # Set PGUSER now that we have the username (needed for app-bind and lakebase paths)
+        if lakebase_config:
+            update_env_file("PGUSER", username)
+            print_success(f"PGUSER set to '{username}'")
 
         # Use experiment ID from app if available, otherwise create/reuse one
         if app_experiment_id:

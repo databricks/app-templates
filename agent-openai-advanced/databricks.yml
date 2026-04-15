@@ -25,35 +25,20 @@ resources:
             value_from: "experiment"
           - name: LAKEBASE_AUTOSCALING_ENDPOINT
             value_from: "postgres"
-          # Autoscaling Lakebase config
-          - name: LAKEBASE_AUTOSCALING_PROJECT
-            value: "<your-project-name>"
-          - name: LAKEBASE_AUTOSCALING_BRANCH
-            value: "<your-branch-name>"
           - name: LOG_LEVEL
             value: "INFO"
-          # Use for provisioned lakebase resource
-          # - name: LAKEBASE_INSTANCE_NAME
-          #   value: "<your-lakebase-instance-name>"
       # Resources which this app has access to
       resources:
         - name: 'experiment'
           experiment:
-            experiment_id: ""
+            experiment_id: "3629566331088829"
             permission: 'CAN_MANAGE'
-        # Autoscaling postgres resource
-        # See: .claude/skills/add-tools/examples/lakebase-autoscaling.yaml
         - name: 'postgres'
           postgres:
-            branch: "projects/<your-project-name>/branches/<your-branch-name>"
-            database: "projects/<your-project-name>/branches/<your-branch-name>/databases/<your-database-id>"
+            endpoint: "projects/bryan-agent-integ-tests/branches/test-5b1e7d74/endpoints/primary"
+            branch: "projects/bryan-agent-integ-tests/branches/test-5b1e7d74"
+            database: "projects/bryan-agent-integ-tests/branches/test-5b1e7d74/databases/db-3yt6-hsl9xi9k3t"
             permission: 'CAN_CONNECT_AND_CREATE'
-        # Use for provisioned lakebase resource
-        # - name: 'database'
-        #   database:
-        #     instance_name: '<your-lakebase-instance-name>'
-        #     database_name: 'databricks_postgres'
-        #     permission: 'CAN_CONNECT_AND_CREATE'
 
 targets:
   dev:

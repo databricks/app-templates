@@ -221,8 +221,7 @@ def run_quickstart(
     template_dir: Path,
     profile: str,
     lakebase: str | None = None,
-    lakebase_autoscaling_project: str | None = None,
-    lakebase_autoscaling_branch: str | None = None,
+    lakebase_autoscaling_endpoint: str | None = None,
     app_name: str | None = None,
     skip_lakebase: bool = False,
 ) -> subprocess.CompletedProcess:
@@ -230,10 +229,8 @@ def run_quickstart(
     cmd = ["uv", "run", "quickstart", "--profile", profile]
     if lakebase:
         cmd.extend(["--lakebase-provisioned-name", lakebase])
-    if lakebase_autoscaling_project:
-        cmd.extend(["--lakebase-autoscaling-project", lakebase_autoscaling_project])
-    if lakebase_autoscaling_branch:
-        cmd.extend(["--lakebase-autoscaling-branch", lakebase_autoscaling_branch])
+    if lakebase_autoscaling_endpoint:
+        cmd.extend(["--lakebase-autoscaling-endpoint", lakebase_autoscaling_endpoint])
     if app_name:
         cmd.extend(["--app-name", app_name])
     if skip_lakebase:
@@ -856,16 +853,14 @@ def grant_lakebase_access(
     app_name: str,
     profile: str,
     instance_name: str | None = None,
-    lakebase_project: str | None = None,
-    lakebase_branch: str | None = None,
+    autoscaling_endpoint: str | None = None,
 ):
     """Grant the app's service principal Lakebase access.
 
     Assumes the SP's postgres role already exists (created by the ``database``
     resource in databricks.yml at deploy time).
 
-    Pass either ``instance_name`` (provisioned) or both
-    ``lakebase_project`` and ``lakebase_branch`` (autoscaling).
+    Pass either ``instance_name`` (provisioned) or ``autoscaling_endpoint`` (autoscaling).
     """
     from databricks_ai_bridge.lakebase import SchemaPrivilege, TablePrivilege
 
@@ -881,10 +876,10 @@ def grant_lakebase_access(
 
         if instance_name:
             client_ctx = LakebaseClient(instance_name=instance_name)
-        elif lakebase_project and lakebase_branch:
-            client_ctx = LakebaseClient(project=lakebase_project, branch=lakebase_branch)
+        elif autoscaling_endpoint:
+            client_ctx = LakebaseClient(autoscaling_endpoint=autoscaling_endpoint)
         else:
-            raise ValueError("Either lakebase instance name or autoscaling project/branch required")
+            raise ValueError("Either instance_name or autoscaling_endpoint required")
 
         with client_ctx as client:
             _log(f"Granting lakebase access to SP {sp_client_id}...")

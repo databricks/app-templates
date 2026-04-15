@@ -9,7 +9,10 @@ dependencies = [
     "requests>=2.31",
     "openai>=1.75",
     "databricks-sdk>=0.40",
-    "databricks-ai-bridge[memory]",
-    "databricks-ai-bridge[agent-server]>=0.18.0",
+"databricks-ai-bridge[agent-server] @ git+https://github.com/databricks/databricks-ai-bridge.git@main",
     "ruamel.yaml>=0.18.0",
 ]
+
+
+[tool.hatch.metadata]
+allow-direct-references = true

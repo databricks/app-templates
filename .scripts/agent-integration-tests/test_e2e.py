@@ -95,7 +95,7 @@ def pytest_generate_tests(metafunc):
 
     Lakebase variants are filtered based on available config:
     - Provisioned variants require --lakebase-provisioned-name
-    - Autoscaling variants require --lakebase-autoscaling-project AND --lakebase-autoscaling-branch
+    - Autoscaling variants require --lakebase-autoscaling-endpoint
     If neither is provided, all lakebase variants are excluded.
     """
     if "template" in metafunc.fixturenames:
@@ -106,10 +106,7 @@ def pytest_generate_tests(metafunc):
         )
 
         has_provisioned = bool(config.getoption("--lakebase-provisioned-name"))
-        has_autoscaling = bool(
-            config.getoption("--lakebase-autoscaling-project")
-            and config.getoption("--lakebase-autoscaling-branch")
-        )
+        has_autoscaling = bool(config.getoption("--lakebase-autoscaling-endpoint"))
 
         # Filter out lakebase variants that can't run with available config
         filtered = []
@@ -306,8 +303,7 @@ def _run_deploy(
     lakebase_provisioned_name: str,
     log_file: Path,
     no_destroy: bool = False,
-    lakebase_project: str | None = None,
-    lakebase_branch: str | None = None,
+    lakebase_autoscaling_endpoint: str | None = None,
     server_started_event: threading.Event | None = None,
 ):
     """Deploy phase: bundle deploy -> grant perms -> run -> wait -> query -> destroy."""
@@ -328,8 +324,7 @@ def _run_deploy(
         if template.lakebase_type == "provisioned":
             _grant_kwargs["instance_name"] = lakebase_provisioned_name
         elif template.lakebase_type == "autoscaling":
-            _grant_kwargs["lakebase_project"] = lakebase_project
-            _grant_kwargs["lakebase_branch"] = lakebase_branch
+            _grant_kwargs["autoscaling_endpoint"] = lakebase_autoscaling_endpoint
         if _grant_kwargs:
             grant_lakebase_access(template.dev_app_name, profile, **_grant_kwargs)
     bundle_run_nowait(template_dir, template.app_resource_key, profile)
@@ -356,8 +351,7 @@ def _run_deploy(
                         if template.lakebase_type == "provisioned":
                             _grant_kwargs["instance_name"] = lakebase_provisioned_name
                         elif template.lakebase_type == "autoscaling":
-                            _grant_kwargs["lakebase_project"] = lakebase_project
-                            _grant_kwargs["lakebase_branch"] = lakebase_branch
+                            _grant_kwargs["autoscaling_endpoint"] = lakebase_autoscaling_endpoint
                         if _grant_kwargs:
                             _log("Re-running lakebase grants to cover newly created objects...")
                             grant_lakebase_access(template.dev_app_name, profile, **_grant_kwargs)
@@ -378,14 +372,9 @@ def _run_deploy(
             _log("--no-destroy: skipping bundle destroy")
 
 
-def test_e2e(template, repo_root, profile, lakebase_provisioned_name, lakebase_project, lakebase_branch, request):
+def test_e2e(template, repo_root, profile, lakebase_provisioned_name, lakebase_autoscaling_endpoint, request):
     """Full e2e test: clean -> quickstart -> edits -> (local || deploy) -> revert."""
     os.environ["DATABRICKS_CONFIG_PROFILE"] = profile
-
-    # Generate a unique branch name per test to avoid race conditions when
-    # multiple autoscaling tests create branches in the same project.
-    if template.lakebase_type == "autoscaling":
-        lakebase_branch = f"test-{uuid.uuid4().hex[:8]}"
 
     skip_local = request.config.getoption("--skip-local")
     skip_deploy = request.config.getoption("--skip-deploy")
@@ -440,7 +429,7 @@ def test_e2e(template, repo_root, profile, lakebase_provisioned_name, lakebase_p
                 with phase("deploy"):
                     _run_deploy(
                         template, template_dir, profile, lakebase_provisioned_name,
-                        log_file, no_destroy, lakebase_project, lakebase_branch,
+                        log_file, no_destroy, lakebase_autoscaling_endpoint,
                     )
                 return
             finally:
@@ -458,8 +447,7 @@ def test_e2e(template, repo_root, profile, lakebase_provisioned_name, lakebase_p
                     run_quickstart(
                         template_dir,
                         profile,
-                        lakebase_autoscaling_project=lakebase_project,
-                        lakebase_autoscaling_branch=lakebase_branch,
+                        lakebase_autoscaling_endpoint=lakebase_autoscaling_endpoint,
                     )
                 else:
                     run_quickstart(template_dir, profile, lakebase=lakebase_provisioned_name)
@@ -486,7 +474,7 @@ def test_e2e(template, repo_root, profile, lakebase_provisioned_name, lakebase_p
                 )
                 deploy_future: Future = executor.submit(
                     _run_deploy, template, template_dir, profile, lakebase_provisioned_name,
-                    log_file, no_destroy, lakebase_project, lakebase_branch, server_started,
+                    log_file, no_destroy, lakebase_autoscaling_endpoint, server_started,
                 )
 
                 errors: list[str] = []

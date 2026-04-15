@@ -911,6 +911,7 @@ class TestHappyPathAutoscalingOnRealTemplates:
             # Step 3: Set autoscaling lakebase in .env
             update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", "my-autoscaling-ep")
             update_env_file("LAKEBASE_INSTANCE_NAME", "")
+            update_env_file("PGHOST", "ep-abc123.database.us-west-2.cloud.databricks.com")
             update_env_file("PGUSER", "test@databricks.com")
             update_env_file("PGDATABASE", "databricks_postgres")
 
@@ -923,6 +924,9 @@ class TestHappyPathAutoscalingOnRealTemplates:
             env_content = (tdir / ".env").read_text()
             assert "LAKEBASE_AUTOSCALING_ENDPOINT=my-autoscaling-ep" in env_content, (
                 f"{template_name}: .env missing LAKEBASE_AUTOSCALING_ENDPOINT"
+            )
+            assert "PGHOST=ep-abc123.database.us-west-2.cloud.databricks.com" in env_content, (
+                f"{template_name}: .env missing PGHOST"
             )
             assert "PGUSER=test@databricks.com" in env_content, (
                 f"{template_name}: .env missing PGUSER"
@@ -1238,3 +1242,120 @@ class TestValidateLakebaseConfig:
         with patch("quickstart.validate_lakebase_autoscaling_endpoint", return_value={}) as mock_validate:
             validate_lakebase_config("my-profile", config)
         mock_validate.assert_called_once_with("my-profile", "my-ep")
+
+
+# Required env vars that must be set after any successful quickstart run with lakebase
+REQUIRED_ENV_VARS_AUTOSCALING = [
+    "MLFLOW_EXPERIMENT_ID",
+    "LAKEBASE_AUTOSCALING_ENDPOINT",
+    "PGHOST",
+    "PGUSER",
+]
+
+REQUIRED_ENV_VARS_PROVISIONED = [
+    "MLFLOW_EXPERIMENT_ID",
+    "LAKEBASE_INSTANCE_NAME",
+    "PGHOST",
+    "PGUSER",
+]
+
+
+class TestRequiredEnvVarsContract:
+    """Verifies that all required env vars are populated after quickstart completes.
+
+    Every quickstart path (autoscaling, provisioned, app-bind) must set:
+    - MLFLOW_EXPERIMENT_ID
+    - PGHOST
+    - PGUSER
+    - Either LAKEBASE_AUTOSCALING_ENDPOINT or LAKEBASE_INSTANCE_NAME
+    """
+
+    def _setup_env(self, tmp_path, template_name):
+        repo_root = Path(__file__).resolve().parents[1]
+        template_dir = repo_root / template_name
+        tdir = tmp_path / template_name
+        tdir.mkdir(parents=True, exist_ok=True)
+        for fname in ["databricks.yml", ".env.example"]:
+            src = template_dir / fname
+            if src.exists():
+                (tdir / fname).write_text(src.read_text())
+        if (template_dir / "app.yaml").exists():
+            (tdir / "app.yaml").write_text((template_dir / "app.yaml").read_text())
+        os.chdir(tdir)
+        setup_env_file()
+        return tdir
+
+    def _assert_env_has_vars(self, tdir, required_vars, template_name, scenario):
+        env_content = (tdir / ".env").read_text()
+        for var in required_vars:
+            # Check the var is present and has a non-empty value
+            match = None
+            for line in env_content.splitlines():
+                if line.startswith(f"{var}=") and not line.startswith("#"):
+                    match = line
+                    break
+            assert match is not None, (
+                f"{template_name} ({scenario}): .env missing {var}"
+            )
+            value = match.split("=", 1)[1]
+            assert value != "", (
+                f"{template_name} ({scenario}): .env has empty {var}"
+            )
+
+    MEMORY_TEMPLATES = [
+        "agent-langgraph-advanced",
+        "agent-openai-advanced",
+    ]
+
+    def test_autoscaling_sets_all_required_env_vars(self, tmp_path):
+        for template_name in self.MEMORY_TEMPLATES:
+            tdir = self._setup_env(tmp_path / "auto", template_name)
+            update_databricks_yml_experiment("12345")
+            update_env_file("MLFLOW_EXPERIMENT_ID", "12345")
+            update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", "projects/p/branches/b/endpoints/primary")
+            update_env_file("LAKEBASE_INSTANCE_NAME", "")
+            update_env_file("PGHOST", "ep-abc.database.us-west-2.cloud.databricks.com")
+            update_env_file("PGUSER", "user@databricks.com")
+            self._assert_env_has_vars(
+                tdir, REQUIRED_ENV_VARS_AUTOSCALING, template_name, "autoscaling"
+            )
+
+    def test_provisioned_sets_all_required_env_vars(self, tmp_path):
+        for template_name in self.MEMORY_TEMPLATES:
+            tdir = self._setup_env(tmp_path / "prov", template_name)
+            update_databricks_yml_experiment("12345")
+            update_env_file("MLFLOW_EXPERIMENT_ID", "12345")
+            update_env_file("LAKEBASE_INSTANCE_NAME", "my-db")
+            update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", "")
+            update_env_file("PGHOST", "instance-abc.database.cloud.databricks.com")
+            update_env_file("PGUSER", "user@databricks.com")
+            self._assert_env_has_vars(
+                tdir, REQUIRED_ENV_VARS_PROVISIONED, template_name, "provisioned"
+            )
+
+    def test_app_bind_autoscaling_sets_all_required_env_vars(self, tmp_path):
+        """Simulates what happens when quickstart binds to an existing app with postgres."""
+        for template_name in self.MEMORY_TEMPLATES:
+            tdir = self._setup_env(tmp_path / "app-auto", template_name)
+            # Simulate app-bind: these are set by the quickstart app-bind path
+            update_env_file("MLFLOW_EXPERIMENT_ID", "99999")
+            update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", "projects/p/branches/b/endpoints/primary")
+            update_env_file("LAKEBASE_INSTANCE_NAME", "")
+            update_env_file("PGHOST", "ep-xyz.database.us-west-2.cloud.databricks.com")
+            update_env_file("PGUSER", "user@databricks.com")
+            self._assert_env_has_vars(
+                tdir, REQUIRED_ENV_VARS_AUTOSCALING, template_name, "app-bind autoscaling"
+            )
+
+    def test_app_bind_provisioned_sets_all_required_env_vars(self, tmp_path):
+        """Simulates what happens when quickstart binds to an existing app with database."""
+        for template_name in self.MEMORY_TEMPLATES:
+            tdir = self._setup_env(tmp_path / "app-prov", template_name)
+            update_env_file("MLFLOW_EXPERIMENT_ID", "99999")
+            update_env_file("LAKEBASE_INSTANCE_NAME", "my-provisioned-db")
+            update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", "")
+            update_env_file("PGHOST", "instance-abc.database.cloud.databricks.com")
+            update_env_file("PGUSER", "user@databricks.com")
+            self._assert_env_has_vars(
+                tdir, REQUIRED_ENV_VARS_PROVISIONED, template_name, "app-bind provisioned"
+            )

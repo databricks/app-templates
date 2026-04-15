@@ -1,5 +1,4 @@
 import re
-import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -9,8 +8,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 DEFAULT_PROFILE = "dev"
 DEFAULT_LAKEBASE = "bbqiu"
-DEFAULT_LAKEBASE_PROJECT = "bryan-agent-integ-tests"
-DEFAULT_LAKEBASE_BRANCH = f"test-{uuid.uuid4().hex[:8]}"
+DEFAULT_LAKEBASE_AUTOSCALING_ENDPOINT = "projects/bryan-agent-integ-tests/branches/production/endpoints/primary"
 DEFAULT_GENIE_SPACE_ID = "01f05202dbb51d74b6cccf1b1b1683eb"
 DEFAULT_SERVING_ENDPOINT = "agents_dev-bbqiu-test-bb-2-25"
 

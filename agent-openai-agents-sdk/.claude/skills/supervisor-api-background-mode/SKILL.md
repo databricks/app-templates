@@ -414,7 +414,7 @@ async def stream_handler(
         )
         for event in events:
             yield event
-            await asyncio.sleep(0.03)  # Small delay for visible streaming effect
+            await asyncio.sleep(0.01)  # Small delay for visible streaming effect
     logger.info("[stream] Complete")
 ```
 
@@ -426,7 +426,7 @@ While the response status is `in_progress`, the Supervisor API may return output
 
 ### 2. Simulated streaming for the frontend
 
-The chat frontend expects SSE streaming events. Since background mode returns the full text at once, `output_item_to_stream_events()` chunks text into 1-word deltas and the stream handler adds a 30ms delay between yields to simulate a realistic streaming experience.
+The chat frontend expects SSE streaming events. Since background mode returns the full text at once, `output_item_to_stream_events()` chunks text into 1-word deltas and the stream handler adds a 10ms delay between yields to simulate a realistic streaming experience.
 
 ### 3. MCP server tools require a multi-turn approval flow
 

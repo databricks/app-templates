@@ -16,8 +16,8 @@ Lakebase is used for three distinct purposes across the agent templates:
 | Use case | Templates | Description |
 |----------|-----------|-------------|
 | **Chat UI conversation history** | All templates | The built-in chat UI (`e2e-chatbot-app-next`) can persist conversations across page refreshes and browser sessions. This is purely UI-side persistence — the agent itself is stateless. |
-| **Agent short-term memory** | `agent-langgraph-short-term-memory`, `agent-openai-agents-sdk-short-term-memory` | Conversation threads within a session via `AsyncCheckpointSaver` (LangGraph) or `AsyncDatabricksSession` (OpenAI SDK). The agent remembers what was said earlier in the same conversation. |
-| **Agent long-term memory** | `agent-langgraph-long-term-memory` | User facts across sessions via `AsyncDatabricksStore`. The agent remembers things about a user from previous conversations. |
+| **Agent short-term memory** | `agent-langgraph-advanced`, `agent-openai-advanced` | Conversation threads within a session via `AsyncCheckpointSaver` (LangGraph) or `AsyncDatabricksSession` (OpenAI SDK). The agent remembers what was said earlier in the same conversation. |
+| **Agent long-term memory** | `agent-langgraph-advanced`, `agent-openai-advanced` | User facts across sessions via `AsyncDatabricksStore` (LangGraph) or memory tools (OpenAI SDK). The agent remembers things about a user from previous conversations. |
 
 > **Note:** When the quickstart prompts for Lakebase on a non-memory template, it's for **chat UI history** only — not for the agent. Memory templates always require Lakebase.
 
@@ -30,10 +30,8 @@ Lakebase provides persistent PostgreSQL storage for agents:
 - **Long-running agent persistence** (OpenAI SDK): Background task state via custom SQLAlchemy tables (`agent_server` schema)
 
 > **Note:** For pre-configured memory templates, see:
-> - `agent-langgraph-short-term-memory` - Conversation history within a session
-> - `agent-langgraph-long-term-memory` - User facts that persist across sessions
-> - `agent-openai-agents-sdk-short-term-memory` - Conversation history (OpenAI SDK)
-> - `agent-openai-agents-sdk-long-running-agent` - Background tasks with Lakebase persistence
+> - `agent-langgraph-advanced` - Short-term and long-term memory (LangGraph)
+> - `agent-openai-advanced` - Short-term memory and long-running tasks (OpenAI SDK)
 
 ## Complete Setup Workflow
 
@@ -260,10 +258,8 @@ DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permiss
 
 | Template | `--memory-type` value |
 |----------|-----------------------|
-| `agent-langgraph-short-term-memory` | `langgraph-short-term` |
-| `agent-langgraph-long-term-memory` | `langgraph-long-term` |
-| `agent-openai-agents-sdk-short-term-memory` | `openai-short-term` |
-| `agent-openai-agents-sdk-long-running-agent` | `long-running-agent` |
+| `agent-langgraph-advanced` | `langgraph-advanced` |
+| `agent-openai-advanced` | `openai-advanced` |
 
 The script handles fresh branches gracefully (warns but doesn't fail if tables don't exist yet — they'll be created on first app startup).
 

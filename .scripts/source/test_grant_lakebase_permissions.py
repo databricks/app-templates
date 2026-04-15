@@ -94,6 +94,7 @@ class TestArgumentParsing:
         monkeypatch.delenv("LAKEBASE_INSTANCE_NAME", raising=False)
         monkeypatch.delenv("LAKEBASE_AUTOSCALING_PROJECT", raising=False)
         monkeypatch.delenv("LAKEBASE_AUTOSCALING_BRANCH", raising=False)
+        monkeypatch.delenv("LAKEBASE_AUTOSCALING_ENDPOINT", raising=False)
         with patch("sys.argv", ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
@@ -103,7 +104,18 @@ class TestArgumentParsing:
         monkeypatch.delenv("LAKEBASE_INSTANCE_NAME", raising=False)
         monkeypatch.delenv("LAKEBASE_AUTOSCALING_PROJECT", raising=False)
         monkeypatch.delenv("LAKEBASE_AUTOSCALING_BRANCH", raising=False)
+        monkeypatch.delenv("LAKEBASE_AUTOSCALING_ENDPOINT", raising=False)
         with patch("sys.argv", ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--project", "my-proj"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 1
+
+    def test_autoscaling_endpoint_bad_format_exits(self, monkeypatch):
+        monkeypatch.delenv("LAKEBASE_INSTANCE_NAME", raising=False)
+        monkeypatch.delenv("LAKEBASE_AUTOSCALING_PROJECT", raising=False)
+        monkeypatch.delenv("LAKEBASE_AUTOSCALING_BRANCH", raising=False)
+        monkeypatch.delenv("LAKEBASE_AUTOSCALING_ENDPOINT", raising=False)
+        with patch("sys.argv", ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--autoscaling-endpoint", "bad-format"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code == 1
@@ -116,6 +128,7 @@ def _run_main(argv, monkeypatch):
     monkeypatch.delenv("LAKEBASE_INSTANCE_NAME", raising=False)
     monkeypatch.delenv("LAKEBASE_AUTOSCALING_PROJECT", raising=False)
     monkeypatch.delenv("LAKEBASE_AUTOSCALING_BRANCH", raising=False)
+    monkeypatch.delenv("LAKEBASE_AUTOSCALING_ENDPOINT", raising=False)
 
     mock_client = MagicMock()
     mock_client.__enter__ = MagicMock(return_value=mock_client)
@@ -158,6 +171,16 @@ class TestLakebaseClientConstruction:
         )
         mock_module.LakebaseClient.assert_called_once_with(
             instance_name=None, project="proj-1", branch="production"
+        )
+
+    def test_autoscaling_endpoint_parses_project_branch(self, monkeypatch):
+        mock_client, mock_module = _run_main(
+            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph",
+             "--autoscaling-endpoint", "projects/my-proj/branches/my-branch/endpoints/primary"],
+            monkeypatch,
+        )
+        mock_module.LakebaseClient.assert_called_once_with(
+            instance_name=None, project="my-proj", branch="my-branch"
         )
 
 

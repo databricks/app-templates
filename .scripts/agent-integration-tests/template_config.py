@@ -1,4 +1,5 @@
 import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -160,7 +161,21 @@ def build_templates(
             },
         ),
         ("agent-non-conversational", False, {"is_conversational": False, "has_evaluate": False}),
+        ("agent-migration-from-model-serving", False, {}),
     ]
+
+    # Validate that all templates from the canonical registry are covered
+    sys.path.insert(0, str(REPO_ROOT / ".scripts"))
+    from templates import TEMPLATES as CANONICAL_TEMPLATES
+
+    config_names = {name for name, _, _ in configs}
+    canonical_names = set(CANONICAL_TEMPLATES.keys())
+    missing = canonical_names - config_names
+    if missing:
+        raise ValueError(
+            f"Templates in .scripts/templates.py but not in template_config.py: {missing}. "
+            "Add them to the configs list or explicitly exclude them."
+        )
 
     templates = []
     for name, needs_lakebase, overrides in configs:

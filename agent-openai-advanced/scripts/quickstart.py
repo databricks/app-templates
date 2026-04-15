@@ -932,10 +932,16 @@ def validate_lakebase_autoscaling_endpoint(profile_name: str, endpoint: str) -> 
             except (json.JSONDecodeError, IndexError, KeyError):
                 pass
 
-    if not branch or not database:
+    if not branch:
         print_error(
-            "Could not resolve branch/database from endpoint. "
-            "Please check the endpoint configuration."
+            "Could not resolve branch path from endpoint response "
+            "(missing 'parent' field). Please check the endpoint configuration."
+        )
+        return None
+    if not database:
+        print_error(
+            f"Could not resolve database from branch '{branch}' "
+            "(the databases API returned no results). Please check the endpoint configuration."
         )
         return None
 
@@ -1003,6 +1009,11 @@ def setup_lakebase(
         if pg_host:
             update_env_file("PGHOST", pg_host)
             print_success(f"PGHOST set to '{pg_host}'")
+        else:
+            print_error(
+                "Could not resolve PGHOST from endpoint. "
+                "Local PostgreSQL connections may not work until PGHOST is set manually in .env."
+            )
 
         update_env_file("PGUSER", username)
         print_success(f"PGUSER set to '{username}'")
@@ -1058,6 +1069,11 @@ def setup_lakebase(
         if pg_host:
             update_env_file("PGHOST", pg_host)
             print_success(f"PGHOST set to '{pg_host}'")
+        else:
+            print_error(
+                "Could not resolve PGHOST from endpoint. "
+                "Local PostgreSQL connections may not work until PGHOST is set manually in .env."
+            )
 
         update_env_file("PGUSER", username)
         print_success(f"PGUSER set to '{username}'")

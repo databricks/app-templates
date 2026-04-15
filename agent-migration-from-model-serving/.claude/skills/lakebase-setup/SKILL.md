@@ -245,7 +245,11 @@ DATABRICKS_CONFIG_PROFILE=<profile> databricks apps get <app-name> --output json
 DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permissions.py <sp-client-id> \
   --memory-type <type> --instance-name <name>
 
-# Autoscaling:
+# Autoscaling (endpoint — reads LAKEBASE_AUTOSCALING_ENDPOINT from .env by default):
+DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permissions.py <sp-client-id> \
+  --memory-type <type> --autoscaling-endpoint <endpoint>
+
+# Autoscaling (project + branch):
 DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permissions.py <sp-client-id> \
   --memory-type <type> --project <project> --branch <branch>
 ```

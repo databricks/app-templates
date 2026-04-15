@@ -180,18 +180,11 @@ def uv_sync(template_dir: Path):
     )
 
 
-_GIT_DEP_URL = "git+https://github.com/databricks/databricks-ai-bridge.git@bbqiu/long-running-agent-server"
-
-
 def _strip_uv_sources(template_dir: Path) -> str | None:
-    """Temporarily strip [tool.uv.sources] and swap in git+ dep for deploy.
+    """Temporarily strip [tool.uv.sources] for deploy.
 
     Returns the original content so it can be restored, or None if no change.
     Also deletes uv.lock since it may contain local paths.
-
-    When stripping sources, also replaces plain `databricks-ai-bridge[server]>=X`
-    with the git+ URL so deploy gets the unreleased version (since PyPI won't
-    have the long_running branch).
     """
     pyproject = template_dir / "pyproject.toml"
     if not pyproject.exists():
@@ -201,12 +194,6 @@ def _strip_uv_sources(template_dir: Path) -> str | None:
         r"\n\[tool\.uv\.sources\]\n(?:.*\n)*?(?=\n\[|\Z)",
         "\n",
         original,
-    )
-    # Replace plain version spec with git+ URL for deploy
-    stripped = re.sub(
-        r'"databricks-ai-bridge\[server\][^"]*"',
-        f'"databricks-ai-bridge[server] @ {_GIT_DEP_URL}"',
-        stripped,
     )
     if stripped == original:
         return None

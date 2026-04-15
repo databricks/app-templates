@@ -31,12 +31,12 @@ resources:
       resources:
         - name: 'experiment'
           experiment:
-            experiment_id: "3629566331088830"
+            experiment_id: ""
             permission: 'CAN_MANAGE'
         - name: 'postgres'
           postgres:
-            branch: "projects/bryan-agent-integ-tests/branches/test-18ddbb45"
-            database: "projects/bryan-agent-integ-tests/branches/test-18ddbb45/databases/db-3yt6-hsl9xi9k3t"
+            branch: "<your-lakebase-branch>"
+            database: "<your-lakebase-database>"
             permission: 'CAN_CONNECT_AND_CREATE'
 
 targets:

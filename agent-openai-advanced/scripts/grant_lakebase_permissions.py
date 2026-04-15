@@ -10,7 +10,10 @@ Usage:
     # Provisioned instance:
     uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type <type> --instance-name <name>
 
-    # Autoscaling instance:
+    # Autoscaling instance (endpoint):
+    uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type <type> --autoscaling-endpoint <endpoint>
+
+    # Autoscaling instance (project + branch):
     uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type <type> --project <project> --branch <branch>
 
     # Memory types: langgraph, openai
@@ -161,6 +164,12 @@ def main():
         help="Lakebase instance name for provisioned instances (default: LAKEBASE_INSTANCE_NAME from .env)",
     )
     parser.add_argument(
+        "--autoscaling-endpoint",
+        default=os.getenv("LAKEBASE_AUTOSCALING_ENDPOINT"),
+        help="Lakebase autoscaling endpoint path (default: LAKEBASE_AUTOSCALING_ENDPOINT from .env). "
+        "e.g. projects/<project>/branches/<branch>/endpoints/primary",
+    )
+    parser.add_argument(
         "--project",
         default=os.getenv("LAKEBASE_AUTOSCALING_PROJECT"),
         help="Lakebase autoscaling project name (default: LAKEBASE_AUTOSCALING_PROJECT from .env)",
@@ -175,10 +184,28 @@ def main():
     has_provisioned = bool(args.instance_name)
     has_autoscaling = bool(args.project and args.branch)
 
+    # Parse project/branch from --autoscaling-endpoint if provided
+    if args.autoscaling_endpoint and not has_autoscaling and not has_provisioned:
+        import re
+
+        m = re.match(r"projects/([^/]+)/branches/([^/]+)", args.autoscaling_endpoint)
+        if m:
+            args.project = m.group(1)
+            args.branch = m.group(2)
+            has_autoscaling = True
+        else:
+            print(
+                f"Error: Could not parse project/branch from endpoint '{args.autoscaling_endpoint}'.\n"
+                "  Expected format: projects/<project>/branches/<branch>/endpoints/<endpoint>",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
     if not has_provisioned and not has_autoscaling:
         print(
             "Error: Lakebase connection is required. Provide one of:\n"
             "  Provisioned:  --instance-name <name>  (or set LAKEBASE_INSTANCE_NAME in .env)\n"
+            "  Autoscaling:  --autoscaling-endpoint <endpoint>  (or set LAKEBASE_AUTOSCALING_ENDPOINT in .env)\n"
             "  Autoscaling:  --project <proj> --branch <branch>  (or set LAKEBASE_AUTOSCALING_PROJECT + LAKEBASE_AUTOSCALING_BRANCH in .env)",
             file=sys.stderr,
         )

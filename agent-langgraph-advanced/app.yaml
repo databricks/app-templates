@@ -15,5 +15,4 @@ env:
   - name: MLFLOW_EXPERIMENT_ID
     valueFrom: "experiment"
   - name: LAKEBASE_AUTOSCALING_ENDPOINT
-    value_from: "postgres"
     valueFrom: "postgres"

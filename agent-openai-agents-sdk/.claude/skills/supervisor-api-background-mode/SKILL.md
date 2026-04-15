@@ -5,7 +5,9 @@ description: "Enable Supervisor API background mode for long-running agent tasks
 
 # Supervisor API Background Mode
 
-**Prerequisite:** Follow the **supervisor-api** skill first to set up the Supervisor API with hosted tools and permissions. This skill extends that setup with background mode support.
+**Prerequisites:**
+1. Run **quickstart** first (`uv run quickstart`) — it creates the MLflow experiment and `.env` file needed by the server.
+2. Follow the **supervisor-api** skill to set up the Supervisor API with hosted tools and permissions. This skill extends that setup with background mode support.
 
 Background mode submits the request asynchronously (`background=True`), polls for completion, and streams the result back to the frontend. Use this when agent tasks may exceed HTTP timeout limits (complex multi-tool workflows, large data analysis, etc.).
 
@@ -230,7 +232,7 @@ async def poll_background_response(
         await asyncio.sleep(POLL_INTERVAL)
 
 
-def _chunk_text(text: str, chunk_size: int = 3) -> list[str]:
+def _chunk_text(text: str, chunk_size: int = 1) -> list[str]:
     """Split text into word-based chunks for streaming."""
     words = text.split(" ")
     chunks = []
@@ -299,6 +301,7 @@ Replace the base Supervisor API handlers with async background mode handlers. Th
 Include your `TOOLS` list from the **supervisor-api** skill's Step 2 if you have hosted tools.
 
 ```python
+import asyncio
 import logging
 from typing import AsyncGenerator
 
@@ -411,6 +414,7 @@ async def stream_handler(
         )
         for event in events:
             yield event
+            await asyncio.sleep(0.03)  # Small delay for visible streaming effect
     logger.info("[stream] Complete")
 ```
 
@@ -422,7 +426,7 @@ While the response status is `in_progress`, the Supervisor API may return output
 
 ### 2. Simulated streaming for the frontend
 
-The chat frontend expects SSE streaming events. Since background mode currently returns the full text at once, `output_item_to_stream_events()` chunks text into 3-word deltas to simulate a streaming experience. Streaming will be supported soon to fix this.
+The chat frontend expects SSE streaming events. Since background mode returns the full text at once, `output_item_to_stream_events()` chunks text into 1-word deltas and the stream handler adds a 30ms delay between yields to simulate a realistic streaming experience.
 
 ### 3. MCP server tools require a multi-turn approval flow
 

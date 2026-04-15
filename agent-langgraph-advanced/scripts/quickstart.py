@@ -2,12 +2,29 @@
 """
 Quickstart setup script for Databricks agent development.
 
-This script handles:
-- Checking prerequisites (uv, nvm, Node 20, Databricks CLI)
-- Databricks authentication (OAuth)
-- MLflow experiment creation
-- Environment variable configuration (.env)
-- Lakebase setup (for chat UI conversation history, and agent memory in memory templates)
+NOTE: Keep this comment up to date when editing the script.
+
+Steps:
+  1. Check prerequisites — uv, Node.js (>=20.19/22.12/23), npm, Databricks CLI.
+     Exit if any are missing or Node version is unsupported by Vite.
+  2. Set up .env — copy .env.example → .env (or create a minimal one).
+  3. Databricks auth — use --profile if provided, otherwise list existing profiles
+     for interactive selection, or create a new DEFAULT profile with --host / prompt.
+     Validate the profile; authenticate via OAuth if invalid. Save profile to .env.
+  4. App binding (optional) — if --app-name is provided (or entered interactively),
+     update databricks.yml with the app name, then fetch the app's resources via API.
+     If the app has an experiment resource, use that ID instead of creating a new one.
+     If the app has a postgres or database resource, build the lakebase config from it
+     (and resolve the endpoint name for local dev .env via the API).
+  5. MLflow experiment — if not already set from app resources (step 4), get username,
+     seed MLFLOW_EXPERIMENT_ID from databricks.yml if not in .env, then create or
+     reuse an experiment. Update .env and databricks.yml.
+  6. Lakebase setup — skip if already resolved from app resources (step 4).
+     Otherwise: if the template requires Lakebase (has LAKEBASE_* in databricks.yml)
+     or CLI flags are provided, set up via CLI args or interactive selection.
+     For non-memory templates, optionally offer Lakebase for chat UI history.
+     Update databricks.yml resources and env vars, and app.yaml env vars.
+  7. Print summary with links to experiment and Lakebase.
 
 Usage:
     uv run quickstart [OPTIONS]
@@ -709,14 +726,11 @@ def _fetch_autoscaling_endpoint_name(profile_name: str, project: str, branch: st
             data = json.loads(result.stdout)
             endpoints = data.get("endpoints", [])
             if endpoints:
-                endpoint_name = endpoints[0].get("name", "")
-                if endpoint_name:
-                    # Extract just the endpoint ID from the full path
-                    # e.g. "projects/p/branches/b/endpoints/ep-name" -> "ep-name"
-                    parts = endpoint_name.split("/endpoints/")
-                    if len(parts) == 2:
-                        return parts[1]
-                    return endpoint_name
+                # Use the uid field (e.g. "ep-steep-lab-d185d9o5") which is
+                # the value the SDK needs to resolve the endpoint host.
+                uid = endpoints[0].get("uid", "")
+                if uid:
+                    return uid
         except (json.JSONDecodeError, IndexError, KeyError):
             pass
     return ""
@@ -1461,30 +1475,8 @@ Examples:
         # Step 3: Databricks authentication
         profile_name = setup_databricks_auth(args.profile, args.host)
 
-        # Step 4: Get username and create MLflow experiment
-        print_step("Getting Databricks username...")
-        username = get_databricks_username(profile_name)
-        print(f"Username: {username}")
-
-        # Seed MLFLOW_EXPERIMENT_ID from databricks.yml if not already in .env.
-        # This handles the case where the user created the app via the Databricks UI,
-        # downloaded the template (which has the experiment_id in databricks.yml already),
-        # and is now running quickstart for the first time locally.
-        if not get_env_value("MLFLOW_EXPERIMENT_ID"):
-            yml_experiment_id = get_databricks_yml_experiment_id()
-            if yml_experiment_id:
-                update_env_file("MLFLOW_EXPERIMENT_ID", yml_experiment_id)
-
-        experiment_name, experiment_id = create_mlflow_experiment(profile_name, username)
-
-        # Step 5: Update .env with experiment ID
-        update_env_file("MLFLOW_EXPERIMENT_ID", experiment_id)
-        print_success("Updated .env with experiment ID")
-
-        # Step 5b: Update databricks.yml to use literal experiment ID
-        update_databricks_yml_experiment(experiment_id)
-
-        # Step 5c: Existing app binding (optional)
+        # Step 4: Existing app binding (optional) — do this early so app resources
+        # (experiment, lakebase) take precedence over fresh creation.
         app_name = args.app_name
         if not app_name and sys.stdin.isatty():
             print_step("Optional: Bind to an existing Databricks app")
@@ -1498,6 +1490,7 @@ Examples:
 
         bundle_key = ""
         lakebase_config = None
+        app_experiment_id = None
         if app_name:
             bundle_key = update_databricks_yml_app_name(app_name)
 
@@ -1507,20 +1500,18 @@ Examples:
                 if "experiment" in resource:
                     app_exp_id = resource["experiment"].get("experiment_id", "")
                     if app_exp_id:
-                        experiment_id = app_exp_id
-                        update_env_file("MLFLOW_EXPERIMENT_ID", experiment_id)
-                        update_databricks_yml_experiment(experiment_id)
-                        print_success(f"Using experiment ID from app: {app_exp_id}")
+                        app_experiment_id = app_exp_id
+                        print_success(f"Found experiment ID from app: {app_exp_id}")
 
                 if "postgres" in resource:
                     pg = resource["postgres"]
                     lakebase_config = {"type": "autoscaling"}
-                    for key in ("endpoint", "branch", "database"):
+                    for key in ("branch", "database"):
                         if pg.get(key):
                             lakebase_config[key] = pg[key]
 
-                    # Try to resolve endpoint name for local dev .env
-                    if "endpoint" not in lakebase_config and "branch" in lakebase_config:
+                    # Resolve endpoint name for local dev .env via API
+                    if "branch" in lakebase_config:
                         branch_path = lakebase_config["branch"]
                         parts = branch_path.split("/")
                         if (
@@ -1532,16 +1523,13 @@ Examples:
                                 profile_name, parts[1], parts[3]
                             )
                             if endpoint_name:
+                                lakebase_config["endpoint"] = endpoint_name
                                 update_env_file(
                                     "LAKEBASE_AUTOSCALING_ENDPOINT", endpoint_name
                                 )
                                 print_success(
                                     f"Lakebase endpoint '{endpoint_name}' saved to .env"
                                 )
-                    elif "endpoint" in lakebase_config:
-                        update_env_file(
-                            "LAKEBASE_AUTOSCALING_ENDPOINT", lakebase_config["endpoint"]
-                        )
                     update_env_file("LAKEBASE_INSTANCE_NAME", "")
                     print_success("Using postgres resource from app")
 
@@ -1565,6 +1553,42 @@ Examples:
                     f"  databricks bundle deployment bind {bundle_key} {app_name} --auto-approve"
                 )
             print(f"  databricks bundle deploy")
+
+        # Step 5: Get username and create MLflow experiment
+        print_step("Getting Databricks username...")
+        username = get_databricks_username(profile_name)
+        print(f"Username: {username}")
+
+        # Use experiment ID from app if available, otherwise create/reuse one
+        if app_experiment_id:
+            experiment_id = app_experiment_id
+            experiment_name = experiment_id
+            # Try to resolve experiment name for display
+            w = get_workspace_client(profile_name)
+            if w:
+                try:
+                    exp = w.experiments.get_experiment(experiment_id=experiment_id).experiment
+                    if exp and exp.name:
+                        experiment_name = exp.name
+                except Exception:
+                    pass
+            update_env_file("MLFLOW_EXPERIMENT_ID", experiment_id)
+            update_databricks_yml_experiment(experiment_id)
+            print_success(f"Using experiment ID from app: {experiment_id}")
+        else:
+            # Seed MLFLOW_EXPERIMENT_ID from databricks.yml if not already in .env.
+            # This handles the case where the user created the app via the Databricks UI,
+            # downloaded the template (which has the experiment_id in databricks.yml already),
+            # and is now running quickstart for the first time locally.
+            if not get_env_value("MLFLOW_EXPERIMENT_ID"):
+                yml_experiment_id = get_databricks_yml_experiment_id()
+                if yml_experiment_id:
+                    update_env_file("MLFLOW_EXPERIMENT_ID", yml_experiment_id)
+
+            experiment_name, experiment_id = create_mlflow_experiment(profile_name, username)
+            update_env_file("MLFLOW_EXPERIMENT_ID", experiment_id)
+            print_success("Updated .env with experiment ID")
+            update_databricks_yml_experiment(experiment_id)
 
         # Step 6: Lakebase setup
         # lakebase_config may already be set from app resources above

@@ -190,5 +190,6 @@ mlflow.db
 !.claude/skills/agent-openai-memory/
 !.claude/skills/migrate-from-model-serving/
 !.claude/skills/enable-feedback/
+!.claude/skills/long-running-server/
 !.claude/AGENTS.md
 !.claude/CLAUDE.md

@@ -17,8 +17,7 @@ dependencies = [
     "databricks-openai[memory]>=0.13.0",
     "databricks-sdk>=0.79.0",
     "databricks-agents>=1.9.3",
-    "databricks-ai-bridge[agent-server]>=0.18.0",
-]
+"databricks-ai-bridge[agent-server] @ git+https://github.com/databricks/databricks-ai-bridge.git@main",]
 
 [build-system]
 requires = ["hatchling"]
@@ -26,6 +25,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["agent_server", "scripts"]
+
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [dependency-groups]
 dev = [

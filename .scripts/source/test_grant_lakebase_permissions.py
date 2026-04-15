@@ -26,41 +26,36 @@ from grant_lakebase_permissions import (
 # ---------------------------------------------------------------------------
 class TestDataStructures:
     def test_memory_type_schemas_has_all_types(self):
-        assert set(MEMORY_TYPE_SCHEMAS.keys()) == {
-            "langgraph-short-term",
-            "langgraph-long-term",
-            "openai-short-term",
-            "long-running-agent",
-        }
+        assert set(MEMORY_TYPE_SCHEMAS.keys()) == {"langgraph", "openai"}
 
-    def test_langgraph_short_term_tables(self):
-        tables = MEMORY_TYPE_SCHEMAS["langgraph-short-term"]["public"]
-        assert "checkpoint_migrations" in tables
-        assert "checkpoint_writes" in tables
-        assert "checkpoints" in tables
-        assert "checkpoint_blobs" in tables
+    def test_langgraph_tables(self):
+        schemas = MEMORY_TYPE_SCHEMAS["langgraph"]
+        public_tables = schemas["public"]
+        assert "checkpoint_migrations" in public_tables
+        assert "checkpoint_writes" in public_tables
+        assert "checkpoints" in public_tables
+        assert "checkpoint_blobs" in public_tables
+        assert "store_migrations" in public_tables
+        assert "store" in public_tables
+        assert "store_vectors" in public_tables
+        assert "vector_migrations" in public_tables
+        agent_tables = schemas["agent_server"]
+        assert "responses" in agent_tables
+        assert "messages" in agent_tables
 
-    def test_langgraph_long_term_tables(self):
-        tables = MEMORY_TYPE_SCHEMAS["langgraph-long-term"]["public"]
-        assert "store_migrations" in tables
-        assert "store" in tables
-        assert "store_vectors" in tables
-        assert "vector_migrations" in tables
+    def test_openai_tables(self):
+        schemas = MEMORY_TYPE_SCHEMAS["openai"]
+        public_tables = schemas["public"]
+        assert "agent_sessions" in public_tables
+        assert "agent_messages" in public_tables
+        agent_tables = schemas["agent_server"]
+        assert "responses" in agent_tables
+        assert "messages" in agent_tables
 
-    def test_openai_short_term_tables(self):
-        tables = MEMORY_TYPE_SCHEMAS["openai-short-term"]["public"]
-        assert "agent_sessions" in tables
-        assert "agent_messages" in tables
-
-    def test_long_running_agent_tables(self):
-        tables = MEMORY_TYPE_SCHEMAS["long-running-agent"]["agent_server"]
-        assert "responses" in tables
-        assert "messages" in tables
-
-    def test_only_openai_and_long_running_need_sequences(self):
+    def test_needs_sequences(self):
         assert NEEDS_SEQUENCES == {
-            "openai-short-term": ["public"],
-            "long-running-agent": ["agent_server"],
+            "openai": ["public", "agent_server"],
+            "langgraph": ["agent_server"],
         }
 
     def test_shared_schemas(self):
@@ -72,20 +67,13 @@ class TestDataStructures:
     def test_shared_sequence_schemas(self):
         assert "drizzle" in SHARED_SEQUENCE_SCHEMAS
 
-    def test_no_table_overlap_between_memory_types(self):
-        all_tables = []
-        for schema_tables in MEMORY_TYPE_SCHEMAS.values():
-            for tables in schema_tables.values():
-                all_tables.extend(tables)
-        assert len(all_tables) == len(set(all_tables)), "Tables should not overlap between memory types"
-
 
 # ---------------------------------------------------------------------------
 # Argument parsing / validation tests
 # ---------------------------------------------------------------------------
 class TestArgumentParsing:
     def test_missing_sp_client_id_exits(self):
-        with patch("sys.argv", ["grant_lakebase_permissions.py", "--memory-type", "langgraph-short-term", "--instance-name", "db"]):
+        with patch("sys.argv", ["grant_lakebase_permissions.py", "--memory-type", "langgraph", "--instance-name", "db"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code == 2  # argparse error
@@ -103,21 +91,19 @@ class TestArgumentParsing:
             assert exc_info.value.code == 2
 
     def test_no_connection_info_exits(self, monkeypatch):
-        """Neither --instance-name nor --project/--branch provided."""
         monkeypatch.delenv("LAKEBASE_INSTANCE_NAME", raising=False)
         monkeypatch.delenv("LAKEBASE_AUTOSCALING_PROJECT", raising=False)
         monkeypatch.delenv("LAKEBASE_AUTOSCALING_BRANCH", raising=False)
-        with patch("sys.argv", ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph-short-term"]):
+        with patch("sys.argv", ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code == 1
 
     def test_partial_autoscaling_exits(self, monkeypatch):
-        """Only --project without --branch should fail."""
         monkeypatch.delenv("LAKEBASE_INSTANCE_NAME", raising=False)
         monkeypatch.delenv("LAKEBASE_AUTOSCALING_PROJECT", raising=False)
         monkeypatch.delenv("LAKEBASE_AUTOSCALING_BRANCH", raising=False)
-        with patch("sys.argv", ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph-short-term", "--project", "my-proj"]):
+        with patch("sys.argv", ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--project", "my-proj"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code == 1
@@ -127,12 +113,13 @@ class TestArgumentParsing:
 # Helper to build a mock LakebaseClient and run main()
 # ---------------------------------------------------------------------------
 def _run_main(argv, monkeypatch):
-    """Run main() with mocked LakebaseClient, return (mock_client, mock_module)."""
     monkeypatch.delenv("LAKEBASE_INSTANCE_NAME", raising=False)
     monkeypatch.delenv("LAKEBASE_AUTOSCALING_PROJECT", raising=False)
     monkeypatch.delenv("LAKEBASE_AUTOSCALING_BRANCH", raising=False)
 
     mock_client = MagicMock()
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
     mock_module = MagicMock()
     mock_module.LakebaseClient.return_value = mock_client
     mock_module.SchemaPrivilege.USAGE = "USAGE"
@@ -157,7 +144,7 @@ def _run_main(argv, monkeypatch):
 class TestLakebaseClientConstruction:
     def test_provisioned_client(self, monkeypatch):
         mock_client, mock_module = _run_main(
-            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph-short-term", "--instance-name", "my-db"],
+            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--instance-name", "my-db"],
             monkeypatch,
         )
         mock_module.LakebaseClient.assert_called_once_with(
@@ -166,7 +153,7 @@ class TestLakebaseClientConstruction:
 
     def test_autoscaling_client(self, monkeypatch):
         mock_client, mock_module = _run_main(
-            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph-short-term", "--project", "proj-1", "--branch", "production"],
+            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--project", "proj-1", "--branch", "production"],
             monkeypatch,
         )
         mock_module.LakebaseClient.assert_called_once_with(
@@ -179,125 +166,93 @@ class TestLakebaseClientConstruction:
 # ---------------------------------------------------------------------------
 class TestGrantCalls:
     def _get_granted_tables(self, mock_client):
-        """Extract all tables from grant_table calls."""
         tables = []
         for c in mock_client.grant_table.call_args_list:
             tables.extend(c.kwargs.get("tables", c[1].get("tables", [])) if c.kwargs else c[1].get("tables", []))
         return tables
 
     def _get_granted_schemas(self, mock_client):
-        """Extract all schemas from grant_schema calls."""
         schemas = []
         for c in mock_client.grant_schema.call_args_list:
             schemas.extend(c.kwargs.get("schemas", c[1].get("schemas", [])) if c.kwargs else c[1].get("schemas", []))
         return schemas
 
-    def test_langgraph_short_term_grants(self, monkeypatch):
+    def test_langgraph_grants(self, monkeypatch):
         mock_client, _ = _run_main(
-            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph-short-term", "--instance-name", "db"],
+            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--instance-name", "db"],
             monkeypatch,
         )
         tables = self._get_granted_tables(mock_client)
-        # Should have public schema tables
+        # Short-term (checkpoint) tables
         assert "public.checkpoint_migrations" in tables
         assert "public.checkpoints" in tables
         assert "public.checkpoint_writes" in tables
         assert "public.checkpoint_blobs" in tables
-        # Should NOT have long-term or openai tables
-        assert not any("store" in t for t in tables if "drizzle" not in t)
-        assert "public.agent_sessions" not in tables
-        # Should have shared schema tables
-        assert "ai_chatbot.Chat" in tables
-        assert "drizzle.__drizzle_migrations" in tables
-        # Should have shared sequence grants (drizzle) only
-        assert mock_client.grant_all_sequences_in_schema.call_count == 1
-        seq_call = mock_client.grant_all_sequences_in_schema.call_args
-        assert seq_call.kwargs["schemas"] == ["drizzle"]
-
-    def test_langgraph_long_term_grants(self, monkeypatch):
-        mock_client, _ = _run_main(
-            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph-long-term", "--instance-name", "db"],
-            monkeypatch,
-        )
-        tables = self._get_granted_tables(mock_client)
+        # Long-term (store) tables
         assert "public.store_migrations" in tables
         assert "public.store" in tables
         assert "public.store_vectors" in tables
         assert "public.vector_migrations" in tables
-        # Should NOT have short-term tables
-        assert "public.checkpoints" not in tables
-        assert "public.agent_sessions" not in tables
-        # Should have shared schemas
-        assert "ai_chatbot.Chat" in tables
-        # Should have shared sequence grants (drizzle) only
-        assert mock_client.grant_all_sequences_in_schema.call_count == 1
-        seq_call = mock_client.grant_all_sequences_in_schema.call_args
-        assert seq_call.kwargs["schemas"] == ["drizzle"]
-
-    def test_openai_short_term_grants(self, monkeypatch):
-        mock_client, _ = _run_main(
-            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "openai-short-term", "--instance-name", "db"],
-            monkeypatch,
-        )
-        tables = self._get_granted_tables(mock_client)
-        assert "public.agent_sessions" in tables
-        assert "public.agent_messages" in tables
-        # Should NOT have langgraph tables
-        assert "public.checkpoints" not in tables
-        assert "public.store" not in tables
-        # Should have shared schemas
-        assert "ai_chatbot.Chat" in tables
-        # Should have sequence grants: drizzle (shared) + public (per-type)
-        assert mock_client.grant_all_sequences_in_schema.call_count == 2
-        seq_schemas = [c.kwargs["schemas"][0] for c in mock_client.grant_all_sequences_in_schema.call_args_list]
-        assert "drizzle" in seq_schemas
-        assert "public" in seq_schemas
-
-    def test_long_running_agent_grants(self, monkeypatch):
-        mock_client, _ = _run_main(
-            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "long-running-agent", "--instance-name", "db"],
-            monkeypatch,
-        )
-        tables = self._get_granted_tables(mock_client)
+        # Agent server tables
         assert "agent_server.responses" in tables
         assert "agent_server.messages" in tables
-        # Should NOT have langgraph or openai tables
-        assert "public.checkpoints" not in tables
+        # Should NOT have openai tables
         assert "public.agent_sessions" not in tables
-        # Should have shared schemas
+        # Shared schema tables
         assert "ai_chatbot.Chat" in tables
-        # Should have sequence grants: drizzle (shared) + agent_server (per-type)
+        assert "drizzle.__drizzle_migrations" in tables
+        # Sequence grants: drizzle (shared) + agent_server (per-type)
         assert mock_client.grant_all_sequences_in_schema.call_count == 2
         seq_schemas = [c.kwargs["schemas"][0] for c in mock_client.grant_all_sequences_in_schema.call_args_list]
         assert "drizzle" in seq_schemas
         assert "agent_server" in seq_schemas
 
+    def test_openai_grants(self, monkeypatch):
+        mock_client, _ = _run_main(
+            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "openai", "--instance-name", "db"],
+            monkeypatch,
+        )
+        tables = self._get_granted_tables(mock_client)
+        # OpenAI session tables
+        assert "public.agent_sessions" in tables
+        assert "public.agent_messages" in tables
+        # Agent server tables
+        assert "agent_server.responses" in tables
+        assert "agent_server.messages" in tables
+        # Should NOT have langgraph tables
+        assert "public.checkpoints" not in tables
+        assert "public.store" not in tables
+        # Shared schema tables
+        assert "ai_chatbot.Chat" in tables
+        # Sequence grants: drizzle (shared) + public + agent_server (per-type)
+        assert mock_client.grant_all_sequences_in_schema.call_count == 3
+        seq_schemas = [c.kwargs["schemas"][0] for c in mock_client.grant_all_sequences_in_schema.call_args_list]
+        assert "drizzle" in seq_schemas
+        assert "public" in seq_schemas
+        assert "agent_server" in seq_schemas
+
     def test_schemas_granted_for_all_types(self, monkeypatch):
-        """All memory types should grant their own schemas + ai_chatbot + drizzle."""
         for memory_type in MEMORY_TYPE_SCHEMAS:
             mock_client, _ = _run_main(
                 ["grant_lakebase_permissions.py", "sp-123", "--memory-type", memory_type, "--instance-name", "db"],
                 monkeypatch,
             )
             schemas = self._get_granted_schemas(mock_client)
-            # All types get shared schemas
             assert "ai_chatbot" in schemas, f"{memory_type}: missing ai_chatbot schema"
             assert "drizzle" in schemas, f"{memory_type}: missing drizzle schema"
-            # Each type gets its own schemas
             for schema in MEMORY_TYPE_SCHEMAS[memory_type]:
                 assert schema in schemas, f"{memory_type}: missing {schema} schema"
 
     def test_role_created_with_sp_id(self, monkeypatch):
         mock_client, _ = _run_main(
-            ["grant_lakebase_permissions.py", "sp-abc-123", "--memory-type", "langgraph-short-term", "--instance-name", "db"],
+            ["grant_lakebase_permissions.py", "sp-abc-123", "--memory-type", "langgraph", "--instance-name", "db"],
             monkeypatch,
         )
         mock_client.create_role.assert_called_once_with("sp-abc-123", "SERVICE_PRINCIPAL")
 
     def test_grantee_is_sp_id(self, monkeypatch):
-        """All grant calls should use the SP client ID as grantee."""
         mock_client, _ = _run_main(
-            ["grant_lakebase_permissions.py", "sp-xyz", "--memory-type", "langgraph-short-term", "--instance-name", "db"],
+            ["grant_lakebase_permissions.py", "sp-xyz", "--memory-type", "langgraph", "--instance-name", "db"],
             monkeypatch,
         )
         for c in mock_client.grant_schema.call_args_list:
@@ -306,9 +261,8 @@ class TestGrantCalls:
             assert c.kwargs["grantee"] == "sp-xyz"
 
     def test_table_privileges(self, monkeypatch):
-        """All grant_table calls should request SELECT, INSERT, UPDATE, DELETE."""
         mock_client, _ = _run_main(
-            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph-short-term", "--instance-name", "db"],
+            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--instance-name", "db"],
             monkeypatch,
         )
         for c in mock_client.grant_table.call_args_list:
@@ -319,9 +273,8 @@ class TestGrantCalls:
             assert "DELETE" in privs
 
     def test_schema_privileges(self, monkeypatch):
-        """All grant_schema calls should request USAGE, CREATE."""
         mock_client, _ = _run_main(
-            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph-short-term", "--instance-name", "db"],
+            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--instance-name", "db"],
             monkeypatch,
         )
         for c in mock_client.grant_schema.call_args_list:
@@ -335,56 +288,53 @@ class TestGrantCalls:
 # ---------------------------------------------------------------------------
 class TestErrorHandling:
     def test_role_already_exists_continues(self, monkeypatch):
-        """'already exists' error on create_role should be ignored."""
         mock_client, mock_module = _run_main(
-            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph-short-term", "--instance-name", "db"],
+            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--instance-name", "db"],
             monkeypatch,
         )
-        # Verify it ran to completion (grant_schema was called)
         assert mock_client.grant_schema.called
 
-        # Now test with "already exists" exception
         mock_module.LakebaseClient.return_value.create_role.side_effect = Exception("Role already exists")
         mock_client2, _ = _run_main(
-            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph-short-term", "--instance-name", "db"],
+            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--instance-name", "db"],
             monkeypatch,
         )
-        # Should still proceed to grants
         assert mock_client2.grant_schema.called
 
     def test_role_creation_other_error_raises(self, monkeypatch):
-        """Non-'already exists' errors on create_role should propagate."""
         monkeypatch.delenv("LAKEBASE_INSTANCE_NAME", raising=False)
         monkeypatch.delenv("LAKEBASE_AUTOSCALING_PROJECT", raising=False)
         monkeypatch.delenv("LAKEBASE_AUTOSCALING_BRANCH", raising=False)
 
         mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.create_role.side_effect = Exception("Connection refused")
         mock_module = MagicMock()
         mock_module.LakebaseClient.return_value = mock_client
 
-        with patch("sys.argv", ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph-short-term", "--instance-name", "db"]):
+        with patch("sys.argv", ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--instance-name", "db"]):
             with patch.dict("sys.modules", {"databricks_ai_bridge.lakebase": mock_module}):
                 with pytest.raises(Exception, match="Connection refused"):
                     main()
 
     def test_grant_failures_do_not_abort(self, monkeypatch):
-        """Warnings on grant_schema/grant_table should not stop execution."""
         monkeypatch.delenv("LAKEBASE_INSTANCE_NAME", raising=False)
         monkeypatch.delenv("LAKEBASE_AUTOSCALING_PROJECT", raising=False)
         monkeypatch.delenv("LAKEBASE_AUTOSCALING_BRANCH", raising=False)
 
         mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.grant_schema.side_effect = Exception("schema not found")
         mock_client.grant_table.side_effect = Exception("table not found")
         mock_module = MagicMock()
         mock_module.LakebaseClient.return_value = mock_client
 
-        with patch("sys.argv", ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph-short-term", "--instance-name", "db"]):
+        with patch("sys.argv", ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--instance-name", "db"]):
             with patch.dict("sys.modules", {"databricks_ai_bridge.lakebase": mock_module}):
-                # Should NOT raise - grant failures are warnings
                 main()
 
-        # All schemas should have been attempted
-        assert mock_client.grant_schema.call_count == 3  # public, ai_chatbot, drizzle
-        assert mock_client.grant_table.call_count == 3
+        # langgraph has: public, agent_server, ai_chatbot, drizzle = 4 schemas
+        assert mock_client.grant_schema.call_count == 4
+        assert mock_client.grant_table.call_count == 4

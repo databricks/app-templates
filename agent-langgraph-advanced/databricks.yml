@@ -26,27 +26,18 @@ resources:
             value_from: "postgres"
           - name: DATABRICKS_EMBEDDING_ENDPOINT
             value: "databricks-gte-large-en"
-          # Use for provisioned lakebase resource
-          # - name: LAKEBASE_INSTANCE_NAME
-          #   value: "<your-lakebase-instance-name>"
 
       # Resources which this app has access to
       resources:
         - name: 'experiment'
           experiment:
-            experiment_id: ""
+            experiment_id: "3629566331088830"
             permission: 'CAN_MANAGE'
-        # Autoscaling postgres resource
         - name: 'postgres'
           postgres:
-            endpoint: "<your-autoscaling-endpoint>"
+            branch: "projects/bryan-agent-integ-tests/branches/test-18ddbb45"
+            database: "projects/bryan-agent-integ-tests/branches/test-18ddbb45/databases/db-3yt6-hsl9xi9k3t"
             permission: 'CAN_CONNECT_AND_CREATE'
-        # Use for provisioned lakebase resource
-        # - name: 'database'
-        #   database:
-        #     instance_name: '<your-lakebase-instance-name>'
-        #     database_name: 'databricks_postgres'
-        #     permission: 'CAN_CONNECT_AND_CREATE'
 
 targets:
   dev:

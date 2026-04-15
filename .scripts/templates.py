@@ -14,14 +14,14 @@ TEMPLATES = {
         "sdk": "openai",
         "bundle_name": "agent_openai_agents_sdk",
     },
-    "agent-openai-agents-sdk-multiagent": {
-        "sdk": "openai",
-        "bundle_name": "agent_openai_agents_sdk_multiagent",
-    },
     "agent-openai-advanced": {
         "sdk": "openai",
         "bundle_name": "agent_openai_advanced",
         "has_memory": True,
+    },
+    "agent-openai-agents-sdk-multiagent": {
+        "sdk": "openai",
+        "bundle_name": "agent_openai_agents_sdk_multiagent",
     },
     "agent-non-conversational": {
         "sdk": "langgraph",

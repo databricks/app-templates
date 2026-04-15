@@ -119,5 +119,5 @@ For local function tools, see `create-tools` skill > `examples/local-python-tool
 - **MLflow experiment**: Already configured in template, no action needed
 - **Multiple resources**: Add multiple entries under `resources:` list
 - **Permission types vary**: Each resource type has specific permission values
-- **Deploy + Run after changes**: Run both `databricks bundle deploy` AND `databricks bundle run agent_langgraph_long_term_memory`
+- **Deploy + Run after changes**: Run both `databricks bundle deploy` AND `databricks bundle run agent_langgraph_advanced`
 - **value_from matching**: Ensure `config.env` `value_from` values match `databricks.yml` resource `name` values

@@ -5,8 +5,9 @@ description: "Add memory capabilities to your agent. Use when: (1) User asks abo
 
 # Adding Memory to Your Agent
 
-> **Note:** This template does not include memory by default. Use this skill to **add memory capabilities**. For a pre-configured memory template, see:
-> - [agent-langgraph-advanced](https://github.com/databricks/app-templates/tree/main/agent-langgraph-advanced) - Short-term and long-term memory with long-running background tasks
+> **Note:** This template does not include memory by default. Use this skill to **add memory capabilities**. For pre-configured memory templates, see:
+> - [agent-langgraph-short-term-memory](https://github.com/databricks/app-templates/tree/main/agent-langgraph-short-term-memory) - Conversation history within a session
+> - [agent-langgraph-long-term-memory](https://github.com/databricks/app-templates/tree/main/agent-langgraph-long-term-memory) - User facts that persist across sessions
 
 ## Memory Types
 
@@ -137,8 +138,8 @@ For implementations in the pre-built templates:
 
 | File | Description |
 |------|-------------|
-| [`agent-langgraph-advanced/agent_server/utils_memory.py`](https://github.com/databricks/app-templates/tree/main/agent-langgraph-advanced/agent_server/utils_memory.py) | Memory tools factory, helpers, error handling |
-| [`agent-langgraph-advanced/agent_server/agent.py`](https://github.com/databricks/app-templates/tree/main/agent-langgraph-advanced/agent_server/agent.py) | Integration with agent, store initialization |
+| [`agent-langgraph-long-term-memory/agent_server/utils_memory.py`](https://github.com/databricks/app-templates/tree/main/agent-langgraph-long-term-memory/agent_server/utils_memory.py) | Memory tools factory, helpers, error handling |
+| [`agent-langgraph-long-term-memory/agent_server/agent.py`](https://github.com/databricks/app-templates/tree/main/agent-langgraph-long-term-memory/agent_server/agent.py) | Integration with agent, store initialization |
 
 Key functions:
 - `memory_tools()` - Factory returning get/save/delete tools
@@ -286,7 +287,7 @@ async with AsyncCheckpointSaver(instance_name=LAKEBASE_INSTANCE_NAME) as checkpo
         yield event
 ```
 
-See the [agent-langgraph-advanced](https://github.com/databricks/app-templates/tree/main/agent-langgraph-advanced) template for a complete implementation.
+See the [agent-langgraph-short-term-memory](https://github.com/databricks/app-templates/tree/main/agent-langgraph-short-term-memory) template for a complete implementation.
 
 ---
 
@@ -374,7 +375,8 @@ For fully configured implementations without manual setup:
 
 | Template | Memory Type | Key Features |
 |----------|-------------|--------------|
-| [agent-langgraph-advanced](https://github.com/databricks/app-templates/tree/main/agent-langgraph-advanced) | Short-term + Long-term | AsyncCheckpointSaver, AsyncDatabricksStore, memory tools |
+| [agent-langgraph-short-term-memory](https://github.com/databricks/app-templates/tree/main/agent-langgraph-short-term-memory) | Short-term | AsyncCheckpointSaver, thread_id |
+| [agent-langgraph-long-term-memory](https://github.com/databricks/app-templates/tree/main/agent-langgraph-long-term-memory) | Long-term | AsyncDatabricksStore, memory tools |
 
 ---
 

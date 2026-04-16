@@ -105,6 +105,11 @@ const PurePreviewMessage = ({
     [message.parts],
   );
 
+  const renderBlocks = React.useMemo(
+    () => groupConsecutiveToolSegments(partSegments),
+    [partSegments],
+  );
+
   // Check if message only contains non-OAuth errors (no other content)
   const hasOnlyErrors = React.useMemo(() => {
     const nonErrorParts = message.parts.filter(
@@ -158,7 +163,22 @@ const PurePreviewMessage = ({
             </div>
           )}
 
-          {partSegments?.map((parts, index) => {
+          {renderBlocks.map((block) => {
+            if (block.kind === 'tool-group') {
+              return (
+                <MessageToolGroup
+                  key={`tool-group-${block.startIndex}`}
+                  tools={block.tools}
+                  isLoading={isLoading}
+                  submitApproval={submitApproval}
+                  isSubmitting={isSubmitting}
+                  pendingApprovalId={pendingApprovalId}
+                />
+              );
+            }
+
+            const parts = block.parts;
+            const index = block.index;
             const [part] = parts;
             const { type } = part;
             const key = `message-${message.id}-part-${index}`;
@@ -223,119 +243,7 @@ const PurePreviewMessage = ({
               }
             }
 
-            // Render Databricks tool calls and results
-            if (part.type === `dynamic-tool`) {
-              const { toolCallId, input, state, errorText, output, toolName } =
-                part;
-
-              // Check if this is an MCP tool call by looking for approvalRequestId in metadata
-              // This works across all states (approval-requested, approval-denied, output-available)
-              const isMcpApproval =
-                part.callProviderMetadata?.databricks?.approvalRequestId !=
-                null;
-              const mcpServerName =
-                part.callProviderMetadata?.databricks?.mcpServerName?.toString();
-
-              // Extract approval outcome for 'approval-responded' state
-              // When addToolApprovalResponse is called, AI SDK sets the `approval` property
-              // on the tool-call part and changes state to 'approval-responded'
-              const approved: boolean | undefined =
-                'approval' in part ? part.approval?.approved : undefined;
-
-              // When approved but only have approval status (not actual output), show as input-available
-              const effectiveState: ToolState = (() => {
-                if (
-                  part.providerExecuted &&
-                  !isLoading &&
-                  state === 'input-available'
-                ) {
-                  return 'output-available';
-                }
-                return state;
-              })();
-
-              // Render MCP tool calls with special styling
-              if (isMcpApproval) {
-                return (
-                  <McpTool key={toolCallId} defaultOpen={true}>
-                    <McpToolHeader
-                      serverName={mcpServerName}
-                      toolName={toolName}
-                      state={effectiveState}
-                      approved={approved}
-                    />
-                    <McpToolContent>
-                      <McpToolInput input={input} />
-                      {state === 'approval-requested' && (
-                        <McpApprovalActions
-                          onApprove={() =>
-                            submitApproval({
-                              approvalRequestId: toolCallId,
-                              approve: true,
-                            })
-                          }
-                          onDeny={() =>
-                            submitApproval({
-                              approvalRequestId: toolCallId,
-                              approve: false,
-                            })
-                          }
-                          isSubmitting={
-                            isSubmitting && pendingApprovalId === toolCallId
-                          }
-                        />
-                      )}
-                      {state === 'output-available' && output != null && (
-                        <ToolOutput
-                          output={
-                            errorText ? (
-                              <div className="rounded border p-2 text-red-500">
-                                Error: {errorText}
-                              </div>
-                            ) : (
-                              <div className="whitespace-pre-wrap font-mono text-sm">
-                                {typeof output === 'string'
-                                  ? output
-                                  : JSON.stringify(output, null, 2)}
-                              </div>
-                            )
-                          }
-                          errorText={undefined}
-                        />
-                      )}
-                    </McpToolContent>
-                  </McpTool>
-                );
-              }
-
-              // Render regular tool calls
-              return (
-                <Tool key={toolCallId} defaultOpen={true}>
-                  <ToolHeader type={toolName} state={effectiveState} />
-                  <ToolContent>
-                    <ToolInput input={input} />
-                    {state === 'output-available' && (
-                      <ToolOutput
-                        output={
-                          errorText ? (
-                            <div className="rounded border p-2 text-red-500">
-                              Error: {errorText}
-                            </div>
-                          ) : (
-                            <div className="whitespace-pre-wrap font-mono text-sm">
-                              {typeof output === 'string'
-                                ? output
-                                : JSON.stringify(output, null, 2)}
-                            </div>
-                          )
-                        }
-                        errorText={undefined}
-                      />
-                    )}
-                  </ToolContent>
-                </Tool>
-              );
-            }
+            // dynamic-tool parts are rendered by MessageToolGroup above.
 
             // Support for citations/annotations
             if (type === 'source-url') {
@@ -416,6 +324,182 @@ export const PreviewMessage = memo(
     return true; // Props are equal, skip re-render
   },
 );
+
+type ChatPart = ChatMessage['parts'][number];
+type ToolPart = Extract<ChatPart, { type: 'dynamic-tool' }>;
+
+type RenderBlock =
+  | { kind: 'segment'; parts: ChatPart[]; index: number }
+  | { kind: 'tool-group'; tools: ToolPart[]; startIndex: number };
+
+const groupConsecutiveToolSegments = (
+  partSegments: ChatPart[][],
+): RenderBlock[] => {
+  const blocks: RenderBlock[] = [];
+  let i = 0;
+  while (i < partSegments.length) {
+    const segment = partSegments[i];
+    const firstPart = segment[0];
+    if (firstPart?.type === 'dynamic-tool') {
+      const startIndex = i;
+      const tools: ToolPart[] = [firstPart as ToolPart];
+      i++;
+      while (
+        i < partSegments.length &&
+        partSegments[i][0]?.type === 'dynamic-tool'
+      ) {
+        tools.push(partSegments[i][0] as ToolPart);
+        i++;
+      }
+      blocks.push({ kind: 'tool-group', tools, startIndex });
+    } else {
+      blocks.push({ kind: 'segment', parts: segment, index: i });
+      i++;
+    }
+  }
+  return blocks;
+};
+
+const MessageToolGroup = ({
+  tools,
+  isLoading,
+  submitApproval,
+  isSubmitting,
+  pendingApprovalId,
+}: {
+  tools: ToolPart[];
+  isLoading: boolean;
+  submitApproval: ReturnType<typeof useApproval>['submitApproval'];
+  isSubmitting: boolean;
+  pendingApprovalId: string | null;
+}) => {
+  const isMultiple = tools.length > 1;
+  return (
+    <div
+      className={cn('flex flex-col gap-2', {
+        'rounded-md border border-border/60 bg-muted/20 p-2': isMultiple,
+      })}
+      data-testid={isMultiple ? 'tool-group' : undefined}
+    >
+      {tools.map((tool) => (
+        <ToolPartRenderer
+          key={tool.toolCallId}
+          part={tool}
+          isLoading={isLoading}
+          submitApproval={submitApproval}
+          isSubmitting={isSubmitting}
+          pendingApprovalId={pendingApprovalId}
+        />
+      ))}
+    </div>
+  );
+};
+
+const ToolPartRenderer = ({
+  part,
+  isLoading,
+  submitApproval,
+  isSubmitting,
+  pendingApprovalId,
+}: {
+  part: ToolPart;
+  isLoading: boolean;
+  submitApproval: ReturnType<typeof useApproval>['submitApproval'];
+  isSubmitting: boolean;
+  pendingApprovalId: string | null;
+}) => {
+  const { toolCallId, input, state, errorText, output, toolName } = part;
+
+  const isMcpApproval =
+    part.callProviderMetadata?.databricks?.approvalRequestId != null;
+  const mcpServerName =
+    part.callProviderMetadata?.databricks?.mcpServerName?.toString();
+
+  const approved: boolean | undefined =
+    'approval' in part ? part.approval?.approved : undefined;
+
+  const effectiveState: ToolState = (() => {
+    if (part.providerExecuted && !isLoading && state === 'input-available') {
+      return 'output-available';
+    }
+    return state;
+  })();
+
+  if (isMcpApproval) {
+    return (
+      <McpTool defaultOpen={true}>
+        <McpToolHeader
+          serverName={mcpServerName}
+          toolName={toolName}
+          state={effectiveState}
+          approved={approved}
+        />
+        <McpToolContent>
+          <McpToolInput input={input} />
+          {state === 'approval-requested' && (
+            <McpApprovalActions
+              onApprove={() =>
+                submitApproval({ approvalRequestId: toolCallId, approve: true })
+              }
+              onDeny={() =>
+                submitApproval({
+                  approvalRequestId: toolCallId,
+                  approve: false,
+                })
+              }
+              isSubmitting={isSubmitting && pendingApprovalId === toolCallId}
+            />
+          )}
+          {state === 'output-available' && output != null && (
+            <ToolOutput
+              output={
+                errorText ? (
+                  <div className="rounded border p-2 text-red-500">
+                    Error: {errorText}
+                  </div>
+                ) : (
+                  <div className="whitespace-pre-wrap font-mono text-sm">
+                    {typeof output === 'string'
+                      ? output
+                      : JSON.stringify(output, null, 2)}
+                  </div>
+                )
+              }
+              errorText={undefined}
+            />
+          )}
+        </McpToolContent>
+      </McpTool>
+    );
+  }
+
+  return (
+    <Tool key={toolCallId} defaultOpen={true}>
+      <ToolHeader type={toolName} state={effectiveState} />
+      <ToolContent>
+        <ToolInput input={input} />
+        {state === 'output-available' && (
+          <ToolOutput
+            output={
+              errorText ? (
+                <div className="rounded border p-2 text-red-500">
+                  Error: {errorText}
+                </div>
+              ) : (
+                <div className="whitespace-pre-wrap font-mono text-sm">
+                  {typeof output === 'string'
+                    ? output
+                    : JSON.stringify(output, null, 2)}
+                </div>
+              )
+            }
+            errorText={undefined}
+          />
+        )}
+      </ToolContent>
+    </Tool>
+  );
+};
 
 export const AwaitingResponseMessage = () => {
   const role = 'assistant';

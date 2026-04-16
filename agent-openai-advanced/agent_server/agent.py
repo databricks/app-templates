@@ -73,6 +73,7 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
             autoscaling_endpoint=lakebase_config.autoscaling_endpoint,
             project=lakebase_config.autoscaling_project,
             branch=lakebase_config.autoscaling_branch,
+            schema=lakebase_config.memory_schema,
             create_tables=False,  # Tables created at startup in start_server.py
         )
 
@@ -121,6 +122,7 @@ async def stream_handler(
             autoscaling_endpoint=lakebase_config.autoscaling_endpoint,
             project=lakebase_config.autoscaling_project,
             branch=lakebase_config.autoscaling_branch,
+            schema=lakebase_config.memory_schema,
             create_tables=False,  # Tables created at startup in start_server.py
         )
 

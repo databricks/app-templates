@@ -6,7 +6,7 @@ description: "Add memory capabilities to your agent. Use when: (1) User asks abo
 # Adding Memory to Your Agent
 
 > **Note:** This template does not include memory by default. Use this skill to **add memory capabilities**. For a pre-configured memory template, see:
-> - [agent-langgraph-advanced](https://github.com/databricks/app-templates/tree/main/agent-langgraph-advanced) - Short-term and long-term memory with Lakebase
+> - [agent-langgraph-advanced](https://github.com/databricks/app-templates/tree/main/agent-langgraph-advanced) - Short-term and long-term memory with long-running background tasks
 
 ## Memory Types
 
@@ -138,7 +138,7 @@ For implementations in the pre-built templates:
 | File | Description |
 |------|-------------|
 | [`agent-langgraph-advanced/agent_server/utils_memory.py`](https://github.com/databricks/app-templates/tree/main/agent-langgraph-advanced/agent_server/utils_memory.py) | Memory tools factory, helpers, error handling |
-| [`agent-langgraph-advanced/agent_server/agent.py`](https://github.com/databricks/app-templates/tree/main/agent-langgraph-advanced/agent_server/agent.py) | Agent with checkpointer and store integration |
+| [`agent-langgraph-advanced/agent_server/agent.py`](https://github.com/databricks/app-templates/tree/main/agent-langgraph-advanced/agent_server/agent.py) | Integration with agent, store initialization |
 
 Key functions:
 - `memory_tools()` - Factory returning get/save/delete tools

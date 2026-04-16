@@ -112,7 +112,7 @@ DatabricksMCPServer(
 )
 ```
 
-For local function tools, see `create-tools` skill > `examples/local-python-tools.md` for `@tool(handle_tool_error=True)` patterns.
+For local function tools defined with `@tool`, see `create-tools` skill > `examples/local-python-tools.md` for the `ToolException` + `handle_tool_error` pattern.
 
 ## Important Notes
 

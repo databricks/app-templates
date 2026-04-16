@@ -24,29 +24,32 @@ databricks vector-search-endpoints list-endpoints --profile <profile>
 
 ## Step 2: Create the index with managed embeddings
 
+When using `--json`, pass all required fields in the JSON body (name, endpoint_name, primary_key, index_type). Do not combine positional arguments with `--json`.
+
 ```bash
-databricks vector-search-indexes create-index \
-  <catalog>.<schema>.<index-name> \
-  my-vs-endpoint \
-  id \
-  DELTA_SYNC \
-  --json '{
-    "delta_sync_index_spec": {
-      "source_table": "<catalog>.<schema>.<source-table>",
-      "pipeline_type": "TRIGGERED",
-      "embedding_source_columns": [
-        {
-          "name": "content",
-          "embedding_model_endpoint_name": "databricks-gte-large-en"
-        }
-      ]
-    }
-  }' \
-  --profile <profile>
+databricks vector-search-indexes create-index --json '{
+  "name": "<catalog>.<schema>.<index-name>",
+  "endpoint_name": "my-vs-endpoint",
+  "primary_key": "id",
+  "index_type": "DELTA_SYNC",
+  "delta_sync_index_spec": {
+    "source_table": "<catalog>.<schema>.<source-table>",
+    "pipeline_type": "TRIGGERED",
+    "embedding_source_columns": [
+      {
+        "name": "content",
+        "embedding_model_endpoint_name": "databricks-gte-large-en"
+      }
+    ]
+  }
+}' --profile <profile>
 ```
 
 Key parameters:
-- Positional args: `NAME`, `ENDPOINT_NAME`, `PRIMARY_KEY`, `INDEX_TYPE`
+- `name`: Full 3-part index name (catalog.schema.index)
+- `endpoint_name`: The Vector Search endpoint that will serve the index
+- `primary_key`: Unique row identifier in the source table
+- `index_type`: `DELTA_SYNC` or `DIRECT_ACCESS`
 - `source_table`: The Delta table to index
 - `embedding_source_columns.name`: The text column to embed and search
 - `embedding_model_endpoint_name`: Use `databricks-gte-large-en` (recommended) or another embedding endpoint

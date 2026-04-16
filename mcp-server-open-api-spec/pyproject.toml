@@ -57,8 +57,6 @@ select = [
   # bare except statements
   "E722",
   "T203",
-  # misuse of typing.TYPE_CHECKING
-  "TC004",
   # import rules
   "TID251",
   # undefined-local-with-import-star

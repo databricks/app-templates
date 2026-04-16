@@ -1,10 +1,8 @@
 import { useNavigate } from 'react-router-dom';
-import { useWindowSize } from 'usehooks-ts';
 
 import { SidebarToggle } from '@/components/sidebar-toggle';
 import { Button } from '@/components/ui/button';
-import { useSidebar } from './ui/sidebar';
-import { PlusIcon, CloudOffIcon } from 'lucide-react';
+import { MessageSquareOff, TriangleAlert } from 'lucide-react';
 import { useConfig } from '@/hooks/use-config';
 import {
   Tooltip,
@@ -12,46 +10,120 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { PlusIcon, CloudOffIcon } from './icons';
+import { cn } from '../lib/utils';
+import { Skeleton } from './ui/skeleton';
 
-export function ChatHeader() {
-  const navigate = useNavigate();
-  const { open } = useSidebar();
-  const { chatHistoryEnabled } = useConfig();
+const DOCS_URL =
+  'https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app';
 
-  const { width: windowWidth } = useWindowSize();
+const OBO_DOCS_URL =
+  'https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app#enable-user-authorization';
+
+function OboScopeBanner({ missingScopes }: { missingScopes: string[] }) {
+  if (missingScopes.length === 0) return null;
 
   return (
-    <header className="sticky top-0 flex items-center gap-2 bg-background px-2 py-1.5 md:px-2">
-      <SidebarToggle />
+    <div className="w-full border-b border-red-500/20 bg-red-50 dark:bg-red-950/20 px-4 py-2.5">
+      <div className="flex items-center gap-2">
+        <TriangleAlert className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
+        <p className="text-sm text-red-700 dark:text-red-400">
+          This endpoint requires on-behalf-of user authorization. Add these
+          scopes to your app:{' '}
+          <strong>{missingScopes.join(', ')}</strong>.{' '}
+          <a
+            href={OBO_DOCS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 underline hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+          >
+            Learn more
+          </a>
+        </p>
+      </div>
+    </div>
+  );
+}
 
-      {(!open || windowWidth < 768) && (
-        <Button
-          variant="outline"
-          className="order-2 ml-auto h-8 px-2 md:order-1 md:ml-0 md:h-fit md:px-2"
-          onClick={() => {
-            navigate('/');
-          }}
-        >
-          <PlusIcon />
-          <span className="md:sr-only">New Chat</span>
-        </Button>
-      )}
+export function ChatHeader({ title, empty, isLoadingTitle }: { title?: string, empty?: boolean, isLoadingTitle?: boolean }) {
+  const navigate = useNavigate();
+  const { chatHistoryEnabled, feedbackEnabled, oboMissingScopes } = useConfig();
 
-      {!chatHistoryEnabled && (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="ml-auto flex items-center gap-1.5 rounded-full bg-muted px-2 py-1 text-muted-foreground text-xs">
-                <CloudOffIcon className="h-3 w-3" />
-                <span className="hidden sm:inline">Ephemeral</span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Chat history disabled - conversations are not saved</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      )}
-    </header>
+  return (
+    <>
+      <header className={cn("sticky top-0 flex h-[60px] items-center gap-2 bg-background px-4", {
+        "border-b border-border md:pb-2": !empty,
+      })}>
+        {/* Toggle visible on mobile only — desktop toggle lives inside the sidebar */}
+        <div className="md:hidden">
+          <SidebarToggle forceOpenIcon />
+        </div>
+
+        {(title || isLoadingTitle) &&
+          <h4 className="text-[16px] font-medium truncate">
+            {isLoadingTitle ?
+              <Skeleton className="w-32 h-6 bg-border" /> :
+              title
+            }
+          </h4>
+        }
+
+        <div className="ml-auto flex items-center gap-2">
+          {!chatHistoryEnabled && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <a
+                    href={DOCS_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 rounded-lg border-border border-1 bg-muted px-2 py-1 text-foreground text-xs hover:text-foreground"
+                  >
+                    <CloudOffIcon className="h-3 w-3" />
+                    <span className="hidden sm:inline">Ephemeral</span>
+                  </a>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Chat history disabled — conversations are not saved. Click to learn more.</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+          {!feedbackEnabled && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <a
+                    href={DOCS_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 rounded-lg border-border border-1 bg-muted px-2 py-1 text-foreground text-xs hover:text-foreground"
+                  >
+                    <MessageSquareOff className="h-3 w-3" />
+                    <span className="hidden sm:inline">Feedback disabled</span>
+                  </a>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Feedback submission disabled. Click to learn more.</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+          {/* New Chat button — mobile only; desktop uses the sidebar rail */}
+          <Button
+            variant="default"
+            className="order-2 ml-auto h-8 px-2 md:hidden"
+            onClick={() => {
+              navigate('/');
+            }}
+          >
+            <PlusIcon />
+            <span>New Chat</span>
+          </Button>
+        </div>
+      </header>
+
+      <OboScopeBanner missingScopes={oboMissingScopes} />
+    </>
   );
 }

@@ -12,10 +12,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import { chatRouter } from './routes/chat';
+import { storeMessageMeta } from './lib/message-meta-store';
 import { historyRouter } from './routes/history';
 import { sessionRouter } from './routes/session';
 import { messagesRouter } from './routes/messages';
 import { configRouter } from './routes/config';
+import { feedbackRouter } from './routes/feedback';
 import { ChatSDKError } from '@chat-template/core/errors';
 
 // ESM-compatible __dirname
@@ -54,6 +56,52 @@ app.use('/api/history', historyRouter);
 app.use('/api/session', sessionRouter);
 app.use('/api/messages', messagesRouter);
 app.use('/api/config', configRouter);
+app.use('/api/feedback', feedbackRouter);
+
+// Agent backend proxy (optional)
+// If API_PROXY is set, proxy /invocations requests to the agent backend
+const agentBackendUrl = process.env.API_PROXY;
+if (agentBackendUrl) {
+  console.log(`✅ Proxying /invocations to ${agentBackendUrl}`);
+  app.all('/invocations', async (req: Request, res: Response) => {
+    try {
+      const forwardHeaders = { ...req.headers } as Record<string, string>;
+      forwardHeaders['content-length'] = undefined;
+
+      const response = await fetch(agentBackendUrl, {
+        method: req.method,
+        headers: forwardHeaders,
+        body:
+          req.method !== 'GET' && req.method !== 'HEAD'
+            ? JSON.stringify(req.body)
+            : undefined,
+      });
+
+      // Copy status and headers
+      res.status(response.status);
+      response.headers.forEach((value, key) => {
+        res.setHeader(key, value);
+      });
+
+      // Stream the response body
+      if (response.body) {
+        const reader = response.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+      }
+      res.end();
+    } catch (error) {
+      console.error('[/invocations proxy] Error:', error);
+      res.status(502).json({
+        error: 'Proxy error',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+}
 
 // Serve static files in production
 if (!isDevelopment) {
@@ -110,6 +158,57 @@ async function startServer() {
         '[Test Mode] Registered handlers:',
         mockServer.listHandlers().length,
       );
+
+      // Import captured request utilities for testing context injection
+      const handlersPath = path.join(
+        dirname(dirname(__dirname)),
+        'tests',
+        'api-mocking',
+        'api-mock-handlers.ts',
+      );
+      const {
+        getCapturedRequests,
+        resetCapturedRequests,
+        getLastCapturedRequest,
+        resetMlflowAssessmentStore,
+        getLastServingRequestHeaders,
+      } = await import(handlersPath);
+
+      // Test-only endpoint to get captured requests (for context injection testing)
+      app.get('/api/test/captured-requests', (_req, res) => {
+        res.json(getCapturedRequests());
+      });
+
+      // Test-only endpoint to get the last captured request
+      app.get('/api/test/last-captured-request', (_req, res) => {
+        const lastRequest = getLastCapturedRequest();
+        if (lastRequest) {
+          res.json(lastRequest);
+        } else {
+          res.status(404).json({ error: 'No captured requests' });
+        }
+      });
+
+      // Test-only endpoint to reset captured requests
+      app.post('/api/test/reset-captured-requests', (_req, res) => {
+        resetCapturedRequests();
+        res.json({ success: true });
+      });
+
+      // Test-only endpoint to reset MLflow assessment store
+      app.post('/api/test/reset-mlflow-store', (_req, res) => {
+        resetMlflowAssessmentStore();
+        res.json({ success: true });
+      });
+
+      // Test-only endpoint to read headers from the last serving endpoint request
+      app.get('/api/test/serving-request-headers', (_req, res) => {
+        res.json(getLastServingRequestHeaders());
+      });
+
+      console.log(
+        '[Test Mode] Test endpoints for context injection registered',
+      );
     } catch (error) {
       console.error('[Test Mode] Failed to start MSW:', error);
       console.error(
@@ -117,10 +216,22 @@ async function startServer() {
         error instanceof Error ? error.stack : error,
       );
     }
+
+    // Registered outside the MSW try/catch so it's available even if MSW setup fails.
+    // Lets tests simulate a message from an endpoint that doesn't return traces.
+    app.post('/api/test/store-message-meta', (req, res) => {
+      const { messageId, chatId, traceId } = req.body as {
+        messageId: string;
+        chatId: string;
+        traceId: string | null;
+      };
+      storeMessageMeta(messageId, chatId, traceId ?? null);
+      res.json({ success: true });
+    });
   }
 
   app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+    console.log(`Backend server is running on http://localhost:${PORT}`);
     console.log(`Environment: ${isDevelopment ? 'development' : 'production'}`);
   });
 }

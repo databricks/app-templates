@@ -8,7 +8,7 @@ import {
   buildConnectionUrl,
 } from '@chat-template/db';
 
-config({ path: '.env.local' });
+config({ path: '.env' });
 
 async function getConnectionUrl() {
   // Use POSTGRES_URL if available
@@ -80,8 +80,12 @@ async function resetDatabase() {
     await sql`DROP TABLE IF EXISTS drizzle.__drizzle_migrations CASCADE`;
     console.log('✅ Drizzle schema migrations table dropped if existed');
 
-    console.log('\n✅ Database reset complete! All data and migrations removed.');
-    console.log('💡 Run "npm run db:migrate" to recreate the schema and apply migrations.\n');
+    console.log(
+      '\n✅ Database reset complete! All data and migrations removed.',
+    );
+    console.log(
+      '💡 Run "npm run db:migrate" to recreate the schema and apply migrations.\n',
+    );
     await sql.end();
   } catch (error) {
     console.error('❌ Failed to reset database:', error);

@@ -289,4 +289,4 @@ def display_todos(todos_data):
     return todo_items
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run(debug=True)

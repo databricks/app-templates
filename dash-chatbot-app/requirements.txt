@@ -1,5 +1,5 @@
-dash==3.0.2
-dash-bootstrap-components==2.0.0
+dash~=2.18.1
+dash-bootstrap-components~=1.6.0
 mlflow>=2.21.2
-python-dotenv==1.1.0
-databricks-sdk
+python-dotenv~=1.2.1
+databricks-sdk~=0.33.0

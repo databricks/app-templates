@@ -6,8 +6,7 @@
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./tools": "./src/databricks-provider/databricks-tool-calling.ts"
+    ".": "./src/index.ts"
   },
   "publishConfig": {
     "exports": {
@@ -20,22 +19,10 @@
           "types": "./dist/index.d.ts",
           "default": "./dist/index.cjs"
         }
-      },
-      "./tools": {
-        "import": {
-          "types": "./dist/tools.d.ts",
-          "default": "./dist/tools.js"
-        },
-        "require": {
-          "types": "./dist/tools.d.ts",
-          "default": "./dist/tools.cjs"
-        }
       }
     }
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
@@ -46,11 +33,10 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@ai-sdk/provider": "^2.0.0",
-    "@ai-sdk/provider-utils": "^3.0.13",
+    "@ai-sdk/provider": "^3.0.7",
     "@chat-template/auth": "*",
     "@chat-template/utils": "*",
-    "ai": "5.0.76",
-    "zod": "^3.25.76"
+    "@databricks/ai-sdk-provider": "0.5.1",
+    "ai": "^6.0.70"
   }
 }

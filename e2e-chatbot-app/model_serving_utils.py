@@ -2,8 +2,11 @@ from mlflow.deployments import get_deploy_client
 from databricks.sdk import WorkspaceClient
 import json
 import uuid
+import os
 
 import logging
+
+mlflow_tracking_uri = os.getenv('MLFLOW_TRACKING_URI', 'databricks')
 
 logging.basicConfig(
     format="%(levelname)s [%(asctime)s] %(name)s - %(message)s",
@@ -75,7 +78,7 @@ def query_endpoint_stream(endpoint_name: str, messages: list[dict[str, str]], re
 
 def _query_chat_endpoint_stream(endpoint_name: str, messages: list[dict[str, str]], return_traces: bool):
     """Invoke an endpoint that implements either chat completions or ChatAgent and stream the response"""
-    client = get_deploy_client("databricks")
+    client = get_deploy_client(mlflow_tracking_uri)
 
     # Prepare input payload
     inputs = {
@@ -94,7 +97,7 @@ def _query_chat_endpoint_stream(endpoint_name: str, messages: list[dict[str, str
 
 def _query_responses_endpoint_stream(endpoint_name: str, messages: list[dict[str, str]], return_traces: bool):
     """Stream responses from agent/v1/responses endpoints using MLflow deployments client."""
-    client = get_deploy_client("databricks")
+    client = get_deploy_client(mlflow_tracking_uri)
     
     input_messages = _convert_to_responses_format(messages)
     
@@ -129,7 +132,7 @@ def _query_chat_endpoint(endpoint_name, messages, return_traces):
     if return_traces:
         inputs['databricks_options'] = {'return_trace': True}
     
-    res = get_deploy_client('databricks').predict(
+    res = get_deploy_client(mlflow_tracking_uri).predict(
         endpoint=endpoint_name,
         inputs=inputs,
     )
@@ -157,7 +160,7 @@ def _query_chat_endpoint(endpoint_name, messages, return_traces):
 
 def _query_responses_endpoint(endpoint_name, messages, return_traces):
     """Query agent/v1/responses endpoints using MLflow deployments client."""
-    client = get_deploy_client("databricks")
+    client = get_deploy_client(mlflow_tracking_uri)
     
     input_messages = _convert_to_responses_format(messages)
     

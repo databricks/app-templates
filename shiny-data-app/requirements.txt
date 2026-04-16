@@ -1,2 +1,6 @@
-shiny==1.0.0
-databricks-sdk
+databricks-sdk~=0.33.0
+databricks-sql-connector~=3.4.0
+shiny~=1.1.0
+matplotlib~=3.10.8
+numpy~=1.26.4
+websockets~=12.0

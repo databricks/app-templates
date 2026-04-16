@@ -7,7 +7,7 @@ export default defineConfig({
   unbundle: false,
   // Explicitly mark what should be external (everything except workspace packages)
   external: [/^express/, /^cors/, /^dotenv/, /^zod/, /^ai/],
-  // Force workspace packages to be bundled
-  noExternal: [/@chat-template\/.*/],
+  // Force workspace packages and their local deps to be bundled
+  noExternal: [/@chat-template\/.*/, /@databricks\/ai-sdk-provider/],
   dts: false,
 });

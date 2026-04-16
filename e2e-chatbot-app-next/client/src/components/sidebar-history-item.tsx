@@ -17,14 +17,7 @@ import {
 } from './ui/dropdown-menu';
 import { memo } from 'react';
 import { useChatVisibility } from '@/hooks/use-chat-visibility';
-import {
-  CircleCheck,
-  GlobeIcon,
-  LockIcon,
-  MoreHorizontalIcon,
-  ShareIcon,
-  TrashIcon,
-} from 'lucide-react';
+import { OverflowIcon, CheckIcon, ShareIcon, TrashIcon } from './icons';
 
 const PureChatItem = ({
   chat,
@@ -43,7 +36,7 @@ const PureChatItem = ({
   });
 
   return (
-    <SidebarMenuItem data-testid="chat-history-item">
+    <SidebarMenuItem data-testid="chat-history-item" className="mb-1">
       <SidebarMenuButton asChild isActive={isActive}>
         <Link to={`/chat/${chat.id}`} onClick={() => setOpenMobile(false)}>
           <span>{chat.title}</span>
@@ -57,7 +50,7 @@ const PureChatItem = ({
             className="mr-0.5 data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             showOnHover={!isActive}
           >
-            <MoreHorizontalIcon />
+            <OverflowIcon />
             <span className="sr-only">More</span>
           </SidebarMenuAction>
         </DropdownMenuTrigger>
@@ -77,10 +70,9 @@ const PureChatItem = ({
                   }}
                 >
                   <div className="flex flex-row items-center gap-2">
-                    <LockIcon size={12} />
+                    {visibilityType === 'private' ? <CheckIcon /> : <div className="size-4" />}
                     <span>Private</span>
                   </div>
-                  {visibilityType === 'private' ? <CircleCheck /> : null}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   className="cursor-pointer flex-row justify-between"
@@ -89,10 +81,9 @@ const PureChatItem = ({
                   }}
                 >
                   <div className="flex flex-row items-center gap-2">
-                    <GlobeIcon />
+                    {visibilityType === 'public' ? <CheckIcon /> : <div className="size-4" />}
                     <span>Public</span>
                   </div>
-                  {visibilityType === 'public' ? <CircleCheck /> : null}
                 </DropdownMenuItem>
               </DropdownMenuSubContent>
             </DropdownMenuPortal>
@@ -113,5 +104,7 @@ const PureChatItem = ({
 
 export const ChatItem = memo(PureChatItem, (prevProps, nextProps) => {
   if (prevProps.isActive !== nextProps.isActive) return false;
+  if (prevProps.chat.title !== nextProps.chat.title) return false;
+  if (prevProps.chat.visibility !== nextProps.chat.visibility) return false;
   return true;
 });

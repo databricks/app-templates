@@ -1,3 +1,5 @@
+import { matchPath } from 'react-router-dom';
+
 /**
  * Soft navigation to a chat ID - updates the browser URL without triggering React Router navigation.
  *
@@ -31,4 +33,13 @@ export function softNavigateToChatId(
 
   // Update URL to /chat/:id without triggering navigation
   window.history.replaceState({}, '', `/chat/${chatId}`);
+}
+
+/**
+ * Extract the chat ID from the current browser pathname.
+ * Useful after a soft navigation where React Router's useParams()
+ * doesn't reflect the replaceState change.
+ */
+export function getChatIdFromPathname(): string | undefined {
+  return matchPath('/chat/:id', window.location.pathname)?.params.id;
 }

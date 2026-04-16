@@ -6,7 +6,7 @@ import { config } from 'dotenv';
  *
  * Tests can run in two modes:
  * - with-db: Tests with PostgreSQL database (persistent mode)
- *   - Loads .env.local first (contains database config)
+ *   - Loads .env first (contains database config)
  *   - Verifies isDatabaseAvailable() returns true
  *   - Passes database configuration to the server process
  *
@@ -24,9 +24,9 @@ import { config } from 'dotenv';
 // Determine which mode to run (default: with-db)
 const TEST_MODE = process.env.TEST_MODE || 'with-db';
 
-// Load .env.local
+// Load .env
 if (TEST_MODE === 'with-db') {
-  config({ path: ['.env.local'] });
+  config({ path: ['.env'] });
 }
 
 console.log(`[Playwright] Running in "${TEST_MODE}" mode)`);
@@ -40,9 +40,9 @@ if (TEST_MODE === 'with-db') {
     console.error(
       '\n❌ ERROR: Running with-db tests but no database configuration found!',
     );
-    console.error('Expected POSTGRES_URL or PGHOST+PGDATABASE in .env.local');
+    console.error('Expected POSTGRES_URL or PGHOST+PGDATABASE in .env');
     console.error('\nPlease either:');
-    console.error('  1. Add database configuration to .env.local, or');
+    console.error('  1. Add database configuration to .env, or');
     console.error('  2. Run ephemeral tests instead: npm run test:ephemeral\n');
     process.exit(0);
   }
@@ -91,47 +91,105 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
     {
+      name: 'oauth',
+      testMatch: /oauth\/.*.test.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
       name: 'e2e',
       testMatch: /e2e\/.*.test.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
     {
       name: 'routes',
-      testMatch: /routes\/.*.test.ts/,
+      testMatch: /routes\/.*(?<!\.api-proxy)\.test\.ts$/,
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      name: 'routes-api-proxy',
+      testMatch: /routes\/.*\.api-proxy\.test\.ts$/,
+      use: { baseURL: 'http://localhost:3003' },
+    },
+    // Deployed tests run against a live Databricks App.
+    // Only included when DEPLOYED_APP_URL is set.
+    ...(process.env.DEPLOYED_APP_URL
+      ? [
+          {
+            name: 'deployed',
+            testMatch: /deployed\/.*.test.ts/,
+            use: {
+              baseURL: process.env.DEPLOYED_APP_URL,
+            },
+          },
+        ]
+      : []),
   ],
 
   // Start dev server before running tests
-  webServer: {
-    command: 'npm run dev',
-    url: `${baseURL}/ping`,
-    timeout: 20 * 1000,
-    reuseExistingServer: !process.env.CI,
-    // Mock the environment variables for the server process
-    env: {
-      PLAYWRIGHT: 'True',
-      DATABRICKS_SERVING_ENDPOINT: 'mock-value',
-      DATABRICKS_CLIENT_ID: 'mock-value',
-      DATABRICKS_CLIENT_SECRET: 'mock-value',
-      DATABRICKS_HOST: 'mock-value',
-      ...(TEST_MODE === 'ephemeral'
-        ? {
-            POSTGRES_URL: '',
-            PGHOST: '',
-            PGDATABASE: '',
-            PGUSER: '',
-            PGPASSWORD: '',
-            PGSSLMODE: '',
-          }
-        : {
-            POSTGRES_URL: process.env.POSTGRES_URL ?? '',
-            PGHOST: process.env.PGHOST ?? '',
-            PGDATABASE: process.env.PGDATABASE ?? '',
-            PGUSER: process.env.PGUSER ?? '',
-            PGPASSWORD: process.env.PGPASSWORD ?? '',
-            PGSSLMODE: process.env.PGSSLMODE ?? '',
-          }),
+  webServer: [
+    {
+      command: 'npm run dev',
+      url: `${baseURL}/ping`,
+      timeout: 20 * 1000,
+      reuseExistingServer: !process.env.CI,
+      // Mock the environment variables for the server process
+      env: {
+        PLAYWRIGHT: 'True',
+        DATABRICKS_SERVING_ENDPOINT: 'mock-value',
+        DATABRICKS_CLIENT_ID: 'mock-value',
+        DATABRICKS_CLIENT_SECRET: 'mock-value',
+        DATABRICKS_HOST: 'mock-value',
+        ...(TEST_MODE === 'ephemeral'
+          ? {
+              POSTGRES_URL: '',
+              PGHOST: '',
+              PGDATABASE: '',
+              PGUSER: '',
+              PGPASSWORD: '',
+              PGSSLMODE: '',
+            }
+          : {
+              // In with-db mode, clear mock Databricks credentials so the server
+              // falls back to CLI auth (DATABRICKS_CONFIG_PROFILE). CLI auth
+              // fetches tokens via a subprocess, bypassing MSW interception, so
+              // the real Lakebase token is used for the DB connection.
+              // Clearing HOST is critical: getDatabricksCliToken passes HOST as
+              // --host to the CLI, so 'mock-value' would break token fetching.
+              DATABRICKS_CLIENT_ID: '',
+              DATABRICKS_CLIENT_SECRET: '',
+              DATABRICKS_HOST: '',
+              DATABRICKS_CONFIG_PROFILE:
+                process.env.DATABRICKS_CONFIG_PROFILE ?? '',
+              POSTGRES_URL: process.env.POSTGRES_URL ?? '',
+              PGHOST: process.env.PGHOST ?? '',
+              PGDATABASE: process.env.PGDATABASE ?? '',
+              PGUSER: process.env.PGUSER ?? '',
+              PGPASSWORD: process.env.PGPASSWORD ?? '',
+              PGSSLMODE: process.env.PGSSLMODE ?? '',
+            }),
+      },
     },
-  },
+    {
+      // API_PROXY mode — Express backend only, port 3003
+      command: 'npm run dev:server',
+      url: 'http://localhost:3003/ping',
+      timeout: 20 * 1000,
+      reuseExistingServer: !process.env.CI,
+      env: {
+        PLAYWRIGHT: 'True',
+        CHAT_APP_PORT: '3003',
+        API_PROXY: 'http://mlflow-agent-server-mock/invocations',
+        DATABRICKS_CLIENT_ID: 'mock-value',
+        DATABRICKS_CLIENT_SECRET: 'mock-value',
+        DATABRICKS_HOST: 'mock-value',
+        // Always ephemeral in API_PROXY test mode
+        POSTGRES_URL: '',
+        PGHOST: '',
+        PGDATABASE: '',
+        PGUSER: '',
+        PGPASSWORD: '',
+        PGSSLMODE: '',
+      },
+    },
+  ],
 });

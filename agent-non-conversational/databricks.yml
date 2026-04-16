@@ -1,0 +1,41 @@
+bundle:
+  name: agent_non_conversational
+
+resources:
+  apps:
+    agent_non_conversational:
+      name: "agent-non-conversational"
+      description: "Non-conversational agent application"
+      source_code_path: ./
+      config:
+        command: ["uv", "run", "start-server"]
+        env:
+          - name: MLFLOW_TRACKING_URI
+            value: "databricks"
+          - name: MLFLOW_REGISTRY_URI
+            value: "databricks-uc"
+          - name: MLFLOW_EXPERIMENT_ID
+            value_from: "experiment"
+
+      # Resources which this app has access to
+      resources:
+        - name: 'experiment'
+          experiment:
+            experiment_id: ""
+            permission: 'CAN_MANAGE'
+
+targets:
+  dev:
+    mode: development
+    default: true
+    # workspace:
+    #   host: https://...
+
+  prod:
+    mode: production
+    # workspace:
+    #   host: https://...
+    resources:
+      apps:
+        agent_non_conversational:
+          name: agent-non-conversational

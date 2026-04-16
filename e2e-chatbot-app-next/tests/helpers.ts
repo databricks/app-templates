@@ -7,6 +7,67 @@ import type {
   TestType,
 } from '@playwright/test';
 
+// ============================================================================
+// SSE Parsing Helpers
+// ============================================================================
+
+/**
+ * Parse SSE lines and return only the `data:` payloads as parsed objects.
+ * Shared across route test files to avoid duplication.
+ */
+export function parseSSEPayloads(body: string): unknown[] {
+  return body
+    .split('\n')
+    .filter((l) => l.startsWith('data: ') && l !== 'data: [DONE]')
+    .map((l) => {
+      try {
+        return JSON.parse(l.slice(6));
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+/**
+ * Send a chat message via POST /api/chat and return the assistant message ID
+ * from the `start` SSE event. Throws if the request fails or the event is missing.
+ */
+export async function sendChatAndGetMessageId(
+  request: APIRequestContext,
+  chatId: string,
+  message: unknown,
+): Promise<string> {
+  const chatResponse = await request.post('/api/chat', {
+    data: {
+      id: chatId,
+      message,
+      selectedChatModel: 'chat-model',
+      selectedVisibilityType: 'private',
+    },
+  });
+
+  if (chatResponse.status() !== 200) {
+    throw new Error(
+      `Expected 200 from /api/chat, got ${chatResponse.status()}`,
+    );
+  }
+
+  const body = await chatResponse.text();
+  const payloads = parseSSEPayloads(body);
+  const startEvent = payloads.find(
+    (p) => (p as any)?.type === 'start' && (p as any)?.messageId,
+  ) as { type: string; messageId: string } | undefined;
+
+  if (!startEvent?.messageId) {
+    throw new Error(
+      `Expected a 'start' SSE event with messageId. Got payloads: ${JSON.stringify(payloads.map((p) => (p as any)?.type))}`,
+    );
+  }
+
+  return startEvent.messageId;
+}
+
 export type UserContext = {
   context: BrowserContext;
   page: Page;
@@ -119,6 +180,821 @@ export function mockFmapiResponseObject(content: string) {
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
     choices: [{ message: { role: 'assistant', content } }],
   };
+}
+
+// ============================================================================
+// Responses API Mock Helpers
+// ============================================================================
+
+/**
+ * Generate a Responses API stream that sends the text as multiple small deltas.
+ * This replicates real Databricks streaming behavior (one chunk per word/token)
+ * and is necessary to reproduce the delta-boundary bug where interleaved raw+text-delta
+ * chunks cause premature text-end injection and subsequent text-deltas to be dropped.
+ */
+export function mockResponsesApiMultiDeltaTextStream(
+  chunks: string[],
+  traceId?: string,
+): string[] {
+  const responseId = generateUUID();
+  const textItemId = generateUUID();
+  const fullText = chunks.join('');
+
+  const events: string[] = [
+    // Response created
+    mockSSE({
+      response: {
+        id: responseId,
+        created_at: Date.now() / 1000,
+        error: null,
+        model: 'databricks-claude-3-7-sonnet',
+        object: 'response',
+        output: [],
+      },
+      sequence_number: 0,
+      type: 'response.created',
+    }),
+    // Message item added
+    mockSSE({
+      item: {
+        id: textItemId,
+        content: [],
+        role: 'assistant',
+        status: 'in_progress',
+        type: 'message',
+      },
+      output_index: 0,
+      sequence_number: 1,
+      type: 'response.output_item.added',
+    }),
+    // Content part added (empty)
+    mockSSE({
+      content_index: 0,
+      item_id: textItemId,
+      output_index: 0,
+      part: { annotations: [], text: '', type: 'output_text', logprobs: null },
+      sequence_number: 2,
+      type: 'response.content_part.added',
+    }),
+  ];
+
+  // One text-delta per chunk (simulates real streaming)
+  chunks.forEach((chunk, i) => {
+    events.push(
+      mockSSE({
+        content_index: 0,
+        delta: chunk,
+        item_id: textItemId,
+        logprobs: [],
+        output_index: 0,
+        sequence_number: 3 + i,
+        type: 'response.output_text.delta',
+      }),
+    );
+  });
+
+  const afterSeq = 3 + chunks.length;
+
+  events.push(
+    // Content part done
+    mockSSE({
+      content_index: 0,
+      item_id: textItemId,
+      output_index: 0,
+      part: {
+        annotations: [],
+        text: fullText,
+        type: 'output_text',
+        logprobs: null,
+      },
+      sequence_number: afterSeq,
+      type: 'response.content_part.done',
+    }),
+    // Message item done (includes trace ID when return_trace was requested)
+    mockSSE({
+      item: {
+        id: textItemId,
+        content: [
+          {
+            annotations: [],
+            text: fullText,
+            type: 'output_text',
+            logprobs: null,
+          },
+        ],
+        role: 'assistant',
+        status: 'completed',
+        type: 'message',
+      },
+      output_index: 0,
+      sequence_number: afterSeq + 1,
+      type: 'response.output_item.done',
+      ...(traceId
+        ? { databricks_output: { trace: { info: { trace_id: traceId } } } }
+        : {}),
+    }),
+    // Response completed
+    mockSSE({
+      response: {
+        id: responseId,
+        created_at: Date.now() / 1000,
+        error: null,
+        model: 'databricks-claude-3-7-sonnet',
+        object: 'response',
+        output: [
+          {
+            id: textItemId,
+            content: [
+              {
+                annotations: [],
+                text: fullText,
+                type: 'output_text',
+                logprobs: null,
+              },
+            ],
+            role: 'assistant',
+            status: 'completed',
+            type: 'message',
+          },
+        ],
+        usage: {
+          input_tokens: 100,
+          output_tokens: fullText.length,
+          total_tokens: 100 + fullText.length,
+        },
+      },
+      sequence_number: afterSeq + 2,
+      type: 'response.completed',
+    }),
+  );
+
+  return events;
+}
+
+/**
+ * Generate a default mock Responses API stream for a text response.
+ * This is used when no special handling (like MCP approval) is needed.
+ */
+export function mockResponsesApiTextStream(text: string): string[] {
+  const responseId = generateUUID();
+  const textItemId = generateUUID();
+
+  return [
+    // Response created
+    mockSSE({
+      response: {
+        id: responseId,
+        created_at: Date.now() / 1000,
+        error: null,
+        model: 'databricks-claude-3-7-sonnet',
+        object: 'response',
+        output: [],
+      },
+      sequence_number: 0,
+      type: 'response.created',
+    }),
+    // Message item added
+    mockSSE({
+      item: {
+        id: textItemId,
+        content: [],
+        role: 'assistant',
+        status: 'in_progress',
+        type: 'message',
+      },
+      output_index: 0,
+      sequence_number: 1,
+      type: 'response.output_item.added',
+    }),
+    // Content part added
+    mockSSE({
+      content_index: 0,
+      item_id: textItemId,
+      output_index: 0,
+      part: { annotations: [], text: '', type: 'output_text', logprobs: null },
+      sequence_number: 2,
+      type: 'response.content_part.added',
+    }),
+    // Text delta
+    mockSSE({
+      content_index: 0,
+      delta: text,
+      item_id: textItemId,
+      logprobs: [],
+      output_index: 0,
+      sequence_number: 3,
+      type: 'response.output_text.delta',
+    }),
+    // Content part done
+    mockSSE({
+      content_index: 0,
+      item_id: textItemId,
+      output_index: 0,
+      part: {
+        annotations: [],
+        text: text,
+        type: 'output_text',
+        logprobs: null,
+      },
+      sequence_number: 4,
+      type: 'response.content_part.done',
+    }),
+    // Message item done
+    mockSSE({
+      item: {
+        id: textItemId,
+        content: [
+          {
+            annotations: [],
+            text: text,
+            type: 'output_text',
+            logprobs: null,
+          },
+        ],
+        role: 'assistant',
+        status: 'completed',
+        type: 'message',
+      },
+      output_index: 0,
+      sequence_number: 5,
+      type: 'response.output_item.done',
+    }),
+    // Response completed
+    mockSSE({
+      response: {
+        id: responseId,
+        created_at: Date.now() / 1000,
+        error: null,
+        model: 'databricks-claude-3-7-sonnet',
+        object: 'response',
+        output: [
+          {
+            id: textItemId,
+            content: [
+              {
+                annotations: [],
+                text: text,
+                type: 'output_text',
+                logprobs: null,
+              },
+            ],
+            role: 'assistant',
+            status: 'completed',
+            type: 'message',
+          },
+        ],
+        usage: {
+          input_tokens: 100,
+          output_tokens: text.length,
+          total_tokens: 100 + text.length,
+        },
+      },
+      sequence_number: 6,
+      type: 'response.completed',
+    }),
+  ];
+}
+
+/**
+ * Generate a mock Responses API stream for an MCP approval request.
+ *
+ * This simulates a response where the model wants to use an MCP tool
+ * and needs user approval before execution.
+ */
+export function mockMcpApprovalRequestStream(options?: {
+  textBefore?: string;
+  toolName?: string;
+  serverLabel?: string;
+  arguments?: Record<string, unknown>;
+  requestId?: string;
+}): string[] {
+  const {
+    textBefore = "I'll help you with that.",
+    toolName = 'test_mcp_tool',
+    serverLabel = 'test-server',
+    arguments: toolArgs = { action: 'test', param: 'value' },
+    requestId = '__fake_mcp_request_id__',
+  } = options ?? {};
+
+  const responseId = generateUUID();
+  const textItemId = generateUUID();
+
+  return [
+    // Response created
+    mockSSE({
+      response: {
+        id: responseId,
+        created_at: Date.now() / 1000,
+        error: null,
+        model: 'databricks-claude-3-7-sonnet',
+        object: 'response',
+        output: [],
+      },
+      sequence_number: 0,
+      type: 'response.created',
+    }),
+    // Message item added
+    mockSSE({
+      item: {
+        id: textItemId,
+        content: [],
+        role: 'assistant',
+        status: 'in_progress',
+        type: 'message',
+      },
+      output_index: 0,
+      sequence_number: 1,
+      type: 'response.output_item.added',
+    }),
+    // Content part added
+    mockSSE({
+      content_index: 0,
+      item_id: textItemId,
+      output_index: 0,
+      part: { annotations: [], text: '', type: 'output_text', logprobs: null },
+      sequence_number: 2,
+      type: 'response.content_part.added',
+    }),
+    // Text delta
+    mockSSE({
+      content_index: 0,
+      delta: textBefore,
+      item_id: textItemId,
+      logprobs: [],
+      output_index: 0,
+      sequence_number: 3,
+      type: 'response.output_text.delta',
+    }),
+    // Content part done
+    mockSSE({
+      content_index: 0,
+      item_id: textItemId,
+      output_index: 0,
+      part: {
+        annotations: [],
+        text: textBefore,
+        type: 'output_text',
+        logprobs: null,
+      },
+      sequence_number: 4,
+      type: 'response.content_part.done',
+    }),
+    // MCP approval request
+    mockSSE({
+      item: {
+        type: 'mcp_approval_request',
+        id: requestId,
+        name: toolName,
+        arguments: JSON.stringify(toolArgs),
+        server_label: serverLabel,
+      },
+      output_index: 1,
+      sequence_number: 5,
+      type: 'response.output_item.done',
+    }),
+    // Message item done
+    mockSSE({
+      item: {
+        id: textItemId,
+        content: [
+          {
+            annotations: [],
+            text: textBefore,
+            type: 'output_text',
+            logprobs: null,
+          },
+        ],
+        role: 'assistant',
+        status: 'completed',
+        type: 'message',
+      },
+      output_index: 0,
+      sequence_number: 6,
+      type: 'response.output_item.done',
+    }),
+    // Response completed
+    mockSSE({
+      response: {
+        id: responseId,
+        created_at: Date.now() / 1000,
+        error: null,
+        model: 'databricks-claude-3-7-sonnet',
+        object: 'response',
+        output: [
+          {
+            id: textItemId,
+            content: [
+              {
+                annotations: [],
+                text: textBefore,
+                type: 'output_text',
+                logprobs: null,
+              },
+            ],
+            role: 'assistant',
+            status: 'completed',
+            type: 'message',
+          },
+          {
+            type: 'mcp_approval_request',
+            id: requestId,
+            name: toolName,
+            arguments: JSON.stringify(toolArgs),
+            server_label: serverLabel,
+          },
+        ],
+        usage: {
+          input_tokens: 100,
+          output_tokens: 50,
+          total_tokens: 150,
+        },
+      },
+      sequence_number: 7,
+      type: 'response.completed',
+    }),
+  ];
+}
+
+/**
+ * Generate a mock Responses API stream for an MCP approval response (approved).
+ */
+export function mockMcpApprovalApprovedStream(options?: {
+  requestId?: string;
+  continuationText?: string;
+}): string[] {
+  const {
+    requestId = '__fake_mcp_request_id__',
+    continuationText = 'The tool has been executed successfully.',
+  } = options ?? {};
+
+  const responseId = generateUUID();
+  const _approvalResponseId = generateUUID();
+  const textItemId = generateUUID();
+
+  return [
+    // Response created
+    mockSSE({
+      response: {
+        id: responseId,
+        created_at: Date.now() / 1000,
+        error: null,
+        model: 'databricks-claude-3-7-sonnet',
+        object: 'response',
+        output: [],
+      },
+      sequence_number: 0,
+      type: 'response.created',
+    }),
+    // Message item added
+    // (mcp_approval_response is sent as INPUT by the client, not echoed in the output)
+    mockSSE({
+      item: {
+        id: textItemId,
+        content: [],
+        role: 'assistant',
+        status: 'in_progress',
+        type: 'message',
+      },
+      output_index: 0,
+      sequence_number: 1,
+      type: 'response.output_item.added',
+    }),
+    // Text delta
+    mockSSE({
+      content_index: 0,
+      delta: continuationText,
+      item_id: textItemId,
+      logprobs: [],
+      output_index: 0,
+      sequence_number: 2,
+      type: 'response.output_text.delta',
+    }),
+    // Message item done
+    mockSSE({
+      item: {
+        id: textItemId,
+        content: [
+          {
+            annotations: [],
+            text: continuationText,
+            type: 'output_text',
+            logprobs: null,
+          },
+        ],
+        role: 'assistant',
+        status: 'completed',
+        type: 'message',
+      },
+      output_index: 0,
+      sequence_number: 3,
+      type: 'response.output_item.done',
+    }),
+    // Response completed
+    mockSSE({
+      response: {
+        id: responseId,
+        created_at: Date.now() / 1000,
+        error: null,
+        model: 'databricks-claude-3-7-sonnet',
+        object: 'response',
+        output: [
+          {
+            id: textItemId,
+            content: [
+              {
+                annotations: [],
+                text: continuationText,
+                type: 'output_text',
+                logprobs: null,
+              },
+            ],
+            role: 'assistant',
+            status: 'completed',
+            type: 'message',
+          },
+        ],
+        usage: {
+          input_tokens: 150,
+          output_tokens: 30,
+          total_tokens: 180,
+        },
+      },
+      sequence_number: 4,
+      type: 'response.completed',
+    }),
+  ];
+}
+
+/**
+ * Generate a mock Responses API stream for an MCP approval response (denied).
+ */
+export function mockMcpApprovalDeniedStream(options?: {
+  requestId?: string;
+  continuationText?: string;
+}): string[] {
+  const {
+    requestId = '__fake_mcp_request_id__',
+    continuationText = "I understand. I won't execute that tool.",
+  } = options ?? {};
+
+  const responseId = generateUUID();
+  const _approvalResponseId = generateUUID();
+  const textItemId = generateUUID();
+
+  return [
+    // Response created
+    mockSSE({
+      response: {
+        id: responseId,
+        created_at: Date.now() / 1000,
+        error: null,
+        model: 'databricks-claude-3-7-sonnet',
+        object: 'response',
+        output: [],
+      },
+      sequence_number: 0,
+      type: 'response.created',
+    }),
+    // Message item added
+    // (mcp_approval_response is sent as INPUT by the client, not echoed in the output)
+    mockSSE({
+      item: {
+        id: textItemId,
+        content: [],
+        role: 'assistant',
+        status: 'in_progress',
+        type: 'message',
+      },
+      output_index: 0,
+      sequence_number: 1,
+      type: 'response.output_item.added',
+    }),
+    // Text delta
+    mockSSE({
+      content_index: 0,
+      delta: continuationText,
+      item_id: textItemId,
+      logprobs: [],
+      output_index: 0,
+      sequence_number: 2,
+      type: 'response.output_text.delta',
+    }),
+    // Message item done
+    mockSSE({
+      item: {
+        id: textItemId,
+        content: [
+          {
+            annotations: [],
+            text: continuationText,
+            type: 'output_text',
+            logprobs: null,
+          },
+        ],
+        role: 'assistant',
+        status: 'completed',
+        type: 'message',
+      },
+      output_index: 0,
+      sequence_number: 3,
+      type: 'response.output_item.done',
+    }),
+    // Response completed
+    mockSSE({
+      response: {
+        id: responseId,
+        created_at: Date.now() / 1000,
+        error: null,
+        model: 'databricks-claude-3-7-sonnet',
+        object: 'response',
+        output: [
+          {
+            id: textItemId,
+            content: [
+              {
+                annotations: [],
+                text: continuationText,
+                type: 'output_text',
+                logprobs: null,
+              },
+            ],
+            role: 'assistant',
+            status: 'completed',
+            type: 'message',
+          },
+        ],
+        usage: {
+          input_tokens: 150,
+          output_tokens: 25,
+          total_tokens: 175,
+        },
+      },
+      sequence_number: 4,
+      type: 'response.completed',
+    }),
+  ];
+}
+
+/**
+ * Mock stream for a local MLflow AgentServer (API_PROXY mode).
+ * Same Responses API SSE format as mockResponsesApiMultiDeltaTextStream, but
+ * when returnTrace is true, appends the standalone trace-ID event emitted by
+ * the AgentServer when the x-mlflow-return-trace-id request header is present.
+ */
+export function mockMlflowAgentServerStream(
+  chunks: string[],
+  returnTrace: boolean,
+  traceId = 'mock-mlflow-trace-id',
+): string[] {
+  const events = mockResponsesApiMultiDeltaTextStream(chunks);
+  if (returnTrace) {
+    events.push(mockSSE({ trace_id: traceId }));
+  }
+  return events;
+}
+
+/**
+ * Create a 200 SSE response whose body stream errors immediately.
+ * This simulates a connection that opens successfully but breaks before
+ * any model data arrives, triggering the stream-error → fallback path.
+ */
+export function createMockImmediateStreamErrorResponse(): Response {
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.error(new Error('Mock upstream connection error'));
+    },
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  });
+}
+
+/**
+ * Create a non-streaming Responses API response object for generateText fallback.
+ */
+export function mockResponsesApiNonStreamingResponse(text: string) {
+  const responseId = generateUUID();
+  const textItemId = generateUUID();
+
+  return {
+    id: responseId,
+    created_at: Math.floor(Date.now() / 1000),
+    status: 'completed',
+    error: null,
+    model: 'databricks-claude-3-7-sonnet',
+    object: 'response',
+    output: [
+      {
+        id: textItemId,
+        content: [
+          {
+            annotations: [],
+            text,
+            type: 'output_text',
+            logprobs: null,
+          },
+        ],
+        role: 'assistant',
+        status: 'completed',
+        type: 'message',
+      },
+    ],
+    usage: {
+      input_tokens: 100,
+      output_tokens: text.length,
+      total_tokens: 100 + text.length,
+    },
+  };
+}
+
+/**
+ * Create a mock streaming response that sends valid Responses API text events,
+ * then a response.failed event to simulate a mid-stream model failure.
+ * The response.failed event (rather than a transport-level stream break) causes
+ * the AI SDK to emit an error chunk through toUIMessageStream's onError.
+ */
+export function createMockMidStreamErrorResponse(text: string): Response {
+  const responseId = generateUUID();
+  const textItemId = generateUUID();
+
+  const events = [
+    mockSSE({
+      response: {
+        id: responseId,
+        created_at: Math.floor(Date.now() / 1000),
+        error: null,
+        model: 'databricks-claude-3-7-sonnet',
+        object: 'response',
+        output: [],
+      },
+      sequence_number: 0,
+      type: 'response.created',
+    }),
+    mockSSE({
+      item: {
+        id: textItemId,
+        content: [],
+        role: 'assistant',
+        status: 'in_progress',
+        type: 'message',
+      },
+      output_index: 0,
+      sequence_number: 1,
+      type: 'response.output_item.added',
+    }),
+    mockSSE({
+      content_index: 0,
+      item_id: textItemId,
+      output_index: 0,
+      part: { annotations: [], text: '', type: 'output_text', logprobs: null },
+      sequence_number: 2,
+      type: 'response.content_part.added',
+    }),
+    mockSSE({
+      content_index: 0,
+      delta: text,
+      item_id: textItemId,
+      logprobs: [],
+      output_index: 0,
+      sequence_number: 3,
+      type: 'response.output_text.delta',
+    }),
+    mockSSE({
+      response: {
+        id: responseId,
+        created_at: Math.floor(Date.now() / 1000),
+        status: 'failed',
+        error: {
+          type: 'server_error',
+          message: 'Mock mid-stream error',
+        },
+        model: 'databricks-claude-3-7-sonnet',
+        object: 'response',
+        output: [
+          {
+            id: textItemId,
+            content: [
+              { annotations: [], text, type: 'output_text', logprobs: null },
+            ],
+            role: 'assistant',
+            status: 'incomplete',
+            type: 'message',
+          },
+        ],
+        usage: {
+          input_tokens: 100,
+          output_tokens: text.length,
+          total_tokens: 100 + text.length,
+        },
+      },
+      sequence_number: 4,
+      type: 'response.failed',
+    }),
+  ];
+
+  return createMockStreamResponse(events);
 }
 
 // Skips

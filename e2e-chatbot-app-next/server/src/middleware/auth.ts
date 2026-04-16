@@ -49,7 +49,7 @@ export async function requireChatAccess(
   res: Response,
   next: NextFunction,
 ) {
-  const { id } = req.params;
+  const id = getIdFromRequest(req);
   if (!id) {
     console.error(
       'Chat access middleware error: no chat ID provided',
@@ -71,3 +71,9 @@ export async function requireChatAccess(
   }
   next();
 }
+
+export const getIdFromRequest = (req: Request): string | undefined => {
+  const { id } = req.params;
+  if (!id) return undefined;
+  return typeof id === 'string' ? id : id[0];
+};

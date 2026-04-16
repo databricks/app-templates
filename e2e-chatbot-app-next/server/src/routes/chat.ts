@@ -12,10 +12,29 @@ import {
   type LanguageModelUsage,
   pipeUIMessageStreamToResponse,
 } from 'ai';
+import type { LanguageModelV3Usage } from '@ai-sdk/provider';
+
+// Convert ai's LanguageModelUsage to @ai-sdk/provider's LanguageModelV3Usage
+function toV3Usage(usage: LanguageModelUsage): LanguageModelV3Usage {
+  return {
+    inputTokens: {
+      total: usage.inputTokens,
+      noCache: undefined,
+      cacheRead: undefined,
+      cacheWrite: undefined,
+    },
+    outputTokens: {
+      total: usage.outputTokens,
+      text: undefined,
+      reasoning: undefined,
+    },
+  };
+}
 import {
   authMiddleware,
   requireAuth,
   requireChatAccess,
+  getIdFromRequest,
 } from '../middleware/auth';
 import {
   deleteChatById,
@@ -25,6 +44,7 @@ import {
   updateChatLastContextById,
   updateChatVisiblityById,
   isDatabaseAvailable,
+  updateChatTitleById,
 } from '@chat-template/db';
 import {
   type ChatMessage,
@@ -36,12 +56,12 @@ import {
   type PostRequestBody,
   StreamCache,
   type VisibilityType,
+  CONTEXT_HEADER_CONVERSATION_ID,
+  CONTEXT_HEADER_USER_ID,
 } from '@chat-template/core';
-import {
-  DATABRICKS_TOOL_CALL_ID,
-  DATABRICKS_TOOL_DEFINITION,
-} from '@chat-template/ai-sdk-providers/tools';
 import { ChatSDKError } from '@chat-template/core/errors';
+import { storeMessageMeta } from '../lib/message-meta-store';
+import { drainStreamToWriter, fallbackToGenerateText } from '../lib/stream-fallback';
 
 export const chatRouter: RouterType = Router();
 
@@ -60,8 +80,6 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
   if (!dbAvailable) {
     console.log('[Chat] Running in ephemeral mode - no persistence');
   }
-
-  console.log(`CHAT POST REQUEST ${Date.now()}`);
 
   let requestBody: PostRequestBody;
 
@@ -82,7 +100,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       selectedVisibilityType,
     }: {
       id: string;
-      message: ChatMessage;
+      message?: ChatMessage;
       selectedChatModel: string;
       selectedVisibilityType: VisibilityType;
     } = requestBody;
@@ -105,16 +123,38 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       return res.status(response.status).json(response.json);
     }
 
-    if (!chat) {
-      if (isDatabaseAvailable()) {
-        const title = await generateTitleFromUserMessage({ message });
+    let titlePromise: Promise<string | null> | undefined;
 
+    if (!chat) {
+      // Only create new chat if we have a message (not a continuation)
+      if (isDatabaseAvailable() && message) {
         await saveChat({
           id,
           userId: session.user.id,
-          title,
+          title: 'New chat',
           visibility: selectedVisibilityType,
         });
+
+        titlePromise = generateTitleFromUserMessage({ message })
+          .then(async (title) => {
+            await updateChatTitleById({ chatId: id, title });
+            return title;
+          })
+          .catch(async (error) => {
+            console.error('Error generating title:', error);
+            const textFromUserMessage = message?.parts.find(
+              (part) => part.type === 'text',
+            )?.text;
+            if (textFromUserMessage) {
+              const fallback = truncatePreserveWords(
+                textFromUserMessage,
+                128,
+              );
+              await updateChatTitleById({ chatId: id, title: fallback });
+              return fallback;
+            }
+            return null;
+          });
       }
     } else {
       if (chat.userId !== session.user.id) {
@@ -125,87 +165,212 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     }
 
     const messagesFromDb = await getMessagesByChatId({ id });
-    const uiMessages = [...convertToUIMessages(messagesFromDb), message];
 
-    await saveMessages({
-      messages: [
-        {
-          chatId: id,
-          id: message.id,
-          role: 'user',
-          parts: message.parts,
-          attachments: [],
-          createdAt: new Date(),
-        },
-      ],
-    });
+    // Use previousMessages from request body when:
+    // 1. Ephemeral mode (DB not available) - always use client-side messages
+    // 2. Continuation request (no message) - tool results only exist client-side
+    const useClientMessages =
+      !dbAvailable || (!message && requestBody.previousMessages);
+    const previousMessages = useClientMessages
+      ? (requestBody.previousMessages ?? [])
+      : convertToUIMessages(messagesFromDb);
+
+    // If message is provided, add it to the list and save it
+    // If not (continuation/regeneration), just use previous messages
+    let uiMessages: ChatMessage[];
+    if (message) {
+      uiMessages = [...previousMessages, message];
+      await saveMessages({
+        messages: [
+          {
+            chatId: id,
+            id: message.id,
+            role: 'user',
+            parts: message.parts,
+            attachments: [],
+            createdAt: new Date(),
+            traceId: null,
+          },
+        ],
+      });
+    } else {
+      // Continuation: use existing messages without adding new user message
+      uiMessages = previousMessages as ChatMessage[];
+
+      // For continuations with database enabled, save any updated assistant messages
+      // This ensures tool-result parts (like MCP approval responses) are persisted
+      if (dbAvailable && requestBody.previousMessages) {
+        const assistantMessages = requestBody.previousMessages.filter(
+          (m: ChatMessage) => m.role === 'assistant',
+        );
+        if (assistantMessages.length > 0) {
+          await saveMessages({
+            messages: assistantMessages.map((m: ChatMessage) => ({
+              chatId: id,
+              id: m.id,
+              role: m.role,
+              parts: m.parts,
+              attachments: [],
+              createdAt: m.metadata?.createdAt
+                ? new Date(m.metadata.createdAt)
+                : new Date(),
+              traceId: null,
+            })),
+          });
+
+          // Check if this is an MCP denial - if so, we're done (no need to call LLM)
+          // Denial is indicated by a dynamic-tool part with state 'output-denied'
+          // or with approval.approved === false
+          const hasMcpDenial = requestBody.previousMessages?.some(
+            (m: ChatMessage) =>
+              m.parts?.some(
+                (p) =>
+                  p.type === 'dynamic-tool' &&
+                  (p.state === 'output-denied' ||
+                    ('approval' in p && p.approval?.approved === false)),
+              ),
+          );
+
+          if (hasMcpDenial) {
+            // We don't need to call the LLM because the user has denied the tool call
+            res.end();
+            return;
+          }
+        }
+      }
+    }
 
     // Clear any previous active stream for this chat
     streamCache.clearActiveStream(id);
 
     let finalUsage: LanguageModelUsage | undefined;
+    let traceId: string | null = null;
     const streamId = generateUUID();
 
     const model = await myProvider.languageModel(selectedChatModel);
+    const modelMessages = await convertToModelMessages(uiMessages);
+    const requestHeaders = {
+      [CONTEXT_HEADER_CONVERSATION_ID]: id,
+      [CONTEXT_HEADER_USER_ID]: session.user.email ?? session.user.id,
+      // Forward OBO user token to the backend/serving endpoint
+      ...(req.headers['x-forwarded-access-token']
+        ? { 'x-forwarded-access-token': req.headers['x-forwarded-access-token'] as string }
+        : {}),
+    };
+
     const result = streamText({
       model,
-      messages: convertToModelMessages(uiMessages),
+      messages: modelMessages,
+      providerOptions: {
+        databricks: { includeTrace: true },
+      },
+      includeRawChunks: true,
+      headers: requestHeaders,
+      onChunk: ({ chunk }) => {
+        if (chunk.type === 'raw') {
+          const raw = chunk.rawValue as any;
+          // Extract trace in Databricks serving endpoint output format, if present
+          if (raw?.type === 'response.output_item.done') {
+            const traceIdFromChunk =
+              raw?.databricks_output?.trace?.info?.trace_id;
+            if (typeof traceIdFromChunk === 'string') {
+              traceId = traceIdFromChunk;
+            }
+          }
+          // Extract trace from MLflow AgentServer output format, if present
+          if (!traceId && typeof raw?.trace_id === 'string') {
+            traceId = raw.trace_id;
+          }
+        }
+      },
       onFinish: ({ usage }) => {
         finalUsage = usage;
-      },
-      tools: {
-        [DATABRICKS_TOOL_CALL_ID]: DATABRICKS_TOOL_DEFINITION,
       },
     });
 
     /**
-     * We manually create the stream to have access to the stream writer.
-     * This allows us to inject custom stream parts like data-error.
+     * We manually read from toUIMessageStream instead of using writer.merge
+     * so the execute promise (and thus the outer stream) stays alive if we
+     * need to fall back to generateText after a streaming error.
      */
     const stream = createUIMessageStream({
+      // Pass originalMessages so that continuation responses reuse the existing
+      // assistant message ID. Without this, handleUIMessageStreamFinish generates
+      // a fresh ID, causing the client to push a second assistant message instead
+      // of replacing the existing one.
+      originalMessages: uiMessages,
+      // The DB Message.id column is typed as uuid, so we must generate UUIDs
+      // rather than the AI SDK's default short-id format (e.g. "Xt8nZiQRj1fS4yiU").
+      generateId: generateUUID,
       execute: async ({ writer }) => {
-        writer.merge(
-          result.toUIMessageStream({
-            originalMessages: uiMessages,
-            generateMessageId: generateUUID,
-            sendReasoning: true,
-            sendSources: true,
-            onError: (error) => {
-              console.error('Stream error:', error);
+        // Manually drain the AI stream so we can append the traceId data part
+        // after all model chunks are processed (traceId is captured via onChunk).
+        // result.toUIMessageStream() converts TextStreamPart → UIMessageChunk:
+        // - text-delta: maps TextStreamPart.text → UIMessageChunk.delta
+        // - start-step/finish-step: strips extra fields
+        // - finish: strips rawFinishReason/totalUsage
+        // - raw: dropped (trace_id captured via onChunk above)
+        const aiStream = result.toUIMessageStream<ChatMessage>({
+          sendReasoning: true,
+          sendSources: true,
+          sendFinish: false,
+          onError: (error) => {
+            const msg =
+              error instanceof Error ? error.message : String(error);
+            writer.onError?.(error);
+            return msg;
+          },
+        });
 
-              const errorMessage =
-                error instanceof Error ? error.message : JSON.stringify(error);
+        const { failed } = await drainStreamToWriter(aiStream, writer);
 
-              writer.write({ type: 'data-error', data: errorMessage });
+        if (failed) {
+          console.log('Streaming failed, falling back to generateText...');
+          const fallbackResult = await fallbackToGenerateText(
+            { model, messages: modelMessages, headers: requestHeaders },
+            writer,
+          );
 
-              return errorMessage;
-            },
-          }),
-        );
+          finalUsage = fallbackResult?.usage;
+          traceId = fallbackResult?.traceId ?? null;
+        }
+        if (titlePromise) {
+          const generatedTitle = await titlePromise;
+          if (generatedTitle) {
+            writer.write({ type: 'data-title', data: generatedTitle });
+          }
+        }
+
+        // Write traceId so the client knows whether feedback is supported.
+        writer.write({ type: 'data-traceId', data: traceId });
       },
       onFinish: async ({ responseMessage }) => {
-        console.log(
-          'Finished message stream! Saving message...',
-          JSON.stringify(responseMessage, null, 2),
-        );
-        await saveMessages({
-          messages: [
-            {
-              id: responseMessage.id,
-              role: responseMessage.role,
-              parts: responseMessage.parts,
-              createdAt: new Date(),
-              attachments: [],
-              chatId: id,
-            },
-          ],
-        });
+        // Store in-memory for ephemeral mode (also useful when DB is available)
+        storeMessageMeta(responseMessage.id, id, traceId);
+
+        try {
+          await saveMessages({
+            messages: [
+              {
+                id: responseMessage.id,
+                role: responseMessage.role,
+                parts: responseMessage.parts,
+                createdAt: new Date(),
+                attachments: [],
+                chatId: id,
+                traceId, // Store trace ID for feedback
+              },
+            ],
+          });
+        } catch (err) {
+          console.error('[onFinish] Failed to save assistant message:', err);
+        }
 
         if (finalUsage) {
           try {
             await updateChatLastContextById({
               chatId: id,
-              context: finalUsage,
+              context: toV3Usage(finalUsage),
             });
           } catch (err) {
             console.warn('Unable to persist last usage for chat', id, err);
@@ -228,12 +393,17 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
+    console.error('[Chat] Caught error in chat API:', {
+      errorType: error?.constructor?.name,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      error,
+    });
+
     if (error instanceof ChatSDKError) {
       const response = error.toResponse();
       return res.status(response.status).json(response.json);
     }
-
-    console.error('Unhandled error in chat API:', error);
 
     const chatError = new ChatSDKError('offline:chat');
     const response = chatError.toResponse();
@@ -248,7 +418,8 @@ chatRouter.delete(
   '/:id',
   [requireAuth, requireChatAccess],
   async (req: Request, res: Response) => {
-    const { id } = req.params;
+    const id = getIdFromRequest(req);
+    if (!id) return;
 
     const deletedChat = await deleteChatById({ id });
     return res.status(200).json(deletedChat);
@@ -263,7 +434,8 @@ chatRouter.get(
   '/:id',
   [requireAuth, requireChatAccess],
   async (req: Request, res: Response) => {
-    const { id } = req.params;
+    const id = getIdFromRequest(req);
+    if (!id) return;
 
     const { chat } = await checkChatAccess(id, req.session?.user.id);
 
@@ -278,7 +450,8 @@ chatRouter.get(
   '/:id/stream',
   [requireAuth],
   async (req: Request, res: Response) => {
-    const { id: chatId } = req.params;
+    const chatId = getIdFromRequest(req);
+    if (!chatId) return;
     const cursor = req.headers['x-resume-stream-cursor'] as string;
 
     console.log(`[Stream Resume] Cursor: ${cursor}`);
@@ -368,7 +541,8 @@ chatRouter.patch(
   [requireAuth, requireChatAccess],
   async (req: Request, res: Response) => {
     try {
-      const { id } = req.params;
+      const id = getIdFromRequest(req);
+      if (!id) return;
       const { visibility } = req.body;
 
       if (!visibility || !['public', 'private'].includes(visibility)) {
@@ -387,10 +561,23 @@ chatRouter.patch(
 // Helper function to generate title from user message
 async function generateTitleFromUserMessage({
   message,
+  maxMessageLength = 256,
 }: {
   message: ChatMessage;
+  maxMessageLength?: number;
 }) {
   const model = await myProvider.languageModel('title-model');
+
+  // Truncate each text part to the maxMessageLength
+  const truncatedMessage = {
+    ...message,
+    parts: message.parts.map((part) =>
+      part.type === 'text'
+        ? { ...part, text: part.text.slice(0, maxMessageLength) }
+        : part,
+    ),
+  };
+
   const { text: title } = await generateText({
     model,
     system: `\n
@@ -398,8 +585,33 @@ async function generateTitleFromUserMessage({
     - ensure it is not more than 80 characters long
     - the title should be a summary of the user's message
     - do not use quotes or colons. do not include other expository content ("I'll help...")`,
-    prompt: JSON.stringify(message),
+    prompt: JSON.stringify(truncatedMessage),
   });
 
   return title;
 }
+
+function truncatePreserveWords(input: string, maxLength: number): string {
+  if (maxLength <= 0) return '';
+  if (input.length <= maxLength) return input;
+
+  // Take the raw slice first
+  const slice = input.slice(0, maxLength);
+
+  // Find the last whitespace within the slice
+  const lastSpaceIndex = slice.lastIndexOf(' ');
+
+  // If no whitespace found, we must break mid-word
+  if (lastSpaceIndex === -1) {
+    return slice;
+  }
+
+  // If the whitespace is too close to the start (e.g., leading space),
+  // fallback to mid-word break to avoid returning an empty string
+  if (lastSpaceIndex === 0) {
+    return slice;
+  }
+
+  return slice.slice(0, lastSpaceIndex);
+}
+

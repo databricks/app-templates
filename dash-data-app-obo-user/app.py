@@ -119,4 +119,4 @@ def render_prediction(n_clicks, pickup, dropoff):
     return calculate_fare_prediction(data, pickup, dropoff)
 
 if __name__ == "__main__":
-    app.run_server(debug=True)
+    app.run(debug=True)

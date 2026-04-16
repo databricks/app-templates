@@ -33,7 +33,7 @@ load_tools(mcp_server)
 
 # Convert the MCP server to a streamable HTTP application
 # This creates a FastAPI app that implements the MCP protocol over HTTP
-mcp_app = mcp_server.streamable_http_app()
+mcp_app = mcp_server.http_app()
 
 # ============================================================================
 # FastAPI Application Setup

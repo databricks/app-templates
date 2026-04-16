@@ -30,13 +30,6 @@ dependencies = [
 ]
 ```
 
-Also add the direct-references metadata setting (required for git install during development):
-
-```toml
-[tool.hatch.metadata]
-allow-direct-references = true
-```
-
 Run `uv sync` to install.
 
 ---

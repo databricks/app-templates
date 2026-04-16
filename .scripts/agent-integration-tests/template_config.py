@@ -164,6 +164,9 @@ def build_templates(
         ("agent-migration-from-model-serving", False, {}),
     ]
 
+    # Templates to skip in tests (still listed above for registry validation)
+    skip_templates = {"agent-migration-from-model-serving"}
+
     # Validate that all templates from the canonical registry are covered
     sys.path.insert(0, str(REPO_ROOT / ".scripts"))
     from templates import TEMPLATES as CANONICAL_TEMPLATES
@@ -179,6 +182,8 @@ def build_templates(
 
     templates = []
     for name, needs_lakebase, overrides in configs:
+        if name in skip_templates:
+            continue
         dev_app_name, app_resource_key = _parse_databricks_yml(name)
         if needs_lakebase:
             for lb_type in ("provisioned", "autoscaling"):

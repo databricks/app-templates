@@ -159,6 +159,11 @@ async def deduplicate_input(request: ResponsesAgentRequest, session: AsyncDatabr
     since the session will prepend the full history automatically.
     """
     messages = [i.model_dump() for i in request.input]
+    # Empty input is a valid signal from the long-running server to resume an
+    # existing session without re-sending user content — the session already
+    # has the prior turns, so there is nothing to deduplicate.
+    if not messages:
+        return []
     # Normalize assistant message content from string to structured list format.
     # MLflow evaluation sends assistant content as a plain string, but the OpenAI
     # Agents SDK expects it as [{"type": "output_text", "text": ..., "annotations": []}].

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import select
 import shutil
 import signal
@@ -19,10 +20,10 @@ from template_config import FileEdit
 # Constants
 # ---------------------------------------------------------------------------
 POLL_INTERVAL = 30  # seconds between polls
-MAX_POLLS = 10  # max number of polls before giving up
+MAX_POLLS = 20  # max number of polls before giving up (10 min for cold starts)
 QUERY_TIMEOUT = 120  # seconds for HTTP requests
-BUNDLE_TIMEOUT = 300  # seconds for bundle deploy/run/destroy commands
-QUICKSTART_TIMEOUT = 300  # seconds for quickstart command
+BUNDLE_TIMEOUT = 600  # seconds for bundle deploy/run/destroy commands (10 min for parallel runs)
+QUICKSTART_TIMEOUT = 600  # seconds for quickstart command (10 min for parallel runs)
 EVALUATE_TIMEOUT = 900  # seconds for agent-evaluate
 SERVER_START_TIMEOUT = 60  # seconds to wait for local server to start
 
@@ -76,7 +77,13 @@ def _run_with_retries(
     True to retry or False to give up.
     """
     for attempt in range(1, max_attempts + 1):
-        result = _run_cmd(cmd, cwd=cwd, timeout=timeout)
+        try:
+            result = _run_cmd(cmd, cwd=cwd, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _log(f"  timed out after {timeout}s")
+            if attempt < max_attempts and recover and recover(f"timed out after {timeout}s", attempt, max_attempts):
+                continue
+            raise
         if result.returncode == 0:
             return result
         if attempt < max_attempts and recover and recover(result.stderr, attempt, max_attempts):
@@ -92,22 +99,126 @@ def _run_with_retries(
 # ---------------------------------------------------------------------------
 
 
+def copy_template(template_dir: Path, app_name_suffix: str = "-p") -> Path:
+    """Copy a template directory to a temporary location for isolated parallel runs.
+
+    After copying, patches both the bundle name and app name in databricks.yml
+    with the given suffix so the copy deploys to a different workspace path and
+    app than the original (avoiding terraform state races).
+    Returns the path to the temporary copy.
+    """
+    import tempfile
+
+    tmp_parent = Path(tempfile.mkdtemp(prefix=f"{template_dir.name}-"))
+    tmp_dir = tmp_parent / template_dir.name
+    shutil.copytree(
+        template_dir,
+        tmp_dir,
+        ignore=shutil.ignore_patterns(".venv", ".bundle", ".databricks", ".env", "__pycache__", "*.pyc"),
+    )
+
+    yml_path = tmp_dir / "databricks.yml"
+    if yml_path.exists():
+        text = yml_path.read_text()
+        # Patch bundle name so it uses a separate workspace path and terraform state
+        # e.g. bundle.name: "agent_langgraph_advanced" -> "agent_langgraph_advanced_p"
+        suffix_underscore = app_name_suffix.replace("-", "_")
+        patched = re.sub(
+            r'(^\s*name:\s*")([\w]+)(")',
+            lambda m: m.group(1) + m.group(2) + suffix_underscore + m.group(3),
+            text,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        # Patch the app name under resources.apps.<key>:
+        #   name: "some-app-name"  or  name: "${bundle.target}-some-suffix"
+        patched = re.sub(
+            r'(^\s*apps:\s*\n\s*\w+:\s*\n\s*name:\s*")(.*?)(")',
+            lambda m: m.group(1) + m.group(2) + app_name_suffix + m.group(3),
+            patched,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        yml_path.write_text(patched)
+
+    return tmp_dir
+
+
 def clean_template(template_dir: Path):
-    """Remove local dev artifacts (.venv/, uv.lock, .env) and bundle state."""
-    for name in [".venv", "uv.lock", ".env", ".bundle", ".databricks"]:
+    """Remove local dev artifacts (.env, uv.lock) and bundle state.
+
+    Keeps .venv/ intact to avoid full reinstalls — uv will sync it on next run.
+    """
+    for name in [".env", ".bundle", ".databricks"]:
         target = template_dir / name
-        if target.is_dir():
-            shutil.rmtree(target)
-        elif target.is_file():
-            target.unlink()
+        try:
+            if target.is_dir():
+                shutil.rmtree(target)
+            elif target.is_file():
+                target.unlink()
+        except FileNotFoundError:
+            pass  # Already removed by another parallel worker
+
+
+def uv_sync(template_dir: Path):
+    """Run `uv sync` to create/update the venv before quickstart.
+
+    Tries online first; falls back to UV_OFFLINE=true on failure (useful when
+    git+ deps are cached locally and the network fetch hangs or fails).
+    """
+    result = _run_cmd(["uv", "sync"], cwd=template_dir, timeout=QUICKSTART_TIMEOUT)
+    if result.returncode == 0:
+        return
+    _log(f"  uv sync failed online, retrying with UV_OFFLINE=true...")
+    env = os.environ.copy()
+    env["UV_OFFLINE"] = "true"
+    result = _run_cmd(["uv", "sync"], cwd=template_dir, timeout=QUICKSTART_TIMEOUT, env=env)
+    assert result.returncode == 0, (
+        f"uv sync failed in {template_dir.name}:\n"
+        f"stdout: {result.stdout}\n"
+        f"stderr: {result.stderr}"
+    )
+
+
+def _strip_uv_sources(template_dir: Path) -> str | None:
+    """Temporarily strip [tool.uv.sources] for deploy.
+
+    Returns the original content so it can be restored, or None if no change.
+    Also deletes uv.lock since it may contain local paths.
+    """
+    pyproject = template_dir / "pyproject.toml"
+    if not pyproject.exists():
+        return None
+    original = pyproject.read_text()
+    stripped = re.sub(
+        r"\n\[tool\.uv\.sources\]\n(?:.*\n)*?(?=\n\[|\Z)",
+        "\n",
+        original,
+    )
+    if stripped == original:
+        return None
+    pyproject.write_text(stripped)
+    lock = template_dir / "uv.lock"
+    if lock.exists():
+        lock.unlink()
+    _log(f"Stripped [tool.uv.sources] from {pyproject.name} for deploy")
+    return original
+
+
+def _restore_uv_sources(template_dir: Path, original: str | None):
+    """Restore pyproject.toml after deploy."""
+    if original is None:
+        return
+    pyproject = template_dir / "pyproject.toml"
+    pyproject.write_text(original)
+    _log(f"Restored [tool.uv.sources] in {pyproject.name}")
 
 
 def run_quickstart(
     template_dir: Path,
     profile: str,
     lakebase: str | None = None,
-    lakebase_autoscaling_project: str | None = None,
-    lakebase_autoscaling_branch: str | None = None,
+    lakebase_autoscaling_endpoint: str | None = None,
     app_name: str | None = None,
     skip_lakebase: bool = False,
 ) -> subprocess.CompletedProcess:
@@ -115,10 +226,8 @@ def run_quickstart(
     cmd = ["uv", "run", "quickstart", "--profile", profile]
     if lakebase:
         cmd.extend(["--lakebase-provisioned-name", lakebase])
-    if lakebase_autoscaling_project:
-        cmd.extend(["--lakebase-autoscaling-project", lakebase_autoscaling_project])
-    if lakebase_autoscaling_branch:
-        cmd.extend(["--lakebase-autoscaling-branch", lakebase_autoscaling_branch])
+    if lakebase_autoscaling_endpoint:
+        cmd.extend(["--lakebase-autoscaling-endpoint", lakebase_autoscaling_endpoint])
     if app_name:
         cmd.extend(["--app-name", app_name])
     if skip_lakebase:
@@ -130,6 +239,7 @@ def run_quickstart(
         f"stderr: {result.stderr}"
     )
     return result
+
 
 
 def git_copy_template(template_name: str, dest: Path, git_ref: str | None = None) -> Path:
@@ -296,6 +406,8 @@ def start_server(template_dir: Path, port: int = 0) -> tuple[subprocess.Popen, i
         ready = select.select([proc.stderr], [], [], 1.0)[0]
         if ready:
             line = proc.stderr.readline()
+            if line.strip():
+                _log(f"  server: {line.rstrip()}")
             if "Uvicorn running on" in line or "Application startup complete" in line:
                 _log(f"Server started on port {port}")
                 return proc, port
@@ -486,7 +598,9 @@ def bundle_deploy(
     """
 
     def recover(stderr: str, attempt: int, max_attempts: int) -> bool:
-        if "terraform init" in stderr:
+        # Normalize newlines for multi-line error messages
+        stderr_flat = " ".join(stderr.split())
+        if "terraform init" in stderr_flat:
             _log(
                 f"bundle deploy attempt {attempt}/{max_attempts} failed in "
                 f"{template_dir.name} (terraform init error), retrying in {POLL_INTERVAL}s..."
@@ -494,7 +608,7 @@ def bundle_deploy(
             time.sleep(POLL_INTERVAL)
             return True
 
-        if "already exists" in stderr:
+        if "already exists" in stderr_flat:
             _log(
                 f"bundle deploy attempt {attempt}/{max_attempts} failed in "
                 f"{template_dir.name} (app already exists), unbinding and binding..."
@@ -519,7 +633,7 @@ def bundle_deploy(
             )
             return True
 
-        if "does not exist or is deleted" in stderr:
+        if "does not exist" in stderr_flat:
             _log(
                 f"bundle deploy attempt {attempt}/{max_attempts} failed in "
                 f"{template_dir.name} (stale state), unbinding and retrying..."
@@ -528,7 +642,7 @@ def bundle_deploy(
             time.sleep(POLL_INTERVAL)
             return True
 
-        if "is not terminal" in stderr or "not terminal with state" in stderr:
+        if "is not terminal" in stderr_flat or "not terminal with state" in stderr_flat:
             _log(
                 f"bundle deploy attempt {attempt}/{max_attempts} failed in "
                 f"{template_dir.name} (app transitioning), waiting {POLL_INTERVAL}s..."
@@ -536,14 +650,27 @@ def bundle_deploy(
             time.sleep(POLL_INTERVAL)
             return True
 
+        if "DELETING" in stderr_flat:
+            _log(
+                f"bundle deploy attempt {attempt}/{max_attempts} failed in "
+                f"{template_dir.name} (compute deleting), waiting {POLL_INTERVAL}s..."
+            )
+            time.sleep(POLL_INTERVAL)
+            return True
+
         return False
 
-    _run_with_retries(
-        ["databricks", "bundle", "deploy", "--target", "dev", "-p", profile],
-        cwd=template_dir,
-        label="bundle deploy",
-        recover=recover,
-    )
+    # Strip [tool.uv.sources] so deploy doesn't upload uv.lock with local paths
+    pyproject_backup = _strip_uv_sources(template_dir)
+    try:
+        _run_with_retries(
+            ["databricks", "bundle", "deploy", "--target", "dev", "-p", profile],
+            cwd=template_dir,
+            label="bundle deploy",
+            recover=recover,
+        )
+    finally:
+        _restore_uv_sources(template_dir, pyproject_backup)
 
 
 def bundle_run_nowait(template_dir: Path, resource_key: str, profile: str):
@@ -570,11 +697,11 @@ def bundle_run_nowait(template_dir: Path, resource_key: str, profile: str):
                 profile,
             ],
             cwd=template_dir,
-            timeout=90,
+            timeout=BUNDLE_TIMEOUT,
         )
     except _subprocess.TimeoutExpired:
         _log(
-            f"bundle run --no-wait for {resource_key} timed out after 90s "
+            f"bundle run --no-wait for {resource_key} timed out after {BUNDLE_TIMEOUT}s "
             f"— app start was initiated, polling via wait_for_app_ready()"
         )
 
@@ -725,16 +852,14 @@ def grant_lakebase_access(
     app_name: str,
     profile: str,
     instance_name: str | None = None,
-    lakebase_project: str | None = None,
-    lakebase_branch: str | None = None,
+    autoscaling_endpoint: str | None = None,
 ):
     """Grant the app's service principal Lakebase access.
 
     Assumes the SP's postgres role already exists (created by the ``database``
     resource in databricks.yml at deploy time).
 
-    Pass either ``instance_name`` (provisioned) or both
-    ``lakebase_project`` and ``lakebase_branch`` (autoscaling).
+    Pass either ``instance_name`` (provisioned) or ``autoscaling_endpoint`` (autoscaling).
     """
     from databricks_ai_bridge.lakebase import SchemaPrivilege, TablePrivilege
 
@@ -750,10 +875,10 @@ def grant_lakebase_access(
 
         if instance_name:
             client_ctx = LakebaseClient(instance_name=instance_name)
-        elif lakebase_project and lakebase_branch:
-            client_ctx = LakebaseClient(project=lakebase_project, branch=lakebase_branch)
+        elif autoscaling_endpoint:
+            client_ctx = LakebaseClient(autoscaling_endpoint=autoscaling_endpoint)
         else:
-            raise ValueError("Either lakebase instance name or autoscaling project/branch required")
+            raise ValueError("Either instance_name or autoscaling_endpoint required")
 
         with client_ctx as client:
             _log(f"Granting lakebase access to SP {sp_client_id}...")
@@ -781,17 +906,24 @@ def grant_lakebase_access(
             _log(f"  Existing managed schemas: {existing_schemas}")
 
             if existing_schemas:
-                # SDK-level grants (schema + tables)
-                client.grant_schema(
-                    grantee=sp_client_id,
-                    privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE],
-                    schemas=existing_schemas,
-                )
-                client.grant_all_tables_in_schema(
-                    grantee=sp_client_id,
-                    privileges=[TablePrivilege.ALL],
-                    schemas=existing_schemas,
-                )
+                # SDK-level grants (schema + tables) — best-effort, may fail
+                # on autoscaling if tables are owned by other users
+                try:
+                    client.grant_schema(
+                        grantee=sp_client_id,
+                        privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE],
+                        schemas=existing_schemas,
+                    )
+                except Exception as exc:
+                    _log(f"  Schema grant warning: {exc}")
+                try:
+                    client.grant_all_tables_in_schema(
+                        grantee=sp_client_id,
+                        privileges=[TablePrivilege.ALL],
+                        schemas=existing_schemas,
+                    )
+                except Exception as exc:
+                    _log(f"  Table grant warning: {exc}")
 
                 # Raw SQL grants for tables and sequences.
                 # Note: GRANT ALL on sequences includes DELETE which is invalid

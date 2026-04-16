@@ -12,9 +12,6 @@ dependencies = [
     "python-dotenv>=1.2.1",
 ]
 
-[tool.uv]
-prerelease = "allow"
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -30,6 +27,7 @@ setup = [
 ]
 
 [tool.uv]
+prerelease = "allow"
 default-groups = ["dev", "setup"]
 
 [project.scripts]

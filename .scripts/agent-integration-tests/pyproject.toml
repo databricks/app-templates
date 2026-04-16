@@ -9,6 +9,7 @@ dependencies = [
     "requests>=2.31",
     "openai>=1.75",
     "databricks-sdk>=0.40",
-    "databricks-ai-bridge[memory]",
+    "databricks-ai-bridge[agent-server]>=0.18.0",
     "ruamel.yaml>=0.18.0",
 ]
+

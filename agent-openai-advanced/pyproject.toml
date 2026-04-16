@@ -27,6 +27,7 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["agent_server", "scripts"]
 
+
 [dependency-groups]
 dev = [
     "hatchling>=1.28.0",
@@ -39,7 +40,6 @@ setup = [
 ]
 
 [tool.uv]
-prerelease = "allow"
 default-groups = ["dev", "setup"]
 
 [tool.pytest.ini_options]

@@ -7,10 +7,9 @@ End-to-end tests that validate every agent template works correctly both locally
 | Template | Conversational | Memory | Special Config |
 |---|---|---|---|
 | `agent-langgraph` | Yes | None | — |
-| `agent-langgraph-short-term-memory` | Yes | Lakebase | Lakebase placeholder in `databricks.yml` |
-| `agent-langgraph-long-term-memory` | Yes | Lakebase | Lakebase placeholder in `databricks.yml` |
+| `agent-langgraph-advanced` | Yes | Lakebase | Lakebase placeholder in `databricks.yml` |
 | `agent-openai-agents-sdk` | Yes | None | — |
-| `agent-openai-agents-sdk-short-term-memory` | Yes | Lakebase | Lakebase placeholder in `databricks.yml` |
+| `agent-openai-agents-advanced` | Yes | Lakebase | Lakebase placeholder in `databricks.yml` |
 | `agent-openai-agents-sdk-multiagent` | Yes | None | Uncomments SUBAGENTS in `agent_server/agent.py` (enables genie + serving_endpoint subagents), replaces placeholders in `databricks.yml` (Genie space ID, serving endpoint) |
 | `agent-non-conversational` | No | None | Uses `/invocations` only; payload is `document_text` + `questions`; runs `test_agent.py` instead of `agent-evaluate` |
 
@@ -19,12 +18,18 @@ End-to-end tests that validate every agent template works correctly both locally
 ```
 test_e2e[template]
   |
-  |-- 1. clean_template()         # Remove .venv/, uv.lock, .env, .bundle/, .databricks/
-  |-- 2. setup log file            # Create logs/ dir, clear logs/{template}.log
-  |-- 3. run_quickstart()          # uv run quickstart --profile <p> [--lakebase-provisioned-name <l> | --lakebase-autoscaling-project <proj> --lakebase-autoscaling-branch <br>]
-  |-- 4. apply_edits()             # Template-specific file edits (grouped by file)
+  |-- 0. (autoscaling only) generate unique branch name per test
+  |-- 1. (provisioned only) copy_template() to temp dir
+  |-- 2. setup log file            # Create logs/ dir, clear logs/{template}-{lakebase_type}.log
   |
-  |-- 5. +----------------------------------------------+
+  |-- [--skip-local shortcut: skip steps 3-5, go straight to deploy]
+  |
+  |-- 3. clean_template()          # Remove .env, .bundle/, .databricks/ (keeps .venv/)
+  |-- 4. uv_sync()                 # Run `uv sync` to create/update .venv
+  |-- 5. run_quickstart()          # uv run quickstart --profile <p> [--lakebase-provisioned-name <l> | --lakebase-autoscaling-project <proj> --lakebase-autoscaling-branch <br>]
+  |-- 6. apply_edits()             # Template-specific file edits (grouped by file)
+  |
+  |-- 7. +----------------------------------------------+
   |       |  ThreadPoolExecutor (max_workers=2)          |
   |       |                                              |
   |       |  Local                  Deploy               |
@@ -43,21 +48,19 @@ test_e2e[template]
   |       |  stop server            bundle destroy       |
   |       +----------------------------------------------+
   |
-  +-- 6. revert_edits() + restore databricks.yml
+  +-- 8. revert_edits() + restore databricks.yml
 ```
 
-Local and deploy phases run **in parallel** via `ThreadPoolExecutor`. Either phase can be skipped with `--skip-local` or `--skip-deploy`. Errors from both threads are collected and reported together.
+Local and deploy phases run **in parallel** via `ThreadPoolExecutor`. Either phase can be skipped with `--skip-local` or `--skip-deploy`. When `--skip-local` is used, setup (clean/uv-sync/quickstart) is skipped entirely — the template must already be configured from a prior run. Errors from both threads are collected and reported together.
 
 ## CLI Flags
-
-### `test_e2e.py` flags
 
 | Flag | Default | Description |
 |---|---|---|
 | `--profile` | `dev` | Databricks CLI profile |
 | `--lakebase` | `bbqiu` | Lakebase provisioned instance name |
-| `--lakebase-project` | _(none)_ | Lakebase autoscaling project name (use instead of `--lakebase` for autoscaling) |
-| `--lakebase-branch` | _(none)_ | Lakebase autoscaling branch name (use with `--lakebase-project`) |
+| `--lakebase-autoscaling-project` | `test-{random}` | Lakebase autoscaling project name (random per run by default) |
+| `--lakebase-autoscaling-branch` | `test-{random}` | Lakebase autoscaling branch name (overridden per test with a unique value) |
 | `--template` | _(all)_ | Run only specific templates (repeatable) |
 | `--genie-space-id` | `01f05202dbb51d74b6cccf1b1b1683eb` | Genie space ID for multiagent |
 | `--serving-endpoint` | `agents_dev-bbqiu-test-bb-2-25` | Serving endpoint for multiagent |
@@ -77,23 +80,23 @@ Local and deploy phases run **in parallel** via `ThreadPoolExecutor`. Either pha
 
 ```
 .scripts/agent-integration-tests/
-|-- conftest.py               # Pytest config: CLI options, fixtures (repo_root, profile, lakebase)
-|-- helpers.py                # Subprocess runners, server lifecycle, endpoint queries, deploy/destroy, OAuth, lakebase grants, file edits, git_copy_template
-|-- lakebase_inspect.py       # Standalone utility to inspect a Lakebase instance (schemas, rows, permissions)
-|-- template_config.py        # TemplateConfig/FileEdit dataclasses, databricks.yml parser, 7 template definitions, REPO_ROOT
-|-- test_e2e.py               # Single test_e2e() parametrized across templates; orchestrates setup/local/deploy/cleanup phases
-|-- test_quickstart_e2e.py    # Quickstart journey tests: 3 scenarios covering fresh run, idempotency, existing-app binding
-|-- logs/                     # Runtime directory: per-template and per-scenario log files
-+-- pyproject.toml            # Dependencies (pytest, pytest-xdist, openai, requests, databricks-sdk, databricks-ai-bridge[memory])
+|-- conftest.py          # Pytest config: CLI options, fixtures (repo_root, profile, lakebase)
+|-- helpers.py               # Subprocess runners, server lifecycle, endpoint queries, deploy/destroy, OAuth, lakebase grants, file edits, git_copy_template
+|-- lakebase_inspect.py      # Standalone utility to inspect a Lakebase instance (schemas, rows, permissions)
+|-- template_config.py       # TemplateConfig/FileEdit dataclasses, databricks.yml parser, 6 template definitions, REPO_ROOT
+|-- test_e2e.py              # Single test_e2e() parametrized across templates; orchestrates setup/local/deploy/cleanup phases
+|-- test_quickstart_e2e.py   # Quickstart journey tests: 3 scenarios covering fresh run, idempotency, existing-app binding
+|-- logs/                    # Runtime directory: per-template and per-scenario log files
++-- pyproject.toml       # Dependencies (pytest, pytest-xdist, openai, requests, databricks-sdk, databricks-ai-bridge[memory])
 ```
 
 ### Module responsibilities
 
 **`template_config.py`** owns all template metadata. `TemplateConfig` carries `name`, `dev_app_name`, `app_resource_key`, flags (`is_conversational`, `needs_lakebase_edit`, `has_evaluate`), and `pre_test_edits`. `_parse_databricks_yml` extracts app name (with `${bundle.target}` -> `dev`) and the DAB resource key from each template's `databricks.yml` via regex, and enforces a 30-character max on the resolved app name. `build_templates()` constructs all 7 configs at pytest collection time. Also exports `REPO_ROOT` as the canonical repo root path used by `conftest.py` and internally.
 
-**`helpers.py`** provides all side-effectful operations, organized into sections: **Logging & subprocess** (`_log`, `set_log_file`, `_run_cmd`, `_run_with_retries`), **Setup & cleanup** (`clean_template`, `run_quickstart`, `apply_edits`, `revert_edits`, `git_copy_template`, `read_env_value`, `databricks_create_app`, `databricks_delete_app`), **Local server** (`find_free_port`, `start_server`, `stop_server`, `run_evaluate`, `run_test_agent`), **Endpoint queries** (`query_endpoint` with `stream` parameter, `query_with_openai_sdk`), **Bundle commands** (`_bundle_unbind`, `bundle_deploy`, `bundle_run`, `bundle_destroy`), **App management** (`get_oauth_token`, `wait_for_app_ready`, `capture_app_logs`), and **Lakebase** (`_try_sql`, `grant_lakebase_access`).
+**`helpers.py`** provides all side-effectful operations, organized into sections: **Logging & subprocess** (`_log`, `set_log_file`, `_run_cmd`, `_run_with_retries`), **Setup & cleanup** (`clean_template`, `uv_sync`, `run_quickstart`, `apply_edits`, `revert_edits`, `git_copy_template`, `read_env_value`, `databricks_create_app`, `databricks_delete_app`), **Local server** (`find_free_port`, `start_server`, `stop_server`, `run_evaluate`, `run_test_agent`), **Endpoint queries** (`query_endpoint` with `stream` parameter, `query_with_openai_sdk`), **Bundle commands** (`_bundle_unbind`, `bundle_deploy`, `bundle_run`, `bundle_destroy`), **App management** (`get_oauth_token`, `wait_for_app_ready`, `capture_app_logs`), and **Lakebase** (`_try_sql`, `grant_lakebase_access`).
 
-**`test_e2e.py`** is the test orchestrator. `test_e2e()` is parametrized across all templates and runs the full pipeline: setup (clean, quickstart, edits) -> parallel local + deploy -> cleanup (revert edits, restore `databricks.yml`). `_query_endpoints` is the shared endpoint validation logic used by both local and deploy phases. `_run_local` and `_run_deploy` are the per-phase entry points submitted to the thread pool.
+**`test_e2e.py`** is the test orchestrator. `test_e2e()` is parametrized across all templates and runs the full pipeline: setup (clean, uv-sync, quickstart, edits) -> parallel local + deploy -> cleanup (revert edits, restore `databricks.yml`). Each autoscaling test generates a unique branch name to avoid race conditions. When `--skip-local` is set, setup is skipped entirely (deploy-only assumes the template is already configured). `_query_endpoints` is the shared endpoint validation logic used by both local and deploy phases. `_run_local` and `_run_deploy` are the per-phase entry points submitted to the thread pool.
 
 **`test_quickstart_e2e.py`** tests the developer setup journey. Three scenarios: `fresh-and-idempotent` (first run creates experiment, second run reuses it), `existing-app` (pre-created app is bound on deploy), and `lakebase-idempotent` (re-run reuses Lakebase config from `.env`). Each scenario copies the template via `git_copy_template` (uses `git ls-files` to respect `.gitignore` while including uncommitted changes), runs quickstart with a unique app name (`qs-{initials}-{hex6}`), validates `.env` and `databricks.yml` output, then optionally deploys and waits for the app to reach RUNNING state.
 
@@ -110,17 +113,17 @@ All commands must be run from the `.scripts/agent-integration-tests/` directory.
 ```bash
 cd .scripts/agent-integration-tests
 
-# DEFAULT: Run all 7 templates in parallel (local + deploy)
-uv run pytest test_e2e.py -v -n 7
+# DEFAULT: Run all 6 templates in parallel (local + deploy)
+uv run pytest test_e2e.py -v -n 8
 
 # Single template (still runs both local + deploy)
 uv run pytest test_e2e.py -v --template agent-langgraph
 
 # Local only — ONLY when explicitly requested
-uv run pytest test_e2e.py -v -n 7 --skip-deploy
+uv run pytest test_e2e.py -v -n 8 --skip-deploy
 
 # Deploy only — ONLY when explicitly requested
-uv run pytest test_e2e.py -v -n 7 --skip-local
+uv run pytest test_e2e.py -v -n 8 --skip-local
 
 # Sequential with full live output (for debugging)
 uv run pytest test_e2e.py -v -n0 -s
@@ -129,10 +132,10 @@ uv run pytest test_e2e.py -v -n0 -s
 uv run pytest test_e2e.py -v --template agent-langgraph --skip-local --no-destroy
 
 # Custom profile and provisioned lakebase
-uv run pytest test_e2e.py -v -n 7 --profile staging --lakebase my-instance
+uv run pytest test_e2e.py -v -n 8 --profile staging --lakebase my-instance
 
 # Custom profile and autoscaling lakebase
-uv run pytest test_e2e.py -v -n 7 --profile staging --lakebase-project my-project --lakebase-branch production
+uv run pytest test_e2e.py -v -n 8 --profile staging --lakebase-project my-project --lakebase-branch production
 
 # Multiagent with custom Genie space and endpoint
 uv run pytest test_e2e.py -v --template agent-openai-agents-sdk-multiagent \
@@ -159,6 +162,32 @@ uv run pytest test_quickstart_e2e.py -v --git-ref main --scenario fresh-and-idem
 # Keep apps running for inspection
 uv run pytest test_quickstart_e2e.py -v --scenario existing-app --no-destroy
 ```
+
+### Running tests from Claude Code
+
+When the user asks you to run e2e tests, use this pattern:
+
+1. **Launch pytest in the background** using the Bash tool with `run_in_background: true`:
+   ```bash
+   cd .scripts/agent-integration-tests && uv run pytest test_e2e.py -v -n 4 --template agent-langgraph-advanced --template agent-openai-advanced --no-destroy
+   ```
+
+2. **Poll test progress every ~30 seconds** using parallel Bash tool calls to `tail` each template's log file simultaneously:
+   ```bash
+   # Run these as parallel tool calls (one per template variant):
+   tail -20 .scripts/agent-integration-tests/logs/agent-langgraph-advanced-autoscaling.log
+   tail -20 .scripts/agent-integration-tests/logs/agent-langgraph-advanced-provisioned.log
+   tail -20 .scripts/agent-integration-tests/logs/agent-openai-advanced-autoscaling.log
+   tail -20 .scripts/agent-integration-tests/logs/agent-openai-advanced-provisioned.log
+   ```
+
+3. **Summarize status** after each poll: report which phase each template is in (setup, local queries, evaluate, deploy, etc.) and whether anything has passed or failed.
+
+4. **Use `sleep 30 && tail -20 <log>` as a single command** per log file to wait 30s before checking, and issue all log reads as parallel tool calls in a single message.
+
+5. **When the background task completes**, check the final pytest output for the overall pass/fail summary.
+
+This approach keeps the user informed of progress without blocking on the full test run (~10-15 min).
 
 ### Parallelism with pytest-xdist
 
@@ -217,4 +246,4 @@ Each template writes a detailed log to `logs/{template-name}.log` (e.g. `logs/ag
 
 **Multiagent** (`agent-openai-agents-sdk-multiagent`): Has the most complex pre-test setup. Uncomments a SUBAGENTS block in `agent_server/agent.py` and enables 2 subagents (genie + serving_endpoint). Also replaces placeholders in `databricks.yml` (Genie space ID, serving endpoint; the knowledge assistant placeholder is filled with the serving endpoint value as a stand-in). Runs `agent-evaluate` after endpoint queries.
 
-**Lakebase memory templates** (`*-short-term-memory`, `*-long-term-memory`): The quickstart command receives `--lakebase-provisioned-name` (or `--lakebase-autoscaling-project` + `--lakebase-autoscaling-branch` for autoscaling) and handles all `databricks.yml` modifications: it sets the experiment ID in the app resource and replaces `<your-lakebase-instance-name>` placeholders with the actual instance name. During deploy, the app's service principal is granted Lakebase access. This applies to 3 templates across both LangGraph and OpenAI SDK families.
+**Lakebase memory templates** (`*-advanced`): The quickstart command receives `--lakebase-provisioned-name` (or `--lakebase-autoscaling-project` + `--lakebase-autoscaling-branch` for autoscaling) and handles all `databricks.yml` modifications: it sets the experiment ID in the app resource and replaces `<your-lakebase-instance-name>` placeholders with the actual instance name. During deploy, the app's service principal is granted Lakebase access. This applies to `agent-langgraph-advanced` and `agent-openai-agents-advanced`.

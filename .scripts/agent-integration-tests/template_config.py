@@ -9,18 +9,9 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 DEFAULT_PROFILE = "dev"
 DEFAULT_LAKEBASE = "bbqiu"
-DEFAULT_LAKEBASE_PROJECT = "agent-integration-tests"
-DEFAULT_LAKEBASE_BRANCH = "production"
+DEFAULT_LAKEBASE_AUTOSCALING_ENDPOINT = "projects/bryan-agent-integ-tests/branches/production/endpoints/primary"
 DEFAULT_GENIE_SPACE_ID = "01f05202dbb51d74b6cccf1b1b1683eb"
 DEFAULT_SERVING_ENDPOINT = "agents_dev-bbqiu-test-bb-2-25"
-
-
-# ---------------------------------------------------------------------------
-# Import TEMPLATES from the central registry
-# ---------------------------------------------------------------------------
-REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / ".scripts"))
-from templates import TEMPLATES  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -43,6 +34,7 @@ class TemplateConfig:
     is_conversational: bool = True  # /responses vs /invocations
     needs_lakebase: bool = False  # Whether template uses lakebase
     lakebase_type: str = ""  # "provisioned", "autoscaling", or ""
+    is_advanced: bool = False  # Whether this is an advanced template (has session + long-term memory)
     pre_test_edits: list[FileEdit] = field(default_factory=list)
     has_evaluate: bool = True
     validate_time: bool = True  # Whether to validate get_current_time tool output
@@ -117,6 +109,7 @@ def _multiagent_edits(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _parse_databricks_yml(template_name: str) -> tuple[str, str]:
@@ -142,26 +135,6 @@ def _parse_databricks_yml(template_name: str) -> tuple[str, str]:
     return dev_app_name, app_resource_key
 
 
-def _needs_lakebase(template_name: str) -> bool:
-    """Check if a template needs lakebase (has_memory or has_lakebase in central registry)."""
-    config = TEMPLATES.get(template_name, {})
-    return config.get("has_memory", False) or config.get("has_lakebase", False)
-
-
-# ---------------------------------------------------------------------------
-# Per-template overrides (things not in the central registry)
-# ---------------------------------------------------------------------------
-_TEMPLATE_OVERRIDES: dict[str, dict] = {
-    "agent-openai-agents-sdk-multiagent": {
-        "validate_time": False,
-    },
-    "agent-non-conversational": {
-        "is_conversational": False,
-        "has_evaluate": False,
-    },
-}
-
-
 # ---------------------------------------------------------------------------
 # Template builder
 # ---------------------------------------------------------------------------
@@ -169,31 +142,50 @@ def build_templates(
     genie_space_id: str = DEFAULT_GENIE_SPACE_ID,
     serving_endpoint: str = DEFAULT_SERVING_ENDPOINT,
 ) -> list[TemplateConfig]:
-    """Build TemplateConfig list from the central TEMPLATES registry.
+    # (name, needs_lakebase, overrides)
+    configs: list[tuple[str, bool, dict]] = [
+        ("agent-langgraph", False, {}),
+        ("agent-langgraph-advanced", True, {"is_advanced": True}),
+        ("agent-openai-agents-sdk", False, {}),
+        ("agent-openai-advanced", True, {"is_advanced": True}),
+        (
+            "agent-openai-agents-sdk-multiagent",
+            False,
+            {
+                "pre_test_edits": _multiagent_edits(
+                    "agent-openai-agents-sdk-multiagent",
+                    genie_space_id,
+                    serving_endpoint,
+                ),
+                "validate_time": False,
+            },
+        ),
+        ("agent-non-conversational", False, {"is_conversational": False, "has_evaluate": False}),
+        ("agent-migration-from-model-serving", False, {}),
+    ]
 
-    Memory/lakebase templates are duplicated: once with lakebase_type="provisioned"
-    and once with lakebase_type="autoscaling".
-    """
-    # Templates to skip in e2e tests (not a deployable app template)
+    # Templates to skip in tests (still listed above for registry validation)
     skip_templates = {"agent-migration-from-model-serving"}
 
-    templates: list[TemplateConfig] = []
-    for name in TEMPLATES:
+    # Validate that all templates from the canonical registry are covered
+    sys.path.insert(0, str(REPO_ROOT / ".scripts"))
+    from templates import TEMPLATES as CANONICAL_TEMPLATES
+
+    config_names = {name for name, _, _ in configs}
+    canonical_names = set(CANONICAL_TEMPLATES.keys())
+    missing = canonical_names - config_names
+    if missing:
+        raise ValueError(
+            f"Templates in .scripts/templates.py but not in template_config.py: {missing}. "
+            "Add them to the configs list or explicitly exclude them."
+        )
+
+    templates = []
+    for name, needs_lakebase, overrides in configs:
         if name in skip_templates:
             continue
-
         dev_app_name, app_resource_key = _parse_databricks_yml(name)
-        overrides = _TEMPLATE_OVERRIDES.get(name, {})
-
-        # Build pre_test_edits for multiagent
-        pre_test_edits: list[FileEdit] = []
-        if name == "agent-openai-agents-sdk-multiagent":
-            pre_test_edits = _multiagent_edits(name, genie_space_id, serving_endpoint)
-
-        needs_lb = _needs_lakebase(name)
-
-        if needs_lb:
-            # Create both provisioned and autoscaling variants
+        if needs_lakebase:
             for lb_type in ("provisioned", "autoscaling"):
                 templates.append(
                     TemplateConfig(
@@ -202,7 +194,6 @@ def build_templates(
                         app_resource_key=app_resource_key,
                         needs_lakebase=True,
                         lakebase_type=lb_type,
-                        pre_test_edits=pre_test_edits,
                         **overrides,
                     )
                 )
@@ -212,11 +203,7 @@ def build_templates(
                     name=name,
                     dev_app_name=dev_app_name,
                     app_resource_key=app_resource_key,
-                    needs_lakebase=False,
-                    lakebase_type="",
-                    pre_test_edits=pre_test_edits,
                     **overrides,
                 )
             )
-
     return templates

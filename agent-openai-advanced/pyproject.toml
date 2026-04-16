@@ -40,7 +40,6 @@ setup = [
 ]
 
 [tool.uv]
-prerelease = "allow"
 default-groups = ["dev", "setup"]
 
 [tool.pytest.ini_options]

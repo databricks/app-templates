@@ -25,6 +25,7 @@ class LakebaseConfig:
     autoscaling_branch: Optional[str]
     embedding_endpoint: str = "databricks-gte-large-en"  # override via DATABRICKS_EMBEDDING_ENDPOINT
     embedding_dims: int = 1024
+    memory_schema: Optional[str] = None
 
     @property
     def description(self) -> str:
@@ -62,12 +63,14 @@ def init_lakebase_config() -> LakebaseConfig:
         branch = None
 
     embedding_endpoint = os.getenv("DATABRICKS_EMBEDDING_ENDPOINT", "databricks-gte-large-en")
+    memory_schema = os.getenv("LAKEBASE_MEMORY_SCHEMA") or None
     return LakebaseConfig(
         instance_name=instance_name,
         autoscaling_endpoint=endpoint,
         autoscaling_project=project,
         autoscaling_branch=branch,
         embedding_endpoint=embedding_endpoint,
+        memory_schema=memory_schema,
     )
 
 
@@ -182,6 +185,7 @@ async def lakebase_context(config: LakebaseConfig):
         autoscaling_endpoint=config.autoscaling_endpoint,
         project=config.autoscaling_project,
         branch=config.autoscaling_branch,
+        schema=config.memory_schema,
     ) as checkpointer, AsyncDatabricksStore(
         instance_name=config.instance_name,
         autoscaling_endpoint=config.autoscaling_endpoint,
@@ -189,6 +193,7 @@ async def lakebase_context(config: LakebaseConfig):
         branch=config.autoscaling_branch,
         embedding_endpoint=config.embedding_endpoint,
         embedding_dims=config.embedding_dims,
+        schema=config.memory_schema,
     ) as store:
         yield checkpointer, store
 

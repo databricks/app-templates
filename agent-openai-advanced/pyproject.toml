@@ -14,15 +14,18 @@ dependencies = [
     "openai-agents>=0.4.1",
     "python-dotenv>=1.2.1",
     "uuid-utils>=0.10.0",
-    "databricks-openai[memory] @ git+https://github.com/databricks/databricks-ai-bridge.git@bbqiu/bqiu/add-schema-param#subdirectory=integrations/openai",
+    "databricks-openai[memory] @ git+https://github.com/databricks/databricks-ai-bridge.git@b5e70dcf610c079766c247ad22d1381bab85683a#subdirectory=integrations/openai",
     "databricks-sdk>=0.79.0",
     "databricks-agents>=1.9.3",
-    "databricks-ai-bridge[agent-server] @ git+https://github.com/databricks/databricks-ai-bridge.git@bbqiu/bqiu/add-schema-param",
+    "databricks-ai-bridge[agent-server] @ git+https://github.com/databricks/databricks-ai-bridge.git@b5e70dcf610c079766c247ad22d1381bab85683a",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["agent_server", "scripts"]

@@ -16,7 +16,7 @@ from databricks_ai_bridge.long_running import LongRunningAgentServer
 from databricks_openai.agents import AsyncDatabricksSession
 from mlflow.genai.agent_server import setup_mlflow_git_based_version_tracking
 
-from agent_server.utils import get_lakebase_access_error_message, lakebase_config, replace_fake_id
+from agent_server.utils import lakebase_config, replace_fake_id
 
 # Need to import the agent to register the functions with the server
 import agent_server.agent  # noqa: F401
@@ -32,11 +32,12 @@ async def run_lakebase_session_setup() -> None:
         autoscaling_endpoint=lakebase_config.autoscaling_endpoint,
         project=lakebase_config.autoscaling_project,
         branch=lakebase_config.autoscaling_branch,
+        schema=lakebase_config.memory_schema,
     )
+
     # _ensure_tables is private API — needed to create tables at startup rather than per-request.
     # If this breaks on a databricks-openai upgrade, replace with the public equivalent.
     await session._ensure_tables()
-    logger.info("Lakebase session tables verified")
 
 
 class AgentServer(LongRunningAgentServer):
@@ -67,13 +68,8 @@ async def _lifespan(app):
     try:
         await run_lakebase_session_setup()
     except Exception as exc:
-        error_msg = str(exc).lower()
-        if any(
-            keyword in error_msg
-            for keyword in ["lakebase", "pg_hba", "postgres", "database instance", "insufficient privilege"]
-        ):
-            logger.error("Lakebase access error during session setup:\n%s", get_lakebase_access_error_message(lakebase_config.description))
-        logger.warning("Lakebase session setup failed: %s. Session tables will be created per-request.", exc)
+        logger.error("Lakebase session setup failed: %s", exc, exc_info=True)
+        raise
     try:
         async with _original_lifespan(app):
             yield

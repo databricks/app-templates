@@ -10,8 +10,8 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.129.0",
     "uvicorn>=0.41.0",
-    "databricks-langchain[memory]>=0.17.0",
-    "databricks-ai-bridge[agent-server]>=0.18.0",
+    "databricks-langchain[memory] @ git+https://github.com/databricks/databricks-ai-bridge.git@b5e70dcf610c079766c247ad22d1381bab85683a#subdirectory=integrations/langchain",
+    "databricks-ai-bridge[agent-server] @ git+https://github.com/databricks/databricks-ai-bridge.git@b5e70dcf610c079766c247ad22d1381bab85683a",
     "databricks-sdk>=0.79.0",
     "databricks-agents>=1.9.3",
     "mlflow>=3.10.1",
@@ -19,6 +19,9 @@ dependencies = [
     "langchain-mcp-adapters>=0.2.1",
     "python-dotenv>=1.2.1",
 ]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [build-system]
 requires = ["hatchling"]

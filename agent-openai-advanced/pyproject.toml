@@ -14,10 +14,10 @@ dependencies = [
     "openai-agents>=0.4.1",
     "python-dotenv>=1.2.1",
     "uuid-utils>=0.10.0",
-    "databricks-openai[memory] @ git+https://github.com/databricks/databricks-ai-bridge.git@b5e70dcf610c079766c247ad22d1381bab85683a#subdirectory=integrations/openai",
+    "databricks-openai[memory] @ git+https://github.com/databricks/databricks-ai-bridge.git@aa6188405ff784a959e2a5dd0468028fe1db1698#subdirectory=integrations/openai",
     "databricks-sdk>=0.79.0",
     "databricks-agents>=1.9.3",
-    "databricks-ai-bridge[agent-server] @ git+https://github.com/databricks/databricks-ai-bridge.git@b5e70dcf610c079766c247ad22d1381bab85683a",
+    "databricks-ai-bridge[agent-server] @ git+https://github.com/databricks/databricks-ai-bridge.git@aa6188405ff784a959e2a5dd0468028fe1db1698",
 ]
 
 [build-system]

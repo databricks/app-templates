@@ -211,6 +211,7 @@ sketch
 .claude/skills/*
 !.claude/skills/quickstart/
 !.claude/skills/discover-tools/
+!.claude/skills/create-tools/
 !.claude/skills/deploy/
 !.claude/skills/add-tools/
 !.claude/skills/run-locally/

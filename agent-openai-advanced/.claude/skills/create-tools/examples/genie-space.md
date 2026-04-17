@@ -32,4 +32,4 @@ databricks genie list-spaces --profile <profile>
 
 Wire the Genie space into your agent and grant permissions. See the **add-tools** skill and use `examples/genie-space.yaml` for the `databricks.yml` resource grant.
 
-MCP URL: `{host}/api/2.0/mcp/genie/{space_id}`
+MCP URL: `{host}/api/2.0/mcp/genie/{space_id}` (OAuth scope for on-behalf-of-user auth: `genie`)

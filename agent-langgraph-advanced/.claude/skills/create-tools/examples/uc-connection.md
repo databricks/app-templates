@@ -61,3 +61,5 @@ databricks connections get my-external-mcp --profile <profile>
 Wire the external MCP server into your agent. See the **add-tools** skill and use `examples/uc-connection.yaml` for the `databricks.yml` resource grant.
 
 MCP URL: `{host}/api/2.0/mcp/external/{connection_name}`
+
+> You can also access the external server through the [UC connections proxy](https://docs.databricks.com/aws/en/query-federation/http#proxy), which works with any HTTP or MCP client and supports arbitrary sub-paths and all HTTP methods: `{host}/api/2.0/unity-catalog/connections/{connection_name}/proxy[/<sub-path>]`

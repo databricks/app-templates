@@ -75,4 +75,4 @@ Check that `status.ready` is `true` before connecting your agent.
 
 Wire the Vector Search index into your agent. See the **add-tools** skill and use `examples/vector-search.yaml` for the `databricks.yml` resource grant.
 
-MCP URL: `{host}/api/2.0/mcp/vector-search/{catalog}/{schema}/{index_name}`
+MCP URL: `{host}/api/2.0/mcp/vector-search/{catalog}/{schema}/{index_name}` (OAuth scope for on-behalf-of-user auth: `vector-search`)

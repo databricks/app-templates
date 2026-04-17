@@ -64,4 +64,4 @@ databricks functions get catalog.schema.my_func --profile <profile>
 
 Wire the UC function into your agent. See the **add-tools** skill and use `examples/uc-function.yaml` for the `databricks.yml` resource grant.
 
-MCP URL: `{host}/api/2.0/mcp/functions/{catalog}/{schema}` (exposes all functions in the schema) or `{host}/api/2.0/mcp/functions/{catalog}/{schema}/{function_name}` (single function)
+MCP URL: `{host}/api/2.0/mcp/functions/{catalog}/{schema}` (exposes all functions in the schema) or `{host}/api/2.0/mcp/functions/{catalog}/{schema}/{function_name}` (single function) (OAuth scope for on-behalf-of-user auth: `unity-catalog`)

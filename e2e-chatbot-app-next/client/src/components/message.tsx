@@ -1,4 +1,10 @@
 import React, { memo, useState } from 'react';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import { ChevronDownIcon } from 'lucide-react';
 import { AnimatedAssistantIcon } from './animation-assistant-icon';
 import { Response } from './elements/response';
 import { MessageContent } from './elements/message';
@@ -360,6 +366,8 @@ const groupConsecutiveToolSegments = (
   return blocks;
 };
 
+const TOOL_GROUP_COLLAPSE_THRESHOLD = 5;
+
 const MessageToolGroup = ({
   tools,
   isLoading,
@@ -374,6 +382,25 @@ const MessageToolGroup = ({
   pendingApprovalId: string | null;
 }) => {
   const isMultiple = tools.length > 1;
+  const shouldCollapse = tools.length > TOOL_GROUP_COLLAPSE_THRESHOLD;
+  const visibleTools = shouldCollapse
+    ? tools.slice(0, TOOL_GROUP_COLLAPSE_THRESHOLD)
+    : tools;
+  const hiddenTools = shouldCollapse
+    ? tools.slice(TOOL_GROUP_COLLAPSE_THRESHOLD)
+    : [];
+
+  const renderTool = (tool: ToolPart) => (
+    <ToolPartRenderer
+      key={tool.toolCallId}
+      part={tool}
+      isLoading={isLoading}
+      submitApproval={submitApproval}
+      isSubmitting={isSubmitting}
+      pendingApprovalId={pendingApprovalId}
+    />
+  );
+
   return (
     <div
       className={cn('flex flex-col gap-2', {
@@ -381,16 +408,21 @@ const MessageToolGroup = ({
       })}
       data-testid={isMultiple ? 'tool-group' : undefined}
     >
-      {tools.map((tool) => (
-        <ToolPartRenderer
-          key={tool.toolCallId}
-          part={tool}
-          isLoading={isLoading}
-          submitApproval={submitApproval}
-          isSubmitting={isSubmitting}
-          pendingApprovalId={pendingApprovalId}
-        />
-      ))}
+      {visibleTools.map(renderTool)}
+      {shouldCollapse && (
+        <Collapsible className="group">
+          <CollapsibleContent>{hiddenTools.map(renderTool)}</CollapsibleContent>
+          <CollapsibleTrigger className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+            <ChevronDownIcon className="size-4 transition-transform group-data-[state=open]:rotate-180" />
+            <span className="group-data-[state=open]:hidden">
+              +{hiddenTools.length} more tool use(s)
+            </span>
+            <span className="hidden group-data-[state=open]:inline">
+              Show less
+            </span>
+          </CollapsibleTrigger>
+        </Collapsible>
+      )}
     </div>
   );
 };

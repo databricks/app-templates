@@ -18,6 +18,7 @@ dependencies = [
     "databricks-sdk>=0.79.0",
     "databricks-agents>=1.9.3",
     "databricks-ai-bridge[agent-server]>=0.18.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.25.0",
 ]
 
 [build-system]

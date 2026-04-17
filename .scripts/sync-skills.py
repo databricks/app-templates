@@ -90,6 +90,10 @@ def sync_template(template: str, config: dict):
     for skill in ["run-locally", "discover-tools", "migrate-from-model-serving"]:
         copy_skill(SOURCE / skill, dest / skill)
 
+    # Load-testing skill (excluded for non-conversational — incompatible input format)
+    if not config.get("exclude_load_testing", False):
+        copy_skill(SOURCE / "load-testing", dest / "load-testing")
+
     # Long-running server skill — skip for advanced templates (already have it) and non-conversational
     if not has_memory and template != "agent-non-conversational":
         copy_skill(SOURCE / "long-running-server", dest / "long-running-server")

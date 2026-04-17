@@ -218,6 +218,8 @@ sketch
 !.claude/skills/agent-memory/
 !.claude/skills/migrate-from-model-serving/
 !.claude/skills/long-running-server/
+!.claude/skills/load-testing/
 
 **/.env
 **/.env.local
+load-test-runs/

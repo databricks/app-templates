@@ -7,9 +7,9 @@ import { TEST_PROMPTS } from '../prompts/routes';
  *
  * Context (conversation_id and user_id) should be injected when:
  * 1. API_PROXY environment variable is set, OR
- * 2. Endpoint task type is 'agent/v2/chat' or 'agent/v1/responses'
+ * 2. Endpoint task type is 'agent/v2/chat'
  *
- * The default mock returns 'agent/v1/responses', so context should be injected
+ * The default mock returns 'agent/v2/chat', so context should be injected
  * in all tests by default.
  */
 
@@ -31,7 +31,7 @@ test.describe
       await adaContext.request.post('/api/test/reset-captured-requests');
     });
 
-    test.describe('agent/v1/responses endpoints', () => {
+    test.describe('agent/v2/chat endpoints', () => {
       test('injects context with conversation_id and user_id', async ({
         adaContext,
       }) => {

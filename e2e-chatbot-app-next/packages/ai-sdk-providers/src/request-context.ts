@@ -7,7 +7,7 @@
  *
  * Context is injected when:
  * 1. Using API_PROXY environment variable, OR
- * 2. Endpoint task type is 'agent/v2/chat' or 'agent/v1/responses'
+ * 2. Endpoint task type is 'agent/v2/chat'
  *
  * @param endpointTask - The task type of the serving endpoint (optional)
  * @returns Whether to inject context into requests
@@ -21,7 +21,5 @@ export function shouldInjectContextForEndpoint(
     return true;
   }
 
-  return (
-    endpointTask === 'agent/v2/chat' || endpointTask === 'agent/v1/responses'
-  );
+  return endpointTask === 'agent/v2/chat';
 }

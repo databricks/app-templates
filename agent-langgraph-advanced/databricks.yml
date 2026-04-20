@@ -14,7 +14,12 @@ resources:
             value: "databricks"
           - name: MLFLOW_REGISTRY_URI
             value: "databricks-uc"
+          # API_PROXY points the Node AI SDK at the Express /invocations
+          # handler which rewrites to background mode and auto-resumes on
+          # disconnect. AGENT_BACKEND_URL is where that handler forwards.
           - name: API_PROXY
+            value: "http://localhost:3000/invocations"
+          - name: AGENT_BACKEND_URL
             value: "http://localhost:8000/invocations"
           - name: CHAT_APP_PORT
             value: "3000"

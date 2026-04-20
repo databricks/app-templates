@@ -144,9 +144,72 @@ if (agentBackendUrl) {
       const MAX_RESUME_ATTEMPTS = 10;
       let resumeAttempt = 0;
 
-      // Read one SSE stream to completion, writing every chunk to the client
-      // and tracking response_id + sequence_number from each event. Returns
-      // whether we saw the [DONE] sentinel.
+      // Tracks the in-progress assistant message item across the stream so we
+      // can emit synthetic closure events on resume. Without this, attempt 1's
+      // partial text bubble keeps receiving deltas from attempt 2's fresh
+      // generation — the client sees attempt-1-partial + attempt-2-full
+      // concatenated. Sealing the partial turns it into its own bubble.
+      type ActiveMessage = {
+        itemId: string;
+        outputIndex: number;
+        contentIndex: number;
+        text: string;
+      };
+      let activeMessage: ActiveMessage | null = null;
+
+      // Emit the closure events that finalize activeMessage with the text
+      // we've accumulated so far plus a short 'resuming…' suffix. Tunes
+      // OpenAI Responses API semantics enough for the Vercel AI SDK to
+      // treat it as a completed message — the next output_item.added in
+      // attempt 2 then starts a fresh assistant bubble.
+      const sealActiveMessage = (suffix: string) => {
+        if (!activeMessage) return;
+        const finalText = activeMessage.text + suffix;
+        if (suffix) {
+          res.write(
+            `event: response.output_text.delta\ndata: ${JSON.stringify({
+              type: 'response.output_text.delta',
+              item_id: activeMessage.itemId,
+              output_index: activeMessage.outputIndex,
+              content_index: activeMessage.contentIndex,
+              delta: suffix,
+            })}\n\n`,
+          );
+        }
+        res.write(
+          `event: response.content_part.done\ndata: ${JSON.stringify({
+            type: 'response.content_part.done',
+            item_id: activeMessage.itemId,
+            output_index: activeMessage.outputIndex,
+            content_index: activeMessage.contentIndex,
+            part: {
+              type: 'output_text',
+              text: finalText,
+              annotations: [],
+            },
+          })}\n\n`,
+        );
+        res.write(
+          `event: response.output_item.done\ndata: ${JSON.stringify({
+            type: 'response.output_item.done',
+            output_index: activeMessage.outputIndex,
+            item: {
+              id: activeMessage.itemId,
+              type: 'message',
+              role: 'assistant',
+              status: 'completed',
+              content: [
+                { type: 'output_text', text: finalText, annotations: [] },
+              ],
+            },
+          })}\n\n`,
+        );
+        activeMessage = null;
+      };
+
+      // Read one SSE stream, track metadata + in-progress items, optionally
+      // emit synthetic closure events, then forward each frame to the client.
+      // Returns whether we saw the [DONE] sentinel.
       const pumpStream = async (upstream: globalThis.Response) => {
         if (!upstream.body) return false;
         const reader = upstream.body.getReader();
@@ -155,41 +218,96 @@ if (agentBackendUrl) {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          res.write(value);
           buf += decoder.decode(value, { stream: true });
-          // Pull out complete SSE frames (separated by \n\n) to sniff metadata.
           const frames = buf.split(/\n\n/);
           buf = frames.pop() || '';
           for (const frame of frames) {
+            const frameBytes = `${frame}\n\n`;
             if (frame.includes('data: [DONE]')) {
+              res.write(frameBytes);
               return true;
             }
             const dataLine = frame.split('\n').find((l) => l.startsWith('data:'));
-            if (!dataLine) continue;
-            try {
-              const parsed = JSON.parse(dataLine.slice(5).trim());
-              // Accept response_id from the dedicated top-level tag, or fall
-              // back to the response.id / top-level id shapes so this works
-              // across LongRunningAgentServer versions.
-              const rid =
-                parsed.response_id ??
-                parsed.response?.id ??
-                (typeof parsed.id === 'string' && parsed.id.startsWith('resp_')
-                  ? parsed.id
-                  : null);
-              if (!responseId && typeof rid === 'string') {
-                responseId = rid;
-                onFirstResponseId(responseId);
-              }
-              if (
-                typeof parsed.sequence_number === 'number' &&
-                parsed.sequence_number > lastSeq
-              ) {
-                lastSeq = parsed.sequence_number;
-              }
-            } catch {
-              // Non-JSON SSE frame (e.g. heartbeats) — safe to ignore.
+            if (!dataLine) {
+              res.write(frameBytes);
+              continue;
             }
+            let parsed: Record<string, unknown> | undefined;
+            try {
+              parsed = JSON.parse(dataLine.slice(5).trim());
+            } catch {
+              // Non-JSON SSE frame (e.g. heartbeats) — forward as-is.
+              res.write(frameBytes);
+              continue;
+            }
+            if (!parsed) {
+              res.write(frameBytes);
+              continue;
+            }
+            // Track response_id (several possible locations).
+            const nested = parsed.response as
+              | { id?: unknown }
+              | undefined;
+            const rid =
+              (typeof parsed.response_id === 'string'
+                ? (parsed.response_id as string)
+                : undefined) ??
+              (typeof nested?.id === 'string' ? nested.id : undefined) ??
+              (typeof parsed.id === 'string' &&
+              (parsed.id as string).startsWith('resp_')
+                ? (parsed.id as string)
+                : undefined);
+            if (!responseId && typeof rid === 'string') {
+              responseId = rid;
+              onFirstResponseId(responseId);
+            }
+            if (
+              typeof parsed.sequence_number === 'number' &&
+              (parsed.sequence_number as number) > lastSeq
+            ) {
+              lastSeq = parsed.sequence_number as number;
+            }
+            const eventType = parsed.type as string | undefined;
+            const item = (parsed.item as Record<string, unknown> | undefined) ?? undefined;
+            // Update activeMessage state (pre-forward).
+            if (
+              eventType === 'response.output_item.added' &&
+              item?.type === 'message'
+            ) {
+              activeMessage = {
+                itemId: (item.id as string) || '',
+                outputIndex: (parsed.output_index as number) ?? 0,
+                contentIndex: 0,
+                text: '',
+              };
+            } else if (
+              eventType === 'response.output_text.delta' &&
+              activeMessage &&
+              (parsed.item_id as string) === activeMessage.itemId
+            ) {
+              activeMessage.text += (parsed.delta as string) ?? '';
+            } else if (
+              eventType === 'response.output_item.done' &&
+              item?.type === 'message' &&
+              activeMessage?.itemId === (item.id as string)
+            ) {
+              // Backend closed the message itself; we don't need our synthetic
+              // closure.
+              activeMessage = null;
+            }
+            // On the resume sentinel, seal any active message BEFORE forwarding
+            // the sentinel itself. Subsequent attempt-2 events will naturally
+            // emit a fresh output_item.added with a new item_id — the client
+            // sees a clean second assistant bubble. The interruption suffix
+            // was already appended when the upstream first closed (see the
+            // auto-resume loop below); seal with no additional suffix.
+            if (eventType === 'response.resumed' && activeMessage) {
+              console.log(
+                `[/invocations] sealing interrupted message item=${activeMessage.itemId} text_len=${activeMessage.text.length}`,
+              );
+              sealActiveMessage('');
+            }
+            res.write(frameBytes);
           }
         }
         return false;
@@ -217,6 +335,28 @@ if (agentBackendUrl) {
         console.log(
           `[/invocations] upstream closed without [DONE] response_id=${responseId} last_seq=${lastSeq}; entering auto-resume`,
         );
+        // Surface the interruption to the user right away — otherwise they'd
+        // see the partial text sit frozen for ~10s until the stale threshold
+        // expires and the backend emits response.resumed. The seal-on-resume
+        // path below will also append text if sentinel arrives, but this
+        // first suffix makes the 'something is happening' signal immediate.
+        // Wrap in a helper call so TS widens the type back — async functions
+        // mutating closure variables aren't tracked through ``await`` boundaries.
+        const readActive = (): ActiveMessage | null => activeMessage;
+        const am = readActive();
+        if (am) {
+          const suffix = '\n\n_(connection interrupted — reconnecting…)_';
+          res.write(
+            `event: response.output_text.delta\ndata: ${JSON.stringify({
+              type: 'response.output_text.delta',
+              item_id: am.itemId,
+              output_index: am.outputIndex,
+              content_index: am.contentIndex,
+              delta: suffix,
+            })}\n\n`,
+          );
+          am.text += suffix;
+        }
       }
       while (!sawDone && responseId && resumeAttempt < MAX_RESUME_ATTEMPTS) {
         resumeAttempt += 1;

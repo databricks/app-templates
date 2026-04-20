@@ -41,6 +41,16 @@ agent_server = AgentServer(
     poll_interval_seconds=float(os.getenv("POLL_INTERVAL_SECONDS", "1.0")),
 )
 
+log_level = os.getenv("LOG_LEVEL", "INFO")
+_lvl = getattr(logging, log_level.upper(), logging.INFO)
+logging.getLogger("agent_server").setLevel(_lvl)
+# Surface [durable] lifecycle logs from LongRunningAgentServer into apps logs.
+logging.getLogger("databricks_ai_bridge").setLevel(_lvl)
+if not logging.getLogger().handlers:
+    logging.basicConfig(level=_lvl, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+else:
+    logging.getLogger().setLevel(_lvl)
+
 # Define the app as a module level variable to enable multiple workers
 app = agent_server.app  # noqa: F841
 setup_mlflow_git_based_version_tracking()

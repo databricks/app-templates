@@ -56,7 +56,18 @@ agent_server = AgentServer(
 )
 
 log_level = os.getenv("LOG_LEVEL", "INFO")
-logging.getLogger("agent_server").setLevel(getattr(logging, log_level.upper(), logging.INFO))
+_lvl = getattr(logging, log_level.upper(), logging.INFO)
+logging.getLogger("agent_server").setLevel(_lvl)
+# Surface [durable] lifecycle logs from LongRunningAgentServer into apps logs.
+# These are INFO-level in databricks_ai_bridge but the library logger defaults
+# to WARNING unless the host process sets it explicitly.
+logging.getLogger("databricks_ai_bridge").setLevel(_lvl)
+# Ensure the root handler actually emits at this level too. uvicorn sets up
+# its own handlers for 'uvicorn.*' but leaves root untouched.
+if not logging.getLogger().handlers:
+    logging.basicConfig(level=_lvl, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+else:
+    logging.getLogger().setLevel(_lvl)
 
 # Wrap the existing lifespan to ensure session tables are created before serving requests
 _original_lifespan = agent_server.app.router.lifespan_context

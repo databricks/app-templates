@@ -69,6 +69,14 @@ export function Chat({
   const resumeAttemptCountRef = useRef(0);
   const maxResumeAttempts = 3;
 
+  // Durable-resume snapshot: on data-resumed we record the length of the
+  // assistant message's text at that instant. If the mid-stream mutation
+  // wipe doesn't stick (AI SDK may re-batch deltas from its accumulator),
+  // onFinish does a post-stream truncation: drop the first N chars of the
+  // final text so only attempt-2 content remains. Keyed by message id so
+  // multi-turn conversations don't cross-contaminate.
+  const attempt1TextLenRef = useRef<Record<string, number>>({});
+
   const abortController = useRef<AbortController | null>(new AbortController());
   useEffect(() => {
     return () => {
@@ -190,35 +198,28 @@ export function Chat({
       // de-dup across attempts via call_id.
       if (dataPart.type === 'data-resumed') {
         console.log('[chat][onData] got data-resumed', dataPart);
+        // Snapshot the current text length across all text parts of the last
+        // assistant message. onFinish below will use this to truncate the
+        // final rendered text so only attempt 2's content remains visible.
         setMessages((prev) => {
-          if (!prev.length) {
-            console.log('[chat][onData] no prev messages; ignoring');
-            return prev;
-          }
+          if (!prev.length) return prev;
           const last = prev[prev.length - 1];
-          console.log(
-            `[chat][onData] last message role=${last.role} parts=${JSON.stringify(
-              (last.parts ?? []).map((p: { type?: string; text?: string }) => ({
-                type: p.type,
-                len: p.text?.length,
-              })),
-            )}`,
-          );
           if (last.role !== 'assistant') return prev;
-          // Reset the text content in place — removing the part lets the AI
-          // SDK recreate it with a fresh id AND the stale accumulated text.
-          // Instead, keep the same part id and wipe .text so the next delta
-          // appends to an empty string. Future deltas from attempt 2 will
-          // still hit the same text part; that's fine, the user just sees
-          // attempt 2's output. Tool parts keep their cards.
-          const updatedParts = (last.parts ?? []).map(
-            (p: { type?: string; text?: string }) =>
-              p.type === 'text' ? { ...p, text: '' } : p,
+          const currentLen = (last.parts ?? []).reduce(
+            (acc: number, p: { type?: string; text?: string }) =>
+              p.type === 'text' ? acc + (p.text?.length ?? 0) : acc,
+            0,
           );
+          attempt1TextLenRef.current[last.id] = currentLen;
           console.log(
-            `[chat][onData] wiped text parts in place; parts remain ${updatedParts.length}`,
+            `[chat][onData] recorded attempt-1 text length=${currentLen} for message=${last.id}`,
           );
-          return [...prev.slice(0, -1), { ...last, parts: updatedParts }];
+          // Also mutate in place as a best-effort mid-stream wipe.
+          for (const p of last.parts ?? []) {
+            const tp = p as { type?: string; text?: string };
+            if (tp.type === 'text') tp.text = '';
+          }
+          return [...prev];
         });
       }
     },
@@ -230,6 +231,37 @@ export function Chat({
     }) => {
       didFetchHistoryOnNewChat.current = false;
       setTitlePending(false);
+
+      // Post-stream durable-resume truncation. If we saw data-resumed during
+      // this stream we recorded how many chars of text belonged to attempt 1.
+      // Now that the stream is complete (attempt 2 produced its answer),
+      // chop off exactly that many chars from the start so only attempt 2's
+      // text is rendered. Belt-and-suspenders over the mid-stream wipe.
+      const lastAssistant = finishedMessages?.at(-1);
+      if (lastAssistant && lastAssistant.role === 'assistant') {
+        const drop = attempt1TextLenRef.current[lastAssistant.id];
+        if (drop && drop > 0) {
+          console.log(
+            `[chat][onFinish] post-stream truncate: removing first ${drop} chars of text parts for message=${lastAssistant.id}`,
+          );
+          setMessages((prev) => {
+            if (!prev.length) return prev;
+            const last = prev[prev.length - 1];
+            if (last.id !== lastAssistant.id) return prev;
+            let remaining = drop;
+            for (const p of last.parts ?? []) {
+              const tp = p as { type?: string; text?: string };
+              if (tp.type !== 'text' || !tp.text) continue;
+              if (remaining <= 0) break;
+              const cut = Math.min(remaining, tp.text.length);
+              tp.text = tp.text.slice(cut);
+              remaining -= cut;
+            }
+            delete attempt1TextLenRef.current[lastAssistant.id];
+            return [...prev];
+          });
+        }
+      }
 
       // If user aborted, don't try to resume
       if (isAbort) {

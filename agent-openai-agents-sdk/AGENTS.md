@@ -54,6 +54,23 @@ Ask the user: "I see there's an existing app with the same name. Would you like 
 - **If they want to bind**: See the **deploy** skill for binding steps
 - **If they want to delete**: Run `databricks apps delete <app-name>` then deploy again
 
+## Supervisor API (Offloading the Agent Loop)
+
+The **Supervisor API** lets Databricks run the tool-selection and agent loop server-side. Declare hosted tools (Genie spaces, UC functions, Knowledge Assistants, UC connection MCP servers, Databricks App endpoints) and call `responses.create()` — Databricks handles the rest.
+
+**Use when the user wants to** connect Genie spaces, UC functions, or other Databricks-hosted tools without managing the agent loop themselves.
+
+**Limitations:**
+- Tools run as the app's service principal (no user token forwarding) — grant permissions in `databricks.yml`
+- Cannot mix hosted tools with client-side function tools in the same request
+- Inference parameters (`temperature`, `top_p`, etc.) are not supported when tools are passed
+- `stream` and `background` cannot both be `true` in the same request
+- Background mode has a maximum execution time of 30 minutes
+
+**Skills:**
+- Use **supervisor-api** to set up the Supervisor API with hosted tools
+- Use **supervisor-api-background-mode** for tasks that may exceed HTTP timeout limits (complex multi-tool workflows, large data analysis)
+
 ## Agent Evaluation
 
 When the user asks about evaluating their agent (quality, metrics, scorers, datasets, or tracing), suggest installing the **MLflow Skills** from https://github.com/mlflow/skills. These provide expert guidance for evaluation workflows using MLflow's native APIs.
@@ -85,6 +102,8 @@ After installation, the skills will be available as slash commands (e.g., `/agen
 | Add tools & permissions | **add-tools** | `.claude/skills/add-tools/SKILL.md` |
 | Run/test locally | **run-locally** | `.claude/skills/run-locally/SKILL.md` |
 | Modify agent code | **modify-agent** | `.claude/skills/modify-agent/SKILL.md` |
+| Offload agent loop to Databricks | **supervisor-api** | `.claude/skills/supervisor-api/SKILL.md` |
+| Long-running background tasks | **supervisor-api-background-mode** | `.claude/skills/supervisor-api-background-mode/SKILL.md` |
 
 **Note:** All agent skills are located in `.claude/skills/` directory.
 

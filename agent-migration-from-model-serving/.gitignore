@@ -222,6 +222,8 @@ sketch
 !.claude/skills/migrate-from-model-serving/
 !.claude/skills/long-running-server/
 !.claude/skills/load-testing/
+!.claude/skills/supervisor-api/
+!.claude/skills/supervisor-api-background-mode/
 
 **/.env
 **/.env.local

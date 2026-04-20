@@ -170,6 +170,7 @@ export function Chat({
       },
     }),
     onData: (dataPart) => {
+      console.log(`[chat][onData] received dataPart type=${dataPart.type}`, dataPart);
       setDataStream((ds) =>
         ds ? [...ds, dataPart as DataUIPart<CustomUIDataTypes>] : [],
       );

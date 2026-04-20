@@ -150,6 +150,59 @@ def replace_fake_id(obj: Any, real_id: str) -> Any:
     return obj
 
 
+async def _heal_orphan_tool_calls(session: AsyncDatabricksSession) -> None:
+    """Add synthetic function_call_output for any function_call missing one.
+
+    Durable-resume can interrupt the pod between the LLM emitting tool_calls
+    and the SDK finishing the tool executions — when that happens the Session
+    is left with function_call items whose matching function_call_output
+    never got written. The very next LLM request over this session fails
+    with 'assistant message with tool_calls must be followed by tool
+    messages…'. Patching in a short synthetic output keeps the conversation
+    valid so the LLM can retry or acknowledge the interruption cleanly.
+    """
+    items = await session.get_items()
+
+    def _get(item, key):
+        if isinstance(item, dict):
+            return item.get(key)
+        return getattr(item, key, None)
+
+    call_ids_with_output: set[str] = set()
+    pending_calls: list[tuple[str, str]] = []
+    for item in items:
+        t = _get(item, "type")
+        call_id = _get(item, "call_id")
+        if not call_id:
+            continue
+        if t == "function_call_output":
+            call_ids_with_output.add(call_id)
+        elif t == "function_call":
+            pending_calls.append((call_id, _get(item, "name") or ""))
+
+    orphans = [
+        {
+            "type": "function_call_output",
+            "call_id": cid,
+            "output": (
+                f"Tool call '{name}' was interrupted by a durable resume "
+                "and did not complete. Please retry if still needed."
+            ),
+        }
+        for cid, name in pending_calls
+        if cid not in call_ids_with_output
+    ]
+    if orphans:
+        logger.info(
+            "Sanitizing session %s: injecting %d synthetic function_call_output "
+            "items for orphan tool calls (ids=%s)",
+            session.session_id,
+            len(orphans),
+            [o["call_id"] for o in orphans],
+        )
+        await session.add_items(orphans)
+
+
 async def deduplicate_input(request: ResponsesAgentRequest, session: AsyncDatabricksSession) -> list[dict]:
     """Return the input messages to pass to the Runner, avoiding duplication with session history.
 
@@ -157,7 +210,11 @@ async def deduplicate_input(request: ResponsesAgentRequest, session: AsyncDatabr
     that history persisted, passing everything through would duplicate messages.
     If the session already covers the prior turns, only the latest message is needed
     since the session will prepend the full history automatically.
+
+    Also heals any orphan tool_calls left by a prior durable-resume interrupt
+    so the next LLM request over this session is a valid conversation.
     """
+    await _heal_orphan_tool_calls(session)
     messages = [i.model_dump() for i in request.input]
     # Empty input is a valid signal from the long-running server to resume an
     # existing session without re-sending user content — the session already

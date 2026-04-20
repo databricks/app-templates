@@ -188,12 +188,24 @@ export function Chat({
       // text renders in-place. Tool parts are kept because they naturally
       // de-dup across attempts via call_id.
       if (dataPart.type === 'data-resumed') {
+        console.log('[chat][onData] got data-resumed', dataPart);
         setMessages((prev) => {
-          if (!prev.length) return prev;
+          if (!prev.length) {
+            console.log('[chat][onData] no prev messages; ignoring');
+            return prev;
+          }
           const last = prev[prev.length - 1];
+          console.log(
+            `[chat][onData] last message role=${last.role} parts=${JSON.stringify(
+              (last.parts ?? []).map((p: { type?: string }) => p.type),
+            )}`,
+          );
           if (last.role !== 'assistant') return prev;
           const filtered = (last.parts ?? []).filter(
             (p: { type?: string }) => p.type !== 'text',
+          );
+          console.log(
+            `[chat][onData] filtered: ${(last.parts ?? []).length} -> ${filtered.length} parts`,
           );
           return [...prev.slice(0, -1), { ...last, parts: filtered }];
         });

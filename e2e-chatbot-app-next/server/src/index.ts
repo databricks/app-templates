@@ -59,13 +59,20 @@ app.use('/api/config', configRouter);
 app.use('/api/feedback', feedbackRouter);
 
 // Agent backend proxy (optional)
-// If API_PROXY is set, proxy /invocations requests to the agent backend.
-// For streaming POSTs we rewrite into LongRunningAgentServer's "background"
-// contract: the backend persists every event to Lakebase, the proxy auto-
-// resumes via GET /responses/{id}?stream=true&starting_after=N if the
-// upstream connection dies before the [DONE] sentinel. This is what makes
-// the UI survive mid-response pod crashes — zero client-side changes.
-const agentBackendUrl = process.env.API_PROXY;
+// If AGENT_BACKEND_URL (or legacy API_PROXY) is set, proxy /invocations
+// requests to the agent backend. For streaming POSTs we rewrite into
+// LongRunningAgentServer's "background" contract: the backend persists every
+// event to Lakebase, the proxy auto-resumes via
+//   GET /responses/{id}?stream=true&starting_after=N
+// if the upstream connection dies before the [DONE] sentinel. This is what
+// makes the UI survive mid-response pod crashes — zero client-side changes.
+//
+// IMPORTANT: when running with the Python FastAPI backend, point
+// AGENT_BACKEND_URL at FastAPI (e.g. http://localhost:8000/invocations) and
+// set API_PROXY at THIS Express server (e.g. http://localhost:3000/invocations)
+// so the AI SDK provider in providers-server.ts routes through this handler
+// instead of going direct to FastAPI.
+const agentBackendUrl = process.env.AGENT_BACKEND_URL || process.env.API_PROXY;
 if (agentBackendUrl) {
   console.log(`✅ Proxying /invocations to ${agentBackendUrl}`);
 

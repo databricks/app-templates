@@ -236,7 +236,9 @@ export function Chat({
       // this stream we recorded how many chars of text belonged to attempt 1.
       // Now that the stream is complete (attempt 2 produced its answer),
       // chop off exactly that many chars from the start so only attempt 2's
-      // text is rendered. Belt-and-suspenders over the mid-stream wipe.
+      // text is rendered. Must return NEW message + part object references —
+      // PreviewMessage is memoized and a reference-equal message short-
+      // circuits the re-render even if we mutated nested `.text` in place.
       const lastAssistant = finishedMessages?.at(-1);
       if (lastAssistant && lastAssistant.role === 'assistant') {
         const drop = attempt1TextLenRef.current[lastAssistant.id];
@@ -249,16 +251,25 @@ export function Chat({
             const last = prev[prev.length - 1];
             if (last.id !== lastAssistant.id) return prev;
             let remaining = drop;
-            for (const p of last.parts ?? []) {
+            const newParts = (last.parts ?? []).map((p) => {
               const tp = p as { type?: string; text?: string };
-              if (tp.type !== 'text' || !tp.text) continue;
-              if (remaining <= 0) break;
+              if (tp.type !== 'text' || !tp.text) return p;
+              if (remaining <= 0) return p;
               const cut = Math.min(remaining, tp.text.length);
-              tp.text = tp.text.slice(cut);
+              const nextText = tp.text.slice(cut);
               remaining -= cut;
-            }
+              return { ...tp, text: nextText };
+            });
             delete attempt1TextLenRef.current[lastAssistant.id];
-            return [...prev];
+            const newLast = { ...last, parts: newParts };
+            console.log(
+              `[chat][onFinish] truncated; new text parts lengths=${JSON.stringify(
+                newParts
+                  .filter((p) => (p as { type?: string }).type === 'text')
+                  .map((p) => (p as { text?: string }).text?.length),
+              )}`,
+            );
+            return [...prev.slice(0, -1), newLast];
           });
         }
       }

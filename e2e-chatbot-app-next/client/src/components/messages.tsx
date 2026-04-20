@@ -18,6 +18,12 @@ interface MessagesProps {
   isReadonly: boolean;
   selectedModelId: string;
   feedback?: FeedbackMap;
+  // Durable-resume: messageId -> chars of text that belonged to attempt 1.
+  // When present, slice that many chars off the front of the message's text
+  // parts at render time so only attempt-2 content shows. State itself is
+  // left alone because the AI SDK accumulator keeps restoring the full
+  // text via structuredClone on every write().
+  attempt1TextLen?: Record<string, number>;
 }
 
 function PureMessages({
@@ -30,6 +36,7 @@ function PureMessages({
   isReadonly,
   selectedModelId,
   feedback = {},
+  attempt1TextLen,
 }: MessagesProps) {
   const {
     containerRef: messagesContainerRef,
@@ -65,25 +72,45 @@ function PureMessages({
     >
       <Conversation className="mx-auto flex min-w-0 max-w-4xl flex-col gap-4 md:gap-6">
         <ConversationContent className="flex flex-col gap-4 px-4 py-4 md:gap-6">
-          {messages.map((message, index) => (
-            <PreviewMessage
-              key={message.id}
-              message={message}
-              allMessages={messages}
-              isLoading={
-                status === 'streaming' && messages.length - 1 === index
-              }
-              setMessages={setMessages}
-              addToolApprovalResponse={addToolApprovalResponse}
-              sendMessage={sendMessage}
-              regenerate={regenerate}
-              isReadonly={isReadonly}
-              requiresScrollPadding={
-                hasSentMessage && index === messages.length - 1
-              }
-              initialFeedback={feedback[message.id]}
-            />
-          ))}
+          {messages.map((message, index) => {
+            // Render-time durable-resume slice: if this message had a resume
+            // boundary recorded, remove the leading attempt-1 chars from its
+            // text parts before passing to PreviewMessage. Creates a new
+            // message object so the memo sees a reference change and
+            // re-renders. Tool / step / data parts are passed through.
+            let displayMessage = message;
+            const drop = attempt1TextLen?.[message.id];
+            if (drop && drop > 0) {
+              let remaining = drop;
+              const newParts = (message.parts ?? []).map((p) => {
+                const tp = p as { type?: string; text?: string };
+                if (tp.type !== 'text' || !tp.text || remaining <= 0) return p;
+                const cut = Math.min(remaining, tp.text.length);
+                remaining -= cut;
+                return { ...tp, text: tp.text.slice(cut) };
+              });
+              displayMessage = { ...message, parts: newParts } as ChatMessage;
+            }
+            return (
+              <PreviewMessage
+                key={message.id}
+                message={displayMessage}
+                allMessages={messages}
+                isLoading={
+                  status === 'streaming' && messages.length - 1 === index
+                }
+                setMessages={setMessages}
+                addToolApprovalResponse={addToolApprovalResponse}
+                sendMessage={sendMessage}
+                regenerate={regenerate}
+                isReadonly={isReadonly}
+                requiresScrollPadding={
+                  hasSentMessage && index === messages.length - 1
+                }
+                initialFeedback={feedback[message.id]}
+              />
+            );
+          })}
 
           {status === 'submitted' &&
             messages.length > 0 &&

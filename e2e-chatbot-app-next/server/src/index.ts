@@ -213,24 +213,42 @@ if (agentBackendUrl) {
 
       // Auto-resume loop: if upstream closed early (pod crash) and we know a
       // response_id, reconnect via the retrieve endpoint using our cursor.
+      if (!sawDone && responseId) {
+        console.log(
+          `[/invocations] upstream closed without [DONE] response_id=${responseId} last_seq=${lastSeq}; entering auto-resume`,
+        );
+      }
       while (!sawDone && responseId && resumeAttempt < MAX_RESUME_ATTEMPTS) {
         resumeAttempt += 1;
         console.log(
-          `[/invocations] resuming stream for ${responseId} from seq=${lastSeq} (attempt ${resumeAttempt})`,
+          `[/invocations] resume fetch response_id=${responseId} starting_after=${lastSeq} attempt=${resumeAttempt}`,
         );
         const resumed = await fetch(retrieveUrl(responseId, lastSeq), {
           method: 'GET',
           headers: forwardHeaders,
         });
         if (!resumed.ok) {
+          console.log(
+            `[/invocations] resume failed response_id=${responseId} status=${resumed.status}`,
+          );
           res.write(
             `event: error\ndata: ${JSON.stringify({ error: { message: 'Resume fetch failed', status: resumed.status } })}\n\n`,
           );
           break;
         }
         sawDone = await pumpStream(resumed);
+        if (sawDone) {
+          console.log(
+            `[/invocations] resume succeeded response_id=${responseId} after ${resumeAttempt} attempts`,
+          );
+        }
       }
 
+      if (responseId) {
+        console.log(
+          `[/invocations] stream done response_id=${responseId} saw_done=${sawDone} last_seq=${lastSeq} resumes=${resumeAttempt}`,
+        );
+      }
       res.end();
     } catch (error) {
       console.error('[/invocations proxy] Error:', error);

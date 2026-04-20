@@ -168,8 +168,17 @@ if (agentBackendUrl) {
             if (!dataLine) continue;
             try {
               const parsed = JSON.parse(dataLine.slice(5).trim());
-              if (!responseId && typeof parsed.id === 'string') {
-                responseId = parsed.id;
+              // Accept response_id from the dedicated top-level tag, or fall
+              // back to the response.id / top-level id shapes so this works
+              // across LongRunningAgentServer versions.
+              const rid =
+                parsed.response_id ??
+                parsed.response?.id ??
+                (typeof parsed.id === 'string' && parsed.id.startsWith('resp_')
+                  ? parsed.id
+                  : null);
+              if (!responseId && typeof rid === 'string') {
+                responseId = rid;
                 onFirstResponseId(responseId);
               }
               if (

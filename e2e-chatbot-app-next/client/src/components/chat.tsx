@@ -198,17 +198,27 @@ export function Chat({
           const last = prev[prev.length - 1];
           console.log(
             `[chat][onData] last message role=${last.role} parts=${JSON.stringify(
-              (last.parts ?? []).map((p: { type?: string }) => p.type),
+              (last.parts ?? []).map((p: { type?: string; text?: string }) => ({
+                type: p.type,
+                len: p.text?.length,
+              })),
             )}`,
           );
           if (last.role !== 'assistant') return prev;
-          const filtered = (last.parts ?? []).filter(
-            (p: { type?: string }) => p.type !== 'text',
+          // Reset the text content in place — removing the part lets the AI
+          // SDK recreate it with a fresh id AND the stale accumulated text.
+          // Instead, keep the same part id and wipe .text so the next delta
+          // appends to an empty string. Future deltas from attempt 2 will
+          // still hit the same text part; that's fine, the user just sees
+          // attempt 2's output. Tool parts keep their cards.
+          const updatedParts = (last.parts ?? []).map(
+            (p: { type?: string; text?: string }) =>
+              p.type === 'text' ? { ...p, text: '' } : p,
           );
           console.log(
-            `[chat][onData] filtered: ${(last.parts ?? []).length} -> ${filtered.length} parts`,
+            `[chat][onData] wiped text parts in place; parts remain ${updatedParts.length}`,
           );
-          return [...prev.slice(0, -1), { ...last, parts: filtered }];
+          return [...prev.slice(0, -1), { ...last, parts: updatedParts }];
         });
       }
     },

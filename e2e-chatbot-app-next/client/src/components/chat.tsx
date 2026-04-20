@@ -184,7 +184,6 @@ export function Chat({
       },
     }),
     onData: (dataPart) => {
-      console.log(`[chat][onData] received dataPart type=${dataPart.type}`, dataPart);
       setDataStream((ds) =>
         ds ? [...ds, dataPart as DataUIPart<CustomUIDataTypes>] : [],
       );
@@ -203,7 +202,6 @@ export function Chat({
       // text renders in-place. Tool parts are kept because they naturally
       // de-dup across attempts via call_id.
       if (dataPart.type === 'data-resumed') {
-        console.log('[chat][onData] got data-resumed', dataPart);
         // Snapshot the current text length across text parts of the last
         // assistant message. Messages uses this to slice at render time.
         // Mid-stream state mutation is fighting the AI SDK accumulator
@@ -231,9 +229,6 @@ export function Chat({
         if (lastAssistantId) {
           const { id, len } = lastAssistantId as { id: string; len: number };
           setAttempt1TextLen((prev) => ({ ...prev, [id]: len }));
-          console.log(
-            `[chat][onData] recorded attempt-1 text length=${len} for message=${id}`,
-          );
         }
       }
     },
@@ -254,9 +249,6 @@ export function Chat({
       if (lastAssistant && lastAssistant.role === 'assistant') {
         const drop = attempt1TextLen[lastAssistant.id];
         if (drop && drop > 0) {
-          console.log(
-            `[chat][onFinish] post-stream truncate: removing first ${drop} chars of text parts for message=${lastAssistant.id}`,
-          );
           setMessages((prev) => {
             if (!prev.length) return prev;
             const last = prev[prev.length - 1];
@@ -272,13 +264,6 @@ export function Chat({
               return { ...tp, text: nextText };
             });
             const newLast = { ...last, parts: newParts } as ChatMessage;
-            console.log(
-              `[chat][onFinish] truncated; new text parts lengths=${JSON.stringify(
-                newParts
-                  .filter((p) => (p as { type?: string }).type === 'text')
-                  .map((p) => (p as { text?: string }).text?.length),
-              )}`,
-            );
             return [...prev.slice(0, -1), newLast];
           });
           // Clear so the render-time slice in Messages stops kicking in

@@ -1,0 +1,9 @@
+version: 1
+name: "Chatbot"
+description: "A basic chatbot application integrated with an LLM hosted on Databricks Model Serving."
+
+resource_specs:
+  - name: "serving-endpoint"
+    description: "The Databricks Model Serving endpoint hosting the LLM that powers the app's responses (e.g., 'Meta Llama 3.3 70B Instruct' or any chat-compatible foundation model)."
+    serving_endpoint_spec:
+      permission: "CAN_QUERY"

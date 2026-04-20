@@ -1,0 +1,12 @@
+version: 1
+name: "AppKit - Genie"
+description: "A Node.js chatbot app for natural language data exploration using AI/BI Genie, built with AppKit."
+
+resource_specs:
+  - name: "genie-space"
+    description: "The AI/BI Genie space the app uses for natural language data queries."
+    genie_space_spec:
+      permission: "CAN_VIEW"
+
+user_api_scopes:
+  - "dashboards.genie"

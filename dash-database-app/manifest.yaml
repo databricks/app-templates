@@ -1,0 +1,9 @@
+version: 1
+name: "Lakebase Provisioned app"
+description: "A basic todo application which stores tasks in a provisioned postgres database hosted on Databricks."
+
+resource_specs:
+  - name: "database"
+    description: "The database the app uses to store and retrieve todo tasks."
+    database_spec:
+      permission: "CAN_CONNECT_AND_CREATE"

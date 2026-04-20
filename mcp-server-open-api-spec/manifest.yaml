@@ -1,0 +1,13 @@
+version: 1
+name: "MCP Server - OpenAPI Spec"
+description: "Make any REST API usable by agents by wrapping it in an MCP server. Deploys an MCP server that exposes REST API operations from an OpenAPI specification stored in a Unity Catalog volume."
+
+resource_specs:
+  - name: "uc-volume"
+    description: "The Unity Catalog volume where your OpenAPI specification is stored. Uses spec.json by default (editable in app.yaml after deployment)."
+    uc_securable_spec:
+      securable_type: "VOLUME"
+      permission: "READ_VOLUME"
+
+user_api_scopes:
+  - "catalog.connections"

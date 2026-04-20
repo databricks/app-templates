@@ -74,7 +74,9 @@ app.use('/api/feedback', feedbackRouter);
 // instead of going direct to FastAPI.
 const agentBackendUrl = process.env.AGENT_BACKEND_URL || process.env.API_PROXY;
 if (agentBackendUrl) {
-  console.log(`✅ Proxying /invocations to ${agentBackendUrl}`);
+  console.log(
+    `✅ Proxying /invocations to ${agentBackendUrl} (durable-resume enabled)`,
+  );
 
   // Derive the retrieve endpoint (strip trailing /invocations or /responses)
   const backendRoot = agentBackendUrl.replace(/\/(invocations|responses)\/?$/, '');
@@ -135,6 +137,9 @@ if (agentBackendUrl) {
       let responseId: string | null = null;
       let lastSeq = 0;
       let sawDone = false;
+      const onFirstResponseId = (rid: string) => {
+        console.log(`[/invocations] background started response_id=${rid}`);
+      };
       // Safety cap so a permanently-broken backend can't loop forever.
       const MAX_RESUME_ATTEMPTS = 10;
       let resumeAttempt = 0;
@@ -165,6 +170,7 @@ if (agentBackendUrl) {
               const parsed = JSON.parse(dataLine.slice(5).trim());
               if (!responseId && typeof parsed.id === 'string') {
                 responseId = parsed.id;
+                onFirstResponseId(responseId);
               }
               if (
                 typeof parsed.sequence_number === 'number' &&

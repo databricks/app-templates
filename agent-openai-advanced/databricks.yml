@@ -4,7 +4,7 @@ bundle:
 resources:
   apps:
     agent_openai_advanced:
-      name: "dhruv-agent-openai-adv-durable"
+      name: "agent-openai-advanced"
       description: "OpenAI Agents SDK agent with short-term memory and long-running
         background task support"
       source_code_path: ./
@@ -16,10 +16,8 @@ resources:
           - name: MLFLOW_REGISTRY_URI
             value: "databricks-uc"
           # API_PROXY points the Node AI SDK at the Express /invocations
-          # handler (on the same Node process, port 3000), which rewrites the
-          # request into background mode and auto-resumes on disconnect.
-          # AGENT_BACKEND_URL is where that handler forwards — the real
-          # Python FastAPI agent endpoint.
+          # handler which rewrites to background mode and auto-resumes on
+          # disconnect. AGENT_BACKEND_URL is where that handler forwards.
           - name: API_PROXY
             value: "http://localhost:3000/invocations"
           - name: AGENT_BACKEND_URL
@@ -30,35 +28,34 @@ resources:
             value: "300"
           - name: MLFLOW_EXPERIMENT_ID
             value_from: "experiment"
-          - name: LAKEBASE_INSTANCE_NAME
-            value_from: "database"
+          - name: LAKEBASE_AUTOSCALING_ENDPOINT
+            value_from: "postgres"
           - name: LOG_LEVEL
             value: "INFO"
-          # Temporary: exposes /_debug/kill_task/{id} for integration tests
-          # that simulate pod crashes without restarting the app. Remove
-          # before any production use.
-          - name: LONG_RUNNING_ENABLE_DEBUG_KILL
-            value: "1"
       # Resources which this app has access to
       resources:
         - name: 'experiment'
           experiment:
-            experiment_id: "1490685316442238"
+            experiment_id: ""
             permission: 'CAN_MANAGE'
-        - name: 'database'
-          database:
-            instance_name: 'dhruv-gupta'
-            database_name: 'databricks_postgres'
+        - name: 'postgres'
+          postgres:
+            branch: "<your-lakebase-branch>"
+            database: "<your-lakebase-database>"
             permission: 'CAN_CONNECT_AND_CREATE'
 
 targets:
   dev:
     mode: development
     default: true
+    # workspace:
+    #   host: https://...
 
   prod:
     mode: production
+    # workspace:
+    #   host: https://...
     resources:
       apps:
         agent_openai_advanced:
-          name: dhruv-agent-openai-adv-durable
+          name: agent-openai-adv

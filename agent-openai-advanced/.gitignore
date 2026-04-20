@@ -210,6 +210,7 @@ sketch
 .claude/skills/*
 !.claude/skills/quickstart/
 !.claude/skills/discover-tools/
+!.claude/skills/create-tools/
 !.claude/skills/deploy/
 !.claude/skills/add-tools/
 !.claude/skills/run-locally/
@@ -217,6 +218,8 @@ sketch
 !.claude/skills/migrate-from-model-serving/
 !.claude/skills/agent-memory/
 !.claude/skills/lakebase-setup/
+!.claude/skills/load-testing/
 
 **/.env
 **/.env.local
+load-test-runs/

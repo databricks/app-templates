@@ -18,12 +18,21 @@ from uuid_utils import uuid7
 logger = logging.getLogger(__name__)
 
 
+def _is_databricks_app_env() -> bool:
+    """Check if running in a Databricks App environment."""
+    return bool(os.getenv("DATABRICKS_APP_NAME"))
+
+
 @dataclass(frozen=True)
 class LakebaseConfig:
     instance_name: Optional[str]
     autoscaling_endpoint: Optional[str]
     autoscaling_project: Optional[str]
     autoscaling_branch: Optional[str]
+
+    @property
+    def description(self) -> str:
+        return self.autoscaling_endpoint or self.instance_name or f"{self.autoscaling_project}/{self.autoscaling_branch}"
 
 
 def _is_lakebase_hostname(value: str) -> bool:
@@ -101,6 +110,30 @@ def init_lakebase_config() -> LakebaseConfig:
         return LakebaseConfig(instance_name=None, autoscaling_endpoint=None, autoscaling_project=project, autoscaling_branch=branch)
     else:
         return LakebaseConfig(instance_name=resolve_lakebase_instance_name(raw_name), autoscaling_endpoint=None, autoscaling_project=None, autoscaling_branch=None)
+
+
+def get_lakebase_access_error_message(lakebase_description: str) -> str:
+    """Generate a helpful error message for Lakebase access issues."""
+    if _is_databricks_app_env():
+        app_name = os.getenv("DATABRICKS_APP_NAME")
+        return (
+            f"Failed to connect to Lakebase instance '{lakebase_description}'. "
+            f"The App Service Principal for '{app_name}' may not have access.\n\n"
+            "To fix this:\n"
+            "1. Go to the Databricks UI and navigate to your app\n"
+            "2. Click 'Edit' → 'App resources' → 'Add resource'\n"
+            "3. Add your Lakebase instance as a resource\n"
+            "4. Grant the necessary permissions on your Lakebase instance. "
+            "See the README section 'Grant Lakebase permissions to your App's Service Principal' for the SQL commands."
+        )
+    else:
+        return (
+            f"Failed to connect to Lakebase instance '{lakebase_description}'. "
+            "Please verify:\n"
+            "1. The instance name is correct\n"
+            "2. You have the necessary permissions to access the instance\n"
+            "3. Your Databricks authentication is configured correctly"
+        )
 
 
 # Module-level singleton — initialized once at import time, shared by agent.py and start_server.py

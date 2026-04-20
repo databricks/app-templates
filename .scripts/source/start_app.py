@@ -33,13 +33,14 @@ FRONTEND_READY = [r"Server is running on http://localhost"]
 
 
 def check_port_available(port: int) -> bool:
-    """Check if a port is available by attempting to bind to it."""
+    """Check if a port is available (nothing is actively listening on it)."""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(("localhost", port))
-        return True
-    except OSError:
-        return False
+            s.settimeout(1)
+            s.connect(("localhost", port))
+        return False  # Something is listening
+    except (ConnectionRefusedError, OSError):
+        return True  # Nothing listening = available
 
 
 class ProcessManager:

@@ -1,4 +1,4 @@
-"""Grant Lakebase Postgres permissions to a Databricks Apps service principal or the current user.
+"""Grant Lakebase Postgres permissions to a Databricks Apps service principal.
 
 After deploying the app, run this script to grant the app's SP access to all
 Lakebase schemas and tables used by the agent's memory.
@@ -8,13 +8,13 @@ Usage:
     databricks apps get <app-name> --output json | jq -r '.service_principal_client_id'
 
     # Provisioned instance:
-    uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type langgraph --instance-name <name>
+    uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type <type> --instance-name <name>
 
-    # Autoscaling instance:
-    uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type openai --project <project> --branch <branch>
+    # Autoscaling instance (endpoint):
+    uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type <type> --autoscaling-endpoint <endpoint>
 
-    # Grant to current user (for local development):
-    uv run python scripts/grant_lakebase_permissions.py --grant-self --memory-type langgraph
+    # Autoscaling instance (project + branch):
+    uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type <type> --project <project> --branch <branch>
 
     # Memory types: langgraph, openai
 """
@@ -76,36 +76,19 @@ SHARED_SCHEMAS: dict[str, list[str]] = {
 }
 
 
-def _try_sql(client, sql: str):
-    """Execute SQL, logging but not raising on failure."""
-    try:
-        client.execute(sql)
-    except Exception as exc:
-        print(f"  SQL warning: {exc!r} for: {sql}")
-
-
-def _grant_permissions(client, grantee: str, memory_types: list[str], grant_self: bool = False):
-    """Grant all permissions for the given memory types to the grantee role."""
+def _grant_permissions(client, grantee: str, memory_type: str):
+    """Grant all permissions for the given memory type to the grantee role."""
     from databricks_ai_bridge.lakebase import (
         SchemaPrivilege,
         SequencePrivilege,
         TablePrivilege,
     )
 
-    quoted = f'"{grantee}"'
-
-    # For --grant-self, grant CREATE ON DATABASE so the user can create schemas
-    if grant_self:
-        print(f"Granting CREATE ON DATABASE to {grantee}...")
-        _try_sql(client, f"GRANT CREATE ON DATABASE databricks_postgres TO {quoted};")
-
-    # Build combined schema -> tables map for all selected memory types
+    # Build schema -> tables map
     schema_tables: dict[str, list[str]] = dict(SHARED_SCHEMAS)
-    for mt in memory_types:
-        for schema, tables in MEMORY_TYPE_SCHEMAS[mt].items():
-            schema_tables.setdefault(schema, []).extend(tables)
+    for schema, tables in MEMORY_TYPE_SCHEMAS[memory_type].items():
+        schema_tables.setdefault(schema, []).extend(tables)
 
-    # Grant schema + table privileges
     schema_privileges = [SchemaPrivilege.USAGE, SchemaPrivilege.CREATE]
     table_privileges = [
         TablePrivilege.SELECT,
@@ -134,12 +117,8 @@ def _grant_permissions(client, grantee: str, memory_types: list[str], grant_self
 
     # Grant sequence privileges (auto-increment columns).
     seq_schemas = list(SHARED_SEQUENCE_SCHEMAS)
-    for mt in memory_types:
-        if mt in NEEDS_SEQUENCES:
-            seq_schemas.extend(NEEDS_SEQUENCES[mt])
-    # Deduplicate while preserving order
-    seen = set()
-    seq_schemas = [s for s in seq_schemas if not (s in seen or seen.add(s))]
+    if memory_type in NEEDS_SEQUENCES:
+        seq_schemas.extend(NEEDS_SEQUENCES[memory_type])
 
     for schema in seq_schemas:
         print(f"Granting sequence privileges on '{schema}' schema...")
@@ -156,39 +135,6 @@ def _grant_permissions(client, grantee: str, memory_types: list[str], grant_self
         except Exception as e:
             print(f"  Warning: sequence grant failed (may not exist yet): {e}")
 
-    # For --grant-self, also grant via SET ROLE databricks_superuser as fallback
-    # for tables/sequences owned by other users (e.g. from previous test runs)
-    if grant_self:
-        print("Attempting grants via SET ROLE databricks_superuser...")
-        try:
-            client.execute("SET ROLE databricks_superuser;")
-            for schema, tables in schema_tables.items():
-                _try_sql(
-                    client,
-                    f"GRANT ALL ON ALL TABLES IN SCHEMA {schema} TO {quoted};",
-                )
-                _try_sql(
-                    client,
-                    f"GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA {schema} TO {quoted};",
-                )
-                _try_sql(
-                    client,
-                    f"ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} "
-                    f"GRANT ALL ON TABLES TO {quoted};",
-                )
-                _try_sql(
-                    client,
-                    f"ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} "
-                    f"GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO {quoted};",
-                )
-            client.execute("RESET ROLE;")
-        except Exception as exc:
-            print(f"  SET ROLE databricks_superuser failed: {exc}")
-            try:
-                client.execute("RESET ROLE;")
-            except Exception:
-                pass
-
     print(
         "\nPermission grants complete. If some grants failed because tables don't "
         "exist yet, that's expected on a fresh branch — they'll be created on first "
@@ -198,30 +144,30 @@ def _grant_permissions(client, grantee: str, memory_types: list[str], grant_self
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Grant Lakebase permissions to an app service principal or the current user."
+        description="Grant Lakebase permissions to an app service principal."
     )
     parser.add_argument(
         "sp_client_id",
-        nargs="?",
-        default=None,
-        help="Service principal client ID (UUID). Not required when using --grant-self.",
-    )
-    parser.add_argument(
-        "--grant-self",
-        action="store_true",
-        help="Grant permissions to the current Lakebase user (for local development).",
+        help="Service principal client ID (UUID). Get it via: "
+        "databricks apps get <app-name> --output json "
+        "| jq -r '.service_principal_client_id'",
     )
     parser.add_argument(
         "--memory-type",
         required=True,
-        nargs="+",
         choices=list(MEMORY_TYPE_SCHEMAS.keys()),
-        help="Memory type(s) to grant permissions for. Can specify multiple.",
+        help="Memory type to grant permissions for",
     )
     parser.add_argument(
         "--instance-name",
         default=os.getenv("LAKEBASE_INSTANCE_NAME"),
         help="Lakebase instance name for provisioned instances (default: LAKEBASE_INSTANCE_NAME from .env)",
+    )
+    parser.add_argument(
+        "--autoscaling-endpoint",
+        default=os.getenv("LAKEBASE_AUTOSCALING_ENDPOINT"),
+        help="Lakebase autoscaling endpoint path (default: LAKEBASE_AUTOSCALING_ENDPOINT from .env). "
+        "e.g. projects/<project>/branches/<branch>/endpoints/primary",
     )
     parser.add_argument(
         "--project",
@@ -235,16 +181,31 @@ def main():
     )
     args = parser.parse_args()
 
-    if not args.grant_self and not args.sp_client_id:
-        parser.error("sp_client_id is required when --grant-self is not specified")
-
     has_provisioned = bool(args.instance_name)
     has_autoscaling = bool(args.project and args.branch)
+
+    # Parse project/branch from --autoscaling-endpoint if provided
+    if args.autoscaling_endpoint and not has_autoscaling and not has_provisioned:
+        import re
+
+        m = re.match(r"projects/([^/]+)/branches/([^/]+)", args.autoscaling_endpoint)
+        if m:
+            args.project = m.group(1)
+            args.branch = m.group(2)
+            has_autoscaling = True
+        else:
+            print(
+                f"Error: Could not parse project/branch from endpoint '{args.autoscaling_endpoint}'.\n"
+                "  Expected format: projects/<project>/branches/<branch>/endpoints/<endpoint>",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     if not has_provisioned and not has_autoscaling:
         print(
             "Error: Lakebase connection is required. Provide one of:\n"
             "  Provisioned:  --instance-name <name>  (or set LAKEBASE_INSTANCE_NAME in .env)\n"
+            "  Autoscaling:  --autoscaling-endpoint <endpoint>  (or set LAKEBASE_AUTOSCALING_ENDPOINT in .env)\n"
             "  Autoscaling:  --project <proj> --branch <branch>  (or set LAKEBASE_AUTOSCALING_PROJECT + LAKEBASE_AUTOSCALING_BRANCH in .env)",
             file=sys.stderr,
         )
@@ -261,27 +222,20 @@ def main():
             print(f"Using provisioned instance: {args.instance_name}")
         else:
             print(f"Using autoscaling project: {args.project}, branch: {args.branch}")
-        print(f"Memory types: {args.memory_type}")
+        print(f"Memory type: {args.memory_type}")
 
-        if args.grant_self:
-            # Resolve current user from the database connection
-            rows = client.execute("SELECT current_user;")
-            grantee = rows[0]["current_user"]
-            print(f"Granting permissions to current user: {grantee}")
-        else:
-            grantee = args.sp_client_id
-            # Create role for SP
-            print(f"Creating role for SP {grantee}...")
-            try:
-                client.create_role(grantee, "SERVICE_PRINCIPAL")
-                print("  Role created.")
-            except Exception as e:
-                if "already exists" in str(e).lower():
-                    print("  Role already exists, skipping.")
-                else:
-                    raise
+        grantee = args.sp_client_id
+        print(f"Creating role for SP {grantee}...")
+        try:
+            client.create_role(grantee, "SERVICE_PRINCIPAL")
+            print("  Role created.")
+        except Exception as e:
+            if "already exists" in str(e).lower():
+                print("  Role already exists, skipping.")
+            else:
+                raise
 
-        _grant_permissions(client, grantee, args.memory_type, grant_self=args.grant_self)
+        _grant_permissions(client, grantee, args.memory_type)
 
 
 if __name__ == "__main__":

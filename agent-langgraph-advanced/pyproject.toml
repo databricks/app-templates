@@ -18,14 +18,12 @@ dependencies = [
     "langgraph>=1.0.9",
     "langchain-mcp-adapters>=0.2.1",
     "python-dotenv>=1.2.1",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.25.0",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [dependency-groups]
 dev = [

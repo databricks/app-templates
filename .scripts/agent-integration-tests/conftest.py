@@ -3,8 +3,7 @@ import pytest
 from template_config import (
     DEFAULT_GENIE_SPACE_ID,
     DEFAULT_LAKEBASE,
-    DEFAULT_LAKEBASE_BRANCH,
-    DEFAULT_LAKEBASE_PROJECT,
+    DEFAULT_LAKEBASE_AUTOSCALING_ENDPOINT,
     DEFAULT_PROFILE,
     DEFAULT_SERVING_ENDPOINT,
     REPO_ROOT,
@@ -19,14 +18,9 @@ def pytest_addoption(parser):
         help="Lakebase provisioned instance name",
     )
     parser.addoption(
-        "--lakebase-autoscaling-project",
-        default=DEFAULT_LAKEBASE_PROJECT,
-        help="Lakebase autoscaling project name",
-    )
-    parser.addoption(
-        "--lakebase-autoscaling-branch",
-        default=DEFAULT_LAKEBASE_BRANCH,
-        help="Lakebase autoscaling branch name",
+        "--lakebase-autoscaling-endpoint",
+        default=DEFAULT_LAKEBASE_AUTOSCALING_ENDPOINT,
+        help="Lakebase autoscaling endpoint (e.g. projects/my-project/branches/my-branch/endpoints/primary)",
     )
     parser.addoption("--template", action="append", default=None, help="Run only these templates (repeatable)")
     parser.addoption(
@@ -82,13 +76,8 @@ def lakebase_provisioned_name(request):
 
 
 @pytest.fixture
-def lakebase_project(request):
-    return request.config.getoption("--lakebase-autoscaling-project")
-
-
-@pytest.fixture
-def lakebase_branch(request):
-    return request.config.getoption("--lakebase-autoscaling-branch")
+def lakebase_autoscaling_endpoint(request):
+    return request.config.getoption("--lakebase-autoscaling-endpoint")
 
 
 @pytest.fixture

@@ -10,10 +10,8 @@ dependencies = [
     "mlflow>=3.10.0",
     "databricks-agents>=1.9.3",
     "python-dotenv>=1.2.1",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.25.0",
 ]
-
-[tool.uv]
-prerelease = "allow"
 
 [build-system]
 requires = ["hatchling"]
@@ -30,6 +28,7 @@ setup = [
 ]
 
 [tool.uv]
+prerelease = "allow"
 default-groups = ["dev", "setup"]
 
 [project.scripts]

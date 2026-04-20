@@ -101,6 +101,11 @@ def sync_template(template: str, config: dict):
     # Deploy skill (with substitution)
     copy_skill(SOURCE / "deploy", dest / "deploy", subs)
 
+    # Add supervisor API to Open AI SDKs
+    if sdk == "openai":
+        copy_skill(SOURCE / "supervisor-api", dest / "supervisor-api")
+        copy_skill(SOURCE / "supervisor-api-background-mode", dest / "supervisor-api-background-mode")
+
     # SDK-specific skills (with substitution for bundle name references)
     if isinstance(sdk, list):
         # Multiple SDKs: copy skills for each, keeping SDK suffix in name

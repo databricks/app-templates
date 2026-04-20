@@ -9,11 +9,17 @@ The Supervisor API lets Databricks run the tool-selection and synthesis loop ser
 
 ## When to Use
 
-Use the Supervisor API when you want Databricks to manage the full agent loop for hosted tools: Genie spaces, UC functions, KA (Knowledge Assistant) agent endpoints, or MCP servers via UC connections.
+Use the Supervisor API when you want to:
+- Connect Genie spaces, UC functions, Knowledge Assistants, or MCP servers without managing the agent loop yourself
+- Choose models at runtime and control which tools are used per request
+- Offload tool orchestration to Databricks while iterating on your agent
 
 **Limitations:**
 - Cannot mix hosted tools with client-side function tools in the same request
 - Inference parameters (e.g., `temperature`, `top_p`) are not supported when tools are passed
+- Scoped token access (OBO) is not supported — tools run as the app's service principal; grant tool permissions in `databricks.yml`
+- `stream` and `background` cannot both be `true` in the same request
+- Background mode requests have a maximum execution time of 30 minutes
 
 ## Step 1: Install `databricks-openai`
 
@@ -40,8 +46,8 @@ TOOLS = [
     {
         "type": "genie_space",
         "genie_space": {
-            "description": "Query sales data using natural language",
             "id": "<genie-space-id>",
+            "description": "Query sales data using natural language",
         },
     },
     # UC function — SQL or Python UDF
@@ -56,24 +62,24 @@ TOOLS = [
     {
         "type": "knowledge_assistant",
         "knowledge_assistant": {
-            "description": "A Knowledge Assistant agent",
             "knowledge_assistant_id": "<ka-id>",
+            "description": "Answers questions from internal documentation",
         },
     },
-    # MCP server via UC connection
+    # External MCP server via Unity Catalog connection
     {
-        "type": "connection",
-        "connection": {
-            "description": "An MCP server via UC connection",
+        "type": "uc_connection",
+        "uc_connection": {
             "name": "<uc-connection-name>",
+            "description": "Searches the web for current information",
         },
     },
-    # Databricks Apps MCP server
+    # Databricks App endpoint or custom MCP server running as a Databricks App
     {
         "type": "app",
         "app": {
-            "description": "An MCP server running as a Databricks App",
             "name": "<databricks-app-name>",
+            "description": "Custom application or MCP server endpoint",
         },
     },
 ]
@@ -85,12 +91,11 @@ Replace your existing invoke/stream handlers with the Supervisor API pattern. Re
 
 `use_ai_gateway=True` automatically resolves the correct AI Gateway endpoint for the workspace.
 
-When deployed on Databricks Apps, the platform forwards the authenticated user's token via `x-forwarded-access-token`. Pass this to the Supervisor API so tool calls (e.g., Genie queries) run on behalf of the user rather than the app's service principal.
+Tools run as the app's service principal — grant each tool's resource permissions in `databricks.yml` (Step 4).
 
 ```python
 import mlflow
 from databricks.sdk import WorkspaceClient
-from databricks.sdk.config import Config
 from databricks_openai import DatabricksOpenAI
 from mlflow.genai.agent_server import invoke, stream
 from mlflow.types.responses import (
@@ -103,24 +108,9 @@ mlflow.openai.autolog()
 MODEL = "databricks-claude-sonnet-4-5"
 TOOLS = [...]  # From Step 2
 
-# Resolve and cache the AI Gateway URL once at module load
+# Resolve and cache the AI Gateway client once at module load
 _wc = WorkspaceClient()
 _client = DatabricksOpenAI(workspace_client=_wc, use_ai_gateway=True)
-_ai_gateway_base_url = str(_client.base_url)
-
-
-def _get_client(obo_token: str | None = None) -> DatabricksOpenAI:
-    """Return a client using the OBO token if provided, else service principal."""
-    if obo_token:
-        obo_wc = WorkspaceClient(
-            config=Config(host=_wc.config.host, token=obo_token)
-        )
-        return DatabricksOpenAI(workspace_client=obo_wc, base_url=_ai_gateway_base_url)
-    return _client
-
-
-def _obo_token(request: ResponsesAgentRequest) -> str | None:
-    return (request.custom_inputs or {}).get("x-forwarded-access-token")
 
 
 @invoke()
@@ -128,7 +118,7 @@ def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
     mlflow.update_current_trace(
         metadata={"mlflow.trace.session": request.context.conversation_id}
     )
-    response = _get_client(_obo_token(request)).responses.create(
+    response = _client.responses.create(
         model=MODEL,
         input=[i.model_dump() for i in request.input],
         tools=TOOLS,
@@ -142,15 +132,13 @@ def stream_handler(request: ResponsesAgentRequest):
     mlflow.update_current_trace(
         metadata={"mlflow.trace.session": request.context.conversation_id}
     )
-    return _get_client(_obo_token(request)).responses.create(
+    return _client.responses.create(
         model=MODEL,
         input=[i.model_dump() for i in request.input],
         tools=TOOLS,
         stream=True,
     )
 ```
-
-> **OBO note:** The `x-forwarded-access-token` is injected into `custom_inputs` by the app server middleware. No changes are needed to the client — the token arrives automatically when users call your deployed app.
 
 ## Step 4: Grant Permissions in `databricks.yml`
 
@@ -161,7 +149,7 @@ For each hosted tool, grant the corresponding resource access. See the **add-too
 | `genie_space` | `genie_space` with `CAN_RUN` |
 | `uc_function` | `uc_securable` (FUNCTION) with `EXECUTE` |
 | `knowledge_assistant` | `serving_endpoint` with `CAN_QUERY` |
-| `connection` | `uc_securable` (CONNECTION) with `USE_CONNECTION` |
+| `uc_connection` | `uc_securable` (CONNECTION) with `USE_CONNECTION` |
 | `app` | *(Databricks App access)* |
 
 Also grant `CAN_QUERY` on the `MODEL` serving endpoint:
@@ -177,12 +165,49 @@ Also grant `CAN_QUERY` on the `MODEL` serving endpoint:
 
 ```bash
 uv run start-app       # Test locally
-databricks bundle deploy && databricks bundle run agent_openai_agents_sdk  # Deploy
+databricks bundle deploy && databricks bundle run {{BUNDLE_NAME}}  # Deploy
 ```
+
+## Supported Models
+
+Pass any of these as the `model` parameter:
+
+| Model | ID |
+|-------|----|
+| Claude Sonnet 4 | `databricks-claude-sonnet-4` |
+| Claude Sonnet 4.5 | `databricks-claude-sonnet-4-5` |
+| Claude Sonnet 4.6 | `databricks-claude-sonnet-4-6` |
+| Claude Haiku 4.5 | `databricks-claude-haiku-4-5` |
+| Claude Opus 4.1 | `databricks-claude-opus-4-1` |
+| Claude Opus 4.5 | `databricks-claude-opus-4-5` |
+| Claude Opus 4.6 | `databricks-claude-opus-4-6` |
+| GPT-5 | `databricks-gpt-5` |
+
+## Enabling Tracing
+
+Pass `trace_destination` via `extra_body` to write a full agent loop trace to Unity Catalog tables:
+
+```python
+response = _client.responses.create(
+    model=MODEL,
+    input=[i.model_dump() for i in request.input],
+    tools=TOOLS,
+    stream=False,
+    extra_body={
+        "trace_destination": {
+            "catalog_name": "<catalog>",
+            "schema_name": "<schema>",
+            "table_prefix": "<table-prefix>",
+        }
+    },
+)
+```
+
+To also return the trace in the response, add `"databricks_options": {"return_trace": True}` to `extra_body`.
 
 ## MCP Server Tools: Multi-Turn Approval Flow
 
-When using MCP server tools (`connection` or `app`), the Supervisor API does **not** execute the MCP tool call in a single request. Instead, it returns a `completed` response containing `mcp_approval_request` output items. To complete the tool call, your agent must handle a multi-turn flow:
+When using MCP server tools (`uc_connection` or `app`), the Supervisor API does **not** execute the MCP tool call in a single request. Instead, it returns a `completed` response containing `mcp_approval_request` output items. To complete the tool call, your agent must handle a multi-turn flow:
 
 1. **First request** — `responses.create()` → response completes with `mcp_approval_request` items in the output
 2. **Return to frontend** — the `mcp_approval_request` item is returned to the chat UI so the user can approve the tool call
@@ -209,7 +234,7 @@ input = [
 
 **"Please ensure AI Gateway V2 is enabled"** — AI Gateway must be enabled for the workspace. Contact your Databricks account team.
 
-**"Cannot mix hosted and client-side tools"** — Remove any `function`-type tools (Python callables) from `TOOLS`. All tools must be hosted types (`genie_space`, `uc_function`, `knowledge_assistant`, `connection`, `app`).
+**"Cannot mix hosted and client-side tools"** — Remove any `function`-type tools (Python callables) from `TOOLS`. All tools must be hosted types (`genie_space`, `uc_function`, `knowledge_assistant`, `uc_connection`, `app`).
 
 **"Parameter not supported when tools are provided"** — Remove `temperature`, `top_p`, or other inference parameters from the `responses.create()` call.
 

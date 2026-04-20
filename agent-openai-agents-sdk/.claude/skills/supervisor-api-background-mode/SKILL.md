@@ -430,9 +430,11 @@ The chat frontend expects SSE streaming events. Since background mode returns th
 
 ### 3. MCP server tools require a multi-turn approval flow
 
-MCP server tools (`connection` or `app`) require a multi-turn approval flow — see the **supervisor-api** skill for the full explanation and example input.
+MCP server tools (`uc_connection` or `app`) require a multi-turn approval flow — see the **supervisor-api** skill for the full explanation and example input.
 
-In background mode, the polling code does not need special handling — it simply yields all output items including `mcp_approval_request`. Each request/response is a separate background mode cycle (submit → poll → yield items → user approves → new request → poll again).
+In background mode, when an MCP tool call requires approval, the response reaches `completed` status (not `in_progress`) with `mcp_approval_request` items in the output. This naturally ends the polling loop. The `mcp_approval_request` items are returned to the frontend for the user to approve.
+
+The approval follow-up is itself a full background mode cycle: the frontend sends a new request (with the original input + `mcp_approval_request` + `mcp_approval_response` appended) using `background=True`, receives a new response ID, and polls again until the final `completed` response with the tool result and assistant message.
 
 ### 4. No timeout on polling
 

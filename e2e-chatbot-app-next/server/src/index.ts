@@ -59,46 +59,172 @@ app.use('/api/config', configRouter);
 app.use('/api/feedback', feedbackRouter);
 
 // Agent backend proxy (optional)
-// If API_PROXY is set, proxy /invocations requests to the agent backend
+// If API_PROXY is set, proxy /invocations requests to the agent backend.
+// For streaming POSTs we rewrite into LongRunningAgentServer's "background"
+// contract: the backend persists every event to Lakebase, the proxy auto-
+// resumes via GET /responses/{id}?stream=true&starting_after=N if the
+// upstream connection dies before the [DONE] sentinel. This is what makes
+// the UI survive mid-response pod crashes — zero client-side changes.
 const agentBackendUrl = process.env.API_PROXY;
 if (agentBackendUrl) {
   console.log(`✅ Proxying /invocations to ${agentBackendUrl}`);
+
+  // Derive the retrieve endpoint (strip trailing /invocations or /responses)
+  const backendRoot = agentBackendUrl.replace(/\/(invocations|responses)\/?$/, '');
+  const retrieveUrl = (rid: string, startingAfter: number) =>
+    `${backendRoot}/responses/${rid}?stream=true&starting_after=${startingAfter}`;
+
   app.all('/invocations', async (req: Request, res: Response) => {
     try {
       const forwardHeaders = { ...req.headers } as Record<string, string>;
-      forwardHeaders['content-length'] = undefined;
+      // biome-ignore lint/performance/noDelete: fetch rejects empty content-length
+      delete forwardHeaders['content-length'];
 
-      const response = await fetch(agentBackendUrl, {
-        method: req.method,
-        headers: forwardHeaders,
-        body:
-          req.method !== 'GET' && req.method !== 'HEAD'
-            ? JSON.stringify(req.body)
-            : undefined,
-      });
+      const isStreamingPost =
+        req.method === 'POST' &&
+        req.body &&
+        typeof req.body === 'object' &&
+        (req.body.stream === true || req.body.stream === 'true');
 
-      // Copy status and headers
-      res.status(response.status);
-      response.headers.forEach((value, key) => {
-        res.setHeader(key, value);
-      });
+      // Non-streaming or non-POST: original passthrough behavior.
+      if (!isStreamingPost) {
+        const response = await fetch(agentBackendUrl, {
+          method: req.method,
+          headers: forwardHeaders,
+          body:
+            req.method !== 'GET' && req.method !== 'HEAD'
+              ? JSON.stringify(req.body)
+              : undefined,
+        });
+        res.status(response.status);
+        response.headers.forEach((value, key) => res.setHeader(key, value));
+        if (response.body) {
+          const reader = response.body.getReader();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            res.write(value);
+          }
+        }
+        res.end();
+        return;
+      }
 
-      // Stream the response body
-      if (response.body) {
-        const reader = response.body.getReader();
+      // Streaming POST → background mode with auto-resume.
+      const durableBody = {
+        ...req.body,
+        background: true,
+        stream: true,
+      };
+
+      // Prime SSE headers immediately so the client starts reading even if the
+      // first upstream chunk takes a moment.
+      res.status(200);
+      res.setHeader('content-type', 'text/event-stream');
+      res.setHeader('cache-control', 'no-cache');
+      res.setHeader('connection', 'keep-alive');
+      res.flushHeaders?.();
+
+      let responseId: string | null = null;
+      let lastSeq = 0;
+      let sawDone = false;
+      // Safety cap so a permanently-broken backend can't loop forever.
+      const MAX_RESUME_ATTEMPTS = 10;
+      let resumeAttempt = 0;
+
+      // Read one SSE stream to completion, writing every chunk to the client
+      // and tracking response_id + sequence_number from each event. Returns
+      // whether we saw the [DONE] sentinel.
+      const pumpStream = async (upstream: globalThis.Response) => {
+        if (!upstream.body) return false;
+        const reader = upstream.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           res.write(value);
+          buf += decoder.decode(value, { stream: true });
+          // Pull out complete SSE frames (separated by \n\n) to sniff metadata.
+          const frames = buf.split(/\n\n/);
+          buf = frames.pop() || '';
+          for (const frame of frames) {
+            if (frame.includes('data: [DONE]')) {
+              return true;
+            }
+            const dataLine = frame.split('\n').find((l) => l.startsWith('data:'));
+            if (!dataLine) continue;
+            try {
+              const parsed = JSON.parse(dataLine.slice(5).trim());
+              if (!responseId && typeof parsed.id === 'string') {
+                responseId = parsed.id;
+              }
+              if (
+                typeof parsed.sequence_number === 'number' &&
+                parsed.sequence_number > lastSeq
+              ) {
+                lastSeq = parsed.sequence_number;
+              }
+            } catch {
+              // Non-JSON SSE frame (e.g. heartbeats) — safe to ignore.
+            }
+          }
         }
+        return false;
+      };
+
+      // Kickoff: POST background request.
+      const initial = await fetch(agentBackendUrl, {
+        method: 'POST',
+        headers: forwardHeaders,
+        body: JSON.stringify(durableBody),
+      });
+      if (!initial.ok) {
+        const text = await initial.text();
+        res.write(
+          `event: error\ndata: ${JSON.stringify({ error: { message: text, status: initial.status } })}\n\n`,
+        );
+        res.end();
+        return;
       }
+      sawDone = await pumpStream(initial);
+
+      // Auto-resume loop: if upstream closed early (pod crash) and we know a
+      // response_id, reconnect via the retrieve endpoint using our cursor.
+      while (!sawDone && responseId && resumeAttempt < MAX_RESUME_ATTEMPTS) {
+        resumeAttempt += 1;
+        console.log(
+          `[/invocations] resuming stream for ${responseId} from seq=${lastSeq} (attempt ${resumeAttempt})`,
+        );
+        const resumed = await fetch(retrieveUrl(responseId, lastSeq), {
+          method: 'GET',
+          headers: forwardHeaders,
+        });
+        if (!resumed.ok) {
+          res.write(
+            `event: error\ndata: ${JSON.stringify({ error: { message: 'Resume fetch failed', status: resumed.status } })}\n\n`,
+          );
+          break;
+        }
+        sawDone = await pumpStream(resumed);
+      }
+
       res.end();
     } catch (error) {
       console.error('[/invocations proxy] Error:', error);
-      res.status(502).json({
-        error: 'Proxy error',
-        message: error instanceof Error ? error.message : String(error),
-      });
+      if (!res.headersSent) {
+        res.status(502).json({
+          error: 'Proxy error',
+          message: error instanceof Error ? error.message : String(error),
+        });
+      } else {
+        try {
+          res.write(
+            `event: error\ndata: ${JSON.stringify({ error: { message: error instanceof Error ? error.message : String(error) } })}\n\n`,
+          );
+          res.end();
+        } catch {}
+      }
     }
   });
 }

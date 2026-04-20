@@ -139,14 +139,27 @@ class ProcessManager:
         if Path("e2e-chatbot-app-next").exists():
             return True
 
-        print("Cloning e2e-chatbot-app-next...")
+        # TEMPORARY: checkout the dhruv0811/durable-execution-templates branch
+        # so the deployed frontend includes the background-mode /invocations
+        # proxy with auto-resume. Revert to cloning main after that PR merges.
+        branch = os.getenv("APP_TEMPLATES_BRANCH", "dhruv0811/durable-execution-templates")
+        print(f"Cloning e2e-chatbot-app-next from branch '{branch}'...")
         for url in [
             "https://github.com/databricks/app-templates.git",
             "git@github.com:databricks/app-templates.git",
         ]:
             try:
                 subprocess.run(
-                    ["git", "clone", "--filter=blob:none", "--sparse", url, "temp-app-templates"],
+                    [
+                        "git",
+                        "clone",
+                        "--filter=blob:none",
+                        "--sparse",
+                        "--branch",
+                        branch,
+                        url,
+                        "temp-app-templates",
+                    ],
                     check=True,
                     capture_output=True,
                 )

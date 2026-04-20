@@ -181,6 +181,23 @@ export function Chat({
         setTitlePending(false);
         fetchChatHistory();
       }
+      // Durable-resume visual reset: when the backend's LongRunningAgentServer
+      // emits response.resumed (mid-stream pod crash + reclaim), the chat route
+      // writes a data-resumed part to signal us. Drop any text parts we've
+      // accumulated from the interrupted attempt so only the new attempt's
+      // text renders in-place. Tool parts are kept because they naturally
+      // de-dup across attempts via call_id.
+      if (dataPart.type === 'data-resumed') {
+        setMessages((prev) => {
+          if (!prev.length) return prev;
+          const last = prev[prev.length - 1];
+          if (last.role !== 'assistant') return prev;
+          const filtered = (last.parts ?? []).filter(
+            (p: { type?: string }) => p.type !== 'text',
+          );
+          return [...prev.slice(0, -1), { ...last, parts: filtered }];
+        });
+      }
     },
     onFinish: ({
       isAbort,

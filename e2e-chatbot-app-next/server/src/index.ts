@@ -137,6 +137,10 @@ if (agentBackendUrl) {
       let responseId: string | null = null;
       let lastSeq = 0;
       let sawDone = false;
+      // Terminal-error flag: if the backend emits a task_failed error event
+      // (e.g. upstream LLM returned 502, task_timeout, permanent failure),
+      // exit the resume loop instead of hammering retrieve N more times.
+      let sawTerminalError = false;
       const onFirstResponseId = (rid: string) => {
         console.log(`[/invocations] background started response_id=${rid}`);
       };
@@ -307,6 +311,20 @@ if (agentBackendUrl) {
               );
               sealActiveMessage('');
             }
+            // Detect terminal errors (task_failed, task_timeout, etc.) so we
+            // don't burn MAX_RESUME_ATTEMPTS fetching a response that will
+            // never succeed. Upstream LLM 502s and permanent run failures
+            // both surface here.
+            if (eventType === 'error') {
+              const errObj = (parsed.error as Record<string, unknown>) || {};
+              const code = errObj.code as string | undefined;
+              if (code === 'task_failed' || code === 'task_timeout') {
+                console.log(
+                  `[/invocations] terminal error code=${code} response_id=${responseId}; not retrying`,
+                );
+                sawTerminalError = true;
+              }
+            }
             res.write(frameBytes);
           }
         }
@@ -358,7 +376,7 @@ if (agentBackendUrl) {
           am.text += suffix;
         }
       }
-      while (!sawDone && responseId && resumeAttempt < MAX_RESUME_ATTEMPTS) {
+      while (!sawDone && !sawTerminalError && responseId && resumeAttempt < MAX_RESUME_ATTEMPTS) {
         resumeAttempt += 1;
         console.log(
           `[/invocations] resume fetch response_id=${responseId} starting_after=${lastSeq} attempt=${resumeAttempt}`,

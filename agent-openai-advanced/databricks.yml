@@ -26,7 +26,7 @@ resources:
           - name: LAKEBASE_AUTOSCALING_ENDPOINT
             value_from: "postgres"
           - name: LAKEBASE_AGENT_MEMORY_SCHEMA
-            value: "openai"
+            value: "agent_openai_memory"
           - name: LOG_LEVEL
             value: "INFO"
       # Resources which this app has access to

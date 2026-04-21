@@ -17,4 +17,4 @@ env:
   - name: LAKEBASE_AUTOSCALING_ENDPOINT
     valueFrom: "postgres"
   - name: LAKEBASE_AGENT_MEMORY_SCHEMA
-    value: "langgraph"
+    value: "agent_langgraph_memory"

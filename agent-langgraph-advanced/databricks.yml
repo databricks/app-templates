@@ -25,7 +25,7 @@ resources:
           - name: LAKEBASE_AUTOSCALING_ENDPOINT
             value_from: "postgres"
           - name: LAKEBASE_AGENT_MEMORY_SCHEMA
-            value: "langgraph"
+            value: "agent_langgraph_memory"
           - name: DATABRICKS_EMBEDDING_ENDPOINT
             value: "databricks-gte-large-en"
 

@@ -137,22 +137,15 @@ if (agentBackendUrl) {
       let responseId: string | null = null;
       let lastSeq = 0;
       let sawDone = false;
-      // Terminal-error flag: if the backend emits a task_failed error event
-      // (e.g. upstream LLM returned 502, task_timeout, permanent failure),
-      // exit the resume loop instead of hammering retrieve N more times.
+      // Terminal-error flag: task_failed / task_timeout from upstream.
       let sawTerminalError = false;
-      const onFirstResponseId = (rid: string) => {
-        console.log(`[/invocations] background started response_id=${rid}`);
-      };
       // Safety cap so a permanently-broken backend can't loop forever.
       const MAX_RESUME_ATTEMPTS = 10;
       let resumeAttempt = 0;
 
-      // Tracks the in-progress assistant message item across the stream so we
-      // can emit synthetic closure events on resume. Without this, attempt 1's
-      // partial text bubble keeps receiving deltas from attempt 2's fresh
-      // generation — the client sees attempt-1-partial + attempt-2-full
-      // concatenated. Sealing the partial turns it into its own bubble.
+      // Tracks the in-progress assistant message item so we can emit
+      // synthetic closure events on resume. Without this, attempt 2's
+      // deltas append to attempt 1's text part in the AI SDK's state.
       type ActiveMessage = {
         itemId: string;
         outputIndex: number;
@@ -161,53 +154,32 @@ if (agentBackendUrl) {
       };
       let activeMessage: ActiveMessage | null = null;
 
-      // Emit the closure events that finalize activeMessage with the text
-      // we've accumulated so far plus a short 'resuming…' suffix. Tunes
-      // OpenAI Responses API semantics enough for the Vercel AI SDK to
-      // treat it as a completed message — the next output_item.added in
-      // attempt 2 then starts a fresh assistant bubble.
-      const sealActiveMessage = (suffix: string) => {
+      const writeEvent = (type: string, payload: Record<string, unknown>) => {
+        res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...payload })}\n\n`);
+      };
+
+      // Emit content_part.done + output_item.done for the active message so
+      // the Vercel AI SDK finalizes its text part and starts a fresh one on
+      // attempt 2's next output_item.added.
+      const sealActiveMessage = () => {
         if (!activeMessage) return;
-        const finalText = activeMessage.text + suffix;
-        if (suffix) {
-          res.write(
-            `event: response.output_text.delta\ndata: ${JSON.stringify({
-              type: 'response.output_text.delta',
-              item_id: activeMessage.itemId,
-              output_index: activeMessage.outputIndex,
-              content_index: activeMessage.contentIndex,
-              delta: suffix,
-            })}\n\n`,
-          );
-        }
-        res.write(
-          `event: response.content_part.done\ndata: ${JSON.stringify({
-            type: 'response.content_part.done',
-            item_id: activeMessage.itemId,
-            output_index: activeMessage.outputIndex,
-            content_index: activeMessage.contentIndex,
-            part: {
-              type: 'output_text',
-              text: finalText,
-              annotations: [],
-            },
-          })}\n\n`,
-        );
-        res.write(
-          `event: response.output_item.done\ndata: ${JSON.stringify({
-            type: 'response.output_item.done',
-            output_index: activeMessage.outputIndex,
-            item: {
-              id: activeMessage.itemId,
-              type: 'message',
-              role: 'assistant',
-              status: 'completed',
-              content: [
-                { type: 'output_text', text: finalText, annotations: [] },
-              ],
-            },
-          })}\n\n`,
-        );
+        const { itemId, outputIndex, contentIndex, text } = activeMessage;
+        writeEvent('response.content_part.done', {
+          item_id: itemId,
+          output_index: outputIndex,
+          content_index: contentIndex,
+          part: { type: 'output_text', text, annotations: [] },
+        });
+        writeEvent('response.output_item.done', {
+          output_index: outputIndex,
+          item: {
+            id: itemId,
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'output_text', text, annotations: [] }],
+          },
+        });
         activeMessage = null;
       };
 
@@ -263,7 +235,7 @@ if (agentBackendUrl) {
                 : undefined);
             if (!responseId && typeof rid === 'string') {
               responseId = rid;
-              onFirstResponseId(responseId);
+              console.log(`[/invocations] background started response_id=${responseId}`);
             }
             if (
               typeof parsed.sequence_number === 'number' &&
@@ -299,17 +271,11 @@ if (agentBackendUrl) {
               // closure.
               activeMessage = null;
             }
-            // On the resume sentinel, seal any active message BEFORE forwarding
-            // the sentinel itself. Subsequent attempt-2 events will naturally
-            // emit a fresh output_item.added with a new item_id — the client
-            // sees a clean second assistant bubble. The interruption suffix
-            // was already appended when the upstream first closed (see the
-            // auto-resume loop below); seal with no additional suffix.
+            // On the resume sentinel, seal the active message before
+            // forwarding the sentinel. Attempt 2 emits a fresh output_item.added
+            // with a new id, so the AI SDK starts a clean text part for it.
             if (eventType === 'response.resumed' && activeMessage) {
-              console.log(
-                `[/invocations] sealing interrupted message item=${activeMessage.itemId} text_len=${activeMessage.text.length}`,
-              );
-              sealActiveMessage('');
+              sealActiveMessage();
             }
             // Detect terminal errors (task_failed, task_timeout, etc.) so we
             // don't burn MAX_RESUME_ATTEMPTS fetching a response that will
@@ -347,34 +313,12 @@ if (agentBackendUrl) {
       }
       sawDone = await pumpStream(initial);
 
-      // Auto-resume loop: if upstream closed early (pod crash) and we know a
-      // response_id, reconnect via the retrieve endpoint using our cursor.
+      // Auto-resume loop: if upstream closed early and we have a response_id,
+      // reconnect via the retrieve endpoint using our cursor.
       if (!sawDone && responseId) {
         console.log(
           `[/invocations] upstream closed without [DONE] response_id=${responseId} last_seq=${lastSeq}; entering auto-resume`,
         );
-        // Surface the interruption to the user right away — otherwise they'd
-        // see the partial text sit frozen for ~10s until the stale threshold
-        // expires and the backend emits response.resumed. The seal-on-resume
-        // path below will also append text if sentinel arrives, but this
-        // first suffix makes the 'something is happening' signal immediate.
-        // Wrap in a helper call so TS widens the type back — async functions
-        // mutating closure variables aren't tracked through ``await`` boundaries.
-        const readActive = (): ActiveMessage | null => activeMessage;
-        const am = readActive();
-        if (am) {
-          const suffix = '\n\n_(connection interrupted — reconnecting…)_';
-          res.write(
-            `event: response.output_text.delta\ndata: ${JSON.stringify({
-              type: 'response.output_text.delta',
-              item_id: am.itemId,
-              output_index: am.outputIndex,
-              content_index: am.contentIndex,
-              delta: suffix,
-            })}\n\n`,
-          );
-          am.text += suffix;
-        }
       }
       while (!sawDone && !sawTerminalError && responseId && resumeAttempt < MAX_RESUME_ATTEMPTS) {
         resumeAttempt += 1;

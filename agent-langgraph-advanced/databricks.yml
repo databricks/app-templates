@@ -26,6 +26,8 @@ resources:
             value_from: "postgres"
           - name: LAKEBASE_AGENT_MEMORY_SCHEMA
             value: "agent_langgraph_memory"
+          - name: LOG_LEVEL
+            value: "INFO"
           - name: DATABRICKS_EMBEDDING_ENDPOINT
             value: "databricks-gte-large-en"
 

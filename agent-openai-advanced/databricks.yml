@@ -27,6 +27,8 @@ resources:
             value_from: "postgres"
           - name: LAKEBASE_AGENT_MEMORY_SCHEMA
             value: "agent_openai_memory"
+          - name: LOG_LEVEL
+            value: "INFO"
       # Resources which this app has access to
       resources:
         - name: 'experiment'

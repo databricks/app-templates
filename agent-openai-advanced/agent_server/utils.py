@@ -183,120 +183,6 @@ def replace_fake_id(obj: Any, real_id: str) -> Any:
     return obj
 
 
-def _item_get(item, key):
-    if isinstance(item, dict):
-        return item.get(key)
-    return getattr(item, key, None)
-
-
-def _item_dict(item):
-    """Normalize an item to a plain dict for re-persistence."""
-    if isinstance(item, dict):
-        return dict(item)
-    if hasattr(item, "model_dump"):
-        return item.model_dump()
-    return dict(item.__dict__) if hasattr(item, "__dict__") else {}
-
-
-async def _sanitize_session(session: AsyncDatabricksSession) -> None:
-    """Rebuild the session so the conversation is valid for the next LLM call.
-
-    Two failure modes to handle on each turn:
-
-    1. **Orphan tool_calls from durable resume.** A kill mid-tool leaves
-       ``function_call`` items in the session with no matching
-       ``function_call_output``. The next ``Runner.run`` fails 400 with
-       'assistant message with tool_calls must be followed by tool
-       messages…'.
-
-    2. **Duplicate items from client history echo.** The Vercel AI SDK
-       on the frontend re-sends the full conversation in ``request.input``
-       every turn. Our ``deduplicate_input`` trims it down to just the
-       latest user message on the fast path, but on a resumed turn the
-       SDK can still re-persist prior items (same ``call_id`` appearing
-       twice). Duplicate ``function_call`` items confuse the LLM API
-       even when every call_id has *an* output.
-
-    Fix: walk the items in chronological order, dedupe by ``call_id`` for
-    function_call / function_call_output, and inject a synthetic
-    ``function_call_output`` immediately after any ``function_call`` whose
-    matching output isn't present. Clear the session and re-add the
-    sanitized list so positional ordering is restored (SQLAlchemySession's
-    ``add_items`` only appends).
-
-    No-op if the session is already clean.
-    """
-    items = await session.get_items()
-    if not items:
-        return
-
-    # First pass: collect call_ids that have outputs anywhere in the history.
-    call_ids_with_output: set[str] = set()
-    for item in items:
-        if _item_get(item, "type") == "function_call_output":
-            cid = _item_get(item, "call_id")
-            if cid:
-                call_ids_with_output.add(cid)
-
-    # Second pass: build the canonical sequence. Dedup function_call /
-    # function_call_output by call_id, insert synthetic outputs where
-    # missing, keep messages / other items as-is.
-    sanitized: list[dict] = []
-    seen_calls: set[str] = set()
-    seen_outputs: set[str] = set()
-    needed_injection: list[str] = []
-
-    for item in items:
-        t = _item_get(item, "type")
-        cid = _item_get(item, "call_id")
-        if t == "function_call" and cid:
-            if cid in seen_calls:
-                continue  # drop duplicate
-            seen_calls.add(cid)
-            sanitized.append(_item_dict(item))
-            # If this function_call has no matching output anywhere in the
-            # session, inject a synthetic one immediately after it.
-            if cid not in call_ids_with_output:
-                name = _item_get(item, "name") or ""
-                sanitized.append(
-                    {
-                        "type": "function_call_output",
-                        "call_id": cid,
-                        "output": (
-                            f"Tool call '{name}' was interrupted by a durable "
-                            "resume and did not complete. Please retry if "
-                            "still needed."
-                        ),
-                    }
-                )
-                needed_injection.append(cid)
-        elif t == "function_call_output" and cid:
-            if cid in seen_outputs:
-                continue  # drop duplicate output
-            seen_outputs.add(cid)
-            sanitized.append(_item_dict(item))
-        else:
-            sanitized.append(_item_dict(item))
-
-    # If the sanitized sequence equals the original (same count, no orphans,
-    # no duplicates), skip the clear+rebuild — it's a no-op and saves DB work.
-    if len(sanitized) == len(items) and not needed_injection:
-        return
-
-    logger.info(
-        "Sanitizing session %s: original=%d items, sanitized=%d items, "
-        "synthetic outputs injected=%d (call_ids=%s)",
-        session.session_id,
-        len(items),
-        len(sanitized),
-        len(needed_injection),
-        needed_injection,
-    )
-    await session.clear_session()
-    if sanitized:
-        await session.add_items(sanitized)
-
-
 async def deduplicate_input(request: ResponsesAgentRequest, session: AsyncDatabricksSession) -> list[dict]:
     """Return the input messages to pass to the Runner, avoiding duplication with session history.
 
@@ -305,11 +191,11 @@ async def deduplicate_input(request: ResponsesAgentRequest, session: AsyncDatabr
     If the session already covers the prior turns, only the latest message is needed
     since the session will prepend the full history automatically.
 
-    Also sanitizes the session (dedupes duplicate items and injects synthetic
-    outputs for orphan tool_calls left behind by a durable-resume interrupt)
-    so the next LLM request over this session is a valid conversation.
+    Also repairs the session (dedupes items and injects synthetic outputs for
+    orphan tool_calls left behind by a durable-resume interrupt) so the next
+    LLM request over this session is a valid conversation.
     """
-    await _sanitize_session(session)
+    await session.repair()
     messages = [i.model_dump() for i in request.input]
     # Empty input is a valid signal from the long-running server to resume an
     # existing session without re-sending user content — the session already

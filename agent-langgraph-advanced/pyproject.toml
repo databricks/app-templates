@@ -43,6 +43,7 @@ default-groups = ["dev", "setup"]
 # changes are in review. Revert to the registry release once merged.
 [tool.uv.sources]
 databricks-ai-bridge = { git = "https://github.com/databricks/databricks-ai-bridge", branch = "dhruv0811/durable-execution-resume" }
+databricks-langchain = { git = "https://github.com/databricks/databricks-ai-bridge", branch = "dhruv0811/durable-execution-resume", subdirectory = "integrations/langchain" }
 
 
 [tool.pytest.ini_options]

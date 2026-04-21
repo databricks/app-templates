@@ -63,7 +63,7 @@ def init_lakebase_config() -> LakebaseConfig:
         branch = None
 
     embedding_endpoint = os.getenv("DATABRICKS_EMBEDDING_ENDPOINT", "databricks-gte-large-en")
-    memory_schema = os.getenv("LAKEBASE_MEMORY_SCHEMA") or None
+    memory_schema = os.getenv("LAKEBASE_AGENT_MEMORY_SCHEMA") or None
     return LakebaseConfig(
         instance_name=instance_name,
         autoscaling_endpoint=endpoint,

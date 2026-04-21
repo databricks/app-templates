@@ -104,7 +104,7 @@ def init_lakebase_config() -> LakebaseConfig:
             "  Option 3 (provisioned): LAKEBASE_INSTANCE_NAME=<your-instance-name>\n"
         )
 
-    memory_schema = os.getenv("LAKEBASE_MEMORY_SCHEMA") or None
+    memory_schema = os.getenv("LAKEBASE_AGENT_MEMORY_SCHEMA") or None
 
     # Priority: endpoint > project+branch > instance_name (mutually exclusive in the library)
     if endpoint:

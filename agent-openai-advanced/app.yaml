@@ -16,5 +16,5 @@ env:
     valueFrom: "experiment"
   - name: LAKEBASE_AUTOSCALING_ENDPOINT
     valueFrom: "postgres"
-  - name: LAKEBASE_MEMORY_SCHEMA
+  - name: LAKEBASE_AGENT_MEMORY_SCHEMA
     value: "openai"

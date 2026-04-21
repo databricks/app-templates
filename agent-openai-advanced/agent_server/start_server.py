@@ -16,7 +16,7 @@ from databricks_ai_bridge.long_running import LongRunningAgentServer
 from databricks_openai.agents import AsyncDatabricksSession
 from mlflow.genai.agent_server import setup_mlflow_git_based_version_tracking
 
-from agent_server.utils import lakebase_config, replace_fake_id
+from agent_server.utils import get_lakebase_access_error_message, lakebase_config, replace_fake_id
 
 # Need to import the agent to register the functions with the server
 import agent_server.agent  # noqa: F401
@@ -68,7 +68,18 @@ async def _lifespan(app):
     try:
         await run_lakebase_session_setup()
     except Exception as exc:
-        logger.error("Lakebase session setup failed: %s", exc, exc_info=True)
+        error_msg = str(exc).lower()
+        if any(
+            keyword in error_msg
+            for keyword in ["lakebase", "pg_hba", "postgres", "database instance", "insufficient privilege"]
+        ):
+            logger.error(
+                "Lakebase session setup failed: %s\n\n%s",
+                exc,
+                get_lakebase_access_error_message(lakebase_config.description),
+            )
+        else:
+            logger.error("Lakebase session setup failed: %s", exc, exc_info=True)
         raise
     try:
         async with _original_lifespan(app):

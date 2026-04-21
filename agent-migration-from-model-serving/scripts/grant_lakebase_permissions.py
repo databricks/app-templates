@@ -28,8 +28,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Schema for memory tables. Defaults to "public" for backward compatibility.
-# Set LAKEBASE_MEMORY_SCHEMA to use a custom schema (e.g. "agent_memory").
-MEMORY_SCHEMA = os.getenv("LAKEBASE_MEMORY_SCHEMA", "public")
+# Set LAKEBASE_AGENT_MEMORY_SCHEMA to use a custom schema (e.g. "agent_memory").
+MEMORY_SCHEMA = os.getenv("LAKEBASE_AGENT_MEMORY_SCHEMA", "public")
 
 # Per-memory-type schema -> table definitions.
 MEMORY_TYPE_SCHEMAS: dict[str, dict[str, list[str]]] = {

@@ -22,7 +22,7 @@ import agent_server.agent  # noqa: F401
 
 from agent_server.agent import LAKEBASE_CONFIG
 from agent_server.utils import replace_fake_id
-from agent_server.utils_memory import run_lakebase_setup
+from agent_server.utils_memory import get_lakebase_access_error_message, run_lakebase_setup
 
 
 class AgentServer(LongRunningAgentServer):
@@ -50,7 +50,22 @@ _original_lifespan = app.router.lifespan_context
 
 @asynccontextmanager
 async def _lifespan(app):
-    await run_lakebase_setup(LAKEBASE_CONFIG)
+    try:
+        await run_lakebase_setup(LAKEBASE_CONFIG)
+    except Exception as exc:
+        error_msg = str(exc).lower()
+        if any(
+            keyword in error_msg
+            for keyword in ["lakebase", "pg_hba", "postgres", "database instance", "insufficient privilege"]
+        ):
+            logger.error(
+                "Lakebase session setup failed: %s\n\n%s",
+                exc,
+                get_lakebase_access_error_message(LAKEBASE_CONFIG.description),
+            )
+        else:
+            logger.error("Lakebase session setup failed: %s", exc, exc_info=True)
+        raise
     try:
         async with _original_lifespan(app):
             yield

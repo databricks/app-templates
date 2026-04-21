@@ -4,7 +4,7 @@ bundle:
 resources:
   apps:
     agent_langgraph_advanced:
-      name: "agent-langgraph-advanced"
+      name: "agent-python-exec"
       description: "LangGraph agent application with short-term and long-term memory"
       source_code_path: ./
       config:
@@ -35,12 +35,12 @@ resources:
       resources:
         - name: 'experiment'
           experiment:
-            experiment_id: ""
+            experiment_id: "618666882277532"
             permission: 'CAN_MANAGE'
         - name: 'postgres'
           postgres:
-            branch: "<your-lakebase-branch>"
-            database: "<your-lakebase-database>"
+            branch: "projects/schema-test-langgraph/branches/production"
+            database: "projects/schema-test-langgraph/branches/production/databases/db-1rfd-s65h9g5p95"
             permission: 'CAN_CONNECT_AND_CREATE'
 
 targets:

@@ -24,7 +24,7 @@ from quickstart import (
     get_databricks_yml_experiment_id,
     get_existing_lakebase_config,
     setup_env_file,
-    update_app_yaml_lakebase,
+
     update_databricks_yml_app_name,
     update_databricks_yml_experiment,
     update_databricks_yml_lakebase,
@@ -576,24 +576,6 @@ class TestUpdateDatabricksYmlLakebase:
                 f"{template_name}: provisioned env var should be removed"
             )
 
-
-class TestUpdateAppYamlLakebase:
-    def test_provisioned_updates_file(self, tmp_path):
-        (tmp_path / "app.yaml").write_text(LAKEBASE_YML)  # reuse as stand-in
-        update_app_yaml_lakebase({"type": "provisioned", "instance_name": "my-instance"})
-        content = (tmp_path / "app.yaml").read_text()
-        assert "LAKEBASE_INSTANCE_NAME" in content
-        assert "LAKEBASE_AUTOSCALING_PROJECT" not in content
-
-    def test_handles_missing_file(self, tmp_path):
-        update_app_yaml_lakebase({"type": "provisioned", "instance_name": "x"})
-        assert not (tmp_path / "app.yaml").exists()
-
-    def test_noop_without_lakebase(self, tmp_path):
-        (tmp_path / "app.yaml").write_text(MINIMAL_YML)
-        update_app_yaml_lakebase({"type": "autoscaling", "endpoint": "ep"})
-        content = (tmp_path / "app.yaml").read_text()
-        assert content == MINIMAL_YML
 
 
 class TestCombined:

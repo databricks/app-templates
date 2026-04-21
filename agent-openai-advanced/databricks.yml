@@ -4,7 +4,7 @@ bundle:
 resources:
   apps:
     agent_openai_advanced:
-      name: "agent-openai-advanced"
+      name: "agent-openai-agents-sdk"
       description: "OpenAI Agents SDK agent with short-term memory and long-running
         background task support"
       source_code_path: ./
@@ -33,12 +33,12 @@ resources:
       resources:
         - name: 'experiment'
           experiment:
-            experiment_id: ""
+            experiment_id: "1579493919346499"
             permission: 'CAN_MANAGE'
         - name: 'postgres'
           postgres:
-            branch: "<your-lakebase-branch>"
-            database: "<your-lakebase-database>"
+            branch: "projects/schema-test-openai/branches/production"
+            database: "projects/schema-test-openai/branches/production/databases/db-cw21-6ho5s449rx"
             permission: 'CAN_CONNECT_AND_CREATE'
 
 targets:

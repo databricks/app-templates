@@ -18,6 +18,10 @@ interface MessagesProps {
   isReadonly: boolean;
   selectedModelId: string;
   feedback?: FeedbackMap;
+  // Durable-resume render-time slice: messageId → parts[] index. Text parts
+  // at indices BEFORE this value are hidden (attempt-1 text); everything else
+  // renders normally. Tool / step parts are never hidden.
+  resumeCutIndex?: Record<string, number>;
 }
 
 function PureMessages({
@@ -30,6 +34,7 @@ function PureMessages({
   isReadonly,
   selectedModelId,
   feedback = {},
+  resumeCutIndex,
 }: MessagesProps) {
   const {
     containerRef: messagesContainerRef,
@@ -66,10 +71,24 @@ function PureMessages({
       <Conversation className="mx-auto flex min-w-0 max-w-4xl flex-col gap-4 md:gap-6">
         <ConversationContent className="flex flex-col gap-4 px-4 py-4 md:gap-6">
           {messages.map((message, index) => {
+            // Render-time slice: if this message saw a durable-resume boundary,
+            // hide text parts at indices before the cutoff so only attempt-2
+            // text shows. Tool / step parts are kept at every index.
+            const cut = resumeCutIndex?.[message.id];
+            const displayMessage =
+              cut != null && cut > 0
+                ? ({
+                    ...message,
+                    parts: (message.parts ?? []).filter(
+                      (p: { type?: string }, i: number) =>
+                        (p.type !== 'text' || i >= cut),
+                    ),
+                  } as ChatMessage)
+                : message;
             return (
               <PreviewMessage
                 key={message.id}
-                message={message}
+                message={displayMessage}
                 allMessages={messages}
                 isLoading={
                   status === 'streaming' && messages.length - 1 === index

@@ -69,6 +69,13 @@ export function Chat({
   const resumeAttemptCountRef = useRef(0);
   const maxResumeAttempts = 3;
 
+  // Durable-resume render-time slice: messageId → index in parts[] to cut at.
+  // Text parts BEFORE this index (attempt-1 text) are hidden at render time.
+  // Tool / step parts pass through regardless so they keep showing.
+  const [resumeCutIndex, setResumeCutIndex] = useState<Record<string, number>>(
+    {},
+  );
+
   const abortController = useRef<AbortController | null>(new AbortController());
   useEffect(() => {
     return () => {
@@ -170,7 +177,6 @@ export function Chat({
       },
     }),
     onData: (dataPart) => {
-      console.log(`[chat][onData] dataPart.type=${dataPart.type}`, dataPart);
       setDataStream((ds) =>
         ds ? [...ds, dataPart as DataUIPart<CustomUIDataTypes>] : [],
       );
@@ -183,30 +189,24 @@ export function Chat({
         fetchChatHistory();
       }
       // Durable-resume visual reset: when the backend's LongRunningAgentServer
-      // emits response.resumed (mid-stream pod crash + reclaim), the chat
-      // route forwards a data-resumed part. Drop text parts from the last
-      // assistant message so only attempt 2's content renders. Tool parts
-      // are kept untouched — they dedupe across attempts by call_id.
+      // emits response.resumed, snapshot the length of the last assistant
+      // message's parts array. Messages renders each message through a
+      // render-time slice that HIDES text parts at indices before this
+      // cutoff (attempt-1 text). Tool parts pass through at any index so
+      // they keep showing. setMessages can't wipe mid-stream because the
+      // AI SDK's activeResponse.state.message (snapshot taken at request
+      // start) overwrites it on the next chunk via write() →
+      // state.replaceMessage; render-time transform sidesteps that.
       if (dataPart.type === 'data-resumed') {
         setMessages((prev) => {
-          if (!prev.length) {
-            console.log('[chat][resumed] no messages, noop');
-            return prev;
-          }
           const last = prev[prev.length - 1];
-          if (last.role !== 'assistant') {
-            console.log('[chat][resumed] last msg not assistant, noop', last.role);
-            return prev;
+          if (last?.role === 'assistant') {
+            setResumeCutIndex((s) => ({
+              ...s,
+              [last.id]: (last.parts ?? []).length,
+            }));
           }
-          const origParts = last.parts ?? [];
-          const keptParts = origParts.filter(
-            (p: { type?: string }) => p.type !== 'text',
-          );
-          console.log(
-            `[chat][resumed] msg=${last.id} parts_before=${origParts.length} parts_after=${keptParts.length} types_before=${JSON.stringify(origParts.map((p: any) => p.type))}`,
-          );
-          if (keptParts.length === origParts.length) return prev;
-          return [...prev.slice(0, -1), { ...last, parts: keptParts }];
+          return prev;
         });
       }
     },
@@ -355,6 +355,7 @@ export function Chat({
           isReadonly={isReadonly}
           selectedModelId={initialChatModel}
           feedback={feedback}
+          resumeCutIndex={resumeCutIndex}
         />
 
 

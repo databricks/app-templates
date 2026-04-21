@@ -94,10 +94,14 @@ Replace your existing invoke/stream handlers with the Supervisor API pattern. Re
 Tools run as the app's service principal — grant each tool's resource permissions in `databricks.yml` (Step 4).
 
 ```python
+import os
+import logging
 import mlflow
 from databricks.sdk import WorkspaceClient
 from databricks_openai import DatabricksOpenAI
+from mlflow import MlflowClient
 from mlflow.genai.agent_server import invoke, stream
+from mlflow.tracing import get_tracing_context_headers_for_http_request
 from mlflow.types.responses import (
     ResponsesAgentRequest,
     ResponsesAgentResponse,
@@ -105,12 +109,39 @@ from mlflow.types.responses import (
 
 mlflow.openai.autolog()
 
+logger = logging.getLogger(__name__)
+
 MODEL = "databricks-claude-sonnet-4-5"
 TOOLS = [...]  # From Step 2
 
 # Resolve and cache the AI Gateway client once at module load
 _wc = WorkspaceClient()
 _client = DatabricksOpenAI(workspace_client=_wc, use_ai_gateway=True)
+
+
+def _get_trace_destination() -> dict:
+    experiment_id = os.environ.get("MLFLOW_EXPERIMENT_ID")
+    if not experiment_id:
+        raise RuntimeError(
+            "MLFLOW_EXPERIMENT_ID is not set. Cannot configure distributed tracing."
+        )
+    trace_location = MlflowClient().get_experiment(experiment_id).trace_location
+    if trace_location is None or not hasattr(trace_location, "catalog_name"):
+        msg = (
+            f"Experiment {experiment_id} trace_location is not a Unity Catalog location "
+            f"(got: {type(trace_location).__name__ if trace_location else None}). "
+            "Distributed tracing requires UC-backed traces."
+        )
+        logger.error(msg)
+        raise RuntimeError(msg)
+    return {
+        "catalog_name": trace_location.catalog_name,
+        "schema_name": trace_location.schema_name,
+        "table_prefix": trace_location.table_prefix,
+    }
+
+
+_TRACE_DESTINATION = _get_trace_destination()
 
 
 @invoke()
@@ -123,6 +154,10 @@ def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
         input=[i.model_dump() for i in request.input],
         tools=TOOLS,
         stream=False,
+        extra_headers=get_tracing_context_headers_for_http_request(),
+        extra_body={
+            "trace_destination": _TRACE_DESTINATION,
+        },
     )
     return ResponsesAgentResponse(output=[item.model_dump() for item in response.output])
 
@@ -137,29 +172,73 @@ def stream_handler(request: ResponsesAgentRequest):
         input=[i.model_dump() for i in request.input],
         tools=TOOLS,
         stream=True,
+        extra_headers=get_tracing_context_headers_for_http_request(),
+        extra_body={
+            "trace_destination": _TRACE_DESTINATION,
+        },
     )
 ```
 
 ## Step 4: Grant Permissions in `databricks.yml`
 
-For each hosted tool, grant the corresponding resource access. See the **add-tools** skill for complete YAML examples.
-
-| Tool type | Resource to grant |
-|-----------|-------------------|
-| `genie_space` | `genie_space` with `CAN_RUN` |
-| `uc_function` | `uc_securable` (FUNCTION) with `EXECUTE` |
-| `knowledge_assistant` | `serving_endpoint` with `CAN_QUERY` |
-| `uc_connection` | `uc_securable` (CONNECTION) with `USE_CONNECTION` |
-| `app` | *(Databricks App access)* |
-
-Also grant `CAN_QUERY` on the `MODEL` serving endpoint:
+Add a `resources` block under your app to grant the service principal access to each hosted tool. The model serving endpoint is always required — add entries for each tool you declared in Step 2.
 
 ```yaml
-- name: 'model-endpoint'
-  serving_endpoint:
-    name: 'databricks-claude-sonnet-4-5'
-    permission: 'CAN_QUERY'
+resources:
+  apps:
+    my-agent:
+      name: 'my-agent'
+      source_code_path: .
+      resources:
+
+        # Always required: the model endpoint used in responses.create()
+        - name: 'model-endpoint'
+          serving_endpoint:
+            name: 'databricks-claude-sonnet-4-5'
+            permission: 'CAN_QUERY'
+
+        # genie_space tool → genie_space with CAN_RUN
+        - name: 'my-genie-space'
+          genie_space:
+            space_id: '<genie-space-id>'
+            permission: 'CAN_RUN'
+
+        # uc_function tool → uc_securable FUNCTION with EXECUTE
+        - name: 'my-uc-function'
+          uc_securable:
+            securable_type: 'FUNCTION'
+            securable_full_name: '<catalog>.<schema>.<function_name>'
+            permission: 'EXECUTE'
+
+        # knowledge_assistant tool → serving_endpoint with CAN_QUERY
+        - name: 'my-knowledge-assistant'
+          serving_endpoint:
+            name: '<knowledge-assistant-endpoint-name>'
+            permission: 'CAN_QUERY'
+
+        # uc_connection tool → uc_securable CONNECTION with USE_CONNECTION
+        # Note: UC connections are metastore-scoped, so securable_full_name is just the connection name
+        - name: 'my-uc-connection'
+          uc_securable:
+            securable_type: 'CONNECTION'
+            securable_full_name: '<connection-name>'
+            permission: 'USE_CONNECTION'
+
+        # app tool → app with CAN_USE
+        - name: 'my-app-tool'
+          app:
+            name: '<target-databricks-app-name>'
+            permission: 'CAN_USE'
 ```
+
+| Tool type | `resources` entry | Permission |
+|-----------|-------------------|------------|
+| *(all)* | `serving_endpoint` (model) | `CAN_QUERY` |
+| `genie_space` | `genie_space` | `CAN_RUN` |
+| `uc_function` | `uc_securable` (`FUNCTION`) | `EXECUTE` |
+| `knowledge_assistant` | `serving_endpoint` | `CAN_QUERY` |
+| `uc_connection` | `uc_securable` (`CONNECTION`) | `USE_CONNECTION` |
+| `app` | `app` | `CAN_USE` |
 
 ## Step 5: Test and Deploy
 
@@ -185,7 +264,64 @@ Pass any of these as the `model` parameter:
 
 ## Enabling Tracing
 
-Pass `trace_destination` via `extra_body` to write a full agent loop trace to Unity Catalog tables:
+The Supervisor API supports **distributed tracing** — spans from the server-side agent loop are linked into the same trace as your agent's client-side spans, giving end-to-end visibility in MLflow.
+
+### How It Works
+
+1. The trace destination (UC catalog/schema/table) is resolved from your MLflow experiment at startup
+2. `get_tracing_context_headers_for_http_request()` propagates the active span context to the Supervisor API via HTTP headers
+3. `trace_destination` tells the Supervisor API where to write its server-side spans
+4. Both sets of spans appear as a single connected trace in MLflow
+
+### Setup
+
+Add to `agent_server/agent.py`:
+
+```python
+import os
+import logging
+import mlflow
+from mlflow import MlflowClient
+from mlflow.tracing import get_tracing_context_headers_for_http_request
+
+logger = logging.getLogger(__name__)
+
+
+def _get_trace_destination() -> dict:
+    """Resolve trace destination from the experiment's Unity Catalog trace location."""
+    experiment_id = os.environ.get("MLFLOW_EXPERIMENT_ID")
+    if not experiment_id:
+        raise RuntimeError(
+            "MLFLOW_EXPERIMENT_ID is not set. Cannot configure distributed tracing. "
+            "Ensure the app is configured with a valid MLflow experiment."
+        )
+
+    client = MlflowClient()
+    experiment = client.get_experiment(experiment_id)
+    trace_location = experiment.trace_location
+
+    if trace_location is None or not hasattr(trace_location, "catalog_name"):
+        msg = (
+            f"Experiment {experiment_id} trace_location is not a Unity Catalog location "
+            f"(got: {type(trace_location).__name__ if trace_location else None}). "
+            "Distributed tracing requires UC-backed traces. "
+            "Ensure 'MLflow traces in Unity Catalog' is enabled for your workspace."
+        )
+        logger.error(msg)
+        raise RuntimeError(msg)
+
+    return {
+        "catalog_name": trace_location.catalog_name,
+        "schema_name": trace_location.schema_name,
+        "table_prefix": trace_location.table_prefix,
+    }
+
+
+# Resolve once at module load — fail fast if the experiment is misconfigured
+_TRACE_DESTINATION = _get_trace_destination()
+```
+
+Then pass `extra_headers` and `extra_body` in every `responses.create()` call:
 
 ```python
 response = _client.responses.create(
@@ -193,17 +329,28 @@ response = _client.responses.create(
     input=[i.model_dump() for i in request.input],
     tools=TOOLS,
     stream=False,
+    extra_headers=get_tracing_context_headers_for_http_request(),
     extra_body={
-        "trace_destination": {
-            "catalog_name": "<catalog>",
-            "schema_name": "<schema>",
-            "table_prefix": "<table-prefix>",
-        }
+        "trace_destination": _TRACE_DESTINATION,
     },
 )
 ```
 
-To also return the trace in the response, add `"databricks_options": {"return_trace": True}` to `extra_body`.
+- `extra_headers` — propagates the active MLflow span context so client and server spans are linked into one trace
+- `trace_destination` — tells the Supervisor API where to write server-side spans in Unity Catalog
+
+### Environment Variable
+
+`MLFLOW_EXPERIMENT_ID` must be set in your app environment. The quickstart script sets this automatically. To verify:
+
+```bash
+grep MLFLOW_EXPERIMENT_ID .env
+```
+
+> **Claude:** Before writing any tracing code, check `.env` for `MLFLOW_EXPERIMENT_ID`. If it is missing or empty, ask the user:
+> *"Distributed tracing requires `MLFLOW_EXPERIMENT_ID` to be set in `.env`. Do you have an MLflow experiment ID? If not, run `uv run quickstart` to create one, or provide the experiment ID and I'll add it to `.env`."*
+>
+> If the value is present but looks wrong (e.g. not a numeric string), warn the user before proceeding.
 
 ## MCP Server Tools: Multi-Turn Approval Flow
 

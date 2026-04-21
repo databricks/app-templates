@@ -210,6 +210,9 @@ async def process_agent_astream_events(
 
         elif event[0] == "updates":
             for node_data in event[1].values():
+                # Middleware nodes that no-op return None; skip those cleanly.
+                if not node_data:
+                    continue
                 messages = node_data.get("messages", [])
                 if not messages:
                     continue

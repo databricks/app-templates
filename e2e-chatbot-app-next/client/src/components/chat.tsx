@@ -69,20 +69,6 @@ export function Chat({
   const resumeAttemptCountRef = useRef(0);
   const maxResumeAttempts = 3;
 
-  // Durable-resume snapshot: on data-resumed we record the length of the
-  // assistant message's text at that instant. Used two ways:
-  //   (1) at RENDER time, Messages slices the first N chars off the text
-  //       parts of the active assistant message so mid-stream the UI shows
-  //       only attempt-2 content (state stays as AI SDK writes it).
-  //   (2) onFinish runs a final setMessages truncate so the persisted
-  //       message also reflects only attempt 2 (would otherwise be saved
-  //       with both attempts concatenated).
-  // Needs to be state (not ref) so the map-time slice in Messages re-runs
-  // when the snapshot changes. Keyed by message id for multi-turn safety.
-  const [attempt1TextLen, setAttempt1TextLen] = useState<
-    Record<string, number>
-  >({});
-
   const abortController = useRef<AbortController | null>(new AbortController());
   useEffect(() => {
     return () => {
@@ -196,40 +182,21 @@ export function Chat({
         fetchChatHistory();
       }
       // Durable-resume visual reset: when the backend's LongRunningAgentServer
-      // emits response.resumed (mid-stream pod crash + reclaim), the chat route
-      // writes a data-resumed part to signal us. Drop any text parts we've
-      // accumulated from the interrupted attempt so only the new attempt's
-      // text renders in-place. Tool parts are kept because they naturally
-      // de-dup across attempts via call_id.
+      // emits response.resumed (mid-stream pod crash + reclaim), the chat
+      // route forwards a data-resumed part. Drop text parts from the last
+      // assistant message so only attempt 2's content renders. Tool parts
+      // are kept untouched — they dedupe across attempts by call_id.
       if (dataPart.type === 'data-resumed') {
-        // Snapshot the current text length across text parts of the last
-        // assistant message. Messages uses this to slice at render time.
-        // Mid-stream state mutation is fighting the AI SDK accumulator
-        // (replaceMessage structuredClones the message on every write()),
-        // so we transform at the view layer instead.
-        const lastAssistantId = (() => {
-          // Peek into current messages via functional setter without mutating.
-          let captured: { id: string; len: number } | null = null;
-          setMessages((prev) => {
-            if (prev.length) {
-              const last = prev[prev.length - 1];
-              if (last.role === 'assistant') {
-                const currentLen = (last.parts ?? []).reduce(
-                  (acc: number, p: { type?: string; text?: string }) =>
-                    p.type === 'text' ? acc + (p.text?.length ?? 0) : acc,
-                  0,
-                );
-                captured = { id: last.id, len: currentLen };
-              }
-            }
-            return prev;
-          });
-          return captured;
-        })();
-        if (lastAssistantId) {
-          const { id, len } = lastAssistantId as { id: string; len: number };
-          setAttempt1TextLen((prev) => ({ ...prev, [id]: len }));
-        }
+        setMessages((prev) => {
+          if (!prev.length) return prev;
+          const last = prev[prev.length - 1];
+          if (last.role !== 'assistant') return prev;
+          const keptParts = (last.parts ?? []).filter(
+            (p: { type?: string }) => p.type !== 'text',
+          );
+          if (keptParts.length === (last.parts ?? []).length) return prev;
+          return [...prev.slice(0, -1), { ...last, parts: keptParts }];
+        });
       }
     },
     onFinish: ({
@@ -240,40 +207,6 @@ export function Chat({
     }) => {
       didFetchHistoryOnNewChat.current = false;
       setTitlePending(false);
-
-      // Post-stream durable-resume truncation. Persists attempt-2-only text
-      // into useChat's messages state (what gets saved to DB). The render-
-      // time slice in Messages handles mid-stream; this handles the final
-      // committed state.
-      const lastAssistant = finishedMessages?.at(-1);
-      if (lastAssistant && lastAssistant.role === 'assistant') {
-        const drop = attempt1TextLen[lastAssistant.id];
-        if (drop && drop > 0) {
-          setMessages((prev) => {
-            if (!prev.length) return prev;
-            const last = prev[prev.length - 1];
-            if (last.id !== lastAssistant.id) return prev;
-            let remaining = drop;
-            const newParts = (last.parts ?? []).map((p) => {
-              const tp = p as { type?: string; text?: string };
-              if (tp.type !== 'text' || !tp.text) return p;
-              if (remaining <= 0) return p;
-              const cut = Math.min(remaining, tp.text.length);
-              const nextText = tp.text.slice(cut);
-              remaining -= cut;
-              return { ...tp, text: nextText };
-            });
-            const newLast = { ...last, parts: newParts } as ChatMessage;
-            return [...prev.slice(0, -1), newLast];
-          });
-          // Clear so the render-time slice in Messages stops kicking in
-          // (state is now already truncated).
-          setAttempt1TextLen((prev) => {
-            const { [lastAssistant.id]: _omit, ...rest } = prev;
-            return rest;
-          });
-        }
-      }
 
       // If user aborted, don't try to resume
       if (isAbort) {
@@ -411,7 +344,6 @@ export function Chat({
           isReadonly={isReadonly}
           selectedModelId={initialChatModel}
           feedback={feedback}
-          attempt1TextLen={attempt1TextLen}
         />
 
 

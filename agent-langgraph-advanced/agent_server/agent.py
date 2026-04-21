@@ -4,7 +4,7 @@ from typing import Any, AsyncGenerator, Optional, Sequence, TypedDict
 
 import mlflow
 from databricks.sdk import WorkspaceClient
-from databricks_langchain import ChatDatabricks, build_tool_resume_repair
+from databricks_langchain import ChatDatabricks, build_tool_resume_repair_middleware
 from fastapi import HTTPException
 from langchain.agents import create_agent
 from langchain_core.messages import AnyMessage
@@ -78,6 +78,11 @@ async def init_agent(
         checkpointer=checkpointer,
         store=store,
         state_schema=StatefulAgentState,
+        # Durable-resume repair: a kill mid-tool leaves an AIMessage with
+        # tool_calls whose ToolMessage responses never landed. This
+        # middleware injects synthetic ToolMessages before every model
+        # call; no-op on the happy path.
+        middleware=[build_tool_resume_repair_middleware()],
     )
 
 
@@ -120,28 +125,14 @@ async def stream_handler(
             # For on-behalf-of user authentication, pass get_user_workspace_client() to init_agent.
             agent = await init_agent(store=store, checkpointer=checkpointer)
 
-            # Durable-resume repair: a kill mid-tool leaves an AIMessage with
-            # tool_calls whose ToolMessage responses never landed. Inject
-            # synthetic ToolMessages (as_node="tools" so the graph transitions
-            # tools → model next, not re-evaluating the model→{tools,END}
-            # conditional branch which doesn't know "model" as a destination).
-            # No-op when state is clean.
-            state = await agent.aget_state(config)
-            has_history = bool(state and state.values.get("messages"))
-            if has_history:
-                repair = build_tool_resume_repair(state.values["messages"])
-                if repair:
-                    await agent.aupdate_state(
-                        config, {"messages": repair}, as_node="tools"
-                    )
-
             # If the thread has history in the checkpointer, only forward the
             # latest user turn — prior turns already live in state. Echoing the
             # full conversation (common from UI clients) can re-inject orphan
             # tool_uses left over in the client's buffer from a previously
             # interrupted attempt, tripping Anthropic's tool_use → tool_result
             # pairing check on the next LLM call.
-            if has_history and input_messages:
+            state = await agent.aget_state(config)
+            if state and state.values.get("messages") and input_messages:
                 last_user = next(
                     (m for m in reversed(input_messages) if m.get("role") == "user"),
                     None,

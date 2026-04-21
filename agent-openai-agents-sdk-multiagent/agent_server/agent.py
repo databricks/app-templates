@@ -178,7 +178,7 @@ def create_orchestrator_agent(mcp_server: McpServer) -> Agent:
             "- Use query_serving_endpoint for questions best answered by the serving model.\n"
             "If unsure, ask the user for clarification."
         ),
-        model="databricks-claude-sonnet-4-5",  # TODO: change model if desired
+        model="databricks-gpt-5-2",  # TODO: change model if desired
         mcp_servers=[mcp_server] if mcp_server else [],
         tools=subagent_tools,
     )

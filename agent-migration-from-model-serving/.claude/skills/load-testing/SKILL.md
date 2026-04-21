@@ -218,8 +218,6 @@ export DATABRICKS_CLIENT_ID=<your-client-id>
 export DATABRICKS_CLIENT_SECRET=<your-client-secret>
 ```
 
-With the default parameters (6 apps, `--max-users 300`, `--step-duration 30`), a full run takes ~45 minutes — well under the U2M token lifetime.
-
 ### Parameters Reference
 
 | Parameter | Required | Default | Description |

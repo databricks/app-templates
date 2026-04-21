@@ -87,8 +87,12 @@ def sync_template(template: str, config: dict):
     copy_skill(SOURCE / "quickstart", dest / "quickstart", quickstart_subs)
 
     # Shared skills (no substitution needed)
-    for skill in ["run-locally", "discover-tools", "migrate-from-model-serving"]:
+    for skill in ["run-locally", "discover-tools", "create-tools", "migrate-from-model-serving"]:
         copy_skill(SOURCE / skill, dest / skill)
+
+    # Load-testing skill (excluded for non-conversational — incompatible input format)
+    if not config.get("exclude_load_testing", False):
+        copy_skill(SOURCE / "load-testing", dest / "load-testing")
 
     # Long-running server skill — skip for advanced templates (already have it) and non-conversational
     if not has_memory and template != "agent-non-conversational":
@@ -96,6 +100,11 @@ def sync_template(template: str, config: dict):
 
     # Deploy skill (with substitution)
     copy_skill(SOURCE / "deploy", dest / "deploy", subs)
+
+    # Add supervisor API to Open AI SDKs
+    if sdk == "openai":
+        copy_skill(SOURCE / "supervisor-api", dest / "supervisor-api")
+        copy_skill(SOURCE / "supervisor-api-background-mode", dest / "supervisor-api-background-mode")
 
     # SDK-specific skills (with substitution for bundle name references)
     if isinstance(sdk, list):

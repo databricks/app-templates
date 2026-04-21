@@ -7,6 +7,8 @@ description: "Add tools to your agent and grant required permissions in databric
 
 > **Profile reminder:** All `databricks` CLI commands must include the profile from `.env`: `databricks <command> --profile <profile>`
 
+> Don't have the resource yet? See **create-tools** skill first.
+
 **After adding any MCP server to your agent, you MUST grant the app access in `databricks.yml`.**
 
 Without this, you'll get permission errors when the agent tries to use the resource.
@@ -96,6 +98,21 @@ env:
 ```
 
 **Critical:** Every `value_from` value must match a `name` field in `databricks.yml` resources.
+
+## MCP Error Handling
+
+MCP tool calls can fail (network issues, permission errors, timeouts). Use `handle_tool_error` on MCP servers to catch errors and return them to the LLM instead of crashing the agent:
+
+```python
+DatabricksMCPServer(
+    name="genie",
+    url=f"{host}/api/2.0/mcp/genie/{space_id}",
+    handle_tool_error=True,   # Return error messages to LLM instead of raising
+    timeout=60.0,             # Increase timeout for slow tools like Genie
+)
+```
+
+For local function tools defined with `@tool`, see `create-tools` skill > `examples/local-python-tools.md` for the `ToolException` + `handle_tool_error` pattern.
 
 ## Important Notes
 

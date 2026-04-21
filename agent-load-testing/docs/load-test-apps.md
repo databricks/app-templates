@@ -241,7 +241,13 @@ databricks apps get <app-name> --output json | jq '{app_status, compute_status, 
 
 The load testing scripts authenticate to your Databricks App automatically:
 
-- **Short tests (under ~1 hour):** Just run `databricks auth login` beforehand. The scripts automatically pick up the U2M token via `databricks auth token` — no extra setup needed.
+- **Short tests (under ~1 hour):** Just run `databricks auth login` beforehand. The scripts automatically pick up the U2M token via `databricks auth token`. Set `DATABRICKS_HOST` and `DATABRICKS_PROFILE` so the scripts know which workspace and profile to use:
+
+```bash
+export DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
+export DATABRICKS_PROFILE=<your-profile-name>   # profile from ~/.databrickscfg
+```
+
 - **Long tests (over ~1 hour):** U2M tokens can expire mid-run. Use M2M OAuth with a service principal instead:
 
 ```bash

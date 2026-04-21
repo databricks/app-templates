@@ -15,7 +15,6 @@ env:
   - name: MLFLOW_EXPERIMENT_ID
     valueFrom: "experiment"
   - name: LAKEBASE_AUTOSCALING_ENDPOINT
-    value_from: "postgres"
     valueFrom: "postgres"
   - name: LAKEBASE_AGENT_MEMORY_SCHEMA
     value: "agent_openai_memory"

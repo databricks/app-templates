@@ -189,13 +189,23 @@ export function Chat({
       // are kept untouched — they dedupe across attempts by call_id.
       if (dataPart.type === 'data-resumed') {
         setMessages((prev) => {
-          if (!prev.length) return prev;
+          if (!prev.length) {
+            console.log('[chat][resumed] no messages, noop');
+            return prev;
+          }
           const last = prev[prev.length - 1];
-          if (last.role !== 'assistant') return prev;
-          const keptParts = (last.parts ?? []).filter(
+          if (last.role !== 'assistant') {
+            console.log('[chat][resumed] last msg not assistant, noop', last.role);
+            return prev;
+          }
+          const origParts = last.parts ?? [];
+          const keptParts = origParts.filter(
             (p: { type?: string }) => p.type !== 'text',
           );
-          if (keptParts.length === (last.parts ?? []).length) return prev;
+          console.log(
+            `[chat][resumed] msg=${last.id} parts_before=${origParts.length} parts_after=${keptParts.length} types_before=${JSON.stringify(origParts.map((p: any) => p.type))}`,
+          );
+          if (keptParts.length === origParts.length) return prev;
           return [...prev.slice(0, -1), { ...last, parts: keptParts }];
         });
       }

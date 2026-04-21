@@ -137,8 +137,6 @@ Deploy multiple Databricks Apps with varying compute sizes and worker counts.
 | Large | 8 | `<your-app>-large-w8` |
 | Large | 10 | `<your-app>-large-w10` |
 
-This 6-config matrix covers the sweet spot identified from prior testing. If the user wants broader coverage, they can add more configurations (e.g., Medium w6/w8, Large w12).
-
 ### Configuring Compute Size
 
 **Databricks CLI:**

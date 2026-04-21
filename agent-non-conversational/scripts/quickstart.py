@@ -1122,8 +1122,8 @@ def _replace_lakebase_env_vars(content: str, lakebase_config: dict) -> str:
                 insert_idx = len(result)
             continue
 
-        # Match LAKEBASE_ env var lines (active or commented)
-        if re.search(r"- name: LAKEBASE_", stripped):
+        # Match only the LAKEBASE_ env vars that quickstart manages
+        if re.search(r"- name: LAKEBASE_(INSTANCE_NAME|AUTOSCALING_ENDPOINT|AUTOSCALING_PROJECT|AUTOSCALING_BRANCH)", stripped):
             if insert_idx is None:
                 insert_idx = len(result)
             skip_next_value = True

@@ -295,6 +295,11 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           // boundary after a crash + CAS claim. Forward it once to the
           // client as a data-resumed part so the UI can drop the
           // interrupted attempt's text parts (tools keep their cards).
+          if (raw?.type === 'response.resumed') {
+            console.log(
+              `[chat][onChunk] saw response.resumed attempt=${raw?.attempt} writer_ready=${!!writerRef.current}`,
+            );
+          }
           if (raw?.type === 'response.resumed' && writerRef.current) {
             const attempt = typeof raw?.attempt === 'number' ? raw.attempt : 2;
             if (!emittedResumedAttempts.has(attempt)) {
@@ -304,6 +309,9 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
                   type: 'data-resumed',
                   data: { attempt },
                 });
+                console.log(
+                  `[chat][onChunk] forwarded data-resumed attempt=${attempt}`,
+                );
               } catch (e) {
                 console.warn('[chat] failed to forward data-resumed:', e);
               }

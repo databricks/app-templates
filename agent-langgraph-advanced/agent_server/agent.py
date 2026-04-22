@@ -1,10 +1,11 @@
+import asyncio
 import logging
 from datetime import datetime
 from typing import Any, AsyncGenerator, Optional, Sequence, TypedDict
 
 import mlflow
 from databricks.sdk import WorkspaceClient
-from databricks_langchain import ChatDatabricks, build_tool_resume_repair_middleware
+from databricks_langchain import ChatDatabricks
 from fastapi import HTTPException
 from langchain.agents import create_agent
 from langchain_core.messages import AnyMessage
@@ -50,6 +51,34 @@ def get_current_time() -> str:
     return datetime.now().isoformat()
 
 
+@tool
+def get_weather(city: str) -> str:
+    """Return a short weather summary for the given city."""
+    stubs = {
+        "new york": "72°F, partly cloudy, light wind",
+        "los angeles": "78°F, sunny, mild humidity",
+        "tokyo": "65°F, rain, chance of thunderstorms",
+    }
+    return stubs.get(city.lower(), f"70°F, clear skies (stub for {city})")
+
+
+@tool
+def get_stock_price(ticker: str) -> str:
+    """Return a simulated stock price for the given ticker symbol."""
+    stubs = {"AAPL": "$187.42 (+1.2%)", "GOOGL": "$141.78 (-0.4%)"}
+    return stubs.get(ticker.upper(), f"$100.00 (stub for {ticker.upper()})")
+
+
+@tool
+async def deep_research(topic: str) -> str:
+    """Run an in-depth multi-source research on the given topic. Takes ~15 seconds."""
+    await asyncio.sleep(15)
+    return (
+        f"Research summary on '{topic}': key findings include "
+        "historical context, current consensus, and two leading counter-arguments."
+    )
+
+
 class StatefulAgentState(TypedDict, total=False):
     messages: Annotated[Sequence[AnyMessage], add_messages]
     custom_inputs: dict[str, Any]
@@ -61,7 +90,7 @@ async def init_agent(
     workspace_client: Optional[WorkspaceClient] = None,
     checkpointer: Optional[Any] = None,
 ):
-    tools = [get_current_time] + memory_tools()
+    tools = [get_current_time, get_weather, get_stock_price, deep_research] + memory_tools()
     # To use MCP server tools instead, uncomment the below lines:
     # mcp_client = init_mcp_client(workspace_client or sp_workspace_client)
     # try:
@@ -78,11 +107,6 @@ async def init_agent(
         checkpointer=checkpointer,
         store=store,
         state_schema=StatefulAgentState,
-        # Durable-resume repair: a kill mid-tool leaves an AIMessage with
-        # tool_calls whose ToolMessage responses never landed. This
-        # middleware injects synthetic ToolMessages before every model
-        # call; no-op on the happy path.
-        middleware=[build_tool_resume_repair_middleware()],
     )
 
 
@@ -124,20 +148,6 @@ async def stream_handler(
             # By default, uses service principal credentials.
             # For on-behalf-of user authentication, pass get_user_workspace_client() to init_agent.
             agent = await init_agent(store=store, checkpointer=checkpointer)
-
-            # If the thread has history in the checkpointer, only forward the
-            # latest user turn — prior turns already live in state. Echoing the
-            # full conversation (common from UI clients) can re-inject orphan
-            # tool_uses left over in the client's buffer from a previously
-            # interrupted attempt, tripping Anthropic's tool_use → tool_result
-            # pairing check on the next LLM call.
-            state = await agent.aget_state(config)
-            if state and state.values.get("messages") and input_messages:
-                last_user = next(
-                    (m for m in reversed(input_messages) if m.get("role") == "user"),
-                    None,
-                )
-                input_messages = [last_user] if last_user else []
 
             input_state: dict[str, Any] = {
                 "messages": input_messages,

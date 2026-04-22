@@ -190,16 +190,8 @@ async def deduplicate_input(request: ResponsesAgentRequest, session: AsyncDatabr
     that history persisted, passing everything through would duplicate messages.
     If the session already covers the prior turns, only the latest message is needed
     since the session will prepend the full history automatically.
-
-    Also repairs the session (dedupes items and injects synthetic outputs for
-    orphan tool_calls left behind by a durable-resume interrupt) so the next
-    LLM request over this session is a valid conversation.
     """
-    await session.repair()
     messages = [i.model_dump() for i in request.input]
-    # Empty input is a valid signal from the long-running server to resume an
-    # existing session without re-sending user content — the session already
-    # has the prior turns, so there is nothing to deduplicate.
     if not messages:
         return []
     # Normalize assistant message content from string to structured list format.

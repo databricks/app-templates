@@ -198,16 +198,22 @@ export function Chat({
       // start) overwrites it on the next chunk via write() →
       // state.replaceMessage; render-time transform sidesteps that.
       if (dataPart.type === 'data-resumed') {
-        setMessages((prev) => {
-          const last = prev[prev.length - 1];
-          if (last?.role === 'assistant') {
-            setResumeCutIndex((s) => ({
-              ...s,
-              [last.id]: (last.parts ?? []).length,
-            }));
-          }
-          return prev;
-        });
+        // TEMP: UI refresh/wipe on resume is DISABLED for durability testing.
+        // Without this, attempt-1 text stays on screen while attempt-2 streams
+        // its (possibly different) text over it — useful for observing how the
+        // server's attempt-1 inheritance + synthetic-output prompt shape the
+        // LLM's mid-turn resume behavior. Re-enable by uncommenting below.
+        //
+        // setMessages((prev) => {
+        //   const last = prev[prev.length - 1];
+        //   if (last?.role === 'assistant') {
+        //     setResumeCutIndex((s) => ({
+        //       ...s,
+        //       [last.id]: (last.parts ?? []).length,
+        //     }));
+        //   }
+        //   return prev;
+        // });
       }
     },
     onFinish: ({

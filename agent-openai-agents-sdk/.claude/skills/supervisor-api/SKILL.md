@@ -130,15 +130,19 @@ def _get_trace_destination() -> dict:
         msg = (
             f"Experiment {experiment_id} trace_location is not a Unity Catalog location "
             f"(got: {type(trace_location).__name__ if trace_location else None}). "
-            "Distributed tracing requires UC-backed traces."
+            "Distributed tracing requires UC-backed traces. "
+            "Ensure 'MLflow traces in Unity Catalog' is enabled for your workspace and that "
+            "the target UC tables use customer-managed storage (Arclight default storage is not supported)."
         )
         logger.error(msg)
         raise RuntimeError(msg)
-    return {
+    dest = {
         "catalog_name": trace_location.catalog_name,
         "schema_name": trace_location.schema_name,
-        "table_prefix": trace_location.table_prefix,
     }
+    if trace_location.table_prefix is not None:
+        dest["table_prefix"] = trace_location.table_prefix
+    return dest
 
 
 _TRACE_DESTINATION = _get_trace_destination()
@@ -181,55 +185,7 @@ def stream_handler(request: ResponsesAgentRequest):
 
 ## Step 4: Grant Permissions in `databricks.yml`
 
-Add a `resources` block under your app to grant the service principal access to each hosted tool. The model serving endpoint is always required — add entries for each tool you declared in Step 2.
-
-```yaml
-resources:
-  apps:
-    my-agent:
-      name: 'my-agent'
-      source_code_path: .
-      resources:
-
-        # Always required: the model endpoint used in responses.create()
-        - name: 'model-endpoint'
-          serving_endpoint:
-            name: 'databricks-claude-sonnet-4-5'
-            permission: 'CAN_QUERY'
-
-        # genie_space tool → genie_space with CAN_RUN
-        - name: 'my-genie-space'
-          genie_space:
-            space_id: '<genie-space-id>'
-            permission: 'CAN_RUN'
-
-        # uc_function tool → uc_securable FUNCTION with EXECUTE
-        - name: 'my-uc-function'
-          uc_securable:
-            securable_type: 'FUNCTION'
-            securable_full_name: '<catalog>.<schema>.<function_name>'
-            permission: 'EXECUTE'
-
-        # knowledge_assistant tool → serving_endpoint with CAN_QUERY
-        - name: 'my-knowledge-assistant'
-          serving_endpoint:
-            name: '<knowledge-assistant-endpoint-name>'
-            permission: 'CAN_QUERY'
-
-        # uc_connection tool → uc_securable CONNECTION with USE_CONNECTION
-        # Note: UC connections are metastore-scoped, so securable_full_name is just the connection name
-        - name: 'my-uc-connection'
-          uc_securable:
-            securable_type: 'CONNECTION'
-            securable_full_name: '<connection-name>'
-            permission: 'USE_CONNECTION'
-
-        # app tool → app with CAN_USE
-        - name: 'my-app-tool'
-          app:
-            name: '<target-databricks-app-name>'
-            permission: 'CAN_USE'
-```
+Grant the service principal access to each hosted tool. See the **add-tools** skill for YAML examples — the resource types are the same. The model serving endpoint is always required.
 
 | Tool type | `resources` entry | Permission |
 |-----------|-------------------|------------|
@@ -238,7 +194,7 @@ resources:
 | `uc_function` | `uc_securable` (`FUNCTION`) | `EXECUTE` |
 | `knowledge_assistant` | `serving_endpoint` | `CAN_QUERY` |
 | `uc_connection` | `uc_securable` (`CONNECTION`) | `USE_CONNECTION` |
-| `app` | `app` | `CAN_USE` |
+| `app` | `app` *(CLI support coming soon)* | `CAN_USE` |
 
 ## Step 5: Test and Deploy
 
@@ -264,7 +220,7 @@ Pass any of these as the `model` parameter:
 
 ## Enabling Tracing
 
-The Supervisor API supports **distributed tracing** — spans from the server-side agent loop are linked into the same trace as your agent's client-side spans, giving end-to-end visibility in MLflow.
+The Supervisor API supports **distributed tracing** — spans from the server-side agent loop are linked into the same trace as your agent's client-side spans, giving end-to-end visibility in MLflow. See the [MLflow distributed tracing docs](https://mlflow.org/docs/latest/genai/tracing/app-instrumentation/distributed-tracing/) for more details.
 
 ### How It Works
 
@@ -305,16 +261,19 @@ def _get_trace_destination() -> dict:
             f"Experiment {experiment_id} trace_location is not a Unity Catalog location "
             f"(got: {type(trace_location).__name__ if trace_location else None}). "
             "Distributed tracing requires UC-backed traces. "
-            "Ensure 'MLflow traces in Unity Catalog' is enabled for your workspace."
+            "Ensure 'MLflow traces in Unity Catalog' is enabled for your workspace and that "
+            "the target UC tables use customer-managed storage (Arclight default storage is not supported)."
         )
         logger.error(msg)
         raise RuntimeError(msg)
 
-    return {
+    dest = {
         "catalog_name": trace_location.catalog_name,
         "schema_name": trace_location.schema_name,
-        "table_prefix": trace_location.table_prefix,
     }
+    if trace_location.table_prefix is not None:
+        dest["table_prefix"] = trace_location.table_prefix
+    return dest
 
 
 # Resolve once at module load — fail fast if the experiment is misconfigured

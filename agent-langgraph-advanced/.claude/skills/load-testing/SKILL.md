@@ -107,7 +107,7 @@ The mock timing is controlled by two environment variables (set in `app.yaml` or
 - `MOCK_CHUNK_DELAY_MS` — delay between text chunks in milliseconds (default: `10`)
 - `MOCK_CHUNK_COUNT` — number of text chunks per response (default: `80`)
 
-**For OpenAI Agents SDK templates:** Create a `MockAsyncOpenAI` client that replaces `AsyncDatabricksOpenAI`. It simulates tool call streaming (instant) and text response streaming (delayed chunks). Swap it in with:
+**For OpenAI Agents SDK templates:** Create a `MockAsyncOpenAI` client that replaces `AsyncDatabricksOpenAI`. It simulates tool call streaming (instant) and text response streaming (delayed chunks). A reference implementation is available at [`examples/mock_openai_client.py`](examples/mock_openai_client.py):
 ```python
 from agent_server.mock_openai_client import MockAsyncOpenAI
 set_default_openai_client(MockAsyncOpenAI())

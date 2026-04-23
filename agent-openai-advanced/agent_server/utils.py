@@ -209,79 +209,23 @@ async def deduplicate_input(request: ResponsesAgentRequest, session: AsyncDatabr
     return messages
 
 
-_DELTA_EVENT_TO_ITEM_TYPE = {
-    "response.output_text.delta": "message",
-    "response.content_part.added": "message",
-    "response.content_part.done": "message",
-    "response.function_call_arguments.delta": "function_call",
-    "response.function_call_arguments.done": "function_call",
-    "response.reasoning.delta": "reasoning",
-    "response.reasoning_summary_text.delta": "reasoning",
-}
-
-
 async def process_agent_stream_events(
     async_stream: AsyncIterator[StreamEvent],
     response_id: str | None = None,
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
-    # Runner streams every event with FAKE_RESPONSES_ID, so we assign uuids
-    # and reconstruct ownership. Two dimensions of disambiguation are
-    # required for providers that emit parallel / interleaved events
-    # (notably Claude via the Databricks OpenAI-compatible endpoint):
-    #
-    #   1. Items of different types interleave (function_call.added then
-    #      message.added, then function_call.done), so we keep the current
-    #      id bucket per item.type for delta routing.
-    #   2. Multiple function_calls can be open at once (Claude parallel tool
-    #      calling). Each call_id must map to its own uuid so the .done
-    #      frames land on the right item — otherwise the most recent call's
-    #      uuid gets stamped on every function_call.done.
-    current_id_by_type: dict[str, str] = {}
-    fc_id_by_call_id: dict[str, str] = {}
-
-    def fc_id_for(call_id: str) -> str:
-        if call_id not in fc_id_by_call_id:
-            fc_id_by_call_id[call_id] = str(uuid4())
-        return fc_id_by_call_id[call_id]
-
+    curr_item_id = str(uuid4())
     async for event in async_stream:
         if event.type == "raw_response_event":
             event_data = event.data.model_dump()
             if response_id is not None:
                 event_data = replace_fake_id(event_data, response_id)
-
-            event_type = event_data.get("type", "")
-            item = event_data.get("item") if isinstance(event_data.get("item"), dict) else None
-            item_type = item.get("type") if item else None
-            call_id = item.get("call_id") if item else None
-
-            if event_type == "response.output_item.added" and item_type:
-                if item_type == "function_call" and call_id:
-                    new_id = fc_id_for(call_id)
-                else:
-                    new_id = str(uuid4())
-                current_id_by_type[item_type] = new_id
-                event_data["item"]["id"] = new_id
-            elif event_type == "response.output_item.done" and item_type:
-                if item_type == "function_call" and call_id:
-                    # Look up by call_id — parallel tool calls each have
-                    # their own registered uuid.
-                    event_data["item"]["id"] = fc_id_for(call_id)
-                elif item_type in current_id_by_type:
-                    event_data["item"]["id"] = current_id_by_type[item_type]
-            elif event_type in _DELTA_EVENT_TO_ITEM_TYPE:
-                # Delta frames carry only item_id, not call_id. Route to the
-                # most recently opened item of the owning type — this is
-                # what Runner's stream actually implies (the current args
-                # delta belongs to the current function_call).
-                owner_type = _DELTA_EVENT_TO_ITEM_TYPE[event_type]
-                owner_id = current_id_by_type.get(owner_type)
-                if owner_id:
-                    if event_data.get("item_id") is not None:
-                        event_data["item_id"] = owner_id
-                    if item and item.get("id") is not None:
-                        event_data["item"]["id"] = owner_id
-
+            if event_data["type"] == "response.output_item.added":
+                curr_item_id = str(uuid4())
+                event_data["item"]["id"] = curr_item_id
+            elif event_data.get("item") is not None and event_data["item"].get("id") is not None:
+                event_data["item"]["id"] = curr_item_id
+            elif event_data.get("item_id") is not None:
+                event_data["item_id"] = curr_item_id
             yield event_data
         elif event.type == "run_item_stream_event" and event.item.type == "tool_call_output_item":
             yield ResponsesAgentStreamEvent(

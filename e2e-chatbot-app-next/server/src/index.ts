@@ -24,6 +24,58 @@ import { ChatSDKError } from '@chat-template/core/errors';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// ---------------------------------------------------------------------------
+// SSE parsing helpers for the durable-resume /invocations proxy.
+// Kept at module scope so each piece is a tiny, single-responsibility, easy
+// to read / unit-test pure function. The proxy handler below composes them.
+// ---------------------------------------------------------------------------
+
+type ParsedSseFrame =
+  | { kind: 'done' }
+  | { kind: 'passthrough' }
+  | { kind: 'data'; payload: Record<string, unknown> };
+
+/** Classify an SSE frame as [DONE], data (parseable JSON), or opaque. */
+function parseSseFrame(frame: string): ParsedSseFrame {
+  if (frame.includes('data: [DONE]')) return { kind: 'done' };
+  const dataLine = frame.split('\n').find((l) => l.startsWith('data:'));
+  if (!dataLine) return { kind: 'passthrough' };
+  try {
+    const payload = JSON.parse(dataLine.slice(5).trim());
+    if (payload && typeof payload === 'object') {
+      return { kind: 'data', payload: payload as Record<string, unknown> };
+    }
+  } catch {
+    // Non-JSON frame (e.g. heartbeat): fall through to passthrough.
+  }
+  return { kind: 'passthrough' };
+}
+
+/** Pull the response_id off an SSE payload — tolerates the three shapes
+ *  emitted by FastAPI ( `response_id`, `response.id`, top-level `id` prefixed
+ *  with `resp_`).
+ */
+function extractResponseId(
+  payload: Record<string, unknown>,
+): string | null {
+  if (typeof payload.response_id === 'string') return payload.response_id;
+  const nested = payload.response as { id?: unknown } | undefined;
+  if (typeof nested?.id === 'string') return nested.id;
+  const topId = payload.id;
+  if (typeof topId === 'string' && topId.startsWith('resp_')) return topId;
+  return null;
+}
+
+/** True for upstream error frames that will never succeed on retry
+ *  (``task_failed`` / ``task_timeout``). Lets the proxy short-circuit its
+ *  resume loop instead of burning the full attempt budget. */
+function isTerminalErrorFrame(payload: Record<string, unknown>): boolean {
+  if (payload.type !== 'error') return false;
+  const err = (payload.error as Record<string, unknown> | undefined) ?? {};
+  const code = err.code as string | undefined;
+  return code === 'task_failed' || code === 'task_timeout';
+}
+
 const app: Express = express();
 const isDevelopment = process.env.NODE_ENV !== 'production';
 // Either let PORT be set by env or use 3001 for development and 3000 for production
@@ -144,76 +196,44 @@ if (agentBackendUrl) {
       let resumeAttempt = 0;
 
       // Read one SSE stream, extract response_id + sequence_number + detect
-      // terminal errors, forward each frame to the client.
-      // Returns whether we saw the [DONE] sentinel.
-      const pumpStream = async (upstream: globalThis.Response) => {
+      // terminal errors, forward each frame to the client. Returns whether we
+      // saw the [DONE] sentinel. Parsing is delegated to the module-level
+      // helpers above.
+      const pumpStream = async (
+        upstream: globalThis.Response,
+      ): Promise<boolean> => {
         if (!upstream.body) return false;
         const reader = upstream.body.getReader();
         const decoder = new TextDecoder();
         let buf = '';
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done) return false;
           buf += decoder.decode(value, { stream: true });
           const frames = buf.split(/\n\n/);
           buf = frames.pop() || '';
           for (const frame of frames) {
             const frameBytes = `${frame}\n\n`;
-            if (frame.includes('data: [DONE]')) {
+            const parsed = parseSseFrame(frame);
+            if (parsed.kind === 'done') {
               res.write(frameBytes);
               return true;
             }
-            const dataLine = frame.split('\n').find((l) => l.startsWith('data:'));
-            if (!dataLine) {
-              res.write(frameBytes);
-              continue;
-            }
-            let parsed: Record<string, unknown> | undefined;
-            try {
-              parsed = JSON.parse(dataLine.slice(5).trim());
-            } catch {
-              // Non-JSON SSE frame (e.g. heartbeats) — forward as-is.
-              res.write(frameBytes);
-              continue;
-            }
-            if (!parsed) {
-              res.write(frameBytes);
-              continue;
-            }
-            // Track response_id (several possible locations).
-            const nested = parsed.response as
-              | { id?: unknown }
-              | undefined;
-            const rid =
-              (typeof parsed.response_id === 'string'
-                ? (parsed.response_id as string)
-                : undefined) ??
-              (typeof nested?.id === 'string' ? nested.id : undefined) ??
-              (typeof parsed.id === 'string' &&
-              (parsed.id as string).startsWith('resp_')
-                ? (parsed.id as string)
-                : undefined);
-            if (!responseId && typeof rid === 'string') {
-              responseId = rid;
-              console.log(`[/invocations] background started response_id=${responseId}`);
-            }
-            if (
-              typeof parsed.sequence_number === 'number' &&
-              (parsed.sequence_number as number) > lastSeq
-            ) {
-              lastSeq = parsed.sequence_number as number;
-            }
-            const eventType = parsed.type as string | undefined;
-            // Detect terminal errors (task_failed, task_timeout, etc.) so we
-            // don't burn MAX_RESUME_ATTEMPTS fetching a response that will
-            // never succeed. Upstream LLM 502s and permanent run failures
-            // both surface here.
-            if (eventType === 'error') {
-              const errObj = (parsed.error as Record<string, unknown>) || {};
-              const code = errObj.code as string | undefined;
-              if (code === 'task_failed' || code === 'task_timeout') {
+            if (parsed.kind === 'data') {
+              const rid = extractResponseId(parsed.payload);
+              if (rid && !responseId) {
+                responseId = rid;
                 console.log(
-                  `[/invocations] terminal error code=${code} response_id=${responseId}; not retrying`,
+                  `[/invocations] background started response_id=${responseId}`,
+                );
+              }
+              const seq = parsed.payload.sequence_number;
+              if (typeof seq === 'number' && seq > lastSeq) {
+                lastSeq = seq;
+              }
+              if (isTerminalErrorFrame(parsed.payload)) {
+                console.log(
+                  `[/invocations] terminal error response_id=${responseId}; not retrying`,
                 );
                 sawTerminalError = true;
               }
@@ -221,7 +241,6 @@ if (agentBackendUrl) {
             res.write(frameBytes);
           }
         }
-        return false;
       };
 
       // Kickoff: POST background request.

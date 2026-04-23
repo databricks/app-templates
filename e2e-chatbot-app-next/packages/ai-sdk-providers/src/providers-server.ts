@@ -10,7 +10,10 @@ import {
 } from '@chat-template/auth';
 import { createDatabricksProvider } from '@databricks/ai-sdk-provider';
 import { extractReasoningMiddleware, wrapLanguageModel } from 'ai';
-import { shouldInjectContextForEndpoint } from './request-context';
+import {
+  getApiProxyUrl,
+  shouldInjectContextForEndpoint,
+} from './request-context';
 
 // Header keys for passing context through streamText headers
 export const CONTEXT_HEADER_CONVERSATION_ID = 'x-databricks-conversation-id';
@@ -70,8 +73,6 @@ export async function getWorkspaceHostname(): Promise<string> {
 
 // Environment variable to enable SSE logging
 const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true';
-
-import { getApiProxyUrl } from './api-proxy';
 
 const API_PROXY = getApiProxyUrl();
 

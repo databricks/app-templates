@@ -2,11 +2,13 @@
  * Utility functions for request context handling.
  */
 
+import { getApiProxyUrl } from './api-proxy';
+
 /**
  * Determines whether context should be injected based on endpoint type.
  *
  * Context is injected when:
- * 1. Using API_PROXY environment variable, OR
+ * 1. The Express /invocations proxy is in play (explicit or inferred), OR
  * 2. Endpoint task type is 'agent/v2/chat' or 'agent/v1/responses'
  *
  * @param endpointTask - The task type of the serving endpoint (optional)
@@ -15,9 +17,7 @@
 export function shouldInjectContextForEndpoint(
   endpointTask: string | undefined,
 ): boolean {
-  const API_PROXY = process.env.API_PROXY;
-
-  if (API_PROXY) {
+  if (getApiProxyUrl()) {
     return true;
   }
 

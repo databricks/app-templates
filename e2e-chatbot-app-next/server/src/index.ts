@@ -124,7 +124,13 @@ app.use('/api/feedback', feedbackRouter);
 // set API_PROXY at THIS Express server (e.g. http://localhost:3000/invocations)
 // so the AI SDK provider in providers-server.ts routes through this handler
 // instead of going direct to FastAPI.
-const agentBackendUrl = process.env.AGENT_BACKEND_URL || process.env.API_PROXY;
+// Default to the advanced-template convention (FastAPI on :8000). Set
+// AGENT_BACKEND_URL explicitly to point at a remote agent, or set it to
+// empty string to disable the /invocations proxy altogether.
+const agentBackendUrl =
+  process.env.AGENT_BACKEND_URL ??
+  process.env.API_PROXY ??
+  'http://localhost:8000/invocations';
 if (agentBackendUrl) {
   console.log(
     `✅ Proxying /invocations to ${agentBackendUrl} (durable-resume enabled)`,

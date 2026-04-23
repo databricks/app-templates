@@ -71,7 +71,9 @@ export async function getWorkspaceHostname(): Promise<string> {
 // Environment variable to enable SSE logging
 const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true';
 
-const API_PROXY = process.env.API_PROXY;
+import { getApiProxyUrl } from './api-proxy';
+
+const API_PROXY = getApiProxyUrl();
 
 // Cache for endpoint details to check task type and OBO scopes
 const endpointDetailsCache = new Map<

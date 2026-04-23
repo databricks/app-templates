@@ -69,13 +69,6 @@ export function Chat({
   const resumeAttemptCountRef = useRef(0);
   const maxResumeAttempts = 3;
 
-  // Durable-resume render-time slice: messageId → index in parts[] to cut at.
-  // Text parts BEFORE this index (attempt-1 text) are hidden at render time.
-  // Tool / step parts pass through regardless so they keep showing.
-  const [resumeCutIndex, setResumeCutIndex] = useState<Record<string, number>>(
-    {},
-  );
-
   const abortController = useRef<AbortController | null>(new AbortController());
   useEffect(() => {
     return () => {
@@ -187,33 +180,6 @@ export function Chat({
         setStreamTitle(dataPart.data as string);
         setTitlePending(false);
         fetchChatHistory();
-      }
-      // Durable-resume visual reset: when the backend's LongRunningAgentServer
-      // emits response.resumed, snapshot the length of the last assistant
-      // message's parts array. Messages renders each message through a
-      // render-time slice that HIDES text parts at indices before this
-      // cutoff (attempt-1 text). Tool parts pass through at any index so
-      // they keep showing. setMessages can't wipe mid-stream because the
-      // AI SDK's activeResponse.state.message (snapshot taken at request
-      // start) overwrites it on the next chunk via write() →
-      // state.replaceMessage; render-time transform sidesteps that.
-      if (dataPart.type === 'data-resumed') {
-        // TEMP: UI refresh/wipe on resume is DISABLED for durability testing.
-        // Without this, attempt-1 text stays on screen while attempt-2 streams
-        // its (possibly different) text over it — useful for observing how the
-        // server's attempt-1 inheritance + synthetic-output prompt shape the
-        // LLM's mid-turn resume behavior. Re-enable by uncommenting below.
-        //
-        // setMessages((prev) => {
-        //   const last = prev[prev.length - 1];
-        //   if (last?.role === 'assistant') {
-        //     setResumeCutIndex((s) => ({
-        //       ...s,
-        //       [last.id]: (last.parts ?? []).length,
-        //     }));
-        //   }
-        //   return prev;
-        // });
       }
     },
     onFinish: ({
@@ -336,7 +302,7 @@ export function Chat({
     return (
       <div className="flex h-dvh min-w-0 flex-col bg-background">
         <ChatHeader empty />
-        <div className="flex min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4">
+        <div className='flex min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-4'>
           <div className="m-auto flex w-full max-w-4xl flex-col">
             <Greeting />
             {inputElement}
@@ -361,7 +327,6 @@ export function Chat({
           isReadonly={isReadonly}
           selectedModelId={initialChatModel}
           feedback={feedback}
-          resumeCutIndex={resumeCutIndex}
         />
 
 

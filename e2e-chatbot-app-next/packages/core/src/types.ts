@@ -12,9 +12,6 @@ export type CustomUIDataTypes = {
   usage: LanguageModelUsage;
   traceId: string | null;
   title: string;
-  // Emitted by the server at a durable-resume boundary so the client can
-  // drop text parts accumulated from the interrupted attempt.
-  resumed: { attempt: number };
 };
 
 export type ChatMessage = UIMessage<MessageMetadata, CustomUIDataTypes>;

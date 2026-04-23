@@ -258,16 +258,6 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
         : {}),
     };
 
-    // Track whether we've seen a durable-resume boundary so we can forward
-    // exactly one data-resumed event to the client (which uses it to wipe
-    // the interrupted attempt's text parts). writerRef is populated by the
-    // execute() callback below — onChunk runs inside the same stream and
-    // needs live access to the writer to push a data part mid-stream.
-    const writerRef: { current: { write: (part: unknown) => void } | null } = {
-      current: null,
-    };
-    const emittedResumedAttempts = new Set<number>();
-
     const result = streamText({
       model,
       messages: modelMessages,
@@ -291,24 +281,6 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           if (!traceId && typeof raw?.trace_id === 'string') {
             traceId = raw.trace_id;
           }
-          // LongRunningAgentServer emits this at the attempt-1 → attempt-2
-          // boundary after a crash + CAS claim. Forward it once to the
-          // client as a data-resumed part so the UI can drop the
-          // interrupted attempt's text parts (tools keep their cards).
-          if (raw?.type === 'response.resumed' && writerRef.current) {
-            const attempt = typeof raw?.attempt === 'number' ? raw.attempt : 2;
-            if (!emittedResumedAttempts.has(attempt)) {
-              emittedResumedAttempts.add(attempt);
-              try {
-                writerRef.current.write({
-                  type: 'data-resumed',
-                  data: { attempt },
-                });
-              } catch (e) {
-                console.warn('[chat] failed to forward data-resumed:', e);
-              }
-            }
-          }
         }
       },
       onFinish: ({ usage }) => {
@@ -331,9 +303,6 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       // rather than the AI SDK's default short-id format (e.g. "Xt8nZiQRj1fS4yiU").
       generateId: generateUUID,
       execute: async ({ writer }) => {
-        // Expose writer to onChunk so it can forward data-resumed events
-        // the instant a durable-resume boundary is observed.
-        writerRef.current = writer as unknown as typeof writerRef.current;
         // Manually drain the AI stream so we can append the traceId data part
         // after all model chunks are processed (traceId is captured via onChunk).
         // result.toUIMessageStream() converts TextStreamPart → UIMessageChunk:

@@ -65,7 +65,13 @@ export function Chat({
   const lastPartRef = useRef<UIMessageChunk | undefined>(lastPart);
   lastPartRef.current = lastPart;
 
-  // Single counter for resume attempts - reset when stream parts are received
+  // Absolute cap on resume attempts per chat turn. Not reset on each chunk
+  // because some provider/stream combinations (e.g. Claude via openai-agents
+  // through the durable retrieve path) never emit a clean `finish`
+  // UIMessageChunk — which leaves `streamIncomplete` perpetually true and,
+  // combined with a cursor-less replay, caused a runaway retry loop when
+  // reset-on-chunk was in place. We reset only when a fresh user message
+  // kicks off a new turn (see sendMessage wrapping below).
   const resumeAttemptCountRef = useRef(0);
   const maxResumeAttempts = 3;
 
@@ -124,8 +130,6 @@ export function Chat({
           }
           didFetchHistoryOnNewChat.current = true;
         }
-        // Reset resume attempts when we successfully receive stream parts
-        resumeAttemptCountRef.current = 0;
         setLastPart(part);
       },
       api: '/api/chat',
@@ -133,6 +137,11 @@ export function Chat({
       prepareSendMessagesRequest({ messages, id, body }) {
         const lastMessage = messages.at(-1);
         const isUserMessage = lastMessage?.role === 'user';
+        // A fresh user message starts a new turn — reset the resume counter.
+        // Tool-result continuations (non-user messages) don't reset.
+        if (isUserMessage) {
+          resumeAttemptCountRef.current = 0;
+        }
 
         // For continuations (non-user messages like tool results), we must always
         // send previousMessages because the tool result only exists client-side

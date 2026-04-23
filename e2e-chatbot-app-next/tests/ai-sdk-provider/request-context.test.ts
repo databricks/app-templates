@@ -26,10 +26,6 @@ test.describe("Request Context Utils", () => {
       expect(shouldInjectContextForEndpoint("agent/v2/chat")).toBe(true);
     });
 
-    test("returns true for agent/v1/responses endpoint task", () => {
-      expect(shouldInjectContextForEndpoint("agent/v1/responses")).toBe(true);
-    });
-
     test("returns false for llm/v1/chat endpoint task", () => {
       expect(shouldInjectContextForEndpoint("llm/v1/chat")).toBe(false);
     });

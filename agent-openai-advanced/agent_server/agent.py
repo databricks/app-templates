@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from datetime import datetime
 from typing import AsyncGenerator
@@ -43,62 +42,6 @@ def get_current_time() -> str:
     return datetime.now().isoformat()
 
 
-@function_tool
-def get_weather(city: str) -> str:
-    """Return a short weather summary for the given city."""
-    # Deterministic stub so durable-resume tests can verify the same tool
-    # result is reused across attempts rather than regenerated.
-    stubs = {
-        "new york": "72°F, partly cloudy, light wind",
-        "los angeles": "78°F, sunny, mild humidity",
-        "tokyo": "65°F, rain, chance of thunderstorms",
-        "paris": "60°F, overcast, occasional drizzle",
-        "london": "55°F, foggy, light rain",
-        "sydney": "82°F, sunny, breezy",
-    }
-    return stubs.get(city.lower(), f"70°F, clear skies (stub for {city})")
-
-
-@function_tool
-def get_stock_price(ticker: str) -> str:
-    """Return a simulated stock price for the given ticker symbol."""
-    stubs = {
-        "AAPL": "$187.42 (+1.2%)",
-        "GOOGL": "$141.78 (-0.4%)",
-        "MSFT": "$415.06 (+0.8%)",
-        "NVDA": "$885.91 (+2.7%)",
-        "TSLA": "$204.33 (-1.5%)",
-    }
-    return stubs.get(ticker.upper(), f"$100.00 (stub for {ticker.upper()})")
-
-
-@function_tool
-def search_best_restaurants(city: str) -> str:
-    """Find a short list of notable restaurants in the given city."""
-    stubs = {
-        "paris": "Le Comptoir du Relais, Septime, Chez L'Ami Jean",
-        "tokyo": "Sukiyabashi Jiro, Narisawa, Den",
-        "new york": "Eleven Madison Park, Le Bernardin, Daniel",
-    }
-    return stubs.get(
-        city.lower(), f"Local favorites in {city}: Cafe One, The Bistro, Riverside Kitchen"
-    )
-
-
-@function_tool
-async def deep_research(topic: str) -> str:
-    """Run an in-depth multi-source research on the given topic. Takes ~15 seconds."""
-    # Deliberately slow so durable-resume tests have a window to kill the
-    # agent mid-run and prove that tool results committed before the crash
-    # are preserved in the OpenAI Session and not re-invoked on resume.
-    await asyncio.sleep(15)
-    return (
-        f"Research summary on '{topic}': key findings include "
-        "historical context, current consensus, and two leading "
-        "counter-arguments. (stubbed 15s simulated research)"
-    )
-
-
 async def init_mcp_server(workspace_client: WorkspaceClient):
     return McpServer(
         url=f"{get_databricks_host_from_env()}/api/2.0/mcp/functions/system/ai",
@@ -112,13 +55,7 @@ def create_agent(mcp_servers: list[McpServer] | None = None) -> Agent:
         name="Agent",
         instructions="You are a helpful assistant.",
         model="databricks-gpt-5-2",
-        tools=[
-            get_current_time,
-            get_weather,
-            get_stock_price,
-            search_best_restaurants,
-            deep_research,
-        ],
+        tools=[get_current_time],
         mcp_servers=mcp_servers or [],
     )
 

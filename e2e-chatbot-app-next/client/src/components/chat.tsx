@@ -302,7 +302,7 @@ export function Chat({
     return (
       <div className="flex h-dvh min-w-0 flex-col bg-background">
         <ChatHeader empty />
-        <div className='flex min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-4'>
+        <div className="flex min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4">
           <div className="m-auto flex w-full max-w-4xl flex-col">
             <Greeting />
             {inputElement}

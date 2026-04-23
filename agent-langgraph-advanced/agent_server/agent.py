@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from datetime import datetime
 from typing import Any, AsyncGenerator, Optional, Sequence, TypedDict
@@ -51,34 +50,6 @@ def get_current_time() -> str:
     return datetime.now().isoformat()
 
 
-@tool
-def get_weather(city: str) -> str:
-    """Return a short weather summary for the given city."""
-    stubs = {
-        "new york": "72°F, partly cloudy, light wind",
-        "los angeles": "78°F, sunny, mild humidity",
-        "tokyo": "65°F, rain, chance of thunderstorms",
-    }
-    return stubs.get(city.lower(), f"70°F, clear skies (stub for {city})")
-
-
-@tool
-def get_stock_price(ticker: str) -> str:
-    """Return a simulated stock price for the given ticker symbol."""
-    stubs = {"AAPL": "$187.42 (+1.2%)", "GOOGL": "$141.78 (-0.4%)"}
-    return stubs.get(ticker.upper(), f"$100.00 (stub for {ticker.upper()})")
-
-
-@tool
-async def deep_research(topic: str) -> str:
-    """Run an in-depth multi-source research on the given topic. Takes ~15 seconds."""
-    await asyncio.sleep(15)
-    return (
-        f"Research summary on '{topic}': key findings include "
-        "historical context, current consensus, and two leading counter-arguments."
-    )
-
-
 class StatefulAgentState(TypedDict, total=False):
     messages: Annotated[Sequence[AnyMessage], add_messages]
     custom_inputs: dict[str, Any]
@@ -90,7 +61,7 @@ async def init_agent(
     workspace_client: Optional[WorkspaceClient] = None,
     checkpointer: Optional[Any] = None,
 ):
-    tools = [get_current_time, get_weather, get_stock_price, deep_research] + memory_tools()
+    tools = [get_current_time] + memory_tools()
     # To use MCP server tools instead, uncomment the below lines:
     # mcp_client = init_mcp_client(workspace_client or sp_workspace_client)
     # try:
@@ -139,7 +110,10 @@ async def stream_handler(
     if user_id:
         config["configurable"]["user_id"] = user_id
 
-    input_messages = to_chat_completions_input([i.model_dump() for i in request.input])
+    input_state: dict[str, Any] = {
+        "messages": to_chat_completions_input([i.model_dump() for i in request.input]),
+        "custom_inputs": dict(request.custom_inputs or {}),
+    }
 
     try:
         async with lakebase_context(LAKEBASE_CONFIG) as (checkpointer, store):
@@ -148,11 +122,6 @@ async def stream_handler(
             # By default, uses service principal credentials.
             # For on-behalf-of user authentication, pass get_user_workspace_client() to init_agent.
             agent = await init_agent(store=store, checkpointer=checkpointer)
-
-            input_state: dict[str, Any] = {
-                "messages": input_messages,
-                "custom_inputs": dict(request.custom_inputs or {}),
-            }
 
             async for event in process_agent_astream_events(
                 agent.astream(input_state, config, stream_mode=["updates", "messages"])

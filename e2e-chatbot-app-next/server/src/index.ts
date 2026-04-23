@@ -143,48 +143,8 @@ if (agentBackendUrl) {
       const MAX_RESUME_ATTEMPTS = 10;
       let resumeAttempt = 0;
 
-      // Tracks the in-progress assistant message item so we can emit
-      // synthetic closure events on resume. Without this, attempt 2's
-      // deltas append to attempt 1's text part in the AI SDK's state.
-      type ActiveMessage = {
-        itemId: string;
-        outputIndex: number;
-        contentIndex: number;
-        text: string;
-      };
-      let activeMessage: ActiveMessage | null = null;
-
-      const writeEvent = (type: string, payload: Record<string, unknown>) => {
-        res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...payload })}\n\n`);
-      };
-
-      // Emit content_part.done + output_item.done for the active message so
-      // the Vercel AI SDK finalizes its text part and starts a fresh one on
-      // attempt 2's next output_item.added.
-      const sealActiveMessage = () => {
-        if (!activeMessage) return;
-        const { itemId, outputIndex, contentIndex, text } = activeMessage;
-        writeEvent('response.content_part.done', {
-          item_id: itemId,
-          output_index: outputIndex,
-          content_index: contentIndex,
-          part: { type: 'output_text', text, annotations: [] },
-        });
-        writeEvent('response.output_item.done', {
-          output_index: outputIndex,
-          item: {
-            id: itemId,
-            type: 'message',
-            role: 'assistant',
-            status: 'completed',
-            content: [{ type: 'output_text', text, annotations: [] }],
-          },
-        });
-        activeMessage = null;
-      };
-
-      // Read one SSE stream, track metadata + in-progress items, optionally
-      // emit synthetic closure events, then forward each frame to the client.
+      // Read one SSE stream, extract response_id + sequence_number + detect
+      // terminal errors, forward each frame to the client.
       // Returns whether we saw the [DONE] sentinel.
       const pumpStream = async (upstream: globalThis.Response) => {
         if (!upstream.body) return false;
@@ -244,39 +204,6 @@ if (agentBackendUrl) {
               lastSeq = parsed.sequence_number as number;
             }
             const eventType = parsed.type as string | undefined;
-            const item = (parsed.item as Record<string, unknown> | undefined) ?? undefined;
-            // Update activeMessage state (pre-forward).
-            if (
-              eventType === 'response.output_item.added' &&
-              item?.type === 'message'
-            ) {
-              activeMessage = {
-                itemId: (item.id as string) || '',
-                outputIndex: (parsed.output_index as number) ?? 0,
-                contentIndex: 0,
-                text: '',
-              };
-            } else if (
-              eventType === 'response.output_text.delta' &&
-              activeMessage &&
-              (parsed.item_id as string) === activeMessage.itemId
-            ) {
-              activeMessage.text += (parsed.delta as string) ?? '';
-            } else if (
-              eventType === 'response.output_item.done' &&
-              item?.type === 'message' &&
-              activeMessage?.itemId === (item.id as string)
-            ) {
-              // Backend closed the message itself; we don't need our synthetic
-              // closure.
-              activeMessage = null;
-            }
-            // On the resume sentinel, seal the active message before
-            // forwarding the sentinel. Attempt 2 emits a fresh output_item.added
-            // with a new id, so the AI SDK starts a clean text part for it.
-            if (eventType === 'response.resumed' && activeMessage) {
-              sealActiveMessage();
-            }
             // Detect terminal errors (task_failed, task_timeout, etc.) so we
             // don't burn MAX_RESUME_ATTEMPTS fetching a response that will
             // never succeed. Upstream LLM 502s and permanent run failures

@@ -65,27 +65,25 @@ function PureMessages({
     >
       <Conversation className="mx-auto flex min-w-0 max-w-4xl flex-col gap-4 md:gap-6">
         <ConversationContent className="flex flex-col gap-4 px-4 py-4 md:gap-6">
-          {messages.map((message, index) => {
-            return (
-              <PreviewMessage
-                key={message.id}
-                message={message}
-                allMessages={messages}
-                isLoading={
-                  status === 'streaming' && messages.length - 1 === index
-                }
-                setMessages={setMessages}
-                addToolApprovalResponse={addToolApprovalResponse}
-                sendMessage={sendMessage}
-                regenerate={regenerate}
-                isReadonly={isReadonly}
-                requiresScrollPadding={
-                  hasSentMessage && index === messages.length - 1
-                }
-                initialFeedback={feedback[message.id]}
-              />
-            );
-          })}
+          {messages.map((message, index) => (
+            <PreviewMessage
+              key={message.id}
+              message={message}
+              allMessages={messages}
+              isLoading={
+                status === 'streaming' && messages.length - 1 === index
+              }
+              setMessages={setMessages}
+              addToolApprovalResponse={addToolApprovalResponse}
+              sendMessage={sendMessage}
+              regenerate={regenerate}
+              isReadonly={isReadonly}
+              requiresScrollPadding={
+                hasSentMessage && index === messages.length - 1
+              }
+              initialFeedback={feedback[message.id]}
+            />
+          ))}
 
           {status === 'submitted' &&
             messages.length > 0 &&

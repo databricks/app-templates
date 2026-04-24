@@ -103,6 +103,7 @@ def pytest_generate_tests(metafunc):
         templates = build_templates(
             genie_space_id=config.getoption("--genie-space-id"),
             serving_endpoint=config.getoption("--serving-endpoint"),
+            target_app_name=config.getoption("--target-app-name"),
         )
 
         has_provisioned = bool(config.getoption("--lakebase-provisioned-name"))

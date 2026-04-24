@@ -25,7 +25,7 @@ QUERY_TIMEOUT = 120  # seconds for HTTP requests
 BUNDLE_TIMEOUT = 600  # seconds for bundle deploy/run/destroy commands (10 min for parallel runs)
 QUICKSTART_TIMEOUT = 600  # seconds for quickstart command (10 min for parallel runs)
 EVALUATE_TIMEOUT = 900  # seconds for agent-evaluate
-SERVER_START_TIMEOUT = 300  # seconds to wait for local server to start (accommodates cold CI runners + heavy template imports)
+SERVER_START_TIMEOUT = 600  # seconds to wait for local server to start (accommodates cold CI runners + heavy template imports)
 
 # ---------------------------------------------------------------------------
 # Logging & subprocess
@@ -782,37 +782,61 @@ def bundle_deploy(
         _restore_uv_sources(template_dir, pyproject_backup)
 
 
-def bundle_run_nowait(template_dir: Path, resource_key: str, profile: str):
+def bundle_run_nowait(
+    template_dir: Path,
+    resource_key: str,
+    profile: str,
+    app_name: str | None = None,
+):
     """Trigger `databricks bundle run` to start the app, then return quickly.
 
     Despite --no-wait, the CLI may still poll briefly for startup. We cap
     the wait at 90s and swallow timeout errors — the app start was initiated
     on the server side and will continue even if the CLI process is killed.
     Use wait_for_app_ready() after this to poll until RUNNING.
+
+    Recovery: if bundle run fails with "Invalid source code path ... does
+    not exist", the prior `bundle deploy` didn't fully upload the bundle
+    source (known failure mode when a previous run's cleanup left the app
+    definition bound but wiped its source dir). Re-run bundle_deploy to
+    force a fresh upload, then retry bundle_run once. ``app_name`` must be
+    provided to enable this recovery.
     """
     import subprocess as _subprocess
 
-    try:
-        _run_cmd(
-            [
-                "databricks",
-                "bundle",
-                "run",
-                resource_key,
-                "--no-wait",
-                "--target",
-                "dev",
-                "-p",
-                profile,
-            ],
-            cwd=template_dir,
-            timeout=BUNDLE_TIMEOUT,
-        )
-    except _subprocess.TimeoutExpired:
+    cmd = [
+        "databricks", "bundle", "run", resource_key,
+        "--no-wait", "--target", "dev", "-p", profile,
+    ]
+    for attempt in range(1, 3):
+        try:
+            result = _run_cmd(cmd, cwd=template_dir, timeout=BUNDLE_TIMEOUT)
+        except _subprocess.TimeoutExpired:
+            _log(
+                f"bundle run --no-wait for {resource_key} timed out after {BUNDLE_TIMEOUT}s "
+                f"— app start was initiated, polling via wait_for_app_ready()"
+            )
+            return
+
+        if result.returncode == 0:
+            return
+
+        stderr_flat = " ".join(result.stderr.split())
+        if "Invalid source code path" in stderr_flat and app_name and attempt == 1:
+            _log(
+                f"bundle run failed: source_code_path missing on workspace "
+                f"(likely stale state from prior run); re-deploying to "
+                f"re-upload source, then retrying..."
+            )
+            bundle_deploy(template_dir, profile, resource_key, app_name)
+            continue
+
+        # Other failure mode — log and let wait_for_app_ready surface it.
         _log(
-            f"bundle run --no-wait for {resource_key} timed out after {BUNDLE_TIMEOUT}s "
-            f"— app start was initiated, polling via wait_for_app_ready()"
+            f"bundle run --no-wait for {resource_key} exited {result.returncode}; "
+            f"proceeding to wait_for_app_ready (may time out)"
         )
+        return
 
 
 def bundle_run(template_dir: Path, resource_key: str, profile: str):

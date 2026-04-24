@@ -396,7 +396,7 @@ def _run_deploy(
             _grant_kwargs["autoscaling_endpoint"] = lakebase_autoscaling_endpoint
         if _grant_kwargs:
             grant_lakebase_access(template.dev_app_name, profile, **_grant_kwargs)
-    bundle_run_nowait(template_dir, template.app_resource_key, profile)
+    bundle_run_nowait(template_dir, template.app_resource_key, profile, template.dev_app_name)
     try:
         app_url, token = wait_for_app_ready(template.dev_app_name, profile)
 

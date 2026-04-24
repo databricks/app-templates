@@ -474,16 +474,8 @@ def find_free_port() -> int:
         return s.getsockname()[1]
 
 
-def start_server(template_dir: Path, port: int = 0) -> tuple[subprocess.Popen, int]:
-    """Start `uv run start-server` as background process.
-
-    If port is 0 (default), dynamically allocates a free port.
-    Waits for 'Uvicorn running on' in stderr (timeout 60s).
-    Returns (process handle, port).
-    """
-    if port == 0:
-        port = find_free_port()
-
+def _start_server_once(template_dir: Path, port: int) -> tuple[subprocess.Popen, int]:
+    """Single attempt at starting `uv run start-server`. See start_server."""
     _log(f"Starting server on port {port} in {template_dir.name}")
     proc = subprocess.Popen(
         ["uv", "run", "start-server", "--port", str(port)],
@@ -513,6 +505,39 @@ def start_server(template_dir: Path, port: int = 0) -> tuple[subprocess.Popen, i
                 return proc, port
     stop_server(proc)
     raise TimeoutError(f"Server did not start within {SERVER_START_TIMEOUT} seconds")
+
+
+def start_server(template_dir: Path, port: int = 0, max_attempts: int = 2) -> tuple[subprocess.Popen, int]:
+    """Start `uv run start-server` as a background process, with one retry.
+
+    If port is 0, dynamically allocates a free port. Watches stderr for
+    ``Uvicorn running on`` or ``Application startup complete`` (timeout
+    SERVER_START_TIMEOUT per attempt).
+
+    Retries once on timeout: we've observed uvicorn hanging between
+    "Started server process" and "Waiting for application startup" on GH
+    Actions runners for some templates (not deterministic — same template
+    passes on one run, hangs on the next). A second attempt from a fresh
+    process typically succeeds.
+
+    Raises TimeoutError if all attempts time out; RuntimeError if the
+    server process exits early. Returns (process handle, port) on success.
+    """
+    for attempt in range(1, max_attempts + 1):
+        allocated_port = port or find_free_port()
+        try:
+            return _start_server_once(template_dir, allocated_port)
+        except TimeoutError as exc:
+            if attempt >= max_attempts:
+                raise
+            _log(
+                f"start_server attempt {attempt}/{max_attempts} timed out; "
+                f"killing and retrying with a fresh process. "
+                f"({exc})"
+            )
+            # fall through to next iteration — allocates a new port,
+            # spawns a new subprocess.
+    raise RuntimeError("start_server exited the retry loop without a result")  # unreachable
 
 
 def stop_server(proc: subprocess.Popen):

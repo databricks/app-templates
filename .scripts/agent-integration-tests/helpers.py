@@ -30,8 +30,22 @@ SERVER_START_TIMEOUT = 300  # seconds to wait for local server to start (accommo
 # ---------------------------------------------------------------------------
 # Logging & subprocess
 # ---------------------------------------------------------------------------
+# Design: stdout is the human-readable stream (timestamps, ✓/✗ markers,
+# collapsible GH Actions groups, short summaries on subprocess success).
+# The per-thread log file (logs/{template}.log) gets the full unstructured
+# text — including every subprocess's stdout/stderr — so post-mortem grep
+# and paste-into-playbook workflows keep working unchanged.
+#
+# Two rules of thumb:
+#   * _log()    prints to both stdout (with timestamp) and log file (raw).
+#   * _run_cmd: terse on stdout when successful, full detail on failure;
+#     always writes full detail to the log file.
 _thread_local = threading.local()
 _log_lock = threading.Lock()
+
+# Only emit GH Actions log-grouping directives when running under Actions.
+# Outside CI they'd just be noise in developer terminals.
+_IN_CI = os.environ.get("GITHUB_ACTIONS") == "true"
 
 
 def set_log_file(log_file: Path | None):
@@ -39,26 +53,105 @@ def set_log_file(log_file: Path | None):
     _thread_local.log_file = log_file
 
 
-def _log(msg: str):
-    """Write to the current thread's log file and stdout."""
-    print(msg)
+def _ts() -> str:
+    """Short HH:MM:SS timestamp for stdout log-line prefixes."""
+    return time.strftime("%H:%M:%S")
+
+
+def _fmt_duration(seconds: float) -> str:
+    """Human-friendly duration: '0.4s', '12.1s', '1m 23s', '1h 2m 3s'."""
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    m, s = divmod(int(seconds), 60)
+    if m < 60:
+        return f"{m}m {s}s"
+    h, m = divmod(m, 60)
+    return f"{h}h {m}m {s}s"
+
+
+def _write_to_log_file(msg: str) -> None:
+    """Append raw text (no timestamp) to the current thread's log file."""
     log_file = getattr(_thread_local, "log_file", None)
-    if log_file:
-        with _log_lock, open(log_file, "a") as f:
-            f.write(msg + "\n")
+    if log_file is None:
+        return
+    with _log_lock, open(log_file, "a") as f:
+        f.write(msg + "\n")
 
 
-def _run_cmd(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
-    """Run a subprocess, log its output, and return the result."""
+def _log(msg: str) -> None:
+    """Log to stdout (with timestamp) and log file (raw).
+
+    Multi-line messages: timestamp only on the first line so continuation
+    lines stay aligned and the file copy is byte-identical to the message.
+    """
+    if msg == "":
+        print("")
+    else:
+        lines = msg.split("\n")
+        print(f"[{_ts()}] {lines[0]}")
+        for line in lines[1:]:
+            print(line)
+    _write_to_log_file(msg)
+
+
+def _gh_group(title: str) -> None:
+    """Open a collapsible GH Actions log group (no-op outside CI)."""
+    if _IN_CI:
+        print(f"::group::{title}")
+
+
+def _gh_endgroup() -> None:
+    """Close the current GH Actions log group (no-op outside CI)."""
+    if _IN_CI:
+        print("::endgroup::")
+
+
+def _run_cmd(cmd: list[str], *, verbose: bool = False, **kwargs) -> subprocess.CompletedProcess:
+    """Run a subprocess and return the result.
+
+    Logging behaviour:
+      * Full command + exit + stdout + stderr always go to the log file.
+      * Stdout (the CI log stream) gets a one-line summary on success
+        — ``✓ <cmd>  (<duration>)`` — and full detail on failure.
+      * Pass ``verbose=True`` to force full output on both paths (useful
+        when the command's output is itself the test signal).
+    """
     kwargs.setdefault("capture_output", True)
     kwargs.setdefault("text", True)
-    _log(f"$ {' '.join(cmd)}")
-    result = subprocess.run(cmd, **kwargs)
-    _log(f"  exit={result.returncode}")
+    cmd_str = " ".join(cmd)
+    short_cmd = " ".join(cmd[:3]) + ("..." if len(cmd) > 3 else "")
+    t0 = time.monotonic()
+
+    _write_to_log_file(f"$ {cmd_str}")
+
+    try:
+        result = subprocess.run(cmd, **kwargs)
+    except subprocess.TimeoutExpired:
+        duration = time.monotonic() - t0
+        # Make timeouts loud on stdout; the file gets the same line plus
+        # any partial output captured by the caller.
+        print(f"[{_ts()}] ✗ timeout: {cmd_str}  (after {_fmt_duration(duration)})")
+        _write_to_log_file(f"  TIMEOUT after {_fmt_duration(duration)}")
+        raise
+
+    duration = time.monotonic() - t0
+
+    _write_to_log_file(f"  exit={result.returncode}  ({_fmt_duration(duration)})")
     if result.stdout:
-        _log(f"  stdout:\n{result.stdout.rstrip()}")
+        _write_to_log_file(f"  stdout:\n{result.stdout.rstrip()}")
     if result.stderr:
-        _log(f"  stderr:\n{result.stderr.rstrip()}")
+        _write_to_log_file(f"  stderr:\n{result.stderr.rstrip()}")
+
+    if result.returncode == 0 and not verbose:
+        print(f"[{_ts()}] ✓ {short_cmd}  ({_fmt_duration(duration)})")
+    else:
+        marker = "✓" if result.returncode == 0 else "✗"
+        print(f"[{_ts()}] {marker} {cmd_str}  (exit {result.returncode}, {_fmt_duration(duration)})")
+        if result.stdout:
+            print(f"  stdout:\n{result.stdout.rstrip()}")
+        if result.stderr:
+            print(f"  stderr:\n{result.stderr.rstrip()}")
+
     return result
 
 

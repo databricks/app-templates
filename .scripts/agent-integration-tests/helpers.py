@@ -25,7 +25,7 @@ QUERY_TIMEOUT = 120  # seconds for HTTP requests
 BUNDLE_TIMEOUT = 600  # seconds for bundle deploy/run/destroy commands (10 min for parallel runs)
 QUICKSTART_TIMEOUT = 600  # seconds for quickstart command (10 min for parallel runs)
 EVALUATE_TIMEOUT = 900  # seconds for agent-evaluate
-SERVER_START_TIMEOUT = 60  # seconds to wait for local server to start
+SERVER_START_TIMEOUT = 300  # seconds to wait for local server to start (accommodates cold CI runners + heavy template imports)
 
 # ---------------------------------------------------------------------------
 # Logging & subprocess
@@ -595,6 +595,8 @@ def bundle_deploy(
     - Terraform init failures (e.g. GitHub 502): wait and retry
     - "already exists" (app): unbind stale state + bind existing app, retry
     - "does not exist or is deleted": unbind stale reference, retry
+    - "lineage mismatch in state files": a prior run left stale terraform
+      state on the same bundle path. Unbind and wipe local state, retry.
     """
 
     def recover(stderr: str, attempt: int, max_attempts: int) -> bool:
@@ -639,6 +641,20 @@ def bundle_deploy(
                 f"{template_dir.name} (stale state), unbinding and retrying..."
             )
             _bundle_unbind(template_dir, app_resource_key, profile)
+            time.sleep(POLL_INTERVAL)
+            return True
+
+        if "lineage mismatch" in stderr_flat:
+            _log(
+                f"bundle deploy attempt {attempt}/{max_attempts} failed in "
+                f"{template_dir.name} (tf state lineage mismatch), unbinding "
+                f"and wiping local state..."
+            )
+            _bundle_unbind(template_dir, app_resource_key, profile)
+            # Remove local terraform state copy; a fresh deploy will repopulate.
+            databricks_state = template_dir / ".databricks"
+            if databricks_state.is_dir():
+                shutil.rmtree(databricks_state, ignore_errors=True)
             time.sleep(POLL_INTERVAL)
             return True
 

@@ -766,10 +766,17 @@ def bundle_deploy(
             time.sleep(POLL_INTERVAL)
             return True
 
-        if "DELETING" in stderr_flat:
+        # "Cannot update app <x> as its compute is in <STATE> state. App
+        # compute needs to be ACTIVE or STOPPED to update." — the app's
+        # compute is mid-transition (STARTING / DELETING / DEPLOYING /
+        # UPDATING) and can't accept a bundle update. Wait it out and
+        # retry. Match on the stable part of the error so it covers
+        # every transient state the API can emit.
+        if "ACTIVE or STOPPED to update" in stderr_flat:
             _log(
                 f"bundle deploy attempt {attempt}/{max_attempts} failed in "
-                f"{template_dir.name} (compute deleting), waiting {POLL_INTERVAL}s..."
+                f"{template_dir.name} (app compute mid-transition), "
+                f"waiting {POLL_INTERVAL}s..."
             )
             time.sleep(POLL_INTERVAL)
             return True

@@ -34,7 +34,7 @@ This guide instructs LLM coding agents how to migrate an MLflow ResponsesAgent f
     │   └── ...
     ├── databricks.yml        # Bundle config with resources
     ├── pyproject.toml
-    ├── requirements.txt
+    ├── uv.lock
     └── ...
 ```
 
@@ -549,13 +549,15 @@ cd <app-name>
 uv sync
 ```
 
-### 4.3 Create requirements.txt for Databricks Apps
+### 4.3 Generate uv.lock for Databricks Apps
 
-Databricks Apps requires a `requirements.txt` file with `uv` to install dependencies from `pyproject.toml`:
+Databricks Apps uses `uv.lock` for reproducible dependency installation. Generate it by running:
 
 ```bash
-echo "uv" > requirements.txt
+uv lock
 ```
+
+> **IMPORTANT:** The `uv.lock` file must be committed to version control. Databricks Apps detects `pyproject.toml` + `uv.lock` (with no `requirements.txt`) and uses `uv` to install dependencies. If a `requirements.txt` exists, it takes priority and `uv.lock` is ignored.
 
 ### 4.4 Run Quickstart
 
@@ -851,12 +853,12 @@ If `databricks bundle deploy` fails because the app already exists, refer to the
 │   └── start_app.py      # App startup
 ├── databricks.yml        # Databricks Asset Bundle configuration (resources, config, targets)
 ├── pyproject.toml        # Dependencies (for local dev with uv)
-├── requirements.txt      # REQUIRED: Must contain "uv" for Databricks Apps
+├── uv.lock               # Lock file for reproducible deploys (must be committed)
 ├── .env.example          # Environment template
 └── README.md
 ```
 
-> **IMPORTANT:** The `requirements.txt` file must exist and contain `uv` so that Databricks Apps can install dependencies using the `pyproject.toml`. Without this file, the app will fail to start.
+> **IMPORTANT:** The `uv.lock` file must be committed to version control. Databricks Apps detects `pyproject.toml` + `uv.lock` (with no `requirements.txt`) and uses `uv` for fully reproducible installs.
 
 ---
 

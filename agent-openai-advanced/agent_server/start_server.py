@@ -32,11 +32,12 @@ async def run_lakebase_session_setup() -> None:
         autoscaling_endpoint=lakebase_config.autoscaling_endpoint,
         project=lakebase_config.autoscaling_project,
         branch=lakebase_config.autoscaling_branch,
+        schema=lakebase_config.memory_schema,
     )
+
     # _ensure_tables is private API — needed to create tables at startup rather than per-request.
     # If this breaks on a databricks-openai upgrade, replace with the public equivalent.
     await session._ensure_tables()
-    logger.info("Lakebase session tables verified")
 
 
 class AgentServer(LongRunningAgentServer):
@@ -72,8 +73,14 @@ async def _lifespan(app):
             keyword in error_msg
             for keyword in ["lakebase", "pg_hba", "postgres", "database instance", "insufficient privilege"]
         ):
-            logger.error("Lakebase access error during session setup:\n%s", get_lakebase_access_error_message(lakebase_config.description))
-        logger.warning("Lakebase session setup failed: %s. Session tables will be created per-request.", exc)
+            logger.error(
+                "Lakebase session setup failed: %s\n\n%s",
+                exc,
+                get_lakebase_access_error_message(lakebase_config.description),
+            )
+        else:
+            logger.error("Lakebase session setup failed: %s", exc, exc_info=True)
+        raise
     try:
         async with _original_lifespan(app):
             yield

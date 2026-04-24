@@ -27,11 +27,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Schema for memory tables. Defaults to "public" for backward compatibility.
+# Set LAKEBASE_AGENT_MEMORY_SCHEMA to use a custom schema (e.g. "agent_memory").
+MEMORY_SCHEMA = os.getenv("LAKEBASE_AGENT_MEMORY_SCHEMA", "public")
 
 # Per-memory-type schema -> table definitions.
 MEMORY_TYPE_SCHEMAS: dict[str, dict[str, list[str]]] = {
     "langgraph": {
-        "public": [
+        MEMORY_SCHEMA: [
             "checkpoint_migrations",
             "checkpoint_writes",
             "checkpoints",
@@ -47,7 +50,7 @@ MEMORY_TYPE_SCHEMAS: dict[str, dict[str, list[str]]] = {
         ],
     },
     "openai": {
-        "public": [
+        MEMORY_SCHEMA: [
             "agent_sessions",
             "agent_messages",
         ],
@@ -60,7 +63,7 @@ MEMORY_TYPE_SCHEMAS: dict[str, dict[str, list[str]]] = {
 
 # Memory types that need sequence privileges (auto-increment columns)
 NEEDS_SEQUENCES = {
-    "openai": ["public", "agent_server"],
+    "openai": [MEMORY_SCHEMA, "agent_server"],
     "langgraph": ["agent_server"],
 }
 

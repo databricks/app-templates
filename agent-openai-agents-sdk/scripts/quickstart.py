@@ -23,7 +23,7 @@ Steps:
      Otherwise: if the template requires Lakebase (has LAKEBASE_* in databricks.yml)
      or CLI flags are provided, set up via CLI args or interactive selection.
      For non-memory templates, optionally offer Lakebase for chat UI history.
-     Update databricks.yml resources and env vars, and app.yaml env vars.
+     Update databricks.yml resources and env vars.
   7. Print summary with links to experiment and Lakebase.
 
 Usage:
@@ -1122,8 +1122,8 @@ def _replace_lakebase_env_vars(content: str, lakebase_config: dict) -> str:
                 insert_idx = len(result)
             continue
 
-        # Match LAKEBASE_ env var lines (active or commented)
-        if re.search(r"- name: LAKEBASE_", stripped):
+        # Match only the LAKEBASE_ env vars that quickstart manages
+        if re.search(r"- name: LAKEBASE_(INSTANCE_NAME|AUTOSCALING_ENDPOINT|AUTOSCALING_PROJECT|AUTOSCALING_BRANCH)", stripped):
             if insert_idx is None:
                 insert_idx = len(result)
             skip_next_value = True
@@ -1410,18 +1410,6 @@ def update_databricks_yml_lakebase(lakebase_config: dict) -> None:
         yml_path.write_text(updated)
         print_success("Updated databricks.yml with Lakebase config")
 
-
-def update_app_yaml_lakebase(lakebase_config: dict) -> None:
-    """Update app.yaml: keep only the relevant Lakebase env vars, remove the others."""
-    app_yaml_path = Path("app.yaml")
-    if not app_yaml_path.exists():
-        return
-
-    content = app_yaml_path.read_text()
-    updated = _replace_lakebase_env_vars(content, lakebase_config)
-    if updated != content:
-        app_yaml_path.write_text(updated)
-        print_success("Updated app.yaml with Lakebase config")
 
 
 def get_databricks_yml_experiment_id() -> str:
@@ -1751,9 +1739,8 @@ Examples:
                     )
 
         if lakebase_config:
-            # Update databricks.yml and app.yaml with Lakebase config
+            # Update databricks.yml with Lakebase config
             update_databricks_yml_lakebase(lakebase_config)
-            update_app_yaml_lakebase(lakebase_config)
 
         # Final summary
         host = get_databricks_host(profile_name)

@@ -14,10 +14,10 @@ dependencies = [
     "openai-agents>=0.4.1",
     "python-dotenv>=1.2.1",
     "uuid-utils>=0.10.0",
-    "databricks-openai[memory]>=0.13.0",
+    "databricks-openai[memory]>=0.15.0",
     "databricks-sdk>=0.79.0",
     "databricks-agents>=1.9.3",
-    "databricks-ai-bridge[agent-server]>=0.18.0",
+    "databricks-ai-bridge[agent-server]>=0.19.0",
     "opentelemetry-exporter-otlp-proto-grpc>=1.25.0",
 ]
 

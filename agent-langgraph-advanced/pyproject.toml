@@ -15,9 +15,6 @@ dependencies = [
     "databricks-sdk>=0.79.0",
     "databricks-agents>=1.9.3",
     "mlflow>=3.10.1",
-    # langgraph-prebuilt 1.0.9 imports ExecutionInfo from langgraph.runtime,
-    # which was only added in langgraph 1.1.0. Older langgraph installs
-    # crash on import of langgraph.prebuilt.tool_node.
     "langgraph>=1.1.0",
     "langchain-mcp-adapters>=0.2.1",
     "python-dotenv>=1.2.1",

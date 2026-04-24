@@ -761,15 +761,19 @@ def bundle_destroy(template_dir: Path, profile: str):
 
 
 def get_oauth_token(profile: str) -> str:
-    """Get token from `databricks auth token -p <profile>`."""
-    result = _run_cmd(
-        ["databricks", "auth", "token", "-p", profile],
-        timeout=60,
-    )
-    assert result.returncode == 0, f"Failed to get auth token: {result.stderr}"
-    data = json.loads(result.stdout)
-    token = data.get("access_token", "")
-    assert token, "No access_token in auth response"
+    """Get an OAuth bearer token for the given Databricks CLI profile.
+
+    Uses the Databricks SDK so this works for both U2M (personal OAuth) and
+    M2M (service-principal client_id/client_secret) profiles. The CLI's
+    `databricks auth token` subcommand only supports U2M, which breaks
+    CI runs against an SP profile.
+    """
+    from databricks.sdk import WorkspaceClient
+
+    w = WorkspaceClient(profile=profile)
+    auth_header = w.config.authenticate()
+    token = auth_header.get("Authorization", "").removeprefix("Bearer ").strip()
+    assert token, f"No OAuth token returned for profile {profile!r}"
     return token
 
 

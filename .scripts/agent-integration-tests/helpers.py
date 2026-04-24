@@ -213,11 +213,18 @@ def copy_template(template_dir: Path, app_name_suffix: str = "-p") -> Path:
     yml_path = tmp_dir / "databricks.yml"
     if yml_path.exists():
         text = yml_path.read_text()
-        # Patch bundle name so it uses a separate workspace path and terraform state
-        # e.g. bundle.name: "agent_langgraph_advanced" -> "agent_langgraph_advanced_p"
+        # Patch bundle.name (the first top-level `name:` in the file —
+        # unquoted identifier like `agent_langgraph_advanced`) so the
+        # copy gets its own workspace path .bundle/<name>/ and its own
+        # terraform state. Previously the regex required quoted values
+        # and silently no-op'd on unquoted bundle.name, meaning the
+        # "isolated" copy actually shared state with the original —
+        # terraform state races and source-upload collisions ensued.
+        # e.g. `  name: agent_langgraph_advanced` ->
+        #      `  name: agent_langgraph_advanced_p`
         suffix_underscore = app_name_suffix.replace("-", "_")
         patched = re.sub(
-            r'(^\s*name:\s*")([\w]+)(")',
+            r"^(\s*name:\s*)(\w+)(\s*)$",
             lambda m: m.group(1) + m.group(2) + suffix_underscore + m.group(3),
             text,
             count=1,

@@ -162,6 +162,7 @@ After installation, the skills will be available as slash commands (e.g., `/agen
 | `agent_server/start_server.py` | FastAPI server + MLflow setup |
 | `agent_server/evaluate_agent.py` | Agent evaluation with MLflow scorers |
 | `databricks.yml` | Bundle config & resource permissions |
+| `.github/workflows/deploy.yml` | GitHub Actions workflow to deploy this app (OIDC federation + `bundle deploy` + `bundle run`). Note: autoscaling Lakebase needs a one-time postgres wiring before CI takes over — see the **deploy** skill. |
 | `scripts/quickstart.py` | One-command setup script |
 | `scripts/discover_tools.py` | Discovers available workspace resources |
 

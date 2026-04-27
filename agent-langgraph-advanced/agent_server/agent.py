@@ -40,7 +40,7 @@ mlflow.langchain.autolog()
 logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
 sp_workspace_client = WorkspaceClient()
 
-LLM_ENDPOINT_NAME = "databricks-claude-sonnet-4-5"
+LLM_ENDPOINT_NAME = "databricks-gpt-5-2"
 LAKEBASE_CONFIG = init_lakebase_config()
 
 

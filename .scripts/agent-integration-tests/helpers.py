@@ -260,61 +260,30 @@ def clean_template(template_dir: Path):
             pass  # Already removed by another parallel worker
 
 
-def uv_sync(template_dir: Path, max_online_attempts: int = 3):
+def uv_sync(template_dir: Path, max_attempts: int = 3):
     """Run `uv sync` to create/update the venv before quickstart.
 
-    Tries online up to ``max_online_attempts`` times with linear backoff to
-    absorb transient PyPI / proxy hiccups (5xx, connection resets), then
-    falls back to UV_OFFLINE=true once. Offline mode succeeds only if every
-    needed package is already in uv's local cache, so it's the last-ditch
-    option not the primary recovery path.
-
-    Indicators we treat as transient:
-      * HTTP 5xx from the index URL
-      * "Failed to fetch" / "Request failed after N retries" (uv's own retry
-        already exhausted, but a fresh `uv sync` invocation can succeed if
-        the proxy briefly recovered).
+    Retries up to ``max_attempts`` times with a short backoff to absorb
+    transient PyPI / proxy hiccups, then falls back to UV_OFFLINE=true
+    one more time as a last resort.
     """
-    transient_markers = (
-        "Request failed after",
-        "Failed to fetch",
-        "503 Service",
-        "502 Bad Gateway",
-        "504 Gateway Timeout",
-        "connection reset",
-        "Connection reset",
-    )
-    last_result = None
-    for attempt in range(1, max_online_attempts + 1):
+    for attempt in range(1, max_attempts + 1):
         result = _run_cmd(["uv", "sync"], cwd=template_dir, timeout=QUICKSTART_TIMEOUT)
         if result.returncode == 0:
             return
-        last_result = result
-        is_transient = any(m in result.stderr for m in transient_markers)
-        if attempt < max_online_attempts and is_transient:
-            backoff = 5 * attempt  # 5s, 10s, 15s
-            _log(
-                f"  uv sync attempt {attempt}/{max_online_attempts} hit a "
-                f"transient index error; retrying in {backoff}s..."
-            )
-            time.sleep(backoff)
-            continue
-        # Non-transient or out of attempts — break to offline fallback.
-        break
+        if attempt < max_attempts:
+            _log(f"  uv sync attempt {attempt}/{max_attempts} failed, retrying in 10s...")
+            time.sleep(10)
 
     _log(f"  uv sync failed online; falling back to UV_OFFLINE=true (cache-only)...")
     env = os.environ.copy()
     env["UV_OFFLINE"] = "true"
     result = _run_cmd(["uv", "sync"], cwd=template_dir, timeout=QUICKSTART_TIMEOUT, env=env)
-    if result.returncode != 0:
-        # Surface the most informative failure: prefer the online error since
-        # offline failures are usually "package not in cache" red herrings.
-        diag = last_result if last_result is not None else result
-        assert False, (
-            f"uv sync failed in {template_dir.name} after {max_online_attempts} "
-            f"online attempts and one offline attempt:\n"
-            f"stdout: {diag.stdout}\nstderr: {diag.stderr}"
-        )
+    assert result.returncode == 0, (
+        f"uv sync failed in {template_dir.name}:\n"
+        f"stdout: {result.stdout}\n"
+        f"stderr: {result.stderr}"
+    )
 
 
 def _strip_uv_sources(template_dir: Path) -> str | None:

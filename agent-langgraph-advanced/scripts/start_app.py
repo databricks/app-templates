@@ -139,14 +139,27 @@ class ProcessManager:
         if Path("e2e-chatbot-app-next").exists():
             return True
 
-        print("Cloning e2e-chatbot-app-next...")
+        # TEMPORARY: checkout the dhruv0811/durable-execution-templates branch
+        # so the deployed frontend includes the background-mode /invocations
+        # proxy with auto-resume. Revert to cloning main after that PR merges.
+        branch = os.getenv("APP_TEMPLATES_BRANCH", "dhruv0811/durable-execution-templates")
+        print(f"Cloning e2e-chatbot-app-next from branch '{branch}'...")
         for url in [
             "https://github.com/databricks/app-templates.git",
             "git@github.com:databricks/app-templates.git",
         ]:
             try:
                 subprocess.run(
-                    ["git", "clone", "--filter=blob:none", "--sparse", url, "temp-app-templates"],
+                    [
+                        "git",
+                        "clone",
+                        "--filter=blob:none",
+                        "--sparse",
+                        "--branch",
+                        branch,
+                        url,
+                        "temp-app-templates",
+                    ],
                     check=True,
                     capture_output=True,
                 )
@@ -219,8 +232,22 @@ class ProcessManager:
                 print("WARNING: Failed to clone frontend. Continuing with backend only.")
                 self.no_ui = True
             else:
-                # Set API_PROXY environment variable for frontend to connect to backend
-                os.environ["API_PROXY"] = f"http://localhost:{self.port}/invocations"
+                # Point the Node AI SDK at the Express /invocations handler
+                # (same Node process, port CHAT_APP_PORT) so streaming POSTs
+                # go through the background-mode rewrite + auto-resume proxy.
+                # The proxy forwards to AGENT_BACKEND_URL (the Python backend
+                # on self.port). Respect any externally-provided values so
+                # operators can override per-deployment.
+                frontend_port = int(
+                    os.environ.get("CHAT_APP_PORT", os.environ.get("PORT", "3000"))
+                )
+                os.environ.setdefault(
+                    "AGENT_BACKEND_URL",
+                    f"http://localhost:{self.port}/invocations",
+                )
+                os.environ["API_PROXY"] = (
+                    f"http://localhost:{frontend_port}/invocations"
+                )
 
         # Open log files
         self.backend_log = open("backend.log", "w", buffering=1)

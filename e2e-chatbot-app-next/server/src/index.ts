@@ -24,6 +24,58 @@ import { ChatSDKError } from '@chat-template/core/errors';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// ---------------------------------------------------------------------------
+// SSE parsing helpers for the durable-resume /invocations proxy.
+// Kept at module scope so each piece is a tiny, single-responsibility, easy
+// to read / unit-test pure function. The proxy handler below composes them.
+// ---------------------------------------------------------------------------
+
+type ParsedSseFrame =
+  | { kind: 'done' }
+  | { kind: 'passthrough' }
+  | { kind: 'data'; payload: Record<string, unknown> };
+
+/** Classify an SSE frame as [DONE], data (parseable JSON), or opaque. */
+function parseSseFrame(frame: string): ParsedSseFrame {
+  if (frame.includes('data: [DONE]')) return { kind: 'done' };
+  const dataLine = frame.split('\n').find((l) => l.startsWith('data:'));
+  if (!dataLine) return { kind: 'passthrough' };
+  try {
+    const payload = JSON.parse(dataLine.slice(5).trim());
+    if (payload && typeof payload === 'object') {
+      return { kind: 'data', payload: payload as Record<string, unknown> };
+    }
+  } catch {
+    // Non-JSON frame (e.g. heartbeat): fall through to passthrough.
+  }
+  return { kind: 'passthrough' };
+}
+
+/** Pull the response_id off an SSE payload — tolerates the three shapes
+ *  emitted by FastAPI ( `response_id`, `response.id`, top-level `id` prefixed
+ *  with `resp_`).
+ */
+function extractResponseId(
+  payload: Record<string, unknown>,
+): string | null {
+  if (typeof payload.response_id === 'string') return payload.response_id;
+  const nested = payload.response as { id?: unknown } | undefined;
+  if (typeof nested?.id === 'string') return nested.id;
+  const topId = payload.id;
+  if (typeof topId === 'string' && topId.startsWith('resp_')) return topId;
+  return null;
+}
+
+/** True for upstream error frames that will never succeed on retry
+ *  (``task_failed`` / ``task_timeout``). Lets the proxy short-circuit its
+ *  resume loop instead of burning the full attempt budget. */
+function isTerminalErrorFrame(payload: Record<string, unknown>): boolean {
+  if (payload.type !== 'error') return false;
+  const err = (payload.error as Record<string, unknown> | undefined) ?? {};
+  const code = err.code as string | undefined;
+  return code === 'task_failed' || code === 'task_timeout';
+}
+
 const app: Express = express();
 const isDevelopment = process.env.NODE_ENV !== 'production';
 // Either let PORT be set by env or use 3001 for development and 3000 for production
@@ -59,46 +111,214 @@ app.use('/api/config', configRouter);
 app.use('/api/feedback', feedbackRouter);
 
 // Agent backend proxy (optional)
-// If API_PROXY is set, proxy /invocations requests to the agent backend
-const agentBackendUrl = process.env.API_PROXY;
+// If AGENT_BACKEND_URL (or legacy API_PROXY) is set, proxy /invocations
+// requests to the agent backend. For streaming POSTs we rewrite into
+// LongRunningAgentServer's "background" contract: the backend persists every
+// event to Lakebase, the proxy auto-resumes via
+//   GET /responses/{id}?stream=true&starting_after=N
+// if the upstream connection dies before the [DONE] sentinel. This is what
+// makes the UI survive mid-response pod crashes — zero client-side changes.
+//
+// IMPORTANT: when running with the Python FastAPI backend, point
+// AGENT_BACKEND_URL at FastAPI (e.g. http://localhost:8000/invocations) and
+// set API_PROXY at THIS Express server (e.g. http://localhost:3000/invocations)
+// so the AI SDK provider in providers-server.ts routes through this handler
+// instead of going direct to FastAPI.
+// Default to the advanced-template convention (FastAPI on :8000). Set
+// AGENT_BACKEND_URL explicitly to point at a remote agent, or set it to
+// empty string to disable the /invocations proxy altogether.
+const agentBackendUrl =
+  process.env.AGENT_BACKEND_URL ??
+  process.env.API_PROXY ??
+  'http://localhost:8000/invocations';
 if (agentBackendUrl) {
-  console.log(`✅ Proxying /invocations to ${agentBackendUrl}`);
+  console.log(
+    `✅ Proxying /invocations to ${agentBackendUrl} (durable-resume enabled)`,
+  );
+
+  // Derive the retrieve endpoint (strip trailing /invocations or /responses)
+  const backendRoot = agentBackendUrl.replace(/\/(invocations|responses)\/?$/, '');
+  const retrieveUrl = (rid: string, startingAfter: number) =>
+    `${backendRoot}/responses/${rid}?stream=true&starting_after=${startingAfter}`;
+
   app.all('/invocations', async (req: Request, res: Response) => {
     try {
       const forwardHeaders = { ...req.headers } as Record<string, string>;
-      forwardHeaders['content-length'] = undefined;
+      // biome-ignore lint/performance/noDelete: fetch rejects empty content-length
+      delete forwardHeaders['content-length'];
 
-      const response = await fetch(agentBackendUrl, {
-        method: req.method,
-        headers: forwardHeaders,
-        body:
-          req.method !== 'GET' && req.method !== 'HEAD'
-            ? JSON.stringify(req.body)
-            : undefined,
-      });
+      const isStreamingPost =
+        req.method === 'POST' &&
+        req.body &&
+        typeof req.body === 'object' &&
+        (req.body.stream === true || req.body.stream === 'true');
 
-      // Copy status and headers
-      res.status(response.status);
-      response.headers.forEach((value, key) => {
-        res.setHeader(key, value);
-      });
+      // Non-streaming or non-POST: original passthrough behavior.
+      if (!isStreamingPost) {
+        const response = await fetch(agentBackendUrl, {
+          method: req.method,
+          headers: forwardHeaders,
+          body:
+            req.method !== 'GET' && req.method !== 'HEAD'
+              ? JSON.stringify(req.body)
+              : undefined,
+        });
+        res.status(response.status);
+        response.headers.forEach((value, key) => res.setHeader(key, value));
+        if (response.body) {
+          const reader = response.body.getReader();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            res.write(value);
+          }
+        }
+        res.end();
+        return;
+      }
 
-      // Stream the response body
-      if (response.body) {
-        const reader = response.body.getReader();
+      // Streaming POST → background mode with auto-resume.
+      const durableBody = {
+        ...req.body,
+        background: true,
+        stream: true,
+      };
+
+      // Prime SSE headers immediately so the client starts reading even if the
+      // first upstream chunk takes a moment.
+      res.status(200);
+      res.setHeader('content-type', 'text/event-stream');
+      res.setHeader('cache-control', 'no-cache');
+      res.setHeader('connection', 'keep-alive');
+      res.flushHeaders?.();
+
+      let responseId: string | null = null;
+      let lastSeq = 0;
+      let sawDone = false;
+      // Terminal-error flag: task_failed / task_timeout from upstream.
+      let sawTerminalError = false;
+      // Safety cap so a permanently-broken backend can't loop forever.
+      const MAX_RESUME_ATTEMPTS = 10;
+      let resumeAttempt = 0;
+
+      // Read one SSE stream, extract response_id + sequence_number + detect
+      // terminal errors, forward each frame to the client. Returns whether we
+      // saw the [DONE] sentinel. Parsing is delegated to the module-level
+      // helpers above.
+      const pumpStream = async (
+        upstream: globalThis.Response,
+      ): Promise<boolean> => {
+        if (!upstream.body) return false;
+        const reader = upstream.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
-          res.write(value);
+          if (done) return false;
+          buf += decoder.decode(value, { stream: true });
+          const frames = buf.split(/\n\n/);
+          buf = frames.pop() || '';
+          for (const frame of frames) {
+            const frameBytes = `${frame}\n\n`;
+            const parsed = parseSseFrame(frame);
+            if (parsed.kind === 'done') {
+              res.write(frameBytes);
+              return true;
+            }
+            if (parsed.kind === 'data') {
+              const rid = extractResponseId(parsed.payload);
+              if (rid && !responseId) {
+                responseId = rid;
+                console.log(
+                  `[/invocations] background started response_id=${responseId}`,
+                );
+              }
+              const seq = parsed.payload.sequence_number;
+              if (typeof seq === 'number' && seq > lastSeq) {
+                lastSeq = seq;
+              }
+              if (isTerminalErrorFrame(parsed.payload)) {
+                console.log(
+                  `[/invocations] terminal error response_id=${responseId}; not retrying`,
+                );
+                sawTerminalError = true;
+              }
+            }
+            res.write(frameBytes);
+          }
         }
+      };
+
+      // Kickoff: POST background request.
+      const initial = await fetch(agentBackendUrl, {
+        method: 'POST',
+        headers: forwardHeaders,
+        body: JSON.stringify(durableBody),
+      });
+      if (!initial.ok) {
+        const text = await initial.text();
+        res.write(
+          `event: error\ndata: ${JSON.stringify({ error: { message: text, status: initial.status } })}\n\n`,
+        );
+        res.end();
+        return;
+      }
+      sawDone = await pumpStream(initial);
+
+      // Auto-resume loop: if upstream closed early and we have a response_id,
+      // reconnect via the retrieve endpoint using our cursor.
+      if (!sawDone && responseId) {
+        console.log(
+          `[/invocations] upstream closed without [DONE] response_id=${responseId} last_seq=${lastSeq}; entering auto-resume`,
+        );
+      }
+      while (!sawDone && !sawTerminalError && responseId && resumeAttempt < MAX_RESUME_ATTEMPTS) {
+        resumeAttempt += 1;
+        console.log(
+          `[/invocations] resume fetch response_id=${responseId} starting_after=${lastSeq} attempt=${resumeAttempt}`,
+        );
+        const resumed = await fetch(retrieveUrl(responseId, lastSeq), {
+          method: 'GET',
+          headers: forwardHeaders,
+        });
+        if (!resumed.ok) {
+          console.log(
+            `[/invocations] resume failed response_id=${responseId} status=${resumed.status}`,
+          );
+          res.write(
+            `event: error\ndata: ${JSON.stringify({ error: { message: 'Resume fetch failed', status: resumed.status } })}\n\n`,
+          );
+          break;
+        }
+        sawDone = await pumpStream(resumed);
+        if (sawDone) {
+          console.log(
+            `[/invocations] resume succeeded response_id=${responseId} after ${resumeAttempt} attempts`,
+          );
+        }
+      }
+
+      if (responseId) {
+        console.log(
+          `[/invocations] stream done response_id=${responseId} saw_done=${sawDone} last_seq=${lastSeq} resumes=${resumeAttempt}`,
+        );
       }
       res.end();
     } catch (error) {
       console.error('[/invocations proxy] Error:', error);
-      res.status(502).json({
-        error: 'Proxy error',
-        message: error instanceof Error ? error.message : String(error),
-      });
+      if (!res.headersSent) {
+        res.status(502).json({
+          error: 'Proxy error',
+          message: error instanceof Error ? error.message : String(error),
+        });
+      } else {
+        try {
+          res.write(
+            `event: error\ndata: ${JSON.stringify({ error: { message: error instanceof Error ? error.message : String(error) } })}\n\n`,
+          );
+          res.end();
+        } catch {}
+      }
     }
   });
 }

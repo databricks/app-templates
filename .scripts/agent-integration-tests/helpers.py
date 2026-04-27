@@ -1013,7 +1013,7 @@ def capture_app_logs(app_name: str, profile: str) -> str:
 # Lakebase
 # ---------------------------------------------------------------------------
 
-_MANAGED_SCHEMAS = ["public", "drizzle", "ai_chatbot", "agent_server"]
+_MANAGED_SCHEMAS = ["public", "drizzle", "ai_chatbot", "agent_server", "agent_langgraph_memory"]
 
 
 def _try_sql(client, sql: str):

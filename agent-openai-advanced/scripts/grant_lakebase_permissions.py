@@ -150,42 +150,69 @@ def _grant_permissions(client, grantee: str, memory_type: str):
     # deployed app failing with "permission denied for sequence
     # <name>_id_seq" on first INSERT.
     #
-    # Workaround: enumerate sequences via pg_sequences and grant on each
-    # individually. Individual GRANTs honor role inheritance, so any
-    # connected user that's a databricks_superuser member (the role that
-    # ends up owning auto-created sequences) can grant on them — no
-    # SET ROLE required, no `set_option` needed on the membership.
-    print("Granting on individual sequences (covers sequences owned by other roles)...")
-    seq_rows = client.execute(
-        "SELECT schemaname, sequencename FROM pg_sequences WHERE schemaname = ANY(%s);",
-        (seq_schemas,),
-    )
-    quoted_grantee = f'"{grantee}"'
-    granted = 0
-    skipped: list[str] = []
-    for seq in seq_rows or []:
-        qualified = f"{seq['schemaname']}.{seq['sequencename']}"
+    # Workaround: re-run the bulk grants under `SET ROLE
+    # databricks_superuser` so the GRANT statements execute as the role
+    # that owns auto-created sequences. The connected user must have
+    # databricks_superuser membership *with set_option=True* — pure
+    # `inherit_option=True` isn't enough, because Postgres only
+    # propagates GRANT OPTION through explicit role-switching, not
+    # through inheritance. A workspace admin can grant set_option via:
+    #   GRANT databricks_superuser TO "<user-or-sp>" WITH SET TRUE;
+    print("Re-running sequence grants via SET ROLE databricks_superuser (covers sequences owned by other roles)...")
+    try:
+        client.execute("SET ROLE databricks_superuser;")
+    except Exception as e:
+        print(
+            f"  Skipped SET ROLE fallback: {e}\n"
+            "  If the app hits 'permission denied for sequence' on first use, ask a\n"
+            "  workspace admin to run:\n"
+            f"    GRANT databricks_superuser TO \"<your-user-or-sp>\" WITH SET TRUE;\n"
+            "  and re-run this script."
+        )
+    else:
         try:
-            client.execute(
-                f"GRANT USAGE, SELECT, UPDATE ON SEQUENCE {qualified} TO {quoted_grantee};"
+            for schema in seq_schemas:
+                try:
+                    client.grant_all_sequences_in_schema(
+                        grantee=grantee,
+                        schemas=[schema],
+                        privileges=[
+                            SequencePrivilege.USAGE,
+                            SequencePrivilege.SELECT,
+                            SequencePrivilege.UPDATE,
+                        ],
+                    )
+                except Exception as e:
+                    print(f"  Warning: sequence grant under SET ROLE failed for '{schema}': {e}")
+        finally:
+            client.execute("RESET ROLE;")
+
+        # Verify the grants actually applied. Postgres silently no-ops
+        # GRANTs the executor isn't authorized to make, so a clean exit
+        # from grant_all_sequences_in_schema doesn't mean the grantee
+        # actually has the privileges.
+        seq_rows = client.execute(
+            "SELECT schemaname || '.' || sequencename AS qualified "
+            "FROM pg_sequences WHERE schemaname = ANY(%s);",
+            (seq_schemas,),
+        )
+        ungranted: list[str] = []
+        for row in seq_rows or []:
+            qualified = row["qualified"]
+            check = client.execute(
+                "SELECT has_sequence_privilege(%s, %s, 'USAGE') AS ok;",
+                (grantee, qualified),
             )
-            granted += 1
-        except Exception as e:
-            skipped.append(f"{qualified}: {e}")
-    if granted:
-        print(f"  Granted on {granted} individual sequence(s).")
-    if skipped:
-        print(
-            f"  {len(skipped)} sequence(s) could not be granted (likely not a databricks_superuser member):"
-        )
-        for line in skipped[:5]:
-            print(f"    - {line}")
-        if len(skipped) > 5:
-            print(f"    ... and {len(skipped) - 5} more")
-        print(
-            "  If the app hits 'permission denied for sequence' on first use, "
-            "ask a workspace admin to add this user to databricks_superuser and re-run."
-        )
+            if check and not check[0]["ok"]:
+                ungranted.append(qualified)
+        if ungranted:
+            print(
+                f"  Warning: {len(ungranted)} sequence(s) still ungranted after SET ROLE pass:\n"
+                + "\n".join(f"    - {q}" for q in ungranted[:5])
+                + (f"\n    ... and {len(ungranted) - 5} more" if len(ungranted) > 5 else "")
+            )
+        else:
+            print("  All target sequences verified granted to grantee.")
 
     print(
         "\nPermission grants complete. If some grants failed because tables don't "

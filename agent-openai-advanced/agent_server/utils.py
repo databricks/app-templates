@@ -204,7 +204,13 @@ async def deduplicate_input(request: ResponsesAgentRequest, session: AsyncDatabr
         ):
             msg["content"] = [{"type": "output_text", "text": msg["content"], "annotations": []}]
     session_items = await session.get_items()
-    if len(session_items) >= len(messages) - 1:
+    # If the session has any items, treat it as authoritative for prior-turn
+    # history and only forward the latest message (the new user turn). The
+    # prior count-based heuristic broke under prose-recovery + always-rotate:
+    # the rotated session can have fewer items than the chatbot's accumulated
+    # UI echo, leading the heuristic to forward duplicates that the SDK then
+    # groups into a malformed assistant.tool_calls block.
+    if session_items and len(messages) > 1:
         return [messages[-1]]
     return messages
 

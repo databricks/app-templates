@@ -118,8 +118,10 @@ function wrapResponseToCaptureRotation(
   response: Response,
   chatId: string,
 ): Response {
-  const originalBody = response.body!;
-  const reader = originalBody.getReader();
+  if (!response.body) {
+    return response;
+  }
+  const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
 

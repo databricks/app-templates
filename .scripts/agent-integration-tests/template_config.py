@@ -41,7 +41,6 @@ class TemplateConfig:
     needs_lakebase: bool = False  # Whether template uses lakebase
     lakebase_type: str = ""  # "provisioned", "autoscaling", or ""
     is_advanced: bool = False  # Whether this is an advanced template (has session + long-term memory)
-    memory_type: str = ""  # "langgraph" or "openai" — passed to scripts/grant_lakebase_permissions.py
     pre_test_edits: list[FileEdit] = field(default_factory=list)
     has_evaluate: bool = True
     validate_time: bool = True  # Whether to validate get_current_time tool output
@@ -182,15 +181,9 @@ def build_templates(
     # (name, needs_lakebase, overrides)
     configs: list[tuple[str, bool, dict]] = [
         ("agent-langgraph", False, {}),
-        ("agent-langgraph-advanced", True, {
-            "is_advanced": True,
-            "memory_type": "langgraph",
-        }),
+        ("agent-langgraph-advanced", True, {"is_advanced": True}),
         ("agent-openai-agents-sdk", False, {}),
-        ("agent-openai-advanced", True, {
-            "is_advanced": True,
-            "memory_type": "openai",
-        }),
+        ("agent-openai-advanced", True, {"is_advanced": True}),
         (
             "agent-openai-agents-sdk-multiagent",
             False,

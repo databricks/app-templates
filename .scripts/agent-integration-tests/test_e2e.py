@@ -395,12 +395,7 @@ def _run_deploy(
         elif template.lakebase_type == "autoscaling":
             _grant_kwargs["autoscaling_endpoint"] = lakebase_autoscaling_endpoint
         if _grant_kwargs:
-            grant_lakebase_access(
-                template.dev_app_name, profile,
-                template_dir=template_dir,
-                memory_type=template.memory_type,
-                **_grant_kwargs,
-            )
+            grant_lakebase_access(template.dev_app_name, profile, **_grant_kwargs)
     bundle_run_nowait(template_dir, template.app_resource_key, profile, template.dev_app_name)
     try:
         app_url, token = wait_for_app_ready(template.dev_app_name, profile)
@@ -428,12 +423,7 @@ def _run_deploy(
                             _grant_kwargs["autoscaling_endpoint"] = lakebase_autoscaling_endpoint
                         if _grant_kwargs:
                             _log("Re-running lakebase grants to cover newly created objects...")
-                            grant_lakebase_access(
-                                template.dev_app_name, profile,
-                                template_dir=template_dir,
-                                memory_type=template.memory_type,
-                                **_grant_kwargs,
-                            )
+                            grant_lakebase_access(template.dev_app_name, profile, **_grant_kwargs)
                     token = get_oauth_token(profile)  # refresh token on retry
                     time.sleep(30)
         if last_exc is not None:

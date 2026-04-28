@@ -138,6 +138,42 @@ def _grant_permissions(client, grantee: str, memory_type: str):
         except Exception as e:
             print(f"  Warning: sequence grant failed (may not exist yet): {e}")
 
+    # Lakebase platform quirk: when a sequence is auto-created (e.g. by a
+    # SERIAL / id_seq column), the on_create_sequence event trigger grants
+    # only to databricks_superuser — unlike on_create_table, it doesn't
+    # also grant to the creating user. Bulk grants run as the connected
+    # identity then silently skip every sequence the connected user
+    # doesn't own, leaving new app SPs without USAGE on existing
+    # sequences. Re-run the bulk grants after `SET ROLE databricks_superuser`
+    # so the GRANT statements execute with the role that does own them.
+    # No-op when the connected user isn't a member of databricks_superuser
+    # (SET ROLE will raise; we log and move on).
+    print("Re-running sequence grants via SET ROLE databricks_superuser (covers sequences owned by other roles)...")
+    try:
+        client.execute("SET ROLE databricks_superuser;")
+        try:
+            for schema in seq_schemas:
+                try:
+                    client.grant_all_sequences_in_schema(
+                        grantee=grantee,
+                        schemas=[schema],
+                        privileges=[
+                            SequencePrivilege.USAGE,
+                            SequencePrivilege.SELECT,
+                            SequencePrivilege.UPDATE,
+                        ],
+                    )
+                except Exception as e:
+                    print(f"  Warning: sequence grant under SET ROLE failed for '{schema}': {e}")
+        finally:
+            client.execute("RESET ROLE;")
+    except Exception as e:
+        print(
+            f"  Skipped SET ROLE fallback: {e}. "
+            "If the app hits 'permission denied for sequence' on first use, "
+            "ask a workspace admin to add this user to databricks_superuser and re-run."
+        )
+
     print(
         "\nPermission grants complete. If some grants failed because tables don't "
         "exist yet, that's expected on a fresh branch — they'll be created on first "

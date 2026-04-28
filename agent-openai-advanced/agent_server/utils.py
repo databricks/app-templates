@@ -29,6 +29,7 @@ class LakebaseConfig:
     autoscaling_endpoint: Optional[str]
     autoscaling_project: Optional[str]
     autoscaling_branch: Optional[str]
+    memory_schema: Optional[str] = None
 
     @property
     def description(self) -> str:
@@ -103,13 +104,15 @@ def init_lakebase_config() -> LakebaseConfig:
             "  Option 3 (provisioned): LAKEBASE_INSTANCE_NAME=<your-instance-name>\n"
         )
 
+    memory_schema = os.getenv("LAKEBASE_AGENT_MEMORY_SCHEMA") or None
+
     # Priority: endpoint > project+branch > instance_name (mutually exclusive in the library)
     if endpoint:
-        return LakebaseConfig(instance_name=None, autoscaling_endpoint=endpoint, autoscaling_project=None, autoscaling_branch=None)
+        return LakebaseConfig(instance_name=None, autoscaling_endpoint=endpoint, autoscaling_project=None, autoscaling_branch=None, memory_schema=memory_schema)
     elif has_autoscaling:
-        return LakebaseConfig(instance_name=None, autoscaling_endpoint=None, autoscaling_project=project, autoscaling_branch=branch)
+        return LakebaseConfig(instance_name=None, autoscaling_endpoint=None, autoscaling_project=project, autoscaling_branch=branch, memory_schema=memory_schema)
     else:
-        return LakebaseConfig(instance_name=resolve_lakebase_instance_name(raw_name), autoscaling_endpoint=None, autoscaling_project=None, autoscaling_branch=None)
+        return LakebaseConfig(instance_name=resolve_lakebase_instance_name(raw_name), autoscaling_endpoint=None, autoscaling_project=None, autoscaling_branch=None, memory_schema=memory_schema)
 
 
 def get_lakebase_access_error_message(lakebase_description: str) -> str:
@@ -204,13 +207,7 @@ async def deduplicate_input(request: ResponsesAgentRequest, session: AsyncDatabr
         ):
             msg["content"] = [{"type": "output_text", "text": msg["content"], "annotations": []}]
     session_items = await session.get_items()
-    # If the session has any items, treat it as authoritative for prior-turn
-    # history and only forward the latest message (the new user turn). The
-    # prior count-based heuristic broke under prose-recovery + always-rotate:
-    # the rotated session can have fewer items than the chatbot's accumulated
-    # UI echo, leading the heuristic to forward duplicates that the SDK then
-    # groups into a malformed assistant.tool_calls block.
-    if session_items and len(messages) > 1:
+    if len(session_items) >= len(messages) - 1:
         return [messages[-1]]
     return messages
 

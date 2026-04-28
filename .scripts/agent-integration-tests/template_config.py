@@ -174,7 +174,7 @@ def _parse_databricks_yml(template_name: str) -> tuple[str, str]:
 # Template builder
 # ---------------------------------------------------------------------------
 def _neutralize_memory_schema_env_edits(template_name: str) -> list[FileEdit]:
-    """Override the hardcoded LAKEBASE_AGENT_MEMORY_SCHEMA env var to empty.
+    """Override the hardcoded LAKEBASE_AGENT_MEMORY_SCHEMA env to `public`.
 
     The advanced templates ship with `LAKEBASE_AGENT_MEMORY_SCHEMA: <schema>`
     set in databricks.yml's app config. The bridge LakebaseClient reads
@@ -182,10 +182,15 @@ def _neutralize_memory_schema_env_edits(template_name: str) -> list[FileEdit]:
     session — putting the template-specific schema first. Without
     schema-qualified CREATE TABLE in langgraph's checkpoint setup, that
     routes new tables into a schema the per-test SP doesn't own +
-    can't write to.
+    can't write to (the schema is owned by another SP and tables in it
+    inherit that ownership).
 
-    Neutralizing the env to "" lets the SP use its default search_path
-    (`"$user", public`), so tables land in `public` where it has CREATE.
+    Override to `public` for tests: the SP has CREATE on public via
+    `_MANAGED_SCHEMAS`, langgraph creates fresh tables there, the SP
+    owns them. (Empty value fails Databricks Apps' env-var validation:
+    `Must specify environment variable source using either value or
+    valueFrom`. Using a non-empty schema avoids that.)
+
     Reverted in the finally block as part of `revert_edits`.
     """
     template_dir = REPO_ROOT / template_name
@@ -198,7 +203,7 @@ def _neutralize_memory_schema_env_edits(template_name: str) -> list[FileEdit]:
                 FileEdit(
                     relative_path="databricks.yml",
                     old=marker,
-                    new=f'- name: LAKEBASE_AGENT_MEMORY_SCHEMA\n            value: ""',
+                    new=f'- name: LAKEBASE_AGENT_MEMORY_SCHEMA\n            value: "public"',
                 )
             )
             break

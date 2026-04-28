@@ -89,7 +89,12 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
         if event.type == "response.output_item.done"
     ]
 
-    custom_outputs: dict[str, Any] = {}
+    # Surface the resolved thread_id so always-rotate works cross-turn: after a
+    # crash + resume, the bridge rotates `context.conversation_id` to
+    # `{base}::attempt-N`. Returning that value here lets the client send it as
+    # `custom_inputs.thread_id` on the next turn, so subsequent turns land on
+    # the rotated (clean) checkpointer row instead of the orphan-poisoned one.
+    custom_outputs: dict[str, Any] = {"thread_id": _get_or_create_thread_id(request)}
     if user_id := get_user_id(request):
         custom_outputs["user_id"] = user_id
     return ResponsesAgentResponse(output=outputs, custom_outputs=custom_outputs)

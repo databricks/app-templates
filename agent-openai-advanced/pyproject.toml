@@ -46,8 +46,8 @@ default-groups = ["dev", "setup"]
 # TEMPORARY: point at the open PR branch while ML-64230 durable-resume
 # changes are in review. Revert to the registry release once merged.
 [tool.uv.sources]
-databricks-ai-bridge = { git = "https://github.com/databricks/databricks-ai-bridge", branch = "dhruv0811/durable-execution-resume" }
-databricks-openai = { git = "https://github.com/databricks/databricks-ai-bridge", branch = "dhruv0811/durable-execution-resume", subdirectory = "integrations/openai" }
+databricks-ai-bridge = { git = "https://github.com/databricks/databricks-ai-bridge", branch = "dhruv0811/durable-execution-prose-recovery" }
+databricks-openai = { git = "https://github.com/databricks/databricks-ai-bridge", branch = "dhruv0811/durable-execution-prose-recovery", subdirectory = "integrations/openai" }
 
 [tool.pytest.ini_options]
 base_url = "http://localhost:8000"

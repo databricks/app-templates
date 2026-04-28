@@ -173,6 +173,38 @@ def _parse_databricks_yml(template_name: str) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 # Template builder
 # ---------------------------------------------------------------------------
+def _neutralize_memory_schema_env_edits(template_name: str) -> list[FileEdit]:
+    """Override the hardcoded LAKEBASE_AGENT_MEMORY_SCHEMA env var to empty.
+
+    The advanced templates ship with `LAKEBASE_AGENT_MEMORY_SCHEMA: <schema>`
+    set in databricks.yml's app config. The bridge LakebaseClient reads
+    that env, then runs `SET search_path TO <schema>, public` on every
+    session — putting the template-specific schema first. Without
+    schema-qualified CREATE TABLE in langgraph's checkpoint setup, that
+    routes new tables into a schema the per-test SP doesn't own +
+    can't write to.
+
+    Neutralizing the env to "" lets the SP use its default search_path
+    (`"$user", public`), so tables land in `public` where it has CREATE.
+    Reverted in the finally block as part of `revert_edits`.
+    """
+    template_dir = REPO_ROOT / template_name
+    yml = (template_dir / "databricks.yml").read_text()
+    edits: list[FileEdit] = []
+    for old_value in ('"agent_langgraph_memory"', '"agent_openai_memory"'):
+        marker = f'- name: LAKEBASE_AGENT_MEMORY_SCHEMA\n            value: {old_value}'
+        if marker in yml:
+            edits.append(
+                FileEdit(
+                    relative_path="databricks.yml",
+                    old=marker,
+                    new=f'- name: LAKEBASE_AGENT_MEMORY_SCHEMA\n            value: ""',
+                )
+            )
+            break
+    return edits
+
+
 def build_templates(
     genie_space_id: str = DEFAULT_GENIE_SPACE_ID,
     serving_endpoint: str = DEFAULT_SERVING_ENDPOINT,
@@ -181,9 +213,15 @@ def build_templates(
     # (name, needs_lakebase, overrides)
     configs: list[tuple[str, bool, dict]] = [
         ("agent-langgraph", False, {}),
-        ("agent-langgraph-advanced", True, {"is_advanced": True}),
+        ("agent-langgraph-advanced", True, {
+            "is_advanced": True,
+            "pre_test_edits": _neutralize_memory_schema_env_edits("agent-langgraph-advanced"),
+        }),
         ("agent-openai-agents-sdk", False, {}),
-        ("agent-openai-advanced", True, {"is_advanced": True}),
+        ("agent-openai-advanced", True, {
+            "is_advanced": True,
+            "pre_test_edits": _neutralize_memory_schema_env_edits("agent-openai-advanced"),
+        }),
         (
             "agent-openai-agents-sdk-multiagent",
             False,

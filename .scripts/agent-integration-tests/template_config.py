@@ -41,6 +41,7 @@ class TemplateConfig:
     needs_lakebase: bool = False  # Whether template uses lakebase
     lakebase_type: str = ""  # "provisioned", "autoscaling", or ""
     is_advanced: bool = False  # Whether this is an advanced template (has session + long-term memory)
+    memory_type: str = ""  # "langgraph" or "openai" — passed to scripts/grant_lakebase_permissions.py
     pre_test_edits: list[FileEdit] = field(default_factory=list)
     has_evaluate: bool = True
     validate_time: bool = True  # Whether to validate get_current_time tool output
@@ -173,43 +174,6 @@ def _parse_databricks_yml(template_name: str) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 # Template builder
 # ---------------------------------------------------------------------------
-def _neutralize_memory_schema_env_edits(template_name: str) -> list[FileEdit]:
-    """Override the hardcoded LAKEBASE_AGENT_MEMORY_SCHEMA env to `public`.
-
-    The advanced templates ship with `LAKEBASE_AGENT_MEMORY_SCHEMA: <schema>`
-    set in databricks.yml's app config. The bridge LakebaseClient reads
-    that env, then runs `SET search_path TO <schema>, public` on every
-    session — putting the template-specific schema first. Without
-    schema-qualified CREATE TABLE in langgraph's checkpoint setup, that
-    routes new tables into a schema the per-test SP doesn't own +
-    can't write to (the schema is owned by another SP and tables in it
-    inherit that ownership).
-
-    Override to `public` for tests: the SP has CREATE on public via
-    `_MANAGED_SCHEMAS`, langgraph creates fresh tables there, the SP
-    owns them. (Empty value fails Databricks Apps' env-var validation:
-    `Must specify environment variable source using either value or
-    valueFrom`. Using a non-empty schema avoids that.)
-
-    Reverted in the finally block as part of `revert_edits`.
-    """
-    template_dir = REPO_ROOT / template_name
-    yml = (template_dir / "databricks.yml").read_text()
-    edits: list[FileEdit] = []
-    for old_value in ('"agent_langgraph_memory"', '"agent_openai_memory"'):
-        marker = f'- name: LAKEBASE_AGENT_MEMORY_SCHEMA\n            value: {old_value}'
-        if marker in yml:
-            edits.append(
-                FileEdit(
-                    relative_path="databricks.yml",
-                    old=marker,
-                    new=f'- name: LAKEBASE_AGENT_MEMORY_SCHEMA\n            value: "public"',
-                )
-            )
-            break
-    return edits
-
-
 def build_templates(
     genie_space_id: str = DEFAULT_GENIE_SPACE_ID,
     serving_endpoint: str = DEFAULT_SERVING_ENDPOINT,
@@ -220,12 +184,12 @@ def build_templates(
         ("agent-langgraph", False, {}),
         ("agent-langgraph-advanced", True, {
             "is_advanced": True,
-            "pre_test_edits": _neutralize_memory_schema_env_edits("agent-langgraph-advanced"),
+            "memory_type": "langgraph",
         }),
         ("agent-openai-agents-sdk", False, {}),
         ("agent-openai-advanced", True, {
             "is_advanced": True,
-            "pre_test_edits": _neutralize_memory_schema_env_edits("agent-openai-advanced"),
+            "memory_type": "openai",
         }),
         (
             "agent-openai-agents-sdk-multiagent",

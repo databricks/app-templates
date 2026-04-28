@@ -13,7 +13,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 import requests
-from databricks_ai_bridge.lakebase import LakebaseClient
 from template_config import FileEdit
 
 # ---------------------------------------------------------------------------
@@ -1019,184 +1018,75 @@ def capture_app_logs(app_name: str, profile: str) -> str:
 # Lakebase
 # ---------------------------------------------------------------------------
 
-_MANAGED_SCHEMAS = ["public", "drizzle", "ai_chatbot", "agent_server"]
 
+def _read_yaml_env_value(yml_text: str, var_name: str) -> str | None:
+    """Pull ``value: "<x>"`` out of a ``- name: <var_name>`` env entry.
 
-def _try_sql(client, sql: str):
-    """Execute SQL, logging but not raising on failure."""
-    try:
-        client.execute(sql)
-    except Exception as exc:
-        _log(f"  SQL warning: {exc!r} for: {sql}")
+    The advanced templates ship with `LAKEBASE_AGENT_MEMORY_SCHEMA` set in
+    databricks.yml's app config to a template-specific schema (e.g.
+    `agent_langgraph_memory`). The agent's grant script reads that env
+    var to decide which schema to grant on, so the test must mirror it
+    when invoking the script outside the app's runtime.
+    """
+    pattern = rf'^\s*-\s*name:\s*{re.escape(var_name)}\s*\n\s*value:\s*"([^"]*)"'
+    m = re.search(pattern, yml_text, re.MULTILINE)
+    return m.group(1) if m else None
 
 
 def grant_lakebase_access(
     app_name: str,
     profile: str,
+    template_dir: Path,
+    memory_type: str,
     instance_name: str | None = None,
     autoscaling_endpoint: str | None = None,
 ):
     """Grant the app's service principal Lakebase access.
 
-    Assumes the SP's postgres role already exists (created by the ``database``
-    resource in databricks.yml at deploy time).
+    Invokes the template's own ``scripts/grant_lakebase_permissions.py`` so
+    the test exercises the exact code path users follow. The script reads
+    ``LAKEBASE_AGENT_MEMORY_SCHEMA`` to decide which schema to grant on; we
+    parse that out of the template's ``databricks.yml`` and pass it through
+    via env so the script's view of the schema matches the deployed app's.
 
     Pass either ``instance_name`` (provisioned) or ``autoscaling_endpoint`` (autoscaling).
     """
-    from databricks_ai_bridge.lakebase import SchemaPrivilege, TablePrivilege
+    result = _run_cmd(
+        ["databricks", "apps", "get", app_name, "-p", profile, "--output", "json"],
+        timeout=60,
+    )
+    assert result.returncode == 0, f"Failed to get app info: {result.stderr}"
+    data = json.loads(result.stdout)
+    sp_client_id = data.get("service_principal_client_id", "")
+    assert sp_client_id, f"No service_principal_client_id found for app {app_name}"
 
-    try:
-        result = _run_cmd(
-            ["databricks", "apps", "get", app_name, "-p", profile, "--output", "json"],
-            timeout=60,
-        )
-        assert result.returncode == 0, f"Failed to get app info: {result.stderr}"
-        data = json.loads(result.stdout)
-        sp_client_id = data.get("service_principal_client_id", "")
-        assert sp_client_id, f"No service_principal_client_id found for app {app_name}"
+    grant_script = template_dir / "scripts" / "grant_lakebase_permissions.py"
+    assert grant_script.exists(), f"Grant script not found at {grant_script}"
 
-        if instance_name:
-            client_ctx = LakebaseClient(instance_name=instance_name)
-        elif autoscaling_endpoint:
-            client_ctx = LakebaseClient(autoscaling_endpoint=autoscaling_endpoint)
-        else:
-            raise ValueError("Either instance_name or autoscaling_endpoint required")
+    cmd = [
+        "uv", "run", "python", str(grant_script.relative_to(template_dir)),
+        sp_client_id,
+        "--memory-type", memory_type,
+    ]
+    if instance_name:
+        cmd.extend(["--instance-name", instance_name])
+    elif autoscaling_endpoint:
+        cmd.extend(["--autoscaling-endpoint", autoscaling_endpoint])
+    else:
+        raise ValueError("Either instance_name or autoscaling_endpoint required")
 
-        with client_ctx as client:
-            _log(f"Granting lakebase access to SP {sp_client_id}...")
-            quoted_sp = f'"{sp_client_id}"'
+    env = os.environ.copy()
+    yml_text = (template_dir / "databricks.yml").read_text()
+    schema = _read_yaml_env_value(yml_text, "LAKEBASE_AGENT_MEMORY_SCHEMA")
+    if schema:
+        env["LAKEBASE_AGENT_MEMORY_SCHEMA"] = schema
+        _log(f"Granting lakebase access to SP {sp_client_id} (schema={schema}, memory_type={memory_type})...")
+    else:
+        _log(f"Granting lakebase access to SP {sp_client_id} (memory_type={memory_type}, no schema override)...")
 
-            # Ensure the SP's postgres role exists
-            try:
-                client.create_role(sp_client_id, "SERVICE_PRINCIPAL")
-                _log(f"  Created role for SP {sp_client_id}")
-            except Exception as exc:
-                if "already exists" in str(exc).lower():
-                    _log(f"  Role already exists for SP {sp_client_id}")
-                else:
-                    _log(f"  Role creation warning: {exc}")
-
-            # Grant CREATE on database so the SP can create schemas
-            _try_sql(client, f"GRANT CREATE ON DATABASE databricks_postgres TO {quoted_sp};")
-
-            # Find managed schemas that exist
-            rows = client.execute(
-                "SELECT schema_name FROM information_schema.schemata WHERE schema_name = ANY(%s);",
-                (_MANAGED_SCHEMAS,),
-            )
-            existing_schemas = [r["schema_name"] for r in rows] if rows else []
-            _log(f"  Existing managed schemas: {existing_schemas}")
-
-            if existing_schemas:
-                # SDK-level grants (schema + tables) — best-effort, may fail
-                # on autoscaling if tables are owned by other users
-                try:
-                    client.grant_schema(
-                        grantee=sp_client_id,
-                        privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE],
-                        schemas=existing_schemas,
-                    )
-                except Exception as exc:
-                    _log(f"  Schema grant warning: {exc}")
-                try:
-                    client.grant_all_tables_in_schema(
-                        grantee=sp_client_id,
-                        privileges=[TablePrivilege.ALL],
-                        schemas=existing_schemas,
-                    )
-                except Exception as exc:
-                    _log(f"  Table grant warning: {exc}")
-
-                # Raw SQL grants for tables and sequences.
-                # Note: GRANT ALL on sequences includes DELETE which is invalid
-                # for sequences (SQLSTATE 0LP01). Use specific privileges instead.
-                for schema in existing_schemas:
-                    _try_sql(
-                        client,
-                        f"GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA {schema} TO {quoted_sp};",
-                    )
-                    _try_sql(
-                        client,
-                        f"GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA {schema} TO {quoted_sp};",
-                    )
-
-                # Workaround for Lakebase bug: the on_create_sequence event trigger
-                # only grants to databricks_superuser (not to individual users like
-                # on_create_table does). So bulk sequence grants silently skip
-                # sequences owned by other users. SET ROLE to databricks_superuser
-                # (which HAS been granted on all sequences) to execute grants with
-                # that role's privileges.
-                _log("  Attempting sequence grants via SET ROLE databricks_superuser...")
-                try:
-                    client.execute("SET ROLE databricks_superuser;")
-                    for schema in existing_schemas:
-                        _try_sql(
-                            client,
-                            f"GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA {schema} TO {quoted_sp};",
-                        )
-                    # Also grant on individual sequences by name as a fallback
-                    seq_rows = client.execute(
-                        "SELECT schemaname, sequencename FROM pg_sequences WHERE schemaname = ANY(%s);",
-                        ([s for s in existing_schemas],),
-                    )
-                    if seq_rows:
-                        for seq in seq_rows:
-                            _try_sql(
-                                client,
-                                f"GRANT USAGE, SELECT, UPDATE ON SEQUENCE "
-                                f"{seq['schemaname']}.{seq['sequencename']} TO {quoted_sp};",
-                            )
-                        _log(f"  Granted on {len(seq_rows)} individual sequence(s) via databricks_superuser")
-                    client.execute("RESET ROLE;")
-                except Exception as exc:
-                    _log(f"  SET ROLE databricks_superuser failed: {exc}")
-                    # Try RESET ROLE in case SET ROLE succeeded but grants failed
-                    try:
-                        client.execute("RESET ROLE;")
-                    except Exception:
-                        pass
-                    # Fall back to granting as current user (individual sequences)
-                    seq_rows = client.execute(
-                        "SELECT schemaname, sequencename FROM pg_sequences WHERE schemaname = ANY(%s);",
-                        ([s for s in existing_schemas],),
-                    )
-                    if seq_rows:
-                        for seq in seq_rows:
-                            _try_sql(
-                                client,
-                                f"GRANT USAGE, SELECT, UPDATE ON SEQUENCE "
-                                f"{seq['schemaname']}.{seq['sequencename']} TO {quoted_sp};",
-                            )
-                        _log(f"  Granted on {len(seq_rows)} individual sequence(s) as current user (fallback)")
-
-                # Log sequences owned by other users for debugging
-                current_user = client.execute("SELECT current_user;")[0]["current_user"]
-                stale_seqs = client.execute(
-                    "SELECT schemaname, sequencename, sequenceowner FROM pg_sequences "
-                    "WHERE schemaname = ANY(%s) AND sequenceowner NOT IN (%s, %s);",
-                    ([s for s in existing_schemas], current_user, sp_client_id),
-                )
-                if stale_seqs:
-                    for seq in stale_seqs:
-                        _log(
-                            f"  INFO: sequence {seq['schemaname']}.{seq['sequencename']} "
-                            f"is owned by {seq['sequenceowner']}"
-                        )
-
-                # Grant default privileges so future tables/sequences created
-                # in these schemas are automatically accessible to the SP
-                for schema in existing_schemas:
-                    _try_sql(
-                        client,
-                        f"ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} "
-                        f"GRANT SELECT, INSERT, UPDATE ON TABLES TO {quoted_sp};",
-                    )
-                    _try_sql(
-                        client,
-                        f"ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} "
-                        f"GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO {quoted_sp};",
-                    )
-
-            _log(f"Lakebase access granted to {sp_client_id}.")
-    except Exception as exc:
-        raise RuntimeError(f"grant_lakebase_access failed for {app_name}: {exc}") from exc
+    result = _run_cmd(cmd, cwd=template_dir, env=env, timeout=BUNDLE_TIMEOUT, verbose=True)
+    assert result.returncode == 0, (
+        f"grant_lakebase_permissions.py failed for {app_name}:\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    _log(f"Lakebase access granted to {sp_client_id}.")

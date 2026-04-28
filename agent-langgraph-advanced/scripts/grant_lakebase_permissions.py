@@ -140,37 +140,50 @@ def _grant_permissions(client, grantee: str, memory_type: str):
 
     # Lakebase platform quirk: when a sequence is auto-created (e.g. by a
     # SERIAL / id_seq column), the on_create_sequence event trigger grants
-    # only to databricks_superuser — unlike on_create_table, it doesn't
-    # also grant to the creating user. Bulk grants run as the connected
-    # identity then silently skip every sequence the connected user
-    # doesn't own, leaving new app SPs without USAGE on existing
-    # sequences. Re-run the bulk grants after `SET ROLE databricks_superuser`
-    # so the GRANT statements execute with the role that does own them.
-    # No-op when the connected user isn't a member of databricks_superuser
-    # (SET ROLE will raise; we log and move on).
-    print("Re-running sequence grants via SET ROLE databricks_superuser (covers sequences owned by other roles)...")
-    try:
-        client.execute("SET ROLE databricks_superuser;")
+    # ownership only to databricks_superuser — unlike on_create_table, it
+    # doesn't also grant to the creating user. And Postgres's
+    # `GRANT … ON ALL SEQUENCES IN SCHEMA` shorthand only targets
+    # sequences the executing role *owns*, even when the executor has
+    # GRANT privileges via role inheritance. Net effect: the bulk grants
+    # above silently skip every sequence the connected user doesn't own,
+    # leaving new app SPs without USAGE on existing sequences and the
+    # deployed app failing with "permission denied for sequence
+    # <name>_id_seq" on first INSERT.
+    #
+    # Workaround: enumerate sequences via pg_sequences and grant on each
+    # individually. Individual GRANTs honor role inheritance, so any
+    # connected user that's a databricks_superuser member (the role that
+    # ends up owning auto-created sequences) can grant on them — no
+    # SET ROLE required, no `set_option` needed on the membership.
+    print("Granting on individual sequences (covers sequences owned by other roles)...")
+    seq_rows = client.execute(
+        "SELECT schemaname, sequencename FROM pg_sequences WHERE schemaname = ANY(%s);",
+        (seq_schemas,),
+    )
+    quoted_grantee = f'"{grantee}"'
+    granted = 0
+    skipped: list[str] = []
+    for seq in seq_rows or []:
+        qualified = f"{seq['schemaname']}.{seq['sequencename']}"
         try:
-            for schema in seq_schemas:
-                try:
-                    client.grant_all_sequences_in_schema(
-                        grantee=grantee,
-                        schemas=[schema],
-                        privileges=[
-                            SequencePrivilege.USAGE,
-                            SequencePrivilege.SELECT,
-                            SequencePrivilege.UPDATE,
-                        ],
-                    )
-                except Exception as e:
-                    print(f"  Warning: sequence grant under SET ROLE failed for '{schema}': {e}")
-        finally:
-            client.execute("RESET ROLE;")
-    except Exception as e:
+            client.execute(
+                f"GRANT USAGE, SELECT, UPDATE ON SEQUENCE {qualified} TO {quoted_grantee};"
+            )
+            granted += 1
+        except Exception as e:
+            skipped.append(f"{qualified}: {e}")
+    if granted:
+        print(f"  Granted on {granted} individual sequence(s).")
+    if skipped:
         print(
-            f"  Skipped SET ROLE fallback: {e}. "
-            "If the app hits 'permission denied for sequence' on first use, "
+            f"  {len(skipped)} sequence(s) could not be granted (likely not a databricks_superuser member):"
+        )
+        for line in skipped[:5]:
+            print(f"    - {line}")
+        if len(skipped) > 5:
+            print(f"    ... and {len(skipped) - 5} more")
+        print(
+            "  If the app hits 'permission denied for sequence' on first use, "
             "ask a workspace admin to add this user to databricks_superuser and re-run."
         )
 

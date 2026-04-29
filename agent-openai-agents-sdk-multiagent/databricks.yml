@@ -54,7 +54,7 @@ resources:
         - name: 'agent_app'
           app:
             name: '<YOUR-TARGET-APP-NAME>'
-            permission: CAN_USE
+            permission: 'CAN_USE'
 
 targets:
   dev:

@@ -170,6 +170,7 @@ After installation, the skills will be available as slash commands (e.g., `/agen
 | `scripts/discover_tools.py` | Discovers available workspace resources |
 | `scripts/grant_lakebase_permissions.py` | Grants Lakebase Postgres permissions to app SP |
 | `scripts/test_long_running_agent.py` | Tests for long-running background mode |
+| `.github/workflows/deploy.yml` | GitHub Actions workflow to deploy this app (OIDC federation + `bundle deploy` + `bundle run`). Note: autoscaling Lakebase needs a one-time postgres wiring before CI takes over — see the **deploy** skill. |
 
 ---
 

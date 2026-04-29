@@ -128,7 +128,8 @@ dmypy.json
 .pyre/
 
 # uv
-**/uv.lock
+# uv.lock is committed per-template for Databricks Apps deployment
+.scripts/**/uv.lock
 
 # Visual Studio Code
 .vscode/

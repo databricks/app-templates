@@ -17,6 +17,30 @@ from databricks_ai_bridge.lakebase import LakebaseClient
 from template_config import FileEdit
 
 # ---------------------------------------------------------------------------
+# Environment scrub: UV_EXCLUDE_NEWER
+# ---------------------------------------------------------------------------
+# The runner workflow sets UV_EXCLUDE_NEWER workflow-wide to pin the
+# runner's *own* deps to a fixed release date (the workflow's "Sync
+# test dependencies" step is where that's actually meant to apply).
+# But the variable leaks into every subprocess pytest spawns — and any
+# `uv run` / `uv sync` invocation against a template subdir then
+# re-resolves under the cutoff and rewrites the template's `uv.lock`
+# with `excluded-newer` baked into its metadata. Bundle deploy uploads
+# the contaminated lock; the Databricks Apps runtime runs
+# `uv sync --locked` *without* the env var, sees the cutoff was
+# removed, ignores the lock, and fails:
+#     Ignoring existing lockfile due to removal of global exclude newer
+#     The lockfile at `uv.lock` needs to be updated, but `--locked`
+#     was provided.
+# End users running `bundle deploy` from their own shell don't have the
+# env var either, so scrubbing it from this process's environment makes
+# every uv subprocess (whether started via _run_cmd, subprocess.Popen
+# in start_server, or anywhere else) behave like the end-user flow.
+# Safe to do at import time: pytest imports helpers AFTER the workflow's
+# "Sync test dependencies" step has already run.
+os.environ.pop("UV_EXCLUDE_NEWER", None)
+
+# ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 POLL_INTERVAL = 30  # seconds between polls
@@ -115,25 +139,9 @@ def _run_cmd(cmd: list[str], *, verbose: bool = False, **kwargs) -> subprocess.C
         — ``✓ <cmd>  (<duration>)`` — and full detail on failure.
       * Pass ``verbose=True`` to force full output on both paths (useful
         when the command's output is itself the test signal).
-
-    For ``uv`` subprocess calls, ``UV_EXCLUDE_NEWER`` is scrubbed from
-    the environment. The runner workflow sets that variable to pin the
-    runner's own deps, but it leaks into every ``uv`` invocation — and
-    when it applies to a template subdir's ``uv run`` / ``uv sync``, uv
-    rewrites the template's ``uv.lock`` with ``excluded-newer`` baked
-    into its metadata. Bundle deploy then uploads that contaminated lock
-    and the Apps runtime ``uv sync --locked`` rejects it because the
-    deploy environment doesn't have the cutoff. End users running
-    ``bundle deploy`` from their own shell don't have the env var
-    either, so scrubbing it for template-side uv calls makes the test
-    match the end-user flow.
     """
     kwargs.setdefault("capture_output", True)
     kwargs.setdefault("text", True)
-    if cmd and cmd[0] == "uv":
-        env = kwargs.get("env") or os.environ.copy()
-        env.pop("UV_EXCLUDE_NEWER", None)
-        kwargs["env"] = env
     cmd_str = " ".join(cmd)
     short_cmd = " ".join(cmd[:3]) + ("..." if len(cmd) > 3 else "")
     t0 = time.monotonic()
@@ -277,20 +285,14 @@ def clean_template(template_dir: Path):
 
 
 def uv_sync(template_dir: Path, max_attempts: int = 3):
-    """Run `uv sync --frozen` to create the venv from the checked-in lockfile.
-
-    `--frozen` belt-and-suspenders: the underlying scrub of
-    ``UV_EXCLUDE_NEWER`` in ``_run_cmd`` already prevents the template's
-    lockfile from being mutated, but ``--frozen`` makes it impossible
-    even if a future change forgets to scrub — uv refuses to update the
-    lock and errors loudly instead of silently rewriting it.
+    """Run `uv sync` to create/update the venv before quickstart.
 
     Retries up to ``max_attempts`` times with a short backoff to absorb
     transient PyPI / proxy hiccups, then falls back to UV_OFFLINE=true
     one more time as a last resort.
     """
     for attempt in range(1, max_attempts + 1):
-        result = _run_cmd(["uv", "sync", "--frozen"], cwd=template_dir, timeout=QUICKSTART_TIMEOUT)
+        result = _run_cmd(["uv", "sync"], cwd=template_dir, timeout=QUICKSTART_TIMEOUT)
         if result.returncode == 0:
             return
         if attempt < max_attempts:
@@ -300,7 +302,7 @@ def uv_sync(template_dir: Path, max_attempts: int = 3):
     _log(f"  uv sync failed online; falling back to UV_OFFLINE=true (cache-only)...")
     env = os.environ.copy()
     env["UV_OFFLINE"] = "true"
-    result = _run_cmd(["uv", "sync", "--frozen"], cwd=template_dir, timeout=QUICKSTART_TIMEOUT, env=env)
+    result = _run_cmd(["uv", "sync"], cwd=template_dir, timeout=QUICKSTART_TIMEOUT, env=env)
     assert result.returncode == 0, (
         f"uv sync failed in {template_dir.name}:\n"
         f"stdout: {result.stdout}\n"

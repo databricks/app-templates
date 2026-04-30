@@ -1,0 +1,4 @@
+command: ['npm', 'run', 'start']
+env:
+  - name: DATABRICKS_SERVING_ENDPOINT_NAME
+    valueFrom: serving-endpoint

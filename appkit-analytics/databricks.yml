@@ -11,7 +11,7 @@ resources:
       name: "appkit-analytics"
       description: "Node.js app with SQL analytics dashboards and charts"
       source_code_path: ./
-      # Uncomment to enable on behalf of user API scopes. Available scopes: sql, dashboards.genie, files.files
+      # Uncomment to enable on behalf of user API scopes. Available scopes: sql, dashboards.genie, files.files, serving.serving-endpoints
       # user_api_scopes:
       #   - sql
 

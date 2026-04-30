@@ -16,6 +16,14 @@ import requests
 from databricks_ai_bridge.lakebase import LakebaseClient
 from template_config import FileEdit
 
+# Strip runner-specific uv config so template-side `uv run` / `uv sync`
+# don't bake `excluded-newer` (global + per-package) into the template's
+# `uv.lock`, which would then be rejected by Apps runtime's
+# `uv sync --locked`. See databricks/app-templates#206 for full rationale.
+os.environ.pop("UV_EXCLUDE_NEWER", None)
+os.environ.pop("UV_CONFIG_FILE", None)
+os.environ["UV_NO_CONFIG"] = "1"
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------

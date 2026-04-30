@@ -10,7 +10,10 @@ import {
 } from '@chat-template/auth';
 import { createDatabricksProvider } from '@databricks/ai-sdk-provider';
 import { extractReasoningMiddleware, wrapLanguageModel } from 'ai';
-import { shouldInjectContextForEndpoint } from './request-context';
+import {
+  getApiProxyUrl,
+  shouldInjectContextForEndpoint,
+} from './request-context';
 
 // Header keys for passing context through streamText headers
 export const CONTEXT_HEADER_CONVERSATION_ID = 'x-databricks-conversation-id';
@@ -71,7 +74,19 @@ export async function getWorkspaceHostname(): Promise<string> {
 // Environment variable to enable SSE logging
 const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true';
 
-const API_PROXY = process.env.API_PROXY;
+const API_PROXY = getApiProxyUrl();
+
+// Always-rotate alias map: chat_id (the conversation_id the client uses) →
+// rotated conversation_id from the most recent durable-resume.
+//
+// When the bridge resumes a crashed run, it rotates `context.conversation_id`
+// to `{base}::attempt-N` and emits `response.resumed { conversation_id: ... }`
+// in the SSE stream. We capture that rotation here so subsequent turns from
+// the same chat send the rotated value as `context.conversation_id`, landing
+// on the rotated (clean) SDK session instead of the original orphan-poisoned
+// row. In-memory only — fine for a single Express process; a multi-pod
+// deployment would persist this in the chat row.
+const rotatedConversationIdByChat = new Map<string, string>();
 
 // Cache for endpoint details to check task type and OBO scopes
 const endpointDetailsCache = new Map<
@@ -96,6 +111,69 @@ function shouldInjectContext(): boolean {
   return shouldInjectContextForEndpoint(endpointTask);
 }
 
+// Wrap an SSE response body so we can sniff `response.resumed` events and
+// remember the rotated conversation_id for the originating chat. The original
+// stream is passed through untouched to the AI SDK consumer.
+function wrapResponseToCaptureRotation(
+  response: Response,
+  chatId: string,
+): Response {
+  if (!response.body) {
+    return response;
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  const wrapped = new ReadableStream({
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(value);
+
+      // Parse data: lines for response.resumed events. Buffered because
+      // SSE frames can split across chunks.
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (!data || data === '[DONE]') continue;
+        try {
+          const evt = JSON.parse(data);
+          if (
+            evt?.type === 'response.resumed' &&
+            typeof evt.conversation_id === 'string'
+          ) {
+            const prior = rotatedConversationIdByChat.get(chatId);
+            if (prior !== evt.conversation_id) {
+              rotatedConversationIdByChat.set(chatId, evt.conversation_id);
+              console.log(
+                `[durable-alias] chat ${chatId} ← rotated conversation_id ${evt.conversation_id} captured from response.resumed`,
+              );
+            }
+          }
+        } catch {
+          // Non-JSON data line — ignore.
+        }
+      }
+    },
+    cancel() {
+      reader.cancel();
+    },
+  });
+
+  return new Response(wrapped, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
 // Custom fetch function to transform Databricks responses to OpenAI format
 export const databricksFetch: typeof fetch = async (input, init) => {
   const url = input.toString();
@@ -110,9 +188,26 @@ export const databricksFetch: typeof fetch = async (input, init) => {
   headers.delete(CONTEXT_HEADER_USER_ID);
   requestInit = { ...requestInit, headers };
 
+  // Resolve the always-rotate alias: if a prior turn for this chat ended on
+  // a rotated conversation_id (durable-resume), use the rotated value so we
+  // land on the clean rotated SDK session instead of the orphan-poisoned
+  // original.
+  const effectiveConversationId =
+    (conversationId && rotatedConversationIdByChat.get(conversationId)) ||
+    conversationId;
+  if (
+    effectiveConversationId &&
+    conversationId &&
+    effectiveConversationId !== conversationId
+  ) {
+    console.log(
+      `[durable-alias] chat ${conversationId} → using rotated conversation_id ${effectiveConversationId}`,
+    );
+  }
+
   // Inject context into request body if appropriate
   if (
-    conversationId &&
+    effectiveConversationId &&
     userId &&
     requestInit?.body &&
     typeof requestInit.body === 'string'
@@ -124,7 +219,7 @@ export const databricksFetch: typeof fetch = async (input, init) => {
           ...body,
           context: {
             ...body.context,
-            conversation_id: conversationId,
+            conversation_id: effectiveConversationId,
             user_id: userId,
           },
         };
@@ -159,7 +254,21 @@ export const databricksFetch: typeof fetch = async (input, init) => {
     }
   }
 
-  const response = await fetch(url, requestInit);
+  let response = await fetch(url, requestInit);
+
+  // Capture rotated conversation_id from the SSE stream's response.resumed
+  // sentinel so subsequent requests for the same chat use the rotated value
+  // (always-rotate alias). Wraps the body once; the SSE-logging wrap below
+  // composes on top if enabled.
+  if (response.body && conversationId) {
+    const contentType = response.headers.get('content-type') || '';
+    if (
+      contentType.includes('text/event-stream') ||
+      contentType.includes('application/x-ndjson')
+    ) {
+      response = wrapResponseToCaptureRotation(response, conversationId);
+    }
+  }
 
   // If SSE logging is enabled and this is a streaming response, wrap the body to log events
   if (LOG_SSE_EVENTS && response.body) {

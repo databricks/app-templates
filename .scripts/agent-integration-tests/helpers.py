@@ -115,9 +115,25 @@ def _run_cmd(cmd: list[str], *, verbose: bool = False, **kwargs) -> subprocess.C
         — ``✓ <cmd>  (<duration>)`` — and full detail on failure.
       * Pass ``verbose=True`` to force full output on both paths (useful
         when the command's output is itself the test signal).
+
+    For ``uv`` subprocess calls, ``UV_EXCLUDE_NEWER`` is scrubbed from
+    the environment. The runner workflow sets that variable to pin the
+    runner's own deps, but it leaks into every ``uv`` invocation — and
+    when it applies to a template subdir's ``uv run`` / ``uv sync``, uv
+    rewrites the template's ``uv.lock`` with ``excluded-newer`` baked
+    into its metadata. Bundle deploy then uploads that contaminated lock
+    and the Apps runtime ``uv sync --locked`` rejects it because the
+    deploy environment doesn't have the cutoff. End users running
+    ``bundle deploy`` from their own shell don't have the env var
+    either, so scrubbing it for template-side uv calls makes the test
+    match the end-user flow.
     """
     kwargs.setdefault("capture_output", True)
     kwargs.setdefault("text", True)
+    if cmd and cmd[0] == "uv":
+        env = kwargs.get("env") or os.environ.copy()
+        env.pop("UV_EXCLUDE_NEWER", None)
+        kwargs["env"] = env
     cmd_str = " ".join(cmd)
     short_cmd = " ".join(cmd[:3]) + ("..." if len(cmd) > 3 else "")
     t0 = time.monotonic()
@@ -263,22 +279,11 @@ def clean_template(template_dir: Path):
 def uv_sync(template_dir: Path, max_attempts: int = 3):
     """Run `uv sync --frozen` to create the venv from the checked-in lockfile.
 
-    `--frozen` matters: the runner workflow sets `UV_EXCLUDE_NEWER` to pin
-    third-party churn in the runner's own deps. That env var also leaks
-    into `uv sync` invocations in the template subdir — uv re-resolves
-    under the cutoff and rewrites the template's `uv.lock` with
-    `excluded-newer` baked into its metadata. Bundle deploy then uploads
-    the contaminated lockfile, and the Databricks Apps runtime — which
-    runs `uv sync --locked` *without* the env var — detects the cutoff
-    was removed, ignores the lock, re-resolves to a different package
-    set, and fails:
-        Ignoring existing lockfile due to removal of global exclude newer
-        The lockfile at `uv.lock` needs to be updated, but `--locked`
-        was provided.
-    `--frozen` installs straight from the existing lock without
-    re-resolving, leaving the on-disk lockfile byte-identical so deploy
-    uploads the version the template's authors checked in (matching the
-    end-user `bundle deploy` flow exactly).
+    `--frozen` belt-and-suspenders: the underlying scrub of
+    ``UV_EXCLUDE_NEWER`` in ``_run_cmd`` already prevents the template's
+    lockfile from being mutated, but ``--frozen`` makes it impossible
+    even if a future change forgets to scrub — uv refuses to update the
+    lock and errors loudly instead of silently rewriting it.
 
     Retries up to ``max_attempts`` times with a short backoff to absorb
     transient PyPI / proxy hiccups, then falls back to UV_OFFLINE=true

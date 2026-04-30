@@ -190,9 +190,12 @@ async def deduplicate_input(request: ResponsesAgentRequest, session: AsyncDatabr
     """Return the input messages to pass to the Runner, avoiding duplication with session history.
 
     When a client sends the full conversation history AND the session already has
-    that history persisted, passing everything through would duplicate messages.
-    If the session already covers the prior turns, only the latest message is needed
-    since the session will prepend the full history automatically.
+    that history persisted, passing everything through would duplicate messages
+    in the LLM call (Runner combines session items + input items, and the OpenAI
+    SDK's `_dedupe_key` doesn't dedupe role-bearing items — see
+    `agents/run_internal/items.py:224-250`). If the session already has any
+    items, the prior turns are persisted there and we only need to forward the
+    latest user message.
     """
     messages = [i.model_dump() for i in request.input]
     # Normalize assistant message content from string to structured list format.
@@ -207,7 +210,10 @@ async def deduplicate_input(request: ResponsesAgentRequest, session: AsyncDatabr
         ):
             msg["content"] = [{"type": "output_text", "text": msg["content"], "annotations": []}]
     session_items = await session.get_items()
-    if len(session_items) >= len(messages) - 1:
+    # Trust the session as authoritative for prior turns. Forward only the
+    # latest message (the new user turn). The Runner will prepend session
+    # history on the LLM call automatically.
+    if session_items and len(messages) > 1:
         return [messages[-1]]
     return messages
 

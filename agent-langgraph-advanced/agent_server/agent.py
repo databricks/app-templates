@@ -123,6 +123,20 @@ async def stream_handler(
             # For on-behalf-of user authentication, pass get_user_workspace_client() to init_agent.
             agent = await init_agent(store=store, checkpointer=checkpointer)
 
+            # When the checkpointer already has prior turns for this thread,
+            # the chat client's full-history echo is redundant — `add_messages`
+            # would append duplicates (it dedupes by `id`, but MLflow's
+            # `responses_to_cc` doesn't preserve IDs, so dedup never fires).
+            # Forward only the latest user message; the checkpointer prepends
+            # the rest.
+            state = await agent.aget_state(config)
+            if state and state.values.get("messages") and input_state["messages"]:
+                last_user = next(
+                    (m for m in reversed(input_state["messages"]) if m.get("role") == "user"),
+                    None,
+                )
+                input_state["messages"] = [last_user] if last_user else []
+
             async for event in process_agent_astream_events(
                 agent.astream(input_state, config, stream_mode=["updates", "messages"])
             ):

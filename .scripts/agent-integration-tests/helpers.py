@@ -261,14 +261,31 @@ def clean_template(template_dir: Path):
 
 
 def uv_sync(template_dir: Path, max_attempts: int = 3):
-    """Run `uv sync` to create/update the venv before quickstart.
+    """Run `uv sync --frozen` to create the venv from the checked-in lockfile.
+
+    `--frozen` matters: the runner workflow sets `UV_EXCLUDE_NEWER` to pin
+    third-party churn in the runner's own deps. That env var also leaks
+    into `uv sync` invocations in the template subdir — uv re-resolves
+    under the cutoff and rewrites the template's `uv.lock` with
+    `excluded-newer` baked into its metadata. Bundle deploy then uploads
+    the contaminated lockfile, and the Databricks Apps runtime — which
+    runs `uv sync --locked` *without* the env var — detects the cutoff
+    was removed, ignores the lock, re-resolves to a different package
+    set, and fails:
+        Ignoring existing lockfile due to removal of global exclude newer
+        The lockfile at `uv.lock` needs to be updated, but `--locked`
+        was provided.
+    `--frozen` installs straight from the existing lock without
+    re-resolving, leaving the on-disk lockfile byte-identical so deploy
+    uploads the version the template's authors checked in (matching the
+    end-user `bundle deploy` flow exactly).
 
     Retries up to ``max_attempts`` times with a short backoff to absorb
     transient PyPI / proxy hiccups, then falls back to UV_OFFLINE=true
     one more time as a last resort.
     """
     for attempt in range(1, max_attempts + 1):
-        result = _run_cmd(["uv", "sync"], cwd=template_dir, timeout=QUICKSTART_TIMEOUT)
+        result = _run_cmd(["uv", "sync", "--frozen"], cwd=template_dir, timeout=QUICKSTART_TIMEOUT)
         if result.returncode == 0:
             return
         if attempt < max_attempts:
@@ -278,7 +295,7 @@ def uv_sync(template_dir: Path, max_attempts: int = 3):
     _log(f"  uv sync failed online; falling back to UV_OFFLINE=true (cache-only)...")
     env = os.environ.copy()
     env["UV_OFFLINE"] = "true"
-    result = _run_cmd(["uv", "sync"], cwd=template_dir, timeout=QUICKSTART_TIMEOUT, env=env)
+    result = _run_cmd(["uv", "sync", "--frozen"], cwd=template_dir, timeout=QUICKSTART_TIMEOUT, env=env)
     assert result.returncode == 0, (
         f"uv sync failed in {template_dir.name}:\n"
         f"stdout: {result.stdout}\n"

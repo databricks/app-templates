@@ -17,28 +17,44 @@ from databricks_ai_bridge.lakebase import LakebaseClient
 from template_config import FileEdit
 
 # ---------------------------------------------------------------------------
-# Environment scrub: UV_EXCLUDE_NEWER
+# Environment scrub: prevent uv from contaminating the template's uv.lock
 # ---------------------------------------------------------------------------
-# The runner workflow sets UV_EXCLUDE_NEWER workflow-wide to pin the
-# runner's *own* deps to a fixed release date (the workflow's "Sync
-# test dependencies" step is where that's actually meant to apply).
-# But the variable leaks into every subprocess pytest spawns — and any
-# `uv run` / `uv sync` invocation against a template subdir then
-# re-resolves under the cutoff and rewrites the template's `uv.lock`
-# with `excluded-newer` baked into its metadata. Bundle deploy uploads
-# the contaminated lock; the Databricks Apps runtime runs
-# `uv sync --locked` *without* the env var, sees the cutoff was
-# removed, ignores the lock, and fails:
-#     Ignoring existing lockfile due to removal of global exclude newer
-#     The lockfile at `uv.lock` needs to be updated, but `--locked`
-#     was provided.
-# End users running `bundle deploy` from their own shell don't have the
-# env var either, so scrubbing it from this process's environment makes
-# every uv subprocess (whether started via _run_cmd, subprocess.Popen
-# in start_server, or anywhere else) behave like the end-user flow.
-# Safe to do at import time: pytest imports helpers AFTER the workflow's
-# "Sync test dependencies" step has already run.
+# Two pieces of runner config leak into template uv invocations and
+# rewrite the template's `uv.lock` with resolution-context metadata
+# the Databricks Apps build environment doesn't share:
+#
+#   1. UV_EXCLUDE_NEWER (set workflow-wide) — pins the runner's *own*
+#      deps to a fixed release date. When applied to a template subdir's
+#      `uv run` / `uv sync`, uv re-resolves under the cutoff and bakes
+#      `excluded-newer` into the lock metadata. Apps runtime then runs
+#      `uv sync --locked` without the env var, sees:
+#          Ignoring existing lockfile due to removal of global exclude newer
+#          The lockfile at `uv.lock` needs to be updated, but `--locked`
+#          was provided.
+#
+#   2. The runner repo's `uv.toml` (referenced by UV_CONFIG_FILE, but
+#      also auto-discovered by uv walking up from the template subdir
+#      to the workspace root). It defines per-package exclude-newer
+#      overrides for databricks-* packages. Same failure mode, different
+#      message:
+#          Ignoring existing lockfile due to removal of exclude newer
+#          for package `databricks-openai`.
+#
+# End users running `bundle deploy` from their own shell don't have any
+# of this configured, so we strip both at import time:
+#   * pop UV_EXCLUDE_NEWER and UV_CONFIG_FILE.
+#   * set UV_NO_CONFIG=1 to disable uv's walk-up discovery of the
+#     runner repo's `uv.toml` (popping UV_CONFIG_FILE alone isn't
+#     enough — uv finds the file via cwd ancestry).
+# Every subprocess pytest spawns (whether via _run_cmd, subprocess.Popen
+# in start_server, or anywhere else) inherits these scrubs.
+#
+# Safe at import time: pytest imports helpers AFTER the workflow's
+# "Sync test dependencies" step has already run with full config
+# applied.
 os.environ.pop("UV_EXCLUDE_NEWER", None)
+os.environ.pop("UV_CONFIG_FILE", None)
+os.environ["UV_NO_CONFIG"] = "1"
 
 # ---------------------------------------------------------------------------
 # Constants

@@ -1,0 +1,9 @@
+version: 1
+name: "Non-Conversational Agent"
+description: "A non-conversational GenAI agent that processes structured financial document questions and provides yes/no answers with detailed reasoning."
+
+resource_specs:
+  - name: "experiment"
+    description: "The experiment that the agent uses to trace the agent's execution."
+    experiment_spec:
+      permission: "CAN_EDIT"

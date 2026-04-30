@@ -1,0 +1,21 @@
+version: 1
+name: "Agent - OpenAI Multiagent"
+description: "A multi-agent orchestrator built with the OpenAI Agents SDK that queries other agents, AI/BI Genie spaces, and Databricks Model Serving endpoints."
+
+resource_specs:
+  - name: "experiment"
+    description: "The destination experiment for traces from the orchestrator's execution."
+    experiment_spec:
+      permission: "CAN_EDIT"
+  - name: "genie_space"
+    description: "The AI/BI Genie space the orchestrator queries for natural language data questions."
+    genie_space_spec:
+      permission: "CAN_RUN"
+  - name: "knowledge_assistant"
+    description: "The Databricks Model Serving endpoint hosting a knowledge-assistant agent the orchestrator delegates to."
+    serving_endpoint_spec:
+      permission: "CAN_QUERY"
+  - name: "serving_endpoint"
+    description: "The Databricks Model Serving endpoint hosting an additional agent or LLM the orchestrator calls."
+    serving_endpoint_spec:
+      permission: "CAN_QUERY"

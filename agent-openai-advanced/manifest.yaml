@@ -1,0 +1,13 @@
+version: 1
+name: "Agent - OpenAI Advanced"
+description: "An OpenAI Agents SDK conversational agent with session memory and long-running background task support, backed by a Lakebase Autoscaling postgres database."
+
+resource_specs:
+  - name: "experiment"
+    description: "The destination experiment for traces from the agent's execution."
+    experiment_spec:
+      permission: "CAN_EDIT"
+  - name: "postgres"
+    description: "The Lakebase Autoscaling database the agent uses for session memory and long-running task persistence."
+    postgres_spec:
+      permission: "CAN_CONNECT_AND_CREATE"

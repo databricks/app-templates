@@ -1,0 +1,9 @@
+version: 1
+name: "Lakebase Autoscaling app"
+description: "A basic todo application which stores tasks in an autoscaling postgres database hosted on Databricks."
+
+resource_specs:
+  - name: "postgres"
+    description: "The database the app uses to store and retrieve todo tasks."
+    postgres_spec:
+      permission: "CAN_CONNECT_AND_CREATE"

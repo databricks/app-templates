@@ -1,0 +1,3 @@
+version: 1
+name: "MCP Server - Hello World"
+description: "A basic MCP server."

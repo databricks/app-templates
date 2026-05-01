@@ -206,8 +206,13 @@ async def deduplicate_input(request: ResponsesAgentRequest, session: AsyncDatabr
             and isinstance(msg.get("content"), str)
         ):
             msg["content"] = [{"type": "output_text", "text": msg["content"], "annotations": []}]
+    # Session is authoritative for cross-turn history when non-empty; only
+    # forward the latest message. Count-based heuristics break under
+    # prose-recovery (rotated session is fresh while the UI echo accumulated
+    # events from both attempts), forwarding duplicates that Anthropic-backed
+    # models reject as malformed tool_use/tool_result pairs.
     session_items = await session.get_items()
-    if len(session_items) >= len(messages) - 1:
+    if session_items and len(messages) > 1:
         return [messages[-1]]
     return messages
 

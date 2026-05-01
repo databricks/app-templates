@@ -23,6 +23,7 @@ from typing_extensions import Annotated
 from agent_server.prompts import SYSTEM_PROMPT
 from agent_server.utils import (
     _get_or_create_thread_id,
+    deduplicate_input,
     get_user_workspace_client,
     init_mcp_client,
     process_agent_astream_events,
@@ -110,10 +111,7 @@ async def stream_handler(
     if user_id:
         config["configurable"]["user_id"] = user_id
 
-    input_state: dict[str, Any] = {
-        "messages": to_chat_completions_input([i.model_dump() for i in request.input]),
-        "custom_inputs": dict(request.custom_inputs or {}),
-    }
+    incoming_messages = to_chat_completions_input([i.model_dump() for i in request.input])
 
     try:
         async with lakebase_context(LAKEBASE_CONFIG) as (checkpointer, store):
@@ -122,6 +120,11 @@ async def stream_handler(
             # By default, uses service principal credentials.
             # For on-behalf-of user authentication, pass get_user_workspace_client() to init_agent.
             agent = await init_agent(store=store, checkpointer=checkpointer)
+
+            input_state: dict[str, Any] = {
+                "messages": await deduplicate_input(agent, config, incoming_messages),
+                "custom_inputs": dict(request.custom_inputs or {}),
+            }
 
             async for event in process_agent_astream_events(
                 agent.astream(input_state, config, stream_mode=["updates", "messages"])

@@ -11,11 +11,27 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env", override=True)
 
 import logging
+import sys
 
 from databricks_ai_bridge.long_running import LongRunningAgentServer
 from mlflow.genai.agent_server import setup_mlflow_git_based_version_tracking
 
 logger = logging.getLogger(__name__)
+
+# Surface databricks_ai_bridge INFO logs (durable-execution lifecycle:
+# task spawn, resume, prose-recovery, terminal status, stale-scan claims)
+# in app stdout. Uvicorn's default logging config drops INFO from
+# non-uvicorn loggers, so attach a stream handler explicitly.
+_bridge_logger = logging.getLogger("databricks_ai_bridge")
+if _bridge_logger.level == logging.NOTSET or _bridge_logger.level > logging.INFO:
+    _bridge_logger.setLevel(logging.INFO)
+if not any(isinstance(h, logging.StreamHandler) for h in _bridge_logger.handlers):
+    _bridge_handler = logging.StreamHandler(sys.stdout)
+    _bridge_handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
+    _bridge_logger.addHandler(_bridge_handler)
+    _bridge_logger.propagate = False
 
 # Need to import the agent to register the functions with the server
 import agent_server.agent  # noqa: F401

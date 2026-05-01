@@ -73,6 +73,47 @@ const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true';
 
 const API_PROXY = process.env.API_PROXY;
 
+// Durable-execution support: when talking to a `LongRunningAgentServer` agent
+// (the case when API_PROXY is set in our advanced templates), we
+//   1. inject `background: true` so the server persists every SSE frame to its
+//      durable store and our retrieve endpoint can resume mid-stream;
+//   2. capture the rotated `conversation_id` from the `response.resumed`
+//      sentinel and replay it on the next user turn — without this, the next
+//      turn lands on the orphan-poisoned session;
+//   3. on connection close without `[DONE]`, transparently re-stream from the
+//      retrieve endpoint using the last seen sequence number.
+//
+// All three live here because `databricksFetch` is the single boundary the
+// Vercel AI SDK pipes every agent request through.
+const MAX_RESUME_ATTEMPTS = 5;
+const conversationAliasMap = new Map<string, string>();
+
+function captureRotation(
+  json: Record<string, unknown> | null,
+  originalChatId: string | null,
+): void {
+  if (!json || !originalChatId) return;
+  if (json.type !== 'response.resumed') return;
+  const rotated = json.conversation_id;
+  if (typeof rotated === 'string' && rotated.length > 0) {
+    conversationAliasMap.set(originalChatId, rotated);
+  }
+}
+
+function extractResponseId(json: Record<string, unknown> | null): string | null {
+  if (!json) return null;
+  if (typeof json.response_id === 'string') return json.response_id;
+  const resp = json.response as { id?: unknown } | undefined;
+  if (resp && typeof resp.id === 'string') return resp.id;
+  return null;
+}
+
+function buildRetrieveUrl(invocationsUrl: string, responseId: string): string {
+  // The bridge mounts GET /responses/{id} on the same origin as POST /invocations.
+  const base = invocationsUrl.replace(/\/invocations\/?$/, '');
+  return `${base}/responses/${encodeURIComponent(responseId)}`;
+}
+
 // Cache for endpoint details to check task type and OBO scopes
 const endpointDetailsCache = new Map<
   string,
@@ -110,28 +151,53 @@ export const databricksFetch: typeof fetch = async (input, init) => {
   headers.delete(CONTEXT_HEADER_USER_ID);
   requestInit = { ...requestInit, headers };
 
-  // Inject context into request body if appropriate
-  if (
-    conversationId &&
-    userId &&
-    requestInit?.body &&
-    typeof requestInit.body === 'string'
-  ) {
-    if (shouldInjectContext()) {
-      try {
-        const body = JSON.parse(requestInit.body);
-        const enhancedBody = {
-          ...body,
-          context: {
-            ...body.context,
-            conversation_id: conversationId,
-            user_id: userId,
-          },
+  // Mutate the request body for durable execution (when we have a body to
+  // mutate). Three things happen here, all conditional:
+  //   - Inject context.conversation_id / context.user_id from headers when the
+  //     endpoint expects it (existing behavior).
+  //   - Substitute conversation_id with any previously-captured rotated alias
+  //     so subsequent turns land on the right (post-resume) session.
+  //   - Set body.background = true on streaming requests when API_PROXY is
+  //     set, so the long-running server persists the stream to its store.
+  let originalChatId: string | null = null;
+  if (requestInit?.body && typeof requestInit.body === 'string') {
+    try {
+      const body = JSON.parse(requestInit.body);
+      let mutated = false;
+
+      if (conversationId && userId && shouldInjectContext()) {
+        body.context = {
+          ...(body.context ?? {}),
+          conversation_id: conversationId,
+          user_id: userId,
         };
-        requestInit = { ...requestInit, body: JSON.stringify(enhancedBody) };
-      } catch {
-        // If JSON parsing fails, pass through unchanged
+        mutated = true;
       }
+
+      const ctx = body.context as { conversation_id?: unknown } | undefined;
+      const ctxConvId =
+        ctx && typeof ctx.conversation_id === 'string'
+          ? ctx.conversation_id
+          : null;
+      if (ctxConvId) {
+        originalChatId = ctxConvId;
+        const aliased = conversationAliasMap.get(ctxConvId);
+        if (aliased && aliased !== ctxConvId) {
+          body.context = { ...body.context, conversation_id: aliased };
+          mutated = true;
+        }
+      }
+
+      if (API_PROXY && body.stream === true && body.background !== true) {
+        body.background = true;
+        mutated = true;
+      }
+
+      if (mutated) {
+        requestInit = { ...requestInit, body: JSON.stringify(body) };
+      }
+    } catch {
+      // If JSON parsing fails, pass through unchanged
     }
   }
 
@@ -161,58 +227,20 @@ export const databricksFetch: typeof fetch = async (input, init) => {
 
   const response = await fetch(url, requestInit);
 
-  // If SSE logging is enabled and this is a streaming response, wrap the body to log events
-  if (LOG_SSE_EVENTS && response.body) {
+  if (response.body) {
     const contentType = response.headers.get('content-type') || '';
     const isSSE =
       contentType.includes('text/event-stream') ||
       contentType.includes('application/x-ndjson');
 
     if (isSSE) {
-      const originalBody = response.body;
-      const reader = originalBody.getReader();
-      const decoder = new TextDecoder();
-      let eventCounter = 0;
-
-      const loggingStream = new ReadableStream({
-        async pull(controller) {
-          const { done, value } = await reader.read();
-
-          if (done) {
-            console.log('[SSE] Stream ended');
-            controller.close();
-            return;
-          }
-
-          // Decode and log the chunk
-          const text = decoder.decode(value, { stream: true });
-          const lines = text.split('\n').filter((line) => line.trim());
-
-          for (const line of lines) {
-            eventCounter++;
-            if (line.startsWith('data:')) {
-              const data = line.slice(5).trim();
-              try {
-                const parsed = JSON.parse(data);
-                console.log(`[SSE #${eventCounter}]`, JSON.stringify(parsed));
-              } catch {
-                console.log(`[SSE #${eventCounter}] (raw)`, data);
-              }
-            } else if (line.trim()) {
-              console.log(`[SSE #${eventCounter}] (line)`, line);
-            }
-          }
-
-          // Pass the original data through
-          controller.enqueue(value);
-        },
-        cancel() {
-          reader.cancel();
-        },
-      });
-
-      // Create a new response with the logging stream
-      return new Response(loggingStream, {
+      const wrapped = wrapDurableSseStream(
+        response.body,
+        url,
+        requestInit?.headers,
+        originalChatId,
+      );
+      return new Response(wrapped, {
         status: response.status,
         statusText: response.statusText,
         headers: response.headers,
@@ -222,6 +250,116 @@ export const databricksFetch: typeof fetch = async (input, init) => {
 
   return response;
 };
+
+/**
+ * Wrap a long-running-server SSE response so we can:
+ *   - sniff `response.resumed` frames and update the conversation alias map,
+ *   - track the last sequence number and response_id we observed,
+ *   - if the upstream stream closes before `[DONE]`, transparently re-stream
+ *     from `GET /responses/{id}?stream=true&starting_after=<seq>`.
+ *
+ * Bytes are passed through untouched; we only sniff data frames.
+ */
+function wrapDurableSseStream(
+  initialBody: ReadableStream<Uint8Array>,
+  invocationsUrl: string,
+  reqHeaders: HeadersInit | undefined,
+  originalChatId: string | null,
+): ReadableStream<Uint8Array> {
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let eventCounter = 0;
+  let responseId: string | null = null;
+  let lastSeq = -1;
+  let sawDone = false;
+  let attemptsLeft = MAX_RESUME_ATTEMPTS;
+
+  function processChunk(value: Uint8Array): void {
+    buffer += decoder.decode(value, { stream: true });
+    while (true) {
+      const nl = buffer.indexOf('\n');
+      if (nl === -1) break;
+      const line = buffer.slice(0, nl);
+      buffer = buffer.slice(nl + 1);
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      if (!trimmed.startsWith('data:')) continue;
+      const data = trimmed.slice(5).trim();
+      if (data === '[DONE]') {
+        sawDone = true;
+        if (LOG_SSE_EVENTS) console.log(`[SSE #${++eventCounter}] [DONE]`);
+        continue;
+      }
+      let json: Record<string, unknown> | null = null;
+      try {
+        json = JSON.parse(data) as Record<string, unknown>;
+      } catch {
+        if (LOG_SSE_EVENTS) console.log(`[SSE #${++eventCounter}] (raw)`, data);
+        continue;
+      }
+      if (LOG_SSE_EVENTS) {
+        console.log(`[SSE #${++eventCounter}]`, JSON.stringify(json));
+      }
+      captureRotation(json, originalChatId);
+      const rid = extractResponseId(json);
+      if (rid) responseId = rid;
+      const seq = json.sequence_number;
+      if (typeof seq === 'number' && seq > lastSeq) lastSeq = seq;
+    }
+  }
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      let currentBody: ReadableStream<Uint8Array> | null = initialBody;
+
+      while (currentBody) {
+        const reader = currentBody.getReader();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            controller.enqueue(value);
+            processChunk(value);
+          }
+        } catch (err) {
+          if (LOG_SSE_EVENTS) console.warn('[SSE] read error', err);
+        } finally {
+          reader.releaseLock();
+        }
+
+        if (sawDone) break;
+        if (!responseId || attemptsLeft <= 0) break;
+
+        attemptsLeft -= 1;
+        const startingAfter = Math.max(lastSeq, 0);
+        const resumeUrl =
+          `${buildRetrieveUrl(invocationsUrl, responseId)}` +
+          `?stream=true&starting_after=${startingAfter}`;
+        console.log(
+          `[SSE] upstream closed without [DONE], resuming response_id=${responseId} from seq=${startingAfter}`,
+        );
+        try {
+          const resp = await fetch(resumeUrl, {
+            method: 'GET',
+            headers: reqHeaders,
+          });
+          if (!resp.ok || !resp.body) {
+            console.warn(
+              `[SSE] resume request failed status=${resp.status}, giving up`,
+            );
+            break;
+          }
+          currentBody = resp.body;
+        } catch (err) {
+          console.warn('[SSE] resume fetch threw, giving up', err);
+          break;
+        }
+      }
+
+      controller.close();
+    },
+  });
+}
 
 type CachedProvider = ReturnType<typeof createDatabricksProvider>;
 let oauthProviderCache: CachedProvider | null = null;

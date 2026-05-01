@@ -139,14 +139,22 @@ class ProcessManager:
         if Path("e2e-chatbot-app-next").exists():
             return True
 
-        print("Cloning e2e-chatbot-app-next...")
+        # APP_TEMPLATES_BRANCH lets us pull the chatbot from a non-main branch
+        # while a templates change is still under review.
+        branch = os.environ.get("APP_TEMPLATES_BRANCH", "main")
+        print(f"Cloning e2e-chatbot-app-next (branch={branch})...")
         for url in [
             "https://github.com/databricks/app-templates.git",
             "git@github.com:databricks/app-templates.git",
         ]:
             try:
                 subprocess.run(
-                    ["git", "clone", "--filter=blob:none", "--sparse", url, "temp-app-templates"],
+                    [
+                        "git", "clone",
+                        "--filter=blob:none", "--sparse",
+                        "--branch", branch,
+                        url, "temp-app-templates",
+                    ],
                     check=True,
                     capture_output=True,
                 )

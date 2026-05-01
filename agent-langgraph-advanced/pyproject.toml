@@ -39,6 +39,11 @@ setup = [
 [tool.uv]
 default-groups = ["dev", "setup"]
 
+# TODO(durable-execution): pin to durable-execution branch until LongRunningAgentServer
+# ships in a stable databricks-ai-bridge release.
+[tool.uv.sources]
+databricks-ai-bridge = { git = "https://github.com/databricks/databricks-ai-bridge.git", branch = "dhruv0811/durable-execution-prose-recovery" }
+
 
 [tool.pytest.ini_options]
 base_url = "http://localhost:8000"

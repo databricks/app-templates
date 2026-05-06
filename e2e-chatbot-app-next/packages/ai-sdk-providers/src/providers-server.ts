@@ -73,32 +73,20 @@ const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true';
 
 const API_PROXY = process.env.API_PROXY;
 
-// Durable-execution support: when talking to a `LongRunningAgentServer` agent
-// (the case when API_PROXY is set in our advanced templates), we
-//   1. inject `background: true` so the server persists every SSE frame to its
-//      durable store and our retrieve endpoint can resume mid-stream;
-//   2. capture the rotated `conversation_id` from the `response.resumed`
-//      sentinel and replay it on the next user turn — without this, the next
-//      turn lands on the orphan-poisoned session;
-//   3. on connection close without `[DONE]`, transparently re-stream from the
-//      retrieve endpoint using the last seen sequence number.
+// Durable-execution support: when talking to a `LongRunningAgentServer`
+// agent (the case when `API_PROXY` is set in our advanced templates) we
+//   1. inject `background: true` so the server persists every SSE frame
+//      to its durable store and the retrieve endpoint can resume mid-stream;
+//   2. on connection close without `[DONE]`, transparently re-stream from
+//      the retrieve endpoint using the last seen sequence number.
 //
-// All three live here because `databricksFetch` is the single boundary the
-// Vercel AI SDK pipes every agent request through.
+// We deliberately do NOT track / substitute rotated `conversation_id`
+// values here. The bridge resolves rotation server-side via its
+// `conversation_aliases` table — the chatbot always sends the original
+// chat id and the bridge maps it to the post-rotation SDK session. This
+// is what lets the durable path survive chatbot restarts and multi-pod
+// chatbot deployments without any client-side state.
 const MAX_RESUME_ATTEMPTS = 5;
-const conversationAliasMap = new Map<string, string>();
-
-function captureRotation(
-  json: Record<string, unknown> | null,
-  originalChatId: string | null,
-): void {
-  if (!json || !originalChatId) return;
-  if (json.type !== 'response.resumed') return;
-  const rotated = json.conversation_id;
-  if (typeof rotated === 'string' && rotated.length > 0) {
-    conversationAliasMap.set(originalChatId, rotated);
-  }
-}
 
 function extractResponseId(json: Record<string, unknown> | null): string | null {
   if (!json) return null;
@@ -152,14 +140,11 @@ export const databricksFetch: typeof fetch = async (input, init) => {
   requestInit = { ...requestInit, headers };
 
   // Mutate the request body for durable execution (when we have a body to
-  // mutate). Three things happen here, all conditional:
+  // mutate). Two things happen here, both conditional:
   //   - Inject context.conversation_id / context.user_id from headers when the
   //     endpoint expects it (existing behavior).
-  //   - Substitute conversation_id with any previously-captured rotated alias
-  //     so subsequent turns land on the right (post-resume) session.
   //   - Set body.background = true on streaming requests when API_PROXY is
   //     set, so the long-running server persists the stream to its store.
-  let originalChatId: string | null = null;
   if (requestInit?.body && typeof requestInit.body === 'string') {
     try {
       const body = JSON.parse(requestInit.body);
@@ -172,20 +157,6 @@ export const databricksFetch: typeof fetch = async (input, init) => {
           user_id: userId,
         };
         mutated = true;
-      }
-
-      const ctx = body.context as { conversation_id?: unknown } | undefined;
-      const ctxConvId =
-        ctx && typeof ctx.conversation_id === 'string'
-          ? ctx.conversation_id
-          : null;
-      if (ctxConvId) {
-        originalChatId = ctxConvId;
-        const aliased = conversationAliasMap.get(ctxConvId);
-        if (aliased && aliased !== ctxConvId) {
-          body.context = { ...body.context, conversation_id: aliased };
-          mutated = true;
-        }
       }
 
       if (API_PROXY && body.stream === true && body.background !== true) {
@@ -238,7 +209,6 @@ export const databricksFetch: typeof fetch = async (input, init) => {
         response.body,
         url,
         requestInit?.headers,
-        originalChatId,
       );
       return new Response(wrapped, {
         status: response.status,
@@ -253,7 +223,6 @@ export const databricksFetch: typeof fetch = async (input, init) => {
 
 /**
  * Wrap a long-running-server SSE response so we can:
- *   - sniff `response.resumed` frames and update the conversation alias map,
  *   - track the last sequence number and response_id we observed,
  *   - if the upstream stream closes before `[DONE]`, transparently re-stream
  *     from `GET /responses/{id}?stream=true&starting_after=<seq>`.
@@ -264,7 +233,6 @@ function wrapDurableSseStream(
   initialBody: ReadableStream<Uint8Array>,
   invocationsUrl: string,
   reqHeaders: HeadersInit | undefined,
-  originalChatId: string | null,
 ): ReadableStream<Uint8Array> {
   const decoder = new TextDecoder();
   let buffer = '';
@@ -300,7 +268,6 @@ function wrapDurableSseStream(
       if (LOG_SSE_EVENTS) {
         console.log(`[SSE #${++eventCounter}]`, JSON.stringify(json));
       }
-      captureRotation(json, originalChatId);
       const rid = extractResponseId(json);
       if (rid) responseId = rid;
       const seq = json.sequence_number;

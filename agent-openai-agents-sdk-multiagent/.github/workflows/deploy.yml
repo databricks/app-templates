@@ -59,4 +59,4 @@ jobs:
       # `bundle deploy` uploads files and configures resources, but does NOT
       # restart the app. Without `bundle run`, the app keeps serving old code.
       - name: Start / restart app
-        run: databricks bundle run agent_openai_agents_sdk --target prod
+        run: databricks bundle run agent_openai_agents_sdk_multiagent --target prod

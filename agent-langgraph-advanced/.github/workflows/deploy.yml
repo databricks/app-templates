@@ -12,14 +12,15 @@
 #   3. Grant the service principal CAN_MANAGE on the Databricks App.
 #   4. In databricks.yml, configure targets.prod.workspace.host (or
 #      workspace.root_path) so production deploys have an explicit path.
-#   5. LAKEBASE (this template uses autoscaling Lakebase): The first deploy
-#      needs a one-time postgres resource wiring via PATCH /api/2.0/apps/<name>
-#      and a `databricks apps deploy` redeploy to pick up the injected env
-#      vars. See `.claude/skills/deploy/SKILL.md` ("Autoscaling Lakebase
-#      Resources"). Do this once out-of-band before relying on CI to deploy.
+#   5. If your agent uses Lakebase memory (advanced templates), run the
+#      grant script once before the first CI deploy. See:
+#      https://docs.databricks.com/aws/en/generative-ai/agent-framework/cicd-agent-app#lakebase
 #
 # Trigger manually from the Actions tab, or uncomment the `push` trigger
 # below to deploy on every push to main.
+#
+# This file is synced from .scripts/source/.github/workflows/deploy.yml —
+# edit the source, then run `uv run python .scripts/sync-scripts.py`.
 
 name: Deploy to Databricks Apps
 
@@ -29,7 +30,7 @@ on:
   #   branches: [main]
 
 permissions:
-  id-token: write   # required for OIDC federation
+  id-token: write # required for OIDC federation
   contents: read
 
 jobs:

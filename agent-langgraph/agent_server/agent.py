@@ -2,7 +2,6 @@ import logging
 from datetime import datetime
 from typing import AsyncGenerator, Optional
 
-import litellm
 import mlflow
 from databricks.sdk import WorkspaceClient
 from databricks_langchain import ChatDatabricks, DatabricksMCPServer, DatabricksMultiServerMCPClient
@@ -26,7 +25,6 @@ from agent_server.utils import (
 logger = logging.getLogger(__name__)
 mlflow.langchain.autolog()
 logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
-litellm.suppress_debug_info = True
 sp_workspace_client = WorkspaceClient()
 
 

@@ -2,7 +2,6 @@ import logging
 from datetime import datetime
 from typing import AsyncGenerator
 
-import litellm
 import mlflow
 from agents import Agent, Runner, function_tool, set_default_openai_api, set_default_openai_client
 from agents.tracing import set_trace_processors
@@ -31,7 +30,6 @@ set_default_openai_api("chat_completions")
 set_trace_processors([])  # only use mlflow for trace processing
 mlflow.openai.autolog()
 logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
-litellm.suppress_debug_info = True
 
 
 @function_tool

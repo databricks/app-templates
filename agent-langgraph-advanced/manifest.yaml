@@ -1,0 +1,13 @@
+version: 1
+name: "Agent - LangGraph Advanced"
+description: "A LangGraph conversational agent with short-term and long-term memory backed by a Lakebase Autoscaling postgres database."
+
+resource_specs:
+  - name: "experiment"
+    description: "The destination experiment for traces from the agent's execution."
+    experiment_spec:
+      permission: "CAN_EDIT"
+  - name: "postgres"
+    description: "The Lakebase Autoscaling database the agent uses for short-term conversation history and long-term user memory."
+    postgres_spec:
+      permission: "CAN_CONNECT_AND_CREATE"

@@ -1,0 +1,13 @@
+version: 1
+name: "Agent - LangChain TS"
+description: "A conversational agent backend and UI built with TypeScript and LangChain, with MLflow tracing."
+
+resource_specs:
+  - name: "serving-endpoint"
+    description: "The Databricks Model Serving endpoint hosting the LLM that powers the agent's responses."
+    serving_endpoint_spec:
+      permission: "CAN_QUERY"
+  - name: "experiment"
+    description: "The destination experiment for traces from the agent's execution."
+    experiment_spec:
+      permission: "CAN_EDIT"

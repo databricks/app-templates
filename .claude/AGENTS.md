@@ -8,7 +8,7 @@ Shared files are copied from source-of-truth directories into each template. **N
 
 | Source directory | Sync command | What it syncs |
 |---|---|---|
-| `.scripts/source/` | `uv run python .scripts/sync-scripts.py` | `quickstart.py`, `start_app.py`, `evaluate_agent.py` |
+| `.scripts/source/` | `uv run python .scripts/sync-scripts.py` | `quickstart.py`, `start_app.py`, `evaluate_agent.py`, `grant_lakebase_permissions.py`, `preflight.py`, plus `.github/workflows/deploy.yml` for templates with `has_actions: True` (with `{{BUNDLE_NAME}}` substitution) |
 | `.claude/skills/` | `uv run python .scripts/sync-skills.py` | All skill directories under `{template}/.claude/skills/` |
 
 After modifying any source file, run the corresponding sync command and commit the synced copies.

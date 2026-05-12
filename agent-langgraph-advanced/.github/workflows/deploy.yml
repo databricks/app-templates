@@ -1,0 +1,62 @@
+# Deploy this Databricks App from GitHub Actions.
+#
+# Prerequisites:
+#   1. Create a Databricks service principal and a GitHub Actions workload
+#      identity federation policy for it. See:
+#      https://docs.databricks.com/aws/en/dev-tools/auth/provider-github
+#   2. In your GitHub repo, create a "prod" Environment
+#      (Settings -> Environments -> New environment). On that environment,
+#      add two Variables:
+#        - DATABRICKS_HOST       e.g. https://my-workspace.cloud.databricks.com
+#        - DATABRICKS_CLIENT_ID  the service principal application ID (UUID)
+#   3. Grant the service principal CAN_MANAGE on the Databricks App.
+#   4. In databricks.yml, configure targets.prod.workspace.host (or
+#      workspace.root_path) so production deploys have an explicit path.
+#   5. If your agent uses Lakebase memory (advanced templates), run the
+#      grant script once before the first CI deploy. See:
+#      https://docs.databricks.com/aws/en/generative-ai/agent-framework/cicd-agent-app#lakebase
+#
+# Trigger manually from the Actions tab, or uncomment the `push` trigger
+# below to deploy on every push to main.
+#
+# This file is synced from .scripts/source/.github/workflows/deploy.yml —
+# edit the source, then run `uv run python .scripts/sync-scripts.py`.
+
+name: Deploy to Databricks Apps
+
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+
+permissions:
+  id-token: write # required for OIDC federation
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    environment: prod
+    env:
+      DATABRICKS_AUTH_TYPE: github-oidc
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Validate bundle
+        run: databricks bundle validate --target prod
+
+      - name: Deploy bundle
+        run: databricks bundle deploy --target prod
+
+      # `bundle deploy` uploads files and configures resources, but does NOT
+      # restart the app. Without `bundle run`, the app keeps serving old code.
+      - name: Start / restart app
+        run: databricks bundle run agent_langgraph_advanced --target prod

@@ -19,7 +19,6 @@ that only support the Chat Completions API ("LLM" task type) will NOT work
 with this template as-is.
 """
 
-import litellm
 import logging
 from contextlib import nullcontext
 from typing import AsyncGenerator
@@ -114,7 +113,6 @@ set_default_openai_api("chat_completions")
 set_trace_processors([])  # only use mlflow for trace processing
 mlflow.openai.autolog()
 logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
-litellm.suppress_debug_info = True
 
 # Async client used inside tool functions to query other agents / endpoints
 _tool_client = AsyncDatabricksOpenAI()

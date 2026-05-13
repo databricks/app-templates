@@ -206,7 +206,7 @@ For each hosted tool, grant the corresponding resource access. Client-side funct
 | `uc_function` | `uc_securable` (`FUNCTION`) | `EXECUTE` |
 | `knowledge_assistant` | `serving_endpoint` | `CAN_QUERY` |
 | `uc_connection` | `uc_securable` (`CONNECTION`) | `USE_CONNECTION` |
-| `app` | (Databricks App access) | |
+| `app` | `app` | `CAN_USE` |
 | `function` | (none — runs in your app code) | |
 
 ## Step 5: Test and Deploy

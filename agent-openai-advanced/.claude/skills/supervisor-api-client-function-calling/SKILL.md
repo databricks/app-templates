@@ -193,7 +193,6 @@ first = client.responses.create(
     model=MODEL,
     tools=TOOLS,
     input=input_list,
-    parallel_tool_calls=True,
 )
 
 # Echo response.output back; only execute client-side function calls.

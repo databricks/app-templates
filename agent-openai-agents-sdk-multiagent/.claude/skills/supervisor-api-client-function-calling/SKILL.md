@@ -23,7 +23,7 @@ from databricks.sdk import WorkspaceClient
 from databricks_openai import DatabricksOpenAI
 
 client = DatabricksOpenAI(workspace_client=WorkspaceClient(), use_ai_gateway=True)
-MODEL = "databricks-gpt-5"
+MODEL = "databricks-claude-sonnet-4-5"
 
 GET_WEATHER = {
     "type": "function",
@@ -151,7 +151,7 @@ from databricks.sdk import WorkspaceClient
 from databricks_openai import DatabricksOpenAI
 
 client = DatabricksOpenAI(workspace_client=WorkspaceClient(), use_ai_gateway=True)
-MODEL = "databricks-gpt-5"
+MODEL = "databricks-claude-sonnet-4-5"
 
 GET_WEATHER = {
     "type": "function",
@@ -232,7 +232,7 @@ from databricks_openai import DatabricksOpenAI
 from openai.types.responses.response_output_item import McpApprovalResponse
 
 client = DatabricksOpenAI(workspace_client=WorkspaceClient(), use_ai_gateway=True)
-MODEL = "databricks-gpt-5"
+MODEL = "databricks-claude-sonnet-4-5"
 
 # Hosted MCP server (require_approval flow) + client-side function tool
 TOOLS = [

@@ -229,7 +229,6 @@ Pass any of these as the `model` parameter:
 | Claude Opus 4.1 | `databricks-claude-opus-4-1` |
 | Claude Opus 4.5 | `databricks-claude-opus-4-5` |
 | Claude Opus 4.6 | `databricks-claude-opus-4-6` |
-| GPT-5 | `databricks-gpt-5` |
 
 ## Enabling Tracing
 

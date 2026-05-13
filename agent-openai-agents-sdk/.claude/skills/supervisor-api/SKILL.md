@@ -82,15 +82,15 @@ TOOLS = [
             "description": "Custom application or MCP server endpoint",
         },
     },
-    # Client-side function tool — your app executes the call
+    # Client-side function tool example — your app executes the call
     {
         "type": "function",
-        "name": "get_weather",
-        "description": "Get current weather for a location.",
+        "name": "<client-side-function>",
+        "description": "<description of what this function does>",
         "parameters": {
             "type": "object",
-            "properties": {"location": {"type": "string"}},
-            "required": ["location"],
+            "properties": {"<param>": {"type": "string"}},
+            "required": ["<param>"],
             "additionalProperties": False,
         },
     },

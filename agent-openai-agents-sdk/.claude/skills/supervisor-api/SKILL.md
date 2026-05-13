@@ -1,21 +1,21 @@
 ---
 name: supervisor-api
-description: "Replace the client-side agent loop with Databricks Supervisor API (hosted tools). Use when: (1) User asks about Supervisor API, (2) User wants Databricks to run the agent loop server-side, (3) Connecting Genie spaces, UC functions, agent endpoints, or MCP servers as hosted tools."
+description: "Replace the client-side agent loop with Databricks Supervisor API (hosted tools + client-side function tools). Use when: (1) User asks about Supervisor API, (2) User wants Databricks to run the agent loop server-side, (3) Connecting Genie spaces, UC functions, agent endpoints, or MCP servers as hosted tools, (4) Mixing client-side function tools (Python callables your app executes) with hosted tools."
 ---
 
 # Use the Databricks Supervisor API
 
-The Supervisor API lets Databricks run the tool-selection and synthesis loop server-side. Instead of your agent managing tool calls and looping, you declare hosted tools and call `responses.create()` — Databricks handles the rest.
+The Supervisor API lets Databricks run the tool-selection and synthesis loop server-side. Instead of your agent managing tool calls and looping, you declare hosted tools and call `responses.create()` — Databricks handles the rest. You can also declare **client-side function tools** (Python callables your app executes) alongside hosted tools in the same request.
 
 ## When to Use
 
 Use the Supervisor API when you want to:
 - Connect Genie spaces, UC functions, Knowledge Assistants, or MCP servers without managing the agent loop yourself
+- Mix client-side function tools (your own Python callables) with hosted tools in the same request
 - Choose models at runtime and control which tools are used per request
 - Offload tool orchestration to Databricks while iterating on your agent
 
 **Limitations:**
-- Cannot mix hosted tools with client-side function tools in the same request
 - Inference parameters (e.g., `temperature`, `top_p`) are not supported when tools are passed
 - Scoped token access (OBO) is not supported — tools run as the app's service principal; grant tool permissions in `databricks.yml`
 - `stream` and `background` cannot both be `true` in the same request
@@ -36,9 +36,9 @@ dependencies = [
 
 Then run `uv sync`.
 
-## Step 2: Declare Hosted Tools
+## Step 2: Declare Tools
 
-Define your tools as a list of dicts. Run `uv run discover-tools` to find available resources in your workspace.
+Define your tools as a list of dicts. Run `uv run discover-tools` to find available hosted resources in your workspace.
 
 ```python
 TOOLS = [
@@ -82,6 +82,18 @@ TOOLS = [
             "description": "Custom application or MCP server endpoint",
         },
     },
+    # Client-side function tool — your app executes the call
+    {
+        "type": "function",
+        "name": "get_weather",
+        "description": "Get current weather for a location.",
+        "parameters": {
+            "type": "object",
+            "properties": {"location": {"type": "string"}},
+            "required": ["location"],
+            "additionalProperties": False,
+        },
+    },
 ]
 ```
 
@@ -91,7 +103,7 @@ Replace your existing invoke/stream handlers with the Supervisor API pattern. Re
 
 `use_ai_gateway=True` automatically resolves the correct AI Gateway endpoint for the workspace.
 
-Tools run as the app's service principal — grant each tool's resource permissions in `databricks.yml` (Step 4).
+Hosted tools run as the app's service principal — grant each hosted tool's resource permissions in `databricks.yml` (Step 4). Client-side function tools execute in your application code, so they need no Databricks-side permissions; instead, you implement the function and run it on each turn (see "Client-Side Function Tools" below).
 
 ```python
 import os
@@ -185,16 +197,17 @@ def stream_handler(request: ResponsesAgentRequest):
 
 ## Step 4: Grant Permissions in `databricks.yml`
 
-Grant the service principal access to each hosted tool. See the **add-tools** skill for YAML examples — the resource types are the same. The model serving endpoint is always required.
+For each hosted tool, grant the corresponding resource access. Client-side function tools need no Databricks permissions. See the **add-tools** skill for complete YAML examples.
 
-| Tool type | `resources` entry | Permission |
+| Tool type | Resource to grant | Permission |
 |-----------|-------------------|------------|
 | *(all)* | `serving_endpoint` (model) | `CAN_QUERY` |
 | `genie_space` | `genie_space` | `CAN_RUN` |
 | `uc_function` | `uc_securable` (`FUNCTION`) | `EXECUTE` |
 | `knowledge_assistant` | `serving_endpoint` | `CAN_QUERY` |
 | `uc_connection` | `uc_securable` (`CONNECTION`) | `USE_CONNECTION` |
-| `app` | `app` *(CLI support coming soon)* | `CAN_USE` |
+| `app` | (Databricks App access) | |
+| `function` | (none — runs in your app code) | |
 
 ## Step 5: Test and Deploy
 
@@ -336,11 +349,15 @@ input = [
 ]
 ```
 
+## Client-Side Function Tools
+
+You can also declare client-side function tools (`type: "function"`) alongside hosted tools in the same request.
+
+See the **supervisor-api-client-function-calling** skill for full implementation details, including function-only, streaming, mixed hosted + function, and MCP approval + function flow examples.
+
 ## Troubleshooting
 
 **"Please ensure AI Gateway V2 is enabled"** — AI Gateway must be enabled for the workspace. Contact your Databricks account team.
-
-**"Cannot mix hosted and client-side tools"** — Remove any `function`-type tools (Python callables) from `TOOLS`. All tools must be hosted types (`genie_space`, `uc_function`, `knowledge_assistant`, `uc_connection`, `app`).
 
 **"Parameter not supported when tools are provided"** — Remove `temperature`, `top_p`, or other inference parameters from the `responses.create()` call.
 

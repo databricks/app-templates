@@ -41,6 +41,7 @@ import {
   getMessagesByChatId,
   saveChat,
   saveMessages,
+  saveUser,
   updateChatLastContextById,
   updateChatVisiblityById,
   isDatabaseAvailable,
@@ -128,6 +129,10 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     if (!chat) {
       // Only create new chat if we have a message (not a continuation)
       if (isDatabaseAvailable() && message) {
+        await saveUser({
+          id: session.user.id,
+          email: session.user.email ?? session.user.id,
+        });
         await saveChat({
           id,
           userId: session.user.id,

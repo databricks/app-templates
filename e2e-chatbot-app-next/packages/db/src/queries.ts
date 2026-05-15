@@ -16,6 +16,7 @@ import postgres from 'postgres';
 import {
   chat,
   message,
+  user,
   vote,
   type DBMessage,
   type Chat,
@@ -90,6 +91,31 @@ async function ensureDb() {
     throw new Error('Database connection could not be established');
   }
   return db;
+}
+
+export async function saveUser({
+  id,
+  email,
+}: {
+  id: string;
+  email: string;
+}) {
+  if (!isDatabaseAvailable()) {
+    console.log('[saveUser] Database not available, skipping persistence');
+    return;
+  }
+
+  try {
+    return await (await ensureDb())
+      .insert(user)
+      .values({ id, email })
+      .onConflictDoUpdate({
+        target: user.id,
+        set: { email },
+      });
+  } catch (error) {
+    console.error('[saveUser] Error saving user:', error);
+  }
 }
 
 export async function saveChat({

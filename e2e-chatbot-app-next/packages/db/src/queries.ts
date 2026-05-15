@@ -16,7 +16,6 @@ import postgres from 'postgres';
 import {
   chat,
   message,
-  user,
   vote,
   type DBMessage,
   type Chat,
@@ -27,9 +26,6 @@ import { ChatSDKError } from '@chat-template/core/errors';
 import type { LanguageModelV3Usage } from '@ai-sdk/provider';
 import { isDatabaseAvailable } from './connection';
 import { getAuthMethod, getAuthMethodDescription } from '@chat-template/auth';
-
-// Re-export User type for external use
-export type { User } from './schema';
 
 // Optionally, if not using email/pass login, you can
 // use the Drizzle adapter for Auth.js / NextAuth
@@ -91,31 +87,6 @@ async function ensureDb() {
     throw new Error('Database connection could not be established');
   }
   return db;
-}
-
-export async function saveUser({
-  id,
-  email,
-}: {
-  id: string;
-  email: string;
-}) {
-  if (!isDatabaseAvailable()) {
-    console.log('[saveUser] Database not available, skipping persistence');
-    return;
-  }
-
-  try {
-    return await (await ensureDb())
-      .insert(user)
-      .values({ id, email })
-      .onConflictDoUpdate({
-        target: user.id,
-        set: { email },
-      });
-  } catch (error) {
-    console.error('[saveUser] Error saving user:', error);
-  }
 }
 
 export async function saveChat({

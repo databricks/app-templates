@@ -16,9 +16,4 @@ CREATE TABLE "ai_chatbot"."Message" (
 	"createdAt" timestamp NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "ai_chatbot"."User" (
-	"id" text PRIMARY KEY NOT NULL,
-	"email" varchar(64) NOT NULL
-);
---> statement-breakpoint
 ALTER TABLE "ai_chatbot"."Message" ADD CONSTRAINT "Message_chatId_Chat_id_fk" FOREIGN KEY ("chatId") REFERENCES "ai_chatbot"."Chat"("id") ON DELETE no action ON UPDATE no action;

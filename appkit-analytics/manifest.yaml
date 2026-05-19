@@ -1,0 +1,9 @@
+version: 1
+name: "AppKit - Analytics"
+description: "A Node.js dashboard app for querying and visualizing Unity Catalog data with a SQL Warehouse, built with AppKit."
+
+resource_specs:
+  - name: "sql-warehouse"
+    description: "The SQL warehouse the app uses to query data."
+    sql_warehouse_spec:
+      permission: "CAN_USE"

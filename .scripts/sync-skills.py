@@ -105,6 +105,7 @@ def sync_template(template: str, config: dict):
     if sdk == "openai":
         copy_skill(SOURCE / "supervisor-api", dest / "supervisor-api")
         copy_skill(SOURCE / "supervisor-api-background-mode", dest / "supervisor-api-background-mode")
+        copy_skill(SOURCE / "supervisor-api-client-function-calling", dest / "supervisor-api-client-function-calling")
 
     # SDK-specific skills (with substitution for bundle name references)
     if isinstance(sdk, list):

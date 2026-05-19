@@ -1,0 +1,9 @@
+version: 1
+name: "Agent - OpenAI Agents SDK"
+description: "A conversational agent backend and UI using OpenAI Agents SDK and MLflow AgentServer"
+
+resource_specs:
+  - name: "experiment"
+    description: "The destination experiment for traces from the agent's execution."
+    experiment_spec:
+      permission: "CAN_EDIT"

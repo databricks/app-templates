@@ -1,0 +1,9 @@
+version: 1
+name: "Data app"
+description: "A starter dashboard application which queries data in Unity Catalog with a SQL Warehouse."
+
+resource_specs:
+  - name: "sql-warehouse"
+    description: "The SQL warehouse the app uses to query data."
+    sql_warehouse_spec:
+      permission: "CAN_USE"

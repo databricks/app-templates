@@ -184,12 +184,11 @@ Add the required OAuth scopes to `app.yaml`. `ai-gateway` is required for all Su
 
 ```yaml
 oauth_scopes:
-  - "ai-gateway"        # required for all Supervisor API access
-  - "genie"             # genie_space tools
-  - "mcp.functions"     # uc_function tools
-  - "model-serving"     # knowledge_assistant tools
+  - "ai-gateway"          # required for all Supervisor API access
+  - "genie"               # genie_space tools
+  - "mcp.functions"       # uc_function tools
+  - "model-serving"       # knowledge_assistant tools
   - "catalog.connections" # uc_connection tools
-  - "apps"              # app tools
 ```
 
 | Tool type | Required scope |
@@ -199,7 +198,7 @@ oauth_scopes:
 | `uc_function` | `mcp.functions` |
 | `knowledge_assistant` | `model-serving` |
 | `uc_connection` | `catalog.connections` |
-| `app` | `apps` |
+| `app` | not supported in OBO mode — use service principal mode instead |
 
 Grant tool resource permissions to the users who will run the agent (e.g., `CAN_RUN` on the Genie space, `CAN_QUERY` on the model endpoint). No `databricks.yml` resource grants are needed for the agent itself.
 

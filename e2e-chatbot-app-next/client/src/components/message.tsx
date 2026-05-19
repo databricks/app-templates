@@ -39,7 +39,6 @@ import { isCredentialErrorMessage } from '@/lib/oauth-error-utils';
 import {
   groupConsecutiveToolSegments,
   type ChatPart,
-  type RenderBlock,
   type ToolPart,
 } from '@/lib/tool-group-segments';
 import { Streamdown } from 'streamdown';
@@ -446,7 +445,7 @@ const ToolPartRenderer = ({
   }
 
   return (
-    <Tool key={toolCallId} defaultOpen={true}>
+    <Tool defaultOpen={true}>
       <ToolHeader type={toolName} state={effectiveState} />
       <ToolContent>
         <ToolInput input={input} />

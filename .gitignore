@@ -192,5 +192,7 @@ mlflow.db
 !.claude/skills/create-tools/
 !.claude/skills/enable-feedback/
 !.claude/skills/long-running-server/
+!.claude/skills/supervisor-api/
+!.claude/skills/supervisor-api-background-mode/
 !.claude/AGENTS.md
 !.claude/CLAUDE.md

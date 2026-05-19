@@ -17,7 +17,6 @@ Use the Supervisor API when you want to:
 
 **Limitations:**
 - Inference parameters (e.g., `temperature`, `top_p`) are not supported when tools are passed
-- Scoped token access (OBO) is not supported — tools run as the app's service principal; grant tool permissions in `databricks.yml`
 - `stream` and `background` cannot both be `true` in the same request
 - Background mode requests have a maximum execution time of 30 minutes
 
@@ -103,13 +102,16 @@ Replace your existing invoke/stream handlers with the Supervisor API pattern. Re
 
 `use_ai_gateway=True` automatically resolves the correct AI Gateway endpoint for the workspace.
 
-Hosted tools run as the app's service principal — grant each hosted tool's resource permissions in `databricks.yml` (Step 4). Client-side function tools execute in your application code, so they need no Databricks-side permissions; instead, you implement the function and run it on each turn (see "Client-Side Function Tools" below).
+**Authentication options:**
+- **OBO (recommended):** Pass `workspace_client=get_user_workspace_client()` per-request so tools run as the requesting user. The app must request the appropriate OAuth scopes in `app.yaml`. Grant tool resource permissions to users, not the service principal.
+- **Service principal:** Pass `workspace_client=WorkspaceClient()` (or omit it) to run tools as the app's service principal. Grant each hosted tool's resource permissions in `databricks.yml` (Step 4).
+
+Client-side function tools execute in your application code, so they need no Databricks-side permissions; instead, you implement the function and run it on each turn (see "Client-Side Function Tools" below).
 
 ```python
 import os
 import logging
 import mlflow
-from databricks.sdk import WorkspaceClient
 from databricks_openai import DatabricksOpenAI
 from mlflow import MlflowClient
 from mlflow.genai.agent_server import invoke, stream
@@ -118,6 +120,7 @@ from mlflow.types.responses import (
     ResponsesAgentRequest,
     ResponsesAgentResponse,
 )
+from agent_server.utils import get_session_id, get_user_workspace_client
 
 mlflow.openai.autolog()
 
@@ -126,76 +129,94 @@ logger = logging.getLogger(__name__)
 MODEL = "databricks-claude-sonnet-4-5"
 TOOLS = [...]  # From Step 2
 
-# Resolve and cache the AI Gateway client once at module load
-_wc = WorkspaceClient()
-_client = DatabricksOpenAI(workspace_client=_wc, use_ai_gateway=True)
 
-
-def _get_trace_destination() -> dict:
+def _get_trace_destination() -> dict | None:
     experiment_id = os.environ.get("MLFLOW_EXPERIMENT_ID")
     if not experiment_id:
-        raise RuntimeError(
-            "MLFLOW_EXPERIMENT_ID is not set. Cannot configure distributed tracing."
-        )
-    trace_location = MlflowClient().get_experiment(experiment_id).trace_location
-    if trace_location is None or not hasattr(trace_location, "catalog_name"):
-        msg = (
-            f"Experiment {experiment_id} trace_location is not a Unity Catalog location "
-            f"(got: {type(trace_location).__name__ if trace_location else None}). "
-            "Distributed tracing requires UC-backed traces. "
-            "Ensure 'MLflow traces in Unity Catalog' is enabled for your workspace and that "
-            "the target UC tables use customer-managed storage (Arclight default storage is not supported)."
-        )
-        logger.error(msg)
-        raise RuntimeError(msg)
-    dest = {
-        "catalog_name": trace_location.catalog_name,
-        "schema_name": trace_location.schema_name,
-    }
-    if trace_location.table_prefix is not None:
-        dest["table_prefix"] = trace_location.table_prefix
-    return dest
+        return None
+    try:
+        trace_location = MlflowClient().get_experiment(experiment_id).trace_location
+        if trace_location is None or not hasattr(trace_location, "catalog_name"):
+            return None
+        dest = {
+            "catalog_name": trace_location.catalog_name,
+            "schema_name": trace_location.schema_name,
+        }
+        if trace_location.table_prefix is not None:
+            dest["table_prefix"] = trace_location.table_prefix
+        return dest
+    except Exception:
+        logger.warning("Could not resolve trace destination, tracing disabled.", exc_info=True)
+        return None
 
 
 _TRACE_DESTINATION = _get_trace_destination()
 
 
+def _extra_body() -> dict:
+    if _TRACE_DESTINATION:
+        return {"trace_destination": _TRACE_DESTINATION}
+    return {}
+
+
 @invoke()
 def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
-    mlflow.update_current_trace(
-        metadata={"mlflow.trace.session": request.context.conversation_id}
-    )
-    response = _client.responses.create(
+    if session_id := get_session_id(request):
+        mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
+    client = DatabricksOpenAI(workspace_client=get_user_workspace_client(), use_ai_gateway=True)
+    response = client.responses.create(
         model=MODEL,
         input=[i.model_dump() for i in request.input],
         tools=TOOLS,
         stream=False,
         extra_headers=get_tracing_context_headers_for_http_request(),
-        extra_body={
-            "trace_destination": _TRACE_DESTINATION,
-        },
+        extra_body=_extra_body(),
     )
     return ResponsesAgentResponse(output=[item.model_dump() for item in response.output])
 
 
 @stream()
 def stream_handler(request: ResponsesAgentRequest):
-    mlflow.update_current_trace(
-        metadata={"mlflow.trace.session": request.context.conversation_id}
-    )
-    return _client.responses.create(
+    if session_id := get_session_id(request):
+        mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
+    client = DatabricksOpenAI(workspace_client=get_user_workspace_client(), use_ai_gateway=True)
+    return client.responses.create(
         model=MODEL,
         input=[i.model_dump() for i in request.input],
         tools=TOOLS,
         stream=True,
         extra_headers=get_tracing_context_headers_for_http_request(),
-        extra_body={
-            "trace_destination": _TRACE_DESTINATION,
-        },
+        extra_body=_extra_body(),
     )
 ```
 
-## Step 4: Grant Permissions in `databricks.yml`
+## Step 4: Grant Permissions
+
+### OBO mode
+
+Add the required OAuth scopes to `app.yaml`. `ai-gateway` is required for all Supervisor API access; add the per-tool scopes for each tool type you use:
+
+```yaml
+oauth_scopes:
+  - "ai-gateway"          # required for all Supervisor API access
+  - "genie"               # genie_space tools
+  - "mcp.functions"       # uc_function tools
+  - "model-serving"       # knowledge_assistant tools
+  - "catalog.connections" # uc_connection tools
+```
+
+| Tool type | Required scope |
+|-----------|---------------|
+| *(all)* | `ai-gateway` |
+| `genie_space` | `genie` |
+| `uc_function` | `mcp.functions` |
+| `knowledge_assistant` | `model-serving` |
+| `uc_connection` | `catalog.connections` |
+| `app` | not supported in OBO mode — use service principal mode instead |
+
+Grant tool resource permissions to the users who will run the agent (e.g., `CAN_RUN` on the Genie space, `CAN_QUERY` on the model endpoint). No `databricks.yml` resource grants are needed for the agent itself.
+
+### Service principal mode
 
 For each hosted tool, grant the corresponding resource access. Client-side function tools need no Databricks permissions. See the **add-tools** skill for complete YAML examples.
 

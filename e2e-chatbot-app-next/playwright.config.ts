@@ -87,7 +87,7 @@ export default defineConfig({
   projects: [
     {
       name: 'unit',
-      testMatch: /ai-sdk-provider\/.*.test.ts/,
+      testMatch: /(ai-sdk-provider|unit)\/.*.test.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
     {

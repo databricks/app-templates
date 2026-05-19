@@ -180,12 +180,26 @@ def stream_handler(request: ResponsesAgentRequest):
 
 ### OBO mode
 
-Add the `ai-gateway` OAuth scope to `app.yaml` so the app requests it from the user:
+Add the required OAuth scopes to `app.yaml`. `ai-gateway` is required for all Supervisor API access; add the per-tool scopes for each tool type you use:
 
 ```yaml
 oauth_scopes:
-  - "ai-gateway"
+  - "ai-gateway"        # required for all Supervisor API access
+  - "genie"             # genie_space tools
+  - "mcp.functions"     # uc_function tools
+  - "model-serving"     # knowledge_assistant tools
+  - "catalog.connections" # uc_connection tools
+  - "apps"              # app tools
 ```
+
+| Tool type | Required scope |
+|-----------|---------------|
+| *(all)* | `ai-gateway` |
+| `genie_space` | `genie` |
+| `uc_function` | `mcp.functions` |
+| `knowledge_assistant` | `model-serving` |
+| `uc_connection` | `catalog.connections` |
+| `app` | `apps` |
 
 Grant tool resource permissions to the users who will run the agent (e.g., `CAN_RUN` on the Genie space, `CAN_QUERY` on the model endpoint). No `databricks.yml` resource grants are needed for the agent itself.
 

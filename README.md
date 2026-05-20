@@ -65,3 +65,16 @@ A collection of templates for building full-stack Databricks Apps with [AppKit](
 | `appkit-lakebase` | Node.js app with Lakebase Autoscaling (Postgres) CRUD operations | Database |
 
 <!-- appkit-end -->
+
+### Showcase Examples
+
+End-to-end example apps that bundle a full Databricks App with seed data, SQL queries, and (where applicable) Lakeflow pipelines and provisioning scripts. See each template's `README.md` for the runbook.
+
+| Template | Description | Dependencies |
+|----------|-------------|--------------|
+| `agentic-support-console` | End-to-end AI-powered support console combining Lakebase, Lakehouse Sync, a medallion pipeline, an LLM agent job, reverse sync, and a Databricks App with Genie analytics. | SQL warehouse, Database, Genie Space, MLflow experiment |
+| `content-moderator` | Internal content moderation tool with per-channel guidelines, AI-powered compliance scoring via Model Serving, and a moderator review workflow backed by Lakebase and Genie analytics. | SQL warehouse, Database, Genie Space, Serving endpoint |
+| `inventory-intelligence` | Retail inventory management with AI-powered demand forecasting, replenishment recommendations, and optional Genie analytics. Built on a live medallion pipeline synced to Lakebase. | SQL warehouse, Database, Genie Space |
+| `rag-chat` | Streaming Retrieval-Augmented Generation chat app with pgvector retrieval from Lakebase, Wikipedia seed corpus, Model Serving generation, and Lakebase-backed chat history. Consumed via `databricks apps init`. | Database, Serving endpoint |
+| `saas-tracker` | Internal tool for tracking team SaaS subscriptions, owners, costs, and renewals with Lakebase persistence and Genie spend analytics. | SQL warehouse, Database, Genie Space |
+| `vacation-rentals` | Vacation rental ops dashboard with revenue analytics from a SQL Warehouse, a booking queue with Lakebase-backed flags and agent notes, and an embedded Genie chat panel. | SQL warehouse, Database, Genie Space |

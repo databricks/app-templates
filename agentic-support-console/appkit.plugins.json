@@ -1,0 +1,151 @@
+{
+  "$schema": "https://databricks.github.io/appkit/schemas/template-plugins.schema.json",
+  "version": "1.0",
+  "plugins": {
+    "analytics": {
+      "name": "analytics",
+      "displayName": "Analytics Plugin",
+      "description": "SQL query execution against Databricks SQL Warehouses",
+      "package": "@databricks/appkit",
+      "resources": {
+        "required": [
+          {
+            "type": "sql_warehouse",
+            "alias": "SQL Warehouse",
+            "resourceKey": "sql-warehouse",
+            "description": "SQL Warehouse for executing analytics queries",
+            "permission": "CAN_USE",
+            "fields": {
+              "id": {
+                "env": "DATABRICKS_WAREHOUSE_ID",
+                "description": "SQL Warehouse ID"
+              }
+            }
+          }
+        ],
+        "optional": []
+      },
+      "requiredByTemplate": true
+    },
+    "files": {
+      "name": "files",
+      "displayName": "Files Plugin",
+      "description": "File operations against Databricks Volumes and Unity Catalog",
+      "package": "@databricks/appkit",
+      "resources": {
+        "required": [
+          {
+            "type": "volume",
+            "alias": "Files",
+            "resourceKey": "files",
+            "description": "Permission to write to volumes",
+            "permission": "WRITE_VOLUME",
+            "fields": {
+              "path": {
+                "env": "DATABRICKS_VOLUME_FILES",
+                "description": "Volume path for file storage (e.g. /Volumes/catalog/schema/volume_name)"
+              }
+            }
+          }
+        ],
+        "optional": []
+      }
+    },
+    "genie": {
+      "name": "genie",
+      "displayName": "Genie Plugin",
+      "description": "AI/BI Genie space integration for natural language data queries",
+      "package": "@databricks/appkit",
+      "resources": {
+        "required": [
+          {
+            "type": "genie_space",
+            "alias": "Genie Space",
+            "resourceKey": "genie-space",
+            "description": "Genie Space for AI-powered data queries. Space IDs configured via plugin config.",
+            "permission": "CAN_RUN",
+            "fields": {
+              "id": {
+                "env": "DATABRICKS_GENIE_SPACE_ID",
+                "description": "Default Genie Space ID"
+              }
+            }
+          }
+        ],
+        "optional": []
+      },
+      "requiredByTemplate": true
+    },
+    "lakebase": {
+      "name": "lakebase",
+      "displayName": "Lakebase",
+      "description": "SQL query execution against Databricks Lakebase Autoscaling",
+      "package": "@databricks/appkit",
+      "resources": {
+        "required": [
+          {
+            "type": "postgres",
+            "alias": "Postgres",
+            "resourceKey": "postgres",
+            "description": "Lakebase Postgres database for persistent storage",
+            "permission": "CAN_CONNECT_AND_CREATE",
+            "fields": {
+              "branch": {
+                "description": "Full Lakebase Postgres branch resource name. Obtain by running `databricks postgres list-branches projects/{project-id}`, select the desired item from the output array and use its .name value.",
+                "examples": ["projects/{project-id}/branches/{branch-id}"]
+              },
+              "database": {
+                "description": "Full Lakebase Postgres database resource name. Obtain by running `databricks postgres list-databases {branch-name}`, select the desired item from the output array and use its .name value. Requires the branch resource name.",
+                "examples": ["projects/{project-id}/branches/{branch-id}/databases/{database-id}"]
+              },
+              "host": {
+                "env": "PGHOST",
+                "localOnly": true,
+                "resolve": "postgres:host",
+                "description": "Postgres host for local development. Auto-injected by the platform at deploy time."
+              },
+              "databaseName": {
+                "env": "PGDATABASE",
+                "localOnly": true,
+                "resolve": "postgres:databaseName",
+                "description": "Postgres database name for local development. Auto-injected by the platform at deploy time."
+              },
+              "endpointPath": {
+                "env": "LAKEBASE_ENDPOINT",
+                "bundleIgnore": true,
+                "resolve": "postgres:endpointPath",
+                "description": "Lakebase endpoint resource name. Auto-injected at runtime via app.yaml valueFrom: postgres. For local development, obtain by running `databricks postgres list-endpoints {branch-name}`, select the desired item from the output array and use its .name value.",
+                "examples": ["projects/{project-id}/branches/{branch-id}/endpoints/{endpoint-id}"]
+              },
+              "port": {
+                "env": "PGPORT",
+                "localOnly": true,
+                "value": "5432",
+                "description": "Postgres port. Auto-injected by the platform at deploy time."
+              },
+              "sslmode": {
+                "env": "PGSSLMODE",
+                "localOnly": true,
+                "value": "require",
+                "description": "Postgres SSL mode. Auto-injected by the platform at deploy time."
+              }
+            }
+          }
+        ],
+        "optional": []
+      },
+      "requiredByTemplate": true
+    },
+    "server": {
+      "name": "server",
+      "displayName": "Server Plugin",
+      "description": "HTTP server with Express, static file serving, and Vite dev mode support",
+      "package": "@databricks/appkit",
+      "resources": {
+        "required": [],
+        "optional": []
+      },
+      "requiredByTemplate": true
+    }
+  }
+}

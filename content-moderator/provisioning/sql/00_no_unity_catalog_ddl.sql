@@ -1,0 +1,5 @@
+-- Content Moderator — provisioning note
+--
+-- No Unity Catalog DDL is required for core functionality.
+-- Lakebase schema and tables are created by the app and/or seed.
+-- See template/README.md for manual steps.

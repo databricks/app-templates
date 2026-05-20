@@ -1,0 +1,14 @@
+resources:
+  pipelines:
+    inventory_analytics:
+      name: inventory_analytics
+      catalog: ${var.catalog}
+      schema: ${var.schema}
+      serverless: true
+      continuous: true
+
+      libraries:
+        - glob:
+            include: ../src/silver/**
+        - glob:
+            include: ../src/gold/**

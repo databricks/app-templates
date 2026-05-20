@@ -1,0 +1,17 @@
+{
+  "name": "inventory-intelligence-seed",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "seed": "tsx seed.ts",
+    "demo": "tsx demo.ts",
+    "create-genie-space": "tsx create-genie-space.ts"
+  },
+  "dependencies": {
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.0",
+    "tsx": "^4.19.0"
+  }
+}

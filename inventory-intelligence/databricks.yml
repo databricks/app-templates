@@ -1,0 +1,221 @@
+bundle:
+  name: inventory-intelligence
+
+# Files synced to the workspace bundle path.
+# dist/** and client/dist/** are pre-built artifacts uploaded for the Databricks App.
+# Pipeline source files are synced so the DLT pipeline and jobs can reference them.
+sync:
+  include:
+    - dist/**
+    - client/dist/**
+    - pipelines/inventory_analytics/src/**
+    - pipelines/demand_forecast/src/**
+    - pipelines/data_generator/src/**
+  exclude:
+    - .agents/**
+    - .databricks/**
+    - node_modules/**
+    - seed/**
+    - provisioning/**
+    - package-lock.json
+    - package.json.dev
+    - deploy.sh
+    - README.md
+    - "*.local"
+
+variables:
+  # ── App ───────────────────────────────────────────────────────────────────
+  sql_warehouse_id:
+    description: SQL Warehouse ID for the Databricks App
+  genie_space_id:
+    description: "Genie Space ID for natural language inventory analytics (optional — leave REPLACE_ME to skip)"
+    default: REPLACE_ME
+  postgres_branch:
+    description: "Full Lakebase branch resource name (e.g. projects/my-project/branches/production)"
+  postgres_database:
+    description: "Full Lakebase database resource name (e.g. projects/my-project/branches/production/databases/db-xxxx)"
+
+  # ── Pipelines & Jobs (full target only) ───────────────────────────────────
+  catalog:
+    description: "Unity Catalog catalog name for pipeline output (silver + gold tables)"
+    default: REPLACE_ME
+  schema:
+    description: "Default schema for DLT silver tables"
+    default: silver
+  forecast_model:
+    description: "Forecasting model: weighted_moving_average | exponential_smoothing | prophet | model_serving"
+    default: weighted_moving_average
+  model_serving_endpoint:
+    description: "Model Serving endpoint name (only used when forecast_model=model_serving)"
+    default: ""
+  use_sample_data:
+    description: "true = run data_generator job before DLT pipeline (no real Lakehouse Sync needed); false = DLT reads from real Lakehouse Sync tables"
+    default: "false"
+
+resources:
+  # ── Databricks App ────────────────────────────────────────────────────────
+  # Deployed in every target (default, demo, full).
+  # Pipeline and job resources are only deployed with --target full.
+  apps:
+    app:
+      name: "inventory-intelligence"
+      description: "Retail inventory management with AI-powered demand forecasting and replenishment recommendations"
+      source_code_path: ./
+      user_api_scopes:
+        - dashboards.genie
+      resources:
+        - name: sql-warehouse
+          sql_warehouse:
+            id: ${var.sql_warehouse_id}
+            permission: CAN_USE
+        - name: postgres
+          postgres:
+            branch: ${var.postgres_branch}
+            database: ${var.postgres_database}
+            permission: CAN_CONNECT_AND_CREATE
+        - name: genie-space
+          genie_space:
+            name: genie-space
+            space_id: ${var.genie_space_id}
+            permission: CAN_RUN
+
+targets:
+  # ── default: app only, real Lakebase ─────────────────────────────────────
+  # Use for day-to-day app deployments (code changes, config tweaks).
+  # Does NOT deploy pipeline or job resources — use --target full for that.
+  #
+  #   databricks bundle deploy
+  #   ./deploy.sh
+  default:
+    default: true
+    workspace:
+      host: REPLACE_ME # e.g. https://dbc-xxxx.cloud.databricks.com
+
+    variables:
+      sql_warehouse_id: REPLACE_ME
+      genie_space_id: REPLACE_ME
+      postgres_branch: REPLACE_ME # e.g. projects/my-project/branches/production
+      postgres_database: REPLACE_ME # e.g. projects/my-project/branches/production/databases/db-xxxx
+      catalog: REPLACE_ME
+      schema: silver
+      forecast_model: weighted_moving_average
+      use_sample_data: "false"
+
+  # ── demo: app only, dedicated demo Lakebase ───────────────────────────────
+  # Points at a separate Lakebase database pre-loaded with controlled demo data.
+  # Deploy the app, then load demo data into the demo Lakebase:
+  #
+  #   databricks bundle deploy --target demo
+  #   ./deploy.sh --target demo
+  #   cd seed && DATABASE_URL=<demo-pg-url> npm run demo
+  #
+  # To get the demo Postgres URL:
+  #   databricks postgres list-endpoints projects/<demo-project>/branches/production
+  demo:
+    workspace:
+      host: https://dbc-466ea6b9-cadd.cloud.databricks.com
+
+    variables:
+      sql_warehouse_id: 825014b1f3706f58
+      genie_space_id: 01f1397b59b518a3a56a99e7b7cc19f2
+      postgres_branch: projects/inventory-intelligence/branches/production
+      postgres_database: projects/inventory-intelligence/branches/production/databases/db-3dye-uy3x95i5ya
+      catalog: oleksandra
+      schema: silver
+      forecast_model: weighted_moving_average
+      use_sample_data: "false"
+
+  # ── full: app + DLT analytics pipeline + forecast job ────────────────────
+  # Deploys and manages the complete Databricks stack: app, pipeline, and jobs.
+  # Use for first-time setup or when pipeline code or schema changes.
+  #
+  #   databricks bundle deploy --target full
+  #   ./deploy.sh --target full [--sample-data]
+  #
+  # With --sample-data: runs the data_generator job → DLT pipeline → forecast job
+  # automatically (no Lakehouse Sync or Sync Tables setup needed).
+  # Without --sample-data: configure Lakehouse Sync and Sync Tables manually.
+  full:
+    workspace:
+      host: https://dbc-466ea6b9-cadd.cloud.databricks.com
+
+    variables:
+      sql_warehouse_id: 825014b1f3706f58
+      genie_space_id: REPLACE_ME
+      postgres_branch: projects/inventory-intelligence/branches/production
+      postgres_database: projects/inventory-intelligence/branches/production/databases/db-3dye-uy3x95i5ya
+      catalog: oleksandra
+      schema: silver
+      forecast_model: weighted_moving_average
+      use_sample_data: "false"
+
+    resources:
+      # ── DLT Analytics Pipeline ──────────────────────────────────────────
+      # Reads from {catalog}.lakebase.lb_*_history (Lakehouse Sync or data_generator)
+      # and writes silver + gold Delta tables.
+      pipelines:
+        inventory_analytics:
+          name: inventory_analytics
+          catalog: ${var.catalog}
+          schema: ${var.schema}
+          serverless: true
+          continuous: false
+
+          libraries:
+            - glob:
+                include: pipelines/inventory_analytics/src/silver/**
+            - glob:
+                include: pipelines/inventory_analytics/src/gold/**
+
+      jobs:
+        # Generates synthetic {catalog}.lakebase.* Delta tables mirroring Lakehouse Sync output.
+        # Run before the DLT pipeline when use_sample_data=true.
+        data_generator_job:
+          name: inventory_data_generator
+          max_concurrent_runs: 1
+          tasks:
+            - task_key: generate_sample_data
+              notebook_task:
+                notebook_path: ./pipelines/data_generator/src/generate_sample_data.py
+                base_parameters:
+                  catalog: ${var.catalog}
+                  lakebase_schema: lakebase
+              environment_key: default
+
+          environments:
+            - environment_key: default
+              spec:
+                environment_version: "4"
+
+        # AI demand forecasting: reads silver Delta tables, writes gold.replenishment_recommendations.
+        # Runs on a daily schedule; trigger manually after first pipeline run.
+        demand_forecast_job:
+          name: inventory_demand_forecast
+          max_concurrent_runs: 1
+          queue:
+            enabled: false
+
+          schedule:
+            quartz_cron_expression: "0 0 4 * * ?"
+            timezone_id: UTC
+
+          parameters:
+            - name: catalog
+              default: ${var.catalog}
+            - name: forecast_model
+              default: ${var.forecast_model}
+            - name: model_serving_endpoint
+              default: ${var.model_serving_endpoint}
+
+          tasks:
+            - task_key: generate_forecasts
+              notebook_task:
+                notebook_path: ./pipelines/demand_forecast/src/generate_forecasts.py
+              environment_key: default
+
+          environments:
+            - environment_key: default
+              spec:
+                environment_version: "4"
+                dependencies:
+                  - statsmodels

@@ -42,6 +42,8 @@ Call `AskUserQuestion`: **"Do you have an existing Databricks app to deploy to?"
 
 **If "Bind to an existing app"** → call `AskUserQuestion`: **"What is the app name?"** Record `--app-name <name>` for Step 4.
 
+> New apps should use the `agent-*` prefix (e.g., `agent-data-analyst`) unless the user specifies otherwise.
+
 ### Step 3: Lakebase
 
 #### Memory templates (e.g. `agent-langgraph-advanced`, `agent-openai-advanced`)
@@ -150,7 +152,7 @@ If you don't pass a flag, the script falls back to interactive `input()` prompts
 
 ### Lakebase — memory templates only
 
-These all auto-skip if you pass `--lakebase-provisioned-name <name>` or `--lakebase-autoscaling-endpoint <endpoint>`.
+These all auto-skip if you pass `--lakebase-provisioned-name <name>`, `--lakebase-autoscaling-endpoint <endpoint>`, or `--lakebase-create-new <name>`.
 
 | Prompt | When it fires |
 |---|---|
@@ -171,7 +173,7 @@ These all auto-skip if you pass `--lakebase-provisioned-name <name>` or `--lakeb
 For Claude / CI to run end-to-end without hanging:
 
 - **Always**: `--profile <name>` (or `--profile <new-name> --host <url>` to create a new profile)
-- **Memory templates**: also pass `--lakebase-provisioned-name <name>` OR `--lakebase-autoscaling-endpoint <endpoint>`
+- **Memory templates**: also pass `--lakebase-provisioned-name <name>` OR `--lakebase-autoscaling-endpoint <endpoint>` OR `--lakebase-create-new <name>` (provisions a new Lakebase)
 - **Non-memory templates**: pass `--skip-lakebase` if you don't want the chat-history Lakebase prompt
 
 ## What Quickstart Configures

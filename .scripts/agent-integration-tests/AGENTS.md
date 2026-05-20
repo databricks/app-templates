@@ -58,7 +58,7 @@ Local and deploy phases run **in parallel** via `ThreadPoolExecutor`. Either pha
 | Flag | Default | Description |
 |---|---|---|
 | `--profile` | `dev` | Databricks CLI profile |
-| `--lakebase` | `bbqiu` | Lakebase provisioned instance name |
+| `--lakebase-provisioned-name` | `bbqiu` | Lakebase provisioned instance name |
 | `--lakebase-autoscaling-endpoint` | _(none)_ | Lakebase autoscaling endpoint — short name or full resource path `projects/<p>/branches/<b>/endpoints/<e>` |
 | `--template` | _(all)_ | Run only specific templates (repeatable) |
 | `--genie-space-id` | `01f05202dbb51d74b6cccf1b1b1683eb` | Genie space ID for multiagent |
@@ -131,10 +131,10 @@ uv run pytest test_e2e.py -v -n0 -s
 uv run pytest test_e2e.py -v --template agent-langgraph --skip-local --no-destroy
 
 # Custom profile and provisioned lakebase
-uv run pytest test_e2e.py -v -n 8 --profile staging --lakebase my-instance
+uv run pytest test_e2e.py -v -n 8 --profile staging --lakebase-provisioned-name my-instance
 
 # Custom profile and autoscaling lakebase
-uv run pytest test_e2e.py -v -n 8 --profile staging --lakebase-project my-project --lakebase-branch production
+uv run pytest test_e2e.py -v -n 8 --profile staging --lakebase-autoscaling-endpoint projects/my-project/branches/production/endpoints/primary
 
 # Multiagent with custom Genie space and endpoint
 uv run pytest test_e2e.py -v --template agent-openai-agents-sdk-multiagent \

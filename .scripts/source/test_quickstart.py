@@ -8,7 +8,7 @@
 # 7. Updates databricks.yml: sets experiment_id in app resource
 # 8. (If lakebase needed) Sets up lakebase (provisioned or autoscaling)
 # 9. (If lakebase needed) Updates databricks.yml: keeps only relevant lakebase env vars, removes the others
-# 10. (If lakebase needed) Updates .env with LAKEBASE_INSTANCE_NAME or LAKEBASE_AUTOSCALING_PROJECT + BRANCH
+# 10. (If lakebase needed) Updates .env with LAKEBASE_INSTANCE_NAME or LAKEBASE_AUTOSCALING_ENDPOINT
 
 import json
 import os

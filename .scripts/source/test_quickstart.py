@@ -20,11 +20,12 @@ import pytest
 from quickstart import (
     _replace_lakebase_env_vars,
     _replace_lakebase_resource,
+    create_lakebase_instance,
     create_mlflow_experiment,
     get_databricks_yml_experiment_id,
     get_existing_lakebase_config,
     setup_env_file,
-
+    setup_lakebase,
     update_databricks_yml_app_name,
     update_databricks_yml_experiment,
     update_databricks_yml_lakebase,
@@ -1344,3 +1345,91 @@ class TestRequiredEnvVarsContract:
             self._assert_env_has_vars(
                 tdir, REQUIRED_ENV_VARS_PROVISIONED, template_name, "app-bind provisioned"
             )
+
+
+class TestLakebaseCreateNew:
+    """Tests for --lakebase-create-new flag (non-interactive Lakebase provisioning)."""
+
+    @staticmethod
+    def _mock_endpoint_info(project="test-proj", branch="test-proj-branch"):
+        return {
+            "endpoint": f"projects/{project}/branches/{branch}/endpoints/primary",
+            "host": "ep-xxx.database.us-west-2.cloud.databricks.com",
+            "branch": f"projects/{project}/branches/{branch}",
+            "database": f"projects/{project}/branches/{branch}/databases/db-xxx",
+        }
+
+    def test_create_lakebase_instance_uses_name_without_prompting(self, tmp_path):
+        """When name kwarg is passed, create_lakebase_instance does NOT call input()."""
+        os.chdir(tmp_path)
+        mock_w = MagicMock()
+        mock_project = MagicMock()
+        mock_project.name = "projects/my-new-project"
+        mock_w.postgres.create_project.return_value.wait.return_value = mock_project
+        mock_branch = MagicMock()
+        mock_branch.name = "projects/my-new-project/branches/my-new-project-branch"
+        mock_w.postgres.create_branch.return_value.wait.return_value = mock_branch
+
+        with patch("quickstart.get_workspace_client", return_value=mock_w), patch(
+            "quickstart.validate_lakebase_autoscaling_endpoint",
+            return_value=self._mock_endpoint_info(
+                project="my-new-project", branch="my-new-project-branch"
+            ),
+        ), patch("builtins.input") as mock_input:
+            result = create_lakebase_instance("DEFAULT", "my-new-project")
+
+        mock_input.assert_not_called()
+        mock_w.postgres.create_project.assert_called_once()
+        mock_w.postgres.create_branch.assert_called_once()
+        assert result["type"] == "autoscaling"
+        assert result["endpoint"].endswith("/endpoints/primary")
+        assert result["host"] == "ep-xxx.database.us-west-2.cloud.databricks.com"
+
+    def test_setup_lakebase_create_new_writes_env_vars(self, tmp_path):
+        """setup_lakebase(create_new_name=X) writes all required env vars to .env."""
+        os.chdir(tmp_path)
+        (tmp_path / ".env").write_text("DATABRICKS_CONFIG_PROFILE=DEFAULT\n")
+        # Pre-seed a stale instance name to verify it gets cleared
+        update_env_file("LAKEBASE_INSTANCE_NAME", "stale-instance")
+
+        endpoint_info = {**self._mock_endpoint_info(), "type": "autoscaling"}
+        with patch("quickstart.create_lakebase_instance", return_value=endpoint_info):
+            result = setup_lakebase(
+                profile_name="DEFAULT",
+                username="test@example.com",
+                create_new_name="test-proj",
+                purpose="memory",
+            )
+
+        env_content = (tmp_path / ".env").read_text()
+        assert (
+            "LAKEBASE_AUTOSCALING_ENDPOINT=projects/test-proj/branches/test-proj-branch/endpoints/primary"
+            in env_content
+        )
+        assert "PGHOST=ep-xxx.database.us-west-2.cloud.databricks.com" in env_content
+        assert "PGUSER=test@example.com" in env_content
+        assert "PGDATABASE=databricks_postgres" in env_content
+        # Stale instance name should be cleared
+        assert "LAKEBASE_INSTANCE_NAME=stale-instance" not in env_content
+        assert "LAKEBASE_INSTANCE_NAME=" in env_content
+        # Return value is the endpoint config dict
+        assert result["type"] == "autoscaling"
+        assert result["endpoint"].startswith("projects/test-proj/")
+
+    def test_setup_lakebase_create_new_passes_name_through(self, tmp_path):
+        """setup_lakebase forwards create_new_name verbatim to create_lakebase_instance."""
+        os.chdir(tmp_path)
+        (tmp_path / ".env").write_text("DATABRICKS_CONFIG_PROFILE=DEFAULT\n")
+
+        endpoint_info = {**self._mock_endpoint_info(project="custom-name"), "type": "autoscaling"}
+        with patch(
+            "quickstart.create_lakebase_instance", return_value=endpoint_info
+        ) as mock_create:
+            setup_lakebase(
+                profile_name="DEFAULT",
+                username="test@example.com",
+                create_new_name="custom-name",
+                purpose="memory",
+            )
+
+        mock_create.assert_called_once_with("DEFAULT", "custom-name")

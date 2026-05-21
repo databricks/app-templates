@@ -1433,3 +1433,71 @@ class TestLakebaseCreateNew:
             )
 
         mock_create.assert_called_once_with("DEFAULT", "custom-name")
+
+    def test_end_to_end_create_new_chain(self, tmp_path):
+        """Seam test: setup_lakebase → create_lakebase_instance → endpoint validation.
+
+        Mocks only the deepest layer (workspace SDK + endpoint API). Catches contract
+        drift between setup_lakebase, create_lakebase_instance, and validate_lakebase_autoscaling_endpoint.
+        """
+        os.chdir(tmp_path)
+        (tmp_path / ".env").write_text("DATABRICKS_CONFIG_PROFILE=DEFAULT\n")
+
+        mock_w = MagicMock()
+        mock_project = MagicMock()
+        mock_project.name = "projects/integration-test"
+        mock_w.postgres.create_project.return_value.wait.return_value = mock_project
+        mock_branch = MagicMock()
+        mock_branch.name = "projects/integration-test/branches/integration-test-branch"
+        mock_w.postgres.create_branch.return_value.wait.return_value = mock_branch
+
+        endpoint_info = self._mock_endpoint_info(
+            project="integration-test", branch="integration-test-branch"
+        )
+
+        with patch("quickstart.get_workspace_client", return_value=mock_w), patch(
+            "quickstart.validate_lakebase_autoscaling_endpoint", return_value=endpoint_info
+        ) as mock_validate:
+            result = setup_lakebase(
+                profile_name="DEFAULT",
+                username="test@example.com",
+                create_new_name="integration-test",
+                purpose="memory",
+            )
+
+        # SDK was called with the user-supplied name
+        assert (
+            mock_w.postgres.create_project.call_args.kwargs.get("project_id")
+            == "integration-test"
+        )
+        assert (
+            mock_w.postgres.create_branch.call_args.kwargs.get("branch_id")
+            == "integration-test-branch"
+        )
+        # Endpoint validation was called with the constructed resource path
+        mock_validate.assert_called_once()
+        validated_path = mock_validate.call_args.args[1]
+        assert validated_path == (
+            "projects/integration-test/branches/integration-test-branch/endpoints/primary"
+        )
+        # Result dict has the expected shape (all four keys consumed by callers)
+        for key in ("type", "endpoint", "host", "branch", "database"):
+            assert key in result, f"setup_lakebase return missing key {key!r}"
+        assert result["type"] == "autoscaling"
+        # .env got populated correctly
+        env_content = (tmp_path / ".env").read_text()
+        assert "LAKEBASE_AUTOSCALING_ENDPOINT=projects/integration-test/" in env_content
+        assert "PGHOST=ep-xxx.database.us-west-2.cloud.databricks.com" in env_content
+        assert "PGUSER=test@example.com" in env_content
+        assert "PGDATABASE=databricks_postgres" in env_content
+
+    def test_create_lakebase_instance_rejects_empty_name(self, tmp_path):
+        """Passing an empty string for name exits non-zero without provisioning."""
+        os.chdir(tmp_path)
+        mock_w = MagicMock()
+        with patch("quickstart.get_workspace_client", return_value=mock_w):
+            with pytest.raises(SystemExit) as exc_info:
+                create_lakebase_instance("DEFAULT", "")
+        assert exc_info.value.code == 1
+        mock_w.postgres.create_project.assert_not_called()
+        mock_w.postgres.create_branch.assert_not_called()

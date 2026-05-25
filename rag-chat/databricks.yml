@@ -1,0 +1,33 @@
+bundle:
+  name: rag-chat-app
+
+sync:
+  exclude:
+    # Lockfile is shipped in the repo so `databricks apps init` can run `npm ci`
+    # locally, but we deliberately keep it OUT of the bundle upload: the Databricks
+    # Apps Linux build container then runs a fresh `npm install`, avoiding the
+    # platform-specific binary resolution issues a macOS-generated lockfile causes.
+    - 'package-lock.json'
+
+variables:
+  postgres_branch:
+    description: Full Lakebase Postgres branch resource name. Obtain by running `databricks postgres list-branches projects/{project-id}`, select the desired item from the output array and use its .name value.
+  postgres_database:
+    description: Full Lakebase Postgres database resource name. Obtain by running `databricks postgres list-databases {branch-name}`, select the desired item from the output array and use its .name value. Requires the branch resource name.
+
+resources:
+  apps:
+    app:
+      name: 'rag-chat-app'
+      description: 'Streaming RAG chat app with pgvector retrieval and Lakebase-backed chat history'
+      source_code_path: ./
+      resources:
+        - name: postgres
+          postgres:
+            branch: ${var.postgres_branch}
+            database: ${var.postgres_database}
+            permission: CAN_CONNECT_AND_CREATE
+
+targets:
+  default:
+    default: true

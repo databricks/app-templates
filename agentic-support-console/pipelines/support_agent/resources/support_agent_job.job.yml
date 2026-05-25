@@ -1,0 +1,30 @@
+resources:
+  jobs:
+    support_agent_job:
+      name: support_agent_job
+
+      max_concurrent_runs: 1
+      queue:
+        enabled: false
+
+      schedule:
+        quartz_cron_expression: '0 * * * * ?'
+        timezone_id: UTC
+
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: endpoint
+          default: ${var.endpoint}
+
+      tasks:
+        - task_key: generate_responses
+          notebook_task:
+            notebook_path: ../src/generate_responses.py
+
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: '4'
+            dependencies:
+              - mlflow

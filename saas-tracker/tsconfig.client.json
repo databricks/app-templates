@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.shared.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.client.tsbuildinfo",
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"],
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "erasableSyntaxOnly": true,
+    "noUncheckedSideEffectImports": true,
+    "baseUrl": "./client",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["client/src"]
+}

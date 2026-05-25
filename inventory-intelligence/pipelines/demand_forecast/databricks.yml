@@ -1,0 +1,35 @@
+bundle:
+  name: demand_forecast
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: The Unity Catalog catalog for reading silver tables and writing gold output
+  forecast_model:
+    description: "Forecasting model to use: weighted_moving_average | exponential_smoothing | prophet | model_serving"
+    default: weighted_moving_average
+  model_serving_endpoint:
+    description: "Databricks Model Serving endpoint name (only used when forecast_model=model_serving)"
+    default: ""
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: REPLACE_ME # e.g. https://my-workspace.cloud.databricks.com
+    variables:
+      catalog: REPLACE_ME # your Unity Catalog catalog name
+      forecast_model: weighted_moving_average
+      model_serving_endpoint: ""
+
+  prod:
+    mode: production
+    workspace:
+      host: REPLACE_ME
+    variables:
+      catalog: REPLACE_ME
+      forecast_model: weighted_moving_average
+      model_serving_endpoint: ""

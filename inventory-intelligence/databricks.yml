@@ -12,7 +12,6 @@ sync:
     - pipelines/demand_forecast/src/**
     - pipelines/data_generator/src/**
   exclude:
-    - .agents/**
     - .databricks/**
     - node_modules/**
     - seed/**

@@ -3,7 +3,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 from databricks.sdk import WorkspaceClient
 from databricks_langchain import AsyncCheckpointSaver, AsyncDatabricksStore
@@ -15,6 +15,17 @@ from mlflow.types.responses import ResponsesAgentRequest
 from agent_server.utils import _is_databricks_app_env
 
 logger = logging.getLogger(__name__)
+
+# Long-lived Lakebase resources, opened once at app startup in start_server.py's
+# lifespan and reused across all requests.
+_lakebase_resources: Optional[Tuple[AsyncCheckpointSaver, AsyncDatabricksStore]] = None
+
+
+def set_lakebase_resources(
+    checkpointer: AsyncCheckpointSaver, store: AsyncDatabricksStore
+) -> None:
+    global _lakebase_resources
+    _lakebase_resources = (checkpointer, store)
 
 
 @dataclass(frozen=True)
@@ -136,14 +147,6 @@ def resolve_lakebase_instance_name(
     )
 
 
-async def run_lakebase_setup(config: LakebaseConfig) -> None:
-    """Run database migrations for checkpoint and store tables. Call once at app startup."""
-    async with lakebase_context(config) as (checkpointer, store):
-        await checkpointer.setup()
-        await store.setup()
-    logger.info("Lakebase setup complete")
-
-
 def get_user_id(request: ResponsesAgentRequest) -> Optional[str]:
     custom_inputs = dict(request.custom_inputs or {})
     if "user_id" in custom_inputs:
@@ -196,6 +199,21 @@ async def lakebase_context(config: LakebaseConfig):
         schema=config.memory_schema,
     ) as store:
         yield checkpointer, store
+
+
+@asynccontextmanager
+async def acquire_lakebase_resources(config: LakebaseConfig):
+    """Yield (checkpointer, store) for use in a request handler.
+
+    If start_server.py's lifespan populated the long-lived resources, yield those
+    without closing on exit. Otherwise (e.g. evaluate_agent.py running outside the
+    FastAPI server) fall back to opening a fresh per-call lakebase_context.
+    """
+    if _lakebase_resources is not None:
+        yield _lakebase_resources
+    else:
+        async with lakebase_context(config) as resources:
+            yield resources
 
 
 def memory_tools():

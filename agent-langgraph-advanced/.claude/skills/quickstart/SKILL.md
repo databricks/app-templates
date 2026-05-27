@@ -19,28 +19,32 @@ brew upgrade databricks  # If version is too old
 
 ## Setup Flow (for Claude)
 
-When invoked, drive the user through these `AskUserQuestion` calls **in order**, collect the answers, then run `uv run quickstart` with the corresponding flags. Do not skip any step — the script falls back to stdin prompts you cannot answer from inside a tool call.
+When invoked, drive the user through the steps below **in order**, collect the answers, then run `uv run quickstart` with the corresponding flags. Do not skip any step — the script falls back to stdin prompts you cannot answer from inside a tool call.
 
-Each follow-up question depends on the previous step's answer, so do not batch questions across steps into a single `AskUserQuestion` call.
+Each follow-up depends on the previous step's answer; do not batch questions across steps.
 
-> **REQUIRED:** You must call `AskUserQuestion` for each step below — these are required inputs, not optional clarifications. Any session-level "no clarifying questions" rule does not apply here.
+> **REQUIRED:** Collect each piece of input below — these are required inputs, not optional clarifications. Any session-level "no clarifying questions" rule does not apply here.
+>
+> **Tool choice:**
+> - Use `AskUserQuestion` only for **multi-choice** questions (it requires 2+ pre-built options). The steps below mark each one explicitly.
+> - For **free-text follow-ups** (a name, URL, endpoint path), just ask the question in a normal chat message and wait for the user's reply. Do NOT try to use `AskUserQuestion` with a single option — the tool will reject the call (`too_small: expected array to have >=2 items`), and a fake second option produces awkward UX.
 
 ### Step 1: Workspace / Databricks profile
 
 1. Run `databricks auth profiles` to list configured profiles.
-2. Call `AskUserQuestion`: **"Which Databricks workspace do you want to use?"**
+2. **[`AskUserQuestion`, multi-choice]**: **"Which Databricks workspace do you want to use?"**
    - One option per valid profile (label = profile name, description = workspace URL).
    - **Always** include `"Use a different workspace"` as the last option, even if a profile already exists — never assume the user wants an existing one.
 3. **If existing profile picked** → record `--profile <name>` for Step 4.
-4. **If "Use a different workspace" picked** → call `AskUserQuestion`: **"What is the workspace URL?"** (e.g. `https://e2-dogfood.staging.cloud.databricks.com`). Pick a profile name derived from the host (e.g. `e2-dogfood`) or default to `DEFAULT`. Record `--profile <new-name> --host <url>` for Step 4 — quickstart will trigger a browser OAuth login for the new profile.
+4. **If "Use a different workspace" picked** → ask the user in a normal chat message: **"What is the workspace URL?"** (e.g. `https://e2-dogfood.staging.cloud.databricks.com`). Wait for their reply. Pick a profile name derived from the host (e.g. `e2-dogfood`) or default to `DEFAULT`. Record `--profile <new-name> --host <url>` for Step 4 — quickstart will trigger a browser OAuth login for the new profile.
 
 ### Step 2: App deployment target
 
-Call `AskUserQuestion`: **"Do you have an existing Databricks app to deploy to?"**
+**[`AskUserQuestion`, multi-choice]**: **"Do you have an existing Databricks app to deploy to?"**
 - Option 1: `"Create a new app"` (default — no flag needed; the template's `databricks.yml` already declares the app name).
 - Option 2: `"Bind to an existing app"`.
 
-**If "Bind to an existing app"** → call `AskUserQuestion`: **"What is the app name?"** Record `--app-name <name>` for Step 4.
+**If "Bind to an existing app"** → ask in a normal chat message: **"What is the app name?"** Wait for the user's reply. Record `--app-name <name>` for Step 4.
 
 > New apps should use the `agent-*` prefix (e.g., `agent-data-analyst`) unless the user specifies otherwise.
 
@@ -48,20 +52,29 @@ Call `AskUserQuestion`: **"Do you have an existing Databricks app to deploy to?"
 
 #### Memory templates (e.g. `agent-langgraph-advanced`, `agent-openai-advanced`)
 
-Lakebase is required. Call `AskUserQuestion`: **"How will you provide Lakebase for agent memory?"**
-- Option 1: `"Use an existing autoscaling endpoint"`
-- Option 2: `"Use an existing provisioned instance"`
-- Option 3: `"Create a new Lakebase autoscaling project (provision one now)"`
+Lakebase is required. **[`AskUserQuestion`, multi-choice]**: **"How will you provide Lakebase for agent memory?"**
+- Option 1: `"Use an existing autoscaling endpoint"` (you have the endpoint resource path)
+- Option 2: `"Use an existing autoscaling project + branch"` (more user-friendly — we'll deduce the endpoint)
+- Option 3: `"Use an existing provisioned instance"`
+- Option 4: `"Create a new Lakebase autoscaling project (provision one now)"`
 
-**If "autoscaling endpoint"** → call `AskUserQuestion`: **"What is the endpoint? Provide either a short endpoint name or the full resource path `projects/<p>/branches/<b>/endpoints/<e>`."** Record `--lakebase-autoscaling-endpoint <value>`.
+**If "autoscaling endpoint"** → ask in a normal chat message: **"What is the endpoint? Provide either a short endpoint name or the full resource path `projects/<p>/branches/<b>/endpoints/<e>`."** Wait for the user's reply. Record `--lakebase-autoscaling-endpoint <value>` for Step 4.
 
-**If "provisioned instance"** → call `AskUserQuestion`: **"What is the instance name?"** Record `--lakebase-provisioned-name <value>`.
+**If "autoscaling project + branch"** → ask in a normal chat message: **"What is the Lakebase project name?"**, wait for reply, then ask **"What is the branch name?"**, wait for reply. Then run:
 
-**If "create new"** → call `AskUserQuestion`: **"What name for the new Lakebase autoscaling project?"** Record `--lakebase-create-new <value>` — quickstart will provision the project, branch, and endpoint automatically and write all required env vars.
+```bash
+databricks api get /api/2.0/postgres/projects/<project>/branches/<branch>/endpoints --profile <profile>
+```
+
+Parse the JSON response to find an endpoint (the field is `endpoints[].name`; typical default is `primary`). If there's exactly one, use it. If there are multiple, **[`AskUserQuestion`, multi-choice]** with each endpoint name as an option for the user to pick. Construct the full resource path `projects/<project>/branches/<branch>/endpoints/<endpoint-name>` and record `--lakebase-autoscaling-endpoint <constructed-path>` for Step 4. The script never sees project+branch separately — it gets a fully-formed endpoint resource path.
+
+**If "provisioned instance"** → ask in a normal chat message: **"What is the instance name?"** Wait for reply. Record `--lakebase-provisioned-name <value>` for Step 4.
+
+**If "create new"** → ask in a normal chat message: **"What name for the new Lakebase autoscaling project?"** Wait for reply. Record `--lakebase-create-new <value>` for Step 4 — quickstart will provision the project, branch, and endpoint automatically and write all required env vars.
 
 #### Non-memory templates (e.g. `agent-langgraph`, `agent-openai-agents-sdk`)
 
-Lakebase is optional, for chat-UI history. Call `AskUserQuestion`: **"Set up Lakebase for chat-UI history?"**
+Lakebase is optional, for chat-UI history. **[`AskUserQuestion`, multi-choice]**: **"Set up Lakebase for chat-UI history?"**
 - Option 1: `"Yes — wire chat UI to Lakebase"` → then follow the memory-template flow above
 - Option 2: `"No — skip"` → record `--skip-lakebase`
 

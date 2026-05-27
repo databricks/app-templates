@@ -1386,7 +1386,7 @@ class TestLakebaseCreateNew:
         assert result["host"] == "ep-xxx.database.us-west-2.cloud.databricks.com"
 
     def test_setup_lakebase_create_new_writes_env_vars(self, tmp_path):
-        """setup_lakebase(create_new_name=X) writes all required env vars to .env."""
+        """setup_lakebase(create_new_lakebase_proj=X) writes all required env vars to .env."""
         os.chdir(tmp_path)
         (tmp_path / ".env").write_text("DATABRICKS_CONFIG_PROFILE=DEFAULT\n")
         # Pre-seed a stale instance name to verify it gets cleared
@@ -1397,7 +1397,7 @@ class TestLakebaseCreateNew:
             result = setup_lakebase(
                 profile_name="DEFAULT",
                 username="test@example.com",
-                create_new_name="test-proj",
+                create_new_lakebase_proj="test-proj",
                 purpose="memory",
             )
 
@@ -1417,7 +1417,7 @@ class TestLakebaseCreateNew:
         assert result["endpoint"].startswith("projects/test-proj/")
 
     def test_setup_lakebase_create_new_passes_name_through(self, tmp_path):
-        """setup_lakebase forwards create_new_name verbatim to create_lakebase_instance."""
+        """setup_lakebase forwards create_new_lakebase_proj verbatim to create_lakebase_instance."""
         os.chdir(tmp_path)
         (tmp_path / ".env").write_text("DATABRICKS_CONFIG_PROFILE=DEFAULT\n")
 
@@ -1428,7 +1428,7 @@ class TestLakebaseCreateNew:
             setup_lakebase(
                 profile_name="DEFAULT",
                 username="test@example.com",
-                create_new_name="custom-name",
+                create_new_lakebase_proj="custom-name",
                 purpose="memory",
             )
 
@@ -1461,7 +1461,7 @@ class TestLakebaseCreateNew:
             result = setup_lakebase(
                 profile_name="DEFAULT",
                 username="test@example.com",
-                create_new_name="integration-test",
+                create_new_lakebase_proj="integration-test",
                 purpose="memory",
             )
 

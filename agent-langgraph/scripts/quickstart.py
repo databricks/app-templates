@@ -958,7 +958,7 @@ def setup_lakebase(
     username: str,
     provisioned_name: str = None,
     autoscaling_endpoint: str = None,
-    create_new_name: str = None,
+    create_new_lakebase_proj: str = None,
     purpose: str = "memory",
 ) -> dict:
     """Set up Lakebase instance.
@@ -977,9 +977,9 @@ def setup_lakebase(
         print_step("Setting up Lakebase instance for agent memory...")
 
     # If --lakebase-create-new was provided, provision a new autoscaling project + branch
-    if create_new_name:
-        print(f"Creating new Lakebase autoscaling project: {create_new_name}")
-        selection = create_lakebase_instance(profile_name, create_new_name)
+    if create_new_lakebase_proj:
+        print(f"Creating new Lakebase autoscaling project: {create_new_lakebase_proj}")
+        selection = create_lakebase_instance(profile_name, create_new_lakebase_proj)
         endpoint = selection["endpoint"]
         update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", endpoint)
         update_env_file("LAKEBASE_INSTANCE_NAME", "")
@@ -1754,7 +1754,7 @@ Examples:
                     username,
                     provisioned_name=args.lakebase_provisioned_name,
                     autoscaling_endpoint=args.lakebase_autoscaling_endpoint,
-                    create_new_name=args.lakebase_create_new,
+                    create_new_lakebase_proj=args.lakebase_create_new,
                     purpose="memory",
                 )
         elif not args.skip_lakebase:

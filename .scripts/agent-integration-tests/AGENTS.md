@@ -26,7 +26,7 @@ test_e2e[template]
   |
   |-- 3. clean_template()          # Remove .env, .bundle/, .databricks/ (keeps .venv/)
   |-- 4. uv_sync()                 # Run `uv sync` to create/update .venv
-  |-- 5. run_quickstart()          # uv run quickstart --profile <p> [--lakebase-provisioned-name <l> | --lakebase-autoscaling-project <proj> --lakebase-autoscaling-branch <br>]
+  |-- 5. run_quickstart()          # uv run quickstart --profile <p> [--lakebase-provisioned-name <l> | --lakebase-autoscaling-endpoint <endpoint>]
   |-- 6. apply_edits()             # Template-specific file edits (grouped by file)
   |
   |-- 7. +----------------------------------------------+
@@ -58,9 +58,8 @@ Local and deploy phases run **in parallel** via `ThreadPoolExecutor`. Either pha
 | Flag | Default | Description |
 |---|---|---|
 | `--profile` | `dev` | Databricks CLI profile |
-| `--lakebase` | `bbqiu` | Lakebase provisioned instance name |
-| `--lakebase-autoscaling-project` | `test-{random}` | Lakebase autoscaling project name (random per run by default) |
-| `--lakebase-autoscaling-branch` | `test-{random}` | Lakebase autoscaling branch name (overridden per test with a unique value) |
+| `--lakebase-provisioned-name` | `bbqiu` | Lakebase provisioned instance name |
+| `--lakebase-autoscaling-endpoint` | _(none)_ | Lakebase autoscaling endpoint — short name or full resource path `projects/<p>/branches/<b>/endpoints/<e>` |
 | `--template` | _(all)_ | Run only specific templates (repeatable) |
 | `--genie-space-id` | `01f05202dbb51d74b6cccf1b1b1683eb` | Genie space ID for multiagent |
 | `--serving-endpoint` | `agents_dev-bbqiu-test-bb-2-25` | Serving endpoint for multiagent |
@@ -132,10 +131,10 @@ uv run pytest test_e2e.py -v -n0 -s
 uv run pytest test_e2e.py -v --template agent-langgraph --skip-local --no-destroy
 
 # Custom profile and provisioned lakebase
-uv run pytest test_e2e.py -v -n 8 --profile staging --lakebase my-instance
+uv run pytest test_e2e.py -v -n 8 --profile staging --lakebase-provisioned-name my-instance
 
 # Custom profile and autoscaling lakebase
-uv run pytest test_e2e.py -v -n 8 --profile staging --lakebase-project my-project --lakebase-branch production
+uv run pytest test_e2e.py -v -n 8 --profile staging --lakebase-autoscaling-endpoint projects/my-project/branches/production/endpoints/primary
 
 # Multiagent with custom Genie space and endpoint
 uv run pytest test_e2e.py -v --template agent-openai-agents-sdk-multiagent \
@@ -246,4 +245,4 @@ Each template writes a detailed log to `logs/{template-name}.log` (e.g. `logs/ag
 
 **Multiagent** (`agent-openai-agents-sdk-multiagent`): Has the most complex pre-test setup. Uncomments a SUBAGENTS block in `agent_server/agent.py` and enables 2 subagents (genie + serving_endpoint). Also replaces placeholders in `databricks.yml` (Genie space ID, serving endpoint; the knowledge assistant placeholder is filled with the serving endpoint value as a stand-in). Runs `agent-evaluate` after endpoint queries.
 
-**Lakebase memory templates** (`*-advanced`): The quickstart command receives `--lakebase-provisioned-name` (or `--lakebase-autoscaling-project` + `--lakebase-autoscaling-branch` for autoscaling) and handles all `databricks.yml` modifications: it sets the experiment ID in the app resource and replaces `<your-lakebase-instance-name>` placeholders with the actual instance name. During deploy, the app's service principal is granted Lakebase access. This applies to `agent-langgraph-advanced` and `agent-openai-agents-advanced`.
+**Lakebase memory templates** (`*-advanced`): The quickstart command receives `--lakebase-provisioned-name` (or `--lakebase-autoscaling-endpoint` for autoscaling) and handles all `databricks.yml` modifications: it sets the experiment ID in the app resource and replaces `<your-lakebase-instance-name>` placeholders with the actual instance name. During deploy, the app's service principal is granted Lakebase access. This applies to `agent-langgraph-advanced` and `agent-openai-advanced`.

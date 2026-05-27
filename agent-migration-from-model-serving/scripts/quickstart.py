@@ -34,6 +34,7 @@ Options:
     --host URL        Databricks workspace URL (for initial setup)
     --lakebase-provisioned-name NAME   Provisioned Lakebase instance name
     --lakebase-autoscaling-endpoint NAME  Autoscaling Lakebase endpoint name
+    --lakebase-create-new NAME  Create a new Lakebase autoscaling project with this name
     --skip-lakebase   Skip Lakebase setup (non-interactive / CI use)
     --app-name NAME   Existing Databricks app name to bind this bundle to
     -h, --help        Show this help message
@@ -644,8 +645,11 @@ def get_app_resources(profile_name: str, app_name: str) -> list[dict]:
         return []
 
 
-def create_lakebase_instance(profile_name: str) -> dict:
+def create_lakebase_instance(profile_name: str, name: str = None) -> dict:
     """Create a new Lakebase autoscaling instance (project + branch).
+
+    Args:
+        name: Optional project name. If None, prompts the user via stdin.
 
     Returns:
         Dict with {"type": "autoscaling", "endpoint": str}
@@ -655,7 +659,8 @@ def create_lakebase_instance(profile_name: str) -> dict:
         print_error("Could not connect to Databricks. Check your CLI profile.")
         sys.exit(1)
 
-    name = input("Enter a name for the new Lakebase autoscaling project: ").strip()
+    if name is None:
+        name = input("Enter a name for the new Lakebase autoscaling project: ").strip()
     if not name:
         print_error("Instance name is required")
         sys.exit(1)
@@ -953,6 +958,7 @@ def setup_lakebase(
     username: str,
     provisioned_name: str = None,
     autoscaling_endpoint: str = None,
+    create_new_lakebase_proj: str = None,
     purpose: str = "memory",
 ) -> dict:
     """Set up Lakebase instance.
@@ -969,6 +975,28 @@ def setup_lakebase(
         print_step("Setting up Lakebase for chat UI conversation history...")
     else:
         print_step("Setting up Lakebase instance for agent memory...")
+
+    # If --lakebase-create-new was provided, provision a new autoscaling project + branch
+    if create_new_lakebase_proj:
+        print(f"Creating new Lakebase autoscaling project: {create_new_lakebase_proj}")
+        selection = create_lakebase_instance(profile_name, create_new_lakebase_proj)
+        endpoint = selection["endpoint"]
+        update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", endpoint)
+        update_env_file("LAKEBASE_INSTANCE_NAME", "")
+
+        pg_host = selection.get("host", "")
+        if pg_host:
+            update_env_file("PGHOST", pg_host)
+            print_success(f"PGHOST set to '{pg_host}'")
+
+        update_env_file("PGUSER", username)
+        print_success(f"PGUSER set to '{username}'")
+
+        update_env_file("PGDATABASE", "databricks_postgres")
+        print_success("PGDATABASE set to 'databricks_postgres'")
+
+        print_success(f"Lakebase autoscaling endpoint saved to .env: {endpoint}")
+        return selection
 
     # If --lakebase-provisioned-name was provided, use it directly
     if provisioned_name:
@@ -1494,6 +1522,7 @@ Examples:
     uv run quickstart --host https://...  # Set up new profile with host
     uv run quickstart --lakebase-provisioned-name my-db   # Provisioned Lakebase
     uv run quickstart --lakebase-autoscaling-endpoint my-endpoint  # Autoscaling
+    uv run quickstart --lakebase-create-new my-new-project  # Provision a new Lakebase
     uv run quickstart --app-name my-existing-app  # Bind to existing Databricks app
     uv run quickstart --skip-lakebase    # Skip Lakebase setup
         """,
@@ -1516,6 +1545,11 @@ Examples:
     parser.add_argument(
         "--lakebase-autoscaling-endpoint",
         help="Autoscaling Lakebase endpoint name",
+        metavar="NAME",
+    )
+    parser.add_argument(
+        "--lakebase-create-new",
+        help="Create a new Lakebase autoscaling project with this name (non-interactive)",
         metavar="NAME",
     )
     parser.add_argument(
@@ -1697,6 +1731,7 @@ Examples:
         lakebase_memory_required = bool(
             args.lakebase_provisioned_name
             or args.lakebase_autoscaling_endpoint
+            or args.lakebase_create_new
             or check_lakebase_required()
         )
 
@@ -1708,7 +1743,9 @@ Examples:
             existing_lakebase = get_existing_lakebase_config()
             if existing_lakebase and not args.lakebase_provisioned_name and not (
                 args.lakebase_autoscaling_endpoint
-            ) and validate_lakebase_config(profile_name, existing_lakebase):
+            ) and not args.lakebase_create_new and validate_lakebase_config(
+                profile_name, existing_lakebase
+            ):
                 print_step("Reusing existing Lakebase config from .env")
                 lakebase_config = existing_lakebase
             else:
@@ -1717,6 +1754,7 @@ Examples:
                     username,
                     provisioned_name=args.lakebase_provisioned_name,
                     autoscaling_endpoint=args.lakebase_autoscaling_endpoint,
+                    create_new_lakebase_proj=args.lakebase_create_new,
                     purpose="memory",
                 )
         elif not args.skip_lakebase:

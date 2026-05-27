@@ -39,8 +39,8 @@ def copy_skill(src: Path, dest: Path, substitutions: dict = None):
 
 LAKEBASE_OPTIONS = (
     "- `--lakebase-provisioned-name NAME`: Provisioned Lakebase instance name (memory templates)\n"
-    "- `--lakebase-autoscaling-project PROJECT`: Autoscaling Lakebase project name (memory templates)\n"
-    "- `--lakebase-autoscaling-branch BRANCH`: Autoscaling Lakebase branch name (memory templates)\n"
+    "- `--lakebase-autoscaling-endpoint NAME`: Autoscaling Lakebase endpoint — short name or full resource path `projects/<p>/branches/<b>/endpoints/<e>` (memory templates)\n"
+    "- `--lakebase-create-new NAME`: Provision a new Lakebase autoscaling project + branch with this name (memory templates)\n"
 )
 
 LAKEBASE_EXAMPLES = (
@@ -49,19 +49,23 @@ LAKEBASE_EXAMPLES = (
     "uv run quickstart --lakebase-provisioned-name my-instance\n"
     "\n"
     "# Memory template with autoscaling Lakebase\n"
-    "uv run quickstart --lakebase-autoscaling-project my-project --lakebase-autoscaling-branch production\n"
+    "uv run quickstart --lakebase-autoscaling-endpoint projects/my-project/branches/production/endpoints/primary\n"
+    "\n"
+    "# Memory template — create a new Lakebase autoscaling project\n"
+    "uv run quickstart --lakebase-create-new my-new-project\n"
 )
 
 LAKEBASE_CONFIGURES_ENV = (
     "- `LAKEBASE_INSTANCE_NAME` - Provisioned Lakebase instance name (if `--lakebase-provisioned-name` provided)\n"
-    "- `LAKEBASE_AUTOSCALING_PROJECT` and `LAKEBASE_AUTOSCALING_BRANCH` - Autoscaling project/branch (if `--lakebase-autoscaling-project/branch` provided)\n"
+    "- `LAKEBASE_AUTOSCALING_ENDPOINT` - Autoscaling Lakebase endpoint (if `--lakebase-autoscaling-endpoint` provided)\n"
+    "- `PGHOST`, `PGUSER`, `PGDATABASE` - Postgres connection details (auto-resolved from the instance or endpoint)\n"
 )
 
 LAKEBASE_CONFIGURES_YML = (
     "\n"
-    "Updates `databricks.yml` and `app.yaml` (if Lakebase flags provided):\n"
+    "Updates `databricks.yml` (if Lakebase flags provided):\n"
     "- Keeps only the env vars relevant to the selected Lakebase type (provisioned or autoscaling)\n"
-    "- Removes the env vars for the other type\n"
+    "- Rewrites the `postgres` or `database` resource block with concrete branch/database/instance values fetched from the workspace\n"
 )
 
 

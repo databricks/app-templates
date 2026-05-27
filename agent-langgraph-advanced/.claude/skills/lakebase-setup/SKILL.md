@@ -99,7 +99,7 @@ databricks api get /api/2.0/postgres/projects/<project-name>/branches/<branch-na
 
 ## Step 3: Configure databricks.yml (Lakebase Resource)
 
-> **Note:** If you ran `uv run quickstart` with Lakebase flags (`--lakebase-provisioned-name` or `--lakebase-autoscaling-project`/`--lakebase-autoscaling-branch`), the quickstart already configured `databricks.yml` for you — including fetching the database ID for autoscaling. Manual configuration is only needed if you didn't use quickstart or need to change values.
+> **Note:** If you ran `uv run quickstart` with Lakebase flags (`--lakebase-provisioned-name` or `--lakebase-autoscaling-endpoint`), the quickstart already configured `databricks.yml` for you — including fetching the database ID for autoscaling. Manual configuration is only needed if you didn't use quickstart or need to change values.
 
 ### Option A: Provisioned
 

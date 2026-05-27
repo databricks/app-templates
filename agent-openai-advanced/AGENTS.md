@@ -2,44 +2,9 @@
 
 ## MANDATORY First Actions
 
-**Ask the user interactively:**
+For first-time environment setup, invoke the **quickstart** skill at `.claude/skills/quickstart/SKILL.md` — its "Setup Flow (for Claude)" section walks through the `AskUserQuestion` calls needed to collect the workspace, app target, and Lakebase configuration, then runs `uv run quickstart` with the right flags.
 
-1. **App deployment target:**
-   > "Do you have an existing Databricks app you want to deploy to, or should we create a new one? If existing, what's the app name?"
-
-   *Note: New apps should use the `agent-*` prefix (e.g., `agent-data-analyst`) unless the user specifies otherwise.*
-
-2. **Lakebase instance (required for memory and long-running persistence) — use `AskUserQuestion` tool:**
-
-   **Step A:** Use the `AskUserQuestion` tool to ask the user which type of Lakebase instance they are using:
-   - Option 1: **Provisioned** — "I have a provisioned Lakebase instance"
-   - Option 2: **Autoscaling** — "I have an autoscaling Lakebase project/branch"
-
-   **Step B (if Provisioned):** Use `AskUserQuestion` to ask:
-   > "What is your Lakebase instance name?"
-
-   Then pass it to quickstart: `uv run quickstart --lakebase-provisioned-name <instance-name>`
-   For post-deploy setup, see the **lakebase-setup** skill.
-
-   **Step B (if Autoscaling):** Use `AskUserQuestion` to ask:
-   > "What is your Lakebase project and branch? You can provide them separately (project name and branch name) or paste the full resource path (e.g. `project/my-project/branch/my-branch`)."
-
-   - If the user provides a resource path like `project/<project>/branch/<branch>`, parse out the project and branch components
-   - The user may also paste just a branch resource path like `project/<project-id>/branch/<branch-id>` — parse project and branch from the path segments
-
-   Then pass to quickstart: `uv run quickstart --lakebase-autoscaling-project <project> --lakebase-autoscaling-branch <branch>`
-   For post-deploy setup (postgres resource config, granting permissions), see `.claude/skills/add-tools/examples/lakebase-autoscaling.yaml`.
-
-**Autoscaling keywords**: If the user mentions "autoscaling", "project", "branch", or "postgres" in the context of Lakebase/memory, use the **autoscaling** guide at `.claude/skills/add-tools/examples/lakebase-autoscaling.yaml`.
-
-**Then set up the environment using quickstart:**
-
-1. **Read the quickstart skill** at `.claude/skills/quickstart/SKILL.md` — it contains all available CLI flags (including Lakebase options), what the script configures, and fallback instructions.
-2. **Check if `.env` exists.** If it does, the environment is already configured — read it to find `DATABRICKS_CONFIG_PROFILE` and skip to verifying auth. If `.env` does not exist, run quickstart:
-   ```bash
-   uv run quickstart --profile <profile-name> --lakebase-provisioned-name <instance-name>
-   ```
-3. Run `databricks auth profiles` to verify the profile is configured and valid.
+If `.env` already exists, the environment is already configured — read it to find `DATABRICKS_CONFIG_PROFILE` and skip to verifying auth with `databricks auth profiles`.
 
 **CRITICAL: All `databricks` CLI commands must include the profile from `.env`.** Either use `--profile` or set the env var:
 

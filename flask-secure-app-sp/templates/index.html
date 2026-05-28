@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure Databricks Query Tool</title>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <nav class="navbar">
+            <div class="nav-brand">
+                <a href="{{ url_for('index') }}">Secure App</a>
+            </div>
+        </nav>
+    </header>
+    
+    <main class="container">
+        <div class="hero">
+            <h1>Secure Databricks Query Tool</h1>
+            <div class="user-info">
+                <h2>Welcome, {{ user }}!</h2>
+                <p><strong>Authentication:</strong> <span class="token-display">Service Principal</span></p>
+            </div>
+        </div>
+
+        <div class="query-section">
+            <h2>Execute SQL Query</h2>
+            <p class="query-preview">Query: <code>SELECT <span id="column-preview">column</span> FROM <span id="table-preview">table</span></code></p>
+            
+            {% if error_message %}
+            <div class="error-message">
+                <h3>Error</h3>
+                <p><strong>{{ error_message }}</strong></p>
+            </div>
+            {% endif %}
+
+            {% if query_info %}
+            <div class="query-info">
+                <h3>Query Execution Results</h3>
+                <p><strong>Query:</strong> <code>{{ query_info.query }}</code></p>
+                <p><strong>Status:</strong> <span class="status-success">{{ query_info.status }}</span></p>
+                <p><strong>Rows Returned:</strong> {{ query_info.result_count }}</p>
+                
+                {% if not query_info.has_data %}
+                <div class="no-data-message">
+                    <p><strong>No data found.</strong> This could mean:</p>
+                    <ul>
+                        <li>The table exists but has no data</li>
+                        <li>The column name doesn't exist in the table</li>
+                        <li>The table name is incorrect</li>
+                        <li>You don't have permission to access this data</li>
+                        <li>The Application doesn't have sufficient privileges</li>
+                    </ul>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+            
+            <form method="POST" class="secure-form" id="query-form">
+                
+                <div class="form-group">
+                    <label for="column_name">Column Name:</label>
+                    <input type="text" id="column_name" name="column_name" 
+                           placeholder="e.g., name, id, created_date" 
+                           value="{{ request.form.get('column_name', '') }}" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="table_name">Table Name:</label>
+                    <input type="text" id="table_name" name="table_name" 
+                           placeholder="e.g., users.users" 
+                           value="{{ request.form.get('table_name', '') }}" required>
+                </div>
+                
+                <button type="submit" class="btn-primary">
+                    Execute Query
+                </button>
+            </form>
+        </div>
+
+        {% if parsed_data and parsed_data.has_data %}
+        <div class="results-section">
+            <h2>Query Results ({{ parsed_data.row_count }} rows)</h2>
+            <div class="results-container">
+                <table class="results-table">
+                    <thead>
+                        <tr>
+                            {% for column in parsed_data.columns %}
+                            <th>{{ column }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in parsed_data.rows %}
+                        <tr>
+                            {% for cell in row %}
+                            <td>{{ cell }}</td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+    </main>
+    
+    <footer>
+        <p>&copy; 2025 Secure Databricks App</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

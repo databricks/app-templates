@@ -26,6 +26,7 @@ dev = [
     "databricks-sdk",
     "databricks-mcp",
     "pytest",
+    "pytest-asyncio",
     "requests"
 ]
 
@@ -37,6 +38,7 @@ dev = [
 
 [project.scripts]
 custom-mcp-server = "server.main:main"
+query-local = "scripts.dev.query_local:run_locally"
 
 [build-system]
 requires = ["hatchling"]

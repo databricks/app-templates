@@ -129,7 +129,11 @@ uv sync
 - Start the server locally. Changes will trigger a reload:
 
 ```bash
-uv run custom-server
+DATABRICKS_CONFIG_PROFILE=<your-profile> \
+UC_CONNECTION_NAME=<your-connection> \
+SPEC_VOLUME_PATH=<your-volume-path> \
+SPEC_FILE_NAME=<your-spec-file> \
+uv run custom-open-api-spec-server
 ```
 
 ## Testing

@@ -243,9 +243,6 @@ class ProcessManager:
                 frontend_dir = Path("e2e-chatbot-app-next")
                 for cmd, desc in [("npm install", "install"), ("npm run build", "build")]:
                     print(f"Running npm {desc}...")
-                    # shell=True so the command resolves through the platform shell.
-                    # On Windows npm is a .cmd shim that isn't directly executable
-                    # by CreateProcess, so passing a split argv raised FileNotFoundError.
                     result = subprocess.run(
                         cmd, cwd=frontend_dir, capture_output=True, text=True, shell=True
                     )

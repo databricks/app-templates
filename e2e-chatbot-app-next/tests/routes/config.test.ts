@@ -60,7 +60,7 @@ test.describe('/api/config', () => {
   test('GET /api/config shows missing scopes when user token lacks required scopes', async ({
     adaContext,
   }) => {
-    // Build a JWT with only "offline_access" scope (missing serving.serving-endpoints)
+    // Build a JWT with only "offline_access" scope (missing model-serving)
     const payload = { scope: 'offline_access', sub: 'test-user' };
     const fakeJwt = `eyJhbGciOiJSUzI1NiJ9.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.sig`;
 
@@ -69,15 +69,15 @@ test.describe('/api/config', () => {
     });
     const data = await response.json();
 
-    // serving.serving-endpoints should be missing
-    expect(data.obo.missingScopes).toContain('serving.serving-endpoints');
+    // model-serving should be missing
+    expect(data.obo.missingScopes).toContain('model-serving');
   });
 
   test('GET /api/config shows no missing scopes when user token has all required scopes', async ({
     adaContext,
   }) => {
-    // Build a JWT that has serving.serving-endpoints
-    const payload = { scope: 'serving.serving-endpoints offline_access', sub: 'test-user' };
+    // Build a JWT that has model-serving
+    const payload = { scope: 'model-serving offline_access', sub: 'test-user' };
     const fakeJwt = `eyJhbGciOiJSUzI1NiJ9.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.sig`;
 
     const response = await adaContext.request.get('/api/config', {
@@ -88,11 +88,11 @@ test.describe('/api/config', () => {
     expect(data.obo.missingScopes).toEqual([]);
   });
 
-  test('GET /api/config parent scope satisfies child scope requirement', async ({
+  test('GET /api/config exact scope satisfies requirement', async ({
     adaContext,
   }) => {
-    // Build a JWT with parent scope "serving" which should satisfy "serving.serving-endpoints"
-    const payload = { scope: 'serving offline_access', sub: 'test-user' };
+    // Build a JWT with model-serving scope
+    const payload = { scope: 'model-serving offline_access', sub: 'test-user' };
     const fakeJwt = `eyJhbGciOiJSUzI1NiJ9.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.sig`;
 
     const response = await adaContext.request.get('/api/config', {
@@ -100,7 +100,7 @@ test.describe('/api/config', () => {
     });
     const data = await response.json();
 
-    // Parent "serving" should satisfy "serving.serving-endpoints"
+    // model-serving should satisfy the requirement
     expect(data.obo.missingScopes).toEqual([]);
   });
 });

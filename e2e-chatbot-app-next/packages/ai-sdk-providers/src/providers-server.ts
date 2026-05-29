@@ -325,9 +325,9 @@ const getEndpointDetails = async (servingEndpoint: string) => {
   const userApiScopes = data.auth_policy?.user_auth_policy?.api_scopes ?? [];
   const isOboEnabled = userApiScopes.length > 0 || isSupervisorAgent;
 
-  // serving.serving-endpoints is always needed for OBO (to call the endpoint as the user)
-  if (isOboEnabled && !userApiScopes.includes('serving.serving-endpoints')) {
-    userApiScopes.push('serving.serving-endpoints');
+  // model-serving is always needed for OBO (to call the endpoint as the user)
+  if (isOboEnabled && !userApiScopes.includes('model-serving')) {
+    userApiScopes.push('model-serving');
   }
 
   if (isOboEnabled) {

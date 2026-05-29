@@ -123,7 +123,7 @@ uv run pytest tests/
 ```python
 from databricks_mcp import DatabricksMCPClient
 mcp_client = DatabricksMCPClient(
-    server_url="http://localhost:8000"
+    server_url="http://localhost:8000/mcp"
 )
 # List available MCP tools
 print(mcp_client.list_tools())

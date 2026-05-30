@@ -49,8 +49,6 @@ test.describe('/api/config', () => {
   test('GET /api/config omits greeting when CHAT_GREETING is unset', async ({
     adaContext,
   }) => {
-    // CHAT_GREETING is not set in the test environment, so the server omits the
-    // field and the client falls back to its default greeting.
     const response = await adaContext.request.get('/api/config');
     const data = await response.json();
 

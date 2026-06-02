@@ -3,15 +3,13 @@ import { setupSampleLakebaseRoutes } from './routes/lakebase/todo-routes';
 
 createApp({
   plugins: [
-    server({ autoStart: false }),
     analytics(),
     files(),
     genie(),
     lakebase(),
+    server(),
   ],
-})
-  .then(async (appkit) => {
+  async onPluginsReady(appkit) {
     await setupSampleLakebaseRoutes(appkit);
-    await appkit.server.start();
-  })
-  .catch(console.error);
+  },
+}).catch(console.error);

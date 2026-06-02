@@ -68,7 +68,7 @@ export function ServingPage() {
         </p>
       </div>
 
-      <div className="border rounded-lg flex flex-col h-[600px]">
+      <div className="border rounded-lg flex flex-col h-[min(600px,70vh)]">
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.map((msg) => (
             <div

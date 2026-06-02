@@ -5,7 +5,7 @@ variables:
   genie_space_id:
     description: Default Genie Space ID
   genie_space_name:
-    description: Genie Space for AI-powered data queries. Space IDs configured via plugin config.
+    description: Genie Space display name
 
 resources:
   apps:
@@ -32,3 +32,4 @@ targets:
 
     variables:
       genie_space_id: placeholder
+      genie_space_name: placeholder

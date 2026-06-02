@@ -13,6 +13,7 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, './dist'),
     emptyOutDir: true,
+    sourcemap: process.env.NODE_ENV === 'development',
   },
   optimizeDeps: {
     include: ['react', 'react-dom', 'react/jsx-dev-runtime', 'react/jsx-runtime', 'recharts'],

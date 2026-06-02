@@ -334,3 +334,8 @@ if prompt:
     
     # Add assistant response to history
     st.session_state.history.append(assistant_response)
+
+    # Rerun so the new response is re-rendered through the history loop above,
+    # which attaches the feedback widget. Without this the feedback control is
+    # missing on the first message until the next request triggers a rerun.
+    st.rerun()

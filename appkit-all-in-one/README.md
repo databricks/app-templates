@@ -1,6 +1,6 @@
 # appkit-all-in-one
 
-A Databricks App powered by [AppKit](https://databricks.github.io/appkit/), featuring React, TypeScript, and Tailwind CSS.
+A Databricks App powered by [AppKit](https://www.databricks.com/devhub/docs/appkit/v0/), featuring React, TypeScript, and Tailwind CSS.
 
 **Enabled plugins:**
 - **Analytics** -- SQL query execution against Databricks SQL Warehouses
@@ -34,7 +34,7 @@ DATABRICKS_APP_PORT=8000
 
 #### Lakebase Configuration
 
-The Lakebase plugin requires additional environment variables for PostgreSQL connectivity. To learn how to configure the Lakebase plugin, see the [Lakebase plugin documentation](https://databricks.github.io/appkit/docs/plugins/lakebase).
+The Lakebase plugin requires additional environment variables for PostgreSQL connectivity. To learn how to configure the Lakebase plugin, see the [Lakebase plugin documentation](https://www.databricks.com/devhub/docs/appkit/v0/plugins/lakebase).
 
 ### CLI Authentication
 

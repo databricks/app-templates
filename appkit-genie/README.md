@@ -1,6 +1,6 @@
 # appkit-genie
 
-A Databricks App powered by [AppKit](https://databricks.github.io/appkit/), featuring React, TypeScript, and Tailwind CSS.
+A Databricks App powered by [AppKit](https://www.databricks.com/devhub/docs/appkit/v0/), featuring React, TypeScript, and Tailwind CSS.
 
 **Enabled plugins:**
 - **Genie** -- AI/BI Genie conversational interface for natural language data queries

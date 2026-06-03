@@ -3,24 +3,29 @@
 
 app-templates is the source of truth. This script renders the skills under
 ``.claude/skills/`` into the *flat*, marketplace-compatible layout that
-databricks-agent-skills expects:
+databricks-agent-skills expects, renaming each into that repo's
+``databricks-<topic>`` convention via the RENAME map below:
 
-    databricks-agent-skills/skills/app-templates-<name>/
+    .claude/skills/deploy/  ->  databricks-agent-skills/skills/databricks-agent-deploy/
 
 Why flat (not nested)? Claude Code discovers plugin skills only one level deep
 under the plugin's ``skills/`` root, so a grouping dir like
-``skills/app-templates/<name>/`` would be invisible. The ``app-templates-``
-prefix namespaces the group while keeping every skill exactly one level deep.
+``skills/app-templates/<name>/`` would be invisible. Every skill therefore
+lives exactly one level deep; the ``databricks-agent-`` namespace keeps the
+names unique and consistent with the repo's other ``databricks-*`` skills.
 See SKILLS_MIGRATION_PLAN.md for the full rationale.
 
 What it does per skill:
   1. Copies the whole skill dir (SKILL.md + references/ + examples/ + ...).
   2. Renders template placeholders ({{BUNDLE_NAME}}, {{LAKEBASE_*}}) to generic
      values so the copy reads as a standalone skill.
-  3. Rewrites the SKILL.md frontmatter ``name:`` to the prefixed dir name.
+  3. Rewrites the SKILL.md frontmatter ``name:`` to the renamed dir name.
   4. Rewrites emphasized cross-skill references (``**deploy** skill``) to the
-     prefixed name when they point at a sibling source skill.
-  5. Writes a ``.synced-from`` provenance marker.
+     renamed name when they point at a sibling source skill.
+  5. Injects a "Related skill" cross-link callout for skills that overlap an
+     existing databricks-agent-skills skill (see CROSS_LINKS), so the mirror
+     defers to the canonical skill instead of duplicating it.
+  6. Writes a ``.synced-from`` provenance marker.
 
 After writing, it runs the downstream ``scripts/skills.py generate`` so
 ``manifest.json`` + ``agents/openai.yaml`` + icon assets are produced in the
@@ -42,7 +47,72 @@ SCRIPT_DIR = Path(__file__).parent.resolve()
 REPO_ROOT = SCRIPT_DIR.parent
 SOURCE = REPO_ROOT / ".claude" / "skills"
 
-PREFIX = "app-templates-"
+# Map each source skill dir (under .claude/skills/) to its name in
+# databricks-agent-skills. That repo follows a strict ``databricks-<topic>``
+# convention, so the skills are renamed into a ``databricks-agent-*`` namespace
+# (rather than carrying an ``app-templates-`` prefix). The namespace keeps the
+# names unique, collision-safe, and visually consistent with the repo's other
+# ``databricks-*`` skills. Framework variants are disambiguated by suffix
+# (``-langgraph`` / ``-openai``). Every source skill MUST have an entry here;
+# main() fails loudly if one is missing.
+RENAME = {
+    "add-tools-langgraph": "databricks-agent-tools-langgraph",
+    "add-tools-openai": "databricks-agent-tools-openai",
+    "agent-langgraph-memory": "databricks-agent-memory-langgraph",
+    "agent-openai-memory": "databricks-agent-memory-openai",
+    "create-tools": "databricks-agent-create-tools",
+    "deploy": "databricks-agent-deploy",
+    "discover-tools": "databricks-agent-discover-tools",
+    "lakebase-setup": "databricks-agent-lakebase-setup",
+    "load-testing": "databricks-agent-load-testing",
+    "long-running-server": "databricks-agent-long-running-server",
+    "migrate-from-model-serving": "databricks-agent-migrate-from-model-serving",
+    "modify-langgraph-agent": "databricks-agent-modify-langgraph",
+    "modify-openai-agent": "databricks-agent-modify-openai",
+    "quickstart": "databricks-agent-quickstart",
+    "run-locally": "databricks-agent-run-locally",
+    "supervisor-api": "databricks-agent-supervisor-api",
+    "supervisor-api-background-mode": "databricks-agent-supervisor-api-background-mode",
+    "supervisor-api-client-function-calling": "databricks-agent-supervisor-api-client-function-calling",
+}
+
+# Several source skills overlap an existing databricks-agent-skills skill. Rather
+# than duplicate that content, the synced copy gets a short "Related skill"
+# callout injected right after its frontmatter, pointing at the canonical skill
+# and scoping itself to the agent-template-specific slice. Source skills stay
+# clean (they don't know about databricks-agent-skills); the deferral lives here
+# so it is reproduced on every sync. Keyed by source skill dir name.
+CROSS_LINKS = {
+    "lakebase-setup": (
+        "> **Related skill:** For general Lakebase Postgres setup, scaling, "
+        "branching, and connectivity, use the `databricks-lakebase` skill. This "
+        "skill covers only the agent-memory-specific Lakebase configuration."
+    ),
+    "deploy": (
+        "> **Related skills:** For general Databricks Asset Bundle (DAB) authoring "
+        "and resource management, use `databricks-dabs`; for the Databricks Apps "
+        "platform itself, use `databricks-apps`. This skill covers only deploying "
+        "an agent template to Databricks Apps."
+    ),
+    "migrate-from-model-serving": (
+        "> **Related skills:** For general Model Serving endpoint management, use "
+        "`databricks-model-serving`; for migrating other workloads to serverless, "
+        "use `databricks-serverless-migration`. This skill covers only migrating "
+        "an MLflow ResponsesAgent from Model Serving to Databricks Apps."
+    ),
+    "supervisor-api": (
+        "> **Related skill:** For Model Serving endpoint management, use "
+        "`databricks-model-serving`. This skill covers the Databricks Supervisor "
+        "API (the hosted agent loop) as used from an agent template."
+    ),
+    "quickstart": (
+        "> **Related skills:** For general Databricks app development in Python "
+        "(Dash, Streamlit, Gradio, Flask, FastAPI) and AppKit, use "
+        "`databricks-apps-python`; for CLI auth and profile setup, use "
+        "`databricks-core`. This skill covers environment setup for the agent "
+        "templates specifically."
+    ),
+}
 
 # Generic default for the DAB bundle/resource key. Real templates substitute a
 # per-template value at sync-to-template time; the standalone marketplace copy
@@ -106,14 +176,17 @@ def render_text(text: str, sibling_names: list[str]) -> str:
         text = text.replace(placeholder, value)
 
     # Rewrite emphasized/backticked references to a sibling source skill, e.g.
-    # ``**deploy** skill`` / `` `deploy` skill `` -> ``**app-templates-deploy** skill``.
+    # ``**deploy** skill`` / `` `deploy` skill `` -> ``**databricks-agent-deploy** skill``.
     # Keyed on real source names, so template-sync artifact names like
     # ``add-tools`` / ``modify-agent`` / ``agent-memory`` (which are NOT source
     # dir names) are deliberately left as descriptive prose.
     for name in sibling_names:
+        target = RENAME.get(name)
+        if not target:
+            continue
         text = re.sub(
             r"(\*\*|`)" + re.escape(name) + r"(\*\*|`)(\s+skill)",
-            lambda m: f"{m.group(1)}{PREFIX}{name}{m.group(2)}{m.group(3)}",
+            lambda m, t=target: f"{m.group(1)}{t}{m.group(2)}{m.group(3)}",
             text,
         )
     return text
@@ -136,6 +209,26 @@ def rewrite_frontmatter_name(text: str, new_name: str) -> str:
     return head + body if n else text
 
 
+def inject_cross_link(text: str, source_name: str) -> str:
+    """Insert a "Related skill" callout (if any) right after the frontmatter.
+
+    Keyed on the source skill dir name so the deferral is reproduced on every
+    sync without touching the upstream source. No-op for skills not in
+    CROSS_LINKS.
+    """
+    note = CROSS_LINKS.get(source_name)
+    if not note:
+        return text
+    if not text.startswith("---"):
+        return f"{note}\n\n{text}"
+    end = text.find("---", 3)
+    if end == -1:
+        return f"{note}\n\n{text}"
+    close = end + 3  # index just past the closing '---'
+    head, rest = text[:close], text[close:].lstrip("\n")
+    return f"{head}\n\n{note}\n\n{rest}"
+
+
 def copy_skill(src: Path, dest: Path, new_name: str, sibling_names: list[str]) -> None:
     dest.mkdir(parents=True, exist_ok=True)
     for item in sorted(src.rglob("*")):
@@ -149,6 +242,7 @@ def copy_skill(src: Path, dest: Path, new_name: str, sibling_names: list[str]) -
             text = render_text(text, sibling_names)
             if item.name == "SKILL.md" and rel == Path("SKILL.md"):
                 text = rewrite_frontmatter_name(text, new_name)
+                text = inject_cross_link(text, src.name)
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text)
         else:
@@ -157,12 +251,18 @@ def copy_skill(src: Path, dest: Path, new_name: str, sibling_names: list[str]) -
 
 
 def clean_existing(skills_root: Path) -> int:
-    """Remove previously-synced app-templates-* dirs so deletions propagate."""
+    """Remove previously-synced skill dirs so renames + deletions propagate.
+
+    Synced dirs are identified by their ``.synced-from`` provenance marker, not
+    by a name prefix. This catches both the current ``databricks-agent-*`` dirs
+    and any legacy ``app-templates-*`` dirs from before the rename, while never
+    touching hand-authored ``databricks-*`` skills (which carry no marker).
+    """
     removed = 0
     if not skills_root.exists():
         return removed
-    for d in skills_root.iterdir():
-        if d.is_dir() and d.name.startswith(PREFIX):
+    for d in sorted(skills_root.iterdir()):
+        if d.is_dir() and (d / ".synced-from").exists():
             shutil.rmtree(d)
             removed += 1
     return removed
@@ -170,8 +270,8 @@ def clean_existing(skills_root: Path) -> int:
 
 def assert_no_placeholders(skills_root: Path) -> None:
     leftovers = []
-    for d in skills_root.iterdir():
-        if not (d.is_dir() and d.name.startswith(PREFIX)):
+    for d in sorted(skills_root.iterdir()):
+        if not (d.is_dir() and (d / ".synced-from").exists()):
             continue
         for f in d.rglob("*"):
             if f.is_file() and f.suffix.lower() in TEXT_SUFFIXES:
@@ -217,11 +317,19 @@ def main() -> None:
         capture_output=True, text=True,
     ).stdout.strip() or "unknown"
 
+    unmapped = [n for n in names if n not in RENAME]
+    if unmapped:
+        raise SystemExit(
+            "ERROR: these source skills have no entry in the RENAME map: "
+            + ", ".join(unmapped)
+            + ".\nAdd a 'databricks-agent-*' target name for each and re-run."
+        )
+
     removed = clean_existing(skills_root)
-    print(f"Removed {removed} stale '{PREFIX}*' skill dir(s).")
+    print(f"Removed {removed} previously-synced skill dir(s).")
 
     for name in names:
-        new_name = PREFIX + name
+        new_name = RENAME[name]
         dest = skills_root / new_name
         copy_skill(SOURCE / name, dest, new_name, names)
         (dest / ".synced-from").write_text(

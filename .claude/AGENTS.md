@@ -15,9 +15,11 @@ After modifying any source file, run the corresponding sync command and commit t
 
 **Cross-repo:** `.claude/skills/` is also mirrored into
 [databricks/databricks-agent-skills](https://github.com/databricks/databricks-agent-skills)
-as `skills/app-templates-<name>/`. On push to the default branch, the
-`sync-skills-to-agent-skills.yml` workflow renders the skills (placeholders →
-generic, names prefixed) and opens a PR there. To preview locally:
+as `skills/databricks-agent-<name>/` (renamed into that repo's `databricks-*`
+convention via the RENAME map in the sync script). On push to the default
+branch, the `sync-skills-to-agent-skills.yml` workflow renders the skills
+(placeholders → generic, names mapped, cross-links injected) and opens a PR
+there. To preview locally:
 `python3 .scripts/sync-skills-to-agent-skills.py --target /path/to/databricks-agent-skills`.
 You do not edit the downstream copies — this repo stays the source of truth.
 

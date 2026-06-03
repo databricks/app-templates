@@ -1,0 +1,103 @@
+# Sync config for mirroring this repo's agent-template skills into the public
+# databricks-agent-skills repo. This repo (`.claude/skills/`) is the source of
+# truth; the sync is one-way and manual. See sync-agent-skills.md for the runbook.
+#
+# Each skill is renamed into databricks-agent-skills' `databricks-<topic>`
+# convention (a `databricks-agent-*` namespace). Framework variants are
+# disambiguated by a `-langgraph` / `-openai` suffix. Skills that overlap an
+# existing databricks-agent-skills skill carry a `related` cross-link so the
+# mirror defers to the canonical skill instead of duplicating it.
+
+target_repo: databricks/databricks-agent-skills
+
+# Placeholder substitutions applied to every synced file. These skills are
+# templated in this repo; the standalone marketplace copy renders them to
+# generic values. The {{LAKEBASE_*}} blocks appear only in the quickstart skill.
+placeholders:
+  "{{BUNDLE_NAME}}": "my_agent"
+  "{{LAKEBASE_OPTIONS}}": |
+    - `--lakebase-provisioned-name NAME`: Provisioned Lakebase instance name (memory templates)
+    - `--lakebase-autoscaling-endpoint NAME`: Autoscaling Lakebase endpoint — short name or full resource path `projects/<p>/branches/<b>/endpoints/<e>` (memory templates)
+    - `--lakebase-create-new NAME`: Provision a new Lakebase autoscaling project + branch with this name (memory templates)
+  "{{LAKEBASE_EXAMPLES}}": |
+    # Memory template with provisioned Lakebase
+    uv run quickstart --lakebase-provisioned-name my-instance
+
+    # Memory template with autoscaling Lakebase
+    uv run quickstart --lakebase-autoscaling-endpoint projects/my-project/branches/production/endpoints/primary
+
+    # Memory template — create a new Lakebase autoscaling project
+    uv run quickstart --lakebase-create-new my-new-project
+  "{{LAKEBASE_CONFIGURES_ENV}}": |
+    - `LAKEBASE_INSTANCE_NAME` - Provisioned Lakebase instance name (if `--lakebase-provisioned-name` provided)
+    - `LAKEBASE_AUTOSCALING_ENDPOINT` - Autoscaling Lakebase endpoint (if `--lakebase-autoscaling-endpoint` provided)
+    - `PGHOST`, `PGUSER`, `PGDATABASE` - Postgres connection details (auto-resolved from the instance or endpoint)
+  "{{LAKEBASE_CONFIGURES_YML}}": |
+    Updates `databricks.yml` (if Lakebase flags provided):
+    - Keeps only the env vars relevant to the selected Lakebase type (provisioned or autoscaling)
+    - Rewrites the `postgres` or `database` resource block with concrete branch/database/instance values fetched from the workspace
+
+# source: skill dir under `.claude/skills/`
+# target: skill dir name in databricks-agent-skills (`skills/<target>/`)
+# related: optional cross-link injected after the frontmatter, deferring to an
+#          existing databricks-agent-skills skill instead of duplicating it.
+skills:
+  - source: add-tools-langgraph
+    target: databricks-agent-tools-langgraph
+  - source: add-tools-openai
+    target: databricks-agent-tools-openai
+  - source: agent-langgraph-memory
+    target: databricks-agent-memory-langgraph
+  - source: agent-openai-memory
+    target: databricks-agent-memory-openai
+  - source: create-tools
+    target: databricks-agent-create-tools
+  - source: deploy
+    target: databricks-agent-deploy
+    related: >-
+      For general Databricks Asset Bundle (DAB) authoring and resource
+      management, use `databricks-dabs`; for the Databricks Apps platform
+      itself, use `databricks-apps`. This skill covers only deploying an agent
+      template to Databricks Apps.
+  - source: discover-tools
+    target: databricks-agent-discover-tools
+  - source: lakebase-setup
+    target: databricks-agent-lakebase-setup
+    related: >-
+      For general Lakebase Postgres setup, scaling, branching, and connectivity,
+      use the `databricks-lakebase` skill. This skill covers only the
+      agent-memory-specific Lakebase configuration.
+  - source: load-testing
+    target: databricks-agent-load-testing
+  - source: long-running-server
+    target: databricks-agent-long-running-server
+  - source: migrate-from-model-serving
+    target: databricks-agent-migrate-from-model-serving
+    related: >-
+      For general Model Serving endpoint management, use
+      `databricks-model-serving`; for migrating other workloads to serverless,
+      use `databricks-serverless-migration`. This skill covers only migrating an
+      MLflow ResponsesAgent from Model Serving to Databricks Apps.
+  - source: modify-langgraph-agent
+    target: databricks-agent-modify-langgraph
+  - source: modify-openai-agent
+    target: databricks-agent-modify-openai
+  - source: quickstart
+    target: databricks-agent-quickstart
+    related: >-
+      For general Databricks app development in Python (Dash, Streamlit, Gradio,
+      Flask, FastAPI) and AppKit, use `databricks-apps-python`; for CLI auth and
+      profile setup, use `databricks-core`. This skill covers environment setup
+      for the agent templates specifically.
+  - source: run-locally
+    target: databricks-agent-run-locally
+  - source: supervisor-api
+    target: databricks-agent-supervisor-api
+    related: >-
+      For Model Serving endpoint management, use `databricks-model-serving`.
+      This skill covers the Databricks Supervisor API (the hosted agent loop) as
+      used from an agent template.
+  - source: supervisor-api-background-mode
+    target: databricks-agent-supervisor-api-background-mode
+  - source: supervisor-api-client-function-calling
+    target: databricks-agent-supervisor-api-client-function-calling

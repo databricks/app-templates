@@ -13,6 +13,14 @@ Shared files are copied from source-of-truth directories into each template. **N
 
 After modifying any source file, run the corresponding sync command and commit the synced copies.
 
+**Cross-repo:** `.claude/skills/` is also mirrored into the public
+[databricks-agent-skills](https://github.com/databricks/databricks-agent-skills)
+repo as `skills/databricks-agent-*`. This is a **manual, agent-run** sync (no
+GitHub Actions, no token) — after changing skills, run the `sync-agent-skills/`
+runbook to open a downstream PR. See
+[`sync-agent-skills/README.md`](../sync-agent-skills/README.md). You do not edit
+the downstream copies — this repo stays the source of truth.
+
 ## Template Registry
 
 `.scripts/templates.py` is the canonical registry — see `TEMPLATES` dict for the full list of templates, their SDKs, and bundle names. All sync scripts and e2e tests import from it.

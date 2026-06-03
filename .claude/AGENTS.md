@@ -10,8 +10,9 @@ Shared files are copied from source-of-truth directories into each template. **N
 |---|---|---|
 | `.scripts/source/` | `uv run python .scripts/sync-scripts.py` | `quickstart.py`, `start_app.py`, `evaluate_agent.py`, `grant_lakebase_permissions.py`, `preflight.py`, plus `.github/workflows/deploy.yml` for templates with `has_actions: True` (with `{{BUNDLE_NAME}}` substitution) |
 | `.claude/skills/` | `uv run python .scripts/sync-skills.py` | All skill directories under `{template}/.claude/skills/` |
+| `.claude/skills/` → databricks-agent-skills | `Run ./sync-agent-skills` (manual runbook) | Mirrors skills as `skills/databricks-agent-*` in the public [databricks-agent-skills](https://github.com/databricks/databricks-agent-skills) repo, opening a downstream PR |
 
-After modifying any source file, run the corresponding sync command and commit the synced copies.
+After modifying any source file, run the corresponding sync command and commit the synced copies. Editing `.claude/skills/` means running **both** skill syncs above — `sync-skills.py` and the `sync-agent-skills` runbook.
 
 **Cross-repo:** `.claude/skills/` is also mirrored into the public
 [databricks-agent-skills](https://github.com/databricks/databricks-agent-skills)
@@ -114,7 +115,7 @@ Template test configs are in `.scripts/agent-integration-tests/template_config.p
 ## Editing Workflow Summary
 
 1. **Changing a shared script** (`quickstart.py`, `start_app.py`, `evaluate_agent.py`) — edit in `.scripts/source/`, run `uv run python .scripts/sync-scripts.py`
-2. **Changing a skill** — edit in `.claude/skills/`, run `uv run python .scripts/sync-skills.py`
+2. **Changing a skill** — edit in `.claude/skills/`, run `uv run python .scripts/sync-skills.py` (propagates to templates), then run the `sync-agent-skills` runbook (mirrors to databricks-agent-skills)
 3. **Changing template-specific agent code** — edit directly in `{template}/agent_server/`
 4. **Adding a new template** — add to `.scripts/templates.py`, create directory, run both sync commands
 5. **Changing `databricks.yml`** — edit directly in the template (not synced)

@@ -3,7 +3,7 @@
 Syncs the agent-template skills in this repo (`.claude/skills/`) to the public
 [databricks-agent-skills](https://github.com/databricks/databricks-agent-skills)
 repo as `skills/databricks-agent-*`. This repo is the source of truth; the sync
-is **one-way and manual** (no GitHub Actions, no token).
+is one-way and manual.
 
 ## Usage
 

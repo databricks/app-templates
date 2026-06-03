@@ -10,15 +10,9 @@ Shared files are copied from source-of-truth directories into each template. **N
 |---|---|---|
 | `.scripts/source/` | `uv run python .scripts/sync-scripts.py` | `quickstart.py`, `start_app.py`, `evaluate_agent.py`, `grant_lakebase_permissions.py`, `preflight.py`, plus `.github/workflows/deploy.yml` for templates with `has_actions: True` (with `{{BUNDLE_NAME}}` substitution) |
 | `.claude/skills/` | `uv run python .scripts/sync-skills.py` | All skill directories under `{template}/.claude/skills/` |
-| `.claude/skills/` → databricks-agent-skills | `Run ./sync-agent-skills` (manual runbook) | Mirrors skills as `skills/databricks-agent-*` in the public [databricks-agent-skills](https://github.com/databricks/databricks-agent-skills) repo, opening a downstream PR |
+| `.claude/skills/` | `Run ./sync-agent-skills` (manual runbook) | Mirrors skills as `skills/databricks-agent-*` in the public [databricks-agent-skills](https://github.com/databricks/databricks-agent-skills) repo, opening a downstream PR |
 
-After modifying any source file, run the corresponding sync command and commit the synced copies. Editing `.claude/skills/` means running **both** skill syncs above — `sync-skills.py` and the `sync-agent-skills` runbook.
-
-**Cross-repo:** `.claude/skills/` is also mirrored into the public
-[databricks-agent-skills](https://github.com/databricks/databricks-agent-skills)
-repo as `skills/databricks-agent-*`. This is a manual, agent-run sync — after changing skills, run the `sync-agent-skills/`
-runbook to open a downstream PR. See
-[`sync-agent-skills/README.md`](../sync-agent-skills/README.md).
+After modifying any source file, run the corresponding sync command and commit the synced copies.
 
 ## Template Registry
 

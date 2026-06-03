@@ -8,12 +8,11 @@ globs: sync-agent-skills/**
 Mirror the agent-template skills under `.claude/skills/` into the public
 [databricks-agent-skills](https://github.com/databricks/databricks-agent-skills)
 repo. This repo is the **source of truth**; the sync is **one-way** and the
-downstream copies are generated mirrors (`do not hand-edit`), so this is a clean
+downstream copies are generated mirrors, so this is a clean
 overwrite — no three-way merge.
 
 This is run manually by a person in Claude Code; it opens the downstream PR via a
-**browser compare URL** using your own GitHub session, so it needs **no token,
-App, or GitHub Actions** — and works even if you only have a fork of
+**browser compare URL** using your own GitHub session — and works even if you only have a fork of
 databricks-agent-skills (not direct write).
 
 ## Configuration

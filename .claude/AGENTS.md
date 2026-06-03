@@ -10,7 +10,7 @@ Shared files are copied from source-of-truth directories into each template. **N
 |---|---|---|
 | `.scripts/source/` | `uv run python .scripts/sync-scripts.py` | `quickstart.py`, `start_app.py`, `evaluate_agent.py`, `grant_lakebase_permissions.py`, `preflight.py`, plus `.github/workflows/deploy.yml` for templates with `has_actions: True` (with `{{BUNDLE_NAME}}` substitution) |
 | `.claude/skills/` | `uv run python .scripts/sync-skills.py` | All skill directories under `{template}/.claude/skills/` |
-| `.claude/skills/` | `Run ./sync-agent-skills` (manual runbook) | Mirrors skills as `skills/databricks-agent-*` in the public [databricks-agent-skills](https://github.com/databricks/databricks-agent-skills) repo, opening a downstream PR |
+| `.claude/skills/` | `Run ./sync-agent-skills` (manual runbook) | Assembles all skills into the single `databricks-agent-templates` skill in the public [databricks-agent-skills](https://github.com/databricks/databricks-agent-skills) repo, opening a downstream PR |
 
 After modifying any source file, run the corresponding sync command and commit the synced copies.
 

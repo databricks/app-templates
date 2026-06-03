@@ -2,17 +2,27 @@
 # databricks-agent-skills repo. This repo (`.claude/skills/`) is the source of
 # truth; the sync is one-way and manual. See sync-agent-skills.md for the runbook.
 #
-# Each skill is renamed into databricks-agent-skills' `databricks-<topic>`
-# convention (a `databricks-agent-*` namespace). Framework variants are
-# disambiguated by a `-langgraph` / `-openai` suffix. Skills that overlap an
-# existing databricks-agent-skills skill carry a `related` cross-link so the
-# mirror defers to the canonical skill instead of duplicating it.
+# The mirror is a SINGLE skill, `databricks-agent-templates`, assembled from the
+# source skills below — a router SKILL.md plus one `references/<source>/` per
+# source skill. This matches databricks-agent-skills' one-skill-per-area layout
+# (e.g. databricks-pipelines is one skill with many references), instead of
+# shipping ~18 sibling skills.
 
 target_repo: databricks/databricks-agent-skills
 
+skill:
+  name: databricks-agent-templates
+  description: >-
+    Build, run, and ship AI agents on the Databricks Apps platform from the
+    agent templates (LangGraph and OpenAI Agents SDK). Use when: scaffolding or
+    modifying an agent; adding tools (MCP servers, Genie spaces, vector search,
+    UC functions); adding memory; running locally; deploying to Databricks Apps;
+    enabling long-running/background execution; using the Supervisor API; load
+    testing; or migrating an MLflow ResponsesAgent from Model Serving to Apps.
+
 # Placeholder substitutions applied to every synced file. These skills are
-# templated in this repo; the standalone marketplace copy renders them to
-# generic values. The {{LAKEBASE_*}} blocks appear only in the quickstart skill.
+# templated in this repo; the standalone mirror renders them to generic values.
+# The {{LAKEBASE_*}} blocks appear only in the quickstart skill.
 placeholders:
   "{{BUNDLE_NAME}}": "my_agent"
   "{{LAKEBASE_OPTIONS}}": |
@@ -37,67 +47,94 @@ placeholders:
     - Keeps only the env vars relevant to the selected Lakebase type (provisioned or autoscaling)
     - Rewrites the `postgres` or `database` resource block with concrete branch/database/instance values fetched from the workspace
 
-# source: skill dir under `.claude/skills/`
-# target: skill dir name in databricks-agent-skills (`skills/<target>/`)
-# related: optional cross-link injected after the frontmatter, deferring to an
-#          existing databricks-agent-skills skill instead of duplicating it.
-skills:
-  - source: add-tools-langgraph
-    target: databricks-agent-tools-langgraph
-  - source: add-tools-openai
-    target: databricks-agent-tools-openai
-  - source: agent-langgraph-memory
-    target: databricks-agent-memory-langgraph
-  - source: agent-openai-memory
-    target: databricks-agent-memory-openai
-  - source: create-tools
-    target: databricks-agent-create-tools
-  - source: deploy
-    target: databricks-agent-deploy
-    related: >-
-      For general Databricks Asset Bundle (DAB) authoring and resource
-      management, use `databricks-dabs`; for the Databricks Apps platform
-      itself, use `databricks-apps`. This skill covers only deploying an agent
-      template to Databricks Apps.
-  - source: discover-tools
-    target: databricks-agent-discover-tools
-  - source: lakebase-setup
-    target: databricks-agent-lakebase-setup
-    related: >-
-      For general Lakebase Postgres setup, scaling, branching, and connectivity,
-      use the `databricks-lakebase` skill. This skill covers only the
-      agent-memory-specific Lakebase configuration.
-  - source: load-testing
-    target: databricks-agent-load-testing
-  - source: long-running-server
-    target: databricks-agent-long-running-server
-  - source: migrate-from-model-serving
-    target: databricks-agent-migrate-from-model-serving
-    related: >-
-      For general Model Serving endpoint management, use
-      `databricks-model-serving`; for migrating other workloads to serverless,
-      use `databricks-serverless-migration`. This skill covers only migrating an
-      MLflow ResponsesAgent from Model Serving to Databricks Apps.
-  - source: modify-langgraph-agent
-    target: databricks-agent-modify-langgraph
-  - source: modify-openai-agent
-    target: databricks-agent-modify-openai
+# Each source skill (a dir under `.claude/skills/`) becomes
+# `references/<source>/<source>.md` (+ its `examples/`) inside the single skill.
+#   group:   section heading in the router SKILL.md index
+#   summary: one-line index entry
+#   related: optional cross-link body; the runbook injects it as a
+#            "> **Related skill(s):** ..." callout deferring to an existing
+#            databricks-agent-skills skill instead of duplicating it.
+references:
   - source: quickstart
-    target: databricks-agent-quickstart
+    group: Getting started
+    summary: set up the dev environment, Databricks auth, and `.env`.
     related: >-
       For general Databricks app development in Python (Dash, Streamlit, Gradio,
       Flask, FastAPI) and AppKit, use `databricks-apps-python`; for CLI auth and
       profile setup, use `databricks-core`. This skill covers environment setup
       for the agent templates specifically.
   - source: run-locally
-    target: databricks-agent-run-locally
+    group: Getting started
+    summary: run and test the agent locally; curl the API; hot reload.
+
+  - source: discover-tools
+    group: Tools
+    summary: find MCP servers, Genie spaces, vector search indexes, and UC functions in the workspace.
+  - source: create-tools
+    group: Tools
+    summary: create the Databricks resources agents connect to as tools.
+  - source: add-tools-langgraph
+    group: Tools
+    summary: attach tools and grant `databricks.yml` permissions (LangGraph).
+  - source: add-tools-openai
+    group: Tools
+    summary: attach tools and grant `databricks.yml` permissions (OpenAI Agents SDK).
+
+  - source: modify-langgraph-agent
+    group: Modify the agent
+    summary: change the model, instructions, or tools (LangGraph).
+  - source: modify-openai-agent
+    group: Modify the agent
+    summary: change the model, instructions, or tools (OpenAI Agents SDK).
+
+  - source: agent-langgraph-memory
+    group: Memory
+    summary: short- and long-term memory (LangGraph checkpointer + store).
+  - source: agent-openai-memory
+    group: Memory
+    summary: conversation memory (OpenAI Agents SDK sessions).
+  - source: lakebase-setup
+    group: Memory
+    summary: configure Lakebase Postgres as the memory backend.
+    related: >-
+      For general Lakebase Postgres setup, scaling, branching, and connectivity,
+      use the `databricks-lakebase` skill. This skill covers only the
+      agent-memory-specific Lakebase configuration.
+
+  - source: deploy
+    group: Deploy & operate
+    summary: deploy to Databricks Apps with Databricks Asset Bundles.
+    related: >-
+      For general Databricks Asset Bundle (DAB) authoring and resource
+      management, use `databricks-dabs`; for the Databricks Apps platform
+      itself, use `databricks-apps`. This skill covers only deploying an agent
+      template to Databricks Apps.
+  - source: long-running-server
+    group: Deploy & operate
+    summary: background execution for tasks beyond the HTTP timeout.
+  - source: load-testing
+    group: Deploy & operate
+    summary: benchmark the app and find its max QPS.
+
   - source: supervisor-api
-    target: databricks-agent-supervisor-api
+    group: Supervisor API (hosted agent loop)
+    summary: run the agent loop server-side with the Databricks Supervisor API.
     related: >-
       For Model Serving endpoint management, use `databricks-model-serving`.
       This skill covers the Databricks Supervisor API (the hosted agent loop) as
       used from an agent template.
   - source: supervisor-api-background-mode
-    target: databricks-agent-supervisor-api-background-mode
+    group: Supervisor API (hosted agent loop)
+    summary: background polling for long-running tasks.
   - source: supervisor-api-client-function-calling
-    target: databricks-agent-supervisor-api-client-function-calling
+    group: Supervisor API (hosted agent loop)
+    summary: mix client-side Python function tools with hosted tools.
+
+  - source: migrate-from-model-serving
+    group: Migration
+    summary: migrate an MLflow ResponsesAgent from Model Serving to Databricks Apps.
+    related: >-
+      For general Model Serving endpoint management, use
+      `databricks-model-serving`; for migrating other workloads to serverless,
+      use `databricks-serverless-migration`. This skill covers only migrating an
+      MLflow ResponsesAgent from Model Serving to Databricks Apps.

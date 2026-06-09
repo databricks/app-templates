@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Application } from "express";
+import { Config } from "@databricks/sdk-experimental";
 import { seedModerationData } from "../lib/seed-data";
 
 interface AppKitWithLakebase {
@@ -123,6 +124,22 @@ const CreateReviewBody = z.object({
 const SERVING_ENDPOINT = process.env.SERVING_ENDPOINT;
 const DATABRICKS_HOST = process.env.DATABRICKS_HOST;
 
+// A deployed Databricks App is given OAuth service-principal credentials
+// (DATABRICKS_CLIENT_ID / DATABRICKS_CLIENT_SECRET), not a static token. Resolve
+// a bearer token at runtime via the SDK Config, which handles the app-SP OAuth
+// flow in production and the CLI profile locally. Mirrors rag-chat's
+// getDatabricksToken().
+async function getDatabricksToken(): Promise<string | null> {
+  if (process.env.DATABRICKS_TOKEN) return process.env.DATABRICKS_TOKEN;
+  const config = new Config({
+    profile: process.env.DATABRICKS_CONFIG_PROFILE || "DEFAULT",
+  });
+  const headers = new Headers();
+  await config.authenticate(headers);
+  const authHeader = headers.get("Authorization");
+  return authHeader ? authHeader.replace("Bearer ", "") : null;
+}
+
 async function analyzeContent(
   appkit: AppKitWithLakebase,
   submissionId: string,
@@ -178,8 +195,7 @@ Evaluate the content against ALL guidelines above. Respond with ONLY valid JSON 
 }`;
 
   try {
-    const token =
-      process.env.DATABRICKS_TOKEN ?? process.env.DATABRICKS_API_TOKEN;
+    const token = await getDatabricksToken();
     const host = DATABRICKS_HOST?.replace(/\/$/, "");
 
     if (!host || !token) {

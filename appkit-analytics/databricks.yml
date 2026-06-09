@@ -1,6 +1,14 @@
 bundle:
   name: appkit-analytics
 
+sync:
+  exclude:
+    # Lockfile is shipped in the repo so `databricks apps init` can run `npm ci`
+    # locally, but we deliberately keep it OUT of the bundle upload: the Databricks
+    # Apps Linux build container then runs a fresh `npm install`, avoiding the
+    # platform-specific binary resolution issues a macOS-generated lockfile causes.
+    - 'package-lock.json'
+
 variables:
   sql_warehouse_id:
     description: SQL Warehouse ID

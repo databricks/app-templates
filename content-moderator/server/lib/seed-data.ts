@@ -1,8 +1,3 @@
-// Demo data seeded on first startup by the app service principal (the SP owns
-// CAN_CONNECT_AND_CREATE, so it creates + owns the schema, tables, and rows).
-// This replaces the old human-run `seed/` script, which created the schema owned
-// by a human role the deployed SP could not operate on.
-
 interface LakebaseClient {
   lakebase: {
     query(

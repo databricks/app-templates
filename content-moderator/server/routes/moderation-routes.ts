@@ -124,11 +124,6 @@ const CreateReviewBody = z.object({
 const SERVING_ENDPOINT = process.env.SERVING_ENDPOINT;
 const DATABRICKS_HOST = process.env.DATABRICKS_HOST;
 
-// A deployed Databricks App is given OAuth service-principal credentials
-// (DATABRICKS_CLIENT_ID / DATABRICKS_CLIENT_SECRET), not a static token. Resolve
-// a bearer token at runtime via the SDK Config, which handles the app-SP OAuth
-// flow in production and the CLI profile locally. Mirrors rag-chat's
-// getDatabricksToken().
 async function getDatabricksToken(): Promise<string | null> {
   if (process.env.DATABRICKS_TOKEN) return process.env.DATABRICKS_TOKEN;
   const config = new Config({
@@ -272,9 +267,6 @@ export async function setupModerationRoutes(appkit: AppKitWithLakebase) {
     if (rows.length > 0) {
       console.log("[moderation] Tables already exist");
     } else {
-      // First boot: the app service principal creates and owns the schema,
-      // tables, and demo rows. No human pre-seed (which would create the schema
-      // owned by a human role the SP cannot operate on).
       await appkit.lakebase.query(SETUP_SCHEMA_SQL);
       await appkit.lakebase.query(CREATE_GUIDELINES_TABLE_SQL);
       await appkit.lakebase.query(CREATE_SUBMISSIONS_TABLE_SQL);

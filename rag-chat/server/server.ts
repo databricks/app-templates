@@ -13,10 +13,8 @@ createApp({
     await setupChatTables(appkit);
     setupChatRoutes(appkit);
     setupChatPersistenceRoutes(appkit);
-    // Kick off the Wikipedia seed without awaiting so a slow/blocked egress
-    // fetch can't delay route registration or trip the deploy health-check.
     void seedFromWikipedia(appkit, generateEmbedding, insertDocument).catch(
-      (e) => console.warn('[rag] seed failed:', (e as Error)?.message),
+      (e) => console.warn('[rag] seed failed:', (e as Error).message),
     );
   },
 }).catch(console.error);

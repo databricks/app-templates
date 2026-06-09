@@ -96,9 +96,6 @@ export async function setupSaasRoutes(appkit: AppKitWithLakebase) {
     if (rows.length > 0) {
       console.log("[saas] Table saas_tracker.subscriptions already exists");
     } else {
-      // First boot: the app service principal creates and owns the schema,
-      // table, and demo rows. No human pre-seed (which would create the schema
-      // owned by a human role the SP cannot operate on).
       await appkit.lakebase.query(SETUP_SCHEMA_SQL);
       await appkit.lakebase.query(CREATE_SUBSCRIPTIONS_TABLE_SQL);
       await seedSubscriptions(appkit);

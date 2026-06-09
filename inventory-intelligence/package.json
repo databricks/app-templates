@@ -26,8 +26,8 @@
   "license": "Unlicensed",
   "description": "Retail inventory management with AI-powered demand forecasting and replenishment recommendations",
   "dependencies": {
-    "@databricks/appkit": "0.38.1",
-    "@databricks/appkit-ui": "0.38.1",
+    "@databricks/appkit": "0.41.1",
+    "@databricks/appkit-ui": "0.41.1",
     "@databricks/sdk-experimental": "0.17.0",
     "clsx": "2.1.1",
     "lucide-react": "0.546.0",

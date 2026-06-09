@@ -7,14 +7,14 @@ import {
 } from "@databricks/appkit";
 import { setupInventoryRoutes, genieEnabled } from "./routes/inventory-routes";
 
-await createApp({
+createApp({
   plugins: [
-    server(),
     analytics(),
     ...(genieEnabled ? [genie()] : []),
     lakebase(),
+    server(),
   ],
   async onPluginsReady(appkit) {
     await setupInventoryRoutes(appkit);
   },
-});
+}).catch(console.error);

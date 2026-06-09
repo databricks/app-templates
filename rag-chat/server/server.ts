@@ -6,13 +6,17 @@ import { setupChatTables } from './lib/chat-store';
 import { seedFromWikipedia } from './lib/seed-data';
 import { generateEmbedding } from './lib/embeddings';
 
-await createApp({
-  plugins: [server(), lakebase()],
+createApp({
+  plugins: [lakebase(), server()],
   async onPluginsReady(appkit) {
     await setupRagTables(appkit);
     await setupChatTables(appkit);
-    await seedFromWikipedia(appkit, generateEmbedding, insertDocument);
     setupChatRoutes(appkit);
     setupChatPersistenceRoutes(appkit);
+    // Kick off the Wikipedia seed without awaiting so a slow/blocked egress
+    // fetch can't delay route registration or trip the deploy health-check.
+    void seedFromWikipedia(appkit, generateEmbedding, insertDocument).catch(
+      (e) => console.warn('[rag] seed failed:', (e as Error)?.message),
+    );
   },
-});
+}).catch(console.error);

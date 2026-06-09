@@ -32,9 +32,9 @@
   "license": "Unlicensed",
   "description": "Internal AI-powered support console for admins",
   "dependencies": {
-    "@databricks/appkit": "0.21.0",
-    "@databricks/appkit-ui": "0.21.0",
-    "@databricks/sdk-experimental": "^0.16.0",
+    "@databricks/appkit": "0.38.1",
+    "@databricks/appkit-ui": "0.38.1",
+    "@databricks/sdk-experimental": "0.17.0",
     "clsx": "2.1.1",
     "embla-carousel-react": "8.6.0",
     "lucide-react": "0.546.0",

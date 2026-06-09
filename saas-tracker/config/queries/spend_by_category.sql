@@ -8,7 +8,7 @@ SELECT
       ELSE 0
     END
   ), 0) AS monthly_spend_cents
-FROM saas_tracker.app_data.subscriptions
+FROM saas_tracker.saas_tracker.subscriptions
 WHERE status IN ('active', 'trial')
 GROUP BY category
 ORDER BY monthly_spend_cents DESC

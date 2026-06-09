@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Application } from "express";
+import { seedSubscriptions } from "../lib/seed-data";
 
 interface AppKitWithLakebase {
   lakebase: {
@@ -95,9 +96,15 @@ export async function setupSaasRoutes(appkit: AppKitWithLakebase) {
     if (rows.length > 0) {
       console.log("[saas] Table saas_tracker.subscriptions already exists");
     } else {
+      // First boot: the app service principal creates and owns the schema,
+      // table, and demo rows. No human pre-seed (which would create the schema
+      // owned by a human role the SP cannot operate on).
       await appkit.lakebase.query(SETUP_SCHEMA_SQL);
       await appkit.lakebase.query(CREATE_SUBSCRIPTIONS_TABLE_SQL);
-      console.log("[saas] Created schema and table saas_tracker.subscriptions");
+      await seedSubscriptions(appkit);
+      console.log(
+        "[saas] Created and seeded schema/table saas_tracker.subscriptions",
+      );
     }
   } catch (err) {
     console.warn("[saas] Database setup failed:", (err as Error).message);

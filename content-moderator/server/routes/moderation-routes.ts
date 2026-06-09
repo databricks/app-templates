@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Application } from "express";
+import { seedModerationData } from "../lib/seed-data";
 
 interface AppKitWithLakebase {
   lakebase: {
@@ -80,13 +81,6 @@ const CONTENT_TARGETS = [
   "twitter",
   "newsletter",
   "press_release",
-] as const;
-
-const SUBMISSION_STATUSES = [
-  "pending_review",
-  "approved",
-  "rejected",
-  "revision_requested",
 ] as const;
 
 const REVIEW_DECISIONS = [
@@ -262,12 +256,16 @@ export async function setupModerationRoutes(appkit: AppKitWithLakebase) {
     if (rows.length > 0) {
       console.log("[moderation] Tables already exist");
     } else {
+      // First boot: the app service principal creates and owns the schema,
+      // tables, and demo rows. No human pre-seed (which would create the schema
+      // owned by a human role the SP cannot operate on).
       await appkit.lakebase.query(SETUP_SCHEMA_SQL);
       await appkit.lakebase.query(CREATE_GUIDELINES_TABLE_SQL);
       await appkit.lakebase.query(CREATE_SUBMISSIONS_TABLE_SQL);
       await appkit.lakebase.query(CREATE_AI_ANALYSES_TABLE_SQL);
       await appkit.lakebase.query(CREATE_REVIEWS_TABLE_SQL);
-      console.log("[moderation] Created schema and tables");
+      await seedModerationData(appkit);
+      console.log("[moderation] Created and seeded schema and tables");
     }
   } catch (err) {
     console.warn("[moderation] Database setup failed:", (err as Error).message);

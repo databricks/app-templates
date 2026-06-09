@@ -1,27 +1,37 @@
-import pg from "pg";
+// Demo data seeded on first startup by the app service principal (the SP owns
+// CAN_CONNECT_AND_CREATE, so it creates + owns the schema, tables, and rows).
+// This replaces the old human-run `seed/` script, which created the schema owned
+// by a human role the deployed SP could not operate on.
 
-const DATABASE_URL = process.env.DATABASE_URL;
-const hasEnvVars = process.env.PGHOST && process.env.PGPASSWORD;
-
-if (!DATABASE_URL && !hasEnvVars) {
-  console.error(
-    "Set DATABASE_URL or PGHOST+PGUSER+PGPASSWORD+PGDATABASE env vars.",
-  );
-  process.exit(1);
+interface LakebaseClient {
+  lakebase: {
+    query(
+      text: string,
+      params?: unknown[],
+    ): Promise<{ rows: Record<string, unknown>[] }>;
+  };
 }
 
-const client = DATABASE_URL
-  ? new pg.Client({
-      connectionString: DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
-    })
-  : new pg.Client({ ssl: { rejectUnauthorized: false } });
-
-async function query(sql: string, params?: unknown[]) {
-  return client.query(sql, params);
+interface SeedSubscription {
+  name: string;
+  vendor: string;
+  description?: string;
+  category: string;
+  cost_cents: number;
+  billing_cycle: string;
+  owner_name: string;
+  owner_email: string;
+  department?: string;
+  license_count?: number;
+  status: string;
+  start_date: string;
+  renewal_date?: string;
+  cancellation_date?: string;
+  url?: string;
+  notes?: string;
 }
 
-const SUBSCRIPTIONS = [
+const SUBSCRIPTIONS: SeedSubscription[] = [
   {
     name: "GitHub Enterprise",
     vendor: "GitHub, Inc.",
@@ -300,38 +310,9 @@ const SUBSCRIPTIONS = [
   },
 ];
 
-async function createTable() {
-  await query(`CREATE SCHEMA IF NOT EXISTS saas_tracker`);
-  await query(`
-    CREATE TABLE IF NOT EXISTS saas_tracker.subscriptions (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      name TEXT NOT NULL,
-      vendor TEXT NOT NULL,
-      description TEXT,
-      category TEXT NOT NULL,
-      cost_cents INTEGER NOT NULL,
-      billing_cycle TEXT NOT NULL DEFAULT 'monthly',
-      currency TEXT NOT NULL DEFAULT 'USD',
-      owner_name TEXT NOT NULL,
-      owner_email TEXT NOT NULL,
-      department TEXT,
-      license_count INTEGER,
-      status TEXT NOT NULL DEFAULT 'active',
-      start_date DATE NOT NULL,
-      renewal_date DATE,
-      cancellation_date DATE,
-      url TEXT,
-      notes TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  console.log("Table created.");
-}
-
-async function seedData() {
+export async function seedSubscriptions(appkit: LakebaseClient): Promise<void> {
   for (const s of SUBSCRIPTIONS) {
-    await query(
+    await appkit.lakebase.query(
       `INSERT INTO saas_tracker.subscriptions
         (name, vendor, description, category, cost_cents, billing_cycle, owner_name, owner_email,
          department, license_count, status, start_date, renewal_date, cancellation_date, url, notes)
@@ -356,21 +337,5 @@ async function seedData() {
       ],
     );
   }
-  console.log(`Seeded ${SUBSCRIPTIONS.length} subscriptions.`);
+  console.log(`[saas] Seeded ${SUBSCRIPTIONS.length} subscriptions`);
 }
-
-async function main() {
-  await client.connect();
-  console.log("Connected to Lakebase.");
-
-  await createTable();
-  await seedData();
-
-  await client.end();
-  console.log("Seed complete.");
-}
-
-main().catch((err) => {
-  console.error("Seed failed:", err);
-  process.exit(1);
-});

@@ -1,14 +1,6 @@
 bundle:
   name: databricks-chatbot
 
-sync:
-  exclude:
-    # Lockfile is shipped in the repo so `databricks apps init` can run `npm ci`
-    # locally, but we deliberately keep it OUT of the bundle upload: the Databricks
-    # Apps Linux build container then runs a fresh `npm install`, avoiding the
-    # platform-specific binary resolution issues a macOS-generated lockfile causes.
-    - 'package-lock.json'
-
 variables:
   serving_endpoint_name:
     description: "Name of the model serving endpoint to be used by the app"

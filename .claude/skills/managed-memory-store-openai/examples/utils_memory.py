@@ -74,6 +74,11 @@ def resolve_scope() -> str | None:
     headers = get_request_headers() or {}
     if headers.get("x-forwarded-access-token"):
         return get_user_workspace_client().current_user.me().id
+    # Deployed apps must carry the OBO token above. DATABRICKS_APP_NAME is set by the Apps runtime
+    # when deployed, so the header/env fallbacks below are LOCAL-DEV ONLY — deployed we fail closed
+    # rather than trust a client-settable header for the scope.
+    if os.getenv("DATABRICKS_APP_NAME"):
+        return None
     return headers.get("x-forwarded-user") or os.getenv("DATABRICKS_MEMORY_SCOPE")
 
 

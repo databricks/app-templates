@@ -56,7 +56,7 @@ echo "Database: $DATABASE_NAME"
 ```bash
 databricks apps init \
   --name rag-chat-app \
-  --template https://github.com/databricks/devhub/tree/main/examples/rag-chat/template \
+  --template https://github.com/databricks/app-templates/tree/main/rag-chat \
   --set lakebase.postgres.branch="$BRANCH_NAME" \
   --set lakebase.postgres.database="$DATABASE_NAME"
 

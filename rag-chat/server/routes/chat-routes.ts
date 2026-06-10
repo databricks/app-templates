@@ -30,6 +30,16 @@ async function getDatabricksToken() {
   return authHeader.replace('Bearer ', '');
 }
 
+function gatewayBaseUrl(): string {
+  // Derive the AI Gateway domain from the workspace host so it resolves on every
+  // environment instead of hardcoding the prod suffix. DATABRICKS_HOST is the bare
+  // hostname in the Apps runtime; drop its first label and reuse the rest, e.g.
+  // e2-dogfood.staging.cloud.databricks.com -> ai-gateway.staging.cloud.databricks.com.
+  const host = process.env.DATABRICKS_HOST?.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const suffix = host?.split('.').slice(1).join('.') || 'cloud.databricks.com';
+  return `https://${process.env.DATABRICKS_WORKSPACE_ID}.ai-gateway.${suffix}/mlflow/v1`;
+}
+
 export function setupChatRoutes(appkit: AppKitWithLakebase) {
   appkit.server.extend((app) => {
     app.post('/api/chat', async (req, res) => {
@@ -91,7 +101,7 @@ export function setupChatRoutes(appkit: AppKitWithLakebase) {
         const token = await getDatabricksToken();
         const endpoint = process.env.DATABRICKS_ENDPOINT || 'databricks-gpt-5-4-mini';
         const databricks = createOpenAI({
-          baseURL: `https://${process.env.DATABRICKS_WORKSPACE_ID}.ai-gateway.cloud.databricks.com/mlflow/v1`,
+          baseURL: gatewayBaseUrl(),
           apiKey: token,
         });
 

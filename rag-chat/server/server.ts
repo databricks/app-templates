@@ -13,8 +13,8 @@ createApp({
     await setupChatTables(appkit);
     setupChatRoutes(appkit);
     setupChatPersistenceRoutes(appkit);
-    void seedFromWikipedia(appkit, generateEmbedding, insertDocument).catch(
-      (e) => console.warn('[rag] seed failed:', (e as Error).message),
+    void seedFromWikipedia(appkit, generateEmbedding, insertDocument).catch((e) =>
+      console.warn('[rag] seed failed:', (e as Error).message)
     );
   },
 }).catch(console.error);

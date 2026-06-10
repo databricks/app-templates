@@ -351,7 +351,9 @@ const REVIEWS: SeedReview[] = [
   },
 ];
 
-export async function seedModerationData(appkit: LakebaseClient): Promise<void> {
+export async function seedModerationData(
+  appkit: LakebaseClient,
+): Promise<void> {
   for (const g of GUIDELINES) {
     await appkit.lakebase.query(
       `INSERT INTO content_moderation.guidelines

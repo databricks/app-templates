@@ -191,7 +191,8 @@ Evaluate the content against ALL guidelines above. Respond with ONLY valid JSON 
 
   try {
     const token = await getDatabricksToken();
-    const host = DATABRICKS_HOST?.replace(/\/$/, "");
+    let host = DATABRICKS_HOST?.replace(/\/$/, "");
+    if (host && !/^https?:\/\//.test(host)) host = `https://${host}`;
 
     if (!host || !token) {
       console.log(

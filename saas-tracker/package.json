@@ -21,7 +21,7 @@
     "test:smoke": "playwright install chromium && playwright test tests/smoke.spec.ts",
     "clean": "rm -rf client/dist dist build node_modules .smoke-test test-results playwright-report",
     "postinstall": "npm run typegen",
-    "prebuild": "npm run sync && npm run typegen",
+    "prebuild": "npm run sync && npm run typegen -- --wait",
     "predev": "npm run sync && npm run typegen",
     "sync": "appkit plugin sync --write --silent",
     "typegen": "appkit generate-types",

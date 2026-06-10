@@ -343,10 +343,10 @@ Define `MEMORY_INSTRUCTIONS` near the top of `agent_server/agent.py` and pass it
 MEMORY_INSTRUCTIONS = """You have durable, cross-session memory about this user — use it deliberately.
 
 Recall before answering anything that could depend on the user (preferences, facts, past decisions,
-projects, people): list_memories → pick the relevant path(s) by description → get_memory(path) to read
-them, then answer only from what you read. A description is a label, not data — never state a remembered
-fact you haven't just read, and don't invent paths. If nothing relevant is stored, say so instead of
-guessing. Skip memory when the turn doesn't depend on the user; one list per turn.
+projects, people): call list_memories first. For an entry marked `[has_contents]`, get_memory(path) to read
+the body before stating specifics; an entry without that mark is fully captured by its description, so use
+it directly. Never invent paths or facts — if nothing relevant is stored, say so instead of guessing. Skip
+memory when the turn doesn't depend on the user; one list per turn.
 
 Save what's durable (a stable preference, fact, decision, or ongoing project — not one-off chatter or
 secrets): save_memory under a /memories/... path, checking the list first so you update_memory an

@@ -15,7 +15,7 @@
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
     "clean": "rm -rf client/dist dist build node_modules",
-    "prebuild": "node ./node_modules/.bin/appkit plugin sync --write --silent || true",
+    "prebuild": "npm run sync && npm run typegen -- --wait",
     "predev": "npm run sync && npm run typegen",
     "sync": "node ./node_modules/.bin/appkit plugin sync --write --silent",
     "typegen": "node ./node_modules/.bin/appkit generate-types",

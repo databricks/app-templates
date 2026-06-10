@@ -14,16 +14,17 @@ REST calls to the Unity Catalog **memory-store** APIs.
 > database to provision, no tables to create, no embedding endpoint, and no extra Python dependency**
 > (it uses the `databricks-sdk` already in the template). This is **different from** the
 > `agent-openai-memory` / `agent-langgraph-memory` skills, which persist to a **Lakebase** instance you
-> run yourself. It's also independent of, and additive to, a template's short-term *session* memory
-> (the OpenAI `AsyncDatabricksSession` or the LangGraph checkpointer) — keep that if it's there.
+> run yourself. It's **additive to short-term/session memory** (the OpenAI `AsyncDatabricksSession` or the
+> LangGraph checkpointer) — keep that. But it **is** the agent's long-term memory, and there should be only
+> one: if the template already has a long-term memory system, remove it before adding these tools.
 
 This skill covers **both** the OpenAI Agents SDK and LangGraph; each step notes the small per-SDK difference.
 
+**Bringing your own agent (not a Databricks template)?** The *portable core* works anywhere: the memory-store REST API, the five tools, the scope-as-isolation rule, and the grant calls (Steps 1–2). The app-template specifics — the `agent_server/...` paths, `resolve_scope()`'s header/OBO helpers, and the `.env` / `databricks.yml` / `quickstart` / `databricks apps` plumbing — are **examples**: map each to your own app (your tools module, your way of identifying the signed-in user, your env config, your deploy). Two invariants never change: the tools authenticate to Databricks via `WorkspaceClient()` (give your app Databricks creds) as a **service principal you grant on the store**, and you pass the **end user's id** as `scope` — fail closed, never the SP.
+
 ## Prerequisites — this is an add-on
 
-This skill **adds long-term memory to an agent that's already set up** — it doesn't scaffold one. First make sure the template is configured and runs:
-- If there's **no `.env`** (auth not configured), run the **quickstart** skill first — it sets the Databricks profile + MLflow experiment, and on the advanced templates provisions the Lakebase used for short-term *session* memory (which this skill leaves intact). Then come back here.
-- Confirm the agent runs (`uv run start-app`) before layering memory on top.
+This skill **adds long-term memory to an agent that's already set up** — it doesn't scaffold one. If there's **no `.env`** (auth not configured), run the **quickstart** skill first — it sets the Databricks profile + MLflow experiment, and on the advanced templates provisions the Lakebase used for short-term *session* memory (which this skill leaves intact). Then come back here. (On your own agent, the equivalent is just that it's authenticated to Databricks — a `WorkspaceClient()` can connect.)
 
 ## Concepts
 
@@ -97,7 +98,7 @@ curl -sS "$PERM" -H "Authorization: Bearer $TOKEN"
 
 ## Step 3 — Add the memory tools
 
-Create `agent_server/utils_memory.py` from **(a) the shared core + the block for your SDK** — (b) for the OpenAI Agents SDK *or* (c) for LangGraph (not both — they each define `_scope` their own way). **No new dependency** — it uses the `databricks-sdk` already in the template.
+Create `agent_server/utils_memory.py` from **(a) the shared core + the block for your SDK** — (b) for the OpenAI Agents SDK *or* (c) for LangGraph (not both — they each define `_scope` their own way). **No new dependency** — it uses the `databricks-sdk` already in the template. (If the template already has a `utils_memory.py`, don't overwrite it — add yours as `utils_managed_memory.py`.)
 
 **(a) Shared core** — the REST calls and scope resolution (SDK-agnostic):
 
@@ -192,6 +193,11 @@ def _delete(scope, path):
         raise
     return f"Deleted {path}."
 ```
+
+> `resolve_scope()` uses two helpers the app-templates ship — `get_request_headers()` (MLflow `agent_server`)
+> and `get_user_workspace_client()` (the template's `utils`). If your Databricks App doesn't have them, do the
+> same thing directly: read the forwarded user token (`X-Forwarded-Access-Token`) from the request and call
+> `current_user.me().id` on a `WorkspaceClient` built with it — return that id, or `None` to fail closed.
 
 **(b) OpenAI Agents SDK wrappers** — thin decorators over the shared core; `scope` comes from the run context:
 
@@ -300,7 +306,7 @@ if not scope:
 from agent_server.utils_memory import MEMORY_TOOLS, MemoryContext, resolve_scope
 # Agent(... tools=[*<your existing tools>, *MEMORY_TOOLS], instructions=MEMORY_INSTRUCTIONS)
 result = await Runner.run(agent, messages, context=MemoryContext(scope=scope))
-# If your handler already passes session= (e.g. agent-openai-advanced), KEEP it:
+# If your handler already passes session= (any short-term session memory), KEEP it:
 result = await Runner.run(agent, messages, session=session, context=MemoryContext(scope=scope))
 ```
 
@@ -309,9 +315,11 @@ result = await Runner.run(agent, messages, session=session, context=MemoryContex
 from agent_server.utils_memory import memory_tools, resolve_scope
 # create_agent(tools=[*<your existing tools>, *memory_tools()], system_prompt=MEMORY_INSTRUCTIONS, ...)
 config = {"configurable": {"memory_scope": scope}}          # add to the config you already pass
-# (advanced template: keep the checkpointer, just REMOVE `store=` — the UC store replaces AsyncDatabricksStore)
 agent.astream(input=messages, config=config, stream_mode=["updates", "messages"])
 ```
+
+> If the template already wires its own long-term memory (e.g. a LangGraph `store=` / `AsyncDatabricksStore`
+> with its own memory tools), remove it here — keep the checkpointer. (Replace, don't stack — see the intro.)
 
 `resolve_scope()`: deployed → the OBO forwarded token → `current_user.me().id` (the proven path); local → an `X-Forwarded-User` header or a dev-only `DATABRICKS_MEMORY_SCOPE` so the chat UI works.
 

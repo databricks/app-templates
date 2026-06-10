@@ -1,0 +1,34 @@
+bundle:
+  name: appkit-genie-advanced
+
+variables:
+  genie_space_id:
+    description: Default Genie Space ID
+  genie_space_name:
+    description: Genie Space for AI-powered data queries. Space IDs configured via plugin config.
+
+resources:
+  apps:
+    app:
+      name: "appkit-genie-advanced"
+      description: "Node.js + React Genie app with multi-space picker, conversation history, feedback, and CSV export"
+      source_code_path: ./
+      user_api_scopes:
+        - dashboards.genie
+
+      # The resources which this app has access to.
+      resources:
+        - name: genie-space
+          genie_space:
+            name: ${var.genie_space_name}
+            space_id: ${var.genie_space_id}
+            permission: CAN_RUN
+
+targets:
+  default:
+    default: true
+    workspace:
+      host: https://your-workspace.cloud.databricks.com
+
+    variables:
+      genie_space_id: placeholder

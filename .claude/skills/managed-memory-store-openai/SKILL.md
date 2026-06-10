@@ -82,44 +82,31 @@ bash examples/grant_memory_store.sh verify
 ## Step 2 — add the tools
 
 1. Copy `examples/utils_memory.py` into `agent_server/`. **No new dependency** — it uses the `databricks-sdk` and `openai-agents` already in the template.
-2. In `agent_server/agent.py`, import the tools and **add them to your existing `create_agent`** — don't replace it (keep your current model, your other tools, and the `mcp_servers` parameter):
-   ```python
-   from agent_server.utils_memory import MEMORY_TOOLS, MemoryContext, resolve_scope
-   # MEMORY_INSTRUCTIONS is defined in Step 4 — add it before you import-test, or you'll hit NameError
-
-   def create_agent(mcp_servers: list[McpServer] | None = None) -> Agent:
-       return Agent(
-           name="Agent",
-           model="databricks-gpt-5-2",                 # keep the template's existing model
-           instructions=MEMORY_INSTRUCTIONS,           # Step 4 (merge with any existing system prompt)
-           tools=[get_current_time, *MEMORY_TOOLS],    # ADD *MEMORY_TOOLS to the existing tool list
-           mcp_servers=mcp_servers or [],              # keep the template's MCP wiring
-       )
-   ```
+2. Make three **additions** to the agent you already have in `agent_server/agent.py` — don't rewrite `create_agent` or drop anything it already passes (model, other tools, `mcp_servers`, …):
+   - **Import:** `from agent_server.utils_memory import MEMORY_TOOLS, MemoryContext, resolve_scope`
+   - **Append the tools** to the existing `tools=[...]` list: `tools=[*<your existing tools>, *MEMORY_TOOLS]`
+   - **Set instructions:** `instructions=MEMORY_INSTRUCTIONS` (defined in Step 4 — add it before you import-test or you'll hit `NameError`; if the agent already has a prompt, merge rather than replace).
 
 ## Step 3 — resolve `scope` and wire it in (fail closed)
 
 Resolve the end user **once per request** and pass it via the run context. The tools run as the app
 SP; only `scope` is per-user. **Never** let scope be empty or fall back to the app identity — that
-mixes all users into one bucket.
+mixes all users into one bucket. This is purely **additive** to your handlers:
 
-Add the imports to `agent_server/agent.py` (`HTTPException` is from FastAPI, already a dependency):
-```python
-from fastapi import HTTPException
-from agent_server.utils_memory import resolve_scope, MemoryContext
-```
-
-Then, in **both** `invoke_handler` and `stream_handler`, resolve scope before building the agent and
-pass it as the run context (the base template sets neither — you're adding the guard and `context=`):
-```python
-scope = resolve_scope()
-if not scope:
-    raise HTTPException(status_code=401, detail="No end-user identity — refusing a shared memory scope.")
-agent = create_agent()
-messages = [i.model_dump() for i in request.input]
-result = await Runner.run(agent, messages, context=MemoryContext(scope=scope))            # invoke_handler
-# stream_handler: result = Runner.run_streamed(agent, input=messages, context=MemoryContext(scope=scope))
-```
+- **Import:** `from fastapi import HTTPException` and `from agent_server.utils_memory import resolve_scope, MemoryContext` (both already deps).
+- **In each handler** (`invoke_handler` and `stream_handler`), add the fail-closed guard before the agent runs:
+  ```python
+  scope = resolve_scope()
+  if not scope:
+      raise HTTPException(status_code=401, detail="No end-user identity — refusing a shared memory scope.")
+      # MLflow's agent_server surfaces this as a 500; either way the request is refused (fail closed).
+  ```
+- **Add `context=MemoryContext(scope=scope)` to the `Runner.run(...)` / `Runner.run_streamed(...)` call you already have** — keep every argument that's already there, just add one:
+  ```python
+  result = await Runner.run(agent, messages, context=MemoryContext(scope=scope))
+  # If your handler already passes session= (e.g. the agent-openai-advanced template), KEEP it:
+  result = await Runner.run(agent, messages, session=session, context=MemoryContext(scope=scope))
+  ```
 
 `resolve_scope()` (in `utils_memory.py`): deployed → the OBO forwarded token → `current_user.me().id`
 (the proven path); local → an `X-Forwarded-User` header, or a dev-only `DATABRICKS_MEMORY_SCOPE` env
@@ -128,8 +115,7 @@ so the bundled chat UI works. Returns `None` when there's no end-user → you fa
 ## Step 4 — agent instructions
 
 Define `MEMORY_INSTRUCTIONS` near the top of `agent_server/agent.py` and pass it as `instructions=`
-(Step 2). This is an addon to any existing instructions. — **prepend it** rather than
-dropping it:
+(Step 2). If the agent already has a system prompt, **prepend yours and keep it** rather than replacing it:
 
 ```python
 MEMORY_INSTRUCTIONS = """You have durable, cross-session memory about this user — use it deliberately.
@@ -183,7 +169,7 @@ curl -X POST https://<app-url>/invocations -H "Authorization: Bearer $TOKEN" \
 | Issue | Cause | Solution |
 |---|---|---|
 | `RuntimeError: DATABRICKS_MEMORY_STORE is not set` | env var missing | Set it in `.env` (local) and `databricks.yml` `config.env` (deploy) — Step 1b |
-| `401 No end-user identity` | no `scope` resolved | Deployed: enable user-authorization (OBO) on the app. Local: send `X-Forwarded-User` or set `DATABRICKS_MEMORY_SCOPE` |
+| `500` + "No end-user identity" | no `scope` resolved — the fail-closed guard fired (the `agent_server` framework surfaces the 401 as a 500) | Deployed: ensure the OBO user token reaches the app. Local: send `X-Forwarded-User` or set `DATABRICKS_MEMORY_SCOPE` |
 | `PERMISSION_DENIED` | caller lacks `READ/WRITE_MEMORY_STORE` | Grant the app SP (Step 1c `app`) / your user (Step 1c `me`) |
 | `NOT_FOUND` on **every** call | wrong store name / store doesn't exist | Re-check `DATABRICKS_MEMORY_STORE` is the full `catalog.schema.name` and the store exists |
 | `ALREADY_EXISTS` on save | the path is taken | Use `update_memory`, or pick a fresh path |
@@ -195,6 +181,7 @@ curl -X POST https://<app-url>/invocations -H "Authorization: Bearer $TOKEN" \
 
 - **No memory structure yet:** entries are flat per scope; the agent invents `/memories/...` paths. The list endpoint supports a `path_prefix` filter, but it's only useful once there's structure — it is **not** exposed to the agent here.
 - **Description vs contents:** for a brief fact the `description` is the whole memory (leave `contents` empty); use `contents` only for detail beyond one line. `update_memory` revises contents only (updating descriptions isn't supported yet).
+- **Combining with short-term memory:** this skill is additive to a template that already has short-term *session* memory (e.g. `agent-openai-advanced`'s Lakebase `AsyncDatabricksSession`). Keep it — pass `session=` **and** `context=` together (Step 3) — and after deploy also grant the app SP its Lakebase Postgres privileges (the template's own requirement, e.g. `scripts/grant_lakebase_permissions.py`), or the app 502s on session setup before memory ever runs.
 
 ## Next Steps
 

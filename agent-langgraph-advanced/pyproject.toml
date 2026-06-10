@@ -11,6 +11,7 @@ dependencies = [
     "fastapi>=0.129.0",
     "uvicorn>=0.41.0",
     "databricks-langchain[memory]>=0.19.0",
+    "databricks-openai",
     "databricks-ai-bridge[agent-server]>=0.19.0",
     "databricks-sdk>=0.79.0",
     "databricks-agents>=1.9.3",
@@ -38,6 +39,15 @@ setup = [
 
 [tool.uv]
 default-groups = ["dev", "setup"]
+
+# TEMPORARY: pin databricks-ai-bridge and its integrations to the fix branch for
+# https://github.com/databricks/databricks-ai-bridge/pull/435 while the fix is
+# unreleased. Remove these once a databricks-ai-bridge release containing the
+# VectorSearchIndex import fix is published to PyPI.
+[tool.uv.sources]
+databricks-ai-bridge = { git = "https://github.com/databricks/databricks-ai-bridge.git", branch = "jennsun/fix-vector-search-index-import" }
+databricks-openai = { git = "https://github.com/databricks/databricks-ai-bridge.git", branch = "jennsun/fix-vector-search-index-import", subdirectory = "integrations/openai" }
+databricks-langchain = { git = "https://github.com/databricks/databricks-ai-bridge.git", branch = "jennsun/fix-vector-search-index-import", subdirectory = "integrations/langchain" }
 
 
 [tool.pytest.ini_options]

@@ -174,7 +174,10 @@ def _get(scope, path):
 def _list(scope):
     resp = _ws().api_client.do("GET", _entries(), query={"scope": scope})
     items = resp.get("entries", [])
-    return "\n".join(f"- {e['path']}: {e.get('description','')}" for e in items) or "No memories yet."
+    return "\n".join(
+        ("[has_contents] " if e.get("has_contents") else "") + f"- {e['path']}: {e.get('description', '')}"
+        for e in items
+    ) or "No memories yet."
 
 def _update(scope, path, op):  # op = exactly one of str_replace/insert/replace_all
     if len(op) != 1:
@@ -238,8 +241,9 @@ async def get_memory(ctx: RunContextWrapper[MemoryContext], path: str) -> str:
 @function_tool
 async def list_memories(ctx: RunContextWrapper[MemoryContext]) -> str:
     """List EVERY saved memory as (path, description) — the index; returns NO contents. Your first step
-    for recall (scan → pick path(s) → get_memory each) and before saving (so you update an existing topic
-    rather than duplicate). A description is a label, not the data. One call per turn."""
+    for recall (scan → pick the relevant path(s)) and before saving (so you update an existing topic rather
+    than duplicate). An entry prefixed `[has_contents]` has a fuller body — get_memory(path) to read it
+    before stating specifics; an entry without that prefix is fully captured by its description. One call per turn."""
     return _list(_scope(ctx))
 
 @function_tool(strict_mode=False)

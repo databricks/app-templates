@@ -132,18 +132,21 @@ def _entries(suffix: str = "") -> str:
         raise RuntimeError("DATABRICKS_MEMORY_STORE is not set — it must be the full catalog.schema.name.")
     return f"/api/2.1/unity-catalog/memory-stores/{store}/entries{suffix}"
 
-def resolve_scope() -> str | None:
+def resolve_scope(request=None) -> str | None:
     """The end user's id used as `scope`, or None if it can't be determined (the handler MUST fail
-    closed). Deployed: the OBO forwarded token -> current_user.me().id. Local: an X-Forwarded-User
-    header or a dev-only DATABRICKS_MEMORY_SCOPE env var. NEVER fall back to the app's own identity."""
+    closed). Deployed: the OBO forwarded token -> current_user.me().id — the ONLY trusted source.
+    Local: an X-Forwarded-User header, the request's custom_inputs.user_id (what the bundled chat UI /
+    preflight send), or a dev-only DATABRICKS_MEMORY_SCOPE env var. NEVER the app's own identity, and
+    NEVER a client-supplied value (X-Forwarded-User / custom_inputs) when deployed — those are spoofable."""
     headers = get_request_headers() or {}
     if headers.get("x-forwarded-access-token"):
         return get_user_workspace_client().current_user.me().id
-    # Deployed, the OBO token above is the only trusted source — never trust a client-settable header.
-    # DATABRICKS_APP_NAME is set by the Apps runtime when deployed, so the fallbacks are LOCAL-DEV ONLY:
+    # Deployed -> the verified OBO token above is the only trusted source. DATABRICKS_APP_NAME is set by
+    # the Apps runtime when deployed, so the client-supplied fallbacks below are LOCAL-DEV ONLY:
     if os.getenv("DATABRICKS_APP_NAME"):
         return None
-    return headers.get("x-forwarded-user") or os.getenv("DATABRICKS_MEMORY_SCOPE")
+    ci = dict(getattr(request, "custom_inputs", None) or {})
+    return headers.get("x-forwarded-user") or ci.get("user_id") or os.getenv("DATABRICKS_MEMORY_SCOPE")
 
 # The five operations. `scope` is passed in (never model-supplied). Each returns a short string.
 def _save(scope, path, description, contents=""):
@@ -295,7 +298,7 @@ These are **additions** to the agent/handlers you already have — don't rewrite
 
 ```python
 from fastapi import HTTPException
-scope = resolve_scope()
+scope = resolve_scope(request)   # pass the request so it can read custom_inputs.user_id locally
 if not scope:
     raise HTTPException(status_code=401, detail="No end-user identity — refusing a shared memory scope.")
     # MLflow's agent_server surfaces this as a 500; either way the request is refused.
@@ -320,8 +323,12 @@ agent.astream(input=messages, config=config, stream_mode=["updates", "messages"]
 
 > If the template already wires its own long-term memory (e.g. a LangGraph `store=` / `AsyncDatabricksStore`
 > with its own memory tools), remove it here — keep the checkpointer. (Replace, don't stack — see the intro.)
+> Heads-up: it may be **entangled with short-term memory** — co-provisioned in a shared resource manager
+> (one context that yields *both* checkpointer and store) and/or set up in the server lifespan. So removing
+> it can be more than deleting one argument: excise only the long-term store and its setup, and leave the
+> short-term path intact. Inspect the wiring rather than assuming a one-liner.
 
-`resolve_scope()`: deployed → the OBO forwarded token → `current_user.me().id` (the proven path); local → an `X-Forwarded-User` header or a dev-only `DATABRICKS_MEMORY_SCOPE` so the chat UI works.
+`resolve_scope(request)`: deployed → the **verified** OBO token → `current_user.me().id` (the only source trusted in prod — it can't be spoofed and **supersedes** any client-supplied `custom_inputs.user_id` the template uses for its own memory). Local → an `X-Forwarded-User` header, the request's `custom_inputs.user_id` (what the bundled **chat UI** and **`preflight`** send), or `DATABRICKS_MEMORY_SCOPE`. If preflight / the chat UI fail closed (401/500) locally, you're missing a local identity — pass `custom_inputs.user_id` or set `DATABRICKS_MEMORY_SCOPE`.
 
 ## Step 5 — Agent instructions
 
@@ -370,7 +377,7 @@ curl -X POST https://<app-url>/invocations -H "Authorization: Bearer $TOKEN" \
 | Issue | Cause | Fix |
 |---|---|---|
 | `RuntimeError: DATABRICKS_MEMORY_STORE is not set` | env var missing | Set it in `.env` (local) **and** `databricks.yml` `config.env` (deploy) — Step 1 |
-| `500` + "No end-user identity" | scope didn't resolve — the fail-closed guard fired (framework surfaces the 401 as 500) | Deployed: ensure the OBO user token reaches the app. Local: send `X-Forwarded-User` or set `DATABRICKS_MEMORY_SCOPE` |
+| `500` + "No end-user identity" | scope didn't resolve (fail-closed guard fired; framework surfaces 401 as 500). Common locally: the bundled **chat UI / `preflight`** send `custom_inputs.user_id` but no forwarded header | Deployed: ensure the OBO user token reaches the app. Local: pass `custom_inputs.user_id`, send `X-Forwarded-User`, or set `DATABRICKS_MEMORY_SCOPE` |
 | `PERMISSION_DENIED` | caller lacks `READ/WRITE_MEMORY_STORE` | Grant the app SP / your user — Step 2 |
 | `NOT_FOUND` on **every** call | wrong store name / store doesn't exist | Re-check `DATABRICKS_MEMORY_STORE` is the full `catalog.schema.name` (confirm with the Step 1 `GET`) |
 | `ALREADY_EXISTS` on save | path is taken | `update_memory`, or pick a fresh path |

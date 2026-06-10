@@ -41,9 +41,17 @@ databricks apps init \
 ## Analytics dashboard (optional)
 
 The dashboard reads Lakebase data from the SQL Warehouse through a Unity Catalog catalog.
+
+> ⚠️ **The catalog name is load-bearing.** The analytics queries in `config/queries/*.sql`
+> hardcode the literal `saas_tracker.saas_tracker.subscriptions` (`<catalog>.<schema>.<table>`),
+> and build-time type generation (`prebuild` runs `appkit generate-types --wait`) `DESCRIBE`s
+> them as the app service principal. You must register the catalog with the **exact name
+> `saas_tracker`** and grant the SP access **before the next build/deploy** — otherwise typegen
+> can't resolve the columns, emits empty types, and the client build fails. If you prefer a
+> different catalog name, change the three-part names in `config/queries/*.sql` to match.
+
 After the first deploy (which creates the app and its service principal), register the
-Lakebase database as a catalog **named `saas_tracker`** (the analytics queries use
-`saas_tracker.saas_tracker.subscriptions`):
+Lakebase database as a catalog **named `saas_tracker`**:
 
 ```bash
 databricks postgres create-catalog saas_tracker \

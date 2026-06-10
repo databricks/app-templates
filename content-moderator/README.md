@@ -35,9 +35,17 @@ databricks apps init \
 ## Analytics dashboard (optional)
 
 The dashboard reads Lakebase data from the SQL Warehouse through a Unity Catalog catalog.
+
+> ⚠️ **The catalog name is load-bearing.** The analytics queries in `config/queries/*.sql`
+> hardcode the literal `content_moderation.content_moderation.<table>` (`<catalog>.<schema>.<table>`),
+> and build-time type generation (`prebuild` runs `appkit generate-types --wait`) `DESCRIBE`s
+> them as the app service principal. You must register the catalog with the **exact name
+> `content_moderation`** and grant the SP access **before the next build/deploy** — otherwise
+> typegen can't resolve the columns, emits empty types, and the client build fails. If you prefer
+> a different catalog name, change the three-part names in `config/queries/*.sql` to match.
+
 After the first deploy (which creates the app and its service principal), register the
-Lakebase database as a catalog **named `content_moderation`** (the analytics queries use
-`content_moderation.content_moderation.<table>`):
+Lakebase database as a catalog **named `content_moderation`**:
 
 ```bash
 databricks postgres create-catalog content_moderation \

@@ -110,7 +110,7 @@ databricks bundle deploy
 
 ```bash
 databricks apps init \
-  --template https://github.com/databricks/devhub/tree/main/examples/agentic-support-console \
+  --template https://github.com/databricks/app-templates/tree/main/agentic-support-console \
   --name support-console
 ```
 

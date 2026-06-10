@@ -1,27 +1,38 @@
-import pg from "pg";
-
-const DATABASE_URL = process.env.DATABASE_URL;
-const hasEnvVars = process.env.PGHOST && process.env.PGPASSWORD;
-
-if (!DATABASE_URL && !hasEnvVars) {
-  console.error(
-    "Set DATABASE_URL or PGHOST+PGUSER+PGPASSWORD+PGDATABASE env vars.",
-  );
-  process.exit(1);
+interface LakebaseClient {
+  lakebase: {
+    query(
+      text: string,
+      params?: unknown[],
+    ): Promise<{ rows: Record<string, unknown>[] }>;
+  };
 }
 
-const client = DATABASE_URL
-  ? new pg.Client({
-      connectionString: DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
-    })
-  : new pg.Client({ ssl: { rejectUnauthorized: false } });
-
-async function query(sql: string, params?: unknown[]) {
-  return client.query(sql, params);
+interface SeedGuideline {
+  target: string;
+  title: string;
+  description: string;
+  rules: string;
+  created_by: string;
 }
 
-const GUIDELINES = [
+interface SeedSubmission {
+  title: string;
+  body: string;
+  target: string;
+  author_name: string;
+  author_email: string;
+  status: string;
+}
+
+interface SeedReview {
+  submission_title: string;
+  reviewer_name: string;
+  reviewer_email: string;
+  decision: string;
+  feedback: string;
+}
+
+const GUIDELINES: SeedGuideline[] = [
   {
     target: "blog",
     title: "Brand Voice",
@@ -115,7 +126,7 @@ const GUIDELINES = [
   },
 ];
 
-const SUBMISSIONS = [
+const SUBMISSIONS: SeedSubmission[] = [
   {
     title: "Introducing Our New Developer Platform",
     body: `We are thrilled to announce the launch of our revolutionary new developer platform that will change the way teams build software forever.
@@ -298,7 +309,7 @@ Thank you for being part of this journey. We can't wait to show you what's comin
   },
 ];
 
-const REVIEWS = [
+const REVIEWS: SeedReview[] = [
   {
     submission_title: "Q2 Product Update: What's New",
     reviewer_name: "Content Lead",
@@ -340,99 +351,44 @@ const REVIEWS = [
   },
 ];
 
-async function createTables() {
-  await query(`CREATE SCHEMA IF NOT EXISTS content_moderation`);
-  await query(`
-    CREATE TABLE IF NOT EXISTS content_moderation.guidelines (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      target TEXT NOT NULL,
-      title TEXT NOT NULL,
-      description TEXT,
-      rules TEXT NOT NULL,
-      is_active BOOLEAN NOT NULL DEFAULT true,
-      created_by TEXT NOT NULL,
-      updated_by TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await query(`
-    CREATE TABLE IF NOT EXISTS content_moderation.submissions (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      title TEXT NOT NULL,
-      body TEXT NOT NULL,
-      target TEXT NOT NULL,
-      author_name TEXT NOT NULL,
-      author_email TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending_review',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await query(`
-    CREATE TABLE IF NOT EXISTS content_moderation.ai_analyses (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      submission_id UUID NOT NULL,
-      compliance_score INTEGER NOT NULL,
-      issues TEXT,
-      suggestions TEXT,
-      guidelines_snapshot TEXT,
-      model TEXT NOT NULL,
-      analyzed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await query(`
-    CREATE TABLE IF NOT EXISTS content_moderation.reviews (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      submission_id UUID NOT NULL,
-      reviewer_name TEXT NOT NULL,
-      reviewer_email TEXT NOT NULL,
-      decision TEXT NOT NULL,
-      feedback TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  console.log("Tables created.");
-}
-
-async function seedGuidelines() {
+export async function seedModerationData(
+  appkit: LakebaseClient,
+): Promise<void> {
   for (const g of GUIDELINES) {
-    await query(
+    await appkit.lakebase.query(
       `INSERT INTO content_moderation.guidelines
         (target, title, description, rules, created_by, updated_by)
        VALUES ($1, $2, $3, $4, $5, $5)`,
       [g.target, g.title, g.description, g.rules, g.created_by],
     );
   }
-  console.log(`Seeded ${GUIDELINES.length} guidelines.`);
-}
+  console.log(`[moderation] Seeded ${GUIDELINES.length} guidelines`);
 
-async function seedSubmissions() {
   for (const s of SUBMISSIONS) {
-    await query(
+    await appkit.lakebase.query(
       `INSERT INTO content_moderation.submissions
         (title, body, target, author_name, author_email, status)
        VALUES ($1, $2, $3, $4, $5, $6)`,
       [s.title, s.body, s.target, s.author_name, s.author_email, s.status],
     );
   }
-  console.log(`Seeded ${SUBMISSIONS.length} submissions.`);
-}
+  console.log(`[moderation] Seeded ${SUBMISSIONS.length} submissions`);
 
-async function seedReviews() {
   for (const r of REVIEWS) {
-    const subResult = await query(
-      `SELECT id FROM content_moderation.submissions WHERE title = $1 LIMIT 1`,
+    const subResult = await appkit.lakebase.query(
+      `SELECT id::text FROM content_moderation.submissions WHERE title = $1 LIMIT 1`,
       [r.submission_title],
     );
     if (subResult.rows.length === 0) {
-      console.warn(`Submission not found for review: ${r.submission_title}`);
+      console.warn(
+        `[moderation] Submission not found for review: ${r.submission_title}`,
+      );
       continue;
     }
-    await query(
+    await appkit.lakebase.query(
       `INSERT INTO content_moderation.reviews
         (submission_id, reviewer_name, reviewer_email, decision, feedback)
-       VALUES ($1, $2, $3, $4, $5)`,
+       VALUES ($1::uuid, $2, $3, $4, $5)`,
       [
         subResult.rows[0].id,
         r.reviewer_name,
@@ -442,23 +398,5 @@ async function seedReviews() {
       ],
     );
   }
-  console.log(`Seeded ${REVIEWS.length} reviews.`);
+  console.log(`[moderation] Seeded ${REVIEWS.length} reviews`);
 }
-
-async function main() {
-  await client.connect();
-  console.log("Connected to Lakebase.");
-
-  await createTables();
-  await seedGuidelines();
-  await seedSubmissions();
-  await seedReviews();
-
-  await client.end();
-  console.log("Seed complete.");
-}
-
-main().catch((err) => {
-  console.error("Seed failed:", err);
-  process.exit(1);
-});

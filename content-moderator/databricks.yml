@@ -10,9 +10,6 @@ variables:
     description: Full Lakebase Postgres branch resource name. Obtain by running `databricks postgres list-branches projects/{project-id}`, select the desired item from the output array and use its .name value.
   postgres_database:
     description: Full Lakebase Postgres database resource name. Obtain by running `databricks postgres list-databases {branch-name}`, select the desired item from the output array and use its .name value. Requires the branch resource name.
-  serving_endpoint:
-    description: Model serving endpoint name for AI content analysis (e.g. databricks-claude-sonnet-4, databricks-meta-llama-4-maverick)
-    default: databricks-claude-sonnet-4
 
 resources:
   apps:
@@ -37,10 +34,6 @@ resources:
             branch: ${var.postgres_branch}
             database: ${var.postgres_database}
             permission: CAN_CONNECT_AND_CREATE
-        - name: serving-endpoint
-          serving_endpoint:
-            name: ${var.serving_endpoint}
-            permission: CAN_QUERY
 
 targets:
   default:
@@ -53,4 +46,3 @@ targets:
       genie_space_id: REPLACE_ME
       postgres_branch: REPLACE_ME # e.g. projects/my-project/branches/production
       postgres_database: REPLACE_ME # e.g. projects/my-project/branches/production/databases/my-db
-      serving_endpoint: REPLACE_ME # e.g. databricks-claude-sonnet-4

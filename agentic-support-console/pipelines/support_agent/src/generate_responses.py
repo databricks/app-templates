@@ -104,13 +104,16 @@ def build_prompt(case_row):
         WHERE case_id = UNHEX('{case_id_hex}')
     """).collect()
 
-    profile_df = spark.sql(f"""
+    profile_df = spark.sql(
+        f"""
         SELECT total_orders_90d, total_spend_90d_cents,
                lifetime_order_count, lifetime_spend_cents,
                support_cases_90d, total_refunds_90d_cents, total_credits_90d_cents
         FROM `{catalog}`.gold.user_support_profile
-        WHERE user_id = '{user_id}'
-    """).collect()
+        WHERE user_id = :user_id
+    """,
+        args={"user_id": user_id},
+    ).collect()
 
     messages_df = spark.sql(f"""
         SELECT
@@ -122,13 +125,16 @@ def build_prompt(case_row):
         ORDER BY created_at ASC
     """).collect()
 
-    orders_df = spark.sql(f"""
+    orders_df = spark.sql(
+        f"""
         SELECT HEX(id) AS order_id, status, total_in_cents, created_at
         FROM `{catalog}`.silver.orders
-        WHERE user_id = '{user_id}'
+        WHERE user_id = :user_id
         ORDER BY created_at DESC
         LIMIT 5
-    """).collect()
+    """,
+        args={"user_id": user_id},
+    ).collect()
 
     ctx = context_df[0] if context_df else None
     profile = profile_df[0] if profile_df else None

@@ -22,4 +22,4 @@ SELECT
       AND renewal_date >= CURRENT_DATE()
     THEN 1 ELSE 0
   END) AS renewals_next_30d
-FROM saas_tracker.app_data.subscriptions
+FROM saas_tracker.saas_tracker.subscriptions

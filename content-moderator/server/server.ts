@@ -7,9 +7,9 @@ import {
 } from "@databricks/appkit";
 import { setupModerationRoutes } from "./routes/moderation-routes";
 
-await createApp({
-  plugins: [server(), analytics(), genie(), lakebase()],
+createApp({
+  plugins: [analytics(), genie(), lakebase(), server()],
   async onPluginsReady(appkit) {
     await setupModerationRoutes(appkit);
   },
-});
+}).catch(console.error);

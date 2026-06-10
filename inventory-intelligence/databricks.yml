@@ -16,7 +16,6 @@ sync:
     - node_modules/**
     - seed/**
     - provisioning/**
-    - package-lock.json
     - package.json.dev
     - deploy.sh
     - README.md

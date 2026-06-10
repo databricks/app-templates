@@ -32,9 +32,9 @@
   "dependencies": {
     "@ai-sdk/openai": "^3.0.48",
     "@ai-sdk/react": "^3.0.140",
-    "@databricks/appkit": "0.21.0",
-    "@databricks/appkit-ui": "0.21.0",
-    "@databricks/sdk-experimental": "0.14.2",
+    "@databricks/appkit": "0.40.0",
+    "@databricks/appkit-ui": "0.40.0",
+    "@databricks/sdk-experimental": "0.17.0",
     "ai": "^6.0.138",
     "clsx": "2.1.1",
     "embla-carousel-react": "8.6.0",

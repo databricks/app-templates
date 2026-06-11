@@ -158,7 +158,7 @@ def _save(scope, path, description, contents=""):
     except DatabricksError as e:
         if e.error_code == "ALREADY_EXISTS":
             return f"A memory already exists at {path}; use update_memory to revise it."
-        raise
+        return f"Could not save {path}: {getattr(e, 'message', str(e))}"
     return f"Saved memory at {path}."
 
 def _get(scope, path):
@@ -167,17 +167,25 @@ def _get(scope, path):
     except DatabricksError as e:
         if e.error_code == "NOT_FOUND":
             return f"No memory at {path}."
-        raise
+        return f"Could not read {path}: {getattr(e, 'message', str(e))}"
     # A brief memory may have empty contents — its description is then the memory.
     return entry.get("contents") or entry.get("description") or f"(empty memory at {path})"
 
 def _list(scope):
-    resp = _ws().api_client.do("GET", _entries(), query={"scope": scope})
+    try:
+        resp = _ws().api_client.do("GET", _entries(), query={"scope": scope})
+    except DatabricksError as e:
+        return f"Could not list memories: {getattr(e, 'message', str(e))}"
     items = resp.get("entries", [])
-    return "\n".join(
+    if not items:
+        return "No memories yet."
+    # Count header (the model is unreliable at tallying a long list); `[has_contents]` marks entries
+    # whose body must be read with get_memory — unmarked entries are captured by their description.
+    lines = [
         ("[has_contents] " if e.get("has_contents") else "") + f"- {e['path']}: {e.get('description', '')}"
         for e in items
-    ) or "No memories yet."
+    ]
+    return f"{len(items)} memories total:\n" + "\n".join(lines)
 
 def _update(scope, path, op):  # op = exactly one of str_replace/insert/replace_all
     if len(op) != 1:
@@ -187,7 +195,8 @@ def _update(scope, path, op):  # op = exactly one of str_replace/insert/replace_
     except DatabricksError as e:
         if e.error_code == "NOT_FOUND":
             return f"No memory at {path} to update — check list_memories or save it first."
-        raise
+        # e.g. str_replace.old_str matched 0 or >1 times -> return it so the model re-reads and retries.
+        return f"Could not update {path}: {getattr(e, 'message', str(e))}"
     return f"Updated {path}."
 
 def _delete(scope, path):
@@ -196,7 +205,7 @@ def _delete(scope, path):
     except DatabricksError as e:
         if e.error_code == "NOT_FOUND":
             return f"No memory at {path} (already gone)."
-        raise
+        return f"Could not delete {path}: {getattr(e, 'message', str(e))}"
     return f"Deleted {path}."
 ```
 
@@ -226,7 +235,10 @@ def _scope(ctx: RunContextWrapper[MemoryContext]) -> str:
 async def save_memory(ctx: RunContextWrapper[MemoryContext], path: str, description: str, contents: str = "") -> str:
     """Create ONE durable memory — a stable preference, fact, decision, or ongoing project; not one-off
     chatter or secrets. Create-only (an existing path errors), so check list_memories first and use
-    update_memory to revise a topic. path: you choose it — starts /memories/, topic-grouped, ends .md.
+    update_memory to revise a topic. path: a SHORT, STABLE topic bucket (lowercase-hyphenated, starts
+    /memories/, ends .md) — keep it broad and reusable (e.g. /memories/preferences/food.md); put the
+    specifics in description/contents, NOT the path, so related facts share one path and you update it
+    instead of minting near-duplicates (avoid over-specific paths like /memories/preferences/coffee-oat-milk.md).
     description: a one-line statement; for a brief fact this IS the memory (leave contents empty).
     contents: OPTIONAL — only when the memory needs more than one line; never echo the description."""
     return _save(_scope(ctx), path, description, contents)
@@ -345,13 +357,17 @@ MEMORY_INSTRUCTIONS = """You have durable, cross-session memory about this user 
 Recall before answering anything that could depend on the user (preferences, facts, past decisions,
 projects, people): call list_memories first. For an entry marked `[has_contents]`, get_memory(path) to read
 the body before stating specifics; an entry without that mark is fully captured by its description, so use
-it directly. Never invent paths or facts — if nothing relevant is stored, say so instead of guessing. Skip
-memory when the turn doesn't depend on the user; one list per turn.
+it directly. When a question touches many memories, answer broadly from the list's descriptions rather than
+tunnel-visioning into a long run of get_memory calls — that tends to cover only a sampled subset, so don't
+silently drop relevant items. Never invent paths or facts — if nothing relevant is stored, say so instead
+of guessing. Skip memory when the turn doesn't depend on the user; one list per turn.
 
-Save what's durable (a stable preference, fact, decision, or ongoing project — not one-off chatter or
-secrets): save_memory under a /memories/... path, checking the list first so you update_memory an
-existing topic rather than duplicate it. update_memory to revise, delete_memory to remove stale/duplicate
-entries. Briefly tell the user after you save, update, or delete."""
+Save what's durable — a stable preference, fact, decision, or ongoing project that will still matter in a
+future, unrelated conversation. Things scoped to the current chat ("for this chat", "for now", "let's call
+this X", a one-off label or note) are session state, not memory — don't save them; nor one-off chatter or
+secrets. save_memory under a broad, stable /memories/... topic path — keep specifics in the memory, not the path —
+checking the list first so you update_memory an existing topic rather than mint an over-specific near-duplicate. update_memory to revise, delete_memory to remove stale/duplicate entries.
+Briefly tell the user after you save, update, or delete."""
 ```
 
 ## Test

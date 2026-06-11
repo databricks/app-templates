@@ -25,6 +25,7 @@ from agent_server.utils import (
     lakebase_config,
     process_agent_stream_events,
 )
+from agent_server.memory_utils import Mem0Context, MEMORY_TOOLS, get_mem0_user_id
 
 
 # NOTE: this will work for all databricks models OTHER than GPT-OSS, which uses a slightly different API
@@ -50,12 +51,17 @@ async def init_mcp_server(workspace_client: WorkspaceClient):
     )
 
 
-def create_agent(mcp_servers: list[McpServer] | None = None) -> Agent:
+def create_agent(mcp_servers: list[McpServer] | None = None) -> "Agent[Mem0Context]":
     return Agent(
         name="Agent",
-        instructions="You are a helpful assistant.",
+        instructions=(
+            "You are a helpful assistant with long-term memory. "
+            "Call search_memory before answering anything that may depend on the user's "
+            "preferences or past statements. When the user shares a durable fact about "
+            "themselves, call save_memory to remember it for future conversations."
+        ),
         model="databricks-gpt-5-2",
-        tools=[get_current_time],
+        tools=[get_current_time, *MEMORY_TOOLS],
         mcp_servers=mcp_servers or [],
     )
 
@@ -88,7 +94,9 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
         #     agent = create_agent()
         agent = create_agent()
         messages = await deduplicate_input(request, session)
-        result = await Runner.run(agent, messages, session=session)
+        result = await Runner.run(
+            agent, messages, session=session, context=Mem0Context(user_id=get_mem0_user_id())
+        )
         return ResponsesAgentResponse(
             output=[item.to_input_item() for item in result.new_items],
             custom_outputs={"session_id": session.session_id},
@@ -137,7 +145,9 @@ async def stream_handler(
         #     agent = create_agent()
         agent = create_agent()
         messages = await deduplicate_input(request, session)
-        result = Runner.run_streamed(agent, input=messages, session=session)
+        result = Runner.run_streamed(
+            agent, input=messages, session=session, context=Mem0Context(user_id=get_mem0_user_id())
+        )
 
         async for event in process_agent_stream_events(result.stream_events()):
             yield event

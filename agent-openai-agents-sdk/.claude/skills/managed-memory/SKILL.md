@@ -99,7 +99,7 @@ curl -sS "$PERM" -H "Authorization: Bearer $TOKEN"
 
 ## Step 3 — Add the memory tools
 
-Put these in `agent_server/utils_memory.py` — use **(a) the shared core + the block for your SDK** ((b) for the OpenAI Agents SDK *or* (c) for LangGraph; not both — they each define `_scope` their own way). **No new dependency** — it uses the `databricks-sdk` already in the template. If the template already has a `utils_memory.py` (e.g. an advanced template keeps its Lakebase short-term-memory helpers there), **add these functions to that same file** rather than creating a second one — keep whatever's already in it.
+Put these in `agent_server/utils_memory.py` — use **(a) the shared core + the block for your SDK** ((b) for the OpenAI Agents SDK *or* (c) for LangGraph; not both — they each define `_scope` their own way). **No new dependency** — it uses the `databricks-sdk` already in the template. If the template already has a `utils_memory.py` (an advanced template keeps its Lakebase plumbing there — short-term **and** long-term), **add these functions to that same file** rather than creating a second one. Keep its short-term/session helpers (the checkpointer setup); but if it also holds a **long-term** implementation (e.g. `AsyncDatabricksStore` + its own `memory_tools()`), **replace that** — only one long-term system (see the intro and Step 4).
 
 **(a) Shared core** — the REST calls and scope resolution (SDK-agnostic):
 
@@ -363,7 +363,7 @@ Save only what will still matter in a future, unrelated conversation — a stabl
 - For a very broad question that touches many memories, summarize from the list's descriptions; reserve get_memory for the specific entry you actually need.
 - If the user's info changes or contradicts what's stored, update or replace it rather than keeping both — but don't rewrite a memory that already says the same thing.
 - delete_memory what's stale.
-- briefly tell the user briefly whenever you save, update, or delete."""
+- Briefly tell the user whenever you save, update, or delete."""
 ```
 
 ## Test

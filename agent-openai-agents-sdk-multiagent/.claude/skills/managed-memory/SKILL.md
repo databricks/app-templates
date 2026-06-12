@@ -22,7 +22,7 @@ REST calls to the Unity Catalog **memory-store** APIs.
 
 This skill is framework-agnostic and flexible with both the OpenAI Agents SDK and LangGraph; each step notes the small per-SDK difference.
 
-**Bringing your own agent (not a Databricks template)?** The *portable core* works anywhere: the memory-store REST API, the five tools, the scope-as-isolation rule, and the grant calls (Steps 1–2). The app-template specifics — the `agent_server/...` paths, `resolve_scope()`'s header/OBO helpers, and the `.env` / `databricks.yml` / `quickstart` / `databricks apps` plumbing — are **examples**: map each to your own app (your tools module, your way of identifying the signed-in user, your env config, your deploy). Two invariants never change: the tools authenticate to Databricks via `WorkspaceClient()` (give your app Databricks creds) as a **service principal you grant on the store**, and you pass the **end user's id** as `scope` — fail closed, never the SP.
+**For a pre-existing agent (not built from a default template) — still on Databricks Apps.** The core (memory-store REST API, the five tools, the scope-as-isolation rule, the grant calls in Steps 1–2) is identical; only the template specifics differ. Map the `agent_server/...` paths to your own modules and reuse the Databricks Apps primitives you already have: the **forwarded OBO user token** for the signed-in user's id (what `resolve_scope()` reads), `config.env` for `DATABRICKS_MEMORY_STORE`, and `databricks apps` to deploy. Two invariants never change: the tools authenticate via `WorkspaceClient()` as the **app service principal you grant on the store**, and you pass the **end user's id** as `scope` — fail closed, never the SP.
 
 ## Prerequisites — this is an add-on
 
@@ -37,7 +37,7 @@ This skill **adds long-term memory to an agent that's already set up** — it do
 | **Scope** | The partition key the caller assigns (e.g. an end-user or project ID) — decides whose memories you read/write. |
 
 **Access is two separate questions:**
-- *Can the caller use the store?* → make sure the caller has `READ_MEMORY_STORE` to retrieve memory entries and/or `WRITE_MEMORY_STORE` to write them. When testing locally the tools are called with the developer's credentials; when the agent is deployed on Apps they run with the app's credentials.
+- *Can the caller use the store?* → make sure the caller has `READ_MEMORY_STORE` to retrieve memory entries and `WRITE_MEMORY_STORE` to write them. When testing locally the tools are called with the developer's credentials; when the agent is deployed on Apps they run with the app's credentials.
 - *Whose memories?* → the explicit **`scope`**, set by your code to the end user's id, project id, etc.
 
 The SP can see every scope, so **`scope` is your isolation boundary**: always set it to the end user, in trusted code, and **never let the model choose it**.
@@ -75,19 +75,18 @@ curl -sS "$DATABRICKS_HOST/api/2.1/unity-catalog/memory-stores/<catalog.schema.n
           - name: DATABRICKS_MEMORY_STORE
             value: "<catalog.schema.name>"
 ```
-> If you haven't run the **quickstart** skill yet, `cp .env.example .env` first, then add `DATABRICKS_MEMORY_STORE=<catalog.schema.name>`.
 
 ## Step 2 — Grant read+write on the store (API calls)
 
-Memories are read/written **as the app SP**, so the SP needs `READ_MEMORY_STORE` + `WRITE_MEMORY_STORE`; locally the caller is *you*, so grant yourself too. DAB has **no `MEMORY_STORE` grant** yet, so this is a direct permissions API call (not `databricks.yml`). Run it yourself — `STORE` is the full name:
+The tools call the API **as whatever principal the agent runs as**: the **app service principal** once deployed, and the **developer's own user** when running locally (the agent's `WorkspaceClient()` picks up the local profile). Grant `READ_MEMORY_STORE` + `WRITE_MEMORY_STORE` to **both**. DAB has **no `MEMORY_STORE` grant** yet, so this is a direct permissions API call (not `databricks.yml`) — run the `PATCH`es below yourself. `STORE` is the full name:
 
 ```bash
 export STORE="<catalog.schema.name>"
 PERM="$DATABRICKS_HOST/api/2.1/unity-catalog/permissions/memory_store/$STORE"
 
-# Grant YOUR user (for local testing — the tools run as you locally):
+# Grant the DEVELOPER's user (for local testing — the local agent runs as them):
 curl -sS -X PATCH "$PERM" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"changes":[{"principal":"<you@org.com>","add":["READ_MEMORY_STORE","WRITE_MEMORY_STORE"]}]}'
+  -d '{"changes":[{"principal":"<developer@org.com>","add":["READ_MEMORY_STORE","WRITE_MEMORY_STORE"]}]}'
 
 # Grant the DEPLOYED app's service principal (run AFTER deploy, once the app + its SP exist):
 APP_SP=$(databricks apps get <your-app> -o json | jq -r .service_principal_client_id)
@@ -121,7 +120,7 @@ from agent_server.utils import get_user_workspace_client
 _client: WorkspaceClient | None = None
 
 def _ws() -> WorkspaceClient:
-    """The memory caller — the app SP when deployed, you when local. Per-user isolation is via
+    """The memory caller — the app SP when deployed, the developer when local. Per-user isolation is via
     `scope`, NEVER this identity (the SP can see every scope)."""
     global _client
     if _client is None:
@@ -242,7 +241,7 @@ async def save_memory(ctx: RunContextWrapper[MemoryContext], path: str, descript
     specifics in description/contents, NOT the path, so related facts share one path and you update it
     instead of minting near-duplicates (avoid over-specific paths like /memories/preferences/coffee-oat-milk.md).
     description: a one-line statement; for a brief fact this IS the memory (leave contents empty).
-    contents: OPTIONAL — only when the memory needs more than one line; never echo the description."""
+    contents: OPTIONAL — only when the memory needs more than one line; detailed; never echo the description."""
     return _save(_scope(ctx), path, description, contents)
 
 @function_tool
@@ -354,25 +353,17 @@ Define `MEMORY_INSTRUCTIONS` near the top of `agent_server/agent.py` and pass it
 `instructions` (OpenAI) / `system_prompt` (LangGraph). If the agent already has a prompt, **prepend yours and keep it**:
 
 ```python
-MEMORY_INSTRUCTIONS = """You have durable, cross-session memory about this user — use it deliberately.
+MEMORY_INSTRUCTIONS = """You have durable, cross-session memory about whoever (or whatever) this conversation is scoped to. Use it deliberately, not by reflex.
 
-Reach for memory only when answering this turn needs a fact about THIS user that you don't already have
-from the current conversation — don't list by reflex. list_memories when the user asks what you know about
-them, wants a personalized answer, or the answer hinges on their saved preferences/facts/decisions/people/
-projects you haven't already seen this session (and once before saving, to find the existing topic). Skip
-the memory tools entirely when the answer doesn't depend on the user (general knowledge, math, coding), it's
-small talk, or it was already established earlier in this conversation — just answer. When you do list: a
-`[has_contents]` entry needs get_memory(path) before you state specifics; one without that mark is captured
-by its description, so use that directly. For questions spanning many memories, answer from the list's
-descriptions rather than a long run of get_memory calls. Never invent paths or facts — if nothing relevant
-is stored, say so. One list per turn.
+Recall when a tailored answer needs something durable you don't already have from this conversation — and once before saving, to find the right existing topic. Skip memory when the answer doesn't depend on who's asking, or you already have what you need. A `[has_contents]` entry has a body to get_memory; one without is fully captured by its description. Open a memory with get_memory before you state its specifics, and never assert a fact that isn't stored — if nothing relevant is stored, just answer without it. Don't re-list what you've already seen this turn.
 
-Save what's durable — a stable preference, fact, decision, or ongoing project that will still matter in a
-future, unrelated conversation. Things scoped to the current chat ("for this chat", "for now", "let's call
-this X", a one-off label or note) are session state, not memory — don't save them; nor one-off chatter or
-secrets. save_memory under a broad, stable /memories/... topic path — keep specifics in the memory, not the path —
-checking the list first so you update_memory an existing topic rather than mint an over-specific near-duplicate. update_memory to revise, delete_memory to remove stale/duplicate entries.
-Briefly tell the user after you save, update, or delete."""
+Save only what will still matter in a future, unrelated conversation — a stable preference, fact, decision, or ongoing project the user actually stated or decided. Don't save your own suggestions or guesses, passing chatter, secrets, or anything scoped to this chat ("for now", a one-off label).
+- Write each memory so it stands on its own out of context, under one broad, stable /memories/... topic per subject with the specifics inside it.
+- Check the list first and update_memory an existing topic instead of minting a near-duplicate.
+- For a very broad question that touches many memories, summarize from the list's descriptions; reserve get_memory for the specific entry you actually need.
+- If the user's info changes or contradicts what's stored, update or replace it rather than keeping both — but don't rewrite a memory that already says the same thing.
+- delete_memory what's stale.
+- briefly tell the user briefly whenever you save, update, or delete."""
 ```
 
 ## Test

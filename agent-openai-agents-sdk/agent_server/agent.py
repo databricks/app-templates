@@ -15,15 +15,12 @@ from mlflow.types.responses import (
     ResponsesAgentStreamEvent,
 )
 
-from fastapi import HTTPException
-
 from agent_server.utils import (
     build_mcp_url,
     get_session_id,
     get_user_workspace_client,
     process_agent_stream_events,
 )
-from agent_server.utils_memory import MEMORY_TOOLS, MemoryContext, resolve_scope
 
 logger = logging.getLogger(__name__)
 
@@ -49,26 +46,12 @@ async def init_mcp_server(workspace_client: WorkspaceClient):
     )
 
 
-MEMORY_INSTRUCTIONS = """You are a helpful assistant with durable, cross-session memory about this user — use it deliberately.
-
-Recall before answering anything that could depend on the user (preferences, facts, past decisions,
-projects, people): list_memories → pick the relevant path(s) by description → get_memory(path) to read
-them, then answer only from what you read. A description is a label, not data — never state a remembered
-fact you haven't just read, and don't invent paths. If nothing relevant is stored, say so instead of
-guessing. Skip memory when the turn doesn't depend on the user; one list per turn.
-
-Save what's durable (a stable preference, fact, decision, or ongoing project — not one-off chatter or
-secrets): save_memory under a /memories/... path, checking the list first so you update_memory an
-existing topic rather than duplicate it. update_memory to revise, delete_memory to remove stale/duplicate
-entries. Briefly tell the user after you save, update, or delete."""
-
-
 def create_agent(mcp_servers: list[McpServer] | None = None) -> Agent:
     return Agent(
         name="Agent",
-        instructions=MEMORY_INSTRUCTIONS,
+        instructions="You are a helpful assistant.",
         model="databricks-gpt-5-2",
-        tools=[get_current_time, *MEMORY_TOOLS],
+        tools=[get_current_time],
         mcp_servers=mcp_servers or [],
     )
 
@@ -86,12 +69,9 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
     # except Exception:
     #     logger.warning("MCP server unavailable. Continuing without MCP tools.", exc_info=True)
     #     agent = create_agent()
-    scope = resolve_scope()
-    if not scope:
-        raise HTTPException(status_code=401, detail="No end-user identity — refusing a shared memory scope.")
     agent = create_agent()
     messages = [i.model_dump() for i in request.input]
-    result = await Runner.run(agent, messages, context=MemoryContext(scope=scope))
+    result = await Runner.run(agent, messages)
     return ResponsesAgentResponse(output=[item.to_input_item() for item in result.new_items])
 
 
@@ -110,12 +90,9 @@ async def stream_handler(
     # except Exception:
     #     logger.warning("MCP server unavailable. Continuing without MCP tools.", exc_info=True)
     #     agent = create_agent()
-    scope = resolve_scope()
-    if not scope:
-        raise HTTPException(status_code=401, detail="No end-user identity — refusing a shared memory scope.")
     agent = create_agent()
     messages = [i.model_dump() for i in request.input]
-    result = Runner.run_streamed(agent, input=messages, context=MemoryContext(scope=scope))
+    result = Runner.run_streamed(agent, input=messages)
 
     async for event in process_agent_stream_events(result.stream_events()):
         yield event

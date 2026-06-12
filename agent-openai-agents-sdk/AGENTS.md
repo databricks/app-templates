@@ -71,6 +71,19 @@ The **Supervisor API** lets Databricks run the tool-selection and agent loop ser
 - Use **supervisor-api** to set up the Supervisor API with hosted tools
 - Use **supervisor-api-background-mode** for tasks that may exceed HTTP timeout limits (complex multi-tool workflows, large data analysis)
 
+## Long-Term Memory (Managed)
+
+> **Beta.** Managed memory uses the Databricks memory-store APIs, which are in beta — APIs and behavior may change.
+
+This template is **stateless by default** (the client carries conversation history). **Managed memory** adds durable memory that persists *across* conversations, backed by a **Unity Catalog memory store** (`catalog.schema.name`, type `MEMORY_STORE`) — governed by UC, with no database for you to provision or run. Databricks manages the underlying quality logic — deduplication, scope isolation, and fact reconciliation. The agent gets tools to store, retrieve, and modify memories, and memories are scoped per end user through code (the model never chooses the scope).
+
+**Use when the user wants to** have the agent remember a user's preferences, facts, or decisions across separate sessions — without standing up or operating any storage infrastructure.
+
+> **Managed memory vs. Lakebase.** Managed memory is the simplest, governed, zero-ops path. The alternative is **Lakebase** — long-term memories in your own Postgres instance (billable) with direct SQL access and embedding-based semantic search; choose it when you need SQL access or it's already part of your stack.
+
+**Skills:**
+- Use **managed-memory** to add the memory-store tools and per-user scope wiring.
+
 ## Agent Evaluation
 
 When the user asks about evaluating their agent (quality, metrics, scorers, datasets, or tracing), suggest installing the **MLflow Skills** from https://github.com/mlflow/skills. These provide expert guidance for evaluation workflows using MLflow's native APIs.
@@ -102,6 +115,7 @@ After installation, the skills will be available as slash commands (e.g., `/agen
 | Add tools & permissions | **add-tools** | `.claude/skills/add-tools/SKILL.md` |
 | Run/test locally | **run-locally** | `.claude/skills/run-locally/SKILL.md` |
 | Modify agent code | **modify-agent** | `.claude/skills/modify-agent/SKILL.md` |
+| Add long-term (cross-session) memory | **managed-memory** | `.claude/skills/managed-memory/SKILL.md` |
 | Offload agent loop to Databricks | **supervisor-api** | `.claude/skills/supervisor-api/SKILL.md` |
 | Long-running background tasks | **supervisor-api-background-mode** | `.claude/skills/supervisor-api-background-mode/SKILL.md` |
 

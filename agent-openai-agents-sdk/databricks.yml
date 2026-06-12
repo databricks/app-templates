@@ -22,12 +22,6 @@ resources:
             value: "300"
           - name: MLFLOW_EXPERIMENT_ID
             value_from: "experiment"
-          - name: DATABRICKS_MEMORY_STORE
-            value: "<catalog.schema.store>"   # the MEMORY_STORE full name
-          # DEV/BETA ONLY: route the pre-GA memory API through a LiteSwap — remove at GA.
-          # Unset = no header (GA behavior). Set to your swap id, e.g. testenv://liteswap/<endpoint>.
-          - name: DATABRICKS_MEMORY_TRAFFIC_ID
-            value: "testenv://liteswap/<your-swap-endpoint>"
 
       # Resources which this app has access to
       resources:

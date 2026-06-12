@@ -68,6 +68,17 @@ The **Supervisor API** lets Databricks run the tool-selection and agent loop ser
 - Use **supervisor-api** to set up the Supervisor API with hosted tools
 - Use **supervisor-api-background-mode** for tasks that may exceed HTTP timeout limits (complex multi-tool workflows, large data analysis)
 
+## Long-Term Memory: Managed (Governed) Alternative
+
+> **Beta.** Managed memory uses the Databricks memory-store APIs, which are in beta — APIs and behavior may change.
+
+This template **defaults to Lakebase** for long-term memory (`AsyncDatabricksStore` — see the Memory Template Note above). **Managed memory** is a governed, zero-ops alternative: long-term memories live in a **Unity Catalog memory store** (`catalog.schema.name`, type `MEMORY_STORE`) with no database for you to provision or run. Databricks manages the underlying quality logic — deduplication, scope isolation, and fact reconciliation. The agent gets tools to store, retrieve, and modify memories, scoped per end user through code.
+
+> **Which to use.** Both persist facts across sessions. Stick with the default **Lakebase** store when you need direct SQL access, embedding-based semantic search, or it's already part of your stack. Choose **managed memory** when you'd rather not run any infrastructure and want UC governance out of the box.
+
+**Skills:**
+- Use **managed-memory** to add (or swap in) the UC memory-store tools.
+
 ## Agent Evaluation
 
 When the user asks about evaluating their agent (quality, metrics, scorers, datasets, or tracing), suggest installing the **MLflow Skills** from https://github.com/mlflow/skills. These provide expert guidance for evaluation workflows using MLflow's native APIs.
@@ -94,7 +105,8 @@ After installation, the skills will be available as slash commands (e.g., `/agen
 |------|-------|------|
 | Setup, auth, first-time | **quickstart** | `.claude/skills/quickstart/SKILL.md` |
 | Lakebase configuration | **lakebase-setup** | `.claude/skills/lakebase-setup/SKILL.md` |
-| Memory patterns | **agent-memory** | `.claude/skills/agent-memory/SKILL.md` |
+| Memory patterns (short-term + long-term, Lakebase) | **agent-memory** | `.claude/skills/agent-memory/SKILL.md` |
+| Long-term memory — managed/governed alternative | **managed-memory** | `.claude/skills/managed-memory/SKILL.md` |
 | Find tools/resources | **discover-tools** | `.claude/skills/discover-tools/SKILL.md` |
 | Create tool resources | **create-tools** | `.claude/skills/create-tools/SKILL.md` |
 | Deploy to Databricks | **deploy** | `.claude/skills/deploy/SKILL.md` |

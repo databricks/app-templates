@@ -20,7 +20,7 @@ with this template as-is.
 """
 
 import logging
-from contextlib import nullcontext
+from contextlib import AsyncExitStack
 from typing import AsyncGenerator
 
 import mlflow
@@ -113,6 +113,7 @@ set_default_openai_api("chat_completions")
 set_trace_processors([])  # only use mlflow for trace processing
 mlflow.openai.autolog()
 logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
+logger = logging.getLogger(__name__)
 
 # Async client used inside tool functions to query other agents / endpoints
 _tool_client = AsyncDatabricksOpenAI()
@@ -149,35 +150,70 @@ subagent_tools = [_make_subagent_tool(sa) for sa in SUBAGENTS if sa["type"] != "
 # ---------------------------------------------------------------------------
 
 
-async def init_mcp_server():
-    """Create a Genie MCP server if a genie subagent is configured."""
-    genie = next((sa for sa in SUBAGENTS if sa["type"] == "genie"), None)
-    if genie is None:
-        return nullcontext()
-    return McpServer(
-        url=build_mcp_url(f"/api/2.0/mcp/genie/{genie['space_id']}"),
-        name=genie["description"],
-    )
+def build_mcp_servers() -> list[McpServer]:
+    """Build a Genie MCP server for each genie subagent configured (usually 0 or 1)."""
+    return [
+        McpServer(url=build_mcp_url(f"/api/2.0/mcp/genie/{sa['space_id']}"), name="Genie")
+        for sa in SUBAGENTS
+        if sa["type"] == "genie"
+    ]
 
 
-def create_orchestrator_agent(mcp_server: McpServer) -> Agent:
+async def connect_healthy_mcp_servers(
+    stack: AsyncExitStack, servers: list[McpServer]
+) -> tuple[list[McpServer], list[str]]:
+    """Connect each MCP server and verify it can actually list its tools.
+
+    The Agents SDK lists each server's tools lazily inside ``Runner.run``, so a server that
+    connects but fails at list time (e.g. an unauthorized Genie space) would otherwise crash
+    the whole request — including the unrelated subagent tools. We list tools here, per
+    server: healthy servers are kept; any that fails to connect OR to list is dropped and its
+    name returned, so the orchestrator runs with whatever is available instead of erroring out.
+
+    Returns (healthy_servers, unavailable_names).
+    """
+    healthy: list[McpServer] = []
+    unavailable: list[str] = []
+    for server in servers:
+        name = getattr(server, "name", "MCP server")
+        try:
+            connected = await stack.enter_async_context(server)
+            await connected.list_tools()  # forces the connectivity + authorization check now
+            healthy.append(connected)
+        except Exception:
+            logger.warning("MCP server %r unavailable; continuing without it.", name, exc_info=True)
+            unavailable.append(name)
+    return healthy, unavailable
+
+
+def create_orchestrator_agent(
+    mcp_servers: list[McpServer], unavailable_tools: list[str] | None = None
+) -> Agent:
     """Build the orchestrator agent with all tools and MCP servers."""
     # TODO: Update these instructions to match the tools you keep or add.
     # The more specific the instructions, the more accurately the agent will
     # route requests to the right tool.
+    instructions = (
+        "You are an orchestrator agent. Route the user's request to the "
+        "most appropriate tool or data source:\n"
+        "- Use the Genie MCP tools for questions about structured data.\n"
+        "- Use query_app_agent for questions that the specialist app agent handles.\n"
+        "- Use query_knowledge_assistant for knowledge-base / documentation lookups.\n"
+        "- Use query_serving_endpoint for questions best answered by the serving model.\n"
+        "If unsure, ask the user for clarification."
+    )
+    if unavailable_tools:
+        names = ", ".join(sorted(set(unavailable_tools)))
+        instructions += (
+            f"\n\nThese data sources are currently UNAVAILABLE (not authorized or unreachable "
+            f"right now): {names}. If answering requires one of them, briefly tell the user it "
+            "isn't available right now instead of guessing, and use whatever else you have."
+        )
     return Agent(
         name="Orchestrator",
-        instructions=(
-            "You are an orchestrator agent. Route the user's request to the "
-            "most appropriate tool or data source:\n"
-            "- Use the Genie MCP tools for questions about structured data.\n"
-            "- Use query_app_agent for questions that the specialist app agent handles.\n"
-            "- Use query_knowledge_assistant for knowledge-base / documentation lookups.\n"
-            "- Use query_serving_endpoint for questions best answered by the serving model.\n"
-            "If unsure, ask the user for clarification."
-        ),
+        instructions=instructions,
         model="databricks-gpt-5-2",  # TODO: change model if desired
-        mcp_servers=[mcp_server] if mcp_server else [],
+        mcp_servers=mcp_servers,
         tools=subagent_tools,
     )
 
@@ -193,8 +229,9 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
-    async with await init_mcp_server() as mcp_server:
-        agent = create_orchestrator_agent(mcp_server)
+    async with AsyncExitStack() as stack:
+        servers, unavailable = await connect_healthy_mcp_servers(stack, build_mcp_servers())
+        agent = create_orchestrator_agent(servers, unavailable)
         messages = [i.model_dump() for i in request.input]
         result = await Runner.run(agent, messages)
         return ResponsesAgentResponse(output=[item.to_input_item() for item in result.new_items])
@@ -206,8 +243,9 @@ async def stream_handler(request: ResponsesAgentRequest) -> AsyncGenerator[Respo
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
-    async with await init_mcp_server() as mcp_server:
-        agent = create_orchestrator_agent(mcp_server)
+    async with AsyncExitStack() as stack:
+        servers, unavailable = await connect_healthy_mcp_servers(stack, build_mcp_servers())
+        agent = create_orchestrator_agent(servers, unavailable)
         messages = [i.model_dump() for i in request.input]
         result = Runner.run_streamed(agent, input=messages)
 

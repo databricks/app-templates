@@ -1,4 +1,5 @@
 import logging
+from contextlib import AsyncExitStack
 from datetime import datetime
 from typing import AsyncGenerator
 
@@ -50,6 +51,33 @@ async def init_mcp_server(workspace_client: WorkspaceClient):
     )
 
 
+async def connect_healthy_mcp_servers(
+    stack: AsyncExitStack, servers: list[McpServer]
+) -> tuple[list[McpServer], list[str]]:
+    """Connect each MCP server and verify it can actually list its tools.
+
+    The Agents SDK lists each server's tools lazily inside ``Runner.run``, so a server that
+    connects but fails at list time (e.g. an unauthorized Genie space) would otherwise crash
+    the whole request — including unrelated turns. We list tools here, per server: healthy
+    servers are kept; any that fails to connect OR to list is dropped and its name returned,
+    so the agent runs with whatever is available instead of erroring out.
+
+    Returns (healthy_servers, unavailable_names).
+    """
+    healthy: list[McpServer] = []
+    unavailable: list[str] = []
+    for server in servers:
+        name = getattr(server, "name", "MCP server")
+        try:
+            connected = await stack.enter_async_context(server)
+            await connected.list_tools()  # forces the connectivity + authorization check now
+            healthy.append(connected)
+        except Exception:
+            logger.warning("MCP server %r unavailable; continuing without it.", name, exc_info=True)
+            unavailable.append(name)
+    return healthy, unavailable
+
+
 def create_agent(mcp_servers: list[McpServer] | None = None) -> Agent:
     return Agent(
         name="Agent",
@@ -77,18 +105,19 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
             create_tables=False,  # Tables created at startup in start_server.py
         )
 
-        # To use MCP server tools, wrap the code below with this async context manager.
-        # By default, uses service principal credentials via WorkspaceClient().
-        # For on-behalf-of user authentication, use get_user_workspace_client() instead.
-        # try:
-        #     async with await init_mcp_server(WorkspaceClient()) as mcp_server:
-        #         agent = create_agent(mcp_servers=[mcp_server])
-        # except Exception:
-        #     logger.warning("MCP server unavailable. Continuing without MCP tools.", exc_info=True)
-        #     agent = create_agent()
-        agent = create_agent()
-        messages = await deduplicate_input(request, session)
-        result = await Runner.run(agent, messages, session=session)
+        # The agent runs inside an AsyncExitStack so any MCP servers stay open for the whole
+        # request. To give the agent MCP tools, connect them with connect_healthy_mcp_servers,
+        # which health-checks each server so one unavailable server can't crash the request
+        # (the Agents SDK lists each server's tools lazily inside Runner.run):
+        #   servers, unavailable = await connect_healthy_mcp_servers(
+        #       stack, [await init_mcp_server(WorkspaceClient())])
+        #   agent = create_agent(mcp_servers=servers)
+        # WorkspaceClient() uses service principal credentials; use get_user_workspace_client()
+        # for on-behalf-of user authentication.
+        async with AsyncExitStack() as stack:
+            agent = create_agent()
+            messages = await deduplicate_input(request, session)
+            result = await Runner.run(agent, messages, session=session)
         return ResponsesAgentResponse(
             output=[item.to_input_item() for item in result.new_items],
             custom_outputs={"session_id": session.session_id},
@@ -126,21 +155,22 @@ async def stream_handler(
             create_tables=False,  # Tables created at startup in start_server.py
         )
 
-        # To use MCP server tools, wrap the code below with this async context manager.
-        # By default, uses service principal credentials via WorkspaceClient().
-        # For on-behalf-of user authentication, use get_user_workspace_client() instead.
-        # try:
-        #     async with await init_mcp_server(WorkspaceClient()) as mcp_server:
-        #         agent = create_agent(mcp_servers=[mcp_server])
-        # except Exception:
-        #     logger.warning("MCP server unavailable. Continuing without MCP tools.", exc_info=True)
-        #     agent = create_agent()
-        agent = create_agent()
-        messages = await deduplicate_input(request, session)
-        result = Runner.run_streamed(agent, input=messages, session=session)
+        # The agent runs inside an AsyncExitStack so any MCP servers stay open for the whole
+        # request. To give the agent MCP tools, connect them with connect_healthy_mcp_servers,
+        # which health-checks each server so one unavailable server can't crash the request
+        # (the Agents SDK lists each server's tools lazily inside Runner.run):
+        #   servers, unavailable = await connect_healthy_mcp_servers(
+        #       stack, [await init_mcp_server(WorkspaceClient())])
+        #   agent = create_agent(mcp_servers=servers)
+        # WorkspaceClient() uses service principal credentials; use get_user_workspace_client()
+        # for on-behalf-of user authentication.
+        async with AsyncExitStack() as stack:
+            agent = create_agent()
+            messages = await deduplicate_input(request, session)
+            result = Runner.run_streamed(agent, input=messages, session=session)
 
-        async for event in process_agent_stream_events(result.stream_events()):
-            yield event
+            async for event in process_agent_stream_events(result.stream_events()):
+                yield event
     except Exception as e:
         error_msg = str(e).lower()
         if any(

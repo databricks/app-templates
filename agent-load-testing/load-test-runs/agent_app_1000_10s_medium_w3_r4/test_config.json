@@ -1,0 +1,16 @@
+{
+  "run_name": "agent_app_1000_10s_medium_w3_r4",
+  "max_users": 1000,
+  "step_size": 20,
+  "step_duration": 10,
+  "spawn_rate": 20,
+  "app_urls": [
+    "https://agent-load-test-medium-w3-5763476629593792.aws.databricksapps.com"
+  ],
+  "labels": [
+    "medium_agent-load-test-medium-w3-5763476629593792"
+  ],
+  "compute_sizes": [
+    "medium"
+  ]
+}

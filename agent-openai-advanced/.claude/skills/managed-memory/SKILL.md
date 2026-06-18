@@ -26,7 +26,7 @@ This skill is framework-agnostic and flexible with both the OpenAI Agents SDK an
 
 ## Prerequisites — this is an add-on
 
-This skill **adds long-term memory to an agent that's already set up** — it doesn't scaffold one. If there's **no `.env`** (auth not configured), run the **quickstart** skill first — it sets the Databricks profile + MLflow experiment, and on the advanced templates provisions the Lakebase used for short-term *session* memory (which this skill leaves intact). Then come back here. (On your own agent, the equivalent is just that it's authenticated to Databricks — a `WorkspaceClient()` can connect.)
+This skill **adds long-term memory to an agent that's already set up** — it doesn't scaffold one. If there's **no `.env`** (auth not configured), run the **quickstart** skill first — it sets the Databricks profile + MLflow experiment, and on the advanced templates provisions the Lakebase used for short-term *session* memory (which this skill leaves intact). Then come back here. **Don't skip it:** the server won't even boot without a valid `MLFLOW_EXPERIMENT_ID` — an empty or unset one fails at import, before any memory code runs — and quickstart is what sets it. (On your own agent, the equivalent is just that it's authenticated to Databricks — a `WorkspaceClient()` can connect.)
 
 ## Concepts
 
@@ -99,7 +99,7 @@ curl -sS "$PERM" -H "Authorization: Bearer $TOKEN"
 
 ## Step 3 — Add the memory tools
 
-Put these in `agent_server/utils_memory.py` — use **(a) the shared core + the block for your SDK** ((b) for the OpenAI Agents SDK *or* (c) for LangGraph; not both — they each define `_scope` their own way). **No new dependency** — it uses the `databricks-sdk` already in the template. If the template already has a `utils_memory.py` (an advanced template keeps its Lakebase plumbing there — short-term **and** long-term), **add these functions to that same file** rather than creating a second one. Keep its short-term/session helpers (the checkpointer setup); but if it also holds a **long-term** implementation (e.g. `AsyncDatabricksStore` + its own `memory_tools()`), **replace that** — only one long-term system (see the intro and Step 4).
+Put these in `agent_server/utils_memory.py` — use **(a) the shared core + the block for your SDK** ((b) for the OpenAI Agents SDK *or* (c) for LangGraph; not both — they each define `_scope` their own way). **No new dependency** — it uses the `databricks-sdk` already in the template. **Most templates have no `utils_memory.py` — create it** (note the OpenAI advanced template keeps its *session* plumbing in `utils.py`, not here, so you still create a fresh `utils_memory.py`). **The one exception is `agent-langgraph-advanced`**: its existing `utils_memory.py` already holds the Lakebase plumbing — short-term checkpointer **and** a long-term `AsyncDatabricksStore` + `memory_tools()`. There, add these functions to that **same file** (don't create a second one), keep the checkpointer, and **replace** the long-term store — only one long-term system (see the intro and Step 4).
 
 **(a) Shared core** — the REST calls and scope resolution (SDK-agnostic):
 
@@ -114,7 +114,7 @@ from agent_server.utils import get_user_workspace_client
 #   create  POST {BASE}/entries?scope=…   {path,contents,description,creation_reason,creation_source}  (flat body; scope is a query param)
 #   get     GET  {BASE}/entries:get       ?scope,path        -> {contents, description, ...}
 #   list    GET  {BASE}/entries           ?scope             -> {entries:[{path,description,has_contents}]}  (key omitted entirely when empty)
-#   update  PATCH{BASE}/entries          {scope, path, <one edit op>}
+#   update  PATCH{BASE}/entries          {scope, path, [description], [one contents edit op]}  (>=1 of the two)
 #   delete  DELETE {BASE}/entries         ?scope,path
 
 _client: WorkspaceClient | None = None
@@ -188,11 +188,17 @@ def _list(scope):
     ]
     return f"{len(items)} memories total:\n" + "\n".join(lines)
 
-def _update(scope, path, op):  # op = exactly one of str_replace/insert/replace_all
-    if len(op) != 1:
-        return "Pass exactly one of str_replace / insert / replace_all."
+def _update(scope, path, op=None, description=None):  # op = at most one of str_replace/insert/replace_all
+    op = op or {}
+    if len(op) > 1:
+        return "Pass at most one contents edit (str_replace / insert / replace_all)."
+    if not op and description is None:
+        return "Provide a new description and/or one contents edit (str_replace / insert / replace_all)."
+    body = {"scope": scope, "path": path, **op}
+    if description is not None:
+        body["description"] = description
     try:
-        _ws().api_client.do("PATCH", _entries(), body={"scope": scope, "path": path, **op})
+        _ws().api_client.do("PATCH", _entries(), body=body)
     except DatabricksError as e:
         if e.error_code == "NOT_FOUND":
             return f"No memory at {path} to update — check list_memories or save it first."
@@ -260,15 +266,16 @@ async def list_memories(ctx: RunContextWrapper[MemoryContext]) -> str:
     return _list(_scope(ctx))
 
 @function_tool(strict_mode=False)
-async def update_memory(ctx: RunContextWrapper[MemoryContext], path: str,
+async def update_memory(ctx: RunContextWrapper[MemoryContext], path: str, description: str | None = None,
                         str_replace: dict | None = None, insert: dict | None = None,
                         replace_all: dict | None = None) -> str:
-    """Edit an EXISTING memory's contents in place (not its path/description). get_memory first so the
-    edit matches. Pass the exact path + EXACTLY ONE op:
-    str_replace={"old_str": ..., "new_str": ...} (old_str must occur once) · insert={"insert_text": ..., "insert_line": <optional>}
-    · replace_all={"contents": ...}."""
+    """Revise an EXISTING memory in place (same path; the path can't change). Pass description="..." to
+    replace its one-line description (use this to correct a brief, description-only memory), and/or EXACTLY
+    ONE contents edit op — str_replace={"old_str": ..., "new_str": ...} (old_str must occur once) ·
+    insert={"insert_text": ..., "insert_line": <optional>} · replace_all={"contents": ...}. get_memory first
+    so a contents edit matches; at least one of description / an edit op is required."""
     op = {k: v for k, v in (("str_replace", str_replace), ("insert", insert), ("replace_all", replace_all)) if v}
-    return _update(_scope(ctx), path, op)
+    return _update(_scope(ctx), path, op, description)
 
 @function_tool
 async def delete_memory(ctx: RunContextWrapper[MemoryContext], path: str) -> str:
@@ -330,6 +337,8 @@ result = await Runner.run(agent, messages, context=MemoryContext(scope=scope))
 result = await Runner.run(agent, messages, session=session, context=MemoryContext(scope=scope))
 ```
 
+> **Multi-agent (supervisor + sub-agents):** put `MEMORY_TOOLS` on the **orchestrator** `Agent` and pass `MemoryContext(scope=...)` to its `Runner.run`. Scope automatically reaches sub-agents that run **in-process** (`Agent.as_tool()` / handoffs in the same run) — they share the run context, so they *can* also carry the tools. Sub-agents that are **separate deployed endpoints** run in their own process with no shared context: each needs its own memory wiring and its own scope source (its forwarded OBO token). Don't try to thread `scope` across a service boundary.
+
 **LangGraph** — add the tools to `create_agent`, and put scope in the graph config under `memory_scope`:
 ```python
 from agent_server.utils_memory import memory_tools, resolve_scope
@@ -350,7 +359,7 @@ agent.astream(input=messages, config=config, stream_mode=["updates", "messages"]
 ## Step 5 — Agent instructions
 
 Define `MEMORY_INSTRUCTIONS` near the top of `agent_server/agent.py` and pass it as the agent's
-`instructions` (OpenAI) / `system_prompt` (LangGraph). If the agent already has a prompt, **prepend yours and keep it**:
+`instructions` (OpenAI) / `system_prompt` (LangGraph). If the agent already has a prompt, **prepend yours and keep it** — but if you just **replaced** a prior memory system (Step 3/4), first delete any text in that prompt that names the old tools you removed (e.g. an `agent-langgraph-advanced` prompt that referenced `get_user_memory` / `save_user_memory`), or the model will be told to call tools that no longer exist:
 
 ```python
 MEMORY_INSTRUCTIONS = """You have durable, cross-session memory about whoever (or whatever) this conversation is scoped to. Use it deliberately, not by reflex.
@@ -368,6 +377,8 @@ Save only what will still matter in a future, unrelated conversation — a stabl
 
 ## Test
 
+Run the server for API-only testing with `uv run start-app --no-ui --port 8000` — plain `start-app` also clones and builds the Next.js chat UI (slow, and unneeded for curl); `--no-ui` skips it and `--port` sets the port (match it in the curls below).
+
 ```bash
 # Local: no forwarded headers exist, so fake a user with X-Forwarded-User (any string; grant your user first, Step 2).
 curl localhost:8000/invocations -H 'Content-Type: application/json' -H 'X-Forwarded-User: alice' \
@@ -384,7 +395,7 @@ curl -X POST https://<app-url>/invocations -H "Authorization: Bearer $TOKEN" \
 ## Limits & errors (beta)
 
 - **Path:** starts `/memories/`, ≤1024 chars, no whitespace/control chars/empty segments/trailing `/`. Re-creating a path → `ALREADY_EXISTS` (use `update_memory`).
-- **Update:** `str_replace.old_str` must match exactly once or `INVALID_PARAMETER_VALUE` — `get_memory` to re-read and retry with more surrounding text. Edits **contents only**, not the description.
+- **Update:** pass `description` to replace the one-line description, and/or one contents edit op. `str_replace.old_str` must match exactly once or `INVALID_PARAMETER_VALUE` — `get_memory` to re-read and retry with more surrounding text.
 - **List volume:** ≤ ~5000 entries per `(store, scope)`, no "more" signal yet.
 - **Retryable:** `ABORTED` (concurrent write) and transient `5xx`/`DEADLINE_EXCEEDED` are safe to retry; `INVALID_PARAMETER_VALUE`/`NOT_FOUND`/`ALREADY_EXISTS` aren't.
 
@@ -403,7 +414,7 @@ curl -X POST https://<app-url>/invocations -H "Authorization: Bearer $TOKEN" \
 
 - **Scope is the isolation boundary** — set it in trusted code (Step 4), never let the model pass it. The app SP can read every scope.
 - **No memory structure yet:** entries are flat per scope; the agent invents `/memories/...` paths.
-- **Description vs contents:** for a brief fact the `description` is the whole memory (leave `contents` empty); `update_memory` revises contents only.
+- **Description vs contents:** for a brief fact the `description` is the whole memory (leave `contents` empty); `update_memory` can revise the `description` and/or the `contents`.
 - **Combining with short-term memory:** additive — keep the template's session memory (OpenAI `session=`, LangGraph checkpointer). On the advanced templates, after deploy also grant the app SP its Lakebase Postgres privileges (the template's own requirement) or it 502s on session setup.
 
 ## Next Steps

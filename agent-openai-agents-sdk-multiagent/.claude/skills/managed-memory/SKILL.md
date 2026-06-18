@@ -26,7 +26,7 @@ This skill is framework-agnostic and flexible with both the OpenAI Agents SDK an
 
 ## Prerequisites — this is an add-on
 
-This skill **adds long-term memory to an agent that's already set up** — it doesn't scaffold one. If there's **no `.env`** (auth not configured), run the **quickstart** skill first — it sets the Databricks profile + MLflow experiment, and on the advanced templates provisions the Lakebase used for short-term *session* memory (which this skill leaves intact). Then come back here. **Don't skip it:** the server won't even boot without a valid `MLFLOW_EXPERIMENT_ID` — an empty or unset one fails at import, before any memory code runs — and quickstart is what sets it. (On your own agent, the equivalent is just that it's authenticated to Databricks — a `WorkspaceClient()` can connect.)
+This skill **adds long-term memory to an agent that's already set up** — it doesn't scaffold one. If there's **no `.env`** (auth not configured), run the **quickstart** skill first — it sets the Databricks profile + MLflow experiment, and on the advanced templates provisions the Lakebase used for short-term *session* memory (which this skill leaves intact). Then come back here. **Verify the app already has everything it needs to run** first — the **quickstart** skill tells you what each template needs set up.
 
 ## Concepts
 

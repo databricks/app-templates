@@ -14,7 +14,7 @@ This project uses Databricks AppKit packages. For AI assistant guidance on using
 For enhanced AI assistance with Databricks CLI operations, authentication, data exploration, and app development, install the Databricks skills:
 
 ```bash
-databricks experimental aitools install
+databricks aitools install
 ```
 
 <!-- appkit-instructions-end -->

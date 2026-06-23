@@ -211,6 +211,7 @@ sketch
 !.claude/skills/discover-tools/
 !.claude/skills/create-tools/
 !.claude/skills/deploy/
+!.claude/skills/managed-memory/
 !.claude/skills/add-tools/
 !.claude/skills/run-locally/
 !.claude/skills/modify-agent/

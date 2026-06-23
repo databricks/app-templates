@@ -194,5 +194,6 @@ mlflow.db
 !.claude/skills/long-running-server/
 !.claude/skills/supervisor-api/
 !.claude/skills/supervisor-api-background-mode/
+!.claude/skills/managed-memory/
 !.claude/AGENTS.md
 !.claude/CLAUDE.md

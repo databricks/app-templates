@@ -105,6 +105,11 @@ def sync_template(template: str, config: dict):
     # Deploy skill (with substitution)
     copy_skill(SOURCE / "deploy", dest / "deploy", subs)
 
+    # Managed memory (UC memory-store) skill — durable long-term memory over REST, no infra.
+    # Conversational agent templates only (not the non-conversational or migration-helper templates).
+    if template not in ("agent-non-conversational", "agent-migration-from-model-serving"):
+        copy_skill(SOURCE / "managed-memory", dest / "managed-memory")
+
     # Add supervisor API to Open AI SDKs
     if sdk == "openai":
         copy_skill(SOURCE / "supervisor-api", dest / "supervisor-api")

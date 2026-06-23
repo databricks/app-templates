@@ -229,6 +229,9 @@ def _delete(scope, path):
 > and `get_user_workspace_client()` (the template's `utils`). If your Databricks App doesn't have them, do the
 > same thing directly: read the forwarded user token (`X-Forwarded-Access-Token`) from the request and call
 > `current_user.me().id` on a `WorkspaceClient` built with it — return that id, or `None` to fail closed.
+> This is the **per-user** resolver (the default); for the **shared** or **custom-logic** strategies, replace it
+> with the variant in **Scope strategy** below — the shared one-liner needs neither helper, so drop the
+> now-unused `get_request_headers` / `get_user_workspace_client` imports.
 
 **(b) OpenAI Agents SDK wrappers** — thin decorators over the shared core; `scope` comes from the run context:
 
@@ -427,6 +430,8 @@ Save only what will still matter in a future, unrelated conversation — a stabl
 ## Test
 
 Run the server for API-only testing with `uv run start-app --no-ui --port 8000` — plain `start-app` also clones and builds the Next.js chat UI (slow, and unneeded for curl); `--no-ui` skips it and `--port` sets the port (match it in the curls below).
+
+The curls below exercise the **per-user** path (scope = the faked user, so isolation applies). For a **shared** scope every request reaches the same partition regardless of user (the isolation note doesn't apply); for **custom logic**, pass whatever inputs your `resolve_scope` reads (e.g. `custom_inputs.user_id` / `project`).
 
 ```bash
 # Local: no forwarded headers exist, so fake a user with X-Forwarded-User (any string; grant your user first, Step 2).

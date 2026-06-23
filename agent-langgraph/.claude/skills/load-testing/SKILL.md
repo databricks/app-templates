@@ -14,8 +14,10 @@ Before beginning, use the `AskUserQuestion` tool to collect the following from t
 1. **Do they already have deployed apps to test, or do they need to set up new apps?**
 2. **Do they want to mock LLM calls?** Mocking isolates infrastructure throughput from LLM latency — useful for capacity planning. Testing without mocks measures end-to-end performance.
 3. **What compute sizes do they want to test?** (Medium, Large, or both)
-4. **How many worker configurations do they want to test?** (e.g., 2, 4, 6, 8 workers)
-5. **Do they have M2M OAuth credentials (service principal client_id/client_secret)?** — Recommended for tests longer than ~30 minutes. If not, guide them to create one.
+4. **How many worker configurations do they want to test?** (e.g., 2, 3, 4 for Medium; 6, 8, 10 for Large)
+5. **How long do they expect the test to run?**
+   - **Under ~1 hour** (e.g., 6 apps with defaults ≈ 45 min): Just run `databricks auth login` beforehand. The scripts automatically pick up the U2M token via the Databricks CLI — no extra setup needed.
+   - **Over ~1 hour** (e.g., large matrix, high max-users, multiple runs): Use M2M OAuth with a service principal because U2M tokens can expire mid-run. If they don't have one, guide them to create a service principal.
 6. **What is their `DATABRICKS_HOST`?** (workspace URL)
 
 ---
@@ -47,7 +49,7 @@ Create a `load-test-scripts/` directory in the project with the following files.
 - Sends `POST /invocations` with `{"input": [...], "stream": true}` to the app
 - Parses SSE stream (`data: {json}` lines) and counts chunks until `data: [DONE]`
 - Tracks **TTFT** (time to first `data:` line) as a custom Locust metric
-- Uses M2M OAuth token exchange (`client_credentials` grant to `{host}/oidc/v1/token`) with auto-refresh
+- Authenticates via U2M (default, from `databricks auth login`) or M2M OAuth (`client_credentials` grant to `{host}/oidc/v1/token`) with auto-refresh
 - Implements `StepRampShape` — ramps users from `step_size` to `max_users`, holding each level for `step_duration` seconds
 
 **`run_load_test.py`** — CLI orchestrator that:
@@ -129,13 +131,11 @@ Deploy multiple Databricks Apps with varying compute sizes and worker counts.
 | Compute Size | Workers | App Name |
 |-------------|---------|----------|
 | Medium | 2 | `<your-app>-medium-w2` |
+| Medium | 3 | `<your-app>-medium-w3` |
 | Medium | 4 | `<your-app>-medium-w4` |
-| Medium | 6 | `<your-app>-medium-w6` |
-| Medium | 8 | `<your-app>-medium-w8` |
 | Large | 6 | `<your-app>-large-w6` |
 | Large | 8 | `<your-app>-large-w8` |
 | Large | 10 | `<your-app>-large-w10` |
-| Large | 12 | `<your-app>-large-w12` |
 
 ### Configuring Compute Size
 
@@ -199,9 +199,18 @@ databricks apps get <app-name> --output json | jq '{app_status, compute_status, 
 
 ## Step 4: Run Load Tests
 
-### Authentication — M2M OAuth (Required for Long Tests)
+### Authentication
 
-Load tests can run for hours. **U2M OAuth tokens expire** and break your test mid-run. Use M2M (machine-to-machine) OAuth with a service principal instead.
+The load testing scripts authenticate to your Databricks App automatically:
+
+- **Short tests (under ~1 hour):** Just run `databricks auth login` beforehand. The scripts automatically pick up the U2M token via `databricks auth token`. Set `DATABRICKS_HOST` and `DATABRICKS_PROFILE` so the scripts know which workspace and profile to use:
+
+```bash
+export DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
+export DATABRICKS_PROFILE=<your-profile-name>   # profile from ~/.databrickscfg
+```
+
+- **Long tests (over ~1 hour):** U2M tokens can expire mid-run. Use M2M OAuth with a service principal instead:
 
 ```bash
 export DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
@@ -214,8 +223,8 @@ export DATABRICKS_CLIENT_SECRET=<your-client-secret>
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
 | `--app-url` | Yes | — | App URL(s) to test (repeatable) |
-| `--client-id` | Recommended | `DATABRICKS_CLIENT_ID` env | Service principal client ID |
-| `--client-secret` | Recommended | `DATABRICKS_CLIENT_SECRET` env | Service principal client secret |
+| `--client-id` | No | `DATABRICKS_CLIENT_ID` env | Service principal client ID (for long tests) |
+| `--client-secret` | No | `DATABRICKS_CLIENT_SECRET` env | Service principal client secret (for long tests) |
 | `--label` | No | Auto-derived from URL | Human-readable label per app (repeatable) |
 | `--compute-size` | No | Auto-detected or `medium` | Compute size tag per app: `medium`, `large` (repeatable) |
 | `--max-users` | No | `300` | Maximum concurrent simulated users |
@@ -230,24 +239,33 @@ export DATABRICKS_CLIENT_SECRET=<your-client-secret>
 ```bash
 cd load-test-scripts/
 
-# Quick single-app test:
+# Quick single-app test (uses U2M auth from `databricks auth login`):
 uv run run_load_test.py \
     --app-url https://my-app.aws.databricksapps.com \
-    --client-id <ID> --client-secret <SECRET> \
     --dashboard --run-name quick-test
 
-# Full matrix — 8 apps, overnight:
+# Full 6-app matrix (~45 min with defaults, U2M is fine):
 uv run run_load_test.py \
     --app-url https://my-app-medium-w2.aws.databricksapps.com \
+    --app-url https://my-app-medium-w3.aws.databricksapps.com \
     --app-url https://my-app-medium-w4.aws.databricksapps.com \
+    --app-url https://my-app-large-w6.aws.databricksapps.com \
     --app-url https://my-app-large-w8.aws.databricksapps.com \
     --app-url https://my-app-large-w10.aws.databricksapps.com \
-    --compute-size medium --compute-size medium \
-    --compute-size large --compute-size large \
+    --compute-size medium --compute-size medium --compute-size medium \
+    --compute-size large --compute-size large --compute-size large \
+    --dashboard --run-name full-sweep
+
+# Overnight high-concurrency test (use M2M OAuth — duration > 1 hour):
+uv run run_load_test.py \
+    --app-url https://my-app-medium-w2.aws.databricksapps.com \
+    --app-url https://my-app-large-w8.aws.databricksapps.com \
+    --compute-size medium --compute-size large \
+    --client-id <ID> --client-secret <SECRET> \
     --max-users 1000 --step-size 20 --step-duration 10 \
     --dashboard --run-name overnight-sweep
 
-# Multiple runs for statistical consistency:
+# Multiple runs for statistical consistency (use M2M if conducting prolonged 1hr+ load testing):
 for RUN in r1 r2 r3 r4 r5; do
   uv run run_load_test.py \
       --app-url ... \
@@ -268,7 +286,7 @@ done
 
 - `(max_users / step_size) * step_duration` seconds per app
 - With defaults: `(300 / 20) * 30 = 15 steps * 30s = ~7.5 min` per app
-- For 4 apps: ~30 min per run
+- For 6 apps (recommended matrix): ~45 min per run — well under the ~1 hour U2M token lifetime
 
 ---
 
@@ -311,7 +329,7 @@ uv run dashboard_template.py ../load-test-runs/<run-name>/
 
 | Issue | Solution |
 |-------|----------|
-| Auth token expired mid-test | Use M2M OAuth (`--client-id`/`--client-secret`) instead of static tokens |
+| Auth token expired mid-test | Test is likely over ~1 hour. Use M2M OAuth (`--client-id`/`--client-secret`) for long tests |
 | Healthcheck fails | Verify app is ACTIVE: `databricks apps get <name> --output json` |
 | 0 QPS / no results | Check `load-test-runs/<run-name>/<label>/locust_output.log` for errors |
 | Low QPS despite high user count | App is saturated — try more workers or larger compute |

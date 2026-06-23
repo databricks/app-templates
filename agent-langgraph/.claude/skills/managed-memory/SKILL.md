@@ -146,7 +146,7 @@ def resolve_scope(request=None) -> str | None:
     """The end user's id used as `scope`, or None if it can't be determined (the handler MUST fail
     closed). Deployed: the OBO forwarded token -> current_user.me().id — the ONLY trusted source.
     Local: an X-Forwarded-User header, the request's custom_inputs.user_id (what the bundled chat UI /
-    preflight send), or a dev-only DATABRICKS_MEMORY_SCOPE env var. NEVER the app's own identity, and
+    preflight send). NEVER the app's own identity, and
     NEVER a client-supplied value (X-Forwarded-User / custom_inputs) when deployed — those are spoofable."""
     headers = get_request_headers() or {}
     if headers.get("x-forwarded-access-token"):
@@ -156,7 +156,7 @@ def resolve_scope(request=None) -> str | None:
     if os.getenv("DATABRICKS_APP_NAME"):
         return None
     ci = dict(getattr(request, "custom_inputs", None) or {})
-    return headers.get("x-forwarded-user") or ci.get("user_id") or os.getenv("DATABRICKS_MEMORY_SCOPE")
+    return headers.get("x-forwarded-user") or ci.get("user_id")
 
 # The five operations. `scope` is passed in (never model-supplied). Each returns a short string.
 def _save(scope, path, description, contents=""):
@@ -363,7 +363,7 @@ agent.astream(input=messages, config=config, stream_mode=["updates", "messages"]
 > it can be more than deleting one argument: excise only the long-term store and its setup, and leave the
 > short-term path intact. Inspect the wiring rather than assuming a one-liner.
 
-`resolve_scope(request)`: deployed → the **verified** OBO token → `current_user.me().id` (the only source trusted in prod — it can't be spoofed and **supersedes** any client-supplied `custom_inputs.user_id` the template uses for its own memory). Local → an `X-Forwarded-User` header, the request's `custom_inputs.user_id` (what the bundled **chat UI** and **`preflight`** send), or `DATABRICKS_MEMORY_SCOPE`. If preflight / the chat UI fail closed (401/500) locally, you're missing a local identity — pass `custom_inputs.user_id` or set `DATABRICKS_MEMORY_SCOPE`.
+`resolve_scope(request)`: deployed → the **verified** OBO token → `current_user.me().id` (the only source trusted in prod — it can't be spoofed and **supersedes** any client-supplied `custom_inputs.user_id` the template uses for its own memory). Local → an `X-Forwarded-User` header or the request's `custom_inputs.user_id` (what the bundled **chat UI** and **`preflight`** send). If preflight / the chat UI fail closed (401/500) locally, you're missing a local identity — pass `custom_inputs.user_id` or send `X-Forwarded-User`.
 
 ## Scope strategy — per-user, shared, or your own logic
 
@@ -386,7 +386,7 @@ Record `DATABRICKS_MEMORY_CUSTOM_SCOPE` in `.env` **and** `databricks.yml` `conf
 
 **Your own logic.** Partition any way your app needs — per project or tenant, or a composite like user×project — as long as `resolve_scope` honors this **contract**:
 - **Anything that identifies a *user* comes from the verified OBO token** when deployed — never a client-supplied value (the per-user resolver already does this; reuse it).
-- A **client-supplied selector** (e.g. a `project` from `custom_inputs`) is safe **only when namespaced under a verified user** — `f"{user_id}:{project}"` isolates per user *and* project, because a caller can only ever reach keys prefixed by their own verified id, so a bad value touches only their own memory. A **bare** client-chosen selector (`return project_id`) is a *shared bucket* — any user can pass any value — so isolate it only if your app independently authorizes the caller's access to that project/tenant.
+- A **client-supplied selector** (e.g. a `project` from `custom_inputs`) is safe **only when namespaced under a verified user** — `f"{user_id}:{project}"` isolates per user *and* project, because a caller can only ever reach keys prefixed by their own verified id, so a bad value touches only their own memory. A **bare** client-chosen selector (`return project_id`) is a *shared bucket* — any user can pass any value.
 - Trusted server code, **never model-chosen**, **fail closed** (`None`) when a required input is missing.
 
 ```python
@@ -407,6 +407,8 @@ In every case the invariants hold: scope is set in **trusted code**, the **model
 
 Define `MEMORY_INSTRUCTIONS` near the top of `agent_server/agent.py` and pass it as the agent's
 `instructions` (OpenAI) / `system_prompt` (LangGraph). If the agent already has a prompt, **prepend yours and keep it** — but if you just **replaced** a prior memory system (Step 3/4), first delete any text in that prompt that names the old tools you removed (e.g. an `agent-langgraph-advanced` prompt that referenced `get_user_memory` / `save_user_memory`), or the model will be told to call tools that no longer exist:
+
+Match the wording to the scope you chose in Step 1. The prompt below is the per-user version.
 
 ```python
 MEMORY_INSTRUCTIONS = """You have durable, cross-session memory about whoever (or whatever) this conversation is scoped to. Use it deliberately, not by reflex.
@@ -451,7 +453,7 @@ curl -X POST https://<app-url>/invocations -H "Authorization: Bearer $TOKEN" \
 | Issue | Cause | Fix |
 |---|---|---|
 | `RuntimeError: DATABRICKS_MEMORY_STORE is not set` | env var missing | Set it in `.env` (local) **and** `databricks.yml` `config.env` (deploy) — Step 1 |
-| `500` + "No end-user identity" | scope didn't resolve (fail-closed guard fired; framework surfaces 401 as 500). Common locally: the bundled **chat UI / `preflight`** send `custom_inputs.user_id` but no forwarded header | Deployed: ensure the OBO user token reaches the app. Local: pass `custom_inputs.user_id`, send `X-Forwarded-User`, or set `DATABRICKS_MEMORY_SCOPE` |
+| `500` + "No end-user identity" | scope didn't resolve (fail-closed guard fired; framework surfaces 401 as 500). Common locally: the bundled **chat UI / `preflight`** send `custom_inputs.user_id` but no forwarded header | Deployed: ensure the OBO user token reaches the app. Local: pass `custom_inputs.user_id` or send `X-Forwarded-User` |
 | `PERMISSION_DENIED` | caller lacks `READ/WRITE_MEMORY_STORE` | Grant the app SP / your user — Step 2 |
 | `NOT_FOUND` on **every** call | wrong store name / store doesn't exist | Re-check `DATABRICKS_MEMORY_STORE` is the full `catalog.schema.name` (confirm with the Step 1 `GET`) |
 | `ALREADY_EXISTS` on save | path is taken | `update_memory`, or pick a fresh path |

@@ -34,7 +34,7 @@ This skill **adds long-term memory to an agent that's already set up** — it do
 |---|---|
 | **Memory store** | A UC securable `catalog.schema.name` (type `MEMORY_STORE`) — the governance object you grant on and the container for memories. Read/written over REST, no SQL. |
 | **Memory entry** | One memory: a `path` (e.g. `/memories/preferences/coffee.md`), a one-line `description`, and optional `contents`. |
-| **Scope** | The partition key the caller assigns — decides whose memories you read/write. Either **per-user** (a private partition, the default) or a **shared constant** (org/team-wide); see **Scope strategy** below. |
+| **Scope** | The partition key the caller assigns — decides whose memories you read/write. **Per-user** (a private partition, the default), a **shared constant** (org/team-wide), or **your own logic** (per project/tenant, user×project); see **Scope strategy** below. |
 
 **Access is two separate questions:**
 - *Can the caller use the store?* → make sure the caller has `READ_MEMORY_STORE` to retrieve memory entries and `WRITE_MEMORY_STORE` to write them. When testing locally the tools are called with the developer's credentials; when the agent is deployed on Apps they run with the app's credentials.
@@ -57,9 +57,10 @@ export TOKEN="$(databricks auth token -p <profile> | jq -r .access_token)"
 - **Use an existing store** — you own it, or hold MANAGE / MANAGE_ACCESS_CONTROL on it.
 - **Create a new store** — under a catalog + schema you choose; you become the owner (needs `CREATE_MEMORY_STORE` on that schema).
 
-*2. The scope strategy* — *"Should memories be private to each end user, or shared across a team/org/project?"* (see **Scope strategy** below for the tradeoff)
+*2. The scope strategy* — *"How should memories be partitioned: private per end user, shared across a team/org/project, or by your own logic?"* (see **Scope strategy** below for the tradeoffs)
 - **Per-user (recommended)** — each user gets a private partition; the default wiring.
 - **Custom (shared)** — one fixed scope for everyone; if chosen, collect the scope id as a free-text follow-up and record it as `DATABRICKS_MEMORY_CUSTOM_SCOPE` (alongside `DATABRICKS_MEMORY_STORE` below).
+- **Custom logic** — partition some other way (per project/tenant, or user×project). Ask the user to describe their isolation model, then write `resolve_scope` to it, honoring the contract under **Scope strategy → Your own logic**.
 
 The scope answer routes `resolve_scope` (Steps 3–4) and the `MEMORY_INSTRUCTIONS` framing (Step 5) — wire whichever the user picked.
 
@@ -364,9 +365,9 @@ agent.astream(input=messages, config=config, stream_mode=["updates", "messages"]
 
 `resolve_scope(request)`: deployed → the **verified** OBO token → `current_user.me().id` (the only source trusted in prod — it can't be spoofed and **supersedes** any client-supplied `custom_inputs.user_id` the template uses for its own memory). Local → an `X-Forwarded-User` header, the request's `custom_inputs.user_id` (what the bundled **chat UI** and **`preflight`** send), or `DATABRICKS_MEMORY_SCOPE`. If preflight / the chat UI fail closed (401/500) locally, you're missing a local identity — pass `custom_inputs.user_id` or set `DATABRICKS_MEMORY_SCOPE`.
 
-## Scope strategy: per-user vs custom (shared)
+## Scope strategy — per-user, shared, or your own logic
 
-`scope` decides *whose* memories a call touches. Pick a strategy per agent:
+`scope` decides *whose* memories a call touches. `resolve_scope` is just a function returning that partition key — the two cases below are the common ones, but you can implement any model (see **Your own logic**). Pick per agent:
 
 **Per-user (the default wiring above).** `scope` = the end user's id, so each user gets a private partition — the right choice for personal preferences, facts, and history. This is why `resolve_scope` is strict: it takes the id from the **verified OBO token** when deployed (never a client-supplied value) and **fails closed** when no end-user identity is present — an empty or wrong scope would leak one user's memories to another.
 
@@ -381,9 +382,26 @@ def resolve_scope(request=None) -> str | None:
 
 Record `DATABRICKS_MEMORY_CUSTOM_SCOPE` in `.env` **and** `databricks.yml` `config.env`, like `DATABRICKS_MEMORY_STORE`. The Step-4 fail-closed guard still applies: if the constant isn't configured, refuse rather than fall back to a default partition.
 
-> **Tradeoff — no per-user isolation.** A shared scope means every user of the app reads *and writes* the same memories (any of them can update or delete an entry). That's intended, but: never put one user's private data in an org scope, and remember the **store grants + your app's own access control are the only boundary** on who can touch it. Re-point `MEMORY_INSTRUCTIONS` at shared facts/policies rather than "this user's preferences."
+> **Tradeoff — no per-user isolation.** A shared scope means every user of the app reads *and writes* the same memories (any of them can update or delete an entry). That's intended, but: never put one user's private data in a shared scope, and remember the **store grants + your app's own access control are the only boundary** on who can touch it. Re-point `MEMORY_INSTRUCTIONS` at shared facts/policies rather than "this user's preferences."
 
-Either way the invariants hold: scope is set in **trusted code**, the **model never sees or chooses it**, and an unresolved scope **fails closed**. (To do both — personal *and* shared — resolve two scopes and expose two tool sets, keeping the raw value out of the model.)
+**Your own logic.** Partition any way your app needs — per project or tenant, or a composite like user×project — as long as `resolve_scope` honors this **contract**:
+- **Anything that identifies a *user* comes from the verified OBO token** when deployed — never a client-supplied value (the per-user resolver already does this; reuse it).
+- A **client-supplied selector** (e.g. a `project` from `custom_inputs`) is safe **only when namespaced under a verified user** — `f"{user_id}:{project}"` isolates per user *and* project, because a caller can only ever reach keys prefixed by their own verified id, so a bad value touches only their own memory. A **bare** client-chosen selector (`return project_id`) is a *shared bucket* — any user can pass any value — so isolate it only if your app independently authorizes the caller's access to that project/tenant.
+- Trusted server code, **never model-chosen**, **fail closed** (`None`) when a required input is missing.
+
+```python
+# Composite per-user-per-project: wrap the per-user resolver (keep its OBO/verified-id + local
+# fallbacks), then namespace by a client-supplied project. Safe — every key is prefixed by the
+# caller's own verified id, so a bad `project` only ever addresses their own memory.
+def resolve_scope(request=None) -> str | None:
+    user = _resolve_user_scope(request)        # the per-user resolve_scope from Step 3, renamed
+    if not user:
+        return None                            # fail closed: no verified user
+    ci = dict(getattr(request, "custom_inputs", None) or {})
+    return f"{user}:{ci.get('project', 'default')}"
+```
+
+In every case the invariants hold: scope is set in **trusted code**, the **model never sees or chooses it**, and an unresolved scope **fails closed**. (To run several at once — e.g. personal *and* shared — resolve multiple scopes and expose a tool set per scope, keeping the raw value out of the model.)
 
 ## Step 5 — Agent instructions
 
@@ -442,7 +460,7 @@ curl -X POST https://<app-url>/invocations -H "Authorization: Bearer $TOKEN" \
 ## Notes
 
 - **Scope is the isolation boundary** — set it in trusted code (Step 4), never let the model pass it. The app SP can read every scope.
-- **Scope strategy:** per-user (private, the default) or custom (one shared constant — org/team/project) — see **Scope strategy**. Same invariants either way: trusted code sets it, the model never does, an unresolved scope fails closed.
+- **Scope strategy:** per-user (private, the default), a shared constant, or your own logic (per project/tenant, user×project) — see **Scope strategy**. Same invariants in every case: trusted code sets it, the model never does, an unresolved scope fails closed.
 - **No memory structure yet:** entries are flat per scope; the agent invents `/memories/...` paths.
 - **Description vs contents:** for a brief fact the `description` is the whole memory (leave `contents` empty); `update_memory` can revise the `description` and/or the `contents`.
 - **Combining with short-term memory:** additive — keep the template's session memory (OpenAI `session=`, LangGraph checkpointer). On the advanced templates, after deploy also grant the app SP its Lakebase Postgres privileges (the template's own requirement) or it 502s on session setup.

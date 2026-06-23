@@ -51,11 +51,19 @@ export DATABRICKS_HOST="https://<your-workspace-host>"
 export TOKEN="$(databricks auth token -p <profile> | jq -r .access_token)"
 ```
 
-**Ask the user with `AskUserQuestion`** (multi-choice): *"Do you have an existing memory store you can manage, or should I create one?"*
+**Ask the user with `AskUserQuestion`** — two setup choices, in one call:
+
+*1. The store* — *"Do you have an existing memory store you can manage, or should I create one?"*
 - **Use an existing store** — you own it, or hold MANAGE / MANAGE_ACCESS_CONTROL on it.
 - **Create a new store** — under a catalog + schema you choose; you become the owner (needs `CREATE_MEMORY_STORE` on that schema).
 
-Then collect the details as normal chat messages (free-text — not `AskUserQuestion`) and run the matching API call. Run these yourself so you can see exactly what each does:
+*2. The scope strategy* — *"Should memories be private to each end user, or shared across a team/org/project?"* (see **Scope strategy** below for the tradeoff)
+- **Per-user (recommended)** — each user gets a private partition; the default wiring.
+- **Custom (shared)** — one fixed scope for everyone; if chosen, collect the scope id as a free-text follow-up and record it as `DATABRICKS_MEMORY_CUSTOM_SCOPE` (alongside `DATABRICKS_MEMORY_STORE` below).
+
+The scope answer routes `resolve_scope` (Steps 3–4) and the `MEMORY_INSTRUCTIONS` framing (Step 5) — wire whichever the user picked.
+
+Then collect the store details as normal chat messages (free-text — not `AskUserQuestion`) and run the matching API call. Run these yourself so you can see exactly what each does:
 
 ```bash
 # CREATE a store you own. Returns the securable {full_name, owner, memory_store_id, ...}.
@@ -356,22 +364,22 @@ agent.astream(input=messages, config=config, stream_mode=["updates", "messages"]
 
 `resolve_scope(request)`: deployed → the **verified** OBO token → `current_user.me().id` (the only source trusted in prod — it can't be spoofed and **supersedes** any client-supplied `custom_inputs.user_id` the template uses for its own memory). Local → an `X-Forwarded-User` header, the request's `custom_inputs.user_id` (what the bundled **chat UI** and **`preflight`** send), or `DATABRICKS_MEMORY_SCOPE`. If preflight / the chat UI fail closed (401/500) locally, you're missing a local identity — pass `custom_inputs.user_id` or set `DATABRICKS_MEMORY_SCOPE`.
 
-## Scope strategy: per-user vs organizational (shared)
+## Scope strategy: per-user vs custom (shared)
 
 `scope` decides *whose* memories a call touches. Pick a strategy per agent:
 
 **Per-user (the default wiring above).** `scope` = the end user's id, so each user gets a private partition — the right choice for personal preferences, facts, and history. This is why `resolve_scope` is strict: it takes the id from the **verified OBO token** when deployed (never a client-supplied value) and **fails closed** when no end-user identity is present — an empty or wrong scope would leak one user's memories to another.
 
-**Organizational (shared).** Every user shares **one fixed scope**, so the memories are common to the whole org or team — company policies, shared domain knowledge, conventions. The scope is a deploy-time constant, not a per-user secret, so `resolve_scope` is simpler and doesn't need the user's identity:
+**Custom (shared).** Every user shares **one fixed scope** you define — an org, team, or project — so the memories are common to that whole group: company policies, shared domain knowledge, conventions. The scope is a deploy-time constant, not a per-user secret, so `resolve_scope` is simpler and doesn't need the user's identity:
 
 ```python
 def resolve_scope(request=None) -> str | None:
-    # Shared org memory: ONE partition for everyone. Set in trusted code (an env var / the org or
-    # team id) — NEVER from the model or a client-supplied value. Fail closed (None) if unset.
-    return os.getenv("DATABRICKS_MEMORY_ORG_SCOPE")
+    # Shared memory: ONE partition for everyone. Set in trusted code (an env var / the org, team, or
+    # project id) — NEVER from the model or a client-supplied value. Fail closed (None) if unset.
+    return os.getenv("DATABRICKS_MEMORY_CUSTOM_SCOPE")
 ```
 
-Record `DATABRICKS_MEMORY_ORG_SCOPE` (e.g. `acme-eng`) in `.env` **and** `databricks.yml` `config.env`, like `DATABRICKS_MEMORY_STORE`. The Step-4 fail-closed guard still applies: if the constant isn't configured, refuse rather than fall back to a default partition.
+Record `DATABRICKS_MEMORY_CUSTOM_SCOPE` in `.env` **and** `databricks.yml` `config.env`, like `DATABRICKS_MEMORY_STORE`. The Step-4 fail-closed guard still applies: if the constant isn't configured, refuse rather than fall back to a default partition.
 
 > **Tradeoff — no per-user isolation.** A shared scope means every user of the app reads *and writes* the same memories (any of them can update or delete an entry). That's intended, but: never put one user's private data in an org scope, and remember the **store grants + your app's own access control are the only boundary** on who can touch it. Re-point `MEMORY_INSTRUCTIONS` at shared facts/policies rather than "this user's preferences."
 
@@ -434,7 +442,7 @@ curl -X POST https://<app-url>/invocations -H "Authorization: Bearer $TOKEN" \
 ## Notes
 
 - **Scope is the isolation boundary** — set it in trusted code (Step 4), never let the model pass it. The app SP can read every scope.
-- **Scope strategy:** per-user (private, the default) or organizational (one shared constant) — see **Scope strategy**. Same invariants either way: trusted code sets it, the model never does, an unresolved scope fails closed.
+- **Scope strategy:** per-user (private, the default) or custom (one shared constant — org/team/project) — see **Scope strategy**. Same invariants either way: trusted code sets it, the model never does, an unresolved scope fails closed.
 - **No memory structure yet:** entries are flat per scope; the agent invents `/memories/...` paths.
 - **Description vs contents:** for a brief fact the `description` is the whole memory (leave `contents` empty); `update_memory` can revise the `description` and/or the `contents`.
 - **Combining with short-term memory:** additive — keep the template's session memory (OpenAI `session=`, LangGraph checkpointer). On the advanced templates, after deploy also grant the app SP its Lakebase Postgres privileges (the template's own requirement) or it 502s on session setup.

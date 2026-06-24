@@ -71,7 +71,38 @@ export async function getWorkspaceHostname(): Promise<string> {
 // Environment variable to enable SSE logging
 const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true';
 
-const API_PROXY = process.env.API_PROXY;
+// Read API_PROXY at call sites (not module load) so tests can flip it
+// per-case via process.env without forcing a re-import.
+const getApiProxy = () => process.env.API_PROXY;
+
+// Durable-execution support: when talking to a `LongRunningAgentServer`
+// agent (the case when `API_PROXY` is set in our advanced templates) we
+//   1. inject `background: true` so the server persists every SSE frame
+//      to its durable store and the retrieve endpoint can resume mid-stream;
+//   2. on connection close without `[DONE]`, transparently re-stream from
+//      the retrieve endpoint using the last seen sequence number.
+//
+// We deliberately do NOT track / substitute rotated `conversation_id`
+// values here. The bridge resolves rotation server-side via its
+// `conversation_aliases` table — the chatbot always sends the original
+// chat id and the bridge maps it to the post-rotation SDK session. This
+// is what lets the durable path survive chatbot restarts and multi-pod
+// chatbot deployments without any client-side state.
+const MAX_RESUME_ATTEMPTS = 5;
+
+function extractResponseId(json: Record<string, unknown> | null): string | null {
+  if (!json) return null;
+  if (typeof json.response_id === 'string') return json.response_id;
+  const resp = json.response as { id?: unknown } | undefined;
+  if (resp && typeof resp.id === 'string') return resp.id;
+  return null;
+}
+
+function buildRetrieveUrl(invocationsUrl: string, responseId: string): string {
+  // The bridge mounts GET /responses/{id} on the same origin as POST /invocations.
+  const base = invocationsUrl.replace(/\/invocations\/?$/, '');
+  return `${base}/responses/${encodeURIComponent(responseId)}`;
+}
 
 // Cache for endpoint details to check task type and OBO scopes
 const endpointDetailsCache = new Map<
@@ -87,7 +118,7 @@ const ENDPOINT_DETAILS_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 function shouldInjectContext(): boolean {
   const servingEndpoint = process.env.DATABRICKS_SERVING_ENDPOINT;
   if (!servingEndpoint) {
-    return Boolean(API_PROXY);
+    return Boolean(getApiProxy());
   }
 
   const cached = endpointDetailsCache.get(servingEndpoint);
@@ -110,28 +141,36 @@ export const databricksFetch: typeof fetch = async (input, init) => {
   headers.delete(CONTEXT_HEADER_USER_ID);
   requestInit = { ...requestInit, headers };
 
-  // Inject context into request body if appropriate
-  if (
-    conversationId &&
-    userId &&
-    requestInit?.body &&
-    typeof requestInit.body === 'string'
-  ) {
-    if (shouldInjectContext()) {
-      try {
-        const body = JSON.parse(requestInit.body);
-        const enhancedBody = {
-          ...body,
-          context: {
-            ...body.context,
-            conversation_id: conversationId,
-            user_id: userId,
-          },
+  // Mutate the request body for durable execution (when we have a body to
+  // mutate). Two things happen here, both conditional:
+  //   - Inject context.conversation_id / context.user_id from headers when the
+  //     endpoint expects it (existing behavior).
+  //   - Set body.background = true on streaming requests when API_PROXY is
+  //     set, so the long-running server persists the stream to its store.
+  if (requestInit?.body && typeof requestInit.body === 'string') {
+    try {
+      const body = JSON.parse(requestInit.body);
+      let mutated = false;
+
+      if (conversationId && userId && shouldInjectContext()) {
+        body.context = {
+          ...(body.context ?? {}),
+          conversation_id: conversationId,
+          user_id: userId,
         };
-        requestInit = { ...requestInit, body: JSON.stringify(enhancedBody) };
-      } catch {
-        // If JSON parsing fails, pass through unchanged
+        mutated = true;
       }
+
+      if (getApiProxy() && body.stream === true && body.background !== true) {
+        body.background = true;
+        mutated = true;
+      }
+
+      if (mutated) {
+        requestInit = { ...requestInit, body: JSON.stringify(body) };
+      }
+    } catch {
+      // If JSON parsing fails, pass through unchanged
     }
   }
 
@@ -161,58 +200,28 @@ export const databricksFetch: typeof fetch = async (input, init) => {
 
   const response = await fetch(url, requestInit);
 
-  // If SSE logging is enabled and this is a streaming response, wrap the body to log events
-  if (LOG_SSE_EVENTS && response.body) {
+  // Only wrap the response for durable resume when API_PROXY is set —
+  // standard Databricks serving endpoints aren't long-running servers, so
+  // the resume path can't fire there and we'd just pay parse cost for
+  // every SSE chunk for no benefit.
+  if (getApiProxy() && response.body) {
     const contentType = response.headers.get('content-type') || '';
     const isSSE =
       contentType.includes('text/event-stream') ||
       contentType.includes('application/x-ndjson');
 
     if (isSSE) {
-      const originalBody = response.body;
-      const reader = originalBody.getReader();
-      const decoder = new TextDecoder();
-      let eventCounter = 0;
+      // Pass only the Authorization header to the resume fetch — it's a
+      // simple GET, no content-type / content-length / mlflow trace
+      // headers needed, and copying the whole request init can carry
+      // along stale fields that confuse the retrieve endpoint.
+      const resumeHeaders = new Headers();
+      const reqHeaders = new Headers(requestInit?.headers);
+      const auth = reqHeaders.get('authorization');
+      if (auth) resumeHeaders.set('authorization', auth);
 
-      const loggingStream = new ReadableStream({
-        async pull(controller) {
-          const { done, value } = await reader.read();
-
-          if (done) {
-            console.log('[SSE] Stream ended');
-            controller.close();
-            return;
-          }
-
-          // Decode and log the chunk
-          const text = decoder.decode(value, { stream: true });
-          const lines = text.split('\n').filter((line) => line.trim());
-
-          for (const line of lines) {
-            eventCounter++;
-            if (line.startsWith('data:')) {
-              const data = line.slice(5).trim();
-              try {
-                const parsed = JSON.parse(data);
-                console.log(`[SSE #${eventCounter}]`, JSON.stringify(parsed));
-              } catch {
-                console.log(`[SSE #${eventCounter}] (raw)`, data);
-              }
-            } else if (line.trim()) {
-              console.log(`[SSE #${eventCounter}] (line)`, line);
-            }
-          }
-
-          // Pass the original data through
-          controller.enqueue(value);
-        },
-        cancel() {
-          reader.cancel();
-        },
-      });
-
-      // Create a new response with the logging stream
-      return new Response(loggingStream, {
+      const wrapped = wrapDurableSseStream(response.body, url, resumeHeaders);
+      return new Response(wrapped, {
         status: response.status,
         statusText: response.statusText,
         headers: response.headers,
@@ -222,6 +231,113 @@ export const databricksFetch: typeof fetch = async (input, init) => {
 
   return response;
 };
+
+/**
+ * Wrap a long-running-server SSE response so we can:
+ *   - track the last sequence number and response_id we observed,
+ *   - if the upstream stream closes before `[DONE]`, transparently re-stream
+ *     from `GET /responses/{id}?stream=true&starting_after=<seq>`.
+ *
+ * Bytes are passed through untouched; we only sniff data frames.
+ */
+function wrapDurableSseStream(
+  initialBody: ReadableStream<Uint8Array>,
+  invocationsUrl: string,
+  resumeHeaders: Headers,
+): ReadableStream<Uint8Array> {
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let eventCounter = 0;
+  let responseId: string | null = null;
+  let lastSeq = -1;
+  let sawDone = false;
+  let attemptsLeft = MAX_RESUME_ATTEMPTS;
+
+  function processChunk(value: Uint8Array): void {
+    buffer += decoder.decode(value, { stream: true });
+    while (true) {
+      const nl = buffer.indexOf('\n');
+      if (nl === -1) break;
+      const line = buffer.slice(0, nl);
+      buffer = buffer.slice(nl + 1);
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      if (!trimmed.startsWith('data:')) continue;
+      const data = trimmed.slice(5).trim();
+      if (data === '[DONE]') {
+        sawDone = true;
+        if (LOG_SSE_EVENTS) console.log(`[SSE #${++eventCounter}] [DONE]`);
+        continue;
+      }
+      let json: Record<string, unknown> | null = null;
+      try {
+        json = JSON.parse(data) as Record<string, unknown>;
+      } catch {
+        if (LOG_SSE_EVENTS) console.log(`[SSE #${++eventCounter}] (raw)`, data);
+        continue;
+      }
+      if (LOG_SSE_EVENTS) {
+        console.log(`[SSE #${++eventCounter}]`, JSON.stringify(json));
+      }
+      const rid = extractResponseId(json);
+      if (rid) responseId = rid;
+      const seq = json.sequence_number;
+      if (typeof seq === 'number' && seq > lastSeq) lastSeq = seq;
+    }
+  }
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      let currentBody: ReadableStream<Uint8Array> | null = initialBody;
+
+      while (currentBody) {
+        const reader = currentBody.getReader();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            controller.enqueue(value);
+            processChunk(value);
+          }
+        } catch (err) {
+          if (LOG_SSE_EVENTS) console.warn('[SSE] read error', err);
+        } finally {
+          reader.releaseLock();
+        }
+
+        if (sawDone) break;
+        if (!responseId || attemptsLeft <= 0) break;
+
+        attemptsLeft -= 1;
+        const startingAfter = Math.max(lastSeq, 0);
+        const resumeUrl =
+          `${buildRetrieveUrl(invocationsUrl, responseId)}` +
+          `?stream=true&starting_after=${startingAfter}`;
+        console.log(
+          `[SSE] upstream closed without [DONE], resuming response_id=${responseId} from seq=${startingAfter}`,
+        );
+        try {
+          const resp = await fetch(resumeUrl, {
+            method: 'GET',
+            headers: resumeHeaders,
+          });
+          if (!resp.ok || !resp.body) {
+            console.warn(
+              `[SSE] resume request failed status=${resp.status}, giving up`,
+            );
+            break;
+          }
+          currentBody = resp.body;
+        } catch (err) {
+          console.warn('[SSE] resume fetch threw, giving up', err);
+          break;
+        }
+      }
+
+      controller.close();
+    },
+  });
+}
 
 type CachedProvider = ReturnType<typeof createDatabricksProvider>;
 let oauthProviderCache: CachedProvider | null = null;
@@ -249,7 +365,7 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
     // When using endpoints such as Agent Bricks or custom agents, we need to use remote tool calling to handle the tool calls
     useRemoteToolCalling: true,
     baseURL: `${hostname}/serving-endpoints`,
-    formatUrl: ({ baseUrl, path }) => API_PROXY ?? `${baseUrl}${path}`,
+    formatUrl: ({ baseUrl, path }) => getApiProxy() ?? `${baseUrl}${path}`,
     fetch: async (...[input, init]: Parameters<typeof fetch>) => {
       const headers = new Headers(init?.headers);
 
@@ -264,7 +380,7 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
         headers.set('Authorization', `Bearer ${currentToken}`);
       }
 
-      if (API_PROXY) {
+      if (getApiProxy()) {
         headers.set('x-mlflow-return-trace-id', 'true');
       }
 
@@ -390,7 +506,7 @@ export class OAuthAwareProvider implements SmartProvider {
     const provider = await getOrCreateDatabricksProvider();
 
     const model = await (async () => {
-      if (API_PROXY) {
+      if (getApiProxy()) {
         // For API proxy we always use the responses agent
         return provider.responses(id);
       }

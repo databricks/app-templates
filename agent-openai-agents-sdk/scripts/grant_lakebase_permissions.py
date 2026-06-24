@@ -47,6 +47,7 @@ MEMORY_TYPE_SCHEMAS: dict[str, dict[str, list[str]]] = {
         "agent_server": [
             "responses",
             "messages",
+            "conversation_aliases",
         ],
     },
     "openai": {
@@ -57,6 +58,7 @@ MEMORY_TYPE_SCHEMAS: dict[str, dict[str, list[str]]] = {
         "agent_server": [
             "responses",
             "messages",
+            "conversation_aliases",
         ],
     },
 }

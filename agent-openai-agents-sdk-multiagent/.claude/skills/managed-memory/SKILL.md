@@ -59,7 +59,7 @@ export TOKEN="$(databricks auth token -p <profile> | jq -r .access_token)"
 
 *2. The scope strategy* — *"How should memories be partitioned: private per end user, shared across a team/org/project, or by your own logic?"* (see **Scope strategy** below for the tradeoffs)
 - **Per-user (recommended)** — each user gets a private partition; the default wiring.
-- **Custom (shared)** — one fixed scope for everyone; if chosen, collect the scope id as a free-text follow-up and record it as `DATABRICKS_MEMORY_CUSTOM_SCOPE` (alongside `DATABRICKS_MEMORY_STORE` below).
+- **Custom (shared)** — one fixed scope for everyone; if chosen, collect the scope id as a free-text follow-up and set it as a constant in `resolve_scope`.
 - **Custom logic** — partition some other way (per project/tenant, or user×project). Ask the user to describe their isolation model, then write `resolve_scope` to it, honoring the contract under **Scope strategy → Your own logic**.
 
 The scope answer routes `resolve_scope` (Steps 3–4) and the `MEMORY_INSTRUCTIONS` framing (Step 5) — wire whichever the user picked.
@@ -374,35 +374,21 @@ agent.astream(input=messages, config=config, stream_mode=["updates", "messages"]
 
 **Per-user (the default wiring above).** `scope` = the end user's id, so each user gets a private partition — the right choice for personal preferences, facts, and history. This is why `resolve_scope` is strict: it takes the id from the **verified OBO token** when deployed (never a client-supplied value) and **fails closed** when no end-user identity is present — an empty or wrong scope would leak one user's memories to another.
 
-**Custom (shared).** Every user shares **one fixed scope** you define — an org, team, or project — so the memories are common to that whole group: company policies, shared domain knowledge, conventions. The scope is a deploy-time constant, not a per-user secret, so `resolve_scope` is simpler and doesn't need the user's identity:
+**Custom (shared).** Every user shares **one fixed scope** you define — an org, team, or project — so the memories are common to that whole group: company policies, shared domain knowledge, conventions. The scope is a constant, not a per-user secret, so `resolve_scope` is a one-liner that doesn't need the user's identity:
 
 ```python
 def resolve_scope(request=None) -> str | None:
-    # Shared memory: ONE partition for everyone. Set in trusted code (an env var / the org, team, or
-    # project id) — NEVER from the model or a client-supplied value. Fail closed (None) if unset.
-    return os.getenv("DATABRICKS_MEMORY_CUSTOM_SCOPE")
+    # Shared memory: ONE partition for everyone. Set this constant in trusted code —
+    # never from the model or a client-supplied value.
+    return "acme-eng"   # your org / team / project scope
 ```
-
-Record `DATABRICKS_MEMORY_CUSTOM_SCOPE` in `.env` **and** `databricks.yml` `config.env`, like `DATABRICKS_MEMORY_STORE`. The Step-4 fail-closed guard still applies: if the constant isn't configured, refuse rather than fall back to a default partition.
 
 > **Tradeoff — no per-user isolation.** A shared scope means every user of the app reads *and writes* the same memories (any of them can update or delete an entry). That's intended, but: never put one user's private data in a shared scope, and remember the **store grants + your app's own access control are the only boundary** on who can touch it. Re-point `MEMORY_INSTRUCTIONS` at shared facts/policies rather than "this user's preferences."
 
-**Your own logic.** Partition any way your app needs — per project or tenant, or a composite like user×project — as long as `resolve_scope` honors this **contract**:
+**Your own logic.** `resolve_scope` just returns the partition-key string — implement whatever your app needs (per project or tenant, or a composite like user×project) and return it, as long as it honors this **contract**:
 - **Anything that identifies a *user* comes from the verified OBO token** when deployed — never a client-supplied value (the per-user resolver already does this; reuse it).
 - A **client-supplied selector** (e.g. a `project` from `custom_inputs`) is safe **only when namespaced under a verified user** — `f"{user_id}:{project}"` isolates per user *and* project, because a caller can only ever reach keys prefixed by their own verified id, so a bad value touches only their own memory. A **bare** client-chosen selector (`return project_id`) is a *shared bucket* — any user can pass any value.
 - Trusted server code, **never model-chosen**, **fail closed** (`None`) when a required input is missing.
-
-```python
-# Composite per-user-per-project: wrap the per-user resolver (keep its OBO/verified-id + local
-# fallbacks), then namespace by a client-supplied project. Safe — every key is prefixed by the
-# caller's own verified id, so a bad `project` only ever addresses their own memory.
-def resolve_scope(request=None) -> str | None:
-    user = _resolve_user_scope(request)        # the per-user resolve_scope from Step 3, renamed
-    if not user:
-        return None                            # fail closed: no verified user
-    ci = dict(getattr(request, "custom_inputs", None) or {})
-    return f"{user}:{ci.get('project', 'default')}"
-```
 
 In every case the invariants hold: scope is set in **trusted code**, the **model never sees or chooses it**, and an unresolved scope **fails closed**. (To run several at once — e.g. personal *and* shared — resolve multiple scopes and expose a tool set per scope, keeping the raw value out of the model.)
 

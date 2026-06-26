@@ -40,14 +40,6 @@ def resolve_scope(request=None) -> str | None:
     return headers.get("x-forwarded-user") or ci.get("user_id") or os.getenv("DATABRICKS_MEMORY_DEV_SCOPE")
 
 
-def _memory_tool(scope: str) -> list:
-    """The memory_store tool — an internal MCP server (save/get/list/delete) on the Supervisor/MAS
-    API, partitioned by `scope`. Same memory-store APIs, exposed as a hosted MCP tool."""
-    if not MEMORY_STORE:
-        return []
-    return [{"type": "memory_store", "memory_store": {"name": MEMORY_STORE, "scope": scope}}]
-
-
 def _get_trace_destination() -> dict | None:
     """Resolve the UC trace destination from the experiment, or None if unavailable (tracing skipped)."""
     experiment_id = os.environ.get("MLFLOW_EXPERIMENT_ID")
@@ -85,21 +77,17 @@ def _client() -> DatabricksOpenAI:
     )
 
 
-def _scoped_tools(request: ResponsesAgentRequest) -> list:
-    scope = resolve_scope(request)
-    if not scope:
-        raise HTTPException(status_code=401, detail="No end-user scope — refusing memory access.")
-    return _memory_tool(scope)
-
-
 @invoke()
 def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
     if session_id := get_session_id(request):
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
+    scope = resolve_scope(request)
+    if not scope:
+        raise HTTPException(status_code=401, detail="No end-user scope — refusing memory access.")
     response = _client().responses.create(
         model=MODEL,
         input=[i.model_dump() for i in request.input],
-        tools=_scoped_tools(request),
+        tools=[{"type": "memory_store", "memory_store": {"name": MEMORY_STORE, "scope": scope}}],
         tool_choice="auto",
         parallel_tool_calls=False,
         stream=False,
@@ -113,10 +101,13 @@ def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
 def stream_handler(request: ResponsesAgentRequest):
     if session_id := get_session_id(request):
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
+    scope = resolve_scope(request)
+    if not scope:
+        raise HTTPException(status_code=401, detail="No end-user scope — refusing memory access.")
     return _client().responses.create(
         model=MODEL,
         input=[i.model_dump() for i in request.input],
-        tools=_scoped_tools(request),
+        tools=[{"type": "memory_store", "memory_store": {"name": MEMORY_STORE, "scope": scope}}],
         tool_choice="auto",
         parallel_tool_calls=False,
         stream=True,

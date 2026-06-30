@@ -59,7 +59,7 @@ export TOKEN="$(databricks auth token -p <profile> | jq -r .access_token)"
 
 *2. The scope strategy* — *"How should memories be partitioned: private per end user, shared across a team/org/project, or by your own logic?"* (see **Scope strategy** below for the tradeoffs)
 - **Per-user (recommended)** — each user gets a private partition; the default wiring.
-- **Custom (shared)** — one fixed scope for everyone; if chosen, collect the scope id as a free-text follow-up and set it as a constant in `resolve_scope`.
+- **Custom (shared)** — fixed scope multiple users can access; if chosen, collect the scope id as a free-text follow-up and set it as a constant in `resolve_scope`.
 - **Custom logic** — partition some other way (per project/tenant, or user×project). Ask the user to describe their isolation model, then write `resolve_scope` to it, honoring the contract under **Scope strategy → Your own logic**.
 
 The scope answer routes `resolve_scope` (Steps 3–4) and the `MEMORY_INSTRUCTIONS` framing (Step 5) — wire whichever the user picked.
@@ -380,10 +380,10 @@ agent.astream(input=messages, config=config, stream_mode=["updates", "messages"]
 def resolve_scope(request=None) -> str | None:
     # Shared memory: ONE partition for everyone. Set this constant in trusted code —
     # never from the model or a client-supplied value.
-    return "acme-eng"   # your org / team / project scope
+    return "project_123"   # your org / team / project scope
 ```
 
-> **Tradeoff — no per-user isolation.** A shared scope means every user of the app reads *and writes* the same memories (any of them can update or delete an entry). That's intended, but: never put one user's private data in a shared scope, and remember the **store grants + your app's own access control are the only boundary** on who can touch it. Re-point `MEMORY_INSTRUCTIONS` at shared facts/policies rather than "this user's preferences."
+> **Tradeoff — no per-user isolation.** A shared scope means every user of the app reads *and writes* the same memories (any of them can update or delete an entry). That's intended, but the end developer needs to ensure to never put one user's sensitive data in a shared scope/data it does not want to be retrieved by another user, and remember the **store grants + your app's own access control are the only boundary** on who can touch it. Re-point `MEMORY_INSTRUCTIONS` at shared facts/policies rather than "this user's preferences."
 
 **Your own logic.** `resolve_scope` just returns the partition-key string — implement whatever your app needs (per project or tenant, or a composite like user×project) and return it, as long as it honors this **contract**:
 - **Anything that identifies a *user* comes from the verified OBO token** when deployed — never a client-supplied value (the per-user resolver already does this; reuse it).

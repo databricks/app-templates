@@ -106,6 +106,19 @@ curl -sS -X PATCH "$PERM" -H "Authorization: Bearer $TOKEN" -H "Content-Type: ap
 curl -sS "$PERM" -H "Authorization: Bearer $TOKEN"
 ```
 
+**Also grant the parent catalog + schema.** `READ/WRITE_MEMORY_STORE` alone is **not enough** — UC requires `USE_CATALOG` on the catalog and `USE_SCHEMA` on the schema to *traverse* to the securable, or every call fails with `User does not have USE CATALOG on Catalog '<catalog>'`. The store's **owner already has these** (so local testing as the developer-owner usually doesn't hit it), but the **deployed app SP almost always needs them** — grant the SP both (split `$STORE` into its `catalog` and `catalog.schema` parts):
+
+```bash
+CATALOG="${STORE%%.*}"            # e.g. main
+SCHEMA="${STORE%.*}"              # e.g. main.default
+curl -sS -X PATCH "$DATABRICKS_HOST/api/2.1/unity-catalog/permissions/catalog/$CATALOG" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d "{\"changes\":[{\"principal\":\"$APP_SP\",\"add\":[\"USE_CATALOG\"]}]}"
+curl -sS -X PATCH "$DATABRICKS_HOST/api/2.1/unity-catalog/permissions/schema/$SCHEMA" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d "{\"changes\":[{\"principal\":\"$APP_SP\",\"add\":[\"USE_SCHEMA\"]}]}"
+```
+
 ## Step 3 — Add the memory tools
 
 Put these in `agent_server/utils_memory.py` — use **(a) the shared core + the block for your SDK** ((b) for the OpenAI Agents SDK *or* (c) for LangGraph; not both — they each define `_scope` their own way). **No new dependency** — it uses the `databricks-sdk` already in the template. **Most templates have no `utils_memory.py` — create it** (note the OpenAI advanced template keeps its *session* plumbing in `utils.py`, not here, so you still create a fresh `utils_memory.py`). **The one exception is `agent-langgraph-advanced`**: its existing `utils_memory.py` already holds the Lakebase plumbing — short-term checkpointer **and** a long-term `AsyncDatabricksStore` + `memory_tools()`. There, add these functions to that **same file** (don't create a second one), keep the checkpointer, and **replace** the long-term store — only one long-term system (see the intro and Step 4).
@@ -506,6 +519,7 @@ curl -X POST https://<app-url>/invocations -H "Authorization: Bearer $TOKEN" \
 | `RuntimeError: DATABRICKS_MEMORY_STORE is not set` | env var missing | Set it in `.env` (local) **and** `databricks.yml` `config.env` (deploy) — Step 1 |
 | `500` + "No end-user identity" | scope didn't resolve (fail-closed guard fired; framework surfaces 401 as 500). Common locally: the bundled **chat UI / `preflight`** send `custom_inputs.user_id` but no forwarded header | Deployed: ensure the OBO user token reaches the app. Local: pass `custom_inputs.user_id` or send `X-Forwarded-User` |
 | `PERMISSION_DENIED` | caller lacks `READ/WRITE_MEMORY_STORE` | Grant the app SP / your user — Step 2 |
+| `User does not have USE CATALOG on Catalog '<catalog>'` (often only after deploy) | SP has the store grants but not the parent catalog/schema traversal privileges | Grant the SP `USE_CATALOG` on the catalog **and** `USE_SCHEMA` on the schema — Step 2 |
 | `NOT_FOUND` on **every** call | wrong store name / store doesn't exist | Re-check `DATABRICKS_MEMORY_STORE` is the full `catalog.schema.name` (confirm with the Step 1 `GET`) |
 | `ALREADY_EXISTS` on save | path is taken | `update_memory`, or pick a fresh path |
 | Tools still hit a vector store (LangGraph advanced) | old `AsyncDatabricksStore` `memory_tools()` not removed | Drop `store=` and the old factory; keep the checkpointer |

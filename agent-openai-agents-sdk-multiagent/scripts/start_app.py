@@ -244,7 +244,7 @@ class ProcessManager:
                 for cmd, desc in [("npm install", "install"), ("npm run build", "build")]:
                     print(f"Running npm {desc}...")
                     result = subprocess.run(
-                        cmd.split(), cwd=frontend_dir, capture_output=True, text=True
+                        cmd, cwd=frontend_dir, capture_output=True, text=True, shell=True
                     )
                     if result.returncode != 0:
                         print(f"npm {desc} failed: {result.stderr}")

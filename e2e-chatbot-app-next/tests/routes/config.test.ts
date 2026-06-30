@@ -46,6 +46,15 @@ test.describe('/api/config', () => {
     expect(data1).toEqual(data2);
   });
 
+  test('GET /api/config omits greeting when CHAT_GREETING is unset', async ({
+    adaContext,
+  }) => {
+    const response = await adaContext.request.get('/api/config');
+    const data = await response.json();
+
+    expect(data.greeting).toBeUndefined();
+  });
+
   test('GET /api/config returns OBO info', async ({
     adaContext,
   }) => {

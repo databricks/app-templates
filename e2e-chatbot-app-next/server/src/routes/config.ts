@@ -28,7 +28,8 @@ function getScopesFromToken(token: string): string[] {
 
 /**
  * GET /api/config - Get application configuration
- * Returns feature flags and OBO status based on environment configuration.
+ * Returns feature flags, the empty-state greeting, and OBO status based on
+ * environment configuration.
  * If the user's OBO token is present, decodes it to check which required
  * scopes are missing — the banner only shows missing scopes.
  */
@@ -54,6 +55,7 @@ configRouter.get('/', async (req: Request, res: Response) => {
       chatHistory: isDatabaseAvailable(),
       feedback: !!process.env.MLFLOW_EXPERIMENT_ID,
     },
+    greeting: process.env.CHAT_GREETING || undefined,
     obo: {
       missingScopes,
     },

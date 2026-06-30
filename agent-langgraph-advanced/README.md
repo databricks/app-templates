@@ -463,9 +463,7 @@ Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tool
 
    After deploying, you need to ensure your app has access to the necessary Lakebase tables for memory. The Lakebase instance is already configured as a resource in `databricks.yml`, but you'll need to grant Postgres-level permissions on schemas and tables that were created during local testing.
 
-   > **Autoscaling Lakebase instances:** If your Lakebase instance is autoscaling (not provisioned), the postgres resource is **not yet supported** as a resource dependency in `databricks.yml`. After `databricks bundle run`, you must manually add the postgres resource to your app via the Databricks API, grant permissions, and then redeploy the app. See the [autoscaling Lakebase setup guide](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/lakebase) for detailed steps. Note that `databricks bundle deploy` will overwrite app resources, so you must re-add the postgres resource after each bundle deploy.
-
-   **For provisioned Lakebase instances**, run the following SQL commands on your Lakebase instance (replace `app-sp-id` with your app's service principal UUID):
+   Run the following SQL commands on your Lakebase instance (replace `app-sp-id` with your app's service principal UUID):
 
    ```sql
    DO $$

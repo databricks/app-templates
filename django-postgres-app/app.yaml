@@ -1,0 +1,4 @@
+command: ["bash", "entrypoint.sh"]
+env:
+  - name: PGENDPOINT
+    valueFrom: postgres

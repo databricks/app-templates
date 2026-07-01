@@ -1,128 +1,116 @@
 import logging
-from contextlib import AsyncExitStack
-from datetime import datetime
-from typing import AsyncGenerator
+import os
 
 import mlflow
-from agents import Agent, Runner, function_tool, set_default_openai_api, set_default_openai_client
-from agents.tracing import set_trace_processors
 from databricks.sdk import WorkspaceClient
-from databricks_openai import AsyncDatabricksOpenAI
-from databricks_openai.agents import McpServer
-from mlflow.genai.agent_server import invoke, stream
-from mlflow.types.responses import (
-    ResponsesAgentRequest,
-    ResponsesAgentResponse,
-    ResponsesAgentStreamEvent,
-)
+from databricks_openai import DatabricksOpenAI
+from fastapi import HTTPException
+from mlflow import MlflowClient
+from mlflow.genai.agent_server import get_request_headers, invoke, stream
+from mlflow.tracing import get_tracing_context_headers_for_http_request
+from mlflow.types.responses import ResponsesAgentRequest, ResponsesAgentResponse
 
-from agent_server.utils import (
-    build_mcp_url,
-    get_session_id,
-    get_user_workspace_client,
-    process_agent_stream_events,
-)
+from agent_server.utils import get_session_id, get_user_workspace_client
 
-logger = logging.getLogger(__name__)
-
-# NOTE: this will work for all databricks models OTHER than GPT-OSS, which uses a slightly different API
-set_default_openai_client(AsyncDatabricksOpenAI())
-set_default_openai_api("chat_completions")
-set_trace_processors([])  # only use mlflow for trace processing
 mlflow.openai.autolog()
 logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
+logger = logging.getLogger(__name__)
+
+# Supervisor (MAS) API: Databricks runs the tool-selection + synthesis loop server-side.
+MODEL = "databricks-claude-sonnet-4"
+
+# UC memory store the memory_store MCP tool reads/writes (full catalog.schema.name).
+MEMORY_STORE = os.environ.get("DATABRICKS_MEMORY_STORE")
+# DEV-ONLY: pre-GA liteswap routing header for the MAS / memory MCP. Remove at GA.
+_MEMORY_TRAFFIC_ID = os.environ.get("DATABRICKS_MEMORY_TRAFFIC_ID")
+
+def resolve_scope(request=None) -> str | None:
+    """End-user id used as the memory `scope` — the partition the memory_store tool reads/writes.
+    Deployed: the verified OBO forwarded token -> current_user.me().id (the only trusted source).
+    Local: an X-Forwarded-User header or custom_inputs.user_id. None (fail closed) otherwise."""
+    headers = get_request_headers() or {}
+    if headers.get("x-forwarded-access-token"):
+        return get_user_workspace_client().current_user.me().id
+    # Deployed -> only the verified OBO token is trusted; client-supplied ids below are LOCAL-DEV only.
+    if os.getenv("DATABRICKS_APP_NAME"):
+        return None
+    ci = dict(getattr(request, "custom_inputs", None) or {})
+    # DATABRICKS_MEMORY_DEV_SCOPE is a LOCAL-ONLY fallback so the chat UI is playable when it sends
+    # no user_id; it's unreachable when deployed (the DATABRICKS_APP_NAME gate above returns first).
+    return headers.get("x-forwarded-user") or ci.get("user_id") or os.getenv("DATABRICKS_MEMORY_DEV_SCOPE")
 
 
-@function_tool
-def get_current_time() -> str:
-    """Get the current date and time."""
-    return datetime.now().isoformat()
+def _get_trace_destination() -> dict | None:
+    """Resolve the UC trace destination from the experiment, or None if unavailable (tracing skipped)."""
+    experiment_id = os.environ.get("MLFLOW_EXPERIMENT_ID")
+    if not experiment_id:
+        return None
+    try:
+        trace_location = MlflowClient().get_experiment(experiment_id).trace_location
+        if trace_location is None or not hasattr(trace_location, "catalog_name"):
+            return None
+        dest = {"catalog_name": trace_location.catalog_name, "schema_name": trace_location.schema_name}
+        if trace_location.table_prefix is not None:
+            dest["table_prefix"] = trace_location.table_prefix
+        return dest
+    except Exception:
+        logger.warning("Could not resolve trace destination, distributed tracing disabled.", exc_info=True)
+        return None
 
 
-async def init_mcp_server(workspace_client: WorkspaceClient):
-    return McpServer(
-        url=build_mcp_url("/api/2.0/mcp/functions/system/ai", workspace_client=workspace_client),
-        name="system.ai UC function MCP server",
-        workspace_client=workspace_client,
-    )
+_TRACE_DESTINATION = _get_trace_destination()
 
 
-async def connect_healthy_mcp_servers(
-    stack: AsyncExitStack, servers: list[McpServer]
-) -> tuple[list[McpServer], list[str]]:
-    """Connect each MCP server and verify it can actually list its tools.
-
-    The Agents SDK lists each server's tools lazily inside ``Runner.run``, so a server that
-    connects but fails at list time (e.g. an unauthorized Genie space) would otherwise crash
-    the whole request — including unrelated turns. We list tools here, per server: healthy
-    servers are kept; any that fails to connect OR to list is dropped and its name returned,
-    so the agent runs with whatever is available instead of erroring out.
-
-    Returns (healthy_servers, unavailable_names).
-    """
-    healthy: list[McpServer] = []
-    unavailable: list[str] = []
-    for server in servers:
-        name = getattr(server, "name", "MCP server")
-        try:
-            connected = await stack.enter_async_context(server)
-            await connected.list_tools()  # forces the connectivity + authorization check now
-            healthy.append(connected)
-        except Exception:
-            logger.warning("MCP server %r unavailable; continuing without it.", name, exc_info=True)
-            unavailable.append(name)
-    return healthy, unavailable
+def _extra_body() -> dict:
+    return {"trace_destination": _TRACE_DESTINATION} if _TRACE_DESTINATION else {}
 
 
-def create_agent(mcp_servers: list[McpServer] | None = None) -> Agent:
-    return Agent(
-        name="Agent",
-        instructions="You are a helpful assistant.",
-        model="databricks-gpt-5-2",
-        tools=[get_current_time],
-        mcp_servers=mcp_servers or [],
+def _client() -> DatabricksOpenAI:
+    """Supervisor (MAS) client, pointed at the MAS endpoint with the dev-only liteswap header so the
+    pre-GA memory_store MCP tool resolves. SP auth: WorkspaceClient() = app SP deployed / dev profile locally."""
+    w = WorkspaceClient()
+    headers = {"x-databricks-traffic-id": _MEMORY_TRAFFIC_ID} if _MEMORY_TRAFFIC_ID else None
+    return DatabricksOpenAI(
+        workspace_client=w,
+        base_url=f"{w.config.host.rstrip('/')}/api/2.0/mas",
+        default_headers=headers,
     )
 
 
 @invoke()
-async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
+def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
     if session_id := get_session_id(request):
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
-    # The agent runs inside an AsyncExitStack so any MCP servers stay open for the whole
-    # request. To give the agent MCP tools, connect them with connect_healthy_mcp_servers,
-    # which health-checks each server so one unavailable server can't crash the request
-    # (the Agents SDK lists each server's tools lazily inside Runner.run):
-    #   servers, unavailable = await connect_healthy_mcp_servers(
-    #       stack, [await init_mcp_server(WorkspaceClient())])
-    #   agent = create_agent(mcp_servers=servers)
-    # WorkspaceClient() uses service principal credentials; use get_user_workspace_client()
-    # for on-behalf-of user authentication.
-    async with AsyncExitStack() as stack:
-        agent = create_agent()
-        messages = [i.model_dump() for i in request.input]
-        result = await Runner.run(agent, messages)
-        return ResponsesAgentResponse(output=[item.to_input_item() for item in result.new_items])
+    scope = resolve_scope(request)
+    if not scope:
+        raise HTTPException(status_code=401, detail="No end-user scope — refusing memory access.")
+    response = _client().responses.create(
+        model=MODEL,
+        input=[i.model_dump() for i in request.input],
+        tools=[{"type": "memory_store", "memory_store": {"name": MEMORY_STORE, "scope": scope}}],
+        tool_choice="auto",
+        parallel_tool_calls=False,
+        stream=False,
+        extra_headers=get_tracing_context_headers_for_http_request(),
+        extra_body=_extra_body(),
+    )
+    return ResponsesAgentResponse(output=[item.model_dump() for item in response.output])
 
 
 @stream()
-async def stream_handler(
-    request: ResponsesAgentRequest,
-) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
+def stream_handler(request: ResponsesAgentRequest):
     if session_id := get_session_id(request):
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
-    # The agent runs inside an AsyncExitStack so any MCP servers stay open for the whole
-    # request. To give the agent MCP tools, connect them with connect_healthy_mcp_servers,
-    # which health-checks each server so one unavailable server can't crash the request
-    # (the Agents SDK lists each server's tools lazily inside Runner.run):
-    #   servers, unavailable = await connect_healthy_mcp_servers(
-    #       stack, [await init_mcp_server(WorkspaceClient())])
-    #   agent = create_agent(mcp_servers=servers)
-    # WorkspaceClient() uses service principal credentials; use get_user_workspace_client()
-    # for on-behalf-of user authentication.
-    async with AsyncExitStack() as stack:
-        agent = create_agent()
-        messages = [i.model_dump() for i in request.input]
-        result = Runner.run_streamed(agent, input=messages)
-
-        async for event in process_agent_stream_events(result.stream_events()):
-            yield event
+    scope = resolve_scope(request)
+    if not scope:
+        raise HTTPException(status_code=401, detail="No end-user scope — refusing memory access.")
+    return _client().responses.create(
+        model=MODEL,
+        input=[i.model_dump() for i in request.input],
+        tools=[{"type": "memory_store", "memory_store": {"name": MEMORY_STORE, "scope": scope}}],
+        tool_choice="auto",
+        parallel_tool_calls=False,
+        stream=True,
+        extra_headers=get_tracing_context_headers_for_http_request(),
+        extra_body=_extra_body(),
+    )

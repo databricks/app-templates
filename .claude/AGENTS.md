@@ -33,12 +33,13 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
 async def stream_handler(request: ResponsesAgentRequest) -> AsyncGenerator[ResponsesAgentStreamEvent, None]: ...
 ```
 
-LangGraph `invoke_handler` delegates to `stream_handler`. OpenAI SDK `invoke_handler` calls `Runner.run()` independently.
+LangGraph `invoke_handler` delegates to `stream_handler`. OpenAI SDK `invoke_handler` calls `Runner.run()` independently. ADK `invoke_handler` delegates to `stream_handler` (collecting `response.output_item.done` items).
 
 ### MLflow autologging
 
 - LangGraph templates: `mlflow.langchain.autolog()`
 - OpenAI SDK templates: `mlflow.openai.autolog()` + `set_trace_processors([])`
+- ADK templates: `mlflow.litellm.autolog()` (ADK calls the model through LiteLLM, so LiteLLM autolog captures the model spans)
 
 All handlers tag traces with: `mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})`
 
@@ -46,6 +47,7 @@ All handlers tag traces with: `mlflow.update_current_trace(metadata={"mlflow.tra
 
 - **LangGraph**: `DatabricksMultiServerMCPClient` wrapping `DatabricksMCPServer` objects. Tools fetched once at agent init via `.get_tools()`.
 - **OpenAI SDK**: `McpServer` used as async context manager per-request: `async with await init_mcp_server() as mcp_server:`
+- **ADK**: `MCPToolset` (with `StreamableHTTPConnectionParams`, `Authorization: Bearer` header) added to the agent's `tools` list. Requires the `mcp` extra (`google-adk[extensions]`).
 
 ### Session/memory patterns
 
@@ -54,8 +56,15 @@ All handlers tag traces with: `mlflow.update_current_trace(metadata={"mlflow.tra
 | Short-term memory | LangGraph | `AsyncCheckpointSaver` | `thread_id` via `config["configurable"]` |
 | Long-term memory | LangGraph | `AsyncDatabricksStore` | `user_id` via `config["configurable"]` |
 | Short-term memory | OpenAI | `AsyncDatabricksSession` | `session_id` passed to `Runner.run(..., session=)` |
+| Short-term memory | ADK | `DatabaseSessionService` (Lakebase) — *not shipped; base `agent-adk` is stateless* | `session_id` passed to `runner.run_async(..., session_id=)` |
 
 All memory templates return the ID in `custom_outputs` so clients can reuse it.
+
+The base `agent-adk` template is stateless: it replays client-carried history into a fresh
+`InMemorySessionService` each request via `agent_server.utils.seed_session_history`, and adapts ADK
+`Event`s to `ResponsesAgentStreamEvent`s via `process_adk_events`. The model is reached through
+`LiteLlm(model="openai/<endpoint>", api_base="{host}/serving-endpoints", api_key=<token>)`; the
+per-request bearer token comes from `get_bearer_token()` (the SDK credential chain).
 
 ### `databricks.yml` conventions
 
@@ -68,7 +77,7 @@ All memory templates return the ID in `custom_outputs` so clients can reuse it.
 
 ### `app.yaml` files
 
-The 3 base templates (`agent-langgraph`, `agent-openai-agents-sdk`, `agent-non-conversational`) have `app.yaml` files for UI-based template creation in the Databricks UI. These are separate from `databricks.yml` and use `valueFrom` (camelCase) for resource references. Memory/multiagent variants do not need separate `app.yaml` files.
+The base conversational templates (`agent-langgraph`, `agent-adk`, `agent-openai-agents-sdk`) and `agent-non-conversational` have `app.yaml` files for UI-based template creation in the Databricks UI. These are separate from `databricks.yml` and use `valueFrom` (camelCase) for resource references. Multiagent variants do not need separate `app.yaml` files.
 
 ### Per-template AGENTS.md
 

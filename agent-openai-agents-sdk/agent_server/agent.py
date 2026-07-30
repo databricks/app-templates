@@ -16,6 +16,7 @@ from mlflow.types.responses import (
     ResponsesAgentStreamEvent,
 )
 
+from agent_server.history import normalize_history_items
 from agent_server.utils import (
     build_mcp_url,
     get_session_id,
@@ -99,7 +100,7 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
     # for on-behalf-of user authentication.
     async with AsyncExitStack() as stack:
         agent = create_agent()
-        messages = [i.model_dump() for i in request.input]
+        messages = normalize_history_items([i.model_dump() for i in request.input])
         result = await Runner.run(agent, messages)
         return ResponsesAgentResponse(output=[item.to_input_item() for item in result.new_items])
 
@@ -121,7 +122,7 @@ async def stream_handler(
     # for on-behalf-of user authentication.
     async with AsyncExitStack() as stack:
         agent = create_agent()
-        messages = [i.model_dump() for i in request.input]
+        messages = normalize_history_items([i.model_dump() for i in request.input])
         result = Runner.run_streamed(agent, input=messages)
 
         async for event in process_agent_stream_events(result.stream_events()):

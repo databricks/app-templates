@@ -17,6 +17,12 @@ DEFAULT_SERVING_ENDPOINT = "agents_dev-bbqiu-test-bb-2-25"
 # sets this to a persistent app in the workspace to exercise the
 # feature end-to-end.
 DEFAULT_TARGET_APP_NAME = ""
+DEFAULT_MLFLOW_UC_CATALOG = "main"
+DEFAULT_MLFLOW_UC_SCHEMA = "agent_traces"
+DEFAULT_MLFLOW_UC_TABLE_PREFIX = "agents_on_apps"
+DEFAULT_MLFLOW_OTEL_SPANS_TABLE = (
+    "main.agent_traces.agents_on_apps_otel_spans"
+)
 
 
 # ---------------------------------------------------------------------------

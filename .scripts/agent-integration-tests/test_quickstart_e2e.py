@@ -36,12 +36,22 @@ and deployment binding.
     uv run pytest test_quickstart_e2e.py -v --scenario existing-app --no-destroy
 """
 
-import secrets
+import importlib.util
+import os
 import re
+import secrets
+import shutil
+import subprocess
+import sys
+import time
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
+import requests
+from databricks.sdk import WorkspaceClient
 
+import helpers
 from helpers import (
     _log,
     _run_cmd,
@@ -55,9 +65,72 @@ from helpers import (
     set_log_file,
     wait_for_app_ready,
 )
+from template_config import (
+    DEFAULT_MLFLOW_UC_CATALOG,
+    DEFAULT_MLFLOW_UC_SCHEMA,
+    DEFAULT_MLFLOW_UC_TABLE_PREFIX,
+    REPO_ROOT,
+)
 
 # Fresh app startups can take 5-15 minutes depending on workspace load
 BUNDLE_RUN_FRESH_TIMEOUT = 900  # 15 minutes
+TRACE_PROPAGATION_TIMEOUT = 180
+
+
+def test_bundle_deploy_retries_while_uc_experiment_access_propagates(
+    tmp_path, monkeypatch
+):
+    permission_error = subprocess.CompletedProcess(
+        args=[],
+        returncode=1,
+        stdout="",
+        stderr=(
+            "Invalid Experiment resource experiment: User does not have permission "
+            "to access Experiment with ID 12345. (403 PERMISSION_DENIED)"
+        ),
+    )
+    success = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+    results = iter([permission_error, success])
+    commands = []
+
+    def run_cmd(cmd, **_kwargs):
+        commands.append(cmd)
+        return next(results)
+
+    monkeypatch.setattr(helpers, "_run_cmd", run_cmd)
+    monkeypatch.setattr(helpers.time, "sleep", lambda _seconds: None)
+
+    helpers.bundle_deploy(tmp_path, "DEFAULT", "agent_langgraph", "agent-app")
+
+    assert commands == [
+        ["databricks", "bundle", "deploy", "--target", "dev", "-p", "DEFAULT"],
+        ["databricks", "bundle", "deploy", "--target", "dev", "-p", "DEFAULT"],
+    ]
+
+
+def test_bundle_deploy_bounds_uc_experiment_access_retries(tmp_path, monkeypatch):
+    permission_error = subprocess.CompletedProcess(
+        args=[],
+        returncode=1,
+        stdout="",
+        stderr=(
+            "Invalid Experiment resource experiment: User does not have permission "
+            "to access Experiment with ID 12345. (403 PERMISSION_DENIED)"
+        ),
+    )
+    commands = []
+
+    def run_cmd(cmd, **_kwargs):
+        commands.append(cmd)
+        return permission_error
+
+    monkeypatch.setattr(helpers, "_run_cmd", run_cmd)
+    monkeypatch.setattr(helpers.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(AssertionError, match="Invalid Experiment resource"):
+        helpers.bundle_deploy(tmp_path, "DEFAULT", "agent_langgraph", "agent-app")
+
+    assert len(commands) == helpers.EXPERIMENT_ACCESS_MAX_ATTEMPTS
 
 
 def _bundle_run(workdir: Path, app_resource_key: str, profile: str):
@@ -103,6 +176,202 @@ def _parse_app_name_from_yml(yml_path: Path) -> str:
     match = re.search(r'\bname:\s+"([^"]+)"', content)
     assert match, f"Could not find quoted app name in {yml_path}"
     return match.group(1)
+
+
+def _load_quickstart_module(workdir: Path):
+    """Load the synchronized quickstart so E2E exercises its grant/query helpers."""
+    module_name = f"quickstart_e2e_{secrets.token_hex(4)}"
+    script_path = workdir / "scripts" / "quickstart.py"
+    spec = importlib.util.spec_from_file_location(module_name, script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _copy_template_for_quickstart(
+    template_name: str, tmp_path: Path, git_ref: str | None
+) -> Path:
+    workdir = git_copy_template(template_name, tmp_path, git_ref)
+    # A locally generated lock lets the live suite remain runnable when PyPI's
+    # index is temporarily unreachable; the copied workdir is still isolated.
+    if git_ref is None and (lock := REPO_ROOT / template_name / "uv.lock").exists():
+        shutil.copy2(lock, workdir / "uv.lock")
+    if git_ref is None and (venv := REPO_ROOT / template_name / ".venv").exists():
+        subprocess.run(
+            ["cp", "-cR", str(venv), str(workdir / ".venv")],
+            check=True,
+        )
+    return workdir
+
+
+def _trace_id_from_response(response: requests.Response) -> str:
+    if trace_id := response.headers.get("X-MLflow-Trace-Id"):
+        return trace_id
+
+    def find_trace_id(value):
+        if isinstance(value, dict):
+            candidate = value.get("trace_id")
+            if isinstance(candidate, str) and candidate:
+                return candidate
+            for nested in value.values():
+                if found := find_trace_id(nested):
+                    return found
+        elif isinstance(value, list):
+            for nested in value:
+                if found := find_trace_id(nested):
+                    return found
+        return ""
+
+    try:
+        return find_trace_id(response.json())
+    except ValueError:
+        return ""
+
+
+def _assert_trace_inputs_and_outputs(trace) -> None:
+    spans = list(trace.data.spans)
+    assert spans, "MLflow returned a trace without spans"
+    root = next((span for span in spans if span.parent_id is None), spans[0])
+    assert "mlflow.spanInputs" in root.attributes, (
+        f"Root span {root.name!r} did not preserve complete inputs"
+    )
+    assert "mlflow.spanOutputs" in root.attributes, (
+        f"Root span {root.name!r} did not preserve complete outputs"
+    )
+
+
+def _verify_uc_trace_smoke(
+    workdir: Path,
+    app_name: str,
+    app_url: str,
+    token: str,
+    profile: str,
+) -> dict[str, str]:
+    """Invoke the deployed app and prove the trace exists in MLflow and UC."""
+    env_file = workdir / ".env"
+    values = {
+        name: read_env_value(env_file, name)
+        for name in (
+            "MLFLOW_EXPERIMENT_ID",
+            "MLFLOW_TRACING_SQL_WAREHOUSE_ID",
+            "MLFLOW_UC_CATALOG",
+            "MLFLOW_UC_SCHEMA",
+            "MLFLOW_UC_TABLE_PREFIX",
+            "MLFLOW_OTEL_SPANS_TABLE",
+        )
+    }
+    assert all(values.values()), f"Incomplete MLflow UC config in {env_file}: {values}"
+    expected_catalog = os.environ.get(
+        "MLFLOW_UC_CATALOG", DEFAULT_MLFLOW_UC_CATALOG
+    )
+    expected_schema = os.environ.get("MLFLOW_UC_SCHEMA", DEFAULT_MLFLOW_UC_SCHEMA)
+    expected_prefix = os.environ.get(
+        "MLFLOW_UC_TABLE_PREFIX", DEFAULT_MLFLOW_UC_TABLE_PREFIX
+    )
+    expected_spans_table = (
+        f"{expected_catalog}.{expected_schema}.{expected_prefix}_otel_spans"
+    )
+    assert values["MLFLOW_UC_CATALOG"] == expected_catalog
+    assert values["MLFLOW_UC_SCHEMA"] == expected_schema
+    assert values["MLFLOW_UC_TABLE_PREFIX"] == expected_prefix
+    assert values["MLFLOW_OTEL_SPANS_TABLE"] == expected_spans_table
+
+    quickstart = _load_quickstart_module(workdir)
+    trace_config = quickstart.MlflowTraceConfig(
+        experiment_name=f"/Users/{WorkspaceClient(profile=profile).current_user.me().user_name}/agents-on-apps",
+        experiment_id=values["MLFLOW_EXPERIMENT_ID"],
+        warehouse_id=values["MLFLOW_TRACING_SQL_WAREHOUSE_ID"],
+        catalog_name=values["MLFLOW_UC_CATALOG"],
+        schema_name=values["MLFLOW_UC_SCHEMA"],
+        table_prefix=values["MLFLOW_UC_TABLE_PREFIX"],
+        otel_spans_table_name=values["MLFLOW_OTEL_SPANS_TABLE"],
+    )
+    workspace = WorkspaceClient(profile=profile)
+    quickstart.grant_uc_trace_access_to_app(workspace, app_name, trace_config)
+
+    response = requests.post(
+        f"{app_url}/invocations",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "X-MLflow-Return-Trace-Id": "true",
+        },
+        json={"input": [{"role": "user", "content": "Reply with the word traced."}]},
+        timeout=120,
+    )
+    response.raise_for_status()
+    trace_id = _trace_id_from_response(response)
+    assert trace_id, (
+        "Deployed invocation returned neither X-MLflow-Trace-Id nor response trace_id: "
+        f"{response.text[:2000]}"
+    )
+
+    import mlflow
+    from mlflow.tracing.utils import parse_trace_id_v4
+
+    tracking_uri = f"databricks://{profile}"
+    os.environ["MLFLOW_TRACKING_URI"] = tracking_uri
+    os.environ["MLFLOW_TRACING_SQL_WAREHOUSE_ID"] = trace_config.warehouse_id
+    mlflow.set_tracking_uri(tracking_uri)
+
+    _, stored_trace_id = parse_trace_id_v4(trace_id)
+    stored_trace_id = (stored_trace_id or trace_id).removeprefix("tr-").lower()
+    quoted_table = ".".join(
+        quickstart._quoted_identifier(part)
+        for part in trace_config.otel_spans_table_name.split(".")
+    )
+    trace_candidates = [trace_id.lower(), stored_trace_id, f"tr-{stored_trace_id}"]
+    candidate_sql = ", ".join(
+        quickstart._quoted_string(candidate) for candidate in trace_candidates
+    )
+    row_query = (
+        f"SELECT COUNT(*) FROM {quoted_table} "
+        f"WHERE lower(CAST(trace_id AS STRING)) IN ({candidate_sql}) "
+        f"OR lower(hex(trace_id)) = {quickstart._quoted_string(stored_trace_id)}"
+    )
+
+    deadline = time.monotonic() + TRACE_PROPAGATION_TIMEOUT
+    trace = None
+    row_count = 0
+    last_error = None
+    while time.monotonic() < deadline:
+        try:
+            trace = mlflow.get_trace(trace_id, flush=True)
+            result = quickstart._execute_sql(
+                workspace,
+                trace_config.warehouse_id,
+                row_query,
+            )
+            rows = getattr(getattr(result, "result", None), "data_array", None) or []
+            row_count = int(rows[0][0]) if rows and rows[0] else 0
+            if trace is not None and row_count > 0:
+                break
+        except Exception as error:
+            last_error = error
+        time.sleep(10)
+
+    assert trace is not None, f"MLflow could not retrieve trace {trace_id}: {last_error}"
+    _assert_trace_inputs_and_outputs(trace)
+    assert row_count > 0, (
+        f"UC spans table {trace_config.otel_spans_table_name} has no rows for "
+        f"trace {trace_id}; last error: {last_error}"
+    )
+
+    host = workspace.config.host.rstrip("/")
+    trace_link = (
+        f"{host}/ml/experiments/{trace_config.experiment_id}/traces"
+        f"?selectedTraceId={quote(trace_id, safe='')}"
+    )
+    table_link = (
+        f"{host}/explore/data/{trace_config.catalog_name}/"
+        f"{trace_config.schema_name}/{trace_config.otel_spans_table_name.rsplit('.', 1)[-1]}"
+    )
+    _log(f"[mlflow-uc-smoke] trace_id={trace_id} rows={row_count}")
+    _log(f"[mlflow-uc-smoke] MLflow trace: {trace_link}")
+    _log(f"[mlflow-uc-smoke] UC spans table: {table_link}")
+    return {"trace_id": trace_id, "trace_link": trace_link, "table_link": table_link}
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +468,7 @@ def _run_fresh_and_idempotent(
     """
     template_name = "agent-langgraph"
     app_name = _unique_app_name(template_name)
-    workdir = git_copy_template(template_name, tmp_path, git_ref)
+    workdir = _copy_template_for_quickstart(template_name, tmp_path, git_ref)
 
     _log(f"[fresh-and-idempotent] workdir={workdir}, app_name={app_name}")
 
@@ -244,7 +513,8 @@ def _run_fresh_and_idempotent(
     try:
         bundle_deploy(workdir, profile, app_resource_key, app_name)
         _bundle_run(workdir, app_resource_key, profile)
-        wait_for_app_ready(app_name, profile)
+        app_url, token = wait_for_app_ready(app_name, profile)
+        _verify_uc_trace_smoke(workdir, app_name, app_url, token, profile)
         _log("[fresh-and-idempotent] App reached RUNNING state and responded to /agent/info")
     finally:
         if not no_destroy:
@@ -277,7 +547,7 @@ def _run_existing_app(
     _log(f"[existing-app] Pre-creating app {app_name}")
     databricks_create_app(app_name, profile)
 
-    workdir = git_copy_template(template_name, tmp_path, git_ref)
+    workdir = _copy_template_for_quickstart(template_name, tmp_path, git_ref)
     _log(f"[existing-app] workdir={workdir}, app_name={app_name}")
 
     try:
@@ -306,7 +576,8 @@ def _run_existing_app(
         _log(f"[existing-app] Deploying (resource key: {app_resource_key})")
         bundle_deploy(workdir, profile, app_resource_key, app_name)
         _bundle_run(workdir, app_resource_key, profile)
-        wait_for_app_ready(app_name, profile)
+        app_url, token = wait_for_app_ready(app_name, profile)
+        _verify_uc_trace_smoke(workdir, app_name, app_url, token, profile)
         _log("[existing-app] App reached RUNNING state")
 
     finally:
@@ -333,7 +604,7 @@ def _run_lakebase_idempotent(
     """
     template_name = "agent-langgraph-advanced"
     app_name = _unique_app_name(template_name)
-    workdir = git_copy_template(template_name, tmp_path, git_ref)
+    workdir = _copy_template_for_quickstart(template_name, tmp_path, git_ref)
 
     _log(f"[lakebase-idempotent] workdir={workdir}, endpoint={lakebase_autoscaling_endpoint}")
 

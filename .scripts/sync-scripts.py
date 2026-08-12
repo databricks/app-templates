@@ -14,9 +14,10 @@ Usage:
 """
 
 import shutil
+import re
 from pathlib import Path
 
-from templates import TEMPLATES
+from templates import MLFLOW_DEPENDENCY, MLFLOW_UC_DEFAULTS, TEMPLATES
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
 REPO_ROOT = SCRIPT_DIR.parent
@@ -35,6 +36,91 @@ SCRIPTS_TO_SYNC = [
 WORKFLOWS_TO_SYNC = [
     ("deploy.yml", ".github/workflows"),
 ]
+
+
+def sync_mlflow_uc_configuration(template: str, config: dict) -> list[str]:
+    """Keep Python agent dependencies and deployed UC tracing config aligned."""
+    template_dir = REPO_ROOT / template
+    changed: list[str] = []
+
+    pyproject = template_dir / "pyproject.toml"
+    pyproject_content = pyproject.read_text()
+    pinned = re.sub(
+        r'"mlflow(?:\[databricks\])?[^\"]*"',
+        f'"{MLFLOW_DEPENDENCY}"',
+        pyproject_content,
+        count=1,
+    )
+    if pinned == pyproject_content and MLFLOW_DEPENDENCY not in pyproject_content:
+        raise RuntimeError(f"Could not find the MLflow dependency in {pyproject}")
+    if pinned != pyproject_content:
+        pyproject.write_text(pinned)
+        changed.append("pyproject.toml")
+
+    bundle_path = template_dir / "databricks.yml"
+    bundle = bundle_path.read_text()
+    if "MLFLOW_TRACING_SQL_WAREHOUSE_ID" not in bundle:
+        experiment_env = (
+            "          - name: MLFLOW_EXPERIMENT_ID\n"
+            "            value_from: \"experiment\"\n"
+        )
+        trace_env = (
+            "          - name: MLFLOW_TRACING_SQL_WAREHOUSE_ID\n"
+            "            value_from: \"mlflow-tracing-warehouse\"\n"
+            f"          - name: MLFLOW_UC_CATALOG\n            value: \"{MLFLOW_UC_DEFAULTS['MLFLOW_UC_CATALOG']}\"\n"
+            f"          - name: MLFLOW_UC_SCHEMA\n            value: \"{MLFLOW_UC_DEFAULTS['MLFLOW_UC_SCHEMA']}\"\n"
+            f"          - name: MLFLOW_UC_TABLE_PREFIX\n            value: \"{MLFLOW_UC_DEFAULTS['MLFLOW_UC_TABLE_PREFIX']}\"\n"
+            f"          - name: MLFLOW_OTEL_SPANS_TABLE\n            value: \"{MLFLOW_UC_DEFAULTS['MLFLOW_OTEL_SPANS_TABLE']}\"\n"
+        )
+        if experiment_env not in bundle:
+            raise RuntimeError(f"Could not find the MLflow experiment env binding in {bundle_path}")
+        bundle = bundle.replace(experiment_env, experiment_env + trace_env, 1)
+
+        experiment_resource = re.search(
+            r"(?P<block>        - name: ['\"]experiment['\"]\n"
+            r"          experiment:\n"
+            r"            experiment_id: .*\n"
+            r"            permission: ['\"]CAN_MANAGE['\"]\n)",
+            bundle,
+        )
+        if not experiment_resource:
+            raise RuntimeError(f"Could not find the MLflow experiment resource in {bundle_path}")
+        warehouse_resource = (
+            "        - name: 'mlflow-tracing-warehouse'\n"
+            "          sql_warehouse:\n"
+            "            id: \"<your-mlflow-tracing-warehouse-id>\"\n"
+            "            permission: 'CAN_USE'\n"
+        )
+        bundle = (
+            bundle[: experiment_resource.end()]
+            + warehouse_resource
+            + bundle[experiment_resource.end() :]
+        )
+        bundle_path.write_text(bundle)
+        changed.append("databricks.yml")
+
+    if config.get("has_app_yaml"):
+        app_path = template_dir / "app.yaml"
+        app = app_path.read_text()
+        if "MLFLOW_TRACING_SQL_WAREHOUSE_ID" not in app:
+            experiment_env = (
+                "  - name: MLFLOW_EXPERIMENT_ID\n"
+                "    valueFrom: \"experiment\"\n"
+            )
+            trace_env = (
+                "  - name: MLFLOW_TRACING_SQL_WAREHOUSE_ID\n"
+                "    valueFrom: \"mlflow-tracing-warehouse\"\n"
+                f"  - name: MLFLOW_UC_CATALOG\n    value: \"{MLFLOW_UC_DEFAULTS['MLFLOW_UC_CATALOG']}\"\n"
+                f"  - name: MLFLOW_UC_SCHEMA\n    value: \"{MLFLOW_UC_DEFAULTS['MLFLOW_UC_SCHEMA']}\"\n"
+                f"  - name: MLFLOW_UC_TABLE_PREFIX\n    value: \"{MLFLOW_UC_DEFAULTS['MLFLOW_UC_TABLE_PREFIX']}\"\n"
+                f"  - name: MLFLOW_OTEL_SPANS_TABLE\n    value: \"{MLFLOW_UC_DEFAULTS['MLFLOW_OTEL_SPANS_TABLE']}\"\n"
+            )
+            if experiment_env not in app:
+                raise RuntimeError(f"Could not find the MLflow experiment env binding in {app_path}")
+            app_path.write_text(app.replace(experiment_env, experiment_env + trace_env, 1))
+            changed.append("app.yaml")
+
+    return changed
 
 
 def sync_scripts(template: str, config: dict) -> list[str]:
@@ -94,7 +180,8 @@ def main():
     for template, config in TEMPLATES.items():
         scripts_synced = sync_scripts(template, config)
         workflows_synced = sync_workflows(template, config)
-        all_synced = scripts_synced + workflows_synced
+        config_synced = sync_mlflow_uc_configuration(template, config)
+        all_synced = scripts_synced + workflows_synced + config_synced
         if all_synced:
             print(f"Syncing {template}... ({', '.join(all_synced)})")
         else:

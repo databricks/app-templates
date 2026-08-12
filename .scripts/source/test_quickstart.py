@@ -13,15 +13,18 @@
 import json
 import os
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+from mlflow.entities.trace_location import UnityCatalog
+
+import quickstart
 
 from quickstart import (
     _replace_lakebase_env_vars,
     _replace_lakebase_resource,
     create_lakebase_instance,
-    create_mlflow_experiment,
     get_databricks_yml_experiment_id,
     get_existing_lakebase_config,
     setup_env_file,
@@ -725,77 +728,407 @@ class TestHappyPathAutoscalingOnRealTemplates:
                     )
 
 
-def _mock_workspace_client(get_experiment_result=None, get_experiment_raises=False,
-                            create_experiment_id="99999"):
-    """Build a mock WorkspaceClient for experiment tests."""
-    mock_w = MagicMock()
-    if get_experiment_raises:
-        mock_w.experiments.get_experiment.side_effect = Exception("not found")
-    else:
-        mock_exp = MagicMock()
-        mock_exp.experiment = get_experiment_result
-        mock_w.experiments.get_experiment.return_value = mock_exp
-    mock_create = MagicMock()
-    mock_create.experiment_id = create_experiment_id
-    mock_w.experiments.create_experiment.return_value = mock_create
-    return mock_w
+def _uc_request(warehouse_id="0123456789abcdef"):
+    return SimpleNamespace(
+        warehouse_id=warehouse_id,
+        catalog_name="main",
+        schema_name="agent_traces",
+        table_prefix="agents_on_apps",
+    )
 
 
-class TestExperimentIdempotency:
-    """Tests for experiment reuse logic in create_mlflow_experiment."""
+def _uc_location(catalog="main", schema="agent_traces", prefix="agents_on_apps"):
+    return UnityCatalog(catalog_name=catalog, schema_name=schema, table_prefix=prefix)
 
-    def test_reuses_existing_id_in_env(self, tmp_path):
-        """When .env has a valid experiment ID, returns it without creating a new one."""
-        (tmp_path / ".env").write_text("MLFLOW_EXPERIMENT_ID=12345\n")
-        existing_exp = MagicMock(name_="/Users/test/agents-on-apps", experiment_id="12345")
-        existing_exp.name = "/Users/test/agents-on-apps"
-        mock_w = _mock_workspace_client(get_experiment_result=existing_exp)
-        with patch("quickstart.get_workspace_client", return_value=mock_w):
-            name, exp_id = create_mlflow_experiment("DEFAULT", "test@example.com")
 
-        assert exp_id == "12345"
-        assert name == "/Users/test/agents-on-apps"
-        mock_w.experiments.get_experiment.assert_called_once_with(experiment_id="12345")
-        mock_w.experiments.create_experiment.assert_not_called()
+def _experiment(location=None, name="/Users/user@example.com/agents-on-apps"):
+    return SimpleNamespace(
+        experiment_id="12345",
+        name=name,
+        trace_location=location,
+    )
 
-    def test_creates_new_if_id_missing(self, tmp_path):
-        """When .env has no MLFLOW_EXPERIMENT_ID, creates a new experiment."""
-        (tmp_path / ".env").write_text("DATABRICKS_CONFIG_PROFILE=DEFAULT\n")
-        mock_w = _mock_workspace_client(create_experiment_id="99999")
-        with patch("quickstart.get_workspace_client", return_value=mock_w):
-            name, exp_id = create_mlflow_experiment("DEFAULT", "test@example.com")
 
-        assert exp_id == "99999"
-        mock_w.experiments.get_experiment.assert_not_called()
-        mock_w.experiments.create_experiment.assert_called_once()
+def _workspace_with_warehouse(warehouse_id="0123456789abcdef"):
+    workspace = MagicMock()
+    workspace.warehouses.get.return_value = SimpleNamespace(
+        id=warehouse_id,
+        state=SimpleNamespace(value="RUNNING"),
+    )
+    return workspace
 
-    def test_creates_new_if_experiment_deleted(self, tmp_path):
-        """When .env has ID but get_experiment fails, creates a new experiment."""
-        (tmp_path / ".env").write_text("MLFLOW_EXPERIMENT_ID=deleted-id\n")
-        mock_w = _mock_workspace_client(get_experiment_raises=True, create_experiment_id="new-id")
-        with patch("quickstart.get_workspace_client", return_value=mock_w):
-            name, exp_id = create_mlflow_experiment("DEFAULT", "test@example.com")
 
-        assert exp_id == "new-id"
-        mock_w.experiments.create_experiment.assert_called_once()
+class TestUcTraceExperimentSetup:
+    """Supported UC setup is mandatory; an ordinary experiment is never a fallback."""
 
-    def test_still_updates_yml_on_reuse(self, tmp_path):
-        """Even when reusing an experiment, databricks.yml gets the experiment_id set."""
+    def test_fresh_setup_uses_supported_uc_location_and_returns_full_config(self, monkeypatch):
+        workspace = _workspace_with_warehouse()
+        mock_set_experiment = Mock(return_value=_experiment(_uc_location()))
+        mock_get_by_name = Mock(return_value=None)
+        mock_create_ordinary = workspace.experiments.create_experiment
+
+        monkeypatch.setattr(quickstart, "get_workspace_client", lambda _profile: workspace)
+        monkeypatch.setattr("mlflow.set_experiment", mock_set_experiment)
+        monkeypatch.setattr("mlflow.get_experiment_by_name", mock_get_by_name)
+
+        trace_config = quickstart.create_or_reuse_uc_trace_experiment(
+            "DEFAULT", "user@example.com", _uc_request()
+        )
+
+        assert trace_config == quickstart.MlflowTraceConfig(
+            experiment_name="/Users/user@example.com/agents-on-apps",
+            experiment_id="12345",
+            warehouse_id="0123456789abcdef",
+            catalog_name="main",
+            schema_name="agent_traces",
+            table_prefix="agents_on_apps",
+            otel_spans_table_name="main.agent_traces.agents_on_apps_otel_spans",
+        )
+        mock_set_experiment.assert_called_once_with(
+            experiment_name="/Users/user@example.com/agents-on-apps",
+            trace_location=UnityCatalog(
+                catalog_name="main",
+                schema_name="agent_traces",
+                table_prefix="agents_on_apps",
+            ),
+        )
+        mock_create_ordinary.assert_not_called()
+
+    def test_exact_location_reuse_keeps_the_same_experiment(self, monkeypatch):
+        workspace = _workspace_with_warehouse()
+        existing = _experiment(_uc_location())
+        mock_set_experiment = Mock(return_value=existing)
+        monkeypatch.setattr(quickstart, "get_workspace_client", lambda _profile: workspace)
+        monkeypatch.setattr("mlflow.get_experiment_by_name", Mock(return_value=existing))
+        monkeypatch.setattr("mlflow.set_experiment", mock_set_experiment)
+
+        result = quickstart.create_or_reuse_uc_trace_experiment(
+            "DEFAULT", "user@example.com", _uc_request()
+        )
+
+        assert result.experiment_id == "12345"
+        assert result.otel_spans_table_name == "main.agent_traces.agents_on_apps_otel_spans"
+        mock_set_experiment.assert_called_once()
+        workspace.experiments.create_experiment.assert_not_called()
+
+    def test_conflicting_immutable_location_is_fatal_and_names_both_locations(
+        self, monkeypatch
+    ):
+        workspace = _workspace_with_warehouse()
+        existing = _experiment(_uc_location("legacy", "traces", "old_prefix"))
+        mock_set_experiment = Mock()
+        monkeypatch.setattr(quickstart, "get_workspace_client", lambda _profile: workspace)
+        monkeypatch.setattr("mlflow.get_experiment_by_name", Mock(return_value=existing))
+        monkeypatch.setattr("mlflow.set_experiment", mock_set_experiment)
+
+        with pytest.raises(RuntimeError) as error:
+            quickstart.create_or_reuse_uc_trace_experiment(
+                "DEFAULT", "user@example.com", _uc_request()
+            )
+
+        message = str(error.value)
+        assert "/Users/user@example.com/agents-on-apps" in message
+        assert "legacy.traces.old_prefix" in message
+        assert "main.agent_traces.agents_on_apps" in message
+        assert "--mlflow-experiment-name" in message
+        mock_set_experiment.assert_not_called()
+        workspace.experiments.create_experiment.assert_not_called()
+
+    def test_missing_uc_preview_is_fatal_without_ordinary_experiment_fallback(
+        self, monkeypatch
+    ):
+        workspace = _workspace_with_warehouse()
+        monkeypatch.setattr(quickstart, "get_workspace_client", lambda _profile: workspace)
+        monkeypatch.setattr("mlflow.get_experiment_by_name", Mock(return_value=None))
+        monkeypatch.setattr(
+            "mlflow.set_experiment",
+            Mock(side_effect=RuntimeError("Unity Catalog tracing preview is not enabled")),
+        )
+
+        with pytest.raises(RuntimeError, match="preview is not enabled"):
+            quickstart.create_or_reuse_uc_trace_experiment(
+                "DEFAULT", "user@example.com", _uc_request()
+            )
+
+        workspace.experiments.create_experiment.assert_not_called()
+
+    def test_unavailable_requested_warehouse_is_fatal_before_mlflow_setup(self, monkeypatch):
+        workspace = MagicMock()
+        workspace.warehouses.get.side_effect = RuntimeError("warehouse not found")
+        mock_set_experiment = Mock()
+        monkeypatch.setattr(quickstart, "get_workspace_client", lambda _profile: workspace)
+        monkeypatch.setattr("mlflow.set_experiment", mock_set_experiment)
+
+        with pytest.raises(RuntimeError, match="0123456789abcdef"):
+            quickstart.create_or_reuse_uc_trace_experiment(
+                "DEFAULT", "user@example.com", _uc_request()
+            )
+
+        mock_set_experiment.assert_not_called()
+        workspace.experiments.create_experiment.assert_not_called()
+
+    def test_selects_an_available_warehouse_when_no_noninteractive_default_exists(
+        self, monkeypatch
+    ):
+        workspace = MagicMock()
+        workspace.warehouses.list.return_value = [
+            SimpleNamespace(id="deleted", state=SimpleNamespace(value="DELETED")),
+            SimpleNamespace(id="running-warehouse", state=SimpleNamespace(value="RUNNING")),
+        ]
+        experiment = _experiment(_uc_location())
+        monkeypatch.setattr(quickstart, "get_workspace_client", lambda _profile: workspace)
+        monkeypatch.setattr("mlflow.get_experiment_by_name", Mock(return_value=None))
+        monkeypatch.setattr("mlflow.set_experiment", Mock(return_value=experiment))
+
+        result = quickstart.create_or_reuse_uc_trace_experiment(
+            "DEFAULT", "user@example.com", _uc_request(warehouse_id=None)
+        )
+
+        assert result.warehouse_id == "running-warehouse"
+
+    def test_scopes_selected_profile_for_mlflow_internal_warehouse_auth(
+        self, monkeypatch
+    ):
+        workspace = _workspace_with_warehouse()
+        monkeypatch.setenv("DATABRICKS_CONFIG_PROFILE", "outer-profile")
+        monkeypatch.setattr(quickstart, "get_workspace_client", lambda _profile: workspace)
+        monkeypatch.setattr("mlflow.get_experiment_by_name", Mock(return_value=None))
+
+        def set_experiment(**_kwargs):
+            assert os.environ["DATABRICKS_CONFIG_PROFILE"] == "selected-profile"
+            return _experiment(_uc_location())
+
+        monkeypatch.setattr("mlflow.set_experiment", Mock(side_effect=set_experiment))
+
+        quickstart.create_or_reuse_uc_trace_experiment(
+            "selected-profile", "user@example.com", _uc_request()
+        )
+
+        assert os.environ["DATABRICKS_CONFIG_PROFILE"] == "outer-profile"
+
+    def test_explicit_experiment_name_selects_a_new_immutable_binding(self, monkeypatch):
+        workspace = _workspace_with_warehouse()
+        request = _uc_request()
+        request.experiment_name = "/Users/user@example.com/agents-on-apps-unique"
+        experiment = _experiment(_uc_location(), name=request.experiment_name)
+        mock_set_experiment = Mock(return_value=experiment)
+        mock_get_by_name = Mock(return_value=None)
+        monkeypatch.setattr(quickstart, "get_workspace_client", lambda _profile: workspace)
+        monkeypatch.setattr("mlflow.get_experiment_by_name", mock_get_by_name)
+        monkeypatch.setattr("mlflow.set_experiment", mock_set_experiment)
+
+        result = quickstart.create_or_reuse_uc_trace_experiment(
+            "DEFAULT", "user@example.com", request
+        )
+
+        assert result.experiment_name == request.experiment_name
+        mock_get_by_name.assert_called_once_with(request.experiment_name)
+        assert mock_set_experiment.call_args.kwargs["experiment_name"] == request.experiment_name
+
+
+class TestUcTraceAppPermissions:
+    def test_missing_app_is_deferred_until_after_first_deploy(self):
+        from databricks.sdk.errors import NotFound
+
+        workspace = MagicMock()
+        workspace.apps.get.side_effect = NotFound("app does not exist")
+
+        assert quickstart.get_existing_app(workspace, "future-app") is None
+
+    def test_app_lookup_setup_failure_is_fatal(self):
+        workspace = MagicMock()
+        workspace.apps.get.side_effect = RuntimeError("apps API unavailable")
+
+        with pytest.raises(RuntimeError, match="apps API unavailable"):
+            quickstart.get_existing_app(workspace, "future-app")
+
+    def test_grants_modify_to_tables_and_select_to_every_trace_entity(self):
+        workspace = MagicMock()
+        workspace.apps.get.return_value = SimpleNamespace(
+            service_principal_client_id="app-client-id"
+        )
+        responses = [
+            SimpleNamespace(
+                status=SimpleNamespace(state=SimpleNamespace(value="SUCCEEDED")),
+                result=SimpleNamespace(
+                    data_array=[
+                        ["agents_on_apps_otel_annotations", "MANAGED"],
+                        ["agents_on_apps_otel_logs", "MANAGED"],
+                        ["agents_on_apps_otel_metrics", "MANAGED"],
+                        ["agents_on_apps_otel_spans", "MANAGED"],
+                        ["agents_on_apps_trace_metadata", "VIEW"],
+                        ["agents_on_apps_trace_unified", "VIEW"],
+                    ]
+                ),
+            )
+        ] + [
+            SimpleNamespace(
+                status=SimpleNamespace(state=SimpleNamespace(value="SUCCEEDED")),
+                result=SimpleNamespace(data_array=[]),
+            )
+            for _ in range(12)
+        ]
+        workspace.statement_execution.execute_statement.side_effect = responses
+
+        quickstart.grant_uc_trace_access_to_app(
+            workspace,
+            "existing-agent-app",
+            quickstart.MlflowTraceConfig(
+                "/Users/user@example.com/agents-on-apps",
+                "12345",
+                "0123456789abcdef",
+                "main",
+                "agent_traces",
+                "agents_on_apps",
+                "main.agent_traces.agents_on_apps_otel_spans",
+            ),
+        )
+
+        workspace.apps.get.assert_called_once_with("existing-agent-app")
+        statements = [
+            call.kwargs["statement"]
+            for call in workspace.statement_execution.execute_statement.call_args_list
+        ]
+        assert statements[1:] == [
+            "GRANT USE CATALOG ON CATALOG `main` TO `app-client-id`",
+            "GRANT USE SCHEMA ON SCHEMA `main`.`agent_traces` TO `app-client-id`",
+            "GRANT MODIFY ON TABLE `main`.`agent_traces`.`agents_on_apps_otel_annotations` TO `app-client-id`",
+            "GRANT SELECT ON TABLE `main`.`agent_traces`.`agents_on_apps_otel_annotations` TO `app-client-id`",
+            "GRANT MODIFY ON TABLE `main`.`agent_traces`.`agents_on_apps_otel_logs` TO `app-client-id`",
+            "GRANT SELECT ON TABLE `main`.`agent_traces`.`agents_on_apps_otel_logs` TO `app-client-id`",
+            "GRANT MODIFY ON TABLE `main`.`agent_traces`.`agents_on_apps_otel_metrics` TO `app-client-id`",
+            "GRANT SELECT ON TABLE `main`.`agent_traces`.`agents_on_apps_otel_metrics` TO `app-client-id`",
+            "GRANT MODIFY ON TABLE `main`.`agent_traces`.`agents_on_apps_otel_spans` TO `app-client-id`",
+            "GRANT SELECT ON TABLE `main`.`agent_traces`.`agents_on_apps_otel_spans` TO `app-client-id`",
+            "GRANT SELECT ON VIEW `main`.`agent_traces`.`agents_on_apps_trace_metadata` TO `app-client-id`",
+            "GRANT SELECT ON VIEW `main`.`agent_traces`.`agents_on_apps_trace_unified` TO `app-client-id`",
+        ]
+        assert "ALL PRIVILEGES" not in "\n".join(statements)
+
+
+class TestAtomicMlflowTraceEnv:
+    def test_writes_all_six_trace_values_in_one_atomic_replace(self, tmp_path, monkeypatch):
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            "DATABRICKS_CONFIG_PROFILE=DEFAULT\n"
+            "MLFLOW_EXPERIMENT_ID=stale\n"
+            "MLFLOW_EXPERIMENT_ID=duplicate\n"
+        )
+        trace_config = SimpleNamespace(
+            experiment_id="12345",
+            warehouse_id="0123456789abcdef",
+            catalog_name="main",
+            schema_name="agent_traces",
+            table_prefix="agents_on_apps",
+            otel_spans_table_name="main.agent_traces.agents_on_apps_otel_spans",
+        )
+        real_replace = os.replace
+        replacements = []
+
+        def recording_replace(source, destination):
+            replacements.append((Path(source), Path(destination)))
+            real_replace(source, destination)
+
+        monkeypatch.setattr(os, "replace", recording_replace)
+
+        quickstart.write_mlflow_trace_env_atomically(trace_config, env_file)
+
+        assert len(replacements) == 1
+        assert replacements[0][1] == env_file
+        active = {
+            line.split("=", 1)[0]: line.split("=", 1)[1]
+            for line in env_file.read_text().splitlines()
+            if line and not line.startswith("#") and "=" in line
+        }
+        assert active == {
+            "DATABRICKS_CONFIG_PROFILE": "DEFAULT",
+            "MLFLOW_EXPERIMENT_ID": "12345",
+            "MLFLOW_TRACING_SQL_WAREHOUSE_ID": "0123456789abcdef",
+            "MLFLOW_UC_CATALOG": "main",
+            "MLFLOW_UC_SCHEMA": "agent_traces",
+            "MLFLOW_UC_TABLE_PREFIX": "agents_on_apps",
+            "MLFLOW_OTEL_SPANS_TABLE": "main.agent_traces.agents_on_apps_otel_spans",
+        }
+
+
+class TestMlflowTraceCliAndRuntimeConfig:
+    def test_cli_defaults_to_environment_backed_uc_coordinates(self, monkeypatch):
+        monkeypatch.setenv("MLFLOW_UC_CATALOG", "team_catalog")
+        monkeypatch.setenv("MLFLOW_UC_SCHEMA", "observability")
+        monkeypatch.setenv("MLFLOW_UC_TABLE_PREFIX", "agent_prod")
+        monkeypatch.setenv("MLFLOW_TRACING_SQL_WAREHOUSE_ID", "warehouse-from-env")
+        monkeypatch.setenv(
+            "MLFLOW_EXPERIMENT_NAME", "/Users/user@example.com/agents-on-apps-unique"
+        )
+
+        args = quickstart._parse_args([])
+
+        assert args.mlflow_catalog == "team_catalog"
+        assert args.mlflow_schema == "observability"
+        assert args.mlflow_table_prefix == "agent_prod"
+        assert args.mlflow_warehouse_id == "warehouse-from-env"
+        assert args.mlflow_experiment_name == (
+            "/Users/user@example.com/agents-on-apps-unique"
+        )
+
+    def test_persists_six_values_and_warehouse_resource_to_bundle_and_app_yaml(
+        self, tmp_path
+    ):
         (tmp_path / "databricks.yml").write_text(MINIMAL_YML)
-        (tmp_path / ".env").write_text("MLFLOW_EXPERIMENT_ID=12345\n")
-        existing_exp = MagicMock()
-        existing_exp.name = "/Users/test/agents-on-apps"
-        mock_w = _mock_workspace_client(get_experiment_result=existing_exp)
-        with patch("quickstart.get_workspace_client", return_value=mock_w):
-            _, exp_id = create_mlflow_experiment("DEFAULT", "test@example.com")
+        (tmp_path / "app.yaml").write_text(
+            "command: [\"uv\", \"run\", \"start-app\"]\n"
+            "env:\n"
+            "  - name: MLFLOW_EXPERIMENT_ID\n"
+            "    valueFrom: experiment\n"
+        )
+        config = quickstart.MlflowTraceConfig(
+            "/Users/user@example.com/agents-on-apps",
+            "12345",
+            "0123456789abcdef",
+            "main",
+            "agent_traces",
+            "agents_on_apps",
+            "main.agent_traces.agents_on_apps_otel_spans",
+        )
 
-        # The test verifies create_mlflow_experiment returns the ID correctly;
-        # the caller (main) is responsible for calling update_databricks_yml_experiment
-        assert exp_id == "12345"
-        # Explicitly verify update_databricks_yml_experiment works after reuse
-        update_databricks_yml_experiment(exp_id)
-        content = (tmp_path / "databricks.yml").read_text()
-        assert 'experiment_id: "12345"' in content
+        quickstart.update_mlflow_trace_runtime_config(config)
+
+        _, bundle = quickstart._load_yml(tmp_path / "databricks.yml")
+        app = next(iter(bundle["resources"]["apps"].values()))
+        env_by_name = {entry["name"]: entry for entry in app["config"]["env"]}
+        assert env_by_name["MLFLOW_EXPERIMENT_ID"] == {
+            "name": "MLFLOW_EXPERIMENT_ID",
+            "value_from": "experiment",
+        }
+        assert env_by_name["MLFLOW_TRACING_SQL_WAREHOUSE_ID"] == {
+            "name": "MLFLOW_TRACING_SQL_WAREHOUSE_ID",
+            "value_from": "mlflow-tracing-warehouse",
+        }
+        assert env_by_name["MLFLOW_UC_CATALOG"]["value"] == "main"
+        assert env_by_name["MLFLOW_UC_SCHEMA"]["value"] == "agent_traces"
+        assert env_by_name["MLFLOW_UC_TABLE_PREFIX"]["value"] == "agents_on_apps"
+        assert env_by_name["MLFLOW_OTEL_SPANS_TABLE"]["value"] == (
+            "main.agent_traces.agents_on_apps_otel_spans"
+        )
+        resources = {entry["name"]: entry for entry in app["resources"]}
+        assert resources["experiment"]["experiment"]["experiment_id"] == "12345"
+        assert resources["mlflow-tracing-warehouse"] == {
+            "name": "mlflow-tracing-warehouse",
+            "sql_warehouse": {
+                "id": "0123456789abcdef",
+                "permission": "CAN_USE",
+            },
+        }
+
+        _, app_yaml = quickstart._load_yml(tmp_path / "app.yaml")
+        app_env = {entry["name"]: entry for entry in app_yaml["env"]}
+        assert app_env["MLFLOW_EXPERIMENT_ID"]["valueFrom"] == "experiment"
+        assert app_env["MLFLOW_TRACING_SQL_WAREHOUSE_ID"]["valueFrom"] == (
+            "mlflow-tracing-warehouse"
+        )
+        assert app_env["MLFLOW_OTEL_SPANS_TABLE"]["value"] == (
+            "main.agent_traces.agents_on_apps_otel_spans"
+        )
 
 
 class TestUpdateDatabricksYmlAppName:

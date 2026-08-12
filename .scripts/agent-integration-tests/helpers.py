@@ -34,6 +34,7 @@ BUNDLE_TIMEOUT = 600  # seconds for bundle deploy/run/destroy commands (10 min f
 QUICKSTART_TIMEOUT = 600  # seconds for quickstart command (10 min for parallel runs)
 EVALUATE_TIMEOUT = 900  # seconds for agent-evaluate
 SERVER_START_TIMEOUT = 600  # seconds to wait for local server to start (accommodates cold CI runners + heavy template imports)
+EXPERIMENT_ACCESS_MAX_ATTEMPTS = 6
 
 # ---------------------------------------------------------------------------
 # Logging & subprocess
@@ -729,6 +730,7 @@ def bundle_deploy(
 
     Handles transient errors with automatic recovery:
     - Terraform init failures (e.g. GitHub 502): wait and retry
+    - Fresh UC experiment access propagation: retry the exact app-resource 403
     - "already exists" (app): unbind stale state + bind existing app, retry
     - "does not exist or is deleted": unbind stale reference, retry
     - "lineage mismatch in state files": a prior run left stale terraform
@@ -742,6 +744,22 @@ def bundle_deploy(
             _log(
                 f"bundle deploy attempt {attempt}/{max_attempts} failed in "
                 f"{template_dir.name} (terraform init error), retrying in {POLL_INTERVAL}s..."
+            )
+            time.sleep(POLL_INTERVAL)
+            return True
+
+        experiment_access_pending = (
+            "Invalid Experiment resource experiment" in stderr_flat
+            and "does not have permission to access Experiment" in stderr_flat
+            and "403 PERMISSION_DENIED" in stderr_flat
+        )
+        if experiment_access_pending:
+            if attempt >= EXPERIMENT_ACCESS_MAX_ATTEMPTS:
+                return False
+            _log(
+                f"bundle deploy attempt {attempt}/{EXPERIMENT_ACCESS_MAX_ATTEMPTS} "
+                f"failed in {template_dir.name} while fresh experiment access "
+                f"propagates, retrying in {POLL_INTERVAL}s..."
             )
             time.sleep(POLL_INTERVAL)
             return True

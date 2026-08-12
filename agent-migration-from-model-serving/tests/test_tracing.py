@@ -9,7 +9,7 @@ import sys
 import mlflow.langchain
 import mlflow.openai
 import pytest
-from mlflow.entities import SpanType
+from mlflow.entities import SpanStatus, SpanType
 from mlflow.entities import Experiment, UnityCatalog
 from mlflow.genai.agent_server import server
 from mlflow.tracing.config import reset_config
@@ -248,6 +248,48 @@ def test_deployment_preflight_rejects_deleted_warehouse_state() -> None:
         )
 
 
+def test_deployment_preflight_rejects_deleted_experiment() -> None:
+    location = UnityCatalog("catalog_test", "schema_test", "migration_test")
+    location._otel_spans_table_name = (
+        "catalog_test.schema_test.migration_test_otel_spans"
+    )
+    experiment = Experiment(
+        experiment_id="123",
+        name="deleted-experiment",
+        artifact_location="dbfs:/tmp/test",
+        lifecycle_stage="deleted",
+        trace_location=location,
+    )
+
+    class LocalMlflowClient:
+        def get_experiment(self, _experiment_id):
+            return experiment
+
+    class LocalWarehouses:
+        def get(self, warehouse_id):
+            return type("Warehouse", (), {"id": warehouse_id, "state": "RUNNING"})()
+
+    workspace = type("Workspace", (), {"warehouses": LocalWarehouses()})()
+    config = {
+        "MLFLOW_TRACKING_URI": "databricks",
+        "MLFLOW_EXPERIMENT_ID": "123",
+        "MLFLOW_TRACING_SQL_WAREHOUSE_ID": "0123456789abcdef",
+        "MLFLOW_UC_CATALOG": "catalog_test",
+        "MLFLOW_UC_SCHEMA": "schema_test",
+        "MLFLOW_UC_TABLE_PREFIX": "migration_test",
+        "MLFLOW_OTEL_SPANS_TABLE": (
+            "catalog_test.schema_test.migration_test_otel_spans"
+        ),
+    }
+
+    with pytest.raises(RuntimeError, match="lifecycle stage: deleted"):
+        preflight.verify_deployment_trace_resources(
+            config,
+            mlflow_client=LocalMlflowClient(),
+            workspace_client=workspace,
+        )
+
+
 @pytest.mark.filterwarnings(
     "ignore:The ``noload`` loader strategy is deprecated:sqlalchemy.exc.SADeprecationWarning"
 )
@@ -435,6 +477,10 @@ def test_offline_preflight_proves_autologging_and_trace_retrieval() -> None:
 def test_selected_autologger_exports_only_sanitized_bounded_spans(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, framework: str
 ) -> None:
+    class SecretRepr:
+        def __repr__(self) -> str:
+            return "OpaqueContext({'api_key': 'object-repr-secret-value'})"
+
     tracking_uri = f"sqlite:///{tmp_path / f'{framework}.db'}"
     artifact_dir = tmp_path / f"{framework}-artifacts"
     artifact_dir.mkdir()
@@ -474,12 +520,23 @@ def test_selected_autologger_exports_only_sanitized_bounded_spans(
                         "Cookie": "session=cookie-header-value",
                     },
                     "api_key": "api-key-value",
+                    "serialized_json": (
+                        '{"api_key":"json-string-secret-value",'
+                        '"Authorization":"Bearer json-auth-secret-value"}'
+                    ),
+                    "python_mapping_repr": (
+                        "{'api_key': 'mapping-repr-secret-value'}"
+                    ),
+                    "opaque_context": SecretRepr(),
                 }
             )
             root.set_outputs(
                 {
                     "sdk_token": "sdk-token-value",
                     "Set-Cookie": "tool-session=cookie-output-value",
+                    "serialized_output": (
+                        '{"credential":"output-json-secret-value"}'
+                    ),
                 }
             )
             root.set_attribute(
@@ -489,14 +546,39 @@ def test_selected_autologger_exports_only_sanitized_bounded_spans(
             with mlflow.start_span("framework.tool", span_type=SpanType.TOOL) as tool:
                 tool.set_inputs(
                     {
-                        "payload": "x" * 70_000,
+                        "payload": json.dumps(
+                            {
+                                "api_key": "oversized-json-secret-value",
+                                "content": "x" * 70_000,
+                            }
+                        ),
                         "credentials": {"secret": "tool-secret-value"},
                     }
                 )
-                tool.set_outputs({"authorization": "Bearer tool-output-value"})
-                tool.set_attribute("sdk.context", {"token": "attribute-token-value"})
+                tool.set_outputs(
+                    {
+                        "authorization": "Bearer tool-output-value",
+                        "serialized": "{'token': 'tool-repr-secret-value'}",
+                    }
+                )
+                tool.set_attribute(
+                    "sdk.context",
+                    '{"token":"attribute-json-secret-value"}',
+                )
+                tool.set_status(
+                    SpanStatus(
+                        status_code="ERROR",
+                        description=(
+                            "tool failed with "
+                            "{'password': 'status-repr-secret-value'}"
+                        ),
+                    )
+                )
             root.record_exception(
-                RuntimeError("authorization Bearer exception-token-value")
+                RuntimeError(
+                    "upstream failed with "
+                    "{'api_key': 'exception-repr-secret-value'}"
+                )
             )
 
         traces = mlflow.search_traces(
@@ -515,9 +597,17 @@ def test_selected_autologger_exports_only_sanitized_bounded_spans(
             "tool-password-value",
             "tool-secret-value",
             "tool-output-value",
-            "attribute-token-value",
-            "exception-token-value",
             "identity-session-value",
+            "json-string-secret-value",
+            "json-auth-secret-value",
+            "mapping-repr-secret-value",
+            "object-repr-secret-value",
+            "output-json-secret-value",
+            "oversized-json-secret-value",
+            "tool-repr-secret-value",
+            "attribute-json-secret-value",
+            "status-repr-secret-value",
+            "exception-repr-secret-value",
         ):
             assert secret not in exported
         assert "[REDACTED]" in exported
@@ -526,6 +616,8 @@ def test_selected_autologger_exports_only_sanitized_bounded_spans(
         )
         assert tool_span.inputs["truncated"] is True
         assert tool_span.inputs["originalBytes"] > 64 * 1024
+        assert len(tool_span.inputs["sha256"]) == 64
+        int(tool_span.inputs["sha256"], 16)
     finally:
         reset_config()
         mlflow.set_tracking_uri(original_tracking_uri)

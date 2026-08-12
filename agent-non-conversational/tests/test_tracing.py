@@ -379,6 +379,48 @@ def test_batch_startup_rejects_wrong_uc_location_and_missing_warehouse() -> None
     assert "warehouse does not exist" in str(caught.value)
 
 
+def test_batch_startup_rejects_deleted_experiment() -> None:
+    from agent_server.tracing import verify_deployment_trace_resources
+
+    location = UnityCatalog("catalog_test", "schema_test", "batch_test")
+    location._otel_spans_table_name = (
+        "catalog_test.schema_test.batch_test_otel_spans"
+    )
+    experiment = Experiment(
+        experiment_id="123",
+        name="deleted-experiment",
+        artifact_location="dbfs:/tmp/test",
+        lifecycle_stage="deleted",
+        trace_location=location,
+    )
+
+    class LocalMlflowClient:
+        def get_experiment(self, _experiment_id):
+            return experiment
+
+    class LocalWarehouses:
+        def get(self, warehouse_id):
+            return type("Warehouse", (), {"id": warehouse_id, "state": "RUNNING"})()
+
+    workspace = type("Workspace", (), {"warehouses": LocalWarehouses()})()
+    config = {
+        "MLFLOW_TRACKING_URI": "databricks",
+        "MLFLOW_EXPERIMENT_ID": "123",
+        "MLFLOW_TRACING_SQL_WAREHOUSE_ID": "0123456789abcdef",
+        "MLFLOW_UC_CATALOG": "catalog_test",
+        "MLFLOW_UC_SCHEMA": "schema_test",
+        "MLFLOW_UC_TABLE_PREFIX": "batch_test",
+        "MLFLOW_OTEL_SPANS_TABLE": "catalog_test.schema_test.batch_test_otel_spans",
+    }
+
+    with pytest.raises(RuntimeError, match="lifecycle stage: deleted"):
+        verify_deployment_trace_resources(
+            config,
+            mlflow_client=LocalMlflowClient(),
+            workspace_client=workspace,
+        )
+
+
 def test_batch_databricks_startup_runs_resource_preflight(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from dataclasses import asdict, is_dataclass
 import hashlib
 import json
@@ -35,8 +36,9 @@ _SECRET_KEY = re.compile(
 )
 _SECRET_TEXT = re.compile(
     r"(?P<prefix>\b(?:authorization|api[-_]?key|cookie|credential|password|secret|token)"
-    r"\b\s*(?::|=|\s)\s*(?:bearer\s+)?)"
-    r"(?P<value>[^\s,;)\]}]+)",
+    r"\b[\"']?\s*(?::|=|\s)\s*)"
+    r"(?:(?P<quote>[\"'])(?:bearer\s+)?(?P<quoted_value>.*?)(?P=quote)"
+    r"|(?:bearer\s+)?(?P<bare_value>[^\s,;)\]}]+))",
     re.IGNORECASE,
 )
 _RESERVED_CAPTURE_ATTRIBUTES = {"mlflow.spanInputs", "mlflow.spanOutputs"}
@@ -47,7 +49,11 @@ _UC_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,254}$")
 
 def _redact_text(value: str) -> str:
     return _SECRET_TEXT.sub(
-        lambda match: f"{match.group('prefix')}[REDACTED]", value
+        lambda match: (
+            f"{match.group('prefix')}"
+            f"{match.group('quote') or ''}[REDACTED]{match.group('quote') or ''}"
+        ),
+        value,
     )
 
 
@@ -69,6 +75,11 @@ def _jsonable(value: Any) -> Any:
         if isinstance(value, bytes):
             return _jsonable(value.decode("utf-8", errors="replace"))
         if isinstance(value, str):
+            for parser in (json.loads, ast.literal_eval):
+                try:
+                    return _jsonable(parser(value))
+                except (SyntaxError, TypeError, ValueError):
+                    pass
             return _redact_text(value)
         if value is None or isinstance(value, (bool, int, float)):
             return value
@@ -104,10 +115,8 @@ def safe_trace_value(value: Any, *, max_bytes: int = _MAX_CAPTURE_BYTES) -> Any:
 
 def safe_error_message(error: BaseException | str) -> str:
     """Return a bounded error/status message without credential values."""
-    message = _redact_text(str(error))
-    if len(message.encode("utf-8")) <= 2048:
-        return message
-    return json.dumps(safe_trace_value(message, max_bytes=2048), sort_keys=True)
+    safe = safe_trace_value(str(error), max_bytes=2048)
+    return safe if isinstance(safe, str) else json.dumps(safe, sort_keys=True)
 
 
 def _safe_identity_text(value: str) -> str:

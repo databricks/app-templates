@@ -109,6 +109,13 @@ def verify_deployment_trace_resources(
     if experiment is None:
         issues.append(f"experiment {config['MLFLOW_EXPERIMENT_ID']!r} does not exist")
     else:
+        raw_lifecycle = getattr(experiment, "lifecycle_stage", None)
+        lifecycle = str(getattr(raw_lifecycle, "value", raw_lifecycle) or "")
+        if lifecycle.lower() != "active":
+            issues.append(
+                f"experiment {config['MLFLOW_EXPERIMENT_ID']!r} is unavailable "
+                f"(lifecycle stage: {lifecycle or 'missing'})"
+            )
         location = experiment.trace_location
         observed = (
             getattr(location, "catalog_name", None),

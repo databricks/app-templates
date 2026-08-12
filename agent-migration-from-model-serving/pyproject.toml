@@ -6,9 +6,12 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.129.0",
+    "httpx>=0.24.0",
     "uvicorn>=0.41.0",
     "mlflow[databricks]>=3.14.0,<4",
     "databricks-agents>=1.9.3",
+    "langchain>=1.0.0",
+    "openai>=1.0.0",
     "python-dotenv>=1.2.1",
     "opentelemetry-exporter-otlp-proto-grpc>=1.25.0",
 ]

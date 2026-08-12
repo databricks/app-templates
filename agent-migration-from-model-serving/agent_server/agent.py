@@ -8,6 +8,7 @@ original Model Serving agent.
 """
 
 import logging
+import os
 from typing import AsyncGenerator
 
 import mlflow
@@ -19,6 +20,10 @@ from mlflow.types.responses import (
 )
 
 from agent_server.utils import get_session_id
+from agent_server.tracing import (
+    mark_autologger_called,
+    validate_tracing_environment,
+)
 
 # ──────────────────────────────────────────────
 # TODO: Import your agent framework and tools here.
@@ -38,6 +43,16 @@ from agent_server.utils import get_session_id
 # ──────────────────────────────────────────────
 
 logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
+
+validate_tracing_environment()
+framework = os.environ["AGENT_FRAMEWORK"]
+if framework == "langgraph":
+    mlflow.langchain.autolog(log_traces=True)
+elif framework == "openai":
+    mlflow.openai.autolog(log_traces=True)
+else:
+    raise RuntimeError("AGENT_FRAMEWORK must be 'langgraph' or 'openai'")
+mark_autologger_called(framework)
 
 
 # ──────────────────────────────────────────────

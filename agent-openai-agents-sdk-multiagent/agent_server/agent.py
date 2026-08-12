@@ -144,7 +144,10 @@ def _make_subagent_tool(subagent: dict):
 
     async def _call(question: str) -> str:
         async def request(carrier: dict[str, str]):
-            return await _tool_client.responses.create(
+            create = type(_tool_client.responses).create
+            create_without_local_autolog = getattr(create, "__wrapped__", create)
+            return await create_without_local_autolog(
+                _tool_client.responses,
                 model=model,
                 input=[{"role": "user", "content": question}],
                 extra_headers=carrier,

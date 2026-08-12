@@ -50,8 +50,9 @@ _UNQUOTED_SECRET_TEXT = re.compile(
     re.IGNORECASE,
 )
 _STANDALONE_SECRET_TEXT = re.compile(
-    r"(?P<label>\b(?:bearer|password|token|secret|api[-_]?key|authorization|credential|cookie))"
-    r"(?P<spacing>\s+)(?P<value>[^\s,;)\]}]+)",
+    r"(?P<prefix>\b(?:bearer|password|token|secret|api[-_]?key|authorization|credential|cookie)"
+    r"\s+(?:bearer\s+)?)"
+    r"(?P<value>'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|[^\s,;)\]}\"']+)",
     re.IGNORECASE,
 )
 
@@ -73,18 +74,11 @@ def _redact_secret_text(value: str) -> str:
 
     def redact_standalone(match: re.Match[str]) -> str:
         candidate = match.group("value")
-        looks_opaque = (
-            len(candidate) >= 16
-            or any(character in candidate for character in "-._~+/=")
-            or (
-                len(candidate) >= 8
-                and any(character.isalpha() for character in candidate)
-                and any(character.isdigit() for character in candidate)
-            )
-        )
-        if not looks_opaque:
-            return match.group(0)
-        return f"{match.group('label')}{match.group('spacing')}[REDACTED]"
+        if candidate[:1] in {"'", '"'} and candidate[-1:] == candidate[:1]:
+            redacted = f"{candidate[0]}[REDACTED]{candidate[-1]}"
+        else:
+            redacted = "[REDACTED]"
+        return f"{match.group('prefix')}{redacted}"
 
     return _STANDALONE_SECRET_TEXT.sub(redact_standalone, value)
 
@@ -501,6 +495,7 @@ def _finalize_appkit_streamed_root(
     token: Any,
     request_usage: AgentRequestUsage,
     stream_capture: BoundedTraceAccumulator,
+    stream_capture_token: Any,
     *,
     error: BaseException | None = None,
     outputs: Any = None,
@@ -523,6 +518,12 @@ def _finalize_appkit_streamed_root(
         span.end()
     except Exception:
         pass
+    finally:
+        try:
+            _stream_capture.reset(stream_capture_token)
+        except (RuntimeError, ValueError):
+            if _stream_capture.get() is stream_capture:
+                _stream_capture.set(None)
 
 
 def _appkit_patched_agent_run_streamed(original, self, *args, **kwargs):
@@ -543,14 +544,27 @@ def _appkit_patched_agent_run_streamed(original, self, *args, **kwargs):
     _apply_identity_to_active_trace()
     request_usage = AgentRequestUsage(span)
     stream_capture = BoundedTraceAccumulator()
-    _stream_capture.set(stream_capture)
+    stream_capture_token = _stream_capture.set(stream_capture)
     try:
         result = original(self, *args, **kwargs)
     except BaseException as error:
-        _finalize_appkit_streamed_root(span, token, request_usage, stream_capture, error=error)
+        _finalize_appkit_streamed_root(
+            span,
+            token,
+            request_usage,
+            stream_capture,
+            stream_capture_token,
+            error=error,
+        )
         raise
     finalizer = weakref.finalize(
-        result, _finalize_appkit_streamed_root, span, token, request_usage, stream_capture
+        result,
+        _finalize_appkit_streamed_root,
+        span,
+        token,
+        request_usage,
+        stream_capture,
+        stream_capture_token,
     )
     original_stream_events = type(result).stream_events
     result_ref = weakref.ref(result)
@@ -575,6 +589,7 @@ def _appkit_patched_agent_run_streamed(original, self, *args, **kwargs):
                     token,
                     request_usage,
                     stream_capture,
+                    stream_capture_token,
                     error=error,
                     outputs=None if error else live_result.final_output,
                 )
@@ -659,7 +674,7 @@ def _install_mlflow_openai_hooks() -> None:
         }
         if usage["costAvailable"]:
             attributes["appkit.cost_usd"] = usage["costUsd"]
-            attributes["mlflow.llm.cost"] = usage["costUsd"]
+            attributes["mlflow.llm.cost"] = {"total_cost": usage["costUsd"]}
         span.set_inputs(safe_trace_value(inputs))
         span.set_outputs(safe_trace_value(result))
         span.set_attributes(attributes)

@@ -37,7 +37,8 @@ _SECRET_KEY = re.compile(
 _SECRET_TEXT = re.compile(
     r"(?P<prefix>\b(?:authorization|api[-_]?key|cookie|credential|password|secret|token)"
     r"\b[\"']?\s*(?::|=|\s)\s*)"
-    r"(?:(?P<quote>[\"'])(?:bearer\s+)?(?P<quoted_value>.*?)(?P=quote)"
+    r"(?:(?P<quote>[\"'])(?:bearer\s+)?"
+    r"(?P<quoted_value>(?:\\.|(?!(?P=quote))[^\\])*)(?P=quote)"
     r"|(?:bearer\s+)?(?P<bare_value>[^\s,;)\]}]+))",
     re.IGNORECASE,
 )

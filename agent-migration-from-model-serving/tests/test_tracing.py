@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import importlib
 import json
 import os
@@ -9,7 +10,7 @@ import sys
 import mlflow.langchain
 import mlflow.openai
 import pytest
-from mlflow.entities import SpanStatus, SpanType
+from mlflow.entities import SpanEvent, SpanStatus, SpanType
 from mlflow.entities import Experiment, UnityCatalog
 from mlflow.genai.agent_server import server
 from mlflow.tracing.config import reset_config
@@ -479,7 +480,12 @@ def test_selected_autologger_exports_only_sanitized_bounded_spans(
 ) -> None:
     class SecretRepr:
         def __repr__(self) -> str:
-            return "OpaqueContext({'api_key': 'object-repr-secret-value'})"
+            return (
+                r"OpaqueContext({'api_key': 'repr-single-prefix\'"
+                r"repr-single-middle\'repr-single-suffix', "
+                r'"token": "repr-double-prefix\"repr-double-middle\"'
+                r'repr-double-suffix"})'
+            )
 
     tracking_uri = f"sqlite:///{tmp_path / f'{framework}.db'}"
     artifact_dir = tmp_path / f"{framework}-artifacts"
@@ -546,11 +552,10 @@ def test_selected_autologger_exports_only_sanitized_bounded_spans(
             with mlflow.start_span("framework.tool", span_type=SpanType.TOOL) as tool:
                 tool.set_inputs(
                     {
-                        "payload": json.dumps(
-                            {
-                                "api_key": "oversized-json-secret-value",
-                                "content": "x" * 70_000,
-                            }
+                        "payload": (
+                            r'Opaque({"api_key": "oversized-prefix\"'
+                            r'oversized-middle\"oversized-suffix"}):'
+                            + "x" * 70_000
                         ),
                         "credentials": {"secret": "tool-secret-value"},
                     }
@@ -565,19 +570,36 @@ def test_selected_autologger_exports_only_sanitized_bounded_spans(
                     "sdk.context",
                     '{"token":"attribute-json-secret-value"}',
                 )
+                tool.add_event(
+                    SpanEvent(
+                        name="fallback-event",
+                        attributes={
+                            "details": (
+                                r"event {'credential': 'event-single-prefix\'"
+                                r"event-single-middle\'event-single-suffix'} "
+                                r'{"token": "event-double-prefix\"'
+                                r'event-double-middle\"event-double-suffix"}'
+                            )
+                        },
+                    )
+                )
                 tool.set_status(
                     SpanStatus(
                         status_code="ERROR",
                         description=(
-                            "tool failed with "
-                            "{'password': 'status-repr-secret-value'}"
+                            r"status {'password': 'status-single-prefix\'"
+                            r"status-single-middle\'status-single-suffix'} "
+                            r'{"api_key": "status-double-prefix\"'
+                            r'status-double-middle\"status-double-suffix"}'
                         ),
                     )
                 )
             root.record_exception(
                 RuntimeError(
-                    "upstream failed with "
-                    "{'api_key': 'exception-repr-secret-value'}"
+                    r"exception {'secret': 'exception-single-prefix\'"
+                    r"exception-single-middle\'exception-single-suffix'} "
+                    r'{"Authorization": "Bearer exception-double-prefix\"'
+                    r'exception-double-middle\"exception-double-suffix"}'
                 )
             )
 
@@ -601,13 +623,36 @@ def test_selected_autologger_exports_only_sanitized_bounded_spans(
             "json-string-secret-value",
             "json-auth-secret-value",
             "mapping-repr-secret-value",
-            "object-repr-secret-value",
             "output-json-secret-value",
-            "oversized-json-secret-value",
             "tool-repr-secret-value",
             "attribute-json-secret-value",
-            "status-repr-secret-value",
-            "exception-repr-secret-value",
+            "repr-single-prefix",
+            "repr-single-middle",
+            "repr-single-suffix",
+            "repr-double-prefix",
+            "repr-double-middle",
+            "repr-double-suffix",
+            "event-single-prefix",
+            "event-single-middle",
+            "event-single-suffix",
+            "event-double-prefix",
+            "event-double-middle",
+            "event-double-suffix",
+            "status-single-prefix",
+            "status-single-middle",
+            "status-single-suffix",
+            "status-double-prefix",
+            "status-double-middle",
+            "status-double-suffix",
+            "exception-single-prefix",
+            "exception-single-middle",
+            "exception-single-suffix",
+            "exception-double-prefix",
+            "exception-double-middle",
+            "exception-double-suffix",
+            "oversized-prefix",
+            "oversized-middle",
+            "oversized-suffix",
         ):
             assert secret not in exported
         assert "[REDACTED]" in exported
@@ -615,9 +660,21 @@ def test_selected_autologger_exports_only_sanitized_bounded_spans(
             span for span in trace.data.spans if span.span_type == SpanType.TOOL
         )
         assert tool_span.inputs["truncated"] is True
-        assert tool_span.inputs["originalBytes"] > 64 * 1024
-        assert len(tool_span.inputs["sha256"]) == 64
-        int(tool_span.inputs["sha256"], 16)
+        expected_safe_inputs = {
+            "credentials": "[REDACTED]",
+            "payload": 'Opaque({"api_key": "[REDACTED]"}):' + "x" * 70_000,
+        }
+        expected_encoded = json.dumps(
+            expected_safe_inputs,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        assert tool_span.inputs["preview"] == expected_encoded[: 64 * 1024].decode()
+        assert tool_span.inputs["originalBytes"] == len(expected_encoded)
+        assert tool_span.inputs["sha256"] == hashlib.sha256(
+            expected_encoded
+        ).hexdigest()
     finally:
         reset_config()
         mlflow.set_tracking_uri(original_tracking_uri)

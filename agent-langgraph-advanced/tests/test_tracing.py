@@ -303,7 +303,9 @@ def test_safe_trace_value_redacts_credentials_from_fallback_repr():
         def __repr__(self):
             return (
                 "CredentialObject(Authorization=Bearer auth-secret, "
-                "cookie=session-cookie, api_key=api-secret, token=token-secret)"
+                "cookie=session-cookie, api_key=api-secret, "
+                "credential=credential-secret, password=password-secret, "
+                "secret=secret-secret, token=token-secret)"
             )
 
     captured = tracing.safe_trace_value({"value": CredentialObject()})
@@ -312,8 +314,90 @@ def test_safe_trace_value_redacts_credentials_from_fallback_repr():
     assert "auth-secret" not in encoded
     assert "session-cookie" not in encoded
     assert "api-secret" not in encoded
+    assert "credential-secret" not in encoded
+    assert "password-secret" not in encoded
+    assert "secret-secret" not in encoded
     assert "token-secret" not in encoded
-    assert encoded.count("[REDACTED]") == 4
+    assert encoded.count("[REDACTED]") == 7
+
+
+def test_safe_trace_value_redacts_quoted_whitespace_and_escaped_repr_values():
+    class CredentialObject:
+        def __repr__(self):
+            return (
+                "CredentialObject("
+                "authorization='Bearer single auth secret', "
+                'Authorization="Bearer double auth secret", '
+                "cookie='single cookie secret', "
+                'Cookie="double cookie secret", '
+                "api_key='single api \\'quoted\\' secret', "
+                'api-key="double api \\"quoted\\" secret", '
+                "credential='single credential secret', "
+                'Credential="double credential secret", '
+                "password='single password secret', "
+                'Password="double password secret", '
+                "secret='single secret phrase', "
+                'Secret="double secret phrase", '
+                "token='single token secret', "
+                'Token="double token secret", '
+                "region='us west', retries=3, "
+                "note=\"ordinary prose stays visible!\", tail='done')"
+            )
+
+    raw = repr(CredentialObject())
+    secrets = [
+        "single auth secret",
+        "double auth secret",
+        "single cookie secret",
+        "double cookie secret",
+        "single api \\'quoted\\' secret",
+        'double api \\"quoted\\" secret',
+        "single credential secret",
+        "double credential secret",
+        "single password secret",
+        "double password secret",
+        "single secret phrase",
+        "double secret phrase",
+        "single token secret",
+        "double token secret",
+    ]
+    captured = tracing.safe_trace_value({"value": CredentialObject()})
+    truncated = tracing.safe_trace_value(
+        {"value": CredentialObject(), "zz_padding": "visible-" * 300}, max_bytes=512
+    )
+    exception_text = tracing.safe_error_message(RuntimeError(raw))
+    encoded_outputs = [
+        captured["value"],
+        truncated["preview"],
+        json.dumps(captured, sort_keys=True),
+        json.dumps(truncated, sort_keys=True),
+        exception_text,
+    ]
+
+    for secret in secrets:
+        assert all(secret not in output for output in encoded_outputs)
+    assert captured["value"].count("[REDACTED]") == 14
+    assert "authorization='[REDACTED]'" in captured["value"]
+    assert 'Authorization="[REDACTED]"' in captured["value"]
+    assert (
+        "region='us west', retries=3, "
+        "note=\"ordinary prose stays visible!\", tail='done')" in captured["value"]
+    )
+    assert truncated["truncated"] is True
+    assert set(truncated) == {"truncated", "originalBytes", "sha256", "preview"}
+    assert len(truncated["sha256"]) == 64
+    assert "[REDACTED]" in truncated["preview"]
+    assert "region='us west'" in exception_text
+
+
+def test_safe_trace_value_preserves_ordinary_credential_prose():
+    prose = (
+        "Password policies, token counts, secret sharing, cookie settings, "
+        "credential formats, api-key rotation, authorization guides, and "
+        "Bearer authentication remain readable."
+    )
+
+    assert tracing.safe_trace_value(prose) == prose
 
 
 def test_langchain_usage_callback_marks_missing_model_cost_unavailable(local_tracking):

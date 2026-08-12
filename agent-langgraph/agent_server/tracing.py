@@ -31,12 +31,26 @@ _SECRET_KEY = re.compile(
     r"(?:authorization|api[-_]?key|cookie|credential|password|secret|token)",
     re.IGNORECASE,
 )
-_SECRET_TEXT = re.compile(
-    r"(?i)\b(?P<prefix>"
-    r"(?:authorization|api[-_]?key|cookie|credential|password|secret|token)"
-    r"\s*(?::|=)\s*(?:bearer\s+)?"
-    r"|(?:bearer|password|token|secret|api[-_]?key|authorization|credential|cookie)\s+"
-    r")(?P<value>[^\s,;)\]}]+)"
+_SECRET_LABEL = r"(?:authorization|api[-_]?key|cookie|credential|password|secret|token)"
+_QUOTED_SECRET_TEXT = re.compile(
+    rf"(?P<prefix>\b{_SECRET_LABEL}\b\s*(?::|=)\s*)"
+    r"""(?P<value>'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*")""",
+    re.IGNORECASE,
+)
+_EXPLICIT_BEARER_SECRET_TEXT = re.compile(
+    rf"(?P<prefix>\b{_SECRET_LABEL}\b\s*(?::|=)\s*bearer\s+)"
+    r"(?P<value>[^\s,;)\]}]+)",
+    re.IGNORECASE,
+)
+_UNQUOTED_SECRET_TEXT = re.compile(
+    rf"(?P<prefix>\b{_SECRET_LABEL}\b\s*(?::|=)\s*)"
+    r"""(?P<value>(?!(?:bearer)\b\s)[^\s,;)\]}"']+)""",
+    re.IGNORECASE,
+)
+_STANDALONE_SECRET_TEXT = re.compile(
+    r"(?P<label>\b(?:bearer|password|token|secret|api[-_]?key|authorization|credential|cookie))"
+    r"(?P<spacing>\s+)(?P<value>[^\s,;)\]}]+)",
+    re.IGNORECASE,
 )
 _configuration_lock = threading.Lock()
 _configured = False
@@ -45,7 +59,36 @@ _request_traces_lock = threading.Lock()
 
 
 def _redact_secret_text(value: str) -> str:
-    return _SECRET_TEXT.sub(lambda match: f"{match.group('prefix')}[REDACTED]", value)
+    value = _QUOTED_SECRET_TEXT.sub(
+        lambda match: (
+            f"{match.group('prefix')}{match.group('value')[0]}"
+            f"[REDACTED]{match.group('value')[-1]}"
+        ),
+        value,
+    )
+    value = _EXPLICIT_BEARER_SECRET_TEXT.sub(
+        lambda match: f"{match.group('prefix')}[REDACTED]", value
+    )
+    value = _UNQUOTED_SECRET_TEXT.sub(
+        lambda match: f"{match.group('prefix')}[REDACTED]", value
+    )
+
+    def redact_standalone(match: re.Match[str]) -> str:
+        candidate = match.group("value")
+        looks_opaque = (
+            len(candidate) >= 16
+            or any(character in candidate for character in "-._~+/=")
+            or (
+                len(candidate) >= 8
+                and any(character.isalpha() for character in candidate)
+                and any(character.isdigit() for character in candidate)
+            )
+        )
+        if not looks_opaque:
+            return match.group(0)
+        return f"{match.group('label')}{match.group('spacing')}[REDACTED]"
+
+    return _STANDALONE_SECRET_TEXT.sub(redact_standalone, value)
 
 
 def configure_mlflow_tracing() -> None:

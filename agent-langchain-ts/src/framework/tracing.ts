@@ -195,11 +195,12 @@ export class LangChainTracingCallback extends BaseCallbackHandler {
     chain: any,
     inputs: any,
     runId: string,
-    _runType?: string,
+    // @langchain/core 1.1.x dispatches parentRunId here despite its stale .d.ts.
+    parentRunId?: string,
     _tags?: string[],
     _metadata?: Record<string, unknown>,
+    _runType?: string,
     runName?: string,
-    parentRunId?: string,
   ): void {
     this.startRun({
       runId,
@@ -271,23 +272,11 @@ export class LangChainTracingCallback extends BaseCallbackHandler {
   }
 
   handleAgentAction(action: any, runId: string): void {
-    this.runs.get(runId)?.span.addEvent({
-      name: "langchain.agent.action",
-      attributes: {
-        runId: safeTraceValue(runId),
-        action: safeTraceValue(action),
-      },
-    } as any);
+    this.recordDecision("langchain.agent.action", action, runId);
   }
 
   handleAgentEnd(finish: any, runId: string): void {
-    this.runs.get(runId)?.span.addEvent({
-      name: "langchain.agent.end",
-      attributes: {
-        runId: safeTraceValue(runId),
-        finish: safeTraceValue(finish),
-      },
-    } as any);
+    this.recordDecision("langchain.agent.end", finish, runId);
   }
 
   handleChatModelStart(
@@ -360,32 +349,50 @@ export class LangChainTracingCallback extends BaseCallbackHandler {
     const usageMetadata = asRecord(message?.usage_metadata);
     const responseMetadata = asRecord(message?.response_metadata);
     const llmOutput = asRecord(output?.llmOutput ?? output?.llm_output);
-    const legacyUsage = asRecord(llmOutput.token_usage ?? llmOutput.usage);
+    const legacyUsage = asRecord(
+      llmOutput.tokenUsage ?? llmOutput.token_usage ?? llmOutput.usage,
+    );
     const inputTokens = firstPresent(
       [usageMetadata, legacyUsage],
-      ["input_tokens", "prompt_tokens"],
+      ["input_tokens", "prompt_tokens", "inputTokens", "promptTokens"],
     );
     const outputTokens = firstPresent(
       [usageMetadata, legacyUsage],
-      ["output_tokens", "completion_tokens"],
+      [
+        "output_tokens",
+        "completion_tokens",
+        "outputTokens",
+        "completionTokens",
+      ],
     );
     const inputDetails = asRecord(usageMetadata.input_token_details);
     const usage: NormalizedUsage = {
       inputTokens: nonnegativeInt(inputTokens),
       outputTokens: nonnegativeInt(outputTokens),
       totalTokens: nonnegativeInt(
-        firstPresent([usageMetadata, legacyUsage], ["total_tokens"]) ??
-          nonnegativeInt(inputTokens) + nonnegativeInt(outputTokens),
+        firstPresent(
+          [usageMetadata, legacyUsage],
+          ["total_tokens", "totalTokens"],
+        ) ?? nonnegativeInt(inputTokens) + nonnegativeInt(outputTokens),
       ),
       costAvailable: false,
     };
     const cacheRead = firstPresent(
       [inputDetails, usageMetadata, legacyUsage],
-      ["cache_read", "cache_read_input_tokens", "cached_tokens"],
+      [
+        "cache_read",
+        "cache_read_input_tokens",
+        "cached_tokens",
+        "cacheReadInputTokens",
+      ],
     );
     const cacheCreation = firstPresent(
       [inputDetails, usageMetadata, legacyUsage],
-      ["cache_creation", "cache_creation_input_tokens"],
+      [
+        "cache_creation",
+        "cache_creation_input_tokens",
+        "cacheCreationInputTokens",
+      ],
     );
     if (cacheRead !== undefined)
       usage.cacheReadInputTokens = nonnegativeInt(cacheRead);
@@ -473,6 +480,23 @@ export class LangChainTracingCallback extends BaseCallbackHandler {
       startedNs: process.hrtime.bigint(),
       model: options.model,
       provider: options.provider,
+    });
+  }
+
+  private recordDecision(name: string, value: unknown, runId: string): void {
+    const parent = this.runs.get(runId)?.span;
+    if (!parent) return;
+    const captured = safeTraceValue(value);
+    const span = mlflow.startSpan({
+      name,
+      spanType: mlflow.SpanType.CHAIN,
+      parent,
+      inputs: captured,
+      attributes: { "langchain.run_id": safeTraceValue(runId) },
+    });
+    span.end({
+      outputs: captured,
+      status: mlflow.SpanStatusCode.OK,
     });
   }
 

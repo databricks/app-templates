@@ -194,12 +194,12 @@ export function createInvocationsRouter(
           req.body,
           identity,
           async (trace) => {
+            res.setHeader("X-MLflow-Trace-Id", trace.traceId);
             const items = await agent.invoke(agentParams);
             trace.setOutputs(items);
             return items;
           },
         );
-        res.setHeader("X-MLflow-Trace-Id", traced.traceId);
         res.json({ output: traced.value, trace_id: traced.traceId });
       }
     } catch (error: unknown) {

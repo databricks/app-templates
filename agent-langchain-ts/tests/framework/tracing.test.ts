@@ -142,6 +142,7 @@ interface FakeSpan {
 }
 
 import * as mlflow from "@mlflow/core";
+import { RunnableLambda, RunnableSequence } from "@langchain/core/runnables";
 import {
   BoundedTraceAccumulator,
   flushTracing,
@@ -433,6 +434,85 @@ describe("MLflow tracing", () => {
     expect(roots[0].attributes["appkit.usage"]).not.toHaveProperty("costUsd");
   });
 
+  test("parses ChatDatabricks camelCase token usage", async () => {
+    const runnable = {
+      async invoke(_input: unknown, options?: Record<string, any>) {
+        const callback = options?.callbacks?.[0];
+        if (!callback)
+          throw new Error("production invocation did not install tracing");
+
+        await callback.handleChatModelStart(
+          { id: ["databricks", "chat"] },
+          [[{ role: "user", content: "count these tokens" }]],
+          "adapter-model-run",
+          undefined,
+          { model: "databricks-adapter-model" },
+          [],
+          { ls_provider: "databricks" },
+          "databricks-adapter-model",
+        );
+        await callback.handleLLMEnd(
+          {
+            generations: [
+              [
+                {
+                  message: { content: "counted" },
+                  generationInfo: { finish_reason: "stop" },
+                },
+              ],
+            ],
+            llmOutput: {
+              tokenUsage: {
+                promptTokens: 11,
+                completionTokens: 5,
+                totalTokens: 16,
+                cacheReadInputTokens: 3,
+                cacheCreationInputTokens: 2,
+              },
+            },
+          },
+          "adapter-model-run",
+        );
+        return { messages: [{ role: "assistant", content: "counted" }] };
+      },
+    };
+    const agent = new StandardAgent(runnable as any, "helpful");
+
+    await withAgentRequestTrace(
+      { input: "count these tokens" },
+      {
+        sessionId: "session-usage",
+        userId: "user-usage",
+        requestId: "request-usage",
+      },
+      async () => agent.invoke({ input: "count these tokens" }),
+    );
+
+    const root = mlflowTest.__spans.find(
+      (span) => span.spanType === "AGENT" && span.parentId === null,
+    );
+    const model = mlflowTest.__spans.find(
+      (span) => span.attributes["langchain.run_id"] === "adapter-model-run",
+    );
+    const expectedUsage = {
+      inputTokens: 11,
+      outputTokens: 5,
+      totalTokens: 16,
+      cacheReadInputTokens: 3,
+      cacheCreationInputTokens: 2,
+      costAvailable: false,
+    };
+    expect(model?.attributes["appkit.usage"]).toEqual(expectedUsage);
+    expect(model?.attributes["mlflow.chat.tokenUsage"]).toEqual({
+      input_tokens: 11,
+      output_tokens: 5,
+      total_tokens: 16,
+      cache_read_input_tokens: 3,
+      cache_creation_input_tokens: 2,
+    });
+    expect(root?.attributes["appkit.usage"]).toEqual(expectedUsage);
+  });
+
   test("records complete tool success and error lifecycles by run ID", async () => {
     const runnable = {
       async invoke(_input: unknown, options?: Record<string, any>) {
@@ -517,7 +597,7 @@ describe("MLflow tracing", () => {
         await callback.handleAgentAction(
           {
             tool: "policy_search",
-            toolInput: { query: "refunds" },
+            toolInput: { query: "refunds", apiKey: "action-secret" },
             log: "search",
           },
           "agent-retrieval",
@@ -542,7 +622,11 @@ describe("MLflow tracing", () => {
           "agent-retrieval",
         );
         await callback.handleAgentEnd(
-          { returnValues: { output: "30 days" }, log: "done" },
+          {
+            returnValues: { output: "30 days" },
+            log: "done",
+            password: "finish-secret",
+          },
           "agent-retrieval",
         );
         await callback.handleChainEnd({ answer: "30 days" }, "agent-retrieval");
@@ -579,26 +663,87 @@ describe("MLflow tracing", () => {
         metadata: { source: "policy" },
       },
     ]);
-    expect(chain?.events).toEqual([
+    const decisions = mlflowTest.__spans.filter(
+      (span) =>
+        span.spanType === "CHAIN" &&
+        ["langchain.agent.action", "langchain.agent.end"].includes(span.name),
+    );
+    expect(decisions).toHaveLength(2);
+    expect(decisions.map((span) => span.parentId)).toEqual([
+      chain?.spanId,
+      chain?.spanId,
+    ]);
+    expect(
+      decisions.map((span) => span.attributes["langchain.run_id"]),
+    ).toEqual(["agent-retrieval", "agent-retrieval"]);
+    expect(decisions.map((span) => span.inputs)).toEqual([
       {
-        name: "langchain.agent.action",
-        attributes: {
-          runId: "agent-retrieval",
-          action: {
-            tool: "policy_search",
-            toolInput: { query: "refunds" },
-            log: "search",
-          },
-        },
+        tool: "policy_search",
+        toolInput: { query: "refunds", apiKey: "[REDACTED]" },
+        log: "search",
       },
       {
-        name: "langchain.agent.end",
-        attributes: {
-          runId: "agent-retrieval",
-          finish: { returnValues: { output: "30 days" }, log: "done" },
-        },
+        returnValues: { output: "30 days" },
+        log: "done",
+        password: "[REDACTED]",
       },
     ]);
+    expect(decisions.map((span) => span.outputs)).toEqual([
+      {
+        tool: "policy_search",
+        toolInput: { query: "refunds", apiKey: "[REDACTED]" },
+        log: "search",
+      },
+      {
+        returnValues: { output: "30 days" },
+        log: "done",
+        password: "[REDACTED]",
+      },
+    ]);
+    expect(decisions.map((span) => span.status.code)).toEqual(["OK", "OK"]);
+    expect(chain?.events).toEqual([]);
+    expect(JSON.stringify(decisions)).not.toContain("action-secret");
+    expect(JSON.stringify(decisions)).not.toContain("finish-secret");
+  });
+
+  test("preserves real RunnableSequence names and nested chain parents", async () => {
+    const sequence = RunnableSequence.from([
+      RunnableLambda.from(
+        async (input: Record<string, unknown>) => input,
+      ).withConfig({ runName: "prepare-input" }),
+      RunnableLambda.from(async () => ({
+        messages: [{ role: "assistant", content: "nested answer" }],
+      })).withConfig({ runName: "produce-answer" }),
+    ]).withConfig({ runName: "outer-sequence" });
+    const agent = new StandardAgent(sequence as any, "helpful");
+
+    await withAgentRequestTrace(
+      { input: "run nested chains" },
+      {
+        sessionId: "session-nested",
+        userId: "user-nested",
+        requestId: "request-nested",
+      },
+      async () => agent.invoke({ input: "run nested chains" }),
+    );
+
+    const chains = mlflowTest.__spans.filter(
+      (span) => span.spanType === "CHAIN",
+    );
+    expect(chains.map((span) => span.name)).toEqual([
+      "outer-sequence",
+      "prepare-input",
+      "produce-answer",
+    ]);
+    const [outer, prepare, produce] = chains;
+    expect(prepare.parentId).toBe(outer.spanId);
+    expect(produce.parentId).toBe(outer.spanId);
+    expect(prepare.attributes["langchain.parent_run_id"]).toBe(
+      outer.attributes["langchain.run_id"],
+    );
+    expect(produce.attributes["langchain.parent_run_id"]).toBe(
+      outer.attributes["langchain.run_id"],
+    );
   });
 
   test("bounds complete captures and redacts structured and free-form secrets", async () => {

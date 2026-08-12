@@ -6,7 +6,12 @@
 import { describe, test, expect, beforeAll, afterAll } from "@jest/globals";
 import { spawn } from "child_process";
 import type { ChildProcess } from "child_process";
+import type { Server } from "http";
+import express from "express";
 import OpenAI from "openai";
+import type { AgentInterface } from "../../src/framework/agent-interface.js";
+import { createInvocationsRouter } from "../../src/framework/routes/invocations.js";
+import { initializeTracing } from "../../src/framework/tracing.js";
 
 describe("API Endpoints", () => {
   let agentProcess: ChildProcess;
@@ -92,6 +97,57 @@ describe("API Endpoints", () => {
       );
       const body = (await response.json()) as { trace_id?: string };
       expect(body.trace_id).toBe(traceId);
+    });
+
+    test("returns the V4 MLflow trace ID when a non-streaming invocation fails", async () => {
+      process.env.MLFLOW_TRACKING_URI = "http://127.0.0.1:65535";
+      process.env.MLFLOW_EXPERIMENT_ID = "123456789";
+      process.env.MLFLOW_UC_CATALOG = "catalog_test";
+      process.env.MLFLOW_UC_SCHEMA = "schema_test";
+      process.env.MLFLOW_UC_TABLE_PREFIX = "langchain_test";
+      initializeTracing();
+
+      const failingAgent: AgentInterface = {
+        async invoke() {
+          throw new Error("expected invocation failure");
+        },
+        async *stream() {
+          throw new Error("stream should not be called");
+        },
+      };
+      const app = express();
+      app.use(express.json());
+      app.use("/invocations", createInvocationsRouter(failingAgent));
+      const server = await new Promise<Server>((resolve) => {
+        const listener = app.listen(0, () => resolve(listener));
+      });
+
+      try {
+        const address = server.address();
+        if (!address || typeof address === "string") {
+          throw new Error("test server did not bind to a TCP port");
+        }
+        const response = await fetch(
+          `http://127.0.0.1:${address.port}/invocations`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              input: [{ role: "user", content: "fail with a trace" }],
+              stream: false,
+            }),
+          },
+        );
+
+        expect(response.status).toBe(500);
+        expect(response.headers.get("x-mlflow-trace-id")).toMatch(
+          /^trace:\/catalog_test\.schema_test\.langchain_test\/[0-9a-f]{32}$/,
+        );
+      } finally {
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => (error ? reject(error) : resolve()));
+        });
+      }
     });
 
     test("should respond with Responses API format", async () => {

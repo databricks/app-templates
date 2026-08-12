@@ -30,7 +30,7 @@ from agent_server.utils import (
     process_agent_astream_events,
 )
 from agent_server.tracing import (
-    LangChainUsageCallback,
+    BoundedTraceAccumulator,
     agent_request_span,
     configure_mlflow_tracing,
     set_request_trace_identity,
@@ -170,13 +170,11 @@ async def stream_handler(
                 ):
                     resource_span.set_outputs({"checkpointer": True, "store": True})
                     config["configurable"]["store"] = store
-                    config["callbacks"] = [LangChainUsageCallback(request_trace)]
-
                     agent = await init_agent(
                         store=store,
                         checkpointer=TracedCheckpointSaver(checkpointer),
                     )
-                    outputs: list[dict] = []
+                    outputs = BoundedTraceAccumulator()
                     async for event in process_agent_astream_events(
                         agent.astream(
                             input_state,
@@ -184,9 +182,9 @@ async def stream_handler(
                             stream_mode=["updates", "messages"],
                         )
                     ):
-                        outputs.append(event.model_dump(exclude_none=True))
+                        outputs.add(event.model_dump(exclude_none=True))
                         yield event
-                    request_trace.set_outputs({"events": outputs})
+                    request_trace.set_outputs({"events": outputs.snapshot()})
         except Exception as e:
             error_msg = str(e).lower()
             if any(
@@ -196,6 +194,8 @@ async def stream_handler(
                 logger.error("Lakebase access error: %s", e)
                 raise HTTPException(
                     status_code=503,
-                    detail=get_lakebase_access_error_message(LAKEBASE_CONFIG.description),
+                    detail=get_lakebase_access_error_message(
+                        LAKEBASE_CONFIG.description
+                    ),
                 ) from e
             raise

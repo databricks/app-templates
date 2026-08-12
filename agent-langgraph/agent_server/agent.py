@@ -4,7 +4,11 @@ from typing import AsyncGenerator, Optional
 from uuid import uuid4
 
 from databricks.sdk import WorkspaceClient
-from databricks_langchain import ChatDatabricks, DatabricksMCPServer, DatabricksMultiServerMCPClient
+from databricks_langchain import (
+    ChatDatabricks,
+    DatabricksMCPServer,
+    DatabricksMultiServerMCPClient,
+)
 from langchain.agents import create_agent
 from langchain_core.tools import tool
 from mlflow.genai.agent_server import invoke, stream
@@ -23,7 +27,7 @@ from agent_server.utils import (
     process_agent_astream_events,
 )
 from agent_server.tracing import (
-    LangChainUsageCallback,
+    BoundedTraceAccumulator,
     agent_request_span,
     configure_mlflow_tracing,
     set_request_trace_identity,
@@ -41,7 +45,9 @@ def get_current_time() -> str:
     return datetime.now().isoformat()
 
 
-def init_mcp_client(workspace_client: WorkspaceClient) -> DatabricksMultiServerMCPClient:
+def init_mcp_client(
+    workspace_client: WorkspaceClient,
+) -> DatabricksMultiServerMCPClient:
     with traced_operation(
         "mcp.initialize", SpanType.TOOL, {"servers": [{"name": "system-ai"}]}
     ) as operation:
@@ -71,7 +77,9 @@ async def init_agent(workspace_client: Optional[WorkspaceClient] = None):
     #       tools.extend(await get_mcp_tools(mcp_client))
     #   except Exception:
     #       logger.warning("Failed to fetch MCP tools. Continuing without MCP tools.", exc_info=True)
-    return create_agent(tools=tools, model=ChatDatabricks(endpoint="databricks-gpt-5-2"))
+    return create_agent(
+        tools=tools, model=ChatDatabricks(endpoint="databricks-gpt-5-2")
+    )
 
 
 @invoke()
@@ -114,17 +122,17 @@ async def stream_handler(
         # For on-behalf-of user authentication, use get_user_workspace_client() instead.
         agent = await init_agent()
         messages = {
-            "messages": to_chat_completions_input([i.model_dump() for i in request.input])
+            "messages": to_chat_completions_input(
+                [i.model_dump() for i in request.input]
+            )
         }
-        callback = LangChainUsageCallback(request_trace)
-        outputs: list[dict] = []
+        outputs = BoundedTraceAccumulator()
         async for event in process_agent_astream_events(
             agent.astream(
                 input=messages,
-                config={"callbacks": [callback]},
                 stream_mode=["updates", "messages"],
             )
         ):
-            outputs.append(event.model_dump(exclude_none=True))
+            outputs.add(event.model_dump(exclude_none=True))
             yield event
-        request_trace.set_outputs({"events": outputs})
+        request_trace.set_outputs({"events": outputs.snapshot()})

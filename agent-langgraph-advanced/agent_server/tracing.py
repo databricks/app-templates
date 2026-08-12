@@ -8,26 +8,44 @@ import math
 import os
 import re
 import threading
+import time
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import asdict, is_dataclass
 from typing import Any, AsyncIterator, Iterator, Mapping
 
 import mlflow
-from langchain_core.callbacks import BaseCallbackHandler
 from mlflow.entities import SpanType
+from mlflow.langchain import langchain_tracer as _mlflow_langchain_tracer
+
+if not hasattr(_mlflow_langchain_tracer, "_appkit_original_tracer"):
+    _mlflow_langchain_tracer._appkit_original_tracer = (
+        _mlflow_langchain_tracer.MlflowLangchainTracer
+    )
+_MlflowLangchainTracer = _mlflow_langchain_tracer._appkit_original_tracer
 
 _langchain_autolog = mlflow.langchain.autolog
 
 _MAX_CAPTURE_BYTES = 64 * 1024
+_MAX_STREAM_PREVIEW_BYTES = _MAX_CAPTURE_BYTES // 2
 _SECRET_KEY = re.compile(
-    r"(?:authorization|api[-_]?key|cookie|credential|password|secret|token)", re.IGNORECASE
+    r"(?:authorization|api[-_]?key|cookie|credential|password|secret|token)",
+    re.IGNORECASE,
 )
 _SECRET_TEXT = re.compile(
-    r"(?i)\b(bearer|password|token|secret|api[-_]?key|authorization|credential)"
-    r"(\s*(?::|=)?\s+)([^\s,;]+)"
+    r"(?i)\b(?P<prefix>"
+    r"(?:authorization|api[-_]?key|cookie|credential|password|secret|token)"
+    r"\s*(?::|=)\s*(?:bearer\s+)?"
+    r"|(?:bearer|password|token|secret|api[-_]?key|authorization|credential|cookie)\s+"
+    r")(?P<value>[^\s,;)\]}]+)"
 )
 _configuration_lock = threading.Lock()
 _configured = False
+_request_traces: dict[str, "AgentRequestTrace"] = {}
+_request_traces_lock = threading.Lock()
+
+
+def _redact_secret_text(value: str) -> str:
+    return _SECRET_TEXT.sub(lambda match: f"{match.group('prefix')}[REDACTED]", value)
 
 
 def configure_mlflow_tracing() -> None:
@@ -40,6 +58,7 @@ def configure_mlflow_tracing() -> None:
             return
         mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "databricks"))
         mlflow.set_experiment(experiment_id=os.environ["MLFLOW_EXPERIMENT_ID"])
+        _mlflow_langchain_tracer.MlflowLangchainTracer = LangChainUsageCallback
         _langchain_autolog(log_traces=True)
         _configured = True
 
@@ -77,18 +96,16 @@ def _jsonable(value: Any) -> Any:
     if isinstance(value, bytes):
         return _jsonable(value.decode("utf-8", errors="replace"))
     if isinstance(value, str):
-        return _SECRET_TEXT.sub(
-            lambda match: f"{match.group(1)} [REDACTED]", value
-        )
+        return _redact_secret_text(value)
     if value is None or isinstance(value, (bool, int, float)):
         return value
-    return repr(value)
+    return _redact_secret_text(repr(value))
 
 
 def safe_error_message(error: BaseException | str) -> str:
     """Return a bounded exception category without credential values."""
     message = str(error)
-    message = _SECRET_TEXT.sub(lambda match: f"{match.group(1)} [REDACTED]", message)
+    message = _redact_secret_text(message)
     if len(message.encode("utf-8")) <= 2048:
         return message
     return json.dumps(safe_trace_value(message, max_bytes=2048), sort_keys=True)
@@ -120,6 +137,69 @@ def safe_trace_value(value: Any, *, max_bytes: int = _MAX_CAPTURE_BYTES) -> Any:
     }
 
 
+class BoundedTraceAccumulator:
+    """Incrementally capture a canonical JSON array with bounded retained bytes."""
+
+    def __init__(self, *, max_bytes: int = _MAX_STREAM_PREVIEW_BYTES):
+        if max_bytes < 1:
+            raise ValueError("max_bytes must be positive")
+        self._max_bytes = max_bytes
+        self._digest = hashlib.sha256()
+        self._digest.update(b"[")
+        self._original_bytes = 1
+        self._preview = bytearray(b"[")
+        self._items: list[Any] | None = []
+        self._item_count = 0
+        self._snapshot: list[Any] | dict[str, Any] | None = None
+
+    def add(self, value: Any) -> None:
+        if self._snapshot is not None:
+            raise RuntimeError("cannot add values after capture is finalized")
+        redacted = _jsonable(value)
+        encoded = json.dumps(
+            redacted, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+        ).encode("utf-8")
+        prefix = b"," if self._item_count else b""
+        chunk = prefix + encoded
+        self._digest.update(chunk)
+        self._original_bytes += len(chunk)
+        remaining = self._max_bytes - len(self._preview)
+        if remaining > 0:
+            self._preview.extend(chunk[:remaining])
+        if self._items is not None:
+            if self._original_bytes + 1 <= self._max_bytes:
+                self._items.append(redacted)
+            else:
+                self._items = None
+        self._item_count += 1
+
+    def snapshot(self) -> list[Any] | dict[str, Any]:
+        if self._snapshot is None:
+            self._digest.update(b"]")
+            self._original_bytes += 1
+            if len(self._preview) < self._max_bytes:
+                self._preview.extend(b"]")
+            if self._items is not None and self._original_bytes <= self._max_bytes:
+                self._snapshot = self._items
+            else:
+                preview_bytes = bytes(self._preview)
+                while preview_bytes:
+                    try:
+                        preview = preview_bytes.decode("utf-8")
+                        break
+                    except UnicodeDecodeError:
+                        preview_bytes = preview_bytes[:-1]
+                else:
+                    preview = ""
+                self._snapshot = {
+                    "truncated": True,
+                    "originalBytes": self._original_bytes,
+                    "sha256": self._digest.hexdigest(),
+                    "preview": preview,
+                }
+        return self._snapshot
+
+
 class AgentRequestTrace:
     """Mutable state for one semantic AGENT root."""
 
@@ -136,6 +216,8 @@ class AgentRequestTrace:
         self._cost_available = True
         self._cost_usd = 0.0
         self._usage_lock = threading.Lock()
+        with _request_traces_lock:
+            _request_traces[span.trace_id] = self
 
     def set_outputs(self, outputs: Any) -> None:
         self._span.set_outputs(safe_trace_value(outputs))
@@ -151,7 +233,9 @@ class AgentRequestTrace:
         self._total_tokens += _nonnegative_int(usage.get("totalTokens"))
         if usage.get("cacheReadInputTokens") is not None:
             self._has_cache_read = True
-            self._cache_read_tokens += _nonnegative_int(usage.get("cacheReadInputTokens"))
+            self._cache_read_tokens += _nonnegative_int(
+                usage.get("cacheReadInputTokens")
+            )
         if usage.get("cacheCreationInputTokens") is not None:
             self._has_cache_creation = True
             self._cache_creation_tokens += _nonnegative_int(
@@ -160,7 +244,12 @@ class AgentRequestTrace:
 
         cost = usage.get("costUsd")
         cost_available = usage.get("costAvailable") is True
-        if not cost_available or not isinstance(cost, (int, float)) or not math.isfinite(cost) or cost < 0:
+        if (
+            not cost_available
+            or not isinstance(cost, (int, float))
+            or not math.isfinite(cost)
+            or cost < 0
+        ):
             self._cost_available = False
         else:
             self._cost_usd += float(cost)
@@ -179,28 +268,82 @@ class AgentRequestTrace:
         if usage["costAvailable"]:
             usage["costUsd"] = round(self._cost_usd, 12)
         self._span.set_attribute("appkit.usage", usage)
+        with _request_traces_lock:
+            _request_traces.pop(self._span.trace_id, None)
 
 
-class LangChainUsageCallback(BaseCallbackHandler):
-    """Aggregate every LangChain model completion into its AGENT root."""
+class LangChainUsageCallback(_MlflowLangchainTracer):
+    """Enrich autologged model spans and aggregate usage into the AGENT root."""
 
-    def __init__(self, request_trace: AgentRequestTrace):
+    def __init__(self, request_trace: AgentRequestTrace | None = None, **kwargs: Any):
+        super().__init__(**kwargs)
         self._request_trace = request_trace
+        self._model_runs: dict[str, dict[str, Any]] = {}
+        self._model_runs_lock = threading.Lock()
+
+    def on_chat_model_start(
+        self,
+        serialized: dict[str, Any],
+        messages: Any,
+        *,
+        run_id: Any,
+        metadata: dict[str, Any] | None = None,
+        invocation_params: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().on_chat_model_start(
+            serialized,
+            messages,
+            run_id=run_id,
+            metadata=metadata,
+            invocation_params=invocation_params,
+            **kwargs,
+        )
+        params = dict(invocation_params or kwargs.get("invocation_params") or {})
+        span = self._get_span_by_run_id(run_id)
+        with _request_traces_lock:
+            request_trace = self._request_trace or _request_traces.get(span.trace_id)
+        run = {
+            "started_ns": time.perf_counter_ns(),
+            "first_token_ns": None,
+            "model": params.get("model") or params.get("model_name"),
+            "provider": (metadata or {}).get("ls_provider")
+            or params.get("provider")
+            or _provider_from_type(params.get("_type")),
+            "request_trace": request_trace,
+        }
+        with self._model_runs_lock:
+            self._model_runs[str(run_id)] = run
+
+    def on_llm_new_token(self, token: str, *, run_id: Any, **kwargs: Any) -> None:
+        with self._model_runs_lock:
+            run = self._model_runs.get(str(run_id))
+            if run is not None and run["first_token_ns"] is None:
+                run["first_token_ns"] = time.perf_counter_ns()
+        super().on_llm_new_token(token, run_id=run_id, **kwargs)
 
     def on_llm_end(self, response: Any, **kwargs: Any) -> None:
+        run_id = kwargs.get("run_id")
+        ended_ns = time.perf_counter_ns()
         message = _first_generation_message(response)
         usage = dict(getattr(message, "usage_metadata", None) or {})
         response_metadata = dict(getattr(message, "response_metadata", None) or {})
         llm_output = dict(getattr(response, "llm_output", None) or {})
-        legacy_usage = dict(llm_output.get("token_usage") or llm_output.get("usage") or {})
+        legacy_usage = dict(
+            llm_output.get("token_usage") or llm_output.get("usage") or {}
+        )
 
-        input_tokens = _first_present(usage, legacy_usage, "input_tokens", "prompt_tokens")
+        input_tokens = _first_present(
+            usage, legacy_usage, "input_tokens", "prompt_tokens"
+        )
         output_tokens = _first_present(
             usage, legacy_usage, "output_tokens", "completion_tokens"
         )
         total_tokens = _first_present(usage, legacy_usage, "total_tokens")
         if total_tokens is None:
-            total_tokens = _nonnegative_int(input_tokens) + _nonnegative_int(output_tokens)
+            total_tokens = _nonnegative_int(input_tokens) + _nonnegative_int(
+                output_tokens
+            )
 
         input_details = dict(usage.get("input_token_details") or {})
         cache_read = _first_present(
@@ -231,23 +374,115 @@ class LangChainUsageCallback(BaseCallbackHandler):
             normalized["cacheCreationInputTokens"] = _nonnegative_int(cache_creation)
         if cost is not None:
             normalized["costUsd"] = cost
-        self._request_trace.add_model_usage(normalized)
+        run = self._pop_model_run(run_id)
+        request_trace = run.get("request_trace") or self._request_trace
+        if request_trace is not None:
+            request_trace.add_model_usage(normalized)
+
+        if run_id is None:
+            return
+        self._enrich_model_span(
+            span=self._get_span_by_run_id(run_id),
+            run=run,
+            response=response,
+            message=message,
+            usage=normalized,
+            ended_ns=ended_ns,
+            error=None,
+        )
+        super().on_llm_end(response, run_id=run_id)
 
     def on_llm_error(self, error: BaseException, **kwargs: Any) -> None:
-        self._request_trace.add_model_usage(
-            {
-                "inputTokens": 0,
-                "outputTokens": 0,
-                "totalTokens": 0,
-                "costAvailable": False,
-            }
+        run_id = kwargs.get("run_id")
+        safe_error = safe_error_message(error)
+        usage = {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "totalTokens": 0,
+            "costAvailable": False,
+        }
+        run = self._pop_model_run(run_id)
+        request_trace = run.get("request_trace") or self._request_trace
+        if request_trace is not None:
+            request_trace.add_model_usage(usage)
+        if run_id is None:
+            return
+        self._enrich_model_span(
+            span=self._get_span_by_run_id(run_id),
+            run=run,
+            response=None,
+            message=None,
+            usage=usage,
+            ended_ns=time.perf_counter_ns(),
+            error=safe_error,
         )
+        super().on_llm_error(
+            RuntimeError(f"{type(error).__name__}: {safe_error}"), run_id=run_id
+        )
+
+    def _pop_model_run(self, run_id: Any) -> dict[str, Any]:
+        with self._model_runs_lock:
+            return self._model_runs.pop(str(run_id), {})
+
+    def _enrich_model_span(
+        self,
+        *,
+        span: Any,
+        run: Mapping[str, Any],
+        response: Any,
+        message: Any,
+        usage: Mapping[str, Any],
+        ended_ns: int,
+        error: str | None,
+    ) -> None:
+        response_metadata = dict(getattr(message, "response_metadata", None) or {})
+        llm_output = dict(getattr(response, "llm_output", None) or {})
+        started_ns = int(run.get("started_ns") or ended_ns)
+        first_token_ns = int(run.get("first_token_ns") or ended_ns)
+        model = (
+            run.get("model")
+            or response_metadata.get("model_name")
+            or llm_output.get("model_name")
+            or span.get_attribute("mlflow.llm.model")
+        )
+        provider = run.get("provider") or span.get_attribute("mlflow.llm.provider")
+        finish_reason = (
+            response_metadata.get("finish_reason")
+            or _first_generation_info(response).get("finish_reason")
+            or ("error" if error else None)
+        )
+        attributes = {
+            "appkit.model": model,
+            "appkit.provider": provider,
+            "appkit.usage": dict(usage),
+            "appkit.ttft_ms": max(0.0, (first_token_ns - started_ns) / 1_000_000),
+            "appkit.stream_duration_ms": max(0.0, (ended_ns - started_ns) / 1_000_000),
+            "appkit.finish_reason": finish_reason,
+            "appkit.error": error,
+            "appkit.cost_available": usage.get("costAvailable") is True,
+        }
+        if usage.get("costAvailable") is True:
+            attributes["appkit.cost_usd"] = usage["costUsd"]
+            attributes["mlflow.llm.cost"] = usage["costUsd"]
+        span.set_attributes(attributes)
 
 
 def _first_generation_message(response: Any) -> Any:
     generations = getattr(response, "generations", None) or []
     generation = generations[0][0] if generations and generations[0] else None
     return getattr(generation, "message", generation)
+
+
+def _first_generation_info(response: Any) -> Mapping[str, Any]:
+    generations = getattr(response, "generations", None) or []
+    generation = generations[0][0] if generations and generations[0] else None
+    return dict(getattr(generation, "generation_info", None) or {})
+
+
+def _provider_from_type(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    return value.removesuffix("-chat").removeprefix("chat-")
 
 
 def _first_present(*values_and_keys: Any) -> Any:

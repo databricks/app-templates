@@ -19,7 +19,11 @@ from mlflow.types.responses import (
     create_text_output_item,
 )
 
-from agent_server.tracing import traced_async_operation, traced_operation
+from agent_server.tracing import (
+    BoundedTraceAccumulator,
+    traced_async_operation,
+    traced_operation,
+)
 
 
 def _get_or_create_thread_id(request: ResponsesAgentRequest) -> str:
@@ -43,7 +47,9 @@ def _is_databricks_app_env() -> bool:
     return bool(os.getenv("DATABRICKS_APP_NAME"))
 
 
-def init_mcp_client(workspace_client: WorkspaceClient) -> DatabricksMultiServerMCPClient:
+def init_mcp_client(
+    workspace_client: WorkspaceClient,
+) -> DatabricksMultiServerMCPClient:
     with traced_operation(
         "mcp.initialize", SpanType.TOOL, {"servers": [{"name": "system-ai"}]}
     ) as operation:
@@ -242,7 +248,11 @@ async def _process_agent_astream_events(
                 for i, msg in enumerate(messages):
                     if isinstance(msg, ToolMessage):
                         # Tool result — standalone event between turns
-                        content = msg.content if isinstance(msg.content, str) else json.dumps(msg.content)
+                        content = (
+                            msg.content
+                            if isinstance(msg.content, str)
+                            else json.dumps(msg.content)
+                        )
                         item = create_function_call_output_item(
                             call_id=msg.tool_call_id,
                             output=content,
@@ -265,7 +275,11 @@ async def _process_agent_astream_events(
                             call_id = tc.get("id", "")
                             name = tc.get("name", "")
                             args = tc.get("args", {})
-                            args_str = json.dumps(args) if isinstance(args, dict) else str(args)
+                            args_str = (
+                                json.dumps(args)
+                                if isinstance(args, dict)
+                                else str(args)
+                            )
 
                             # Match to active tool call by chunk index
                             tc_info = active_tool_calls.get(j)
@@ -321,7 +335,11 @@ async def _process_agent_astream_events(
                                 item_id=item_id,
                                 output_index=output_index,
                                 content_index=0,
-                                part={"type": "output_text", "text": "", "annotations": []},
+                                part={
+                                    "type": "output_text",
+                                    "text": "",
+                                    "annotations": [],
+                                },
                             )
 
                         yield ResponsesAgentStreamEvent(
@@ -329,7 +347,11 @@ async def _process_agent_astream_events(
                             item_id=item_id,
                             output_index=output_index,
                             content_index=0,
-                            part={"type": "output_text", "text": text, "annotations": []},
+                            part={
+                                "type": "output_text",
+                                "text": text,
+                                "annotations": [],
+                            },
                         )
 
                         item = create_text_output_item(text=text, id=item_id)
@@ -359,8 +381,8 @@ async def process_agent_astream_events(
     async with traced_async_operation(
         "langgraph.response.parse", SpanType.PARSER, {"source": "agent.astream"}
     ) as operation:
-        outputs: list[dict] = []
+        outputs = BoundedTraceAccumulator()
         async for event in _process_agent_astream_events(async_stream):
-            outputs.append(event.model_dump(exclude_none=True))
+            outputs.add(event.model_dump(exclude_none=True))
             yield event
-        operation.set_outputs({"events": outputs})
+        operation.set_outputs({"events": outputs.snapshot()})

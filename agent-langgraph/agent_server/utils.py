@@ -13,7 +13,7 @@ from mlflow.types.responses import (
     output_to_responses_items_stream,
 )
 
-from agent_server.tracing import traced_async_operation
+from agent_server.tracing import BoundedTraceAccumulator, traced_async_operation
 
 
 def get_session_id(request: ResponsesAgentRequest) -> str | None:
@@ -62,16 +62,20 @@ async def process_agent_astream_events(
     async with traced_async_operation(
         "langgraph.response.parse", SpanType.PARSER, {"source": "agent.astream"}
     ) as operation:
-        outputs: list[dict] = []
+        outputs = BoundedTraceAccumulator()
         async for event in async_stream:
             if event[0] == "updates":
                 for node_data in event[1].values():
                     if len(node_data.get("messages", [])) > 0:
                         for msg in node_data["messages"]:
-                            if isinstance(msg, ToolMessage) and not isinstance(msg.content, str):
+                            if isinstance(msg, ToolMessage) and not isinstance(
+                                msg.content, str
+                            ):
                                 msg.content = json.dumps(msg.content)
-                        for item in output_to_responses_items_stream(node_data["messages"]):
-                            outputs.append(item.model_dump(exclude_none=True))
+                        for item in output_to_responses_items_stream(
+                            node_data["messages"]
+                        ):
+                            outputs.add(item.model_dump(exclude_none=True))
                             yield item
             elif event[0] == "messages":
                 chunk = event[1][0]
@@ -79,6 +83,6 @@ async def process_agent_astream_events(
                     parsed = ResponsesAgentStreamEvent(
                         **create_text_delta(delta=content, item_id=chunk.id)
                     )
-                    outputs.append(parsed.model_dump(exclude_none=True))
+                    outputs.add(parsed.model_dump(exclude_none=True))
                     yield parsed
-        operation.set_outputs({"events": outputs})
+        operation.set_outputs({"events": outputs.snapshot()})

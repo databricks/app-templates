@@ -16,10 +16,22 @@ describe("API Endpoints", () => {
 
   beforeAll(async () => {
     // Start framework server with stub agent (no LLM required)
-    agentProcess = spawn("node_modules/.bin/tsx", ["tests/framework/stub-server.ts"], {
-      env: { ...process.env, PORT: PORT.toString(), MLFLOW_TRACKING_URI: "noop" },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    agentProcess = spawn(
+      "node_modules/.bin/tsx",
+      ["tests/framework/stub-server.ts"],
+      {
+        env: {
+          ...process.env,
+          PORT: PORT.toString(),
+          MLFLOW_TRACKING_URI: "http://127.0.0.1:65535",
+          MLFLOW_EXPERIMENT_ID: "123456789",
+          MLFLOW_UC_CATALOG: "catalog_test",
+          MLFLOW_UC_SCHEMA: "schema_test",
+          MLFLOW_UC_TABLE_PREFIX: "langchain_test",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
 
     // Poll /health until server is ready (max 20s)
     const start = Date.now();
@@ -41,6 +53,47 @@ describe("API Endpoints", () => {
   });
 
   describe("/invocations endpoint", () => {
+    test("returns the V4 MLflow trace ID for a streaming request", async () => {
+      const response = await fetch(`${BASE_URL}/invocations`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Session-Id": "session-stream",
+          "X-User-Id": "user-stream",
+          "X-Request-Id": "request-stream",
+        },
+        body: JSON.stringify({
+          input: [{ role: "user", content: "trace this stream" }],
+          stream: true,
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("x-mlflow-trace-id")).toMatch(
+        /^trace:\/catalog_test\.schema_test\.langchain_test\/[0-9a-f]{32}$/,
+      );
+      await response.text();
+    });
+
+    test("returns the same V4 MLflow trace ID for a non-streaming request", async () => {
+      const response = await fetch(`${BASE_URL}/invocations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          input: [{ role: "user", content: "trace this response" }],
+          stream: false,
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      const traceId = response.headers.get("x-mlflow-trace-id");
+      expect(traceId).toMatch(
+        /^trace:\/catalog_test\.schema_test\.langchain_test\/[0-9a-f]{32}$/,
+      );
+      const body = (await response.json()) as { trace_id?: string };
+      expect(body.trace_id).toBe(traceId);
+    });
+
     test("should respond with Responses API format", async () => {
       const stream = await client.responses.create({
         model: "test-model",
@@ -84,6 +137,5 @@ describe("API Endpoints", () => {
 
       expect(hasTextDelta).toBe(true);
     }, 30000);
-
   });
 });

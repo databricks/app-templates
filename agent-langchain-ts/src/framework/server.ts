@@ -4,7 +4,7 @@
  * Provides:
  * - /invocations endpoint (MLflow-compatible Responses API)
  * - Health check endpoint
- * - MLflow trace export via OpenTelemetry
+ * - MLflow trace export via the supported MLflow TypeScript SDK
  *
  * Note: This server is UI-agnostic. The UI (e2e-chatbot-app-next) runs separately
  * and proxies to /invocations via the API_PROXY environment variable.
@@ -16,10 +16,7 @@ import { config } from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import { existsSync } from "fs";
-import {
-  initializeMLflowTracing,
-  type MLflowTracing,
-} from "./tracing.js";
+import { flushTracing, initializeTracing } from "./tracing.js";
 import { createInvocationsRouter } from "./routes/invocations.js";
 import { closeMCPClient } from "../tools.js";
 import type { AgentInterface } from "./agent-interface.js";
@@ -46,13 +43,12 @@ const SERVICE_INFO = {
 /**
  * Register SIGINT/SIGTERM handlers that flush tracing and close MCP connections.
  */
-function setupShutdownHandlers(tracing: MLflowTracing): void {
+function setupShutdownHandlers(): void {
   const shutdown = async (signal: string) => {
     console.log(`\nReceived ${signal}, shutting down...`);
     try {
       await closeMCPClient();
-      await tracing.flush();
-      await tracing.shutdown();
+      await flushTracing();
       process.exit(0);
     } catch (error) {
       console.error("Error during shutdown:", error);
@@ -62,7 +58,7 @@ function setupShutdownHandlers(tracing: MLflowTracing): void {
 
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
-  process.on("beforeExit", () => tracing.flush());
+  process.on("beforeExit", () => flushTracing());
 }
 
 /**
@@ -70,21 +66,18 @@ function setupShutdownHandlers(tracing: MLflowTracing): void {
  */
 export async function createServer(
   agent: AgentInterface,
-  serverConfig: ServerConfig
+  serverConfig: ServerConfig,
 ): Promise<express.Application> {
   const app = express();
 
   // Middleware
   app.use(cors());
-  app.use(express.json({ limit: '10mb' })); // Protect against large payload DoS
+  app.use(express.json({ limit: "10mb" })); // Protect against large payload DoS
 
   // Initialize MLflow tracing
-  const tracing = await initializeMLflowTracing({
-    serviceName: "langchain-agent-ts",
-    experimentId: process.env.MLFLOW_EXPERIMENT_ID,
-  });
+  initializeTracing();
 
-  setupShutdownHandlers(tracing);
+  setupShutdownHandlers();
 
   /**
    * Health check endpoint
@@ -116,7 +109,10 @@ export async function createServer(
         const response = await fetch(targetUrl, {
           method: req.method,
           headers: req.headers as Record<string, string>,
-          body: req.method !== "GET" && req.method !== "HEAD" ? JSON.stringify(req.body) : undefined,
+          body:
+            req.method !== "GET" && req.method !== "HEAD"
+              ? JSON.stringify(req.body)
+              : undefined,
         });
 
         // Copy response headers
@@ -145,7 +141,15 @@ export async function createServer(
     // Serve UI static files from ui/client/dist
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
-    const uiDistPath = path.join(__dirname, "..", "..", "..", "ui", "client", "dist");
+    const uiDistPath = path.join(
+      __dirname,
+      "..",
+      "..",
+      "..",
+      "ui",
+      "client",
+      "dist",
+    );
 
     if (existsSync(uiDistPath)) {
       console.log(`📂 Serving UI static files from: ${uiDistPath}`);
@@ -157,11 +161,15 @@ export async function createServer(
       });
     } else {
       console.warn(`⚠️  UI dist path not found: ${uiDistPath}`);
-      app.get("/", (_req: Request, res: Response) => { res.json(SERVICE_INFO); });
+      app.get("/", (_req: Request, res: Response) => {
+        res.json(SERVICE_INFO);
+      });
     }
   } else {
     // Agent-only mode: service info at root
-    app.get("/", (_req: Request, res: Response) => { res.json(SERVICE_INFO); });
+    app.get("/", (_req: Request, res: Response) => {
+      res.json(SERVICE_INFO);
+    });
   }
 
   return app;
@@ -170,7 +178,10 @@ export async function createServer(
 /**
  * Start the server
  */
-export async function startServer(agent: AgentInterface, config?: { port?: number }) {
+export async function startServer(
+  agent: AgentInterface,
+  config?: { port?: number },
+) {
   const port = config?.port ?? parseInt(process.env.PORT || "8000", 10);
 
   const app = await createServer(agent, { port });
@@ -180,6 +191,8 @@ export async function startServer(agent: AgentInterface, config?: { port?: numbe
     console.log(`   Health: http://localhost:${port}/health`);
     console.log(`   Invocations API: http://localhost:${port}/invocations`);
     console.log(`\n📊 MLflow tracking enabled`);
-    console.log(`   Experiment: ${process.env.MLFLOW_EXPERIMENT_ID || "default"}`);
+    console.log(
+      `   Experiment: ${process.env.MLFLOW_EXPERIMENT_ID || "default"}`,
+    );
   });
 }

@@ -1,363 +1,174 @@
 # LangChain TypeScript Agent with MLflow Tracing
 
-A production-ready TypeScript agent template using [@databricks/langchainjs](https://github.com/databricks/databricks-ai-bridge/tree/main/integrations/langchainjs) with automatic MLflow tracing via OpenTelemetry.
+A standalone Express and LangChain agent template for Databricks Apps. It uses
+`@mlflow/core@0.3.0` as its tracing provider and stores traces in a pre-provisioned
+Unity Catalog trace location.
 
-## Features
+## What is included
 
-- 🤖 **LangChain Agent**: Tool-calling agent using ChatDatabricks
-- 📊 **MLflow Tracing**: Automatic trace export via OpenTelemetry
-- 🔧 **Multiple Tools**: Built-in tools + MCP integration (SQL, UC Functions, Vector Search)
-- 🚀 **Express API**: REST API with streaming support
-- 📦 **TypeScript**: Full type safety with modern ES modules
-- ☁️ **Databricks Deployment**: Ready for Databricks Apps platform
+- A LangGraph ReAct agent backed by `ChatDatabricks`
+- Built-in tools and optional MCP tools
+- `/invocations` and `/responses` endpoints with streaming and non-streaming responses
+- One semantic `AGENT` trace root per request
+- Child spans for every LangChain model, chain, tool, and retriever lifecycle
+- Exact token/cache aggregation, latency, time to first token, stream duration, and
+  provider cost when the provider returns one
+- Bounded, redacted inputs, outputs, events, identities, and errors
+- The actual MLflow V4 trace ID in `X-MLflow-Trace-Id` for every successful request;
+  non-streaming responses also include `trace_id`
 
-> **Note**: This template uses a standalone Express.js server with OpenTelemetry tracing, rather than the MLflow AgentServer / ResponsesAgent pattern used by the other agent templates. It does not include the built-in chat UI proxy or the `/invocations`/`/responses` endpoints. See the [official agent authoring docs](https://docs.databricks.com/aws/en/generative-ai/agent-framework/author-agent) for the standard Apps-based agent pattern.
+## Prerequisites
 
-## Quick Start
+- Node.js 22 or later
+- `uv`
+- Databricks CLI authentication
+- A SQL warehouse that can provision the MLflow Unity Catalog trace tables
 
-### Prerequisites
+## Quickstart
 
-- Node.js >= 18.0.0
-- Databricks workspace with Model Serving enabled
-- Databricks CLI configured
+From this directory, run:
 
-### Installation
+```bash
+npm run quickstart
+```
+
+The TypeScript wizard configures authentication and the model, then invokes the shared
+Task 10 Python quickstart. That workflow provisions or reuses an experiment through the
+supported Python MLflow API:
+
+```python
+mlflow.set_experiment(
+    experiment_name=experiment_name,
+    trace_location=UnityCatalog(
+        catalog_name=catalog,
+        schema_name=schema,
+        table_prefix=table_prefix,
+    ),
+)
+```
+
+It validates the experiment's immutable trace location, provisions the UC tables, applies
+app-principal grants when the app already exists, and writes the complete tracing config to
+`.env`, `app.yaml`, and `databricks.yml`. It does not call private trace-location endpoints.
+
+Defaults are:
+
+```env
+MLFLOW_TRACKING_URI=databricks
+MLFLOW_UC_CATALOG=main
+MLFLOW_UC_SCHEMA=agent_traces
+MLFLOW_UC_TABLE_PREFIX=agents_on_apps
+```
+
+Set `MLFLOW_TRACING_SQL_WAREHOUSE_ID` before quickstart to select a warehouse
+non-interactively. Set `MLFLOW_EXPERIMENT_NAME` to choose a custom experiment name.
+
+## Required runtime configuration
+
+The server validates these values before it listens:
+
+| Variable | Purpose |
+|---|---|
+| `MLFLOW_EXPERIMENT_ID` | UC-backed MLflow experiment ID |
+| `MLFLOW_UC_CATALOG` | UC catalog containing trace tables |
+| `MLFLOW_UC_SCHEMA` | UC schema containing trace tables |
+| `MLFLOW_UC_TABLE_PREFIX` | Prefix used for the trace tables |
+
+`MLFLOW_TRACKING_URI` defaults to `databricks`. Deployment also carries
+`MLFLOW_TRACING_SQL_WAREHOUSE_ID` and `MLFLOW_OTEL_SPANS_TABLE` for provisioning and
+verification.
+
+Missing or malformed required configuration is a startup error. Runtime export failures are
+logged and do not change an otherwise successful agent response.
+
+## Run locally
 
 ```bash
 npm install
+npm run dev:agent
 ```
 
-### Configuration
+The agent listens at `http://localhost:5001` in local development.
 
-Copy the environment template and configure your settings:
+Streaming request:
 
 ```bash
-cp .env.example .env
+curl -i http://localhost:5001/invocations \
+  -H 'Content-Type: application/json' \
+  -H 'X-Session-Id: example-session' \
+  -H 'X-User-Id: example-user' \
+  -H 'X-Request-Id: example-request' \
+  -d '{"input":[{"role":"user","content":"What time is it in Tokyo?"}],"stream":true}'
 ```
 
-Edit `.env` with your Databricks credentials:
+The response header contains a V4 identifier such as:
 
-```env
-DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
-DATABRICKS_TOKEN=dapi...
-DATABRICKS_MODEL=databricks-claude-sonnet-4-5
-MLFLOW_EXPERIMENT_ID=your-experiment-id
+```text
+X-MLflow-Trace-Id: trace:/main.agent_traces.agents_on_apps/<32-hex-id>
 ```
 
-### Local Development
+## Trace contract
+
+The request root is named `langchain.request` and has span type `AGENT`. Request headers are
+mapped to MLflow metadata:
+
+| Header | Trace metadata |
+|---|---|
+| `X-Session-Id` | `mlflow.trace.session` |
+| `X-User-Id` | `mlflow.trace.user` |
+| `X-Request-Id` | `appkit.request.id` |
+
+`appkit.app.name` comes from `DATABRICKS_APP_NAME`, or defaults to
+`agent-langchain-ts`. Missing identity headers receive safe request-scoped defaults.
+
+Each LangChain start event creates one live child span keyed by `run_id`; its matching end or
+error event finalizes that same span. Model spans record model/provider, exact input/output
+and cache tokens, latency, time to first token, stream duration, finish reason, and cost.
+When cost is unavailable, the span/root records `costAvailable=false` and omits `costUsd`.
+
+## Test and build
+
+Focused tracing and endpoint tests:
 
 ```bash
-# Start the server
-npm run dev
-
-# Server will be available at http://localhost:8000
+npm test -- --runInBand tests/framework/tracing.test.ts tests/framework/endpoints.test.ts
 ```
 
-### Test the Agent
-
-```bash
-# Health check
-curl http://localhost:8000/health
-
-# Chat (non-streaming)
-curl -X POST http://localhost:8000/api/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "messages": [
-      {"role": "user", "content": "What is the weather in San Francisco?"}
-    ]
-  }'
-
-# Chat (streaming)
-curl -X POST http://localhost:8000/api/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "messages": [
-      {"role": "user", "content": "Calculate 25 * 48"}
-    ],
-    "stream": true
-  }'
-```
-
-## Architecture
-
-### Project Structure
-
-```
-agent-langchain-ts/
-├── src/
-│   ├── agent.ts        # Agent setup and execution
-│   ├── server.ts       # Express API server
-│   ├── tracing.ts      # OpenTelemetry MLflow tracing
-│   └── tools.ts        # Tool definitions (basic + MCP)
-├── scripts/
-│   └── quickstart.ts   # Setup wizard
-├── tests/
-│   └── agent.test.ts   # Unit tests
-├── app.yaml            # Databricks App runtime config
-├── databricks.yml      # Databricks Asset Bundle config
-├── package.json
-├── tsconfig.json
-└── README.md
-```
-
-### Components
-
-#### 1. **ChatDatabricks Model** (`src/agent.ts`)
-
-The agent uses `ChatDatabricks` from `@databricks/langchainjs`:
-
-```typescript
-import { ChatDatabricks } from "@databricks/langchainjs";
-
-const model = new ChatDatabricks({
-  model: "databricks-claude-sonnet-4-5",
-  temperature: 0.1,
-  maxTokens: 2000,
-});
-```
-
-#### 2. **MLflow Tracing** (`src/tracing.ts`)
-
-Automatic trace export to MLflow via OpenTelemetry:
-
-```typescript
-import { initializeMLflowTracing } from "./tracing.js";
-
-const tracing = initializeMLflowTracing({
-  serviceName: "langchain-agent-ts",
-  experimentId: process.env.MLFLOW_EXPERIMENT_ID,
-});
-```
-
-All LangChain operations (LLM calls, tool invocations, chain executions) are automatically traced.
-
-#### 3. **Tools** (`src/tools.ts`)
-
-**Basic Tools:**
-- `get_weather`: Weather lookup
-- `calculator`: Mathematical expressions
-- `get_current_time`: Current time in any timezone
-
-**MCP Tools** (optional):
-- Databricks SQL queries
-- Unity Catalog functions
-- Vector Search
-- Genie Spaces
-
-#### 4. **Express Server** (`src/server.ts`)
-
-REST API with:
-- `GET /health`: Health check
-- `POST /api/chat`: Agent invocation (streaming or non-streaming)
-
-## Tool Configuration
-
-### Basic Tools Only
-
-Default configuration includes weather, calculator, and time tools.
-
-### Adding MCP Tools
-
-#### Databricks SQL
-
-Enable SQL queries via MCP:
-
-```env
-ENABLE_SQL_MCP=true
-```
-
-#### Unity Catalog Functions
-
-Use UC functions as tools:
-
-```env
-UC_FUNCTION_CATALOG=main
-UC_FUNCTION_SCHEMA=default
-UC_FUNCTION_NAME=my_function  # Optional: specific function
-```
-
-#### Vector Search
-
-Query vector search indexes:
-
-```env
-VECTOR_SEARCH_CATALOG=main
-VECTOR_SEARCH_SCHEMA=default
-VECTOR_SEARCH_INDEX=my_index  # Optional: specific index
-```
-
-#### Genie Spaces
-
-Integrate with Genie data understanding:
-
-```env
-GENIE_SPACE_ID=your-space-id
-```
-
-## Deployment to Databricks
-
-### 1. Validate Configuration
-
-```bash
-databricks bundle validate -t dev
-```
-
-### 2. Deploy the App
-
-```bash
-databricks bundle deploy -t dev
-```
-
-### 3. View Deployment
-
-```bash
-databricks apps list
-databricks apps get db-agent-langchain-ts-<username>
-```
-
-### 4. View Logs
-
-```bash
-databricks apps logs db-agent-langchain-ts-<username> --follow
-```
-
-### 5. View Traces in MLflow
-
-Navigate to your workspace:
-```
-/Users/<username>/agent-langchain-ts
-```
-
-Traces will appear in the experiment with:
-- Request/response data
-- Tool invocations
-- Latency metrics
-- Token usage
-
-## API Reference
-
-### POST /api/chat
-
-Invoke the agent with a conversation.
-
-**Request Body:**
-```typescript
-{
-  messages: Array<{
-    role: "user" | "assistant";
-    content: string;
-  }>;
-  stream?: boolean;  // Default: false
-  config?: {
-    temperature?: number;
-    maxTokens?: number;
-  };
-}
-```
-
-**Response (Non-streaming):**
-```typescript
-{
-  message: {
-    role: "assistant";
-    content: string;
-  };
-  intermediateSteps?: Array<{
-    action: string;
-    observation: string;
-  }>;
-}
-```
-
-**Response (Streaming):**
-
-Server-Sent Events (SSE) stream:
-```
-data: {"chunk": "Hello"}
-data: {"chunk": " there"}
-data: {"done": true}
-```
-
-## Development
-
-### Build
+Build:
 
 ```bash
 npm run build
 ```
 
-Output in `dist/` directory.
-
-### Test
+Deployed test:
 
 ```bash
-npm test
+APP_URL=https://your-app.databricksapps.com \
+  npm run test:e2e -- --runInBand tests/e2e/deployed.test.ts
 ```
 
-### Lint & Format
+When `APP_URL` is absent, the deployed suite is collected and skipped. When present, it
+invokes the app, checks the returned V4 trace ID, retrieves that trace through
+`@mlflow/core`, and verifies the single `AGENT` root has inputs and outputs.
+
+## Deploy
 
 ```bash
-npm run lint
-npm run format
+npm run build
+databricks bundle deploy -t dev
+databricks bundle run agent_langchain_ts -t dev
 ```
 
-## Configuration Reference
+If quickstart ran before the app existed, rerun it with the deployed app name so the shared
+workflow can apply explicit UC grants:
 
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATABRICKS_HOST` | Databricks workspace URL | Required |
-| `DATABRICKS_TOKEN` | Personal access token | Required |
-| `DATABRICKS_MODEL` | Model endpoint name | `databricks-claude-sonnet-4-5` |
-| `USE_RESPONSES_API` | Use Responses API | `false` |
-| `TEMPERATURE` | Model temperature (0-1) | `0.1` |
-| `MAX_TOKENS` | Max generation tokens | `2000` |
-| `MLFLOW_TRACKING_URI` | MLflow tracking URI | `databricks` |
-| `MLFLOW_EXPERIMENT_ID` | Experiment ID for traces | Required |
-| `PORT` | Server port | `8000` |
-
-### Model Options
-
-Available Databricks foundation models:
-- `databricks-claude-sonnet-4-5`
-- `databricks-gpt-5-2`
-- `databricks-meta-llama-3-3-70b-instruct`
-
-Or use your own custom model serving endpoint.
-
-## Troubleshooting
-
-### Authentication Issues
-
-Ensure your Databricks CLI is configured:
 ```bash
-databricks auth login --host https://your-workspace.cloud.databricks.com
+MLFLOW_EXPERIMENT_NAME=/Users/you@example.com/agents-on-apps npm run quickstart
 ```
 
-### MLflow Traces Not Appearing
+## Customize
 
-Check:
-1. `MLFLOW_EXPERIMENT_ID` is set correctly
-2. You have `CAN_MANAGE` permission on the experiment
-3. Tracing initialized successfully (check logs)
-
-### MCP Tools Not Loading
-
-Verify:
-1. MCP environment variables are set correctly
-2. You have appropriate permissions for the resources
-3. Check server logs for specific errors
-
-## Learn More
-
-- [@databricks/langchainjs SDK](https://github.com/databricks/databricks-ai-bridge/tree/main/integrations/langchainjs)
-- [LangChain.js Documentation](https://js.langchain.com/)
-- [MLflow Tracing](https://mlflow.org/docs/latest/llm-tracking.html)
-- [OpenTelemetry](https://opentelemetry.io/)
-- [Databricks Apps](https://docs.databricks.com/en/dev-tools/databricks-apps/index.html)
-
-## License
-
-Apache 2.0
+- Edit `src/agent.ts` to change the model, prompt, or agent behavior.
+- Edit `src/tools.ts` to add tools.
+- Edit `src/mcp-servers.ts` to configure Databricks MCP integrations.
+- Keep tracing and HTTP lifecycle changes under `src/framework/` covered by framework tests.

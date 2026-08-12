@@ -9,7 +9,11 @@
  */
 
 import { ChatDatabricks, DatabricksMCPServer } from "@databricks/langchainjs";
-import { BaseMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
+import {
+  BaseMessage,
+  HumanMessage,
+  SystemMessage,
+} from "@langchain/core/messages";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { randomUUID } from "crypto";
 import type {
@@ -21,8 +25,12 @@ import type {
   ResponseStreamEvent,
   ResponseTextDeltaEvent,
 } from "openai/resources/responses/responses.js";
-import type { AgentInterface, InvokeParams } from "./framework/agent-interface.js";
+import type {
+  AgentInterface,
+  InvokeParams,
+} from "./framework/agent-interface.js";
 import { getAllTools } from "./tools.js";
+import { createLangChainTracingCallback } from "./framework/tracing.js";
 
 /**
  * Agent configuration
@@ -63,7 +71,6 @@ export interface AgentConfig {
    * MCP servers for additional tools
    */
   mcpServers?: DatabricksMCPServer[];
-
 }
 
 /**
@@ -105,7 +112,10 @@ export class StandardAgent implements AgentInterface {
   private agent: Awaited<ReturnType<typeof createReactAgent>>;
   private systemPrompt: string;
 
-  constructor(agent: Awaited<ReturnType<typeof createReactAgent>>, systemPrompt: string) {
+  constructor(
+    agent: Awaited<ReturnType<typeof createReactAgent>>,
+    systemPrompt: string,
+  ) {
     this.agent = agent;
     this.systemPrompt = systemPrompt;
   }
@@ -123,7 +133,10 @@ export class StandardAgent implements AgentInterface {
       new HumanMessage(input),
     ];
 
-    const result = await this.agent.invoke({ messages });
+    const result = await this.agent.invoke(
+      { messages },
+      { callbacks: [createLangChainTracingCallback()] },
+    );
 
     const finalMessages = result.messages || [];
     const lastMessage = finalMessages[finalMessages.length - 1];
@@ -167,7 +180,10 @@ export class StandardAgent implements AgentInterface {
     const textItemId = `msg_${randomUUID()}`;
     let textOutputIndex = -1; // set on first text delta
 
-    const eventStream = this.agent.streamEvents({ messages }, { version: "v2" });
+    const eventStream = this.agent.streamEvents(
+      { messages },
+      { version: "v2", callbacks: [createLangChainTracingCallback()] },
+    );
 
     for await (const event of eventStream) {
       // Tool call started — emit function_call output item
@@ -310,7 +326,9 @@ export class StandardAgent implements AgentInterface {
  * @param config Agent configuration
  * @returns AgentInterface instance
  */
-export async function createAgent(config: AgentConfig = {}): Promise<AgentInterface> {
+export async function createAgent(
+  config: AgentConfig = {},
+): Promise<AgentInterface> {
   const {
     model: modelName = "databricks-claude-sonnet-4-5",
     useResponsesApi = false,
@@ -342,4 +360,3 @@ export async function createAgent(config: AgentConfig = {}): Promise<AgentInterf
 
   return new StandardAgent(agent, systemPrompt);
 }
-

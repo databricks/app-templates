@@ -29,6 +29,8 @@ build-backend = "hatchling.build"
 dev = [
     "hatchling>=1.28.0",
     "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "pytest-base-url>=2.1.0",
     "pytest-xdist>=3.8.0",
 ]
 

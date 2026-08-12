@@ -10,6 +10,7 @@ from databricks.sdk import WorkspaceClient
 from databricks_langchain import DatabricksMCPServer, DatabricksMultiServerMCPClient
 from langchain_core.messages import AIMessageChunk, ToolMessage
 from mlflow.genai.agent_server import get_request_headers
+from mlflow.entities import SpanType
 from mlflow.types.responses import (
     ResponsesAgentRequest,
     ResponsesAgentStreamEvent,
@@ -17,6 +18,8 @@ from mlflow.types.responses import (
     create_function_call_output_item,
     create_text_output_item,
 )
+
+from agent_server.tracing import traced_async_operation, traced_operation
 
 
 def _get_or_create_thread_id(request: ResponsesAgentRequest) -> str:
@@ -41,16 +44,35 @@ def _is_databricks_app_env() -> bool:
 
 
 def init_mcp_client(workspace_client: WorkspaceClient) -> DatabricksMultiServerMCPClient:
-    host_name = get_databricks_host_from_env()
-    return DatabricksMultiServerMCPClient(
-        [
-            DatabricksMCPServer(
-                name="system-ai",
-                url=f"{host_name}/api/2.0/mcp/functions/system/ai",
-                workspace_client=workspace_client,
-            ),
-        ]
-    )
+    with traced_operation(
+        "mcp.initialize", SpanType.TOOL, {"servers": [{"name": "system-ai"}]}
+    ) as operation:
+        host_name = get_databricks_host_from_env()
+        url = f"{host_name}/api/2.0/mcp/functions/system/ai"
+        client = DatabricksMultiServerMCPClient(
+            [
+                DatabricksMCPServer(
+                    name="system-ai",
+                    url=url,
+                    workspace_client=workspace_client,
+                ),
+            ]
+        )
+        operation.set_outputs(
+            {"initialized": True, "server_count": 1, "servers": [{"url": url}]}
+        )
+        return client
+
+
+async def get_mcp_tools(client: Any) -> list[Any]:
+    async with traced_async_operation(
+        "mcp.health", SpanType.TOOL, {"operation": "get_tools"}
+    ) as operation:
+        tools = await client.get_tools()
+        operation.set_outputs(
+            {"tools": [getattr(item, "name", type(item).__name__) for item in tools]}
+        )
+        return tools
 
 
 def get_user_workspace_client() -> WorkspaceClient:
@@ -81,7 +103,7 @@ def replace_fake_id(obj: Any, real_id: str) -> Any:
     return obj
 
 
-async def process_agent_astream_events(
+async def _process_agent_astream_events(
     async_stream: AsyncIterator[Any],
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
     response_id = f"{_FAKE_ID_PREFIX}{uuid4().hex[:16]}"
@@ -207,6 +229,7 @@ async def process_agent_astream_events(
 
             except Exception as e:
                 logging.exception(f"Error processing agent stream event: {e}")
+                raise
 
         elif event[0] == "updates":
             for node_data in event[1].values():
@@ -327,3 +350,17 @@ async def process_agent_astream_events(
                         response=_response_obj(turn_output_items),
                     )
                     _end_turn()
+
+
+async def process_agent_astream_events(
+    async_stream: AsyncIterator[Any],
+) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
+    """Parse graph events under one correctness-changing PARSER span."""
+    async with traced_async_operation(
+        "langgraph.response.parse", SpanType.PARSER, {"source": "agent.astream"}
+    ) as operation:
+        outputs: list[dict] = []
+        async for event in _process_agent_astream_events(async_stream):
+            outputs.append(event.model_dump(exclude_none=True))
+            yield event
+        operation.set_outputs({"events": outputs})

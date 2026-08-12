@@ -8,7 +8,10 @@ createApp({
   // command provisions the immutable UC trace location before first run.
   telemetry: { mlflowUc: true },
   plugins: [
-    agents({ agents: { helper } }),
+    agents({
+      defaultModel: process.env.DATABRICKS_AGENT_SERVING_ENDPOINT_NAME,
+      agents: { helper },
+    }),
     analytics(),
     files(),
     genie(),

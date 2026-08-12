@@ -195,14 +195,16 @@ export function AgentChat() {
           })}
         </CardContent>
 
-        {mlflowTraceId && mlflowTraceUrl && (
+        {mlflowTraceId && (
           <div className="border-t px-4 py-2 text-xs flex items-center justify-between gap-3">
             <code className="truncate" title={mlflowTraceId}>
               {mlflowTraceId}
             </code>
-            <a href={mlflowTraceUrl} target="_blank" rel="noreferrer">
-              Open trace in MLflow
-            </a>
+            {mlflowTraceUrl && (
+              <a href={mlflowTraceUrl} target="_blank" rel="noreferrer">
+                Open trace in MLflow
+              </a>
+            )}
           </div>
         )}
 

@@ -51,7 +51,7 @@
             "permission": "CAN_QUERY",
             "fields": {
               "name": {
-                "env": "DATABRICKS_SERVING_ENDPOINT_NAME",
+                "env": "DATABRICKS_AGENT_SERVING_ENDPOINT_NAME",
                 "description": "Default LLM serving endpoint name",
                 "origin": "user"
               }
@@ -59,7 +59,8 @@
           }
         ]
       },
-      "stability": "beta"
+      "stability": "beta",
+      "requiredByTemplate": true
     },
     "aiSearch": {
       "name": "aiSearch",

@@ -4,7 +4,7 @@ env:
     valueFrom: mlflow-experiment
   - name: MLFLOW_TRACING_SQL_WAREHOUSE_ID
     valueFrom: mlflow-tracing-warehouse
-  - name: DATABRICKS_SERVING_ENDPOINT_NAME
+  - name: DATABRICKS_AGENT_SERVING_ENDPOINT_NAME
     valueFrom: agents-serving-endpoint
   - name: DATABRICKS_WAREHOUSE_ID
     valueFrom: sql-warehouse

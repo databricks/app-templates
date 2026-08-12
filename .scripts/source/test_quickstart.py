@@ -12,6 +12,7 @@
 
 import json
 import os
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
@@ -941,6 +942,50 @@ class TestUcTraceAppPermissions:
 
         with pytest.raises(RuntimeError, match="apps API unavailable"):
             quickstart.get_existing_app(workspace, "future-app")
+
+    def test_missing_app_skips_cli_resource_lookup(self, monkeypatch):
+        mock_run = Mock()
+        monkeypatch.setattr(quickstart, "run_command", mock_run)
+
+        assert quickstart.get_app_resources("DEFAULT", "future-app", None) == []
+        mock_run.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("result", "message"),
+        [
+            (
+                subprocess.CompletedProcess(
+                    args=[], returncode=1, stdout="", stderr="permission denied"
+                ),
+                "permission denied",
+            ),
+            (
+                subprocess.CompletedProcess(
+                    args=[], returncode=0, stdout="not-json", stderr=""
+                ),
+                "malformed JSON",
+            ),
+            (
+                subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout='{"resources": {"experiment": {}}}',
+                    stderr="",
+                ),
+                "invalid resources",
+            ),
+        ],
+        ids=["command-failure", "malformed-json", "invalid-resource-shape"],
+    )
+    def test_existing_app_resource_lookup_failures_are_fatal(
+        self, monkeypatch, result, message
+    ):
+        monkeypatch.setattr(quickstart, "run_command", Mock(return_value=result))
+
+        with pytest.raises(RuntimeError, match=message):
+            quickstart.get_app_resources(
+                "DEFAULT", "existing-app", SimpleNamespace(name="existing-app")
+            )
 
     def test_grants_modify_to_tables_and_select_to_every_trace_entity(self):
         workspace = MagicMock()

@@ -37,6 +37,10 @@ and deployment binding.
 """
 
 import importlib.util
+import copy
+import hashlib
+import json
+import math
 import os
 import re
 import secrets
@@ -45,6 +49,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import quote
 
 import pytest
@@ -75,6 +80,191 @@ from template_config import (
 # Fresh app startups can take 5-15 minutes depending on workspace load
 BUNDLE_RUN_FRESH_TIMEOUT = 900  # 15 minutes
 TRACE_PROPAGATION_TIMEOUT = 180
+TRACE_REDACT_KEYS = {
+    "authorization",
+    "proxyauthorization",
+    "cookie",
+    "setcookie",
+    "apikey",
+    "xapikey",
+    "token",
+    "accesstoken",
+    "refreshtoken",
+    "databrickstoken",
+    "sdktoken",
+    "password",
+    "secret",
+    "clientsecret",
+    "credential",
+    "credentials",
+}
+REDACTED_TRACE_VALUE = "[REDACTED]"
+
+
+def _capture_metadata(value: str) -> dict[str, object]:
+    encoded = value.encode("utf-8")
+    return {
+        "original_bytes": len(encoded),
+        "sha256": hashlib.sha256(encoded).hexdigest(),
+        "truncated": False,
+    }
+
+
+def _mlflow_trace_fixture(*, cost_available: bool = False):
+    """Return a fake with the public MLflow 3.14 Trace/Span property shape."""
+    trace_id = "trace:/main.agent_traces.agents_on_apps/0123456789abcdef"
+    request = {
+        "custom_inputs": {
+            "Authorization": "Bearer request-secret",
+            "api_key": "provider-secret",
+            "request_label": "uc-smoke",
+        },
+        "input": [{"role": "user", "content": "Reply with the word traced."}],
+    }
+    redacted_request_json = (
+        '{"custom_inputs":{"Authorization":"[REDACTED]",'
+        '"api_key":"[REDACTED]","request_label":"uc-smoke"},'
+        '"input":[{"content":"Reply with the word traced.","role":"user"}]}'
+    )
+    response = {
+        "output": [
+            {
+                "content": [{"text": "traced", "type": "output_text"}],
+                "role": "assistant",
+                "type": "message",
+            }
+        ],
+        "status": "completed",
+    }
+    response_json = (
+        '{"output":[{"content":[{"text":"traced","type":"output_text"}],'
+        '"role":"assistant","type":"message"}],"status":"completed"}'
+    )
+    root_usage = {
+        "cache_creation_input_tokens": 2,
+        "cache_read_input_tokens": 3,
+        "input_tokens": 7,
+        "output_tokens": 2,
+        "total_tokens": 9,
+    }
+    root_attributes = {
+        "mlflow.spanType": "AGENT",
+        "mlflow.spanInputs": json.loads(redacted_request_json),
+        "mlflow.spanOutputs": json.loads(response_json),
+        "mlflow.trace.tokenUsage": dict(root_usage),
+        "appkit.cost.available": cost_available,
+    }
+    for key, value in (
+        ("mlflow.spanInputs", redacted_request_json),
+        ("mlflow.spanOutputs", response_json),
+    ):
+        for suffix, metadata_value in _capture_metadata(value).items():
+            root_attributes[f"{key}.{suffix}"] = metadata_value
+    if cost_available:
+        root_attributes["mlflow.llm.cost"] = 0.0125
+
+    root = SimpleNamespace(
+        trace_id=trace_id,
+        span_id="root-span",
+        parent_id=None,
+        name="planner agent",
+        span_type="AGENT",
+        inputs=json.loads(redacted_request_json),
+        outputs=json.loads(response_json),
+        attributes=root_attributes,
+    )
+    model = SimpleNamespace(
+        trace_id=trace_id,
+        span_id="model-span",
+        parent_id="root-span",
+        name="databricks dbx-model",
+        span_type="CHAT_MODEL",
+        inputs={"messages": [{"role": "user", "content": "Reply"}]},
+        outputs={"text": "traced"},
+        attributes={
+            "mlflow.spanType": "CHAT_MODEL",
+            "mlflow.chat.provider": "databricks",
+            "gen_ai.provider.name": "databricks",
+            "mlflow.chat.model": "dbx-model",
+            "gen_ai.request.model": "dbx-model",
+            "mlflow.chat.tokenUsage": dict(root_usage),
+            "appkit.cache.read_input_tokens": 3,
+            "appkit.cache.creation_input_tokens": 2,
+            "appkit.cost.available": cost_available,
+            **({"mlflow.llm.cost": 0.0125} if cost_available else {}),
+        },
+    )
+    trace = SimpleNamespace(
+        info=SimpleNamespace(trace_id=trace_id),
+        data=SimpleNamespace(spans=[root, model]),
+    )
+    return trace, request, response
+
+
+def test_trace_contract_accepts_complete_redacted_mlflow_314_shape():
+    trace, request, response = _mlflow_trace_fixture()
+    contract = globals().get("_assert_trace_contract")
+    assert contract is not None, "trace contract validator is missing"
+
+    contract(trace, request, response)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "non-agent-root",
+        "duplicate-root",
+        "duplicate-provider",
+        "mixed-trace",
+        "unredacted-input",
+        "truncated-input",
+        "wrong-aggregate-usage",
+        "collapsed-cache-usage",
+        "unavailable-cost-present",
+        "negative-available-cost",
+        "provider-mismatch",
+    ],
+)
+def test_trace_contract_rejects_incomplete_or_duplicate_semantics(mutation):
+    trace, request, response = _mlflow_trace_fixture(
+        cost_available=mutation == "negative-available-cost"
+    )
+    root, model = trace.data.spans
+    if mutation == "non-agent-root":
+        root.span_type = "CHAIN"
+        root.attributes["mlflow.spanType"] = "CHAIN"
+    elif mutation == "duplicate-root":
+        duplicate = copy.deepcopy(root)
+        duplicate.span_id = "second-root"
+        trace.data.spans.append(duplicate)
+    elif mutation == "duplicate-provider":
+        duplicate = copy.deepcopy(model)
+        duplicate.span_id = "second-model"
+        trace.data.spans.append(duplicate)
+    elif mutation == "mixed-trace":
+        model.trace_id = "trace:/main.agent_traces.agents_on_apps/different"
+    elif mutation == "unredacted-input":
+        root.inputs = request
+        root.attributes["mlflow.spanInputs"] = request
+    elif mutation == "truncated-input":
+        root.attributes["mlflow.spanInputs.truncated"] = True
+    elif mutation == "wrong-aggregate-usage":
+        root.attributes["mlflow.trace.tokenUsage"]["total_tokens"] = 8
+    elif mutation == "collapsed-cache-usage":
+        del root.attributes["mlflow.trace.tokenUsage"][
+            "cache_creation_input_tokens"
+        ]
+    elif mutation == "unavailable-cost-present":
+        root.attributes["mlflow.llm.cost"] = 0.0
+    elif mutation == "negative-available-cost":
+        root.attributes["mlflow.llm.cost"] = -1.0
+    elif mutation == "provider-mismatch":
+        model.attributes["gen_ai.provider.name"] = "second-provider"
+
+    contract = globals().get("_assert_trace_contract")
+    assert contract is not None, "trace contract validator is missing"
+    with pytest.raises(AssertionError):
+        contract(trace, request, response)
 
 
 def test_bundle_deploy_retries_while_uc_experiment_access_propagates(
@@ -230,16 +420,186 @@ def _trace_id_from_response(response: requests.Response) -> str:
         return ""
 
 
-def _assert_trace_inputs_and_outputs(trace) -> None:
+def _normalize_trace_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", value.lower())
+
+
+def _redact_trace_value(value):
+    if isinstance(value, dict):
+        return {
+            key: (
+                REDACTED_TRACE_VALUE
+                if _normalize_trace_key(str(key)) in TRACE_REDACT_KEYS
+                else _redact_trace_value(nested)
+            )
+            for key, nested in sorted(value.items())
+        }
+    if isinstance(value, list):
+        return [_redact_trace_value(nested) for nested in value]
+    return value
+
+
+def _canonical_trace_json(value) -> str:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
+def _decode_trace_attribute(value, label: str):
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError as error:
+            raise AssertionError(f"{label} is not valid JSON: {error}") from error
+    return value
+
+
+def _assert_complete_capture(attributes, key: str, expected) -> object:
+    actual = _decode_trace_attribute(attributes.get(key), key)
+    expected_redacted = _redact_trace_value(expected)
+    assert actual not in (None, "", [], {}), f"{key} is empty"
+    assert actual == expected_redacted, f"{key} is partial, unredacted, or incorrect"
+
+    encoded = _canonical_trace_json(expected_redacted).encode("utf-8")
+    assert attributes.get(f"{key}.truncated") is False, f"{key} was truncated"
+    assert attributes.get(f"{key}.original_bytes") == len(encoded), (
+        f"{key} original byte count does not cover the complete redacted value"
+    )
+    assert attributes.get(f"{key}.sha256") == hashlib.sha256(encoded).hexdigest(), (
+        f"{key} hash does not cover the complete redacted value"
+    )
+    serialized = _canonical_trace_json(actual)
+    for secret in ("request-secret", "provider-secret"):
+        assert secret not in serialized, f"{key} exposed credential-shaped data"
+    return actual
+
+
+def _usage(attributes, key: str) -> dict[str, int]:
+    value = _decode_trace_attribute(attributes.get(key), key)
+    assert isinstance(value, dict), f"{key} must be an object"
+    required = {"input_tokens", "output_tokens", "total_tokens"}
+    assert required <= value.keys(), f"{key} is missing base token counts"
+    assert all(
+        isinstance(count, int) and not isinstance(count, bool) and count >= 0
+        for count in value.values()
+    ), f"{key} contains an invalid token count"
+    assert value["total_tokens"] == value["input_tokens"] + value["output_tokens"], (
+        f"{key} total_tokens does not equal input_tokens plus output_tokens"
+    )
+    return value
+
+
+def _assert_trace_contract(trace, request, response) -> None:
     spans = list(trace.data.spans)
     assert spans, "MLflow returned a trace without spans"
-    root = next((span for span in spans if span.parent_id is None), spans[0])
-    assert "mlflow.spanInputs" in root.attributes, (
-        f"Root span {root.name!r} did not preserve complete inputs"
+    trace_id = trace.info.trace_id
+    assert isinstance(trace_id, str) and trace_id, "MLflow trace has no trace ID"
+    assert all(span.trace_id == trace_id for span in spans), (
+        "Returned spans do not all belong to the retrieved trace"
     )
-    assert "mlflow.spanOutputs" in root.attributes, (
-        f"Root span {root.name!r} did not preserve complete outputs"
+
+    roots = [span for span in spans if span.parent_id is None]
+    assert len(roots) == 1, f"Expected exactly one parentless span, found {len(roots)}"
+    root = roots[0]
+    assert root.span_type == "AGENT", "Parentless span is not an AGENT"
+    assert root.attributes.get("mlflow.spanType") == "AGENT", (
+        "Parentless span is missing mlflow.spanType=AGENT"
     )
+
+    span_by_id = {span.span_id: span for span in spans}
+    assert len(span_by_id) == len(spans), "Trace contains duplicate span IDs"
+    for span in spans:
+        if span is root:
+            continue
+        assert span.parent_id in span_by_id, f"Span {span.name!r} has an unknown parent"
+        cursor = span
+        visited = set()
+        while cursor is not root:
+            assert cursor.span_id not in visited, "Trace span tree contains a cycle"
+            visited.add(cursor.span_id)
+            cursor = span_by_id[cursor.parent_id]
+
+    captured_inputs = _assert_complete_capture(
+        root.attributes, "mlflow.spanInputs", request
+    )
+    captured_outputs = _assert_complete_capture(
+        root.attributes, "mlflow.spanOutputs", response
+    )
+    assert _decode_trace_attribute(root.inputs, "root.inputs") == captured_inputs
+    assert _decode_trace_attribute(root.outputs, "root.outputs") == captured_outputs
+
+    models = [span for span in spans if span.span_type == "CHAT_MODEL"]
+    assert models, "Trace contains no CHAT_MODEL descendant"
+    fingerprints = set()
+    aggregate: dict[str, int] = {}
+    all_model_costs_available = True
+    model_cost = 0.0
+    for model in models:
+        attributes = model.attributes
+        assert attributes.get("mlflow.spanType") == "CHAT_MODEL"
+        provider = attributes.get("mlflow.chat.provider")
+        assert provider == "databricks", f"Unexpected model provider {provider!r}"
+        assert attributes.get("gen_ai.provider.name") == provider, (
+            "MLflow and OpenTelemetry provider attributes disagree"
+        )
+        model_name = attributes.get("mlflow.chat.model")
+        assert isinstance(model_name, str) and model_name
+        assert attributes.get("gen_ai.request.model") == model_name
+        fingerprint = (model.parent_id, model.name, provider, model_name)
+        assert fingerprint not in fingerprints, "Duplicate model/provider tree detected"
+        fingerprints.add(fingerprint)
+
+        model_usage = _usage(attributes, "mlflow.chat.tokenUsage")
+        for key, count in model_usage.items():
+            aggregate[key] = aggregate.get(key, 0) + count
+        if "cache_read_input_tokens" in model_usage:
+            assert attributes.get("appkit.cache.read_input_tokens") == model_usage[
+                "cache_read_input_tokens"
+            ]
+        if "cache_creation_input_tokens" in model_usage:
+            assert attributes.get("appkit.cache.creation_input_tokens") == model_usage[
+                "cache_creation_input_tokens"
+            ]
+
+        available = attributes.get("appkit.cost.available")
+        assert isinstance(available, bool), "Model cost availability is not boolean"
+        all_model_costs_available = all_model_costs_available and available
+        if available:
+            cost = attributes.get("mlflow.llm.cost")
+            assert isinstance(cost, (int, float)) and not isinstance(cost, bool)
+            assert math.isfinite(cost) and cost >= 0, "Model cost is invalid"
+            model_cost += float(cost)
+        else:
+            assert "mlflow.llm.cost" not in attributes, (
+                "Unavailable model cost must be omitted"
+            )
+
+    root_usage = _usage(root.attributes, "mlflow.trace.tokenUsage")
+    assert root_usage == aggregate, "Root usage does not include every model descendant"
+    for cache_key in ("cache_read_input_tokens", "cache_creation_input_tokens"):
+        if cache_key in aggregate:
+            assert root_usage.get(cache_key) == aggregate[cache_key], (
+                "Root cache token categories were collapsed"
+            )
+
+    root_cost_available = root.attributes.get("appkit.cost.available")
+    assert root_cost_available is all_model_costs_available, (
+        "Root cost availability does not cover every model descendant"
+    )
+    if root_cost_available:
+        root_cost = root.attributes.get("mlflow.llm.cost")
+        assert isinstance(root_cost, (int, float)) and not isinstance(root_cost, bool)
+        assert math.isfinite(root_cost) and root_cost >= 0, "Root cost is invalid"
+        assert math.isclose(float(root_cost), model_cost), (
+            "Root cost does not include every priced model descendant"
+        )
+    else:
+        assert "mlflow.llm.cost" not in root.attributes, (
+            "Unavailable root cost must be omitted"
+        )
 
 
 def _verify_uc_trace_smoke(
@@ -291,6 +651,14 @@ def _verify_uc_trace_smoke(
     workspace = WorkspaceClient(profile=profile)
     quickstart.grant_uc_trace_access_to_app(workspace, app_name, trace_config)
 
+    invocation_request = {
+        "input": [{"role": "user", "content": "Reply with the word traced."}],
+        "custom_inputs": {
+            "Authorization": "Bearer request-secret",
+            "api_key": "provider-secret",
+            "request_label": "uc-smoke",
+        },
+    }
     response = requests.post(
         f"{app_url}/invocations",
         headers={
@@ -298,10 +666,14 @@ def _verify_uc_trace_smoke(
             "Content-Type": "application/json",
             "X-MLflow-Return-Trace-Id": "true",
         },
-        json={"input": [{"role": "user", "content": "Reply with the word traced."}]},
+        json=invocation_request,
         timeout=120,
     )
     response.raise_for_status()
+    try:
+        invocation_response = response.json()
+    except ValueError as error:
+        raise AssertionError("Deployed invocation did not return JSON") from error
     trace_id = _trace_id_from_response(response)
     assert trace_id, (
         "Deployed invocation returned neither X-MLflow-Trace-Id nor response trace_id: "
@@ -353,7 +725,7 @@ def _verify_uc_trace_smoke(
         time.sleep(10)
 
     assert trace is not None, f"MLflow could not retrieve trace {trace_id}: {last_error}"
-    _assert_trace_inputs_and_outputs(trace)
+    _assert_trace_contract(trace, invocation_request, invocation_response)
     assert row_count > 0, (
         f"UC spans table {trace_config.otel_spans_table_name} has no rows for "
         f"trace {trace_id}; last error: {last_error}"

@@ -918,32 +918,49 @@ def write_mlflow_trace_env_atomically(
     os.replace(temporary_path, env_file)
 
 
-def get_app_resources(profile_name: str, app_name: str) -> list[dict]:
+def get_app_resources(
+    profile_name: str, app_name: str, existing_app: Any | None
+) -> list[dict]:
     """Fetch resources from an existing Databricks app.
 
-    Returns the resources list from the apps API, or empty list on failure.
+    A missing pre-deploy app skips this lookup. Once the SDK confirms that the
+    app exists, command, JSON, and response-shape failures are fatal.
     """
+    if existing_app is None:
+        return []
+
     print(f"Fetching resources from app '{app_name}'...")
     result = run_command(
         ["databricks", "-p", profile_name, "apps", "get", app_name, "--output", "json"],
         check=False,
     )
     if result.returncode != 0:
-        print(
-            f"  Could not fetch app details: "
-            f"{result.stderr.strip() if result.stderr else 'Unknown error'}"
+        detail = result.stderr.strip() if result.stderr else "Unknown error"
+        raise RuntimeError(
+            f"Could not fetch resources for existing app {app_name!r}: {detail}"
         )
-        return []
     try:
         data = json.loads(result.stdout)
-        resources = data.get("resources", [])
-        if resources:
-            print_success(f"Found {len(resources)} resource(s) in app '{app_name}'")
-        else:
-            print(f"  App '{app_name}' has no resources configured")
-        return resources
-    except (json.JSONDecodeError, KeyError):
-        return []
+    except json.JSONDecodeError as error:
+        raise RuntimeError(
+            f"Existing app {app_name!r} returned malformed JSON: {error}"
+        ) from error
+    if not isinstance(data, dict):
+        raise RuntimeError(
+            f"Existing app {app_name!r} returned an invalid response object"
+        )
+    resources = data.get("resources", [])
+    if not isinstance(resources, list) or any(
+        not isinstance(resource, dict) for resource in resources
+    ):
+        raise RuntimeError(
+            f"Existing app {app_name!r} returned invalid resources; expected a list of objects"
+        )
+    if resources:
+        print_success(f"Found {len(resources)} resource(s) in app '{app_name}'")
+    else:
+        print(f"  App '{app_name}' has no resources configured")
+    return resources
 
 
 def create_lakebase_instance(profile_name: str, name: str = None) -> dict:
@@ -1870,7 +1887,7 @@ def main():
             existing_app = get_existing_app(workspace, app_name)
 
             # Fetch resources from the existing app and use them in databricks.yml
-            app_resources = get_app_resources(profile_name, app_name)
+            app_resources = get_app_resources(profile_name, app_name, existing_app)
             for resource in app_resources:
                 if "postgres" in resource:
                     pg = resource["postgres"]

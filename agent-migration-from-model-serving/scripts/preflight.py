@@ -4,7 +4,8 @@
 Run this before deploying to catch configuration and code errors early.
 
 Usage:
-    uv run preflight
+    uv run preflight              # Real deployment preflight; validates configured UC
+    uv run preflight --offline-test  # Synthetic local test harness only
 """
 
 import importlib
@@ -19,6 +20,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from uuid import uuid4
 
 import mlflow
 
@@ -43,12 +45,69 @@ def verify_agent_tracing() -> dict[str, str]:
     return config
 
 
+def verify_deployment_trace_resources(
+    config: dict[str, str],
+    *,
+    mlflow_client=None,
+    workspace_client=None,
+) -> None:
+    """Prove the configured experiment location and warehouse are available."""
+    issues: list[str] = []
+    client = mlflow_client or mlflow.MlflowClient()
+    experiment = None
+    try:
+        experiment = client.get_experiment(config["MLFLOW_EXPERIMENT_ID"])
+    except Exception as error:
+        issues.append(
+            f"experiment {config['MLFLOW_EXPERIMENT_ID']!r} is unavailable: {error}"
+        )
+    if experiment is None:
+        issues.append(f"experiment {config['MLFLOW_EXPERIMENT_ID']!r} does not exist")
+    else:
+        location = experiment.trace_location
+        observed = (
+            getattr(location, "catalog_name", None),
+            getattr(location, "schema_name", None),
+            getattr(location, "table_prefix", None),
+            getattr(location, "full_otel_spans_table_name", None),
+        )
+        expected = (
+            config["MLFLOW_UC_CATALOG"],
+            config["MLFLOW_UC_SCHEMA"],
+            config["MLFLOW_UC_TABLE_PREFIX"],
+            config["MLFLOW_OTEL_SPANS_TABLE"],
+        )
+        if observed != expected:
+            issues.append(
+                f"experiment {config['MLFLOW_EXPERIMENT_ID']!r} has wrong UC trace "
+                f"location {observed!r}; expected {expected!r}"
+            )
+
+    if workspace_client is None:
+        from databricks.sdk import WorkspaceClient
+
+        workspace_client = WorkspaceClient()
+    warehouse_id = config["MLFLOW_TRACING_SQL_WAREHOUSE_ID"]
+    try:
+        warehouse = workspace_client.warehouses.get(warehouse_id)
+        raw_state = getattr(warehouse, "state", None)
+        state = str(getattr(raw_state, "value", raw_state) or "")
+        if state.upper() in {"DELETED", "DELETING"}:
+            issues.append(f"SQL warehouse {warehouse_id!r} is unavailable (state: {state})")
+    except Exception as error:
+        issues.append(f"SQL warehouse {warehouse_id!r} is unavailable: {error}")
+
+    if issues:
+        raise RuntimeError("Deployment tracing preflight failed: " + "; ".join(issues))
+
+
 def verify_smoke_trace(
     experiment_id: str,
     started_ms: int,
+    request_id: str,
     timeout_seconds: float = 15,
 ) -> str:
-    """Prove a post-smoke trace can be searched and retrieved from MLflow."""
+    """Prove the exact post-smoke request trace can be searched and retrieved."""
     deadline = time.monotonic() + timeout_seconds
     last_error: Exception | None = None
     while True:
@@ -76,15 +135,32 @@ def verify_smoke_trace(
             for candidate in traces:
                 if candidate.info.timestamp_ms < started_ms:
                     continue
+                candidate_request_id = candidate.info.trace_metadata.get(
+                    "appkit.request.id"
+                )
+                if candidate_request_id not in {None, request_id}:
+                    continue
                 trace_id = candidate.info.trace_id
-                if mlflow.get_trace(trace_id, flush=True) is not None:
+                retrieved = mlflow.get_trace(trace_id, flush=True)
+                if retrieved is None:
+                    continue
+                metadata_request_id = retrieved.info.trace_metadata.get(
+                    "appkit.request.id"
+                )
+                root_request_ids = {
+                    span.get_attribute("appkit.request.id")
+                    for span in retrieved.data.spans
+                    if span.parent_id is None
+                }
+                if metadata_request_id == request_id or request_id in root_request_ids:
                     return trace_id
         except Exception as error:
             last_error = error
         if time.monotonic() >= deadline:
             detail = f": {last_error}" if last_error is not None else ""
             raise RuntimeError(
-                "Tracing preflight failed: smoke trace was not retrievable" + detail
+                "Tracing preflight failed: exact smoke trace was not retrievable"
+                + detail
             )
         time.sleep(0.5)
 
@@ -105,7 +181,7 @@ def run_offline_test() -> None:
             {
                 "MLFLOW_TRACKING_URI": tracking_uri,
                 "MLFLOW_EXPERIMENT_ID": experiment_id,
-                "MLFLOW_TRACING_SQL_WAREHOUSE_ID": "offline-warehouse",
+                "MLFLOW_TRACING_SQL_WAREHOUSE_ID": "0123456789abcdef",
                 "MLFLOW_UC_CATALOG": "offline_catalog",
                 "MLFLOW_UC_SCHEMA": "offline_schema",
                 "MLFLOW_UC_TABLE_PREFIX": "offline_migration",
@@ -119,14 +195,19 @@ def run_offline_test() -> None:
         framework = os.environ["AGENT_FRAMEWORK"]
         print(f"selected autologger ran: {framework}")
 
+        request_id = f"offline-smoke-{uuid4()}"
         started_ms = int(time.time() * 1000)
         with mlflow.start_span(name="preflight.smoke", span_type="AGENT") as span:
+            mlflow.update_current_trace(
+                metadata={"appkit.request.id": request_id}
+            )
             span.set_inputs({"offline": True, "framework": framework})
             span.set_outputs({"tracing": "enabled"})
             span.set_status("OK")
         trace_id = verify_smoke_trace(
             experiment_id=experiment_id,
             started_ms=started_ms,
+            request_id=request_id,
         )
         print(f"smoke trace retrieved: {trace_id}")
 
@@ -210,9 +291,12 @@ def check_health(base_url: str) -> bool:
         return False
 
 
-def check_invocations(base_url: str, retries: int = 2) -> bool:
+def check_invocations(base_url: str, request_id: str, retries: int = 2) -> bool:
     payload = json.dumps(
-        {"input": [{"role": "user", "content": "Say hello in one word."}]}
+        {
+            "input": [{"role": "user", "content": "Say hello in one word."}],
+            "custom_inputs": {"request_id": request_id},
+        }
     ).encode()
 
     for attempt in range(retries + 1):
@@ -241,6 +325,10 @@ def check_invocations(base_url: str, retries: int = 2) -> bool:
 
 def main():
     if "--offline-test" in sys.argv[1:]:
+        print(
+            "TEST-ONLY: synthetic local tracing configuration; "
+            "deployment UC validation is not performed"
+        )
         run_offline_test()
         return
 
@@ -248,6 +336,7 @@ def main():
     print("=" * 40)
 
     config = verify_agent_tracing()
+    verify_deployment_trace_resources(config)
 
     port = find_free_port()
     base_url = f"http://localhost:{port}"
@@ -267,8 +356,9 @@ def main():
 
         # Step 3: Send a test request
         print("3. Sending test request to /invocations...")
+        smoke_request_id = f"preflight-smoke-{uuid4()}"
         smoke_started_ms = int(time.time() * 1000)
-        if not check_invocations(base_url):
+        if not check_invocations(base_url, request_id=smoke_request_id):
             print("   FAILED")
             sys.exit(1)
         print("   OK")
@@ -278,6 +368,7 @@ def main():
         trace_id = verify_smoke_trace(
             experiment_id=config["MLFLOW_EXPERIMENT_ID"],
             started_ms=smoke_started_ms,
+            request_id=smoke_request_id,
         )
         print(f"   OK ({trace_id})")
 

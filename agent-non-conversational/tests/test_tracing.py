@@ -9,12 +9,13 @@ from types import SimpleNamespace
 
 import databricks.sdk
 import mlflow
+from mlflow.entities import Experiment, UnityCatalog
 from mlflow.genai.agent_server import server
 import pytest
 
 
 REQUIRED_TRACING_ENV = {
-    "MLFLOW_TRACING_SQL_WAREHOUSE_ID": "warehouse-test",
+    "MLFLOW_TRACING_SQL_WAREHOUSE_ID": "0123456789abcdef",
     "MLFLOW_UC_CATALOG": "catalog_test",
     "MLFLOW_UC_SCHEMA": "schema_test",
     "MLFLOW_UC_TABLE_PREFIX": "batch_test",
@@ -208,6 +209,78 @@ def test_malformed_second_answer_preserves_batch_trace_and_usage(
     assert "[REDACTED]" in exported
 
 
+def test_schema_invalid_second_answer_is_parser_error_and_batch_continues(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    tracking_uri = f"sqlite:///{tmp_path / 'schema-invalid.db'}"
+    artifact_dir = tmp_path / "schema-invalid-artifacts"
+    artifact_dir.mkdir()
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment_id = mlflow.create_experiment(
+        "batch-schema-invalid", artifact_location=artifact_dir.as_uri()
+    )
+    mlflow.set_experiment(experiment_id=experiment_id)
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", tracking_uri)
+    monkeypatch.setenv("MLFLOW_EXPERIMENT_ID", experiment_id)
+    for name, value in REQUIRED_TRACING_ENV.items():
+        monkeypatch.setenv(name, value)
+    workspace = FakeWorkspaceClient(
+        [
+            FakeCompletion(
+                content='{"answer":"Yes","reasoning":"Found it."}',
+                input_tokens=5,
+                output_tokens=2,
+                cost_usd=None,
+            ),
+            FakeCompletion(
+                content='{"answer":"Maybe"}',
+                input_tokens=6,
+                output_tokens=2,
+                cost_usd=None,
+            ),
+            FakeCompletion(
+                content='{"answer":"No","reasoning":"Not present."}',
+                input_tokens=7,
+                output_tokens=2,
+                cost_usd=None,
+            ),
+        ]
+    )
+    monkeypatch.setattr(databricks.sdk, "WorkspaceClient", lambda: workspace)
+    sys.modules.pop("agent_server.agent", None)
+    sys.modules.pop("agent_server.tracing", None)
+    monkeypatch.setattr(server, "_invoke_function", None)
+    agent = importlib.import_module("agent_server.agent")
+
+    result = asyncio.run(
+        agent.invoke_handler(
+            {
+                "document_text": "A document.",
+                "questions": ["First?", "Second?", "Third?"],
+            }
+        )
+    )
+
+    assert [item["answer"] for item in result["results"]] == ["Yes", "No", "No"]
+    assert "parsing error" in result["results"][1]["reasoning"]
+    traces = mlflow.search_traces(
+        locations=[experiment_id], return_type="list", flush=True
+    )
+    trace = mlflow.get_trace(traces[0].info.trace_id, flush=True)
+    root = next(span for span in trace.data.spans if span.parent_id is None)
+    models = [span for span in trace.data.spans if span.span_type == "CHAT_MODEL"]
+    parsers = sorted(
+        (span for span in trace.data.spans if span.span_type == "PARSER"),
+        key=lambda span: span.get_attribute("appkit.question_index"),
+    )
+    assert len(models) == 3
+    assert [span.status.status_code for span in parsers] == ["OK", "ERROR", "OK"]
+    assert root.status.status_code == "ERROR"
+    assert [item["question_text"] for item in root.outputs["partialOutputs"]] == [
+        "First?"
+    ]
+
+
 def test_agent_import_reports_every_missing_tracing_setting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -232,6 +305,108 @@ def test_agent_import_reports_every_missing_tracing_setting(
 
     for name in required_names:
         assert name in str(caught.value)
+
+
+def test_tracing_config_reports_every_invalid_identifier_and_table() -> None:
+    from agent_server.tracing import validate_tracing_environment
+
+    invalid = {
+        "MLFLOW_TRACKING_URI": "databricks",
+        "MLFLOW_EXPERIMENT_ID": "not-an-id",
+        "MLFLOW_TRACING_SQL_WAREHOUSE_ID": "not-a-warehouse",
+        "MLFLOW_UC_CATALOG": "bad.catalog",
+        "MLFLOW_UC_SCHEMA": "bad-schema",
+        "MLFLOW_UC_TABLE_PREFIX": "1bad-prefix",
+        "MLFLOW_OTEL_SPANS_TABLE": "other.schema.unrelated_otel_spans",
+    }
+
+    with pytest.raises(RuntimeError) as caught:
+        validate_tracing_environment(invalid)
+
+    for name in (
+        "MLFLOW_EXPERIMENT_ID",
+        "MLFLOW_TRACING_SQL_WAREHOUSE_ID",
+        "MLFLOW_UC_CATALOG",
+        "MLFLOW_UC_SCHEMA",
+        "MLFLOW_UC_TABLE_PREFIX",
+        "MLFLOW_OTEL_SPANS_TABLE",
+    ):
+        assert name in str(caught.value)
+
+
+def test_batch_startup_rejects_wrong_uc_location_and_missing_warehouse() -> None:
+    from agent_server.tracing import verify_deployment_trace_resources
+
+    wrong_location = UnityCatalog("wrong_catalog", "wrong_schema", "wrong_prefix")
+    wrong_location._otel_spans_table_name = (
+        "wrong_catalog.wrong_schema.wrong_prefix_otel_spans"
+    )
+    experiment = Experiment(
+        experiment_id="123",
+        name="wrong-location",
+        artifact_location="dbfs:/tmp/test",
+        lifecycle_stage="active",
+        trace_location=wrong_location,
+    )
+
+    class LocalMlflowClient:
+        def get_experiment(self, _experiment_id):
+            return experiment
+
+    class LocalWarehouses:
+        def get(self, _warehouse_id):
+            raise RuntimeError("warehouse does not exist")
+
+    workspace = type("Workspace", (), {"warehouses": LocalWarehouses()})()
+    config = {
+        "MLFLOW_TRACKING_URI": "databricks",
+        "MLFLOW_EXPERIMENT_ID": "123",
+        "MLFLOW_TRACING_SQL_WAREHOUSE_ID": "0123456789abcdef",
+        "MLFLOW_UC_CATALOG": "catalog_test",
+        "MLFLOW_UC_SCHEMA": "schema_test",
+        "MLFLOW_UC_TABLE_PREFIX": "batch_test",
+        "MLFLOW_OTEL_SPANS_TABLE": "catalog_test.schema_test.batch_test_otel_spans",
+    }
+
+    with pytest.raises(RuntimeError) as caught:
+        verify_deployment_trace_resources(
+            config,
+            mlflow_client=LocalMlflowClient(),
+            workspace_client=workspace,
+        )
+
+    assert "wrong UC trace location" in str(caught.value)
+    assert "warehouse does not exist" in str(caught.value)
+
+
+def test_batch_databricks_startup_runs_resource_preflight(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import agent_server.tracing as tracing
+
+    config = {
+        "MLFLOW_TRACKING_URI": "databricks",
+        "MLFLOW_EXPERIMENT_ID": "123",
+        "MLFLOW_TRACING_SQL_WAREHOUSE_ID": "0123456789abcdef",
+        "MLFLOW_UC_CATALOG": "catalog_test",
+        "MLFLOW_UC_SCHEMA": "schema_test",
+        "MLFLOW_UC_TABLE_PREFIX": "batch_test",
+        "MLFLOW_OTEL_SPANS_TABLE": "catalog_test.schema_test.batch_test_otel_spans",
+    }
+    for name, value in config.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(mlflow, "set_tracking_uri", lambda _uri: None)
+    monkeypatch.setattr(mlflow, "set_experiment", lambda **_kwargs: None)
+
+    def reject_resources(_config):
+        raise RuntimeError("batch deployment resources are unavailable")
+
+    monkeypatch.setattr(
+        tracing, "verify_deployment_trace_resources", reject_resources
+    )
+
+    with pytest.raises(RuntimeError, match="batch deployment resources are unavailable"):
+        tracing.configure_mlflow_tracing()
 
 
 def test_runtime_trace_export_failure_does_not_fail_successful_response(

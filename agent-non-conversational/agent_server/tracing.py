@@ -36,6 +36,9 @@ _SECRET_TEXT = re.compile(
     r"(?P<value>[^\s,;)\]}]+)",
     re.IGNORECASE,
 )
+_EXPERIMENT_ID = re.compile(r"^[0-9]+$")
+_WAREHOUSE_ID = re.compile(r"^[0-9a-f]{16}$", re.IGNORECASE)
+_UC_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,254}$")
 _request_identity: ContextVar[dict[str, str] | None] = ContextVar(
     "batch_request_identity", default=None
 )
@@ -51,14 +54,96 @@ def validate_tracing_environment(
         raise RuntimeError(
             "Missing required tracing configuration: " + ", ".join(missing)
         )
-    return {name: source[name] for name in REQUIRED_TRACING_ENV}
+    config = {name: source[name] for name in REQUIRED_TRACING_ENV}
+    invalid: list[str] = []
+    if not _EXPERIMENT_ID.fullmatch(config["MLFLOW_EXPERIMENT_ID"]):
+        invalid.append("MLFLOW_EXPERIMENT_ID must be numeric")
+    if not _WAREHOUSE_ID.fullmatch(config["MLFLOW_TRACING_SQL_WAREHOUSE_ID"]):
+        invalid.append("MLFLOW_TRACING_SQL_WAREHOUSE_ID must be a 16-hex ID")
+    for name in ("MLFLOW_UC_CATALOG", "MLFLOW_UC_SCHEMA", "MLFLOW_UC_TABLE_PREFIX"):
+        if not _UC_IDENTIFIER.fullmatch(config[name]):
+            invalid.append(f"{name} must be a simple UC identifier")
+    expected_table = ".".join(
+        (
+            config["MLFLOW_UC_CATALOG"],
+            config["MLFLOW_UC_SCHEMA"],
+            f"{config['MLFLOW_UC_TABLE_PREFIX']}_otel_spans",
+        )
+    )
+    if config["MLFLOW_OTEL_SPANS_TABLE"] != expected_table:
+        invalid.append(
+            "MLFLOW_OTEL_SPANS_TABLE must equal "
+            "<MLFLOW_UC_CATALOG>.<MLFLOW_UC_SCHEMA>."
+            "<MLFLOW_UC_TABLE_PREFIX>_otel_spans"
+        )
+    if invalid:
+        raise RuntimeError("Invalid tracing configuration: " + "; ".join(invalid))
+    return config
 
 
 def configure_mlflow_tracing() -> None:
     """Validate UC export configuration before constructing external clients."""
     config = validate_tracing_environment()
     mlflow.set_tracking_uri(config["MLFLOW_TRACKING_URI"])
+    if config["MLFLOW_TRACKING_URI"].startswith("databricks"):
+        verify_deployment_trace_resources(config)
     mlflow.set_experiment(experiment_id=config["MLFLOW_EXPERIMENT_ID"])
+
+
+def verify_deployment_trace_resources(
+    config: dict[str, str],
+    *,
+    mlflow_client=None,
+    workspace_client=None,
+) -> None:
+    """Prove the configured experiment location and warehouse are available."""
+    issues: list[str] = []
+    client = mlflow_client or mlflow.MlflowClient()
+    experiment = None
+    try:
+        experiment = client.get_experiment(config["MLFLOW_EXPERIMENT_ID"])
+    except Exception as error:
+        issues.append(
+            f"experiment {config['MLFLOW_EXPERIMENT_ID']!r} is unavailable: {error}"
+        )
+    if experiment is None:
+        issues.append(f"experiment {config['MLFLOW_EXPERIMENT_ID']!r} does not exist")
+    else:
+        location = experiment.trace_location
+        observed = (
+            getattr(location, "catalog_name", None),
+            getattr(location, "schema_name", None),
+            getattr(location, "table_prefix", None),
+            getattr(location, "full_otel_spans_table_name", None),
+        )
+        expected = (
+            config["MLFLOW_UC_CATALOG"],
+            config["MLFLOW_UC_SCHEMA"],
+            config["MLFLOW_UC_TABLE_PREFIX"],
+            config["MLFLOW_OTEL_SPANS_TABLE"],
+        )
+        if observed != expected:
+            issues.append(
+                f"experiment {config['MLFLOW_EXPERIMENT_ID']!r} has wrong UC trace "
+                f"location {observed!r}; expected {expected!r}"
+            )
+
+    if workspace_client is None:
+        from databricks.sdk import WorkspaceClient
+
+        workspace_client = WorkspaceClient()
+    warehouse_id = config["MLFLOW_TRACING_SQL_WAREHOUSE_ID"]
+    try:
+        warehouse = workspace_client.warehouses.get(warehouse_id)
+        raw_state = getattr(warehouse, "state", None)
+        state = str(getattr(raw_state, "value", raw_state) or "")
+        if state.upper() in {"DELETED", "DELETING"}:
+            issues.append(f"SQL warehouse {warehouse_id!r} is unavailable (state: {state})")
+    except Exception as error:
+        issues.append(f"SQL warehouse {warehouse_id!r} is unavailable: {error}")
+
+    if issues:
+        raise RuntimeError("Deployment tracing preflight failed: " + "; ".join(issues))
 
 
 def _redact_text(value: str) -> str:

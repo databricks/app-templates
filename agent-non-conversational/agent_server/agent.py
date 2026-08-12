@@ -3,12 +3,13 @@
 import json
 import os
 from time import perf_counter_ns
+from typing import Literal
 from uuid import uuid4
 
 from databricks.sdk import WorkspaceClient
 from mlflow.entities import SpanType
 from mlflow.genai.agent_server import invoke
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from agent_server.tracing import (
     UsageAccumulator,
@@ -36,6 +37,13 @@ class AnalysisResult(BaseModel):
     question_text: str = Field(..., description="Original question text")
     answer: str = Field(..., description="Yes or No answer")
     reasoning: str = Field(..., description="Step-by-step reasoning for the answer")
+
+
+class StructuredAnalysisResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    answer: Literal["Yes", "No"]
+    reasoning: str = Field(min_length=1)
 
 
 class AgentOutput(BaseModel):
@@ -190,9 +198,11 @@ async def invoke_handler(data: dict) -> dict:
                 {"question": question, "response": response_text},
             ) as parser_span:
                 try:
-                    response_data: dict = json.loads(response_text)
-                    answer = response_data.get("answer", "No")
-                    reasoning = response_data.get("reasoning", "")
+                    response_data = StructuredAnalysisResponse.model_validate(
+                        json.loads(response_text)
+                    ).model_dump()
+                    answer = response_data["answer"]
+                    reasoning = response_data["reasoning"]
                 except Exception as error:
                     safe_error = safe_error_message(error)
                     if not parser_errors:

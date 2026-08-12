@@ -22,6 +22,7 @@ with this template as-is.
 import logging
 from contextlib import AsyncExitStack
 from typing import AsyncGenerator
+from uuid import uuid4
 
 import mlflow
 from agents import Agent, Runner, function_tool, set_default_openai_api, set_default_openai_client
@@ -34,6 +35,7 @@ from mlflow.types.responses import (
     ResponsesAgentResponse,
     ResponsesAgentStreamEvent,
 )
+from openai import AsyncOpenAI
 
 from agent_server.utils import (
     build_mcp_url,
@@ -41,6 +43,23 @@ from agent_server.utils import (
     get_user_workspace_client,
     process_agent_stream_events,
 )
+from agent_server.tracing import (
+    TracedMcpServer,
+    configure_mlflow_tracing,
+    set_request_trace_identity,
+    traced_remote_agent_call,
+)
+
+
+def _create_openai_client():
+    try:
+        return AsyncDatabricksOpenAI()
+    except Exception:
+        return AsyncOpenAI(
+            api_key="databricks-auth-required",
+            base_url="http://127.0.0.1:1/v1",
+            max_retries=0,
+        )
 
 # ---------------------------------------------------------------------------
 # TODO: Configure the subagents for your environment.
@@ -98,25 +117,20 @@ SUBAGENTS = [
     # },
 ]
 
-assert SUBAGENTS, (
-    "Configure at least one subagent in SUBAGENTS above. "
-    "Uncomment an entry and replace placeholder values. See README.md."
-)
-
 # ---------------------------------------------------------------------------
 # Client setup
 # ---------------------------------------------------------------------------
 
 # NOTE: this will work for all databricks models OTHER than GPT-OSS, which uses a slightly different API
-set_default_openai_client(AsyncDatabricksOpenAI())
+set_default_openai_client(_create_openai_client())
 set_default_openai_api("chat_completions")
 set_trace_processors([])  # only use mlflow for trace processing
-mlflow.openai.autolog()
+configure_mlflow_tracing()
 logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 
 # Async client used inside tool functions to query other agents / endpoints
-_tool_client = AsyncDatabricksOpenAI()
+_tool_client = _create_openai_client()
 
 # ---------------------------------------------------------------------------
 # Subagent tools — one tool per non-genie SUBAGENTS entry
@@ -129,9 +143,19 @@ def _make_subagent_tool(subagent: dict):
     model = f"apps/{endpoint}" if subagent["type"] == "app" else endpoint
 
     async def _call(question: str) -> str:
-        response = await _tool_client.responses.create(
-            model=model,
-            input=[{"role": "user", "content": question}],
+        async def request(carrier: dict[str, str]):
+            return await _tool_client.responses.create(
+                model=model,
+                input=[{"role": "user", "content": question}],
+                extra_headers=carrier,
+            )
+
+        response = await traced_remote_agent_call(
+            name=f"remote.{subagent['name']}",
+            target_type=subagent["type"],
+            target_name=endpoint,
+            delegated_input=question,
+            request=request,
         )
         return response.output_text
 
@@ -153,7 +177,13 @@ subagent_tools = [_make_subagent_tool(sa) for sa in SUBAGENTS if sa["type"] != "
 def build_mcp_servers() -> list[McpServer]:
     """Build a Genie MCP server for each genie subagent configured (usually 0 or 1)."""
     return [
-        McpServer(url=build_mcp_url(f"/api/2.0/mcp/genie/{sa['space_id']}"), name="Genie")
+        TracedMcpServer(
+            McpServer(
+                url=build_mcp_url(f"/api/2.0/mcp/genie/{sa['space_id']}"),
+                name="Genie",
+            ),
+            target_name=sa["space_id"],
+        )
         for sa in SUBAGENTS
         if sa["type"] == "genie"
     ]
@@ -225,8 +255,14 @@ def create_orchestrator_agent(
 
 @invoke()
 async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
-    if session_id := get_session_id(request):
-        mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
+    custom_inputs = dict(request.custom_inputs or {})
+    session_id = get_session_id(request) or str(uuid4())
+    set_request_trace_identity(
+        session_id=session_id,
+        user_id=str(custom_inputs.get("user_id") or "anonymous"),
+        request_id=str(custom_inputs.get("request_id") or uuid4()),
+        template_name="agent-openai-agents-sdk-multiagent",
+    )
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
     async with AsyncExitStack() as stack:
@@ -239,8 +275,14 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
 
 @stream()
 async def stream_handler(request: ResponsesAgentRequest) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
-    if session_id := get_session_id(request):
-        mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
+    custom_inputs = dict(request.custom_inputs or {})
+    session_id = get_session_id(request) or str(uuid4())
+    set_request_trace_identity(
+        session_id=session_id,
+        user_id=str(custom_inputs.get("user_id") or "anonymous"),
+        request_id=str(custom_inputs.get("request_id") or uuid4()),
+        template_name="agent-openai-agents-sdk-multiagent",
+    )
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
     async with AsyncExitStack() as stack:

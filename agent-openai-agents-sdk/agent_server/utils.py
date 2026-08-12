@@ -7,6 +7,8 @@ from databricks.sdk import WorkspaceClient
 from mlflow.genai.agent_server import get_request_headers
 from mlflow.types.responses import ResponsesAgentRequest, ResponsesAgentStreamEvent
 
+from agent_server.tracing import capture_stream_event
+
 
 def get_session_id(request: ResponsesAgentRequest) -> str | None:
     if request.context and request.context.conversation_id:
@@ -51,9 +53,12 @@ async def process_agent_stream_events(
                 event_data["item"]["id"] = curr_item_id
             elif event_data.get("item_id") is not None:
                 event_data["item_id"] = curr_item_id
+            capture_stream_event(event_data)
             yield event_data
         elif event.type == "run_item_stream_event" and event.item.type == "tool_call_output_item":
-            yield ResponsesAgentStreamEvent(
+            output_event = ResponsesAgentStreamEvent(
                 type="response.output_item.done",
                 item=event.item.to_input_item(),
             )
+            capture_stream_event(output_event)
+            yield output_event

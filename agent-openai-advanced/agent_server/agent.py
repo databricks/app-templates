@@ -2,6 +2,7 @@ import logging
 from contextlib import AsyncExitStack
 from datetime import datetime
 from typing import AsyncGenerator
+from uuid import uuid4
 
 import mlflow
 from agents import Agent, Runner, function_tool, set_default_openai_api, set_default_openai_client
@@ -16,6 +17,7 @@ from mlflow.types.responses import (
     ResponsesAgentResponse,
     ResponsesAgentStreamEvent,
 )
+from openai import AsyncOpenAI
 
 from agent_server.utils import (
     deduplicate_input,
@@ -26,13 +28,29 @@ from agent_server.utils import (
     lakebase_config,
     process_agent_stream_events,
 )
+from agent_server.tracing import (
+    TracedSession,
+    configure_mlflow_tracing,
+    set_request_trace_identity,
+)
+
+
+def _create_openai_client():
+    try:
+        return AsyncDatabricksOpenAI()
+    except Exception:
+        return AsyncOpenAI(
+            api_key="databricks-auth-required",
+            base_url="http://127.0.0.1:1/v1",
+            max_retries=0,
+        )
 
 
 # NOTE: this will work for all databricks models OTHER than GPT-OSS, which uses a slightly different API
-set_default_openai_client(AsyncDatabricksOpenAI())
+set_default_openai_client(_create_openai_client())
 set_default_openai_api("chat_completions")
 set_trace_processors([])  # only use mlflow for trace processing
-mlflow.openai.autolog()
+configure_mlflow_tracing()
 logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 
@@ -93,16 +111,21 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
     try:
         # Create session for stateful, short-term conversation history with your Databricks Lakebase instance
         session_id = get_session_id(request)
-        if session_id:
-            mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
-        session = AsyncDatabricksSession(
+        custom_inputs = dict(request.custom_inputs or {})
+        set_request_trace_identity(
+            session_id=session_id,
+            user_id=str(custom_inputs.get("user_id") or "anonymous"),
+            request_id=str(custom_inputs.get("request_id") or uuid4()),
+            template_name="agent-openai-advanced",
+        )
+        session = TracedSession(AsyncDatabricksSession(
             session_id=session_id,
             autoscaling_endpoint=lakebase_config.autoscaling_endpoint,
             project=lakebase_config.autoscaling_project,
             branch=lakebase_config.autoscaling_branch,
             schema=lakebase_config.memory_schema,
             create_tables=False,  # Tables created at startup in start_server.py
-        )
+        ))
 
         # The agent runs inside an AsyncExitStack so any MCP servers stay open for the whole
         # request. To give the agent MCP tools, connect them with connect_healthy_mcp_servers,
@@ -142,16 +165,21 @@ async def stream_handler(
     try:
         # Create session for stateful, short-term conversation history with your Databricks Lakebase instance
         session_id = get_session_id(request)
-        if session_id:
-            mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
-        session = AsyncDatabricksSession(
+        custom_inputs = dict(request.custom_inputs or {})
+        set_request_trace_identity(
+            session_id=session_id,
+            user_id=str(custom_inputs.get("user_id") or "anonymous"),
+            request_id=str(custom_inputs.get("request_id") or uuid4()),
+            template_name="agent-openai-advanced",
+        )
+        session = TracedSession(AsyncDatabricksSession(
             session_id=session_id,
             autoscaling_endpoint=lakebase_config.autoscaling_endpoint,
             project=lakebase_config.autoscaling_project,
             branch=lakebase_config.autoscaling_branch,
             schema=lakebase_config.memory_schema,
             create_tables=False,  # Tables created at startup in start_server.py
-        )
+        ))
 
         # The agent runs inside an AsyncExitStack so any MCP servers stay open for the whole
         # request. To give the agent MCP tools, connect them with connect_healthy_mcp_servers,

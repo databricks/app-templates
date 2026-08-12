@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import hashlib
 import json
 import os
+import weakref
 from types import SimpleNamespace
 
 import httpx
@@ -659,3 +661,105 @@ def test_failed_stream_resets_capture_before_later_success(monkeypatch, tmp_path
     )
     assert "streamfailuresecret" not in serialized
     assert "[REDACTED]" in serialized
+
+
+def test_cross_task_weakref_finalizer_does_not_contaminate_origin_context(
+    monkeypatch, tmp_path
+):
+    tracking_uri = f"sqlite:///{tmp_path / 'cross-task-finalizer.db'}"
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment_id = mlflow.create_experiment(
+        "cross-task-finalizer", artifact_location=artifact_dir.as_uri()
+    )
+    mlflow.set_experiment(experiment_id=experiment_id)
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", tracking_uri)
+    monkeypatch.setenv("MLFLOW_EXPERIMENT_ID", experiment_id)
+
+    chunks = [
+        {
+            "id": "chatcmpl-abandoned",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": "databricks-gpt-5-2",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "delta": {"role": "assistant", "content": "unused"},
+                }
+            ],
+        },
+        {
+            "id": "chatcmpl-abandoned",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": "databricks-gpt-5-2",
+            "choices": [],
+            "usage": {
+                "prompt_tokens": 2,
+                "completion_tokens": 1,
+                "total_tokens": 3,
+            },
+        },
+    ]
+    body = "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in chunks)
+    body += "data: [DONE]\n\n"
+
+    async def transport(request):
+        return httpx.Response(
+            200,
+            content=body.encode(),
+            headers={"content-type": "text/event-stream"},
+            request=request,
+        )
+
+    client = AsyncOpenAI(
+        api_key="test",
+        base_url="https://example.invalid/v1",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(transport)),
+    )
+    import databricks_openai
+
+    monkeypatch.setattr(databricks_openai, "AsyncDatabricksOpenAI", lambda: client)
+    set_default_openai_client(client)
+    from agent_server import agent, tracing
+
+    finalizers = []
+    original_finalize = weakref.finalize
+
+    def capture_finalizer(*args, **kwargs):
+        finalizer = original_finalize(*args, **kwargs)
+        finalizers.append(finalizer)
+        return finalizer
+
+    monkeypatch.setattr(tracing.weakref, "finalize", capture_finalizer)
+
+    async def finalize_from_another_task():
+        result = agent.Runner.run_streamed(
+            agent.create_agent(),
+            input=[{"role": "user", "content": "abandon this stream"}],
+        )
+        assert tracing._stream_capture.get() is None
+        assert len(finalizers) == 1
+        finalizer = finalizers[0]
+
+        async def drop_after_run_completes(stream_result):
+            await stream_result.run_loop_task
+            result_ref = weakref.ref(stream_result)
+            del stream_result
+            for _ in range(10):
+                gc.collect()
+                await asyncio.sleep(0)
+                if result_ref() is None:
+                    break
+            return result_ref() is None
+
+        drop_task = asyncio.create_task(drop_after_run_completes(result))
+        del result
+        assert await drop_task
+        assert not finalizer.alive
+        assert tracing._stream_capture.get() is None
+
+    asyncio.run(finalize_from_another_task())

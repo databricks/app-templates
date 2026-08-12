@@ -690,7 +690,6 @@ def _finalize_appkit_streamed_root(
     token: Any,
     request_usage: AgentRequestUsage,
     stream_capture: BoundedTraceAccumulator,
-    stream_capture_token: Any,
     *,
     error: BaseException | None = None,
     outputs: Any = None,
@@ -713,12 +712,6 @@ def _finalize_appkit_streamed_root(
         span.end()
     except Exception:
         pass
-    finally:
-        try:
-            _stream_capture.reset(stream_capture_token)
-        except (RuntimeError, ValueError):
-            if _stream_capture.get() is stream_capture:
-                _stream_capture.set(None)
 
 
 def _appkit_patched_agent_run_streamed(original, self, *args, **kwargs):
@@ -739,7 +732,6 @@ def _appkit_patched_agent_run_streamed(original, self, *args, **kwargs):
     _apply_identity_to_active_trace()
     request_usage = AgentRequestUsage(span)
     stream_capture = BoundedTraceAccumulator()
-    stream_capture_token = _stream_capture.set(stream_capture)
     try:
         result = original(self, *args, **kwargs)
     except BaseException as error:
@@ -748,7 +740,6 @@ def _appkit_patched_agent_run_streamed(original, self, *args, **kwargs):
             token,
             request_usage,
             stream_capture,
-            stream_capture_token,
             error=error,
         )
         raise
@@ -759,7 +750,6 @@ def _appkit_patched_agent_run_streamed(original, self, *args, **kwargs):
         token,
         request_usage,
         stream_capture,
-        stream_capture_token,
     )
     original_stream_events = type(result).stream_events
     result_ref = weakref.ref(result)
@@ -770,6 +760,7 @@ def _appkit_patched_agent_run_streamed(original, self, *args, **kwargs):
             async for event in original_stream_events(live_result, *stream_args, **stream_kwargs):
                 yield event
             return
+        stream_capture_token = _stream_capture.set(stream_capture)
         error: BaseException | None = None
         try:
             async for event in original_stream_events(live_result, *stream_args, **stream_kwargs):
@@ -784,10 +775,14 @@ def _appkit_patched_agent_run_streamed(original, self, *args, **kwargs):
                     token,
                     request_usage,
                     stream_capture,
-                    stream_capture_token,
                     error=error,
                     outputs=None if error else live_result.final_output,
                 )
+            try:
+                _stream_capture.reset(stream_capture_token)
+            except (RuntimeError, ValueError):
+                if _stream_capture.get() is stream_capture:
+                    _stream_capture.set(None)
 
     result.stream_events = wrapped_stream_events
     return result

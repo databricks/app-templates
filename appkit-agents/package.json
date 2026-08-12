@@ -1,5 +1,5 @@
 {
-  "name": "appkit-all-in-one",
+  "name": "appkit-agents",
   "version": "1.0.0",
   "main": "dist/server.js",
   "type": "module",
@@ -27,7 +27,7 @@
   "keywords": [],
   "author": "",
   "license": "Unlicensed",
-  "description": "Full-stack Node.js app with traced agents, SQL analytics dashboards, file browser, Genie AI conversations, Lakebase Autoscaling (Postgres) CRUD, and Model Serving",
+  "description": "Node.js agent app with MLflow Unity Catalog tracing and a composed planner/helper example",
   "dependencies": {
     "@databricks/appkit": "0.59.0",
     "@databricks/appkit-ui": "0.59.0",

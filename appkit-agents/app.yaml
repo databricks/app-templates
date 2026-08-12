@@ -6,16 +6,6 @@ env:
     valueFrom: mlflow-tracing-warehouse
   - name: DATABRICKS_SERVING_ENDPOINT_NAME
     valueFrom: agents-serving-endpoint
-  - name: DATABRICKS_WAREHOUSE_ID
-    valueFrom: sql-warehouse
-  - name: DATABRICKS_VOLUME_FILES
-    valueFrom: files
-  - name: DATABRICKS_GENIE_SPACE_ID
-    valueFrom: genie-space
-  - name: LAKEBASE_ENDPOINT
-    valueFrom: postgres
-  - name: DATABRICKS_SERVING_ENDPOINT_NAME
-    valueFrom: serving-endpoint
   # UC coordinates are runtime configuration, not fields on the experiment
   # resource binding. `npm run setup` replaces these defaults after provisioning.
   - name: MLFLOW_UC_CATALOG

@@ -133,8 +133,7 @@
             "After init, ensure config/queries/ has at least one .sql file before running npm run typegen"
           ]
         }
-      },
-      "requiredByTemplate": true
+      }
     },
     "files": {
       "name": "files",
@@ -171,8 +170,7 @@
             "Before init, verify your Unity Catalog volume exists and you have WRITE_VOLUME permission"
           ]
         }
-      },
-      "requiredByTemplate": true
+      }
     },
     "genie": {
       "name": "genie",
@@ -212,8 +210,7 @@
             "After init, configure the 'spaces' map in plugin config with alias-to-Space-ID mappings"
           ]
         }
-      },
-      "requiredByTemplate": true
+      }
     },
     "jobs": {
       "name": "jobs",
@@ -342,8 +339,7 @@
             "After init, verify Lakebase connectivity with 'psql $PGHOST -c \"select 1\"'"
           ]
         }
-      },
-      "requiredByTemplate": true
+      }
     },
     "server": {
       "name": "server",
@@ -379,8 +375,7 @@
           }
         ],
         "optional": []
-      },
-      "requiredByTemplate": true
+      }
     }
   },
   "scaffolding": {

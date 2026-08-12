@@ -1,6 +1,5 @@
-import { createApp, analytics, files, genie, lakebase, server, serving } from '@databricks/appkit';
+import { createApp, server } from '@databricks/appkit';
 import { agents } from '@databricks/appkit/beta';
-import { setupSampleLakebaseRoutes } from './routes/lakebase/todo-routes';
 import { helper } from './agents/helper';
 
 createApp({
@@ -9,14 +8,6 @@ createApp({
   telemetry: { mlflowUc: true },
   plugins: [
     agents({ agents: { helper } }),
-    analytics(),
-    files(),
-    genie(),
-    lakebase(),
     server(),
-    serving(),
   ],
-  async onPluginsReady(appkit) {
-    await setupSampleLakebaseRoutes(appkit);
-  },
 }).catch(console.error);

@@ -14,7 +14,11 @@ import { Router, type Request, type Response } from "express";
 import type { AgentInterface } from "../agent-interface.js";
 import { randomUUID } from "crypto";
 import { z } from "zod";
-import { BoundedTraceAccumulator, withAgentRequestTrace } from "../tracing.js";
+import {
+  BoundedTraceAccumulator,
+  safeLogError,
+  withAgentRequestTrace,
+} from "../tracing.js";
 
 /**
  * Responses API request schema.
@@ -176,8 +180,9 @@ export function createInvocationsRouter(
             res.write("data: [DONE]\n\n");
             res.end();
           } catch (error: unknown) {
+            const details = safeLogError(error);
             const message = trace.recordError(error);
-            console.error("Streaming error:", message);
+            console.error("Streaming error:", { ...details, message });
             res.write(
               `data: ${JSON.stringify({ type: "error", error: message })}\n\n`,
             );
@@ -203,11 +208,11 @@ export function createInvocationsRouter(
         res.json({ output: traced.value, trace_id: traced.traceId });
       }
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error("Agent invocation error:", error);
+      const details = safeLogError(error);
+      console.error("Agent invocation error:", details);
       res.status(500).json({
         error: "Internal server error",
-        message,
+        message: details.message,
       });
     }
   });

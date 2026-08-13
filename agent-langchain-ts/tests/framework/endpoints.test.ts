@@ -16,6 +16,7 @@ import {
 import http, { type Server } from "http";
 import express from "express";
 import OpenAI from "openai";
+import { format } from "util";
 import type { AgentInterface } from "../../src/framework/agent-interface.js";
 import { createInvocationsRouter } from "../../src/framework/routes/invocations.js";
 import { StubAgent } from "./stub-agent.js";
@@ -208,6 +209,86 @@ describe("API Endpoints", () => {
           "Agent invocation error:",
           expect.objectContaining({ message: "expected invocation failure" }),
         );
+      } finally {
+        await flushTracing();
+        errorLog.mockRestore();
+        const address = server.address();
+        if (address && typeof address !== "string") {
+          allowedOrigins.delete(`http://127.0.0.1:${address.port}`);
+        }
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => (error ? reject(error) : resolve()));
+        });
+      }
+    });
+
+    test("logs SDK authentication failures without serializing credentials or environment", async () => {
+      const sentinelCredential = "test-only-sentinel-value";
+      const environmentMarker = "TEST_FULL_ENV_MARKER";
+      class ConfigError extends Error {
+        readonly code = "UNAUTHENTICATED";
+        readonly config = {
+          env: {
+            DATABRICKS_TOKEN: sentinelCredential,
+            [environmentMarker]: "present-only-in-sdk-config",
+          },
+          headers: {
+            authorization: `Bearer ${sentinelCredential}`,
+            cookie: `session=${sentinelCredential}`,
+            "x-api-key": sentinelCredential,
+          },
+        };
+      }
+
+      const failingAgent: AgentInterface = {
+        async invoke() {
+          throw new ConfigError(
+            `authentication failed: Authorization: Bearer ${sentinelCredential}`,
+          );
+        },
+        async *stream() {
+          throw new Error("stream should not be called");
+        },
+      };
+      const app = express();
+      app.use(express.json());
+      app.use("/invocations", createInvocationsRouter(failingAgent));
+      const server = await new Promise<Server>((resolve) => {
+        const listener = app.listen(0, () => resolve(listener));
+      });
+      const logged: string[] = [];
+      const errorLog = jest
+        .spyOn(console, "error")
+        .mockImplementation((...args: unknown[]) => {
+          logged.push(format(...args));
+        });
+
+      try {
+        const address = server.address();
+        if (!address || typeof address === "string") {
+          throw new Error("test server did not bind to a TCP port");
+        }
+        const origin = `http://127.0.0.1:${address.port}`;
+        allowedOrigins.add(origin);
+        const response = await fetch(`${origin}/invocations`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            input: [{ role: "user", content: "fail authentication" }],
+            stream: false,
+          }),
+        });
+
+        expect(response.status).toBe(500);
+        await flushTracing();
+        const output = logged.join("\n");
+        expect(output).toContain("ConfigError");
+        expect(output).toContain("UNAUTHENTICATED");
+        expect(output).toContain("authentication failed");
+        expect(output).toContain("Authorization: [REDACTED]");
+        expect(output).not.toContain(sentinelCredential);
+        expect(output).not.toContain(environmentMarker);
+        expect(output).not.toContain("present-only-in-sdk-config");
       } finally {
         await flushTracing();
         errorLog.mockRestore();

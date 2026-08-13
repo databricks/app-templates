@@ -14,6 +14,7 @@
 import { WorkspaceClient } from "@databricks/sdk-experimental";
 import { writeFileSync } from "fs";
 import { config } from "dotenv";
+import { safeLogError } from "../src/framework/tracing.js";
 
 // Load environment variables
 config();
@@ -36,7 +37,7 @@ interface DiscoveryResults {
 async function discoverUCFunctions(
   w: WorkspaceClient,
   catalog?: string,
-  maxSchemas: number = DEFAULT_MAX_SCHEMAS
+  maxSchemas: number = DEFAULT_MAX_SCHEMAS,
 ): Promise<any[]> {
   const functions: any[] = [];
   let schemasSearched = 0;
@@ -61,7 +62,10 @@ async function discoverUCFunctions(
         }
 
         // Take schemas from this catalog until we hit the global budget
-        const schemasToSearch = allSchemas.slice(0, maxSchemas - schemasSearched);
+        const schemasToSearch = allSchemas.slice(
+          0,
+          maxSchemas - schemasSearched,
+        );
 
         for (const schema of schemasToSearch) {
           const schema_name = `${cat}.${schema.name}`;
@@ -91,7 +95,7 @@ async function discoverUCFunctions(
       }
     }
   } catch (error: any) {
-    console.error(`Error discovering UC functions: ${error.message}`);
+    console.error("Error discovering UC functions:", safeLogError(error));
   }
 
   return functions;
@@ -104,7 +108,7 @@ async function discoverUCTables(
   w: WorkspaceClient,
   catalog?: string,
   schema?: string,
-  maxSchemas: number = DEFAULT_MAX_SCHEMAS
+  maxSchemas: number = DEFAULT_MAX_SCHEMAS,
 ): Promise<any[]> {
   const tables: any[] = [];
   let schemasSearched = 0;
@@ -135,7 +139,10 @@ async function discoverUCTables(
         }
 
         // Take schemas until we hit the global budget
-        const schemasSlice = schemasToSearch.slice(0, maxSchemas - schemasSearched);
+        const schemasSlice = schemasToSearch.slice(
+          0,
+          maxSchemas - schemasSearched,
+        );
 
         for (const sch of schemasSlice) {
           if (sch === "information_schema") {
@@ -181,7 +188,7 @@ async function discoverUCTables(
       }
     }
   } catch (error: any) {
-    console.error(`Error discovering UC tables: ${error.message}`);
+    console.error("Error discovering UC tables:", safeLogError(error));
   }
 
   return tables;
@@ -214,7 +221,10 @@ async function discoverVectorSearchIndexes(w: WorkspaceClient): Promise<any[]> {
       }
     }
   } catch (error: any) {
-    console.error(`Error discovering vector search indexes: ${error.message}`);
+    console.error(
+      "Error discovering vector search indexes:",
+      safeLogError(error),
+    );
   }
 
   return indexes;
@@ -239,7 +249,7 @@ async function discoverGenieSpaces(w: WorkspaceClient): Promise<any[]> {
       });
     }
   } catch (error: any) {
-    console.error(`Error discovering Genie spaces: ${error.message}`);
+    console.error("Error discovering Genie spaces:", safeLogError(error));
   }
 
   return spaces;
@@ -265,7 +275,7 @@ async function discoverCustomMCPServers(w: WorkspaceClient): Promise<any[]> {
       }
     }
   } catch (error: any) {
-    console.error(`Error discovering custom MCP servers: ${error.message}`);
+    console.error("Error discovering custom MCP servers:", safeLogError(error));
   }
 
   return customServers;
@@ -292,7 +302,10 @@ async function discoverExternalMCPServers(w: WorkspaceClient): Promise<any[]> {
       }
     }
   } catch (error: any) {
-    console.error(`Error discovering external MCP servers: ${error.message}`);
+    console.error(
+      "Error discovering external MCP servers:",
+      safeLogError(error),
+    );
   }
 
   return externalServers;
@@ -308,10 +321,16 @@ function formatOutputMarkdown(results: DiscoveryResults): string {
   const functions = results.uc_functions;
   if (functions.length > 0) {
     lines.push(`## Unity Catalog Functions (${functions.length})\n`);
-    lines.push("**What they are:** SQL UDFs that can be used as agent tools.\n");
+    lines.push(
+      "**What they are:** SQL UDFs that can be used as agent tools.\n",
+    );
     lines.push("**How to use:** Access via UC functions MCP server:");
-    lines.push("- All functions in a schema: `{workspace_host}/api/2.0/mcp/functions/{catalog}/{schema}`");
-    lines.push("- Single function: `{workspace_host}/api/2.0/mcp/functions/{catalog}/{schema}/{function_name}`\n");
+    lines.push(
+      "- All functions in a schema: `{workspace_host}/api/2.0/mcp/functions/{catalog}/{schema}`",
+    );
+    lines.push(
+      "- Single function: `{workspace_host}/api/2.0/mcp/functions/{catalog}/{schema}/{function_name}`\n",
+    );
     for (const func of functions.slice(0, 10)) {
       lines.push(`- \`${func.name}\``);
       if (func.comment) {
@@ -349,9 +368,15 @@ function formatOutputMarkdown(results: DiscoveryResults): string {
   const indexes = results.vector_search_indexes;
   if (indexes.length > 0) {
     lines.push(`## Vector Search Indexes (${indexes.length})\n`);
-    lines.push("These can be used for RAG applications with unstructured data.\n");
-    lines.push("**How to use:** Connect via MCP server at `{workspace_host}/api/2.0/mcp/vector-search/{catalog}/{schema}` or\n");
-    lines.push("`{workspace_host}/api/2.0/mcp/vector-search/{catalog}/{schema}/{index_name}`\n");
+    lines.push(
+      "These can be used for RAG applications with unstructured data.\n",
+    );
+    lines.push(
+      "**How to use:** Connect via MCP server at `{workspace_host}/api/2.0/mcp/vector-search/{catalog}/{schema}` or\n",
+    );
+    lines.push(
+      "`{workspace_host}/api/2.0/mcp/vector-search/{catalog}/{schema}/{index_name}`\n",
+    );
     for (const idx of indexes) {
       lines.push(`- \`${idx.name}\``);
       lines.push(`  - Endpoint: ${idx.endpoint}`);
@@ -365,7 +390,9 @@ function formatOutputMarkdown(results: DiscoveryResults): string {
   if (spaces.length > 0) {
     lines.push(`## Genie Spaces (${spaces.length})\n`);
     lines.push("**What they are:** Natural language interface to your data\n");
-    lines.push("**How to use:** Connect via Genie MCP server at `{workspace_host}/api/2.0/mcp/genie/{space_id}`\n");
+    lines.push(
+      "**How to use:** Connect via Genie MCP server at `{workspace_host}/api/2.0/mcp/genie/{space_id}`\n",
+    );
     for (const space of spaces) {
       lines.push(`- \`${space.name}\` (ID: ${space.id})`);
       if (space.description) {
@@ -379,12 +406,22 @@ function formatOutputMarkdown(results: DiscoveryResults): string {
   const customServers = results.custom_mcp_servers;
   if (customServers.length > 0) {
     lines.push(`## Custom MCP Servers (${customServers.length})\n`);
-    lines.push("**What:** Your own MCP servers deployed as Databricks Apps (names starting with mcp-)\n");
+    lines.push(
+      "**What:** Your own MCP servers deployed as Databricks Apps (names starting with mcp-)\n",
+    );
     lines.push("**How to use:** Access via `{app_url}/mcp`\n");
-    lines.push("**⚠️ Important:** Custom MCP server apps require manual permission grants:");
-    lines.push("1. Get your agent app's service principal: `databricks apps get <agent-app> --output json | jq -r '.service_principal_name'`");
-    lines.push("2. Grant permission: `databricks apps update-permissions <mcp-server-app> --service-principal <sp-name> --permission-level CAN_USE`");
-    lines.push("(Apps are not yet supported as resource dependencies in databricks.yml)\n");
+    lines.push(
+      "**⚠️ Important:** Custom MCP server apps require manual permission grants:",
+    );
+    lines.push(
+      "1. Get your agent app's service principal: `databricks apps get <agent-app> --output json | jq -r '.service_principal_name'`",
+    );
+    lines.push(
+      "2. Grant permission: `databricks apps update-permissions <mcp-server-app> --service-principal <sp-name> --permission-level CAN_USE`",
+    );
+    lines.push(
+      "(Apps are not yet supported as resource dependencies in databricks.yml)\n",
+    );
     for (const server of customServers) {
       lines.push(`- \`${server.name}\``);
       if (server.url) {
@@ -404,9 +441,15 @@ function formatOutputMarkdown(results: DiscoveryResults): string {
   const externalServers = results.external_mcp_servers;
   if (externalServers.length > 0) {
     lines.push(`## External MCP Servers (${externalServers.length})\n`);
-    lines.push("**What:** Third-party MCP servers via Unity Catalog connections\n");
-    lines.push("**How to use:** Connect via `{workspace_host}/api/2.0/mcp/external/{connection_name}`\n");
-    lines.push("**Benefits:** Secure access to external APIs through UC governance\n");
+    lines.push(
+      "**What:** Third-party MCP servers via Unity Catalog connections\n",
+    );
+    lines.push(
+      "**How to use:** Connect via `{workspace_host}/api/2.0/mcp/external/{connection_name}`\n",
+    );
+    lines.push(
+      "**Benefits:** Secure access to external APIs through UC governance\n",
+    );
     for (const server of externalServers) {
       lines.push(`- \`${server.name}\``);
       if (server.full_name) {
@@ -467,7 +510,9 @@ async function main() {
     ? new WorkspaceClient({ profile })
     : new WorkspaceClient({
         host: process.env.DATABRICKS_HOST,
-        authType: process.env.DATABRICKS_CONFIG_PROFILE ? "databricks-cli" : undefined,
+        authType: process.env.DATABRICKS_CONFIG_PROFILE
+          ? "databricks-cli"
+          : undefined,
         profile: process.env.DATABRICKS_CONFIG_PROFILE,
       });
 
@@ -482,22 +527,35 @@ async function main() {
 
   // Discover each type with configurable limits
   console.error("- UC Functions...");
-  results.uc_functions = (await discoverUCFunctions(w, catalog, maxSchemas)).slice(0, maxResults);
+  results.uc_functions = (
+    await discoverUCFunctions(w, catalog, maxSchemas)
+  ).slice(0, maxResults);
 
   console.error("- UC Tables...");
-  results.uc_tables = (await discoverUCTables(w, catalog, schema, maxSchemas)).slice(0, maxResults);
+  results.uc_tables = (
+    await discoverUCTables(w, catalog, schema, maxSchemas)
+  ).slice(0, maxResults);
 
   console.error("- Vector Search Indexes...");
-  results.vector_search_indexes = (await discoverVectorSearchIndexes(w)).slice(0, maxResults);
+  results.vector_search_indexes = (await discoverVectorSearchIndexes(w)).slice(
+    0,
+    maxResults,
+  );
 
   console.error("- Genie Spaces...");
   results.genie_spaces = (await discoverGenieSpaces(w)).slice(0, maxResults);
 
   console.error("- Custom MCP Servers (Apps)...");
-  results.custom_mcp_servers = (await discoverCustomMCPServers(w)).slice(0, maxResults);
+  results.custom_mcp_servers = (await discoverCustomMCPServers(w)).slice(
+    0,
+    maxResults,
+  );
 
   console.error("- External MCP Servers (Connections)...");
-  results.external_mcp_servers = (await discoverExternalMCPServers(w)).slice(0, maxResults);
+  results.external_mcp_servers = (await discoverExternalMCPServers(w)).slice(
+    0,
+    maxResults,
+  );
 
   // Format output
   let outputText: string;
@@ -519,13 +577,15 @@ async function main() {
   console.error("\n=== Discovery Summary ===");
   console.error(`UC Functions: ${results.uc_functions.length}`);
   console.error(`UC Tables: ${results.uc_tables.length}`);
-  console.error(`Vector Search Indexes: ${results.vector_search_indexes.length}`);
+  console.error(
+    `Vector Search Indexes: ${results.vector_search_indexes.length}`,
+  );
   console.error(`Genie Spaces: ${results.genie_spaces.length}`);
   console.error(`Custom MCP Servers: ${results.custom_mcp_servers.length}`);
   console.error(`External MCP Servers: ${results.external_mcp_servers.length}`);
 }
 
 main().catch((error) => {
-  console.error("Fatal error:", error);
+  console.error("Fatal error:", safeLogError(error));
   process.exit(1);
 });

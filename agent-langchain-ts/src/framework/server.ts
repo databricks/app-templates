@@ -16,7 +16,7 @@ import { config } from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import { existsSync } from "fs";
-import { flushTracing, initializeTracing } from "./tracing.js";
+import { flushTracing, initializeTracing, safeLogError } from "./tracing.js";
 import { createInvocationsRouter } from "./routes/invocations.js";
 import { closeMCPClient } from "../tools.js";
 import type { AgentInterface } from "./agent-interface.js";
@@ -51,7 +51,7 @@ function setupShutdownHandlers(): void {
       await flushTracing();
       process.exit(0);
     } catch (error) {
-      console.error("Error during shutdown:", error);
+      console.error("Error during shutdown:", safeLogError(error));
       process.exit(1);
     }
   };
@@ -133,7 +133,7 @@ export async function createServer(
         }
         res.end();
       } catch (error) {
-        console.error("Error proxying to UI backend:", error);
+        console.error("Error proxying to UI backend:", safeLogError(error));
         res.status(502).json({ error: "Bad Gateway" });
       }
     });

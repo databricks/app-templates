@@ -6,7 +6,7 @@ const MAX_CAPTURE_BYTES = 64 * 1024;
 const SECRET_KEY =
   /(?:authorization|api[-_]?key|cookie|credential|password|secret|token)/i;
 const SECRET_TEXT =
-  /(\b(?:authorization|api[-_]?key|cookie|credential|password|secret|token)\b["']?\s*(?::|=|\s)\s*)(?:(["'])(?:bearer\s+)?((?:\\.|(?!\2)[^\\])*)\2|(?:bearer\s+)?([^\s,;)\]}]+))/gi;
+  /((?<![A-Za-z0-9])(?:authorization|(?:x[-_])?api[-_]?key|cookie|credential|password|secret|token|(?:databricks|access|refresh)[-_]token|client[-_]secret)\b["']?\s*(?::|=|\s)\s*)(?:(["'])(?:bearer\s+)?((?:\\.|(?!\2)[^\\])*)\2|(?:bearer\s+)?([^\s,;)\]}]+))/gi;
 
 function requireEnv(name: string): string {
   const value = process.env[name]?.trim();
@@ -561,10 +561,11 @@ export async function withAgentRequestTrace<T>(
         if (!recordedError) span.setStatus(mlflow.SpanStatusCode.OK);
         return { value, traceId: span.traceId };
       } catch (error) {
-        const message = safeError(error);
+        const details = safeLogError(error);
+        const message = details.message;
         span.setOutputs({ error: message });
         span.setStatus(mlflow.SpanStatusCode.ERROR, message);
-        throw new Error(message);
+        throw safeErrorForThrow(details);
       } finally {
         requestTrace.finalize();
         requestTraces.delete(span.traceId);
@@ -581,7 +582,10 @@ export async function flushTracing(): Promise<void> {
   try {
     await mlflow.flushTraces();
   } catch (error) {
-    console.error("MLflow trace export failed during flush:", safeError(error));
+    console.error(
+      "MLflow trace export failed during flush:",
+      safeLogError(error),
+    );
   }
 }
 
@@ -769,10 +773,72 @@ function safeIdentity(value: string): string {
   return typeof safe === "string" ? safe : JSON.stringify(safe);
 }
 
+export interface SafeLogError {
+  name: string;
+  message: string;
+  code?: string | number;
+}
+
+export function safeLogError(error: unknown): SafeLogError {
+  let name = "Error";
+  let message: unknown = "Unknown error";
+  let code: unknown;
+
+  try {
+    if (error && typeof error === "object") {
+      const value = error as Record<string, unknown>;
+      const constructorName = value.constructor?.name;
+      const declaredName = value.name;
+      name =
+        typeof constructorName === "string" && constructorName !== "Error"
+          ? constructorName
+          : typeof declaredName === "string" && declaredName
+            ? declaredName
+            : "Error";
+      message = typeof value.message === "string" ? value.message : message;
+      code = value.code;
+    } else if (typeof error === "string") {
+      message = error;
+    } else if (error !== undefined && error !== null) {
+      message = String(error);
+    }
+  } catch {
+    // Do not inspect arbitrary error properties beyond the safe fallback.
+  }
+
+  const safeName = safeTraceValue(name, 256);
+  const safeMessage = safeTraceValue(message, 2048);
+  const details: SafeLogError = {
+    name: typeof safeName === "string" ? safeName : "Error",
+    message:
+      typeof safeMessage === "string"
+        ? safeMessage
+        : JSON.stringify(safeMessage),
+  };
+  if (typeof code === "string" || typeof code === "number") {
+    const safeCode = safeTraceValue(code, 256);
+    if (typeof safeCode === "string" || typeof safeCode === "number") {
+      details.code = safeCode;
+    }
+  }
+  return details;
+}
+
+function safeErrorForThrow(details: SafeLogError): Error {
+  const error = new Error(details.message);
+  error.name = details.name;
+  if (details.code !== undefined) {
+    Object.defineProperty(error, "code", {
+      configurable: true,
+      enumerable: true,
+      value: details.code,
+    });
+  }
+  return error;
+}
+
 function safeError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  const safe = safeTraceValue(message, 2048);
-  return typeof safe === "string" ? safe : JSON.stringify(safe);
+  return safeLogError(error).message;
 }
 
 function asRecord(value: unknown): Record<string, any> {

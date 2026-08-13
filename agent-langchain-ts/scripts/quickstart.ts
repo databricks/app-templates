@@ -14,6 +14,7 @@ import { execFileSync, execSync } from "child_process";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 import * as readline from "readline/promises";
+import { safeLogError } from "../src/framework/tracing.js";
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -283,7 +284,7 @@ async function main() {
     console.log("\n📚 Documentation: README.md");
     console.log("");
   } catch (error) {
-    console.error("\n❌ Setup failed:", error);
+    console.error("\n❌ Setup failed:", safeLogError(error));
     process.exit(1);
   } finally {
     rl.close();

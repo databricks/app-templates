@@ -26,12 +26,14 @@ interface CapturedSpan {
 }
 
 import * as mlflow from "@mlflow/core";
+import { Config, ConfigError } from "@databricks/sdk-experimental";
 import { RunnableLambda, RunnableSequence } from "@langchain/core/runnables";
 import {
   BoundedTraceAccumulator,
   buildTracingConfig,
   flushTracing,
   initializeTracing,
+  safeLogError,
   withAgentRequestTrace,
 } from "../../src/framework/tracing.js";
 import { StandardAgent } from "../../src/agent.js";
@@ -133,6 +135,39 @@ afterAll(async () => {
 });
 
 describe("MLflow tracing", () => {
+  test("reduces SDK configuration errors to safe actionable fields", () => {
+    const sentinelCredential = "test-only-sentinel-value";
+    const environmentMarker = "TEST_FULL_ENV_MARKER";
+    const sdkConfig = new Config({
+      env: {
+        DATABRICKS_TOKEN: sentinelCredential,
+        [environmentMarker]: "present-only-in-sdk-config",
+      },
+    });
+    const error = new ConfigError(
+      [
+        "authentication failed",
+        `Authorization: Bearer ${sentinelCredential}`,
+        `Cookie: session=${sentinelCredential}`,
+        `x-api-key=${sentinelCredential}`,
+        `DATABRICKS_TOKEN=${sentinelCredential}`,
+        `CLIENT_SECRET=${sentinelCredential}`,
+      ].join("; "),
+      sdkConfig,
+    ) as ConfigError & { code: string };
+    error.code = "UNAUTHENTICATED";
+
+    const output = JSON.stringify(safeLogError(error));
+
+    expect(output).toContain("ConfigError");
+    expect(output).toContain("UNAUTHENTICATED");
+    expect(output).toContain("authentication failed");
+    expect(output).toContain("Authorization: [REDACTED]");
+    expect(output).not.toContain(sentinelCredential);
+    expect(output).not.toContain(environmentMarker);
+    expect(output).not.toContain("present-only-in-sdk-config");
+  });
+
   test.each(REQUIRED_ENV)("fails startup when %s is missing", (missingName) => {
     process.env.MLFLOW_EXPERIMENT_ID = "123456789";
     process.env.MLFLOW_UC_CATALOG = "catalog_test";
@@ -345,9 +380,7 @@ describe("MLflow tracing", () => {
     const roots = mlflowSpans.filter(
       (span) => span.spanType === "AGENT" && span.parentId === null,
     );
-    const models = mlflowSpans.filter(
-      (span) => span.spanType === "CHAT_MODEL",
-    );
+    const models = mlflowSpans.filter((span) => span.spanType === "CHAT_MODEL");
     expect(roots).toHaveLength(1);
     expect(roots[0].status.code).toBe("STATUS_CODE_OK");
     expect(models.map((span) => span.attributes["langchain.run_id"])).toEqual([
@@ -620,9 +653,7 @@ describe("MLflow tracing", () => {
         span.parentId === root?.spanId &&
         span.attributes["langchain.run_id"] === "agent-retrieval",
     );
-    const retriever = mlflowSpans.find(
-      (span) => span.spanType === "RETRIEVER",
-    );
+    const retriever = mlflowSpans.find((span) => span.spanType === "RETRIEVER");
     expect(root).toBeDefined();
     expect(chain?.parentId).toBe(root?.spanId);
     expect(retriever?.parentId).toBe(chain?.spanId);
@@ -701,14 +732,10 @@ describe("MLflow tracing", () => {
       async () => agent.invoke({ input: "run nested chains" }),
     );
 
-    const chains = mlflowSpans.filter(
-      (span) => span.spanType === "CHAIN",
+    const chains = mlflowSpans.filter((span) => span.spanType === "CHAIN");
+    expect(chains.map((span) => span.name).sort()).toEqual(
+      ["outer-sequence", "prepare-input", "produce-answer"].sort(),
     );
-    expect(chains.map((span) => span.name).sort()).toEqual([
-      "outer-sequence",
-      "prepare-input",
-      "produce-answer",
-    ].sort());
     const outer = chains.find((span) => span.name === "outer-sequence")!;
     const prepare = chains.find((span) => span.name === "prepare-input")!;
     const produce = chains.find((span) => span.name === "produce-answer")!;
@@ -819,5 +846,4 @@ describe("MLflow tracing", () => {
     ).toBeLessThanOrEqual(1024);
     expect(JSON.stringify(snapshot)).not.toContain("secret-0");
   });
-
 });

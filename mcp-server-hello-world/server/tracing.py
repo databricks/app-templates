@@ -186,11 +186,12 @@ def _jsonable(value: Any) -> Any:
         if isinstance(value, bytes):
             return _jsonable(value.decode("utf-8", errors="replace"))
         if isinstance(value, str):
-            for parser in (json.loads, ast.literal_eval):
-                try:
-                    return _jsonable(parser(value))
-                except (SyntaxError, TypeError, ValueError):
-                    pass
+            if value.lstrip().startswith(("{", "[", "(")):
+                for parser in (json.loads, ast.literal_eval):
+                    try:
+                        return _jsonable(parser(value))
+                    except (SyntaxError, TypeError, ValueError):
+                        pass
             return _redact_text(value)
         if value is None or isinstance(value, (bool, int, float)):
             return value
@@ -245,12 +246,13 @@ def current_request_context() -> dict[str, Any] | None:
 @contextmanager
 def _safe_span(name: str, span_type: str, attributes: dict[str, Any]) -> Iterator[Any | None]:
     manager = None
+    safe_name = safe_error_message(name)
     try:
         safe_attributes = {
             str(key): _safe_attribute(str(key), value) for key, value in attributes.items()
         }
         manager = mlflow.start_span(
-            name=name,
+            name=safe_name,
             span_type=span_type,
             attributes=safe_attributes,
         )
@@ -258,7 +260,7 @@ def _safe_span(name: str, span_type: str, attributes: dict[str, Any]) -> Iterato
     except Exception as error:
         logger.error(
             "MLflow span export failed while starting %s: %s",
-            name,
+            safe_name,
             safe_error_message(error),
         )
         yield None
@@ -271,7 +273,7 @@ def _safe_span(name: str, span_type: str, attributes: dict[str, Any]) -> Iterato
         except Exception as error:
             logger.error(
                 "MLflow span export failed while finishing %s: %s",
-                name,
+                safe_name,
                 safe_error_message(error),
             )
 
@@ -289,6 +291,35 @@ def _safe_span_call(span: Any, method: str, *args: Any) -> None:
             method,
             safe_error_message(error),
         )
+
+
+def _failure_message(value: Any) -> str | None:
+    """Normalize exceptions and MCP/JSON-RPC failure result shapes."""
+    if isinstance(value, BaseException):
+        return safe_error_message(value)
+    if not isinstance(value, Mapping):
+        return None
+
+    error = value.get("error")
+    if error:
+        if isinstance(error, Mapping):
+            for key in ("message", "detail", "text"):
+                if error.get(key):
+                    return safe_error_message(error[key])
+        return safe_error_message(error)
+
+    for key, failed_value in (("ok", False), ("isError", True)):
+        if value.get(key) is failed_value:
+            for message_key in ("message", "detail", "text"):
+                if value.get(message_key):
+                    return safe_error_message(value[message_key])
+            return f"{key} is {str(failed_value).lower()}"
+
+    for key in ("result", "structuredContent"):
+        if key in value:
+            if failure := _failure_message(value[key]):
+                return failure
+    return None
 
 
 def traced_tool(server_name: str, tool_name: str) -> Callable:
@@ -316,7 +347,7 @@ def traced_tool(server_name: str, tool_name: str) -> Callable:
                     result = function(*args, **kwargs)
                 except BaseException as error:
                     latency_ms = max(0.0, (perf_counter_ns() - started_ns) / 1_000_000)
-                    safe_error = safe_error_message(error)
+                    safe_error = _failure_message(error) or safe_error_message(error)
                     if span is not None:
                         _safe_span_call(span, "set_outputs", {"error": safe_error})
                         _safe_span_call(
@@ -336,8 +367,8 @@ def traced_tool(server_name: str, tool_name: str) -> Callable:
                         _safe_span_call(span, "set_status", "ERROR")
                     raise
 
-                is_error = isinstance(result, Mapping) and bool(result.get("error"))
-                status = "ERROR" if is_error else "OK"
+                failure = _failure_message(result)
+                status = "ERROR" if failure else "OK"
                 latency_ms = max(0.0, (perf_counter_ns() - started_ns) / 1_000_000)
                 if span is not None:
                     _safe_span_call(span, "set_outputs", safe_trace_value(result))
@@ -345,8 +376,8 @@ def traced_tool(server_name: str, tool_name: str) -> Callable:
                         "mcp.tool.status": status,
                         "mcp.tool.latency_ms": latency_ms,
                     }
-                    if is_error:
-                        final_attributes["mcp.tool.error"] = safe_error_message(result["error"])
+                    if failure:
+                        final_attributes["mcp.tool.error"] = failure
                     _safe_span_call(span, "set_attributes", final_attributes)
                     _safe_span_call(span, "set_status", status)
                 return result
@@ -364,6 +395,72 @@ def _jsonrpc_identity(body: bytes) -> tuple[str, Any]:
     except (TypeError, ValueError):
         pass
     return "unknown", None
+
+
+def _request_input(body: bytes) -> Any:
+    try:
+        return json.loads(body)
+    except (TypeError, ValueError):
+        return body.decode("utf-8", errors="replace")
+
+
+def _bounded_response_value(value: Any) -> Any:
+    """Bound large response leaves while preserving the JSON-RPC envelope."""
+    if isinstance(value, Mapping):
+        return {str(key): _bounded_response_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_bounded_response_value(item) for item in value]
+    if isinstance(value, (str, bytes)):
+        return safe_trace_value(value, max_bytes=8 * 1024)
+    return _jsonable(value)
+
+
+def _response_output(body: bytes) -> Any:
+    """Parse one SSE JSON envelope, plain JSON, or a bounded raw fallback."""
+    text = body.decode("utf-8", errors="replace")
+    normalized = text.replace("\r\n", "\n")
+    for event in normalized.split("\n\n"):
+        data = "\n".join(
+            line[5:].lstrip() for line in event.splitlines() if line.startswith("data:")
+        )
+        if data and data != "[DONE]":
+            try:
+                return _bounded_response_value(json.loads(data))
+            except (TypeError, ValueError):
+                break
+    try:
+        return _bounded_response_value(json.loads(text))
+    except (TypeError, ValueError):
+        return safe_trace_value(text)
+
+
+def _finish_request_span(
+    span: Any | None,
+    *,
+    started_ns: int,
+    output: Any,
+    response_status: int | None,
+    failure: str | None,
+) -> None:
+    if span is None:
+        return
+    if output is not None:
+        _safe_span_call(span, "set_outputs", output)
+    status = (
+        "ERROR" if failure or (response_status is not None and response_status >= 400) else "OK"
+    )
+    attributes = {
+        "mcp.request.status": status,
+        "mcp.request.latency_ms": max(0.0, (perf_counter_ns() - started_ns) / 1_000_000),
+    }
+    if response_status is not None:
+        attributes["http.response.status_code"] = response_status
+    if failure:
+        attributes["mcp.request.error"] = failure
+    elif response_status is not None and response_status >= 400:
+        attributes["mcp.request.error"] = f"HTTP {response_status}"
+    _safe_span_call(span, "set_attributes", attributes)
+    _safe_span_call(span, "set_status", status)
 
 
 class TraceContextMiddleware:
@@ -391,6 +488,7 @@ class TraceContextMiddleware:
         )
 
         with propagation:
+            started_ns = perf_counter_ns()
             body = bytearray()
             while True:
                 message = await receive()
@@ -413,7 +511,7 @@ class TraceContextMiddleware:
             token = _request_context.set(shared)
             try:
                 with _safe_span(
-                    f"mcp.{method}",
+                    "mcp.request",
                     "AGENT",
                     {
                         "mcp.server.name": self.server_name,
@@ -424,9 +522,15 @@ class TraceContextMiddleware:
                     if span is not None:
                         shared["trace_id"] = span.trace_id
                         shared["span_id"] = span.span_id
+                        _safe_span_call(span, "set_inputs", _request_input(bytes(body)))
+
+                    response_body = bytearray()
+                    response_status = None
 
                     async def traced_send(message):
+                        nonlocal response_status
                         if message["type"] == "http.response.start":
+                            response_status = message.get("status")
                             response_headers = list(message.get("headers", ()))
                             if trace_id := shared.get("trace_id"):
                                 response_headers.append(
@@ -437,8 +541,35 @@ class TraceContextMiddleware:
                                     (b"x-mlflow-span-id", span_id.encode("ascii"))
                                 )
                             message = {**message, "headers": response_headers}
+                        elif message["type"] == "http.response.body":
+                            response_body.extend(message.get("body", b""))
                         await send(message)
 
-                    await self.app(scope, replay_receive, traced_send)
+                    try:
+                        await self.app(scope, replay_receive, traced_send)
+                    except BaseException as error:
+                        safe_error = _failure_message(error) or safe_error_message(error)
+                        _finish_request_span(
+                            span,
+                            started_ns=started_ns,
+                            output={"error": safe_error},
+                            response_status=response_status,
+                            failure=safe_error,
+                        )
+                        if span is not None:
+                            _safe_span_call(
+                                span,
+                                "record_exception",
+                                RuntimeError(f"{type(error).__name__}: {safe_error}"),
+                            )
+                        raise
+                    output = _response_output(bytes(response_body)) if response_body else None
+                    _finish_request_span(
+                        span,
+                        started_ns=started_ns,
+                        output=output,
+                        response_status=response_status,
+                        failure=_failure_message(output),
+                    )
             finally:
                 _request_context.reset(token)

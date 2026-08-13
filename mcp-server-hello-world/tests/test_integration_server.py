@@ -11,7 +11,8 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from server import utils
-from server.app import combined_app
+from server.app import combined_app, mcp_server
+from server.tracing import traced_tool
 
 REMOTE_TRACE_ID = "1234567890abcdef1234567890abcdef"
 REMOTE_PARENT_ID = "0123456789abcdef"
@@ -104,10 +105,16 @@ def test_mcp_jsonrpc_continues_remote_trace_and_traces_concrete_tools(
         "get_user_authenticated_workspace_client",
         lambda: FailingWorkspace(),
     )
+
+    @mcp_server.tool(name="protocol_failure")
+    @traced_tool("custom-mcp-server", "protocol_failure")
+    def protocol_failure() -> dict:
+        return {"isError": True, "message": "downstream rejected the operation"}
+
     with TestClient(combined_app) as client:
         exporter = _capture_spans()
         static_response = client.get("/")
-        _rpc(client, "api key is 'id-secret'", "tools/list", {})
+        listed = _rpc(client, "api key is 'id-secret'", "tools/list", {})
         response = _rpc(
             client,
             "call-17",
@@ -120,28 +127,58 @@ def test_mcp_jsonrpc_continues_remote_trace_and_traces_concrete_tools(
             "tools/call",
             {"name": "get_current_user", "arguments": {}},
         )
+        protocol_failed = _rpc(
+            client,
+            "protocol-error-17",
+            "tools/call",
+            {"name": "protocol_failure", "arguments": {}},
+        )
 
     assert '"isError":false' in response.text
     assert '"error"' in failed.text
+    assert '"isError":true' in protocol_failed.text
     assert "x-mlflow-trace-id" not in static_response.headers
 
     spans = exporter.get_finished_spans()
-    assert len(spans) == 5
-    requests = [span for span in spans if span.name == "mcp.tools/call"]
+    assert len(spans) == 7
+    request_spans = [span for span in spans if _attribute(span, "mlflow.spanType") == "AGENT"]
+    assert {span.name for span in request_spans} == {"mcp.request"}
+    requests = [
+        span for span in request_spans if _attribute(span, "jsonrpc.method") == "tools/call"
+    ]
     tools = [span for span in spans if _attribute(span, "mlflow.spanType") == "TOOL"]
-    assert len(requests) == 2
-    assert len(tools) == 2, [(span.name, dict(span.attributes)) for span in spans]
+    assert len(requests) == 3
+    assert len(tools) == 3, [(span.name, dict(span.attributes)) for span in spans]
 
     health = next(span for span in tools if _attribute(span, "mcp.tool.name") == "health")
     error = next(span for span in tools if _attribute(span, "mcp.tool.name") == "get_current_user")
+    protocol_error = next(
+        span for span in tools if _attribute(span, "mcp.tool.name") == "protocol_failure"
+    )
     health_request = next(
         span for span in requests if _attribute(span, "jsonrpc.request.id") == "call-17"
+    )
+    error_request = next(
+        span for span in requests if _attribute(span, "jsonrpc.request.id") == "error-17"
+    )
+    protocol_error_request = next(
+        span for span in requests if _attribute(span, "jsonrpc.request.id") == "protocol-error-17"
     )
     assert format(health.context.trace_id, "032x") == REMOTE_TRACE_ID
     assert format(health_request.parent.span_id, "016x") == REMOTE_PARENT_ID
     assert health_request.parent.trace_state.get("vendor") == "value"
     assert response.headers["x-mlflow-span-id"] == format(health_request.context.span_id, "016x")
     assert health.parent.span_id == health_request.context.span_id
+    assert _attribute(health_request, "mlflow.spanInputs") == {
+        "jsonrpc": "2.0",
+        "id": "call-17",
+        "method": "tools/call",
+        "params": {"name": "health", "arguments": {}},
+    }
+    assert _attribute(health_request, "mlflow.spanOutputs")["result"]["isError"] is False
+    assert _attribute(health_request, "mcp.request.status") == "OK"
+    assert _attribute(health_request, "mcp.request.latency_ms") >= 0
+    assert health_request.status.status_code.name == "OK"
     assert _attribute(health, "mcp.server.name") == "custom-mcp-server"
     assert _attribute(health, "jsonrpc.request.id") == "call-17"
     assert _attribute(health, "mlflow.spanInputs") == {}
@@ -150,10 +187,24 @@ def test_mcp_jsonrpc_continues_remote_trace_and_traces_concrete_tools(
     assert health.status.status_code.name == "OK"
 
     assert error.status.status_code.name == "ERROR"
+    assert error_request.status.status_code.name == "ERROR"
+    assert _attribute(error_request, "mcp.request.status") == "ERROR"
+    assert _attribute(error_request, "mcp.request.error")
+    assert _attribute(error_request, "mlflow.spanOutputs")["result"]["structuredContent"]["error"]
     assert _attribute(error, "mcp.tool.status") == "ERROR"
     assert _attribute(error, "mlflow.spanOutputs")["truncated"] is True
     assert _attribute(error, "mlflow.spanOutputs")["originalBytes"] > 70_000
     assert len(_attribute(error, "mlflow.spanOutputs")["sha256"]) == 64
+    assert protocol_error.status.status_code.name == "ERROR"
+    assert _attribute(protocol_error, "mcp.tool.status") == "ERROR"
+    assert protocol_error_request.status.status_code.name == "ERROR"
+    assert _attribute(protocol_error_request, "mcp.request.status") == "ERROR"
+    list_request = next(
+        span for span in request_spans if _attribute(span, "jsonrpc.method") == "tools/list"
+    )
+    assert _attribute(list_request, "mlflow.spanOutputs")["id"] == "api key is '[REDACTED]'"
+    assert _attribute(list_request, "mcp.request.status") == "OK"
+    assert listed.status_code == 200
     exported = json.dumps([dict(span.attributes) for span in spans], sort_keys=True)
     for secret in (
         "request-secret",
@@ -163,6 +214,44 @@ def test_mcp_jsonrpc_continues_remote_trace_and_traces_concrete_tools(
         "id-secret",
     ):
         assert secret not in exported
+
+
+def test_router_error_captures_bounded_request_lifecycle_without_method_leak(
+    monkeypatch, tmp_path
+) -> None:
+    """A malformed method must produce safe, complete request-span telemetry."""
+    _set_valid_tracing_environment(monkeypatch, tmp_path)
+    method = "api key is 'method-secret'"
+    with TestClient(combined_app) as client:
+        exporter = _capture_spans()
+        response = _rpc(
+            client,
+            "router-error-17",
+            method,
+            {"note": "cookie is 'body-secret'"},
+        )
+
+    assert "Invalid request parameters" in response.text
+    spans = exporter.get_finished_spans()
+    assert len(spans) == 1
+    request = spans[0]
+    assert request.name == "mcp.request"
+    assert _attribute(request, "mlflow.spanInputs") == {
+        "jsonrpc": "2.0",
+        "id": "router-error-17",
+        "method": "api key is '[REDACTED]'",
+        "params": {"note": "cookie is '[REDACTED]'"},
+    }
+    output = _attribute(request, "mlflow.spanOutputs")
+    assert output["error"]["code"] == -32602
+    assert output["error"]["message"] == "Invalid request parameters"
+    assert _attribute(request, "mcp.request.status") == "ERROR"
+    assert _attribute(request, "mcp.request.error") == "Invalid request parameters"
+    assert _attribute(request, "mcp.request.latency_ms") >= 0
+    assert request.status.status_code.name == "ERROR"
+    exported = json.dumps([dict(span.attributes) for span in spans], sort_keys=True)
+    assert "method-secret" not in exported
+    assert "body-secret" not in exported
 
 
 def test_startup_reports_all_missing_and_invalid_tracing_configuration(monkeypatch) -> None:
@@ -254,9 +343,24 @@ def test_runtime_export_failure_is_logged_safely_without_failing_tool(
                 "params": {"name": "health", "arguments": {}},
             },
         )
+        router_response = client.post(
+            "/mcp",
+            headers={"accept": "application/json, text/event-stream"},
+            json={
+                "jsonrpc": "2.0",
+                "id": "export-router-17",
+                "method": "api key is 'method-secret'",
+                "params": {},
+            },
+        )
 
     assert response.status_code == 200
     assert '"isError":false' in response.text
-    assert "MLflow span export failed" in caplog.text
-    assert "[REDACTED]" in caplog.text
-    assert "export-secret" not in caplog.text
+    assert "Invalid request parameters" in router_response.text
+    tracing_logs = "\n".join(
+        record.getMessage() for record in caplog.records if record.name == "server.tracing"
+    )
+    assert "MLflow span export failed" in tracing_logs
+    assert "[REDACTED]" in tracing_logs
+    assert "export-secret" not in tracing_logs
+    assert "method-secret" not in tracing_logs

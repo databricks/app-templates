@@ -1,5 +1,6 @@
 import {
   generateText,
+  type FinishReason,
   type LanguageModelUsage,
   type UIMessageStreamWriter,
 } from 'ai';
@@ -148,7 +149,6 @@ function writeGenerateTextResultToStream(
     }
   }
 
-  writer.write({ type: 'finish', finishReason: result.finishReason });
 }
 
 /**
@@ -159,7 +159,14 @@ function writeGenerateTextResultToStream(
 export async function fallbackToGenerateText(
   params: Parameters<typeof generateText>[0],
   writer: UIMessageStreamWriter,
-): Promise<{ usage: LanguageModelUsage; traceId?: string } | undefined> {
+): Promise<
+  | {
+      usage: LanguageModelUsage;
+      finishReason: FinishReason;
+      traceId?: string;
+    }
+  | undefined
+> {
   try {
     const fallback = await generateText(params);
 
@@ -173,7 +180,11 @@ export async function fallbackToGenerateText(
 
     writeGenerateTextResultToStream(fallback, writer);
 
-    return { usage: fallback.usage, traceId };
+    return {
+      usage: fallback.usage,
+      finishReason: fallback.finishReason,
+      traceId,
+    };
   } catch (fallbackError) {
     console.error(
       '[fallbackToGenerateText] generateText fallback also failed:',

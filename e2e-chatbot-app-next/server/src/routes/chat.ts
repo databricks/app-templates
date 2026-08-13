@@ -9,6 +9,7 @@ import {
   createUIMessageStream,
   streamText,
   generateText,
+  type FinishReason,
   type LanguageModelUsage,
   pipeUIMessageStreamToResponse,
 } from 'ai';
@@ -305,6 +306,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     streamCache.clearActiveStream(id);
 
     let finalUsage: LanguageModelUsage | undefined;
+    let finalFinishReason: FinishReason | undefined;
     let traceId: string | null = null;
     const streamId = generateUUID();
 
@@ -340,8 +342,9 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           traceId ||= traceIdFromValue(raw);
         }
       },
-      onFinish: ({ usage }) => {
+      onFinish: ({ usage, finishReason }) => {
         finalUsage = usage;
+        finalFinishReason = finishReason;
       },
     });
 
@@ -420,6 +423,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           );
 
           finalUsage = fallbackResult?.usage;
+          finalFinishReason = fallbackResult?.finishReason ?? 'error';
           traceId = fallbackResult?.traceId ?? traceId;
         }
         if (!failed) {
@@ -441,6 +445,12 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
 
         // Write traceId so the client knows whether feedback is supported.
         writer.write({ type: 'data-traceId', data: traceId });
+        // Keep finish as the terminal protocol chunk. The client uses it to
+        // distinguish a complete response from an interrupted stream.
+        writer.write({
+          type: 'finish',
+          finishReason: finalFinishReason ?? (failed ? 'error' : 'other'),
+        });
       },
       onFinish: async ({ responseMessage }) => {
         // Store in-memory for ephemeral mode (also useful when DB is available)

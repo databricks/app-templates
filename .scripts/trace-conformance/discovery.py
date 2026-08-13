@@ -302,15 +302,39 @@ def _generated_appkit_proof_owner(template: Path) -> str | None:
         return None
     agents = manifest.get("plugins", {}).get("agents", {})
     server = _read(server_path)
-    if (
+    if not (
         package.get("dependencies", {}).get("@databricks/appkit")
         and agents.get("package") == "@databricks/appkit"
         and agents.get("requiredByTemplate") is True
         and re.search(r"\bcreateApp\s*\(", server)
         and re.search(r"\bagents\s*\(", server)
     ):
-        return "@databricks/appkit generated-template conformance"
-    return None
+        return None
+    configured_owner = os.environ.get("APPKIT_SOURCE_ROOT")
+    if configured_owner:
+        owner_roots = [Path(configured_owner)]
+    else:
+        workspace_root = template.parent.parent
+        owner_roots = sorted(
+            (path for path in workspace_root.iterdir() if path.is_dir()),
+            key=lambda path: path.name,
+        )
+    matches: list[Path] = []
+    for owner_root in owner_roots:
+        owner_suite = (
+            owner_root
+            / "packages/appkit/src/plugins/agents/tests/trace-conformance.integration.test.ts"
+        )
+        owner_generator = owner_root / "tools/generate-app-templates.ts"
+        if (
+            owner_suite.exists()
+            and owner_generator.exists()
+            and f'name: "{template.name}"' in _read(owner_generator)
+        ):
+            matches.append(owner_root.resolve())
+    if configured_owner and matches:
+        return str(matches[0])
+    return str(matches[0]) if len(matches) == 1 else None
 
 
 def is_trace_policy_candidate(template: AgentTemplate) -> bool:
@@ -319,7 +343,7 @@ def is_trace_policy_candidate(template: AgentTemplate) -> bool:
 
 
 def discover_agentic_templates(root: Path | str) -> list[AgentTemplate]:
-    root = Path(root)
+    root = Path(root).resolve()
     discovered = []
     for template in sorted(
         path
@@ -329,6 +353,14 @@ def discover_agentic_templates(root: Path | str) -> list[AgentTemplate]:
         signals = _production_signals(template)
         if not signals:
             continue
+        proof_owner = _generated_appkit_proof_owner(template)
+        local_test_command = _local_test_command(template)
+        if proof_owner and local_test_command is None:
+            local_test_command = (
+                "__appkit_generated_owner__",
+                proof_owner,
+                template.name,
+            )
         discovered.append(
             AgentTemplate(
                 name=template.name,
@@ -336,9 +368,11 @@ def discover_agentic_templates(root: Path | str) -> list[AgentTemplate]:
                 signals=signals,
                 has_uc_resources=_has_uc_resources(template),
                 has_local_conformance=_has_local_conformance(template),
-                has_deployed_verification=_has_deployed_verification(template),
-                local_test_command=_local_test_command(template),
-                proof_owner=_generated_appkit_proof_owner(template),
+                has_deployed_verification=(
+                    _has_deployed_verification(template) or proof_owner is not None
+                ),
+                local_test_command=local_test_command,
+                proof_owner=proof_owner,
             )
         )
     return discovered
@@ -350,7 +384,7 @@ def assert_template_policy(templates: list[AgentTemplate]) -> None:
         missing = []
         if not template.has_uc_resources:
             missing.append("UC resources")
-        if not template.has_local_conformance and not template.proof_owner:
+        if not template.has_local_conformance and template.local_test_command is None:
             missing.append("deterministic local conformance")
         if not template.has_deployed_verification and not template.proof_owner:
             missing.append("deployed verification")

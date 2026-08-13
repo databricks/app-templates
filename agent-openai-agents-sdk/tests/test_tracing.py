@@ -20,6 +20,42 @@ from mlflow.entities import SpanType
 from mlflow.types.responses import ResponsesAgentRequest
 
 
+def test_request_usage_retains_real_completed_output_for_later_failure():
+    from agent_server import tracing
+
+    attributes = {}
+    span = SimpleNamespace(
+        trace_id="completed-then-failed",
+        set_attribute=lambda key, value: attributes.__setitem__(key, value),
+    )
+    usage = tracing.AgentRequestUsage(span)
+    usage.add(
+        {
+            "inputTokens": 3,
+            "outputTokens": 2,
+            "totalTokens": 5,
+            "costAvailable": False,
+        },
+        output={"message": "first completed answer", "note": "api_key=hidden"},
+    )
+    usage.add(
+        {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "totalTokens": 0,
+            "costAvailable": False,
+        }
+    )
+
+    partial = usage.partial_output()
+    usage.finalize()
+
+    serialized = json.dumps(partial)
+    assert "first completed answer" in serialized
+    assert "hidden" not in serialized
+    assert "[REDACTED]" in serialized
+
+
 @pytest.mark.parametrize(
     "label",
     [
@@ -263,11 +299,7 @@ def test_real_runner_tool_turn_has_one_root_and_one_model_span_per_call(
     trace = mlflow.get_trace(trace_rows.iloc[0].trace_id)
     roots = [span for span in trace.data.spans if span.parent_id is None]
     model_spans = sorted(
-        [
-            span
-            for span in trace.data.spans
-            if span.span_type in {"CHAT_MODEL", "LLM"}
-        ],
+        [span for span in trace.data.spans if span.span_type in {"CHAT_MODEL", "LLM"}],
         key=lambda span: span.start_time_ns,
     )
     tool_spans = [span for span in trace.data.spans if span.span_type == "TOOL"]
@@ -327,8 +359,7 @@ def test_real_runner_tool_turn_has_one_root_and_one_model_span_per_call(
     ]
     assert all(span.get_attribute("appkit.ttft_ms") >= 0 for span in model_spans)
     assert all(
-        span.get_attribute("appkit.stream_duration_ms") >= 0
-        for span in model_spans
+        span.get_attribute("appkit.stream_duration_ms") >= 0 for span in model_spans
     )
     root_usage = roots[0].get_attribute("appkit.usage")
     assert root_usage == {
@@ -391,8 +422,10 @@ def test_model_failure_finalizes_root_and_model_with_safe_error(monkeypatch, tmp
     model = models[0]
     assert root.status.status_code == "ERROR"
     assert model.status.status_code == "ERROR"
-    assert root.outputs["partial_output"] == {"model_calls_completed": 1}
-    assert model.outputs["partial_output"] == {"events": []}
+    unavailable = {"available": False, "reason": "no output produced"}
+    assert root.outputs["partial_output"] == unavailable
+    assert model.outputs["partial_output"] == unavailable
+    assert "request-secret" not in json.dumps([root.outputs, model.outputs])
     assert root.get_attribute("appkit.usage") == {
         "inputTokens": 0,
         "outputTokens": 0,
@@ -417,6 +450,100 @@ def test_model_failure_finalizes_root_and_model_with_safe_error(monkeypatch, tmp
     assert "provider-secret" not in serialized
     assert "request-secret" not in serialized
     assert "[REDACTED]" in serialized
+
+
+def test_later_model_failure_retains_the_completed_model_output(monkeypatch, tmp_path):
+    tracking_uri = f"sqlite:///{tmp_path / 'later-failure.db'}"
+    artifact_dir = tmp_path / "later-failure-artifacts"
+    artifact_dir.mkdir()
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment_id = mlflow.create_experiment(
+        "simple-later-failure", artifact_location=artifact_dir.as_uri()
+    )
+    mlflow.set_experiment(experiment_id=experiment_id)
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", tracking_uri)
+    monkeypatch.setenv("MLFLOW_EXPERIMENT_ID", experiment_id)
+
+    first_response = {
+        "id": "chatcmpl-completed",
+        "object": "chat.completion",
+        "created": 1,
+        "model": "databricks-gpt-5-2",
+        "choices": [
+            {
+                "index": 0,
+                "finish_reason": "tool_calls",
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call-time-before-failure",
+                            "type": "function",
+                            "function": {
+                                "name": "get_current_time",
+                                "arguments": "{}",
+                            },
+                        }
+                    ],
+                },
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 2,
+            "total_tokens": 10,
+        },
+    }
+    calls = 0
+
+    async def transport(request):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(200, json=first_response, request=request)
+        return httpx.Response(
+            500,
+            json={"error": {"message": "token=later-provider-secret"}},
+            request=request,
+        )
+
+    client = AsyncOpenAI(
+        api_key="test",
+        base_url="https://example.invalid/v1",
+        max_retries=0,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(transport)),
+    )
+    import databricks_openai
+
+    monkeypatch.setattr(databricks_openai, "AsyncDatabricksOpenAI", lambda: client)
+    set_default_openai_client(client)
+    from agent_server import agent
+
+    request = ResponsesAgentRequest(
+        input=[{"role": "user", "content": "Use the time tool, then answer."}],
+        custom_inputs={"session_id": "later-failure", "request_id": "later-failure"},
+    )
+    with pytest.raises(Exception):
+        asyncio.run(agent.invoke_handler(request))
+
+    mlflow.flush_trace_async_logging()
+    rows = mlflow.search_traces(
+        locations=[experiment_id], return_type="list", flush=True
+    )
+    trace = mlflow.get_trace(rows[0].info.trace_id, flush=True)
+    root = next(span for span in trace.data.spans if span.parent_id is None)
+    models = sorted(
+        (span for span in trace.data.spans if span.span_type == "CHAT_MODEL"),
+        key=lambda span: span.start_time_ns,
+    )
+    assert [span.status.status_code for span in models] == ["OK", "ERROR"]
+    partial = root.outputs["partial_output"]
+    serialized = json.dumps(partial)
+    assert "call-time-before-failure" in serialized
+    assert "get_current_time" in serialized
+    assert "later-provider-secret" not in serialized
+    assert partial != {"available": False, "reason": "no output produced"}
 
 
 def test_real_stream_runner_finalizes_one_root_with_usage(monkeypatch, tmp_path):
@@ -450,9 +577,7 @@ def test_real_stream_runner_finalizes_one_root_with_usage(monkeypatch, tmp_path)
             "object": "chat.completion.chunk",
             "created": 1,
             "model": "databricks-gpt-5-2",
-            "choices": [
-                {"index": 0, "finish_reason": "stop", "delta": {}}
-            ],
+            "choices": [{"index": 0, "finish_reason": "stop", "delta": {}}],
         },
         {
             "id": "chatcmpl-stream",
@@ -636,7 +761,10 @@ def test_failed_stream_resets_capture_before_later_success(monkeypatch, tmp_path
 
     request = ResponsesAgentRequest(
         input=[{"role": "user", "content": "stream recovery"}],
-        custom_inputs={"session_id": "stream-recovery", "request_id": "stream-recovery"},
+        custom_inputs={
+            "session_id": "stream-recovery",
+            "request_id": "stream-recovery",
+        },
     )
 
     async def fail_then_recover():
@@ -660,10 +788,13 @@ def test_failed_stream_resets_capture_before_later_success(monkeypatch, tmp_path
         assert len(trace_roots) == 1
         roots.extend(trace_roots)
     assert sorted(root.status.status_code for root in roots) == ["ERROR", "OK"]
-    assert all(root.get_attribute("appkit.stream.capture") is not None for root in roots)
+    assert all(
+        root.get_attribute("appkit.stream.capture") is not None for root in roots
+    )
     failed_root = next(root for root in roots if root.status.status_code == "ERROR")
     assert failed_root.outputs["partial_output"] == {
-        "events": failed_root.get_attribute("appkit.stream.capture")
+        "available": False,
+        "reason": "no output produced",
     }
     serialized = json.dumps(
         [span.to_dict() for trace in traces for span in trace.data.spans]

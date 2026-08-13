@@ -2,7 +2,7 @@ import { createApp, server } from '@databricks/appkit';
 import { agents } from '@databricks/appkit/beta';
 import { helper } from './agents/helper';
 
-createApp({
+export const app = createApp({
   // Uses AppKit's existing TelemetryManager / OTel provider. The setup
   // command provisions the immutable UC trace location before first run.
   telemetry: { mlflowUc: true },
@@ -13,4 +13,6 @@ createApp({
     }),
     server(),
   ],
-}).catch(console.error);
+});
+
+app.catch(console.error);

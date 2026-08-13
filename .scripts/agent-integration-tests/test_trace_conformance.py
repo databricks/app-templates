@@ -18,6 +18,7 @@ from discovery import (  # noqa: E402
 from helpers import (  # noqa: E402
     _run_typescript_trace_probe,
     execute_trace_row_query,
+    poll_trace_rows,
     run_local_trace_test,
 )
 from normalize import load_trace_manifest  # noqa: E402
@@ -37,6 +38,49 @@ RUNNABLE_TRACE_POLICY_TEMPLATES = [
     for template in TRACE_POLICY_TEMPLATES
     if template.local_test_command is not None
 ]
+
+
+def test_generated_owner_runs_the_full_conformance_file(monkeypatch, tmp_path):
+    import helpers
+
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    template_path = tmp_path / "generated-agent"
+    template_path.mkdir()
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        '{"template":"generated-agent","trace_id":"trace-id","spans":[]}\n'
+    )
+    observed = []
+
+    def fake_run(command, **kwargs):
+        observed.append((command, kwargs))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(helpers, "_run_cmd", fake_run)
+    template = SimpleNamespace(
+        name="generated-agent",
+        path=template_path,
+        local_test_command=(
+            "__appkit_generated_owner__",
+            str(owner),
+            "generated-agent",
+        ),
+    )
+
+    run_local_trace_test(template, manifest_path)
+
+    command, kwargs = observed[0]
+    assert command == [
+        "npx",
+        "--yes",
+        "pnpm@10.21.0",
+        "exec",
+        "vitest",
+        "run",
+        "packages/appkit/src/plugins/agents/tests/trace-conformance.integration.test.ts",
+    ]
+    assert kwargs["cwd"] == owner
 
 
 def test_primary_template_policy_is_derived_from_behavior():
@@ -127,6 +171,68 @@ def test_deployed_uc_query_is_parameterized_by_table_and_trace_id():
         {"name": "trace_id", "type": "STRING", "value": "trace-id"},
     ]
     assert call["wait_timeout"] == "50s"
+
+
+class _DelayedUcExecution:
+    def __init__(self, batches):
+        self.batches = iter(batches)
+
+    def execute_statement(self, **_kwargs):
+        return SimpleNamespace(
+            status=SimpleNamespace(state=SimpleNamespace(value="SUCCEEDED")),
+            result=SimpleNamespace(data_array=next(self.batches)),
+        )
+
+
+def test_uc_ingestion_polling_waits_for_current_trace_rows():
+    execution = _DelayedUcExecution(
+        [
+            [],
+            [],
+            [["current-trace", "span-id", None, "request", "{}"]],
+        ]
+    )
+
+    rows = poll_trace_rows(
+        SimpleNamespace(statement_execution=execution),
+        "0123456789abcdef",
+        "main.agent_traces.support_otel_spans",
+        "current-trace",
+        max_attempts=3,
+        sleep=lambda _seconds: None,
+    )
+
+    assert [row["trace_id"] for row in rows] == ["current-trace"]
+
+
+def test_uc_ingestion_polling_rejects_foreign_rows():
+    execution = _DelayedUcExecution(
+        [[["foreign-trace", "span-id", None, "request", "{}"]]]
+    )
+
+    with pytest.raises(AssertionError, match="foreign trace"):
+        poll_trace_rows(
+            SimpleNamespace(statement_execution=execution),
+            "0123456789abcdef",
+            "main.agent_traces.support_otel_spans",
+            "current-trace",
+            max_attempts=1,
+            sleep=lambda _seconds: None,
+        )
+
+
+def test_uc_ingestion_polling_times_out_on_missing_rows():
+    execution = _DelayedUcExecution([[], []])
+
+    with pytest.raises(AssertionError, match="not ingested"):
+        poll_trace_rows(
+            SimpleNamespace(statement_execution=execution),
+            "0123456789abcdef",
+            "main.agent_traces.support_otel_spans",
+            "current-trace",
+            max_attempts=2,
+            sleep=lambda _seconds: None,
+        )
 
 
 def test_deploy_runner_verifies_uc_trace_for_each_parameterized_template(

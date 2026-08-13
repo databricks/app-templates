@@ -301,7 +301,7 @@ def test_agentic_support_console_owns_executable_trace_policy_proof():
     assert_template_policy([candidate])
 
 
-def test_generated_appkit_alias_derives_runtime_proof_from_its_source_owner(tmp_path):
+def test_generated_appkit_markers_without_executable_owner_proof_are_rejected(tmp_path):
     template = tmp_path / "generated-agent"
     _write(template / "app.yaml", UC_ENV)
     _write(
@@ -329,10 +329,80 @@ def test_generated_appkit_alias_derives_runtime_proof_from_its_source_owner(tmp_
     )
 
     candidate = discover_agentic_templates(tmp_path)[0]
-    assert candidate.proof_owner == "@databricks/appkit generated-template conformance"
+    assert candidate.proof_owner is None
     assert candidate.has_local_conformance is False
     assert candidate.has_deployed_verification is False
+    with pytest.raises(AssertionError, match="deterministic local conformance"):
+        assert_template_policy([candidate])
+
+
+def test_generated_appkit_owner_is_discovered_by_behavior_or_explicit_config(
+    tmp_path, monkeypatch
+):
+    monkeypatch.delenv("APPKIT_SOURCE_ROOT", raising=False)
+    templates_root = tmp_path / "app-templates"
+    template = templates_root / "generated-agent"
+    _write(template / "app.yaml", UC_ENV)
+    _write(
+        template / "databricks.yml",
+        "resources:\n  experiments:\n    traced: {}\n  sql_warehouses:\n    trace: {}\n",
+    )
+    _write(
+        template / "package.json",
+        '{"dependencies":{"@databricks/appkit":"0.60.0"}}',
+    )
+    _write(
+        template / "appkit.plugins.json",
+        '{"plugins":{"agents":{"package":"@databricks/appkit",'
+        '"requiredByTemplate":true}}}',
+    )
+    _write(
+        template / "server/server.ts",
+        "import { createApp } from '@databricks/appkit';\n"
+        "import { agents } from '@databricks/appkit/beta';\n"
+        "createApp({ plugins: [agents({ agents: {} })] });\n",
+    )
+    _write(
+        template / "server/agents/helper.ts",
+        "export const helper = createAgent({ name: 'helper' });\n",
+    )
+    owner = tmp_path / "arbitrarily-named-appkit-checkout"
+    _write(
+        owner
+        / "packages/appkit/src/plugins/agents/tests/trace-conformance.integration.test.ts",
+        "test('generated trace conformance', () => {});\n",
+    )
+    _write(
+        owner / "tools/generate-app-templates.ts",
+        'const templates = [{ name: "generated-agent" }];\n',
+    )
+
+    candidate = discover_agentic_templates(templates_root)[0]
+
+    assert candidate.proof_owner == str(owner.resolve())
+    assert candidate.local_test_command == (
+        "__appkit_generated_owner__",
+        str(owner.resolve()),
+        "generated-agent",
+    )
     assert_template_policy([candidate])
+
+    second_owner = tmp_path / "second-valid-appkit-checkout"
+    _write(
+        second_owner
+        / "packages/appkit/src/plugins/agents/tests/trace-conformance.integration.test.ts",
+        "test('generated trace conformance', () => {});\n",
+    )
+    _write(
+        second_owner / "tools/generate-app-templates.ts",
+        'const templates = [{ name: "generated-agent" }];\n',
+    )
+    ambiguous = discover_agentic_templates(templates_root)[0]
+    assert ambiguous.proof_owner is None
+
+    monkeypatch.setenv("APPKIT_SOURCE_ROOT", str(owner))
+    configured = discover_agentic_templates(templates_root)[0]
+    assert configured.proof_owner == str(owner.resolve())
 
 
 def test_appkit_dependency_alone_cannot_delegate_trace_proof(tmp_path):

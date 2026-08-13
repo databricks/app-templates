@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from types import SimpleNamespace
 
 import httpx
 
@@ -13,6 +14,42 @@ import pytest
 from agents import set_default_openai_client
 from openai import AsyncOpenAI
 from mlflow.types.responses import ResponsesAgentRequest
+
+
+def test_request_usage_retains_real_completed_output_for_later_failure():
+    from agent_server import tracing
+
+    attributes = {}
+    span = SimpleNamespace(
+        trace_id="completed-then-failed",
+        set_attribute=lambda key, value: attributes.__setitem__(key, value),
+    )
+    usage = tracing.AgentRequestUsage(span)
+    usage.add(
+        {
+            "inputTokens": 3,
+            "outputTokens": 2,
+            "totalTokens": 5,
+            "costAvailable": False,
+        },
+        output={"message": "first completed answer", "note": "api_key=hidden"},
+    )
+    usage.add(
+        {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "totalTokens": 0,
+            "costAvailable": False,
+        }
+    )
+
+    partial = usage.partial_output()
+    usage.finalize()
+
+    serialized = json.dumps(partial)
+    assert "first completed answer" in serialized
+    assert "hidden" not in serialized
+    assert "[REDACTED]" in serialized
 
 
 def test_real_runner_traces_memory_read_and_write(monkeypatch, tmp_path):
@@ -105,9 +142,7 @@ def test_real_runner_traces_memory_read_and_write(monkeypatch, tmp_path):
     trace = mlflow.get_trace(rows.iloc[0].trace_id)
     roots = [span for span in trace.data.spans if span.parent_id is None]
     memory_spans = [span for span in trace.data.spans if span.span_type == "MEMORY"]
-    model_spans = [
-        span for span in trace.data.spans if span.span_type == "CHAT_MODEL"
-    ]
+    model_spans = [span for span in trace.data.spans if span.span_type == "CHAT_MODEL"]
     workflow = next(span for span in trace.data.spans if span.name == "Agent workflow")
     assert workflow.inputs["data"]["sdk_span_type"] == "task"
     assert workflow.inputs["data"]["name"] == workflow.name
@@ -192,7 +227,9 @@ def test_real_runner_memory_failure_finalizes_safe_error(monkeypatch, tmp_path):
     import databricks_openai.agents
 
     monkeypatch.setattr(databricks_openai, "AsyncDatabricksOpenAI", lambda: client)
-    monkeypatch.setattr(databricks_openai.agents, "AsyncDatabricksSession", FailingSession)
+    monkeypatch.setattr(
+        databricks_openai.agents, "AsyncDatabricksSession", FailingSession
+    )
     set_default_openai_client(client)
     from agent_server import agent
 
@@ -223,7 +260,8 @@ def test_real_runner_memory_failure_finalizes_safe_error(monkeypatch, tmp_path):
     }
     assert roots[0].status.status_code == "ERROR"
     assert roots[0].outputs["partial_output"] == {
-        "model_calls_completed": 0
+        "available": False,
+        "reason": "no output produced",
     }
     assert roots[0].get_attribute("appkit.usage") == {
         "inputTokens": 0,
@@ -232,4 +270,52 @@ def test_real_runner_memory_failure_finalizes_safe_error(monkeypatch, tmp_path):
         "costAvailable": False,
     }
     serialized = json.dumps([span.to_dict() for span in trace.data.spans])
+    failed = [span for span in trace.data.spans if span.status.status_code == "ERROR"]
+    assert all(span.outputs.get("partial_output") != span.inputs for span in failed)
+    assert "Read memory." not in json.dumps([span.outputs for span in failed])
     assert "memoryfailuresecret" not in serialized
+
+
+def test_stream_failure_retains_only_actual_bounded_redacted_output(monkeypatch):
+    from mlflow.openai import _agent_tracer
+    from agent_server import tracing
+
+    monkeypatch.setattr(_agent_tracer, "_safe_detach_span_context", lambda _token: None)
+
+    class CapturedSpan:
+        def __init__(self):
+            self.attributes = {}
+            self.outputs = None
+
+        def set_attribute(self, key, value):
+            self.attributes[key] = value
+
+        def set_outputs(self, value):
+            self.outputs = value
+
+        def record_exception(self, _error):
+            pass
+
+        def set_status(self, _status):
+            pass
+
+        def end(self):
+            pass
+
+    span = CapturedSpan()
+    capture = tracing.BoundedTraceAccumulator(max_bytes=96)
+    capture.add({"delta": "produced text"})
+    capture.add({"delta": "api_key=stream-output-secret"})
+    tracing._finalize_appkit_streamed_root(
+        span,
+        object(),
+        SimpleNamespace(finalize=lambda: None),
+        capture,
+        error=RuntimeError("stream failed"),
+    )
+
+    serialized = json.dumps(span.outputs)
+    assert "produced text" in serialized
+    assert "stream-output-secret" not in serialized
+    assert "[REDACTED]" in serialized
+    assert len(serialized.encode("utf-8")) < 512

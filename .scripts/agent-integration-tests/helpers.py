@@ -31,7 +31,9 @@ os.environ["UV_NO_CONFIG"] = "1"
 POLL_INTERVAL = 30  # seconds between polls
 MAX_POLLS = 20  # max number of polls before giving up (10 min for cold starts)
 QUERY_TIMEOUT = 120  # seconds for HTTP requests
-BUNDLE_TIMEOUT = 600  # seconds for bundle deploy/run/destroy commands (10 min for parallel runs)
+BUNDLE_TIMEOUT = (
+    600  # seconds for bundle deploy/run/destroy commands (10 min for parallel runs)
+)
 QUICKSTART_TIMEOUT = 600  # seconds for quickstart command (10 min for parallel runs)
 EVALUATE_TIMEOUT = 900  # seconds for agent-evaluate
 SERVER_START_TIMEOUT = 600  # seconds to wait for local server to start (accommodates cold CI runners + heavy template imports)
@@ -116,7 +118,9 @@ def _gh_endgroup() -> None:
         print("::endgroup::")
 
 
-def _run_cmd(cmd: list[str], *, verbose: bool = False, **kwargs) -> subprocess.CompletedProcess:
+def _run_cmd(
+    cmd: list[str], *, verbose: bool = False, **kwargs
+) -> subprocess.CompletedProcess:
     """Run a subprocess and return the result.
 
     Logging behaviour:
@@ -156,7 +160,9 @@ def _run_cmd(cmd: list[str], *, verbose: bool = False, **kwargs) -> subprocess.C
         print(f"[{_ts()}] ✓ {short_cmd}  ({_fmt_duration(duration)})")
     else:
         marker = "✓" if result.returncode == 0 else "✗"
-        print(f"[{_ts()}] {marker} {cmd_str}  (exit {result.returncode}, {_fmt_duration(duration)})")
+        print(
+            f"[{_ts()}] {marker} {cmd_str}  (exit {result.returncode}, {_fmt_duration(duration)})"
+        )
         if result.stdout:
             print(f"  stdout:\n{result.stdout.rstrip()}")
         if result.stderr:
@@ -184,12 +190,20 @@ def _run_with_retries(
             result = _run_cmd(cmd, cwd=cwd, timeout=timeout)
         except subprocess.TimeoutExpired:
             _log(f"  timed out after {timeout}s")
-            if attempt < max_attempts and recover and recover(f"timed out after {timeout}s", attempt, max_attempts):
+            if (
+                attempt < max_attempts
+                and recover
+                and recover(f"timed out after {timeout}s", attempt, max_attempts)
+            ):
                 continue
             raise
         if result.returncode == 0:
             return result
-        if attempt < max_attempts and recover and recover(result.stderr, attempt, max_attempts):
+        if (
+            attempt < max_attempts
+            and recover
+            and recover(result.stderr, attempt, max_attempts)
+        ):
             continue
         break
     assert result.returncode == 0, (
@@ -217,7 +231,9 @@ def copy_template(template_dir: Path, app_name_suffix: str = "-p") -> Path:
     shutil.copytree(
         template_dir,
         tmp_dir,
-        ignore=shutil.ignore_patterns(".venv", ".bundle", ".databricks", ".env", "__pycache__", "*.pyc"),
+        ignore=shutil.ignore_patterns(
+            ".venv", ".bundle", ".databricks", ".env", "__pycache__", "*.pyc"
+        ),
     )
 
     yml_path = tmp_dir / "databricks.yml"
@@ -282,13 +298,17 @@ def uv_sync(template_dir: Path, max_attempts: int = 3):
         if result.returncode == 0:
             return
         if attempt < max_attempts:
-            _log(f"  uv sync attempt {attempt}/{max_attempts} failed, retrying in 10s...")
+            _log(
+                f"  uv sync attempt {attempt}/{max_attempts} failed, retrying in 10s..."
+            )
             time.sleep(10)
 
     _log(f"  uv sync failed online; falling back to UV_OFFLINE=true (cache-only)...")
     env = os.environ.copy()
     env["UV_OFFLINE"] = "true"
-    result = _run_cmd(["uv", "sync"], cwd=template_dir, timeout=QUICKSTART_TIMEOUT, env=env)
+    result = _run_cmd(
+        ["uv", "sync"], cwd=template_dir, timeout=QUICKSTART_TIMEOUT, env=env
+    )
     assert result.returncode == 0, (
         f"uv sync failed in {template_dir.name}:\n"
         f"stdout: {result.stdout}\n"
@@ -354,8 +374,9 @@ def run_quickstart(
     return result
 
 
-
-def git_copy_template(template_name: str, dest: Path, git_ref: str | None = None) -> Path:
+def git_copy_template(
+    template_name: str, dest: Path, git_ref: str | None = None
+) -> Path:
     """Copy a template directory to dest using git-tracked files only.
 
     Without git_ref: uses `git ls-files` so uncommitted modifications to tracked
@@ -417,7 +438,16 @@ def databricks_create_app(app_name: str, profile: str):
     'compute is in STARTING state' error when bundle deploy tries to update it.
     """
     result = _run_cmd(
-        ["databricks", "apps", "create", app_name, "-p", profile, "--no-compute", "--no-wait"],
+        [
+            "databricks",
+            "apps",
+            "create",
+            app_name,
+            "-p",
+            profile,
+            "--no-compute",
+            "--no-wait",
+        ],
         timeout=60,
     )
     assert result.returncode == 0, f"Failed to create app {app_name}: {result.stderr}"
@@ -520,7 +550,9 @@ def _start_server_once(template_dir: Path, port: int) -> tuple[subprocess.Popen,
     raise TimeoutError(f"Server did not start within {SERVER_START_TIMEOUT} seconds")
 
 
-def start_server(template_dir: Path, port: int = 0, max_attempts: int = 2) -> tuple[subprocess.Popen, int]:
+def start_server(
+    template_dir: Path, port: int = 0, max_attempts: int = 2
+) -> tuple[subprocess.Popen, int]:
     """Start `uv run start-server` as a background process, with one retry.
 
     If port is 0, dynamically allocates a free port. Watches stderr for
@@ -550,7 +582,9 @@ def start_server(template_dir: Path, port: int = 0, max_attempts: int = 2) -> tu
             )
             # fall through to next iteration — allocates a new port,
             # spawns a new subprocess.
-    raise RuntimeError("start_server exited the retry loop without a result")  # unreachable
+    raise RuntimeError(
+        "start_server exited the retry loop without a result"
+    )  # unreachable
 
 
 def stop_server(proc: subprocess.Popen):
@@ -627,7 +661,9 @@ def query_endpoint(
             f"Expected text/event-stream, got {content_type}"
         )
         has_data = any(
-            line.startswith("data:") for line in resp.iter_lines(decode_unicode=True) if line
+            line.startswith("data:")
+            for line in resp.iter_lines(decode_unicode=True)
+            if line
         )
         _log(f"  streaming: content_type={content_type}, has_data={has_data}")
         assert has_data, "No SSE data: events received in stream response"
@@ -712,11 +748,27 @@ def run_local_trace_test(template, manifest_path: Path):
     )
     existing_pythonpath = env.get("PYTHONPATH")
     env["PYTHONPATH"] = os.pathsep.join(
-        value
-        for value in (str(conformance_dir), existing_pythonpath)
-        if value
+        value for value in (str(conformance_dir), existing_pythonpath) if value
     )
-    if command[0] == "uv":
+    if command[0] == "__appkit_generated_owner__":
+        owner_root = Path(command[1])
+        command = [
+            "npx",
+            "--yes",
+            "pnpm@10.21.0",
+            "exec",
+            "vitest",
+            "run",
+            "packages/appkit/src/plugins/agents/tests/trace-conformance.integration.test.ts",
+        ]
+        env.update(
+            {
+                "APPKIT_TRACE_CONFORMANCE_CANDIDATE": template.name,
+                "APPKIT_TRACE_CONFORMANCE_SOURCE_DIRECTORY": str(template.path),
+            }
+        )
+        cwd = owner_root
+    elif command[0] == "uv":
         env["PYTEST_PLUGINS"] = "normalize"
         cwd = REPO_ROOT
     else:
@@ -726,7 +778,7 @@ def run_local_trace_test(template, manifest_path: Path):
         f"deterministic trace test failed for {template.name}:\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
     )
-    if command[0] != "uv" and not manifest_path.exists():
+    if command[0] not in {"uv", "npx"} and not manifest_path.exists():
         _run_typescript_trace_probe(template.path, manifest_path, conformance_dir)
     assert manifest_path.exists(), (
         f"{template.name} deterministic trace test did not write {manifest_path}"
@@ -909,9 +961,16 @@ def execute_trace_row_query(
         status = getattr(response, "status", None)
         state = getattr(getattr(status, "state", None), "value", None)
         if state == "SUCCEEDED":
-            values = getattr(getattr(response, "result", None), "data_array", None) or []
+            values = (
+                getattr(getattr(response, "result", None), "data_array", None) or []
+            )
             return [
-                dict(zip(("trace_id", "span_id", "parent_span_id", "name", "attributes"), row))
+                dict(
+                    zip(
+                        ("trace_id", "span_id", "parent_span_id", "name", "attributes"),
+                        row,
+                    )
+                )
                 for row in values
             ]
         if state in {"FAILED", "CANCELED", "CLOSED"}:
@@ -928,6 +987,38 @@ def execute_trace_row_query(
         response = workspace.statement_execution.get_statement(statement_id)
         time.sleep(1)
     raise TimeoutError("UC trace row query did not finish after 120 polls")
+
+
+def poll_trace_rows(
+    workspace,
+    warehouse_id: str,
+    otel_spans_table: str,
+    trace_id: str,
+    *,
+    max_attempts: int = 36,
+    interval_seconds: float = 5.0,
+    sleep=time.sleep,
+) -> list[dict[str, object]]:
+    """Wait for the exact current-run trace to become visible in UC."""
+    for attempt in range(max_attempts):
+        rows = execute_trace_row_query(
+            workspace, warehouse_id, otel_spans_table, trace_id
+        )
+        if rows:
+            foreign = [
+                row.get("trace_id") for row in rows if row.get("trace_id") != trace_id
+            ]
+            assert not foreign, (
+                f"UC query for current trace {trace_id!r} returned foreign trace rows "
+                f"{foreign!r}"
+            )
+            return rows
+        if attempt + 1 < max_attempts:
+            sleep(interval_seconds)
+    raise AssertionError(
+        f"UC trace {trace_id!r} was not ingested into {otel_spans_table!r} "
+        f"after {max_attempts} attempts"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1111,8 +1202,15 @@ def bundle_run_nowait(
     import subprocess as _subprocess
 
     cmd = [
-        "databricks", "bundle", "run", resource_key,
-        "--no-wait", "--target", "dev", "-p", profile,
+        "databricks",
+        "bundle",
+        "run",
+        resource_key,
+        "--no-wait",
+        "--target",
+        "dev",
+        "-p",
+        profile,
     ]
     for attempt in range(1, 3):
         try:
@@ -1239,7 +1337,9 @@ def wait_for_app_ready(app_name: str, profile: str) -> tuple[str, str]:
                 break
         time.sleep(POLL_INTERVAL)
     else:
-        raise TimeoutError(f"App {app_name} did not reach RUNNING state within {MAX_POLLS} polls")
+        raise TimeoutError(
+            f"App {app_name} did not reach RUNNING state within {MAX_POLLS} polls"
+        )
 
     # Phase 2: poll /agent/info until the app is actually serving
     _log(f"App is RUNNING at {app_url}, polling /agent/info...")
@@ -1280,7 +1380,13 @@ def capture_app_logs(app_name: str, profile: str) -> str:
 # Lakebase
 # ---------------------------------------------------------------------------
 
-_MANAGED_SCHEMAS = ["public", "drizzle", "ai_chatbot", "agent_server", "agent_langgraph_memory"]
+_MANAGED_SCHEMAS = [
+    "public",
+    "drizzle",
+    "ai_chatbot",
+    "agent_server",
+    "agent_langgraph_memory",
+]
 
 
 def _try_sql(client, sql: str):
@@ -1334,7 +1440,9 @@ def grant_lakebase_access(
                     _log(f"  Role creation warning: {exc}")
 
             # Grant CREATE on database so the SP can create schemas
-            _try_sql(client, f"GRANT CREATE ON DATABASE databricks_postgres TO {quoted_sp};")
+            _try_sql(
+                client, f"GRANT CREATE ON DATABASE databricks_postgres TO {quoted_sp};"
+            )
 
             # Find managed schemas that exist
             rows = client.execute(
@@ -1383,7 +1491,9 @@ def grant_lakebase_access(
                 # sequences owned by other users. SET ROLE to databricks_superuser
                 # (which HAS been granted on all sequences) to execute grants with
                 # that role's privileges.
-                _log("  Attempting sequence grants via SET ROLE databricks_superuser...")
+                _log(
+                    "  Attempting sequence grants via SET ROLE databricks_superuser..."
+                )
                 try:
                     client.execute("SET ROLE databricks_superuser;")
                     for schema in existing_schemas:
@@ -1403,7 +1513,9 @@ def grant_lakebase_access(
                                 f"GRANT USAGE, SELECT, UPDATE ON SEQUENCE "
                                 f"{seq['schemaname']}.{seq['sequencename']} TO {quoted_sp};",
                             )
-                        _log(f"  Granted on {len(seq_rows)} individual sequence(s) via databricks_superuser")
+                        _log(
+                            f"  Granted on {len(seq_rows)} individual sequence(s) via databricks_superuser"
+                        )
                     client.execute("RESET ROLE;")
                 except Exception as exc:
                     _log(f"  SET ROLE databricks_superuser failed: {exc}")
@@ -1424,7 +1536,9 @@ def grant_lakebase_access(
                                 f"GRANT USAGE, SELECT, UPDATE ON SEQUENCE "
                                 f"{seq['schemaname']}.{seq['sequencename']} TO {quoted_sp};",
                             )
-                        _log(f"  Granted on {len(seq_rows)} individual sequence(s) as current user (fallback)")
+                        _log(
+                            f"  Granted on {len(seq_rows)} individual sequence(s) as current user (fallback)"
+                        )
 
                 # Log sequences owned by other users for debugging
                 current_user = client.execute("SELECT current_user;")[0]["current_user"]
@@ -1456,4 +1570,6 @@ def grant_lakebase_access(
 
             _log(f"Lakebase access granted to {sp_client_id}.")
     except Exception as exc:
-        raise RuntimeError(f"grant_lakebase_access failed for {app_name}: {exc}") from exc
+        raise RuntimeError(
+            f"grant_lakebase_access failed for {app_name}: {exc}"
+        ) from exc

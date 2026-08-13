@@ -461,6 +461,53 @@ export const handlers = [
         trace_info: {
           trace_id: traceId,
           assessments,
+          app_id: 'remote-agent',
+          user_id: 'local-user',
+          session_id: 'local-session',
+        },
+        data: {
+          spans: [
+            {
+              trace_id: traceId,
+              span_id: 'root-span',
+              parent_span_id: null,
+              name: 'remote.agent',
+              span_type: 'AGENT',
+              inputs: { input: 'Why is the sky blue?' },
+              outputs: { output: "It's just blue duh!" },
+              status: { status_code: 'OK' },
+              latency_ms: 2,
+              attributes: {
+                'mlflow.trace.tokenUsage': {
+                  input_tokens: 2,
+                  output_tokens: 1,
+                  total_tokens: 3,
+                },
+                'appkit.cost_available': false,
+              },
+            },
+            {
+              trace_id: traceId,
+              span_id: 'model-span',
+              parent_span_id: 'root-span',
+              name: 'remote.model',
+              span_type: 'CHAT_MODEL',
+              inputs: { messages: ['Why is the sky blue?'] },
+              outputs: { text: "It's just blue duh!" },
+              status: { status_code: 'OK' },
+              latency_ms: 1,
+              attributes: {
+                'mlflow.chat.model': 'test-model',
+                'mlflow.chat.provider': 'databricks',
+                'mlflow.chat.tokenUsage': {
+                  input_tokens: 2,
+                  output_tokens: 1,
+                  total_tokens: 3,
+                },
+                'appkit.cost_available': false,
+              },
+            },
+          ],
         },
       },
     });

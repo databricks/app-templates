@@ -21,6 +21,7 @@ import {
   storeAssessmentId,
 } from '../lib/message-meta-store';
 import { canSubmitFeedback } from '../lib/feedback-ownership';
+import { captureRemoteTraceManifest } from '../lib/mlflow-trace-manifest';
 
 export const feedbackRouter: RouterType = Router();
 
@@ -109,6 +110,17 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
         const token = await getDatabricksToken();
         const hostUrl = await getWorkspaceHostname();
         const userId = session.user.email ?? session.user.id;
+
+        if (process.env.TRACE_CONFORMANCE_MANIFEST) {
+          await captureRemoteTraceManifest({
+            traceId,
+            hostUrl,
+            token,
+            destination: process.env.TRACE_CONFORMANCE_MANIFEST,
+            template:
+              process.env.TRACE_CONFORMANCE_TEMPLATE ?? 'e2e-chatbot-app-next',
+          });
+        }
 
         // Check for an existing assessment to update (deduplication).
         // Memory-first: check the in-memory assessment store.

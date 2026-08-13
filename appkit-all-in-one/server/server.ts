@@ -3,7 +3,7 @@ import { agents } from '@databricks/appkit/beta';
 import { setupSampleLakebaseRoutes } from './routes/lakebase/todo-routes';
 import { helper } from './agents/helper';
 
-createApp({
+export const app = createApp({
   // Uses AppKit's existing TelemetryManager / OTel provider. The setup
   // command provisions the immutable UC trace location before first run.
   telemetry: { mlflowUc: true },
@@ -22,4 +22,6 @@ createApp({
   async onPluginsReady(appkit) {
     await setupSampleLakebaseRoutes(appkit);
   },
-}).catch(console.error);
+});
+
+app.catch(console.error);

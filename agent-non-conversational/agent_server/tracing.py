@@ -11,7 +11,7 @@ import math
 import os
 import re
 from time import perf_counter_ns
-from typing import Any, Iterator, Mapping
+from typing import Any, Callable, Iterator, Mapping
 
 import mlflow
 
@@ -221,6 +221,11 @@ def safe_error_message(error: BaseException | str) -> str:
     return json.dumps(safe_trace_value(message, max_bytes=2048), sort_keys=True)
 
 
+def unavailable_partial_output() -> dict[str, object]:
+    """Describe a failure that occurred before any output was produced."""
+    return {"available": False, "reason": "no output produced"}
+
+
 def set_request_trace_identity(
     session_id: str,
     user_id: str,
@@ -284,7 +289,13 @@ def _safe_span_call(span: Any, method: str, *args: Any) -> None:
 
 
 @contextmanager
-def traced_span(name: str, span_type: str, inputs: Any) -> Iterator[Any]:
+def traced_span(
+    name: str,
+    span_type: str,
+    inputs: Any,
+    *,
+    partial_output: Callable[[], Any] | None = None,
+) -> Iterator[Any]:
     """Create a span whose telemetry failures never alter agent execution."""
     started_ns = perf_counter_ns()
     try:
@@ -299,11 +310,19 @@ def traced_span(name: str, span_type: str, inputs: Any) -> Iterator[Any]:
         yield span
     except BaseException as error:
         safe_error = safe_error_message(error)
+        produced_output = None
+        if partial_output is not None:
+            try:
+                produced_output = partial_output()
+            except Exception:
+                produced_output = None
         set_span_result(
             span,
             outputs={
                 "error": safe_error,
-                "partial_output": safe_trace_value({"inputs": inputs}),
+                "partial_output": (
+                    produced_output if produced_output else unavailable_partial_output()
+                ),
             },
             attributes={
                 "appkit.error": safe_error,

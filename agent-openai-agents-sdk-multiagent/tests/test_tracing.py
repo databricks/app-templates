@@ -16,6 +16,42 @@ from mlflow.types.responses import ResponsesAgentRequest
 from mcp.types import CallToolResult, TextContent, Tool
 
 
+def test_request_usage_retains_real_completed_output_for_later_failure():
+    from agent_server import tracing
+
+    attributes = {}
+    span = SimpleNamespace(
+        trace_id="completed-then-failed",
+        set_attribute=lambda key, value: attributes.__setitem__(key, value),
+    )
+    usage = tracing.AgentRequestUsage(span)
+    usage.add(
+        {
+            "inputTokens": 3,
+            "outputTokens": 2,
+            "totalTokens": 5,
+            "costAvailable": False,
+        },
+        output={"message": "first completed answer", "note": "api_key=hidden"},
+    )
+    usage.add(
+        {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "totalTokens": 0,
+            "costAvailable": False,
+        }
+    )
+
+    partial = usage.partial_output()
+    usage.finalize()
+
+    serialized = json.dumps(partial)
+    assert "first completed answer" in serialized
+    assert "hidden" not in serialized
+    assert "[REDACTED]" in serialized
+
+
 def test_real_runner_remote_handoffs_propagate_and_link(monkeypatch, tmp_path):
     tracking_uri = f"sqlite:///{tmp_path / 'multi.db'}"
     artifact_dir = tmp_path / "artifacts"
@@ -74,7 +110,9 @@ def test_real_runner_remote_handoffs_propagate_and_link(monkeypatch, tmp_path):
                                 "type": "function",
                                 "function": {
                                     "name": "query_serving_endpoint",
-                                    "arguments": json.dumps({"question": "ask endpoint"}),
+                                    "arguments": json.dumps(
+                                        {"question": "ask endpoint"}
+                                    ),
                                 },
                             }
                         ],
@@ -179,7 +217,9 @@ def test_real_runner_remote_handoffs_propagate_and_link(monkeypatch, tmp_path):
     clients = iter([local_client, remote_client])
     import databricks_openai
 
-    monkeypatch.setattr(databricks_openai, "AsyncDatabricksOpenAI", lambda: next(clients))
+    monkeypatch.setattr(
+        databricks_openai, "AsyncDatabricksOpenAI", lambda: next(clients)
+    )
     set_default_openai_client(local_client)
     from agent_server import agent
     from agents.tracing.setup import get_trace_provider
@@ -189,7 +229,9 @@ def test_real_runner_remote_handoffs_propagate_and_link(monkeypatch, tmp_path):
     assert len(processors) == 1
     assert isinstance(processors[0], MlflowOpenAgentTracingProcessor)
 
-    monkeypatch.setattr(agent, "build_mcp_url", lambda path: f"https://test.invalid{path}")
+    monkeypatch.setattr(
+        agent, "build_mcp_url", lambda path: f"https://test.invalid{path}"
+    )
     agent.SUBAGENTS = [
         {
             "name": "app_agent",
@@ -254,11 +296,15 @@ def test_real_runner_remote_handoffs_propagate_and_link(monkeypatch, tmp_path):
         {"input": "ask app"},
         {"input": "ask endpoint"},
     ]
-    assert [span.get_attribute("appkit.remote.target_type") for span in remote_spans] == [
+    assert [
+        span.get_attribute("appkit.remote.target_type") for span in remote_spans
+    ] == [
         "app",
         "serving_endpoint",
     ]
-    assert [span.get_attribute("appkit.remote.target_name") for span in remote_spans] == [
+    assert [
+        span.get_attribute("appkit.remote.target_name") for span in remote_spans
+    ] == [
         "specialist-app",
         "specialist-endpoint",
     ]
@@ -325,7 +371,9 @@ def test_real_runner_remote_handoffs_propagate_and_link(monkeypatch, tmp_path):
     assert remote_spans[1].links[0].span_id == "3333333333333333"
     assert len(model_spans) == 3
     assert all(span.parent_id is not None for span in model_spans + remote_spans)
-    assert all(span.trace_id == roots[0].trace_id for span in model_spans + remote_spans)
+    assert all(
+        span.trace_id == roots[0].trace_id for span in model_spans + remote_spans
+    )
     assert roots[0].get_attribute("appkit.usage") == {
         "inputTokens": 36,
         "outputTokens": 7,
@@ -411,7 +459,9 @@ def test_real_runner_failed_remote_has_stable_safe_schema(monkeypatch, tmp_path)
     clients = iter([local_client, remote_client])
     import databricks_openai
 
-    monkeypatch.setattr(databricks_openai, "AsyncDatabricksOpenAI", lambda: next(clients))
+    monkeypatch.setattr(
+        databricks_openai, "AsyncDatabricksOpenAI", lambda: next(clients)
+    )
     set_default_openai_client(local_client)
     from agent_server import agent
 
@@ -440,7 +490,8 @@ def test_real_runner_failed_remote_has_stable_safe_schema(monkeypatch, tmp_path)
     assert remote.status.status_code == "ERROR"
     assert remote.inputs == {"input": "delegated failure input"}
     assert remote.outputs == {
-        "error": "authorization Bearer [REDACTED]"
+        "error": "authorization Bearer [REDACTED]",
+        "partial_output": {"available": False, "reason": "no output produced"},
     }
     for key in ("appkit.remote.trace_id", "appkit.remote.root_span_id"):
         assert key in remote.attributes
@@ -580,12 +631,16 @@ def test_real_runner_genie_handoff_traces_health_and_continuation(
     import databricks_openai
     import databricks_openai.agents
 
-    monkeypatch.setattr(databricks_openai, "AsyncDatabricksOpenAI", lambda: local_client)
+    monkeypatch.setattr(
+        databricks_openai, "AsyncDatabricksOpenAI", lambda: local_client
+    )
     monkeypatch.setattr(databricks_openai.agents, "McpServer", FakeMcpServer)
     set_default_openai_client(local_client)
     from agent_server import agent
 
-    monkeypatch.setattr(agent, "build_mcp_url", lambda path: f"https://test.invalid{path}")
+    monkeypatch.setattr(
+        agent, "build_mcp_url", lambda path: f"https://test.invalid{path}"
+    )
     monkeypatch.setattr(agent, "McpServer", FakeMcpServer)
     agent.SUBAGENTS = [
         {
@@ -735,12 +790,16 @@ def test_real_runner_genie_tool_failure_finalizes_safe_schema(monkeypatch, tmp_p
     import databricks_openai
     import databricks_openai.agents
 
-    monkeypatch.setattr(databricks_openai, "AsyncDatabricksOpenAI", lambda: local_client)
+    monkeypatch.setattr(
+        databricks_openai, "AsyncDatabricksOpenAI", lambda: local_client
+    )
     monkeypatch.setattr(databricks_openai.agents, "McpServer", FailingMcpServer)
     set_default_openai_client(local_client)
     from agent_server import agent
 
-    monkeypatch.setattr(agent, "build_mcp_url", lambda path: f"https://test.invalid{path}")
+    monkeypatch.setattr(
+        agent, "build_mcp_url", lambda path: f"https://test.invalid{path}"
+    )
     monkeypatch.setattr(agent, "McpServer", FailingMcpServer)
     agent.SUBAGENTS = [
         {
@@ -777,7 +836,10 @@ def test_real_runner_genie_tool_failure_finalizes_safe_schema(monkeypatch, tmp_p
     assert remote.inputs == {
         "input": {"tool": "query_genie", "arguments": {"question": "revenue"}}
     }
-    assert remote.outputs == {"error": "token [REDACTED]"}
+    assert remote.outputs == {
+        "error": "token [REDACTED]",
+        "partial_output": {"available": False, "reason": "no output produced"},
+    }
     assert remote.get_attribute("appkit.remote.target_type") == "genie"
     assert remote.get_attribute("appkit.remote.target_name") == "space-failure"
     assert remote.get_attribute("appkit.remote.trace_id") is None

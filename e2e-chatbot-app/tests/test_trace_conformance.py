@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from copy import deepcopy
 import os
 from pathlib import Path
 import sys
@@ -10,64 +9,59 @@ import pytest
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT))
 
-from contract import SpanManifest, TraceManifest, assert_trace_contract  # noqa: E402
+from contract import assert_trace_contract  # noqa: E402
 from normalize import write_trace_manifest  # noqa: E402
 import model_serving_utils  # noqa: E402
-from trace_verification import verify_remote_trace  # noqa: E402
+from trace_verification import retrieve_remote_trace, verify_remote_trace  # noqa: E402
 
 
-def _manifest(trace_id: str) -> TraceManifest:
-    usage = {"input_tokens": 2, "output_tokens": 1, "total_tokens": 3}
-    return TraceManifest(
-        template="e2e-chatbot-app",
-        trace_id=trace_id,
-        spans=[
-            SpanManifest(
-                name="remote.agent",
-                span_type="AGENT",
-                span_id="root-span",
-                parent_span_id=None,
-                inputs={"input": "Use the deterministic tool"},
-                outputs={"output": "done"},
-                status="OK",
-                latency_ms=2.0,
-                model=None,
-                provider=None,
-                usage=usage,
-                cost_usd=None,
-                cost_available=False,
-                links=[],
-                attributes={
-                    "app_id": "remote-agent",
-                    "user_id": "local-user",
-                    "session_id": "local-session",
-                },
-            ),
-            SpanManifest(
-                name="remote.model",
-                span_type="CHAT_MODEL",
-                span_id="model-span",
-                parent_span_id="root-span",
-                inputs={"messages": ["Use the deterministic tool"]},
-                outputs={"text": "done"},
-                status="OK",
-                latency_ms=1.0,
-                model="test-model",
-                provider="databricks",
-                usage=usage,
-                cost_usd=None,
-                cost_available=False,
-                links=[],
-                attributes={},
-            ),
-        ],
-    )
+def _create_provider_trace(mlflow):
+    usage = {"inputTokens": 2, "outputTokens": 1, "totalTokens": 3}
+    with mlflow.start_span(name="remote.agent", span_type="AGENT") as root:
+        root.set_inputs({"input": "Use the deterministic tool"})
+        root.set_attributes(
+            {
+                "appkit.usage": {**usage, "costAvailable": False},
+                "appkit.cost_available": False,
+            }
+        )
+        mlflow.update_current_trace(
+            metadata={
+                "appkit.app.name": "remote-agent",
+                "mlflow.trace.user": "local-user",
+                "mlflow.trace.session": "local-session",
+            }
+        )
+        with mlflow.start_span(name="remote.model", span_type="CHAT_MODEL") as model:
+            model.set_inputs({"messages": ["Use the deterministic tool"]})
+            model.set_outputs({"text": "done"})
+            model.set_attributes(
+                {
+                    "appkit.model": "test-model",
+                    "appkit.provider": "databricks",
+                    "appkit.usage": {**usage, "costAvailable": False},
+                    "appkit.cost_available": False,
+                }
+            )
+            model.set_status("OK")
+        root.set_outputs({"output": "done"})
+        root.set_status("OK")
+        return root.trace_id
 
 
 def test_deterministic_remote_agent_response_is_bound_to_conformant_mlflow_and_uc(
     monkeypatch,
+    tmp_path,
 ):
-    trace_id = "trace-deterministic"
+    import mlflow
+
+    previous_tracking_uri = mlflow.get_tracking_uri()
+    monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
+    mlflow.set_tracking_uri(tmp_path.as_uri())
+    mlflow.set_experiment("legacy-chatbot-local-conformance")
+    trace_id = _create_provider_trace(mlflow)
+    stale_trace_id = _create_provider_trace(mlflow)
+    assert stale_trace_id != trace_id
     monkeypatch.setattr(
         model_serving_utils,
         "_get_endpoint_task_type",
@@ -93,16 +87,17 @@ def test_deterministic_remote_agent_response_is_bound_to_conformant_mlflow_and_u
         )(),
     )
 
-    messages, request_id = model_serving_utils.query_endpoint(
-        "remote-agent", [{"role": "user", "content": "hello"}], True
-    )
-    assert messages[0]["content"] == "done"
-    mlflow_manifest = _manifest(trace_id)
-    uc_manifest = deepcopy(mlflow_manifest)
-    assert_trace_contract(mlflow_manifest)
-    verify_remote_trace(request_id, mlflow_manifest, uc_manifest)
-    if destination := os.environ.get("TRACE_CONFORMANCE_MANIFEST"):
-        write_trace_manifest(destination, mlflow_manifest)
+    try:
+        messages, request_id = model_serving_utils.query_endpoint(
+            "remote-agent", [{"role": "user", "content": "hello"}], True
+        )
+        assert messages[0]["content"] == "done"
+        mlflow_manifest = retrieve_remote_trace(request_id)
+        assert_trace_contract(mlflow_manifest)
+        if destination := os.environ.get("TRACE_CONFORMANCE_MANIFEST"):
+            write_trace_manifest(destination, mlflow_manifest)
+    finally:
+        mlflow.set_tracking_uri(previous_tracking_uri)
 
 
 def test_deployed_remote_agent_trace_persists_to_uc():
@@ -124,7 +119,7 @@ def test_deployed_remote_agent_trace_persists_to_uc():
     integration = Path(__file__).parents[2] / ".scripts" / "agent-integration-tests"
     sys.path.insert(0, str(integration))
     from helpers import execute_trace_row_query
-    from normalize import normalize_python_mlflow_trace, normalize_uc_rows
+    from normalize import normalize_uc_rows
 
     import mlflow
     from databricks.sdk import WorkspaceClient
@@ -141,8 +136,7 @@ def test_deployed_remote_agent_trace_persists_to_uc():
         [{"role": "user", "content": "Use the deterministic tool"}],
         True,
     )
-    mlflow_trace = mlflow.get_trace(trace_id)
-    mlflow_manifest = normalize_python_mlflow_trace("e2e-chatbot-app", mlflow_trace)
+    mlflow_manifest = retrieve_remote_trace(trace_id)
     workspace = WorkspaceClient(profile=profile) if profile else WorkspaceClient()
     rows = execute_trace_row_query(
         workspace,

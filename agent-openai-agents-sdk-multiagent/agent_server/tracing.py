@@ -117,6 +117,10 @@ def safe_error_message(error: BaseException | str) -> str:
     return json.dumps(safe_trace_value(message, max_bytes=2048), sort_keys=True)
 
 
+def unavailable_partial_output() -> dict[str, object]:
+    return {"available": False, "reason": "no output produced"}
+
+
 def safe_trace_value(value: Any, *, max_bytes: int = _MAX_CAPTURE_BYTES) -> Any:
     """Redact and deterministically bound an arbitrary trace value."""
     redacted = _jsonable(value)
@@ -293,7 +297,9 @@ async def traced_remote_agent_call(
             "totalTokens": 0,
             "costAvailable": False,
         }
-        span.set_outputs({"error": safe_error})
+        span.set_outputs(
+            {"error": safe_error, "partial_output": unavailable_partial_output()}
+        )
         span.set_attributes(
             {
                 "appkit.remote.trace_id": None,
@@ -313,9 +319,7 @@ async def traced_remote_agent_call(
         manager.__exit__(None, None, None)
         raise
 
-    remote_trace_id = _remote_value(
-        response, "trace_id", "traceId", "mlflow_trace_id"
-    )
+    remote_trace_id = _remote_value(response, "trace_id", "traceId", "mlflow_trace_id")
     remote_span_id = _remote_value(
         response, "root_span_id", "rootSpanId", "span_id", "spanId"
     )
@@ -416,7 +420,9 @@ class TracedMcpServer:
             tools = await self._server.list_tools(*args, **kwargs)
         except BaseException as error:
             safe_error = safe_error_message(error)
-            health_span.set_outputs({"error": safe_error})
+            health_span.set_outputs(
+                {"error": safe_error, "partial_output": unavailable_partial_output()}
+            )
             health_span.record_exception(
                 RuntimeError(f"{type(error).__name__}: {safe_error}")
             )
@@ -514,11 +520,13 @@ class AgentRequestUsage:
         self._model_calls = 0
         self._cost_available = True
         self._cost_usd = 0.0
+        self._completed_outputs = BoundedTraceAccumulator(max_bytes=_MAX_CAPTURE_BYTES)
+        self._completed_output_count = 0
         self._lock = threading.Lock()
         with _request_traces_lock:
             _request_traces[span.trace_id] = self
 
-    def add(self, usage: Mapping[str, Any]) -> None:
+    def add(self, usage: Mapping[str, Any], *, output: Any = None) -> None:
         with self._lock:
             self._model_calls += 1
             self._input_tokens += _nonnegative_int(usage.get("inputTokens"))
@@ -545,6 +553,9 @@ class AgentRequestUsage:
                 self._cost_available = False
             else:
                 self._cost_usd += float(cost)
+            if output is not None:
+                self._completed_outputs.add(output)
+                self._completed_output_count += 1
 
     def finalize(self) -> None:
         usage: dict[str, Any] = {
@@ -562,6 +573,12 @@ class AgentRequestUsage:
         self._span.set_attribute("appkit.usage", usage)
         with _request_traces_lock:
             _request_traces.pop(self._span.trace_id, None)
+
+    def partial_output(self) -> dict[str, object]:
+        with self._lock:
+            if self._completed_output_count:
+                return {"completed_model_outputs": self._completed_outputs.snapshot()}
+            return unavailable_partial_output()
 
 
 def _nonnegative_int(value: Any) -> int:
@@ -604,7 +621,9 @@ def _completion_usage(result: Any) -> dict[str, Any]:
     total_tokens = usage.get("total_tokens")
     if total_tokens is None:
         total_tokens = _nonnegative_int(input_tokens) + _nonnegative_int(output_tokens)
-    details = usage.get("prompt_tokens_details") or usage.get("input_tokens_details") or {}
+    details = (
+        usage.get("prompt_tokens_details") or usage.get("input_tokens_details") or {}
+    )
     if hasattr(details, "model_dump"):
         details = details.model_dump()
     cost = _provider_cost(usage, getattr(result, "model_extra", None) or {})
@@ -672,7 +691,9 @@ async def _appkit_patched_agent_run(original, self, *args, **kwargs):
         result = await original(self, *args, **kwargs)
     except BaseException as error:
         safe_error = safe_error_message(error)
-        span.set_outputs({"error": safe_error})
+        span.set_outputs(
+            {"error": safe_error, "partial_output": request_usage.partial_output()}
+        )
         span.record_exception(RuntimeError(f"{type(error).__name__}: {safe_error}"))
         request_usage.finalize()
         manager.__exit__(None, None, None)
@@ -699,10 +720,20 @@ def _finalize_appkit_streamed_root(
     _agent_tracer._safe_detach_span_context(token)
     try:
         request_usage.finalize()
-        span.set_attribute("appkit.stream.capture", stream_capture.snapshot())
+        captured_events = stream_capture.snapshot()
+        span.set_attribute("appkit.stream.capture", captured_events)
         if error is not None:
             safe_error = safe_error_message(error)
-            span.set_outputs({"error": safe_error})
+            span.set_outputs(
+                {
+                    "error": safe_error,
+                    "partial_output": (
+                        {"events": captured_events}
+                        if captured_events
+                        else unavailable_partial_output()
+                    ),
+                }
+            )
             span.record_exception(RuntimeError(f"{type(error).__name__}: {safe_error}"))
             span.set_status("ERROR")
         else:
@@ -720,7 +751,9 @@ def _appkit_patched_agent_run_streamed(original, self, *args, **kwargs):
     from mlflow.tracing.fluent import start_span_no_context
     from mlflow.tracing.provider import set_span_in_context
 
-    inputs, attributes = _agent_tracer._build_agent_run_span_args(original, self, args, kwargs)
+    inputs, attributes = _agent_tracer._build_agent_run_span_args(
+        original, self, args, kwargs
+    )
     span = start_span_no_context(
         name=_agent_tracer._AGENT_RUN_STREAMED_SPAN_NAME,
         span_type=SpanType.AGENT,
@@ -757,13 +790,17 @@ def _appkit_patched_agent_run_streamed(original, self, *args, **kwargs):
     async def wrapped_stream_events(*stream_args, **stream_kwargs):
         live_result = result_ref()
         if not finalizer.alive:
-            async for event in original_stream_events(live_result, *stream_args, **stream_kwargs):
+            async for event in original_stream_events(
+                live_result, *stream_args, **stream_kwargs
+            ):
                 yield event
             return
         stream_capture_token = _stream_capture.set(stream_capture)
         error: BaseException | None = None
         try:
-            async for event in original_stream_events(live_result, *stream_args, **stream_kwargs):
+            async for event in original_stream_events(
+                live_result, *stream_args, **stream_kwargs
+            ):
                 yield event
         except BaseException as caught:
             error = caught
@@ -791,6 +828,7 @@ def _appkit_patched_agent_run_streamed(original, self, *args, **kwargs):
 def _install_mlflow_openai_hooks() -> None:
     """Enrich the model spans emitted by MLflow's OpenAI autologger."""
     from mlflow.openai import _agent_tracer
+
     openai_autolog = importlib.import_module("mlflow.openai.autolog")
 
     _agent_tracer._patched_agent_run = _appkit_patched_agent_run
@@ -838,7 +876,7 @@ def _install_mlflow_openai_hooks() -> None:
         with _request_traces_lock:
             request_usage = _request_traces.get(span.trace_id)
         if request_usage is not None:
-            request_usage.add(usage)
+            request_usage.add(usage, output=result)
         model = getattr(result, "model", None) or inputs.get("model")
         provider = "databricks" if str(model).startswith("databricks-") else "openai"
         attributes = {
@@ -852,12 +890,8 @@ def _install_mlflow_openai_hooks() -> None:
             "appkit.model": model,
             "appkit.provider": provider,
             "appkit.usage": usage,
-            "appkit.ttft_ms": max(
-                0.0, (first_token_ns - started_ns) / 1_000_000
-            ),
-            "appkit.stream_duration_ms": max(
-                0.0, (ended_ns - started_ns) / 1_000_000
-            ),
+            "appkit.ttft_ms": max(0.0, (first_token_ns - started_ns) / 1_000_000),
+            "appkit.stream_duration_ms": max(0.0, (ended_ns - started_ns) / 1_000_000),
             "appkit.finish_reason": _model_finish_reason(result),
             "appkit.error": None,
             "appkit.cost_available": usage["costAvailable"],
@@ -887,7 +921,9 @@ def _install_mlflow_openai_hooks() -> None:
             request_usage.add(usage)
         safe_error = safe_error_message(error)
         span.set_inputs(timing.get("inputs"))
-        span.set_outputs({"error": safe_error})
+        span.set_outputs(
+            {"error": safe_error, "partial_output": unavailable_partial_output()}
+        )
         span.set_attributes(
             {
                 "mlflow.llm.model": timing.get("model"),
@@ -944,9 +980,7 @@ def _install_single_mlflow_agent_processor() -> None:
                 from mlflow.entities import SpanEvent, SpanStatus, SpanStatusCode
                 from mlflow.openai import _agent_tracer
 
-                span_with_token = self._span_id_to_mlflow_span.pop(
-                    span.span_id, None
-                )
+                span_with_token = self._span_id_to_mlflow_span.pop(span.span_id, None)
                 if span_with_token is None:
                     return
                 _agent_tracer.detach_span_from_context(span_with_token.token)
@@ -956,23 +990,17 @@ def _install_single_mlflow_agent_processor() -> None:
                 if span.span_data.type == OpenAISpanType.AGENT:
                     mlflow_span.set_attributes(
                         {
-                            "handoffs": safe_trace_value(
-                                span.span_data.handoffs
-                            ),
+                            "handoffs": safe_trace_value(span.span_data.handoffs),
                             "tools": safe_trace_value(span.span_data.tools),
-                            "output_type": safe_trace_value(
-                                span.span_data.output_type
-                            ),
+                            "output_type": safe_trace_value(span.span_data.output_type),
                         }
                     )
                 if span.error:
-                    safe_error = safe_error_message(
-                        span.error.get("message", "error")
-                    )
+                    safe_error = safe_error_message(span.error.get("message", "error"))
                     mlflow_span.set_outputs(
                         {
                             "error": safe_error,
-                            "partial_output": agent_inputs,
+                            "partial_output": unavailable_partial_output(),
                         }
                     )
                     mlflow_span.add_event(
@@ -982,9 +1010,7 @@ def _install_single_mlflow_agent_processor() -> None:
                                 "exception.message": safe_error,
                                 "exception.type": "",
                                 "exception.stacktrace": json.dumps(
-                                    safe_trace_value(
-                                        span.error.get("data", {})
-                                    )
+                                    safe_trace_value(span.error.get("data", {}))
                                 ),
                             },
                         )
@@ -995,11 +1021,7 @@ def _install_single_mlflow_agent_processor() -> None:
                     )
                 else:
                     outputs = (
-                        {
-                            "output_type": safe_trace_value(
-                                span.span_data.output_type
-                            )
-                        }
+                        {"output_type": safe_trace_value(span.span_data.output_type)}
                         if span.span_data.type == OpenAISpanType.AGENT
                         else {"completed": True}
                     )
@@ -1010,12 +1032,16 @@ def _install_single_mlflow_agent_processor() -> None:
             if span.error:
                 span.set_error(
                     {
-                        "message": safe_error_message(span.error.get("message", "error")),
+                        "message": safe_error_message(
+                            span.error.get("message", "error")
+                        ),
                         "data": safe_trace_value(span.error.get("data", {})),
                     }
                 )
             if span.span_data.type == OpenAISpanType.FUNCTION:
-                span.span_data.input = json.dumps(safe_trace_value(span.span_data.input))
+                span.span_data.input = json.dumps(
+                    safe_trace_value(span.span_data.input)
+                )
                 span.span_data.output = safe_trace_value(span.span_data.output)
             super().on_span_end(span)
 

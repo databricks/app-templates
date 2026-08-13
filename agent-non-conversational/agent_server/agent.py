@@ -81,7 +81,13 @@ async def invoke_handler(data: dict) -> dict:
         Dictionary with analysis results for each question
     """
     root_started_ns = perf_counter_ns()
-    with traced_span("document.analysis", SpanType.AGENT, data) as root_span:
+    analysis_results: list[AnalysisResult] = []
+    with traced_span(
+        "document.analysis",
+        SpanType.AGENT,
+        data,
+        partial_output=lambda: [item.model_dump() for item in analysis_results],
+    ) as root_span:
         session_id = str(data.get("session_id") or uuid4())
         user_id = str(data.get("user_id") or "anonymous")
         request_id = str(data.get("request_id") or uuid4())
@@ -93,7 +99,6 @@ async def invoke_handler(data: dict) -> dict:
         )
         input_data = AgentInput(**data)
         doc_identity = document_identity(input_data.document_text)
-        analysis_results: list[AnalysisResult] = []
         partial_outputs: list[dict] = []
         parser_errors: list[str] = []
         aggregate_usage = UsageAccumulator()
@@ -126,9 +131,7 @@ async def invoke_handler(data: dict) -> dict:
                         root_span.set_attributes(
                             {
                                 "appkit.usage": root_usage,
-                                "appkit.cost_available": root_usage[
-                                    "costAvailable"
-                                ],
+                                "appkit.cost_available": root_usage["costAvailable"],
                             }
                         )
                     except Exception:
@@ -206,12 +209,13 @@ async def invoke_handler(data: dict) -> dict:
                 except Exception as error:
                     safe_error = safe_error_message(error)
                     if not parser_errors:
-                        partial_outputs = [item.model_dump() for item in analysis_results]
+                        partial_outputs = [
+                            item.model_dump() for item in analysis_results
+                        ]
                     parser_errors.append(safe_error)
                     answer = "No"
                     reasoning = (
-                        "Unable to process the question due to parsing error: "
-                        f"{error}"
+                        f"Unable to process the question due to parsing error: {error}"
                     )
                     set_span_result(
                         parser_span,

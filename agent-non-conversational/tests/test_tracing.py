@@ -198,11 +198,13 @@ def test_malformed_second_answer_preserves_batch_trace_and_usage(
     assert [item["question_text"] for item in root.outputs["partial_output"]] == [
         "Balance sheet?"
     ]
-    assert [
-        item["question_text"] for item in parsers[1].outputs["partial_output"]
-    ] == ["Balance sheet?"]
+    assert [item["question_text"] for item in parsers[1].outputs["partial_output"]] == [
+        "Balance sheet?"
+    ]
     assert root.outputs["results"] == result["results"]
-    assert all(span.get_attribute("appkit.duration_ms") >= 0 for span in models + parsers)
+    assert all(
+        span.get_attribute("appkit.duration_ms") >= 0 for span in models + parsers
+    )
     assert trace.info.trace_metadata["mlflow.trace.session"] == "batch-session"
     assert trace.info.trace_metadata["mlflow.trace.user"] == "batch-user"
     assert trace.info.trace_metadata["appkit.request.id"] == "batch-request"
@@ -386,9 +388,7 @@ def test_batch_startup_rejects_deleted_experiment() -> None:
     from agent_server.tracing import verify_deployment_trace_resources
 
     location = UnityCatalog("catalog_test", "schema_test", "batch_test")
-    location._otel_spans_table_name = (
-        "catalog_test.schema_test.batch_test_otel_spans"
-    )
+    location._otel_spans_table_name = "catalog_test.schema_test.batch_test_otel_spans"
     experiment = Experiment(
         experiment_id="123",
         name="deleted-experiment",
@@ -446,11 +446,11 @@ def test_batch_databricks_startup_runs_resource_preflight(
     def reject_resources(_config):
         raise RuntimeError("batch deployment resources are unavailable")
 
-    monkeypatch.setattr(
-        tracing, "verify_deployment_trace_resources", reject_resources
-    )
+    monkeypatch.setattr(tracing, "verify_deployment_trace_resources", reject_resources)
 
-    with pytest.raises(RuntimeError, match="batch deployment resources are unavailable"):
+    with pytest.raises(
+        RuntimeError, match="batch deployment resources are unavailable"
+    ):
         tracing.configure_mlflow_tracing()
 
 
@@ -535,7 +535,10 @@ def test_model_failure_finalizes_safe_error_and_known_usage(
     with pytest.raises(RuntimeError, match="model-secret"):
         asyncio.run(
             agent.invoke_handler(
-                {"document_text": "Balance sheet.", "questions": ["Present?"]}
+                {
+                    "document_text": "api_key=input-only-secret Balance sheet.",
+                    "questions": ["Present?"],
+                }
             )
         )
 
@@ -544,9 +547,7 @@ def test_model_failure_finalizes_safe_error_and_known_usage(
     )
     trace = mlflow.get_trace(traces[0].info.trace_id, flush=True)
     root = next(span for span in trace.data.spans if span.parent_id is None)
-    model = next(
-        span for span in trace.data.spans if span.span_type == "CHAT_MODEL"
-    )
+    model = next(span for span in trace.data.spans if span.span_type == "CHAT_MODEL")
     assert root.status.status_code == "ERROR"
     assert model.status.status_code == "ERROR"
     assert model.end_time_ns is not None
@@ -560,6 +561,85 @@ def test_model_failure_finalizes_safe_error_and_known_usage(
     assert root.get_attribute("appkit.usage") == expected_usage
     assert root.get_attribute("appkit.duration_ms") >= 0
     assert model.get_attribute("appkit.duration_ms") >= 0
+    unavailable = {"available": False, "reason": "no output produced"}
+    assert root.outputs["partial_output"] == unavailable
+    assert model.outputs["partial_output"] == unavailable
+    assert "inputs" not in root.outputs["partial_output"]
     exported = json.dumps([span.to_dict() for span in trace.data.spans], sort_keys=True)
+    outputs = json.dumps([span.outputs for span in trace.data.spans], sort_keys=True)
+    assert "input-only-secret" not in outputs
     assert "model-secret" not in exported
     assert "token [REDACTED]" in exported
+
+
+def test_later_model_failure_preserves_completed_analysis_results(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    tracking_uri = f"sqlite:///{tmp_path / 'later-model-failure.db'}"
+    artifact_dir = tmp_path / "later-model-failure-artifacts"
+    artifact_dir.mkdir()
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment_id = mlflow.create_experiment(
+        "batch-later-model-failure", artifact_location=artifact_dir.as_uri()
+    )
+    mlflow.set_experiment(experiment_id=experiment_id)
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", tracking_uri)
+    monkeypatch.setenv("MLFLOW_EXPERIMENT_ID", experiment_id)
+    for name, value in REQUIRED_TRACING_ENV.items():
+        monkeypatch.setenv(name, value)
+
+    first = FakeCompletion(
+        content='{"answer":"Yes","reasoning":"Completed first."}',
+        input_tokens=5,
+        output_tokens=2,
+        cost_usd=None,
+    )
+
+    class CompleteThenFail:
+        def __init__(self):
+            self.calls = 0
+
+        def create(self, **_kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return first
+            raise RuntimeError("token later-model-secret")
+
+    completions = CompleteThenFail()
+    workspace = SimpleNamespace(
+        serving_endpoints=SimpleNamespace(
+            get_open_ai_client=lambda: SimpleNamespace(
+                chat=SimpleNamespace(completions=completions)
+            )
+        )
+    )
+    monkeypatch.setattr(databricks.sdk, "WorkspaceClient", lambda: workspace)
+    sys.modules.pop("agent_server.agent", None)
+    sys.modules.pop("agent_server.tracing", None)
+    monkeypatch.setattr(server, "_invoke_function", None)
+    agent = importlib.import_module("agent_server.agent")
+
+    with pytest.raises(RuntimeError, match="later-model-secret"):
+        asyncio.run(
+            agent.invoke_handler(
+                {
+                    "document_text": "A document.",
+                    "questions": ["First?", "Second?"],
+                }
+            )
+        )
+
+    traces = mlflow.search_traces(
+        locations=[experiment_id], return_type="list", flush=True
+    )
+    trace = mlflow.get_trace(traces[0].info.trace_id, flush=True)
+    root = next(span for span in trace.data.spans if span.parent_id is None)
+    assert root.status.status_code == "ERROR"
+    assert root.outputs["partial_output"] == [
+        {
+            "question_text": "First?",
+            "answer": "Yes",
+            "reasoning": "Completed first.",
+        }
+    ]
+    assert "later-model-secret" not in json.dumps(root.outputs)

@@ -194,7 +194,7 @@ def test_deployed_job_trace_persists_to_its_bound_uc_table():
     integration = Path(__file__).parents[4] / ".scripts" / "agent-integration-tests"
     sys.path[:0] = [str(conformance), str(integration)]
     from contract import assert_trace_contract
-    from helpers import execute_trace_row_query
+    from helpers import poll_trace_rows
     from normalize import normalize_python_mlflow_trace, normalize_uc_rows
 
     import mlflow
@@ -227,7 +227,7 @@ def test_deployed_job_trace_persists_to_its_bound_uc_table():
     assert trace is not None, f"job run {run_id} produced no MLflow trace"
     mlflow_manifest = normalize_python_mlflow_trace("agentic-support-console", trace)
     assert_trace_contract(mlflow_manifest)
-    rows = execute_trace_row_query(
+    rows = poll_trace_rows(
         workspace,
         required["MLFLOW_TRACING_SQL_WAREHOUSE_ID"],
         required["MLFLOW_OTEL_SPANS_TABLE"],

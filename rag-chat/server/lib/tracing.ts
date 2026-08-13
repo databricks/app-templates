@@ -46,9 +46,9 @@ interface WorkflowState {
 }
 
 const MAX_CAPTURE_BYTES = 64 * 1024;
-const SECRET_KEY = /(?:authorization|api[-_]?key|cookie|credential|password|secret|token)/i;
+const SECRET_KEY = /(?:authorization|api[-_\s]?key|cookie|credential|password|secret|token)/i;
 const SECRET_TEXT =
-  /(\b(?:authorization|api[-_]?key|cookie|credential|password|secret|token)\b["']?\s*(?::|=|\s)\s*(?:bearer\s+)?)([^\s,;)\]}]+)/gi;
+  /(\b(?:authorization|api[-_\s]?key|cookie|credential|password|secret|token)\b["']?(?:\s*(?::|=)\s*|\s+(?:is\s+)?)(?:bearer\s+)?)([^\s,;)\]}]+)/gi;
 const UC_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]{0,254}$/;
 const tracer = trace.getTracer('rag-chat', '1.0.0');
 let ragContext: AppKitRagContext | undefined;
@@ -364,6 +364,8 @@ export async function runRagWorkflow(request: RagRequest, rootSpan: Span): Promi
   let output = '';
   let finalized = false;
   let partialUsage: unknown;
+  let partialResponse: unknown;
+  let partialFinishReason: unknown;
   const state: WorkflowState = { output: '' };
 
   const finalizeModel = async (event: any, error?: unknown) => {
@@ -371,7 +373,13 @@ export async function runRagWorkflow(request: RagRequest, rootSpan: Span): Promi
     finalized = true;
     const finishedNs = process.hrtime.bigint();
     output = typeof event?.text === 'string' ? event.text : output;
-    const usage = normalizeUsage(event?.usage ?? partialUsage, [event?.response?.body, event?.response]);
+    const errorRecord = error && typeof error === 'object' ? (error as Record<string, any>) : {};
+    const response = event?.response ?? errorRecord.response ?? partialResponse;
+    const responseRecord = response && typeof response === 'object' ? (response as Record<string, any>) : {};
+    const usage = normalizeUsage(
+      event?.usage ?? event?.totalUsage ?? errorRecord.usage ?? errorRecord.totalUsage ?? partialUsage,
+      [responseRecord.body, responseRecord, errorRecord.response?.body, errorRecord.response]
+    );
     state.output = output;
     state.usage = usage;
     if (error) state.error = safeError(error);
@@ -380,16 +388,16 @@ export async function runRagWorkflow(request: RagRequest, rootSpan: Span): Promi
       startedNs,
       { text: output, partial: Boolean(error) },
       {
-        'appkit.model': String(event?.response?.modelId ?? endpoint),
+        'appkit.model': String(responseRecord.modelId ?? endpoint),
         'appkit.provider': 'databricks',
-        'appkit.finish_reason': event?.finishReason,
+        'appkit.finish_reason': event?.finishReason ?? errorRecord.finishReason ?? partialFinishReason,
         'appkit.ttft_ms': Math.max(0, Number((firstTokenNs ?? finishedNs) - startedNs) / 1_000_000),
         'appkit.stream_duration_ms': Math.max(0, Number(finishedNs - startedNs) / 1_000_000),
         ...usageAttributes(usage),
       },
       error
     );
-    if (!error) {
+    if (!error || output) {
       const persistence = childSpan(rootSpan, 'rag.memory.assistant', 'MEMORY', {
         chatId: request.chatId,
         userId: request.userId,
@@ -406,9 +414,16 @@ export async function runRagWorkflow(request: RagRequest, rootSpan: Span): Promi
         state.persisted = saved;
         finish(persistence.span, persistence.startedNs, saved);
       } catch (persistenceError) {
-        state.error = safeError(persistenceError);
-        finish(persistence.span, persistence.startedNs, { error: state.error }, {}, persistenceError);
-        throw persistenceError;
+        const persistenceMessage = safeError(persistenceError);
+        state.error ??= persistenceMessage;
+        finish(
+          persistence.span,
+          persistence.startedNs,
+          { error: persistenceMessage, partialContent: output },
+          {},
+          persistenceError
+        );
+        if (!error) throw persistenceError;
       }
     }
   };
@@ -422,10 +437,12 @@ export async function runRagWorkflow(request: RagRequest, rootSpan: Span): Promi
         firstTokenNs ??= process.hrtime.bigint();
         output += String(chunk.text ?? chunk.delta ?? '');
       }
-      if (chunk?.type === 'finish') partialUsage = chunk.totalUsage ?? chunk.usage;
+      partialUsage = chunk?.totalUsage ?? chunk?.usage ?? partialUsage;
+      partialResponse = chunk?.response ?? partialResponse;
+      partialFinishReason = chunk?.finishReason ?? partialFinishReason;
     },
     onFinish: async (event: any) => finalizeModel(event),
-    onError: async ({ error }: any) => finalizeModel({}, error),
+    onError: async (event: any) => finalizeModel(event, event?.error),
   });
   const traceId = rootSpan.spanContext().traceId;
   const uiStream = createUIMessageStream({

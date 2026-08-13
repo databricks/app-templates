@@ -65,7 +65,11 @@ test.describe('Deployed app: feedback round-trip', () => {
       headers: { Authorization: `Bearer ${token}` },
       data: {
         id: chatId,
-        message: { role: 'user', content: 'Say "test" and nothing else.' },
+        message: {
+          id: generateUUID(),
+          role: 'user',
+          parts: [{ type: 'text', text: 'Say "test" and nothing else.' }],
+        },
         selectedChatModel: 'chat-model',
         selectedVisibilityType: 'private',
       },

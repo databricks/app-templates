@@ -100,6 +100,20 @@ def valid_content(action="credit"):
     )
 
 
+def test_natural_language_credentials_are_fully_redacted():
+    module = load_module()
+
+    captured = module.safe_trace_value(
+        "The customer's password is hunter2 and their api key is live-secret."
+    )
+
+    assert captured == (
+        "The customer's password is [REDACTED] and their api key is [REDACTED]"
+    )
+    assert "hunter2" not in captured
+    assert "live-secret" not in captured
+
+
 def test_batch_trace_has_per_ticket_children_identity_usage_and_partial_parser_failure(
     monkeypatch,
 ):
@@ -227,6 +241,115 @@ def test_batch_trace_has_per_ticket_children_identity_usage_and_partial_parser_f
     }
     assert "appkit.cost_usd" not in root.attributes
     assert capture.trace_updates[0]["metadata"]["appkit.request.id"] == "run-456"
+
+
+def test_model_failure_keeps_semantic_usage_cost_partial_output_and_skipped_parser(
+    monkeypatch,
+):
+    module = load_module()
+    capture = SpanCapture()
+    monkeypatch.setattr(module.mlflow, "start_span", capture.start_span)
+    monkeypatch.setattr(module.mlflow, "update_current_trace", lambda **_kwargs: None)
+
+    class ModelFailure(RuntimeError):
+        def __init__(self):
+            super().__init__("model stream failed")
+            self.response = {
+                "model": "databricks-gpt-5-4-mini",
+                "choices": [
+                    {
+                        "message": {"content": "Partial answer before failure"},
+                        "finish_reason": "error",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 8,
+                    "completion_tokens": 2,
+                    "total_tokens": 10,
+                    "prompt_tokens_details": {"cached_tokens": 3},
+                    "cost_usd": 0.0025,
+                },
+            }
+
+    result = module.process_messages(
+        [
+            {
+                "message_id": b"one",
+                "case_id": b"case-one",
+                "case_id_hex": "01",
+                "user_id": "user-one",
+                "subject": "Outage",
+                "status": "open",
+            }
+        ],
+        prompt_builder=lambda _message: "Ticket context",
+        model_caller=lambda _prompt: (_ for _ in ()).throw(ModelFailure()),
+        generated_at=datetime(2026, 8, 12, tzinfo=timezone.utc),
+        identity={
+            "session_id": "job-123",
+            "user_id": "support-job",
+            "request_id": "run-456",
+        },
+    )
+
+    assert result == []
+    root = capture.spans[0]
+    children = [span for span in capture.spans if span.parent is root]
+    assert [(span.name, span.span_type) for span in children] == [
+        ("support.ticket.context", "TOOL"),
+        ("support.ticket.model", "CHAT_MODEL"),
+        ("support.ticket.parse", "PARSER"),
+    ]
+    model = children[1]
+    assert model.status == "ERROR"
+    assert model.outputs["partialOutput"]["choices"][0]["message"]["content"] == (
+        "Partial answer before failure"
+    )
+    assert model.attributes["appkit.model"] == "databricks-gpt-5-4-mini"
+    assert model.attributes["appkit.provider"] == "databricks"
+    assert model.attributes["appkit.finish_reason"] == "error"
+    assert model.attributes["appkit.usage"] == {
+        "inputTokens": 8,
+        "outputTokens": 2,
+        "totalTokens": 10,
+        "cacheReadInputTokens": 3,
+        "costAvailable": True,
+        "costUsd": 0.0025,
+    }
+    assert model.attributes["mlflow.chat.tokenUsage"] == {
+        "input_tokens": 8,
+        "output_tokens": 2,
+        "total_tokens": 10,
+        "cache_read_input_tokens": 3,
+    }
+    assert model.attributes["appkit.cost_available"] is True
+    assert model.attributes["appkit.cost_usd"] == 0.0025
+    assert model.attributes["mlflow.llm.cost"] == {"total_cost": 0.0025}
+
+    parser = children[2]
+    assert parser.status == "UNSET"
+    assert parser.inputs == {
+        "ticketIndex": 0,
+        "content": "Partial answer before failure",
+    }
+    assert parser.outputs == {
+        "skipped": True,
+        "reason": "model_error",
+        "partialContent": "Partial answer before failure",
+    }
+    assert parser.attributes["appkit.skipped"] is True
+    assert parser.attributes["appkit.skip_reason"] == "model_error"
+
+    assert root.attributes["appkit.usage"] == {
+        "inputTokens": 8,
+        "outputTokens": 2,
+        "totalTokens": 10,
+        "cacheReadInputTokens": 3,
+        "costAvailable": True,
+        "costUsd": 0.0025,
+    }
+    assert root.attributes["appkit.cost_available"] is True
+    assert root.attributes["appkit.cost_usd"] == 0.0025
 
 
 def test_runtime_export_failure_does_not_fail_successful_generation(monkeypatch):

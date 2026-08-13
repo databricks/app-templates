@@ -60,12 +60,12 @@ Respond with valid JSON only, no markdown formatting:
 
 MAX_CAPTURE_BYTES = 64 * 1024
 SECRET_KEY = re.compile(
-    r"(?:authorization|api[-_]?key|cookie|credential|password|secret|token)",
+    r"(?:authorization|api[-_\s]?key|cookie|credential|password|secret|token)",
     re.IGNORECASE,
 )
 SECRET_TEXT = re.compile(
-    r"(?P<prefix>\b(?:authorization|api[-_]?key|cookie|credential|password|secret|token)"
-    r"\b[\"']?\s*(?::|=|\s)\s*(?:bearer\s+)?)"
+    r"(?P<prefix>\b(?:authorization|api[-_\s]?key|cookie|credential|password|secret|token)"
+    r"\b[\"']?(?:\s*(?::|=)\s*|\s+(?:is\s+)?)(?:bearer\s+)?)"
     r"(?P<value>[^\s,;)\]}]+)",
     re.IGNORECASE,
 )
@@ -364,6 +364,54 @@ def response_content(response: Mapping[str, Any]) -> tuple[str, str, str | None]
     )
 
 
+def partial_response_content(
+    response: Mapping[str, Any],
+) -> tuple[str | None, str | None, str | None]:
+    model = response.get("model")
+    model_name = str(model) if model is not None else None
+    choices = response.get("choices")
+    if not isinstance(choices, Sequence) or not choices:
+        return None, model_name, None
+    choice = choices[0]
+    if not isinstance(choice, Mapping):
+        return None, model_name, None
+    message = choice.get("message")
+    content = message.get("content") if isinstance(message, Mapping) else None
+    finish_reason = choice.get("finish_reason")
+    return (
+        content if isinstance(content, str) else None,
+        model_name,
+        str(finish_reason) if finish_reason is not None else None,
+    )
+
+
+def model_span_attributes(
+    *,
+    ticket_index: int,
+    ticket_user_id: str,
+    model_name: str | None,
+    finish_reason: str | None,
+    usage: Mapping[str, Any],
+    started_ns: int,
+) -> dict[str, Any]:
+    attributes: dict[str, Any] = {
+        "appkit.ticket_index": ticket_index,
+        "appkit.ticket_user_id": ticket_user_id,
+        "appkit.provider": "databricks",
+        "appkit.usage": usage,
+        "mlflow.chat.tokenUsage": token_usage(usage),
+        "appkit.finish_reason": finish_reason,
+        "appkit.cost_available": usage["costAvailable"],
+        "appkit.duration_ms": elapsed_ms(started_ns),
+    }
+    if model_name is not None:
+        attributes["appkit.model"] = model_name
+    if usage["costAvailable"]:
+        attributes["appkit.cost_usd"] = usage["costUsd"]
+        attributes["mlflow.llm.cost"] = {"total_cost": usage["costUsd"]}
+    return attributes
+
+
 def set_trace_identity(span: Any, identity: Mapping[str, str]) -> None:
     attributes = {
         "mlflow.trace.session": str(identity["session_id"]),
@@ -438,6 +486,9 @@ def process_messages(
                     )
 
                 model_started = perf_counter_ns()
+                model_error: BaseException | None = None
+                error_response: Mapping[str, Any] | None = None
+                partial_content: str | None = None
                 with traced_span(
                     "support.ticket.model",
                     SpanType.CHAT_MODEL,
@@ -449,10 +500,15 @@ def process_messages(
                             response
                         )
                     except BaseException as error:
-                        error_response = getattr(error, "response", None)
+                        candidate_response = getattr(error, "response", None)
+                        error_response = (
+                            candidate_response
+                            if isinstance(candidate_response, Mapping)
+                            else None
+                        )
                         failure_usage = (
                             normalize_usage(error_response)
-                            if isinstance(error_response, Mapping)
+                            if error_response is not None
                             else {
                                 "inputTokens": 0,
                                 "outputTokens": 0,
@@ -460,45 +516,72 @@ def process_messages(
                                 "costAvailable": False,
                             }
                         )
+                        partial_content, model_name, finish_reason = (
+                            partial_response_content(error_response)
+                            if error_response is not None
+                            else (None, None, None)
+                        )
                         usage_total.add(failure_usage)
+                        failure_attributes = model_span_attributes(
+                            ticket_index=index,
+                            ticket_user_id=str(message.get("user_id", "")),
+                            model_name=model_name,
+                            finish_reason=finish_reason,
+                            usage=failure_usage,
+                            started_ns=model_started,
+                        )
+                        failure_attributes["appkit.error"] = safe_error(error)
                         finish_span(
                             model_span,
-                            outputs={"error": safe_error(error)},
-                            attributes={
-                                "appkit.ticket_index": index,
-                                "appkit.usage": failure_usage,
-                                "appkit.cost_available": False,
-                                "appkit.duration_ms": elapsed_ms(model_started),
-                                "appkit.error": safe_error(error),
+                            outputs={
+                                "error": safe_error(error),
+                                "partialOutput": error_response,
                             },
+                            attributes=failure_attributes,
                             status="ERROR",
                             error=error,
                         )
-                        raise
-                    usage = normalize_usage(response)
-                    usage_total.add(usage)
-                    model_attributes: dict[str, Any] = {
-                        "appkit.ticket_index": index,
-                        "appkit.ticket_user_id": str(message.get("user_id", "")),
-                        "appkit.model": model_name,
-                        "appkit.provider": "databricks",
-                        "appkit.usage": usage,
-                        "mlflow.chat.tokenUsage": token_usage(usage),
-                        "appkit.finish_reason": finish_reason,
-                        "appkit.cost_available": usage["costAvailable"],
-                        "appkit.duration_ms": elapsed_ms(model_started),
-                    }
-                    if usage["costAvailable"]:
-                        model_attributes["appkit.cost_usd"] = usage["costUsd"]
-                        model_attributes["mlflow.llm.cost"] = {
-                            "total_cost": usage["costUsd"]
-                        }
-                    finish_span(
-                        model_span,
-                        outputs=response,
-                        attributes=model_attributes,
-                        status="OK",
-                    )
+                        model_error = error
+                    else:
+                        usage = normalize_usage(response)
+                        usage_total.add(usage)
+                        finish_span(
+                            model_span,
+                            outputs=response,
+                            attributes=model_span_attributes(
+                                ticket_index=index,
+                                ticket_user_id=str(message.get("user_id", "")),
+                                model_name=model_name,
+                                finish_reason=finish_reason,
+                                usage=usage,
+                                started_ns=model_started,
+                            ),
+                            status="OK",
+                        )
+
+                if model_error is not None:
+                    parser_started = perf_counter_ns()
+                    with traced_span(
+                        "support.ticket.parse",
+                        SpanType.PARSER,
+                        {"ticketIndex": index, "content": partial_content},
+                    ) as parser_span:
+                        finish_span(
+                            parser_span,
+                            outputs={
+                                "skipped": True,
+                                "reason": "model_error",
+                                "partialContent": partial_content,
+                            },
+                            attributes={
+                                "appkit.ticket_index": index,
+                                "appkit.skipped": True,
+                                "appkit.skip_reason": "model_error",
+                                "appkit.duration_ms": elapsed_ms(parser_started),
+                            },
+                            status="UNSET",
+                        )
+                    raise model_error
 
                 parser_started = perf_counter_ns()
                 with traced_span(

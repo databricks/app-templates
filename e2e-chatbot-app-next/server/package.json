@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node ../node_modules/tsx/dist/cli.mjs watch --inspect src/index.ts",
+    "dev:test": "node ../node_modules/tsx/dist/cli.mjs watch src/index.ts",
     "build": "tsdown",
     "start": "NODE_ENV=production node --env-file-if-exists ../.env dist/index.mjs"
   },

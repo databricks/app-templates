@@ -43,6 +43,30 @@ test.describe('/api/feedback', () => {
     // (depends on endpoint type; present when using the Responses API mock)
   });
 
+  test('POST /api/feedback rejects a different user for the message chat', async ({
+    adaContext,
+    babbageContext,
+  }) => {
+    const chatId = generateUUID();
+    const assistantMessageId = await sendChatAndGetMessageId(
+      adaContext.request,
+      chatId,
+      TEST_PROMPTS.SKY.MESSAGE,
+    );
+
+    const feedbackResponse = await babbageContext.request.post(
+      '/api/feedback',
+      {
+        data: {
+          messageId: assistantMessageId,
+          feedbackType: 'thumbs_up',
+        },
+      },
+    );
+
+    expect(feedbackResponse.status()).toBe(403);
+  });
+
   test('POST /api/feedback reports tracing unavailable when the exact message has no trace ID', async ({
     adaContext,
   }) => {

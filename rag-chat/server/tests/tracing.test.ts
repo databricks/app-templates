@@ -8,6 +8,10 @@ const state = vi.hoisted(() => ({
   queries: [] as Array<{ text: string; params?: unknown[] }>,
   streamOptions: undefined as any,
   createAppConfig: undefined as any,
+  streamFailure: undefined as
+    | undefined
+    | { error: Error; usage: Record<string, unknown>; response: Record<string, unknown> },
+  throwOnTelemetry: false,
 }));
 
 vi.mock('@opentelemetry/api', () => {
@@ -32,23 +36,28 @@ vi.mock('@opentelemetry/api', () => {
     }
     setAttribute(key: string, value: unknown) {
       this.attributes[key] = value;
+      if (state.throwOnTelemetry) throw new Error('exporter unavailable');
       return this;
     }
     setAttributes(values: Record<string, unknown>) {
       Object.assign(this.attributes, values);
+      if (state.throwOnTelemetry) throw new Error('exporter unavailable');
       return this;
     }
     setStatus(status: unknown) {
       this.status = status;
+      if (state.throwOnTelemetry) throw new Error('exporter unavailable');
       return this;
     }
     recordException(error: unknown) {
       this.exceptions.push(String(error));
+      if (state.throwOnTelemetry) throw new Error('exporter unavailable');
     }
     spanContext() {
       return { traceId: this.traceId, spanId: this.spanId, traceFlags: 1 };
     }
     end() {
+      if (state.throwOnTelemetry) throw new Error('exporter unavailable');
       this.ended = true;
     }
   }
@@ -135,6 +144,34 @@ vi.mock('ai', async (importOriginal) => {
             async pull(controller) {
               if (emitted) return;
               emitted = true;
+              if (state.streamFailure) {
+                options.onChunk?.({
+                  chunk: { type: 'text-delta', text: 'Partial grounded answer' },
+                });
+                controller.enqueue({ type: 'text-start', id: 'answer' });
+                controller.enqueue({
+                  type: 'text-delta',
+                  id: 'answer',
+                  delta: 'Partial grounded answer',
+                });
+                options.onChunk?.({
+                  chunk: {
+                    type: 'finish',
+                    finishReason: 'error',
+                    totalUsage: state.streamFailure.usage,
+                    response: state.streamFailure.response,
+                  },
+                });
+                state.throwOnTelemetry = true;
+                await options.onError?.({
+                  error: state.streamFailure.error,
+                  usage: state.streamFailure.usage,
+                  response: state.streamFailure.response,
+                  finishReason: 'error',
+                });
+                controller.error(state.streamFailure.error);
+                return;
+              }
               options.onChunk?.({
                 chunk: { type: 'text-delta', text: 'Grounded answer' },
               });
@@ -203,6 +240,8 @@ describe('RAG chat tracing', () => {
     state.queries.length = 0;
     state.streamOptions = undefined;
     state.createAppConfig = undefined;
+    state.streamFailure = undefined;
+    state.throwOnTelemetry = false;
     process.env.DATABRICKS_TOKEN = 'credential-must-not-be-captured';
     process.env.DATABRICKS_WORKSPACE_ID = '123';
     process.env.DATABRICKS_HOST = 'workspace.cloud.databricks.com';
@@ -223,6 +262,18 @@ describe('RAG chat tracing', () => {
     });
     expect(JSON.stringify(captured)).not.toContain('never-export-this');
     expect(JSON.stringify(captured)).not.toContain('also-secret');
+  });
+
+  test('natural-language credentials are fully redacted', () => {
+    const captured = safeTraceValue({
+      content: "The customer's password is hunter2 and their api key is live-secret.",
+    });
+
+    expect(captured).toEqual({
+      content: "The customer's password is [REDACTED] and their api key is [REDACTED]",
+    });
+    expect(JSON.stringify(captured)).not.toContain('hunter2');
+    expect(JSON.stringify(captured)).not.toContain('live-secret');
   });
 
   test('missing UC tracing configuration fails synchronously before AppKit startup', () => {
@@ -396,6 +447,146 @@ describe('RAG chat tracing', () => {
     expect(JSON.stringify(state.spans)).not.toContain('credential-must-not-be-captured');
     expect(children.every((span) => span.ended)).toBe(true);
     expect(root.ended).toBe(true);
+  });
+
+  test('stream failure retains partial output, usage, cost, persistence, and exporter isolation', async () => {
+    state.streamFailure = {
+      error: new Error('provider stream failed'),
+      usage: {
+        inputTokens: 13,
+        outputTokens: 4,
+        totalTokens: 17,
+        inputTokenDetails: { cacheReadTokens: 2 },
+      },
+      response: {
+        modelId: 'databricks-gpt-5-4-mini',
+        body: { usage: { cost_usd: 0.004 } },
+      },
+    };
+    const appkit = {
+      lakebase: {
+        query: vi.fn(async (text: string, params?: unknown[]) => {
+          state.queries.push({ text, params });
+          if (text.includes('INSERT INTO chat.messages')) {
+            return {
+              rows: [
+                {
+                  id: `message-${state.queries.length}`,
+                  chat_id: 'chat-1',
+                  role: params?.[1],
+                  content: params?.[2],
+                },
+              ],
+            };
+          }
+          if (text.includes('FROM chat.chats')) {
+            return { rows: [{ id: 'chat-1', user_id: 'ada@example.com' }] };
+          }
+          if (text.includes('FROM rag.documents')) {
+            return {
+              rows: [
+                {
+                  id: 'doc-1',
+                  content: 'Lakehouse context',
+                  similarity: 0.91,
+                  metadata: { source: 'docs' },
+                },
+              ],
+            };
+          }
+          return { rows: [] };
+        }),
+      },
+      server: {
+        extend(fn: (app: any) => void) {
+          fn({
+            post(path: string, handler: (req: any, res: any) => Promise<void>) {
+              if (path === '/api/chat') state.route = handler;
+            },
+          });
+        },
+      },
+    };
+    setupChatRoutes(appkit);
+
+    const response = {
+      headersSent: false,
+      statusCode: 200,
+      setHeader() {},
+      status(code: number) {
+        this.statusCode = code;
+        return this;
+      },
+      json: vi.fn(),
+    };
+    await state.route!(
+      {
+        body: {
+          chatId: 'chat-1',
+          messages: [
+            {
+              id: 'user-message',
+              role: 'user',
+              parts: [{ type: 'text', text: 'What is a lakehouse?' }],
+            },
+          ],
+        },
+        header(name: string) {
+          return name.toLowerCase() === 'x-forwarded-email' ? 'ada@example.com' : 'request-error';
+        },
+      },
+      response
+    );
+
+    const chunks = await consume(state.responseStream);
+    expect(chunks).toContainEqual({
+      type: 'error',
+      errorText: 'provider stream failed',
+    });
+
+    const root = state.spans.find((span) => span.name === 'rag-chat.request');
+    const model = state.spans.find((span) => span.name === 'rag.generate');
+    const persistence = state.spans.find((span) => span.name === 'rag.memory.assistant');
+    expect(attribute(model, 'mlflow.spanOutputs')).toEqual({
+      text: 'Partial grounded answer',
+      partial: true,
+    });
+    expect(attribute(model, 'appkit.usage')).toEqual({
+      inputTokens: 13,
+      outputTokens: 4,
+      totalTokens: 17,
+      cacheReadInputTokens: 2,
+      costAvailable: true,
+      costUsd: 0.004,
+    });
+    expect(model.attributes['appkit.cost_usd']).toBe(0.004);
+    expect(persistence).toBeDefined();
+    expect(attribute(persistence, 'mlflow.spanOutputs')).toEqual(
+      expect.objectContaining({
+        role: 'assistant',
+        content: 'Partial grounded answer',
+      })
+    );
+    expect(
+      state.queries.some(
+        ({ text, params }) =>
+          text.includes('INSERT INTO chat.messages') &&
+          params?.[1] === 'assistant' &&
+          params?.[2] === 'Partial grounded answer'
+      )
+    ).toBe(true);
+    expect(attribute(root, 'mlflow.spanOutputs')).toEqual(
+      expect.objectContaining({
+        text: 'Partial grounded answer',
+        partial: true,
+        persisted: expect.objectContaining({
+          role: 'assistant',
+          content: 'Partial grounded answer',
+        }),
+        error: 'provider stream failed',
+      })
+    );
+    expect(attribute(root, 'appkit.usage')).toEqual(attribute(model, 'appkit.usage'));
   });
 
   test('server passes the MLflow UC processor option to AppKit before startup', async () => {

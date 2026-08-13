@@ -24,10 +24,6 @@ export async function drainStreamToWriter(
     ) {
       if (chunk.value.type === 'error') {
         if (!receivedTextChunk) {
-          console.error(
-            'Error before first text chunk, triggering fallback:',
-            chunk.value.errorText,
-          );
           return { failed: true, errorText: chunk.value.errorText };
         }
         console.error(
@@ -44,7 +40,6 @@ export async function drainStreamToWriter(
     }
   } catch (readError) {
     if (!receivedTextChunk) {
-      console.error('Stream read error before first text chunk:', readError);
       return { failed: true };
     }
     console.error('Mid-stream read error:', readError);
@@ -168,17 +163,22 @@ export async function fallbackToGenerateText(
   try {
     const fallback = await generateText(params);
 
-    const traceId = (fallback?.response?.body as {
-      metadata: {
-        trace_id: string;
-      };
-    })?.metadata?.trace_id;
+    const traceId = (
+      fallback?.response?.body as {
+        metadata: {
+          trace_id: string;
+        };
+      }
+    )?.metadata?.trace_id;
 
     writeGenerateTextResultToStream(fallback, writer);
 
     return { usage: fallback.usage, traceId };
   } catch (fallbackError) {
-    console.error('[fallbackToGenerateText] generateText fallback also failed:', fallbackError);
+    console.error(
+      '[fallbackToGenerateText] generateText fallback also failed:',
+      fallbackError,
+    );
     const errorMessage =
       fallbackError instanceof Error
         ? fallbackError.message

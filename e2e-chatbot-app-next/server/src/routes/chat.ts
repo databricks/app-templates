@@ -444,7 +444,13 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       },
       onFinish: async ({ responseMessage }) => {
         // Store in-memory for ephemeral mode (also useful when DB is available)
-        storeMessageMeta(responseMessage.id, id, traceId);
+        storeMessageMeta(
+          responseMessage.id,
+          id,
+          traceId,
+          session.user.id,
+          selectedVisibilityType,
+        );
 
         try {
           await saveMessages({

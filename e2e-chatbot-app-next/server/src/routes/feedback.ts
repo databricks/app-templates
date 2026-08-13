@@ -67,12 +67,27 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
         const response = error.toResponse();
         return res.status(response.status).json(response.json);
       }
+      if (
+        metadata.visibility !== 'public' &&
+        metadata.ownerId !== session.user.id
+      ) {
+        const error = new ChatSDKError('forbidden:chat');
+        const response = error.toResponse();
+        return res.status(response.status).json(response.json);
+      }
       traceId = metadata.traceId;
       chatId = metadata.chatId;
     } else {
       const dbMessage = messages[0];
       traceId = dbMessage.traceId;
       chatId = dbMessage.chatId;
+
+      const { allowed } = await checkChatAccess(chatId, session.user.id);
+      if (!allowed) {
+        const error = new ChatSDKError('forbidden:chat');
+        const response = error.toResponse();
+        return res.status(response.status).json(response.json);
+      }
     }
 
     let mlflowAssessmentId: string | undefined;

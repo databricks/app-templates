@@ -22,13 +22,22 @@ function setBounded<K, V>(map: Map<K, V>, key: K, value: V): void {
   map.set(key, value);
 }
 
-const store = new Map<string, { traceId: string | null; chatId: string }>();
+type MessageMetadata = {
+  traceId: string | null;
+  chatId: string;
+  ownerId: string;
+  visibility: 'public' | 'private';
+};
+
+const store = new Map<string, MessageMetadata>();
 
 export const storeMessageMeta = (
   messageId: string,
   chatId: string,
   traceId: string | null,
-) => setBounded(store, messageId, { traceId, chatId });
+  ownerId: string,
+  visibility: MessageMetadata['visibility'],
+) => setBounded(store, messageId, { traceId, chatId, ownerId, visibility });
 
 export const getMessageMetadata = (messageId: string) =>
   store.get(messageId) ?? null;

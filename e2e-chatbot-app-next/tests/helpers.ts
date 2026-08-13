@@ -106,10 +106,14 @@ export function generateRandomTestUser() {
   return { email, password };
 }
 
-export const createMockStreamResponse = (SSEs: string[]) => {
+export const createMockStreamResponse = (
+  SSEs: string[],
+  headers?: HeadersInit,
+) => {
   return new Response(stringsToStream(SSEs), {
     headers: {
       'Content-Type': 'text/event-stream',
+      ...Object.fromEntries(new Headers(headers).entries()),
     },
   });
 };

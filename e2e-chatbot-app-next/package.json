@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:test": "concurrently \"npm run dev:test --workspace=@databricks/chatbot-server\" \"npm run dev:client\"",
     "dev:server": "npm run dev --workspace=@databricks/chatbot-server",
     "dev:client": "npm run dev --workspace=@databricks/chatbot-client",
     "build": "npm run db:migrate && npm run build:client && npm run build:server",

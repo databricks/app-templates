@@ -220,12 +220,22 @@ async function startServer() {
     // Registered outside the MSW try/catch so it's available even if MSW setup fails.
     // Lets tests simulate a message from an endpoint that doesn't return traces.
     app.post('/api/test/store-message-meta', (req, res) => {
-      const { messageId, chatId, traceId } = req.body as {
+      const {
+        messageId,
+        chatId,
+        traceId,
+        visibility = 'private',
+      } = req.body as {
         messageId: string;
         chatId: string;
         traceId: string | null;
+        visibility?: 'public' | 'private';
       };
-      storeMessageMeta(messageId, chatId, traceId ?? null);
+      const ownerId = req.header('x-forwarded-user');
+      if (!ownerId) {
+        return res.status(400).json({ error: 'x-forwarded-user is required' });
+      }
+      storeMessageMeta(messageId, chatId, traceId ?? null, ownerId, visibility);
       res.json({ success: true });
     });
   }

@@ -278,24 +278,31 @@ export async function saveMessages({
   }
 
   try {
-    // Use upsert to handle both new messages and updates (e.g., MCP approval continuations)
-    // When a message ID already exists, update its parts (which may have changed)
-    // Using sql`excluded.X` to reference the values that would have been inserted
-    return await (await ensureDb())
-      .insert(message)
-      .values(messages)
-      .onConflictDoUpdate({
-        target: message.id,
-        set: {
-          parts: sql`excluded.parts`,
-          attachments: sql`excluded.attachments`,
-          traceId: sql`excluded."traceId"`,
-        },
-      });
+    return await buildSaveMessagesQuery(await ensureDb(), messages);
   } catch (_error) {
     console.error('[saveMessages] DB error:', _error);
     throw new ChatSDKError('bad_request:database', 'Failed to save messages');
   }
+}
+
+export function buildSaveMessagesQuery(
+  database: ReturnType<typeof drizzle>,
+  messages: Array<DBMessage>,
+) {
+  // Use upsert to handle both new messages and updates (e.g., MCP approval continuations)
+  // When a message ID already exists, update its parts (which may have changed)
+  // Using sql`excluded.X` to reference the values that would have been inserted
+  return database
+    .insert(message)
+    .values(messages)
+    .onConflictDoUpdate({
+      target: message.id,
+      set: {
+        parts: sql`excluded.parts`,
+        attachments: sql`excluded.attachments`,
+        traceId: sql`coalesce(excluded."traceId", ${message.traceId})`,
+      },
+    });
 }
 
 export async function getMessagesByChatId({ id }: { id: string }) {
@@ -409,7 +416,6 @@ export async function updateChatVisiblityById({
   }
 }
 
-
 export async function updateChatTitleById({
   chatId,
   title,
@@ -418,7 +424,9 @@ export async function updateChatTitleById({
   title: string;
 }) {
   if (!isDatabaseAvailable()) {
-    console.log('[updateChatTitleById] Database not available, skipping update');
+    console.log(
+      '[updateChatTitleById] Database not available, skipping update',
+    );
     return;
   }
 
@@ -484,7 +492,9 @@ export async function voteMessage({
     });
 }
 
-export async function getVotesByChatId({ id }: { id: string }): Promise<Vote[]> {
+export async function getVotesByChatId({
+  id,
+}: { id: string }): Promise<Vote[]> {
   if (!isDatabaseAvailable()) {
     return [];
   }

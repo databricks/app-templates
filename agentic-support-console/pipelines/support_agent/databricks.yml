@@ -8,7 +8,7 @@ variables:
     description: The AI Gateway model serving endpoint to use
   mlflow_experiment_id:
     description: MLflow experiment ID with a Unity Catalog trace location
-  mlflow_tracing_warehouse_id:
+  mlflow_tracing_sql_warehouse_id:
     description: SQL warehouse ID used by the MLflow UC trace exporter
   mlflow_uc_catalog:
     description: Unity Catalog catalog containing trace tables
@@ -42,8 +42,8 @@ resources:
           default: databricks
         - name: mlflow_experiment_id
           default: ${var.mlflow_experiment_id}
-        - name: mlflow_tracing_warehouse_id
-          default: ${var.mlflow_tracing_warehouse_id}
+        - name: mlflow_tracing_sql_warehouse_id
+          default: ${var.mlflow_tracing_sql_warehouse_id}
         - name: mlflow_uc_catalog
           default: ${var.mlflow_uc_catalog}
         - name: mlflow_uc_schema
@@ -73,7 +73,7 @@ targets:
       catalog: REPLACE_ME # your Unity Catalog catalog name
       endpoint: databricks-gpt-5-4-mini
       mlflow_experiment_id: REPLACE_ME
-      mlflow_tracing_warehouse_id: REPLACE_ME
+      mlflow_tracing_sql_warehouse_id: REPLACE_ME
 
   prod:
     mode: production
@@ -83,4 +83,4 @@ targets:
       catalog: REPLACE_ME
       endpoint: databricks-gpt-5-4-mini
       mlflow_experiment_id: REPLACE_ME
-      mlflow_tracing_warehouse_id: REPLACE_ME
+      mlflow_tracing_sql_warehouse_id: REPLACE_ME

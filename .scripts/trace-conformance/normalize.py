@@ -239,6 +239,12 @@ def _normalize_span(span: Any) -> tuple[str | None, SpanManifest]:
         cost_available = _get(appkit_usage, "costAvailable", "cost_available")
     if cost_available is None:
         cost_available = cost is not None
+    if cost_available is False:
+        # Provider/autolog integrations sometimes emit a default zero cost even
+        # when the production span explicitly records that pricing is unknown.
+        # The explicit availability signal is authoritative; retaining that
+        # synthetic zero would turn "unknown" into a false priced result.
+        cost = None
     manifest = SpanManifest(
         name=_get(span, "name"),
         span_type=span_type,
@@ -278,7 +284,15 @@ def _cost_value(value: Any) -> float | None:
     if value is None:
         return None
     if isinstance(value, Mapping):
-        value = _get(value, "cost_usd", "costUsd", "value", "amount")
+        value = _get(
+            value,
+            "cost_usd",
+            "costUsd",
+            "total_cost",
+            "totalCost",
+            "value",
+            "amount",
+        )
     if value is None:
         return None
     return float(value)
@@ -368,9 +382,7 @@ def _install_trace_id_recorder(mlflow) -> None:
             trace_id = getattr(span, "trace_id", None)
             if trace_id and trace_id not in _PROCESS_TRACE_IDS:
                 _PROCESS_TRACE_IDS.append(trace_id)
-                _PROCESS_TRACE_LOCATIONS[trace_id] = str(
-                    mlflow.get_tracking_uri()
-                )
+                _PROCESS_TRACE_LOCATIONS[trace_id] = str(mlflow.get_tracking_uri())
             yield span
 
     recording_start_span._trace_conformance_recorder = True

@@ -11,6 +11,10 @@ variables:
     default: "chatbot-lakebase"
   resource_name_suffix:
     description: "Suffix for resource names (app/lakebase instance names etc). Helpful for avoiding name collisions if multiple users deploy this app to the same workspace"
+  mlflow_experiment_id:
+    description: "Remote agent MLflow experiment ID with immutable UC trace storage"
+  mlflow_tracing_sql_warehouse_id:
+    description: "SQL warehouse used to verify remote agent traces in UC"
 
 resources:
   database_instances:
@@ -35,6 +39,16 @@ resources:
           serving_endpoint:
             name: ${var.serving_endpoint_name}
             permission: CAN_QUERY
+        - name: mlflow-experiment
+          description: "Remote agent MLflow experiment"
+          experiment:
+            experiment_id: ${var.mlflow_experiment_id}
+            permission: CAN_READ
+        - name: mlflow-tracing-warehouse
+          description: "Warehouse for remote trace verification"
+          sql_warehouse:
+            id: ${var.mlflow_tracing_sql_warehouse_id}
+            permission: CAN_USE
         # TODO (optional): Uncomment the database resource below to bind the app to the database instance above
         # and enable persistent chat history
         # - name: database

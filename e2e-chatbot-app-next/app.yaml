@@ -4,6 +4,15 @@ runtime: nodejs20
 env:
   - name: DATABRICKS_SERVING_ENDPOINT
     valueFrom: serving-endpoint
-  # FEEDBACK RESOURCE: Uncomment to enable the feedback UI (requires experiment resource in databricks.yml)
-  # - name: MLFLOW_EXPERIMENT_ID
-  #   valueFrom: experiment
+  - name: MLFLOW_EXPERIMENT_ID
+    valueFrom: mlflow-experiment
+  - name: MLFLOW_TRACING_SQL_WAREHOUSE_ID
+    valueFrom: mlflow-tracing-warehouse
+  - name: MLFLOW_UC_CATALOG
+    value: main
+  - name: MLFLOW_UC_SCHEMA
+    value: agent_traces
+  - name: MLFLOW_UC_TABLE_PREFIX
+    value: e2e_chatbot_next
+  - name: MLFLOW_OTEL_SPANS_TABLE
+    value: main.agent_traces.e2e_chatbot_next_otel_spans

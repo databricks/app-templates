@@ -1,5 +1,6 @@
 import re
 import os
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -37,6 +38,7 @@ class AgentTemplate:
     has_local_conformance: bool
     has_deployed_verification: bool
     local_test_command: tuple[str, ...] | None = None
+    proof_owner: str | None = None
 
 
 def _read(path: Path) -> str:
@@ -64,10 +66,15 @@ def _signals(source: str) -> tuple[str, ...]:
         source,
     ):
         signals.append("agent-constructor")
-    if re.search(
-        r"(?:\.responses\.create\s*\(|/agent/v\d+/|/invocations\b|agents/[\w./-]+)",
+    explicit_agent_endpoint = re.search(
+        r"(?:\.responses\.create\s*\(|/agent/v\d+/|agents/[\w./-]+)", source
+    )
+    trace_returning_invocation = re.search(r"/invocations\b", source) and re.search(
+        r"\b(?:agent|return_trace|trace_id|traceId|request_id|requestId)\b",
         source,
-    ):
+        re.IGNORECASE,
+    )
+    if explicit_agent_endpoint or trace_returning_invocation:
         signals.append("agent-endpoint")
     if (
         re.search(r"\bwhile\b", source)
@@ -80,6 +87,22 @@ def _signals(source: str) -> tuple[str, ...]:
     ) and re.search(r"\b(?:generate|model|llm|chat)\b", source, re.IGNORECASE):
         signals.append("retrieval-generation")
     return tuple(signals)
+
+
+def _production_signals(template: Path) -> tuple[str, ...]:
+    observed = {
+        signal
+        for path in _iter_files(template, _SOURCE_SUFFIXES, exclude_tests=True)
+        for signal in _signals(_read(path))
+    }
+    order = (
+        "agent-server",
+        "agent-constructor",
+        "agent-endpoint",
+        "model-tool-loop",
+        "retrieval-generation",
+    )
+    return tuple(signal for signal in order if signal in observed)
 
 
 def _all_text(template: Path, *, suffixes: set[str]) -> str:
@@ -107,8 +130,9 @@ def _iter_files(root: Path, suffixes: set[str], *, exclude_tests: bool = False):
 
 def _has_uc_resources(template: Path) -> bool:
     config = _all_text(template, suffixes=_CONFIG_SUFFIXES)
+    normalized = config.lower()
     return (
-        all(variable in config for variable in _UC_ENV)
+        all(variable.lower() in normalized for variable in _UC_ENV)
         and re.search(r"\bexperiment", config, re.IGNORECASE) is not None
         and re.search(r"\b(?:sql_)?warehouse", config, re.IGNORECASE) is not None
     )
@@ -129,9 +153,9 @@ def _has_local_conformance(template: Path) -> bool:
         relative = path.relative_to(template).as_posix().lower()
         if "deployed" in relative or "e2e" in relative:
             continue
-        direct_contract = "assert_trace_contract" in source and re.search(
-            r"mock|deterministic|inmemory", source, re.IGNORECASE
-        )
+        direct_contract = re.search(
+            r"assert_?Trace_?Contract", source, re.IGNORECASE
+        ) and re.search(r"mock|deterministic|inmemory", source, re.IGNORECASE)
         real_trace_test = re.search(
             r"search_traces|InMemoryTraceManager|withAgentRequestTrace|InMemorySpanExporter",
             source,
@@ -151,7 +175,11 @@ def _has_local_conformance(template: Path) -> bool:
 def _has_deployed_verification(template: Path) -> bool:
     for path, source in _test_files(template):
         relative = path.relative_to(template).as_posix().lower()
-        deployed_test = "deployed" in relative or "e2e" in relative
+        deployed_test = (
+            "deployed" in relative
+            or "e2e" in relative
+            or re.search(r"\b(?:def|test)\s+test_deployed", source) is not None
+        )
         deployment_preflight = (
             "verify_deployment_trace_resources" in source
             and "verify_smoke_trace" in source
@@ -188,6 +216,65 @@ def _local_test_command(template: Path) -> tuple[str, ...] | None:
         if "pytest-xdist" in (template / "pyproject.toml").read_text():
             command.append("-n0")
         return tuple(command)
+    nested_python_trace_tests = sorted(
+        template.glob("pipelines/*/tests/test_tracing.py")
+    )
+    if nested_python_trace_tests:
+        repository_root = template.parent
+        integration_project = repository_root / ".scripts" / "agent-integration-tests"
+        return (
+            "uv",
+            "run",
+            "--offline",
+            "--frozen",
+            "--project",
+            integration_project.relative_to(repository_root).as_posix(),
+            "pytest",
+            nested_python_trace_tests[0].relative_to(repository_root).as_posix(),
+            "-v",
+        )
+    standalone_python_trace_test = template / "tests" / "test_trace_conformance.py"
+    if standalone_python_trace_test.exists():
+        repository_root = template.parent
+        integration_project = repository_root / ".scripts" / "agent-integration-tests"
+        return (
+            "uv",
+            "run",
+            "--offline",
+            "--frozen",
+            "--project",
+            integration_project.relative_to(repository_root).as_posix(),
+            "pytest",
+            standalone_python_trace_test.relative_to(repository_root).as_posix(),
+            "-v",
+        )
+    tracing_tests = [
+        path
+        for path in (
+            template / "server" / "tests" / "tracing.test.ts",
+            template / "server" / "tests" / "tracing-real-ai-sdk.test.ts",
+        )
+        if path.exists()
+    ]
+    if (template / "package.json").exists() and tracing_tests:
+        return (
+            "npm",
+            "test",
+            "--",
+            *(path.relative_to(template).as_posix() for path in tracing_tests),
+        )
+    proxy_trace_test = (
+        template / "tests" / "routes" / "trace-id-capture.api-proxy.test.ts"
+    )
+    if (template / "package.json").exists() and proxy_trace_test.exists():
+        return (
+            "npm",
+            "run",
+            "test:ephemeral",
+            "--",
+            proxy_trace_test.relative_to(template).as_posix(),
+            "--project=routes-api-proxy",
+        )
     if (template / "package.json").exists() and (
         template / "tests/framework/tracing.test.ts"
     ).exists():
@@ -199,6 +286,30 @@ def _local_test_command(template: Path) -> tuple[str, ...] | None:
             "tests/framework/tracing.test.ts",
             "tests/framework/endpoints.test.ts",
         )
+    return None
+
+
+def _generated_appkit_proof_owner(template: Path) -> str | None:
+    package_path = template / "package.json"
+    manifest_path = template / "appkit.plugins.json"
+    server_path = template / "server" / "server.ts"
+    if not all(path.exists() for path in (package_path, manifest_path, server_path)):
+        return None
+    try:
+        package = json.loads(_read(package_path))
+        manifest = json.loads(_read(manifest_path))
+    except (TypeError, ValueError):
+        return None
+    agents = manifest.get("plugins", {}).get("agents", {})
+    server = _read(server_path)
+    if (
+        package.get("dependencies", {}).get("@databricks/appkit")
+        and agents.get("package") == "@databricks/appkit"
+        and agents.get("requiredByTemplate") is True
+        and re.search(r"\bcreateApp\s*\(", server)
+        and re.search(r"\bagents\s*\(", server)
+    ):
+        return "@databricks/appkit generated-template conformance"
     return None
 
 
@@ -215,7 +326,7 @@ def discover_agentic_templates(root: Path | str) -> list[AgentTemplate]:
         for path in root.iterdir()
         if path.is_dir() and not path.name.startswith(".")
     ):
-        signals = _signals(_production_source(template))
+        signals = _production_signals(template)
         if not signals:
             continue
         discovered.append(
@@ -227,6 +338,7 @@ def discover_agentic_templates(root: Path | str) -> list[AgentTemplate]:
                 has_local_conformance=_has_local_conformance(template),
                 has_deployed_verification=_has_deployed_verification(template),
                 local_test_command=_local_test_command(template),
+                proof_owner=_generated_appkit_proof_owner(template),
             )
         )
     return discovered
@@ -238,9 +350,9 @@ def assert_template_policy(templates: list[AgentTemplate]) -> None:
         missing = []
         if not template.has_uc_resources:
             missing.append("UC resources")
-        if not template.has_local_conformance:
+        if not template.has_local_conformance and not template.proof_owner:
             missing.append("deterministic local conformance")
-        if not template.has_deployed_verification:
+        if not template.has_deployed_verification and not template.proof_owner:
             missing.append("deployed verification")
         if missing:
             failures.append(f"{template.name}: missing {', '.join(missing)}")

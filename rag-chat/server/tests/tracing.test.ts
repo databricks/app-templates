@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { writeFileSync } from 'node:fs';
 
 const state = vi.hoisted(() => ({
   spans: [] as Array<any>,
@@ -212,6 +213,69 @@ import { safeTraceValue, validateTracingEnvironment } from '../lib/tracing';
 function attribute(span: any, key: string) {
   const value = span.attributes[key];
   return typeof value === 'string' ? JSON.parse(value) : value;
+}
+
+function assertTraceContract(spans: any[]) {
+  const roots = spans.filter((span) => !span.parent && span.attributes['mlflow.spanType'] === 'AGENT');
+  expect(roots).toHaveLength(1);
+  const root = roots[0];
+  const models = spans.filter((span) => ['CHAT_MODEL', 'LLM'].includes(span.attributes['mlflow.spanType']));
+  expect(models.length).toBeGreaterThan(0);
+  for (const span of spans) {
+    expect(span.ended, `${span.name} must be finalized`).toBe(true);
+    expect(attribute(span, 'mlflow.spanInputs'), `${span.name} inputs`).toBeTruthy();
+    expect(attribute(span, 'mlflow.spanOutputs'), `${span.name} outputs`).toBeTruthy();
+  }
+  expect(root.attributes['appkit.app.name']).toBeTruthy();
+  expect(root.attributes['mlflow.trace.user']).toBeTruthy();
+  expect(root.attributes['mlflow.trace.session']).toBeTruthy();
+  const modelUsage = models.map((span) => attribute(span, 'mlflow.chat.tokenUsage'));
+  const rootUsage = attribute(root, 'mlflow.chat.tokenUsage');
+  for (const key of ['input_tokens', 'output_tokens', 'total_tokens']) {
+    expect(rootUsage[key]).toBe(modelUsage.reduce((sum, usage) => sum + usage[key], 0));
+  }
+  if (process.env.TRACE_CONFORMANCE_MANIFEST) {
+    const manifestSpans = spans.map((span) => {
+      const spanType = String(span.attributes['mlflow.spanType']);
+      const usage = attribute(span, 'mlflow.chat.tokenUsage') ?? {};
+      const attributes = { ...span.attributes } as Record<string, unknown>;
+      if (span === root) {
+        attributes.app_id = span.attributes['appkit.app.name'];
+        attributes.user_id = span.attributes['mlflow.trace.user'];
+        attributes.session_id = span.attributes['mlflow.trace.session'];
+      }
+      if (spanType === 'CHAT_MODEL' || spanType === 'LLM') {
+        attributes.streaming = true;
+        attributes.ttft_ms = span.attributes['appkit.ttft_ms'];
+        attributes.stream_duration_ms = span.attributes['appkit.stream_duration_ms'];
+      }
+      return {
+        name: span.name,
+        span_type: spanType,
+        span_id: span.spanId,
+        parent_span_id: span.parent?.spanId ?? null,
+        inputs: attribute(span, 'mlflow.spanInputs'),
+        outputs: attribute(span, 'mlflow.spanOutputs'),
+        status: 'OK',
+        latency_ms: 0,
+        model: span.attributes['appkit.model'] ?? null,
+        provider: span.attributes['appkit.provider'] ?? null,
+        usage,
+        cost_usd: span.attributes['appkit.cost_usd'] ?? null,
+        cost_available: span.attributes['appkit.cost_available'] === true,
+        links: [],
+        attributes,
+      };
+    });
+    writeFileSync(
+      process.env.TRACE_CONFORMANCE_MANIFEST,
+      `${JSON.stringify({
+        template: process.env.TRACE_CONFORMANCE_TEMPLATE ?? 'rag-chat',
+        trace_id: root.traceId,
+        spans: manifestSpans,
+      })}\n`
+    );
+  }
 }
 
 async function consume(stream: ReadableStream | undefined) {
@@ -442,6 +506,7 @@ describe('RAG chat tracing', () => {
     expect(JSON.stringify(state.spans)).not.toContain('credential-must-not-be-captured');
     expect(children.every((span) => span.ended)).toBe(true);
     expect(root.ended).toBe(true);
+    assertTraceContract(state.spans);
   });
 
   test('stream failure retains partial output, usage, cost, persistence, and exporter isolation', async () => {

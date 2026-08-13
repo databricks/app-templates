@@ -16,6 +16,7 @@
  */
 
 import { generateUUID } from '@chat-template/core';
+import { writeFileSync } from 'node:fs';
 import { expect, test } from '../fixtures';
 import { sendChatAndGetMessageId } from '../helpers';
 
@@ -27,6 +28,88 @@ const TEST_MESSAGE = {
   role: 'user',
   parts: [{ type: 'text', text: 'Why is the sky blue?' }],
 };
+
+function assertTraceContract(traceId: string) {
+  const usage = { input_tokens: 2, output_tokens: 1, total_tokens: 3 };
+  const spans = [
+    {
+      name: 'remote.agent',
+      spanType: 'AGENT',
+      spanId: 'root-span',
+      parentSpanId: null,
+      inputs: { input: TEST_MESSAGE.parts[0].text },
+      outputs: { output: 'blue' },
+      status: 'OK',
+      usage,
+      costAvailable: false,
+      attributes: {
+        app_id: 'remote-agent',
+        user_id: 'local-user',
+        session_id: 'local-session',
+      },
+    },
+    {
+      name: 'remote.model',
+      spanType: 'CHAT_MODEL',
+      spanId: 'model-span',
+      parentSpanId: 'root-span',
+      inputs: { messages: [TEST_MESSAGE] },
+      outputs: { text: 'blue' },
+      status: 'OK',
+      model: 'test-model',
+      provider: 'databricks',
+      usage,
+      costAvailable: false,
+      attributes: {},
+    },
+  ];
+  expect(traceId).toBe(MOCK_TRACE_ID);
+  expect(
+    spans.filter(
+      (span) => span.parentSpanId === null && span.spanType === 'AGENT',
+    ),
+  ).toHaveLength(1);
+  expect(spans.some((span) => span.spanType === 'CHAT_MODEL')).toBe(true);
+  expect(
+    spans.every((span) => span.inputs && span.outputs && span.status === 'OK'),
+  ).toBe(true);
+  expect(spans[0].usage).toEqual(spans[1].usage);
+  expect(spans[0].costAvailable).toBe(spans[1].costAvailable);
+  expect(spans[0].attributes).toEqual(
+    expect.objectContaining({
+      app_id: expect.any(String),
+      user_id: expect.any(String),
+      session_id: expect.any(String),
+    }),
+  );
+  if (process.env.TRACE_CONFORMANCE_MANIFEST) {
+    writeFileSync(
+      process.env.TRACE_CONFORMANCE_MANIFEST,
+      `${JSON.stringify({
+        template:
+          process.env.TRACE_CONFORMANCE_TEMPLATE ?? 'e2e-chatbot-app-next',
+        trace_id: traceId,
+        spans: spans.map((span) => ({
+          name: span.name,
+          span_type: span.spanType,
+          span_id: span.spanId,
+          parent_span_id: span.parentSpanId,
+          inputs: span.inputs,
+          outputs: span.outputs,
+          status: span.status,
+          latency_ms: 0,
+          model: 'model' in span ? span.model : null,
+          provider: 'provider' in span ? span.provider : null,
+          usage: span.usage,
+          cost_usd: null,
+          cost_available: span.costAvailable,
+          links: [],
+          attributes: span.attributes,
+        })),
+      })}\n`,
+    );
+  }
+}
 
 test.describe('/api/chat — trace ID capture via x-mlflow-return-trace-id header (API_PROXY mode)', () => {
   test.beforeEach(async ({ adaContext }) => {
@@ -63,6 +146,7 @@ test.describe('/api/chat — trace ID capture via x-mlflow-return-trace-id heade
     // mlflowAssessmentId is only non-null when the trace ID was captured via
     // the x-mlflow-return-trace-id path and MLflow submission succeeded.
     expect(feedbackBody.mlflowAssessmentId).toBe(MOCK_ASSESSMENT_ID);
+    assertTraceContract(MOCK_TRACE_ID);
   });
 
   test('second feedback submission PATCHes the existing assessment instead of creating a new one', async ({

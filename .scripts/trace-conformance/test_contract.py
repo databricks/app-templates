@@ -485,9 +485,7 @@ def test_pytest_capture_records_trace_ids_at_their_creation_location():
         assert span.trace_id == TRACE_ID
 
     assert normalize._PROCESS_TRACE_IDS == [TRACE_ID]
-    assert normalize._PROCESS_TRACE_LOCATIONS == {
-        TRACE_ID: "sqlite:///created.db"
-    }
+    assert normalize._PROCESS_TRACE_LOCATIONS == {TRACE_ID: "sqlite:///created.db"}
 
 
 def test_pytest_capture_retrieves_only_the_current_process_trace_id(
@@ -522,9 +520,7 @@ def test_pytest_capture_retrieves_only_the_current_process_trace_id(
 
     manager = SimpleNamespace(get_trace=no_pending_trace)
     trace_manager = ModuleType("mlflow.tracing.trace_manager")
-    trace_manager.InMemoryTraceManager = SimpleNamespace(
-        get_instance=lambda: manager
-    )
+    trace_manager.InMemoryTraceManager = SimpleNamespace(get_instance=lambda: manager)
     tracing = ModuleType("mlflow.tracing")
     monkeypatch.setitem(sys.modules, "mlflow", fake_mlflow)
     monkeypatch.setitem(sys.modules, "mlflow.tracing", tracing)
@@ -618,6 +614,21 @@ def test_normalizes_persisted_uc_rows_and_decodes_attributes():
 
     assert manifest.trace_id == TRACE_ID
     assert [span.span_id for span in manifest.spans] == ["root", "model"]
+    assert_trace_contract(manifest)
+
+
+def test_explicit_unavailable_cost_discards_provider_default_zero():
+    root = _OtelSpan(root=True)
+    model = _OtelSpan(root=False)
+    root.attributes["appkit.cost_available"] = False
+    root.attributes["mlflow.llm.cost"] = {"total_cost": 0.0}
+    model.attributes["appkit.cost_available"] = False
+    model.attributes["mlflow.llm.cost"] = {"total_cost": 0.0}
+
+    manifest = normalize_appkit_otel_trace("unknown-cost", [root, model])
+
+    assert manifest.spans[0].cost_usd is None
+    assert manifest.spans[1].cost_usd is None
     assert_trace_contract(manifest)
 
 

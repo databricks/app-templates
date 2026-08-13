@@ -131,6 +131,24 @@ def test_discovers_every_agentic_signal_and_ignores_non_agent(behavior_root):
     }
 
 
+def test_plain_model_invocation_is_not_misclassified_as_an_agent_endpoint(tmp_path):
+    _write(
+        tmp_path / "plain-model" / "src/moderate.ts",
+        "fetch(`${host}/serving-endpoints/text-model/invocations`, "
+        "{ body: JSON.stringify({ messages }) });\n",
+    )
+
+    assert discover_agentic_templates(tmp_path) == []
+
+
+def test_unrelated_behavior_tokens_in_different_files_do_not_form_a_tool_loop(tmp_path):
+    _write(tmp_path / "forecast" / "src/clock.py", "while current < deadline: pass\n")
+    _write(tmp_path / "forecast" / "src/model.py", "model = load_forecaster()\n")
+    _write(tmp_path / "forecast" / "src/write.py", "delta_table.execute()\n")
+
+    assert discover_agentic_templates(tmp_path) == []
+
+
 def test_discovery_ignores_hidden_root_directories(tmp_path):
     _write(
         tmp_path / ".claude" / "src/app.py",
@@ -259,6 +277,83 @@ def test_policy_builder_does_not_share_deployed_proof_between_candidates(tmp_pat
     assert {
         candidate.name: candidate.has_deployed_verification for candidate in candidates
     } == {"covered": False, "uncovered": False}
+
+
+def test_agentic_support_console_owns_executable_trace_policy_proof():
+    repository_root = Path(__file__).parents[2]
+    candidate = next(
+        template
+        for template in discover_agentic_templates(repository_root)
+        if template.name == "agentic-support-console"
+    )
+
+    assert candidate.local_test_command == (
+        "uv",
+        "run",
+        "--offline",
+        "--frozen",
+        "--project",
+        ".scripts/agent-integration-tests",
+        "pytest",
+        "agentic-support-console/pipelines/support_agent/tests/test_tracing.py",
+        "-v",
+    )
+    assert_template_policy([candidate])
+
+
+def test_generated_appkit_alias_derives_runtime_proof_from_its_source_owner(tmp_path):
+    template = tmp_path / "generated-agent"
+    _write(template / "app.yaml", UC_ENV)
+    _write(
+        template / "databricks.yml",
+        "resources:\n  experiments:\n    traced: {}\n  sql_warehouses:\n    trace: {}\n",
+    )
+    _write(
+        template / "package.json",
+        '{"dependencies":{"@databricks/appkit":"0.60.0"}}',
+    )
+    _write(
+        template / "appkit.plugins.json",
+        '{"plugins":{"agents":{"package":"@databricks/appkit",'
+        '"requiredByTemplate":true}}}',
+    )
+    _write(
+        template / "server/server.ts",
+        "import { createApp } from '@databricks/appkit';\n"
+        "import { agents } from '@databricks/appkit/beta';\n"
+        "createApp({ plugins: [agents({ agents: {} })] });\n",
+    )
+    _write(
+        template / "server/agents/helper.ts",
+        "export const helper = createAgent({ name: 'helper' });\n",
+    )
+
+    candidate = discover_agentic_templates(tmp_path)[0]
+    assert candidate.proof_owner == "@databricks/appkit generated-template conformance"
+    assert candidate.has_local_conformance is False
+    assert candidate.has_deployed_verification is False
+    assert_template_policy([candidate])
+
+
+def test_appkit_dependency_alone_cannot_delegate_trace_proof(tmp_path):
+    template = tmp_path / "ordinary-app"
+    _write_policy_evidence(template)
+    _write(
+        template / "package.json",
+        '{"dependencies":{"@databricks/appkit":"0.60.0"}}',
+    )
+    _write(
+        template / "server/server.ts",
+        "const planner = createAgent({});\n",
+    )
+
+    candidate = discover_agentic_templates(tmp_path)[0]
+    assert candidate.proof_owner is None
+    (template / "tests/test_trace_conformance.py").unlink()
+    (template / "tests/deployed/test_trace_conformance.py").unlink()
+    candidate = discover_agentic_templates(tmp_path)[0]
+    with pytest.raises(AssertionError):
+        assert_template_policy([candidate])
 
 
 def test_python_local_command_uses_the_existing_lock_without_reresolution(tmp_path):

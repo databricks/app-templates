@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import importlib.util
+import os
 from pathlib import Path
 import sys
+import time
+
+import pytest
 
 
 SOURCE = Path(__file__).parents[1] / "src" / "generate_responses.py"
@@ -112,6 +116,128 @@ def test_natural_language_credentials_are_fully_redacted():
     )
     assert "hunter2" not in captured
     assert "live-secret" not in captured
+
+
+def test_deterministic_local_turn_emits_a_conformant_real_mlflow_trace(
+    monkeypatch, tmp_path
+):
+    conformance = Path(__file__).parents[4] / ".scripts" / "trace-conformance"
+    sys.path.insert(0, str(conformance))
+    from contract import assert_trace_contract
+    from normalize import normalize_python_mlflow_trace
+
+    import mlflow
+
+    previous_tracking_uri = mlflow.get_tracking_uri()
+    monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
+    mlflow.set_tracking_uri(tmp_path.as_uri())
+    mlflow.set_experiment("support-agent-local-conformance")
+    module = load_module()
+    try:
+        results = module.process_messages(
+            [
+                {
+                    "message_id": b"one",
+                    "case_id": b"case-one",
+                    "case_id_hex": "01",
+                    "user_id": "user-one",
+                    "subject": "Deterministic local trace",
+                    "status": "open",
+                }
+            ],
+            prompt_builder=lambda _message: "Summarize the deterministic ticket",
+            model_caller=lambda _prompt: response(
+                valid_content("resolve"),
+                usage={
+                    "prompt_tokens": 2,
+                    "completion_tokens": 1,
+                    "total_tokens": 3,
+                    "cost_usd": 0.001,
+                },
+            ),
+            generated_at=datetime(2026, 8, 12, tzinfo=timezone.utc),
+            identity={
+                "session_id": "local-session",
+                "user_id": "local-user",
+                "request_id": "local-request",
+            },
+        )
+        assert results[0]["suggested_action"] == "resolve"
+        mlflow.flush_trace_async_logging()
+        trace_id = mlflow.get_last_active_trace_id()
+        assert trace_id
+        manifest = normalize_python_mlflow_trace(
+            "agentic-support-console", mlflow.get_trace(trace_id)
+        )
+        assert_trace_contract(manifest)
+    finally:
+        mlflow.set_tracking_uri(previous_tracking_uri)
+
+
+def test_deployed_job_trace_persists_to_its_bound_uc_table():
+    required = {
+        name: os.environ.get(name)
+        for name in (
+            "SUPPORT_AGENT_JOB_ID",
+            "MLFLOW_EXPERIMENT_ID",
+            "MLFLOW_TRACING_SQL_WAREHOUSE_ID",
+            "MLFLOW_OTEL_SPANS_TABLE",
+        )
+    }
+    missing = [name for name, value in required.items() if not value]
+    if missing:
+        pytest.skip(
+            "deployed support trace credentials are absent: " + ", ".join(missing)
+        )
+
+    conformance = Path(__file__).parents[4] / ".scripts" / "trace-conformance"
+    integration = Path(__file__).parents[4] / ".scripts" / "agent-integration-tests"
+    sys.path[:0] = [str(conformance), str(integration)]
+    from contract import assert_trace_contract
+    from helpers import execute_trace_row_query
+    from normalize import normalize_python_mlflow_trace, normalize_uc_rows
+
+    import mlflow
+    from databricks.sdk import WorkspaceClient
+
+    profile = os.environ.get("DATABRICKS_CONFIG_PROFILE")
+    workspace = WorkspaceClient(profile=profile) if profile else WorkspaceClient()
+    run = workspace.jobs.run_now(job_id=int(required["SUPPORT_AGENT_JOB_ID"]))
+    completed = run.result(timeout=timedelta(minutes=20))
+    run_id = str(completed.run_id)
+
+    mlflow.set_tracking_uri(f"databricks://{profile}" if profile else "databricks")
+    experiment = mlflow.MlflowClient().get_experiment(required["MLFLOW_EXPERIMENT_ID"])
+    assert (
+        experiment.trace_location.full_otel_spans_table_name
+        == required["MLFLOW_OTEL_SPANS_TABLE"]
+    )
+    deadline = time.monotonic() + 180
+    trace = None
+    while time.monotonic() < deadline:
+        matches = mlflow.search_traces(
+            experiment_ids=[required["MLFLOW_EXPERIMENT_ID"]],
+            filter_string=f"metadata.`appkit.request.id` = '{run_id}'",
+            return_type="list",
+        )
+        if matches:
+            trace = matches[0]
+            break
+        time.sleep(5)
+    assert trace is not None, f"job run {run_id} produced no MLflow trace"
+    mlflow_manifest = normalize_python_mlflow_trace("agentic-support-console", trace)
+    assert_trace_contract(mlflow_manifest)
+    rows = execute_trace_row_query(
+        workspace,
+        required["MLFLOW_TRACING_SQL_WAREHOUSE_ID"],
+        required["MLFLOW_OTEL_SPANS_TABLE"],
+        mlflow_manifest.trace_id,
+    )
+    uc_manifest = normalize_uc_rows("agentic-support-console", rows)
+    assert_trace_contract(uc_manifest)
+    assert {span.span_id for span in uc_manifest.spans} == {
+        span.span_id for span in mlflow_manifest.spans
+    }
 
 
 def test_batch_trace_has_per_ticket_children_identity_usage_and_partial_parser_failure(

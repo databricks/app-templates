@@ -49,7 +49,9 @@ def validate_tracing_environment(
 ) -> dict[str, str]:
     """Return mandatory tracing configuration or report every missing value."""
     source = os.environ if environ is None else environ
-    missing = [name for name in REQUIRED_TRACING_ENV if not source.get(name, "").strip()]
+    missing = [
+        name for name in REQUIRED_TRACING_ENV if not source.get(name, "").strip()
+    ]
     if missing:
         raise RuntimeError(
             "Missing required tracing configuration: " + ", ".join(missing)
@@ -145,7 +147,9 @@ def verify_deployment_trace_resources(
         raw_state = getattr(warehouse, "state", None)
         state = str(getattr(raw_state, "value", raw_state) or "")
         if state.upper() in {"DELETED", "DELETING"}:
-            issues.append(f"SQL warehouse {warehouse_id!r} is unavailable (state: {state})")
+            issues.append(
+                f"SQL warehouse {warehouse_id!r} is unavailable (state: {state})"
+            )
     except Exception as error:
         issues.append(f"SQL warehouse {warehouse_id!r} is unavailable: {error}")
 
@@ -154,9 +158,7 @@ def verify_deployment_trace_resources(
 
 
 def _redact_text(value: str) -> str:
-    return _SECRET_TEXT.sub(
-        lambda match: f"{match.group('prefix')}[REDACTED]", value
-    )
+    return _SECRET_TEXT.sub(lambda match: f"{match.group('prefix')}[REDACTED]", value)
 
 
 def _jsonable(value: Any) -> Any:
@@ -299,7 +301,10 @@ def traced_span(name: str, span_type: str, inputs: Any) -> Iterator[Any]:
         safe_error = safe_error_message(error)
         set_span_result(
             span,
-            outputs={"error": safe_error},
+            outputs={
+                "error": safe_error,
+                "partial_output": safe_trace_value({"inputs": inputs}),
+            },
             attributes={
                 "appkit.error": safe_error,
                 "appkit.duration_ms": elapsed_ms(started_ns),

@@ -792,7 +792,7 @@ def _required_widget(dbutils: Any, name: str) -> str:
 def configure_tracing(dbutils: Any) -> None:
     tracking_uri = _required_widget(dbutils, "mlflow_tracking_uri")
     experiment_id = _required_widget(dbutils, "mlflow_experiment_id")
-    warehouse_id = _required_widget(dbutils, "mlflow_tracing_warehouse_id")
+    warehouse_id = _required_widget(dbutils, "mlflow_tracing_sql_warehouse_id")
     uc_catalog = _required_widget(dbutils, "mlflow_uc_catalog")
     uc_schema = _required_widget(dbutils, "mlflow_uc_schema")
     table_prefix = _required_widget(dbutils, "mlflow_uc_table_prefix")

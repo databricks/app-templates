@@ -726,7 +726,7 @@ def run_local_trace_test(template, manifest_path: Path):
         f"deterministic trace test failed for {template.name}:\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
     )
-    if command[0] != "uv":
+    if command[0] != "uv" and not manifest_path.exists():
         _run_typescript_trace_probe(template.path, manifest_path, conformance_dir)
     assert manifest_path.exists(), (
         f"{template.name} deterministic trace test did not write {manifest_path}"

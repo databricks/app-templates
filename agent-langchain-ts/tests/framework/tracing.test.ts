@@ -56,6 +56,138 @@ const REQUIRED_ENV = [
 
 const originalEnv = { ...process.env };
 
+const CREDENTIAL_SENTINEL = "task14-round4-sentinel.with/suffix+=tail";
+const CREDENTIAL_MESSAGE_CASES: Array<
+  [label: string, credentialText: string, redactedText: string]
+> = [
+  [
+    "authorization",
+    `Authorization: Bearer ${CREDENTIAL_SENTINEL}`,
+    "Authorization: [REDACTED]",
+  ],
+  [
+    "authorization header",
+    `Authorization header: Bearer ${CREDENTIAL_SENTINEL}`,
+    "Authorization header: [REDACTED]",
+  ],
+  [
+    "authorization_header",
+    `authorization_header=Bearer ${CREDENTIAL_SENTINEL}`,
+    "authorization_header=[REDACTED]",
+  ],
+  [
+    "authorizationHeader",
+    `authorizationHeader: \"Bearer ${CREDENTIAL_SENTINEL}\"`,
+    'authorizationHeader: "[REDACTED]"',
+  ],
+  ["cookie", `Cookie: session=${CREDENTIAL_SENTINEL}`, "Cookie: [REDACTED]"],
+  [
+    "cookie header",
+    `Cookie header: session=${CREDENTIAL_SENTINEL}`,
+    "Cookie header: [REDACTED]",
+  ],
+  [
+    "set-cookie",
+    `Set-Cookie: \"session=${CREDENTIAL_SENTINEL}\"`,
+    'Set-Cookie: "[REDACTED]"',
+  ],
+  ["API key", `API key: ${CREDENTIAL_SENTINEL}`, "API key: [REDACTED]"],
+  ["api-key", `api-key=${CREDENTIAL_SENTINEL}`, "api-key=[REDACTED]"],
+  [
+    "api_key",
+    `api_key is \"${CREDENTIAL_SENTINEL}\"`,
+    'api_key is "[REDACTED]"',
+  ],
+  ["apiKey", `apiKey: ${CREDENTIAL_SENTINEL}`, "apiKey: [REDACTED]"],
+  ["x-api-key", `x-api-key=${CREDENTIAL_SENTINEL}`, "x-api-key=[REDACTED]"],
+  [
+    "Databricks token",
+    `Databricks token is ${CREDENTIAL_SENTINEL}`,
+    "Databricks token is [REDACTED]",
+  ],
+  [
+    "DATABRICKS_TOKEN",
+    `DATABRICKS_TOKEN=${CREDENTIAL_SENTINEL}`,
+    "DATABRICKS_TOKEN=[REDACTED]",
+  ],
+  [
+    "databricksToken",
+    `databricksToken: '${CREDENTIAL_SENTINEL}'`,
+    "databricksToken: '[REDACTED]'",
+  ],
+  [
+    "access token",
+    `access token is ${CREDENTIAL_SENTINEL}`,
+    "access token is [REDACTED]",
+  ],
+  [
+    "access-token",
+    `access-token=Bearer ${CREDENTIAL_SENTINEL}`,
+    "access-token=[REDACTED]",
+  ],
+  [
+    "access_token",
+    `access_token: ${CREDENTIAL_SENTINEL}`,
+    "access_token: [REDACTED]",
+  ],
+  [
+    "accessToken",
+    `accessToken=\"${CREDENTIAL_SENTINEL}\"`,
+    'accessToken="[REDACTED]"',
+  ],
+  [
+    "refresh token",
+    `refresh token is ${CREDENTIAL_SENTINEL}`,
+    "refresh token is [REDACTED]",
+  ],
+  [
+    "refresh-token",
+    `refresh-token: '${CREDENTIAL_SENTINEL}'`,
+    "refresh-token: '[REDACTED]'",
+  ],
+  [
+    "refresh_token",
+    `refresh_token=${CREDENTIAL_SENTINEL}`,
+    "refresh_token=[REDACTED]",
+  ],
+  [
+    "refreshToken",
+    `refreshToken=${CREDENTIAL_SENTINEL}`,
+    "refreshToken=[REDACTED]",
+  ],
+  [
+    "client secret",
+    `client secret is ${CREDENTIAL_SENTINEL}`,
+    "client secret is [REDACTED]",
+  ],
+  [
+    "client-secret",
+    `client-secret=${CREDENTIAL_SENTINEL}`,
+    "client-secret=[REDACTED]",
+  ],
+  [
+    "client_secret",
+    `client_secret: \"${CREDENTIAL_SENTINEL}\"`,
+    'client_secret: "[REDACTED]"',
+  ],
+  [
+    "clientSecret",
+    `clientSecret=${CREDENTIAL_SENTINEL}`,
+    "clientSecret=[REDACTED]",
+  ],
+  ["password", `password is ${CREDENTIAL_SENTINEL}`, "password is [REDACTED]"],
+  [
+    "generic secret",
+    `secret: '${CREDENTIAL_SENTINEL}'`,
+    "secret: '[REDACTED]'",
+  ],
+  [
+    "generic credential",
+    `credential is ${CREDENTIAL_SENTINEL}`,
+    "credential is [REDACTED]",
+  ],
+];
+
 beforeAll(async () => {
   artifactDirectory = await mkdtemp(join(tmpdir(), "mlflow-core-test-"));
   exporterServer = http.createServer((request, response) => {
@@ -135,6 +267,84 @@ afterAll(async () => {
 });
 
 describe("MLflow tracing", () => {
+  test.each(CREDENTIAL_MESSAGE_CASES)(
+    "redacts %s credentials without leaking a value suffix",
+    (_label, credentialText, redactedText) => {
+      const message = safeLogError(
+        new Error(`Request failed; ${credentialText}; retry later.`),
+      ).message;
+
+      expect(message).toBe(`Request failed; ${redactedText}; retry later.`);
+      expect(message).not.toContain(CREDENTIAL_SENTINEL);
+      expect(message).not.toContain("suffix+=tail");
+    },
+  );
+
+  test("preserves ordinary error context containing credential-related words", () => {
+    const message =
+      "The token budget is 4096; authorization failed after timeout; " +
+      "the cookie parser failed; secret rotation is enabled; " +
+      "credential validation remains unavailable.";
+
+    expect(safeLogError(new Error(message)).message).toBe(message);
+  });
+
+  test("does not traverse configuration or environment properties", () => {
+    const accessed: PropertyKey[] = [];
+    const guardedError = new Proxy(
+      Object.assign(new Error(`clientSecret=${CREDENTIAL_SENTINEL}`), {
+        name: "ConfigError",
+        code: "UNAUTHENTICATED",
+      }),
+      {
+        get(target, property, receiver) {
+          accessed.push(property);
+          if (
+            ["config", "env", "headers", "cause"].includes(String(property))
+          ) {
+            throw new Error(`unsafe property traversal: ${String(property)}`);
+          }
+          return Reflect.get(target, property, receiver);
+        },
+        ownKeys() {
+          throw new Error("safeLogError must not enumerate the error object");
+        },
+      },
+    );
+
+    Object.defineProperties(guardedError, {
+      config: {
+        get: () => {
+          throw new Error("config getter traversed");
+        },
+      },
+      env: {
+        get: () => {
+          throw new Error("env getter traversed");
+        },
+      },
+      headers: {
+        get: () => {
+          throw new Error("headers getter traversed");
+        },
+      },
+      cause: {
+        get: () => {
+          throw new Error("cause getter traversed");
+        },
+      },
+    });
+
+    expect(safeLogError(guardedError)).toEqual({
+      name: "ConfigError",
+      code: "UNAUTHENTICATED",
+      message: "clientSecret=[REDACTED]",
+    });
+    expect(accessed.map(String)).not.toEqual(
+      expect.arrayContaining(["config", "env", "headers", "cause"]),
+    );
+  });
+
   test("reduces SDK configuration errors to safe actionable fields", () => {
     const sentinelCredential = "test-only-sentinel-value";
     const environmentMarker = "TEST_FULL_ENV_MARKER";

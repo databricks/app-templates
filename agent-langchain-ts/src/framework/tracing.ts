@@ -5,8 +5,12 @@ import { createHash } from "crypto";
 const MAX_CAPTURE_BYTES = 64 * 1024;
 const SECRET_KEY =
   /(?:authorization|api[-_]?key|cookie|credential|password|secret|token)/i;
-const SECRET_TEXT =
-  /((?<![A-Za-z0-9])(?:authorization|(?:x[-_])?api[-_]?key|cookie|credential|password|secret|token|(?:databricks|access|refresh)[-_]token|client[-_]secret)\b["']?\s*(?::|=|\s)\s*)(?:(["'])(?:bearer\s+)?((?:\\.|(?!\2)[^\\])*)\2|(?:bearer\s+)?([^\s,;)\]}]+))/gi;
+const SECRET_TEXT_FIELD =
+  "(?:authorization(?:[ _-]?header)?|(?:set[ _-]?)?cookie(?:[ _-]?header)?|(?:x[ _-]?)?api[ _-]?key|(?:databricks|access|refresh)[ _-]?token|client[ _-]?secret|password|secret|credential)";
+const SECRET_TEXT = new RegExp(
+  `((?<![A-Za-z0-9])${SECRET_TEXT_FIELD}(?![A-Za-z0-9])["']?\\s*(?::|=|\\bis\\b)\\s*)(?:(["'])(?:bearer\\s+)?(?:\\\\.|(?!\\2)[^\\\\])*\\2|(?:bearer\\s+)?[^\\s,;)\\]}]+)`,
+  "gi",
+);
 
 function requireEnv(name: string): string {
   const value = process.env[name]?.trim();

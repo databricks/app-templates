@@ -257,7 +257,7 @@ def test_router_error_captures_bounded_request_lifecycle_without_method_leak(
 
 
 def test_streamed_response_capture_stays_bounded_until_last_body(monkeypatch, tmp_path) -> None:
-    """A many-chunk SSE response must not create an unbounded in-flight buffer."""
+    """A large HTTP-200 SSE error must stay bounded and retain failure semantics."""
     from server import tracing
 
     _set_valid_tracing_environment(monkeypatch, tmp_path)
@@ -272,12 +272,14 @@ def test_streamed_response_capture_stays_bounded_until_last_body(monkeypatch, tm
             observed_buffer_sizes.append(len(self))
 
     monkeypatch.setattr(tracing, "bytearray", TrackingBytearray, raising=False)
-    prefix = (
-        b'event: message\ndata: {"jsonrpc":"2.0","id":"stream-17","error":'
-        b'{"message":"authorization: Bearer stream-secret"},"padding":"'
-    )
+    prefix = b'event: message\ndata: {"jsonrpc":"2.0","id":"stream-17","result":{"padding":"'
     padding = [f"{index:04d}".encode() + b"x" * (8 * 1024 - 4) for index in range(128)]
-    response_chunks = [prefix, *padding, b'"}\n\n']
+    response_chunks = [
+        prefix,
+        *padding,
+        b'","isError":true,"structuredContent":{"error":"authorization: Bearer '
+        b'stream-secret"}}}\n\n',
+    ]
     complete_response = b"".join(response_chunks)
     finished_during_send: list[int] = []
 
@@ -286,7 +288,7 @@ def test_streamed_response_capture_stays_bounded_until_last_body(monkeypatch, tm
         await send(
             {
                 "type": "http.response.start",
-                "status": 503,
+                "status": 200,
                 "headers": [(b"content-type", b"text/event-stream")],
             }
         )
@@ -339,11 +341,14 @@ def test_streamed_response_capture_stays_bounded_until_last_body(monkeypatch, tm
     assert output["originalBytes"] == len(complete_response)
     assert output["sha256"] == hashlib.sha256(complete_response).hexdigest()
     assert "event: message" in output["preview"]
-    assert "[REDACTED]" in output["preview"]
+    assert len(output["preview"].encode()) <= 16 * 1024
     assert "stream-secret" not in json.dumps(dict(span.attributes), sort_keys=True)
     assert _attribute(span, "mcp.request.status") == "ERROR"
-    assert _attribute(span, "mcp.request.error") == "HTTP 503"
-    assert _attribute(span, "http.response.status_code") == 503
+    error_evidence = _attribute(span, "mcp.request.error")
+    assert "[REDACTED]" in error_evidence
+    assert "stream-secret" not in error_evidence
+    assert len(error_evidence.encode()) <= 2048
+    assert _attribute(span, "http.response.status_code") == 200
     assert span.status.status_code.name == "ERROR"
     response_start = next(
         message for message in sent_messages if message["type"] == "http.response.start"

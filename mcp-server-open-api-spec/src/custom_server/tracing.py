@@ -36,6 +36,8 @@ REQUIRED_TRACING_ENV = (
 _MAX_CAPTURE_BYTES = 64 * 1024
 _MAX_RESPONSE_CAPTURE_BYTES = 4 * _MAX_CAPTURE_BYTES
 _RESPONSE_PREVIEW_BYTES = _MAX_CAPTURE_BYTES // 4
+_MAX_STREAM_ERROR_BYTES = 2 * 1024
+_MAX_STREAM_JSON_DEPTH = 64
 _EXPERIMENT_ID = re.compile(r"^[0-9]+$")
 _WAREHOUSE_ID = re.compile(r"^[0-9a-f]{16}$", re.IGNORECASE)
 _UC_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,254}$")
@@ -436,6 +438,170 @@ def _response_output(body: bytes) -> Any:
         return safe_trace_value(text)
 
 
+class _StreamingFailureDetector:
+    """Detect relevant JSON failure shapes with bounded incremental state."""
+
+    def __init__(self) -> None:
+        self.failure: str | None = None
+        self._contexts: list[tuple[bool, bool]] = []
+        self._overflow_depth = 0
+        self._in_string = False
+        self._escaped = False
+        self._string = bytearray()
+        self._string_truncated = False
+        self._string_value_key: str | None = None
+        self._candidate_key: str | None = None
+        self._value_key: str | None = None
+        self._literal = bytearray()
+        self._literal_key: str | None = None
+
+    def feed(self, chunk: bytes) -> None:
+        for byte in chunk:
+            if self._in_string:
+                self._consume_string_byte(byte)
+                continue
+
+            if self._literal_key is not None:
+                if byte in b" \t\r\n,]}":
+                    self._finish_literal()
+                else:
+                    self._append_bounded(self._literal, byte)
+                    continue
+
+            if byte in b" \t\r\n":
+                continue
+
+            if self._value_key is not None:
+                key = self._value_key
+                self._value_key = None
+                if byte == ord('"'):
+                    self._start_string(key)
+                elif byte == ord("{"):
+                    self._push_context(is_object=True, key=key)
+                elif byte == ord("["):
+                    self._push_context(is_object=False, key=key)
+                else:
+                    self._start_literal(key, byte)
+                continue
+
+            if byte == ord('"'):
+                self._start_string(None)
+                continue
+            if byte == ord(":") and self._candidate_key is not None:
+                self._value_key = self._candidate_key
+                self._candidate_key = None
+                continue
+
+            self._candidate_key = None
+            if byte == ord("{"):
+                self._push_context(is_object=True, key=None)
+            elif byte == ord("["):
+                self._push_context(is_object=False, key=None)
+            elif byte in (ord("}"), ord("]")):
+                self._pop_context()
+
+    def finish(self) -> None:
+        if self._literal_key is not None:
+            self._finish_literal()
+
+    def _start_string(self, value_key: str | None) -> None:
+        self._in_string = True
+        self._escaped = False
+        self._string.clear()
+        self._string_truncated = False
+        self._string_value_key = value_key
+
+    def _consume_string_byte(self, byte: int) -> None:
+        if self._escaped:
+            self._append_string_byte(byte)
+            self._escaped = False
+        elif byte == ord("\\"):
+            self._append_string_byte(byte)
+            self._escaped = True
+        elif byte == ord('"'):
+            self._in_string = False
+            self._finish_string()
+        else:
+            self._append_string_byte(byte)
+
+    def _append_string_byte(self, byte: int) -> None:
+        if len(self._string) < _MAX_STREAM_ERROR_BYTES:
+            self._string.append(byte)
+        else:
+            self._string_truncated = True
+
+    def _finish_string(self) -> None:
+        raw = bytes(self._string)
+        if self._string_truncated:
+            value = raw.decode("utf-8", errors="replace")
+        else:
+            try:
+                value = json.loads(b'"' + raw + b'"')
+            except (TypeError, ValueError):
+                value = raw.decode("utf-8", errors="replace")
+
+        key = self._string_value_key
+        self._string_value_key = None
+        if key is None:
+            self._candidate_key = value if not self._string_truncated else None
+            return
+        if self._is_relevant() and key == "error" and value:
+            self.failure = safe_error_message(value)
+        elif self._is_error_context() and key == "message" and value:
+            self.failure = safe_error_message(value)
+
+    def _start_literal(self, key: str, byte: int) -> None:
+        self._literal_key = key
+        self._literal.clear()
+        self._append_bounded(self._literal, byte)
+
+    def _finish_literal(self) -> None:
+        key = self._literal_key
+        token = bytes(self._literal).decode("ascii", errors="ignore").strip().lower()
+        self._literal_key = None
+        if not self._is_relevant():
+            return
+        if key == "isError" and token == "true":
+            self.failure = self.failure or "Oversized response reported isError=true"
+        elif key == "ok" and token == "false":
+            self.failure = self.failure or "Oversized response reported ok=false"
+        elif key == "error" and token not in {"", "0", "0.0", "false", "null"}:
+            self.failure = self.failure or "Oversized response reported an error"
+
+    def _push_context(self, *, is_object: bool, key: str | None) -> None:
+        parent_relevant = self._is_relevant()
+        error_context = parent_relevant and key == "error"
+        if error_context:
+            self.failure = self.failure or "Oversized response reported an error"
+        relevant = is_object and (
+            (not self._contexts and self._overflow_depth == 0)
+            or (parent_relevant and key in {"result", "structuredContent"})
+        )
+        if self._overflow_depth:
+            self._overflow_depth += 1
+        elif len(self._contexts) >= _MAX_STREAM_JSON_DEPTH:
+            self._overflow_depth = 1
+        else:
+            self._contexts.append((relevant, is_object and error_context))
+
+    def _pop_context(self) -> None:
+        if self._overflow_depth:
+            self._overflow_depth -= 1
+        elif self._contexts:
+            self._contexts.pop()
+
+    def _is_relevant(self) -> bool:
+        return bool(not self._overflow_depth and self._contexts and self._contexts[-1][0])
+
+    def _is_error_context(self) -> bool:
+        return bool(not self._overflow_depth and self._contexts and self._contexts[-1][1])
+
+    @staticmethod
+    def _append_bounded(buffer: bytearray, byte: int) -> None:
+        if len(buffer) < _MAX_STREAM_ERROR_BYTES:
+            buffer.append(byte)
+
+
 class _BoundedResponseCapture:
     """Retain a bounded parse window while counting and hashing every response byte."""
 
@@ -444,8 +610,10 @@ class _BoundedResponseCapture:
         self._original_bytes = 0
         self._sha256 = hashlib.sha256()
         self._truncated = False
+        self._failure_detector = _StreamingFailureDetector()
 
     def extend(self, chunk: bytes) -> None:
+        self._failure_detector.feed(chunk)
         self._original_bytes += len(chunk)
         self._sha256.update(chunk)
         remaining = _MAX_RESPONSE_CAPTURE_BYTES - len(self._body)
@@ -467,6 +635,13 @@ class _BoundedResponseCapture:
             "sha256": self._sha256.hexdigest(),
             "preview": safe_trace_value(preview, max_bytes=_MAX_CAPTURE_BYTES // 2),
         }
+
+    @property
+    def failure(self) -> str | None:
+        if not self._truncated:
+            return None
+        self._failure_detector.finish()
+        return self._failure_detector.failure
 
 
 def _finish_request_span(
@@ -599,12 +774,13 @@ class TraceContextMiddleware:
                             )
                         raise
                     output = response_capture.output() if response_capture else None
+                    failure = _failure_message(output) or response_capture.failure
                     _finish_request_span(
                         span,
                         started_ns=started_ns,
                         output=output,
                         response_status=response_status,
-                        failure=_failure_message(output),
+                        failure=failure,
                     )
             finally:
                 _request_context.reset(token)

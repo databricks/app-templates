@@ -19,9 +19,11 @@ from .schemas import (
     InvokeApiEndpointRequest,
     ListApiEndpointsRequest,
 )
+from .tracing import traced_tool
 from .utils import load_openapi_spec
 
 logger = logging.getLogger(__name__)
+SERVER_NAME = "custom-open-api-spec-server"
 
 
 def validate_mcp_server():
@@ -40,6 +42,7 @@ def load_tools(mcp_server):
     validate_mcp_server()
 
     @mcp_server.tool()
+    @traced_tool(SERVER_NAME, "list_api_endpoints")
     def list_api_endpoints(search_query: Optional[str] = None) -> Dict[str, Any]:
         """
         Discovers available API endpoints, with optional filtering by search query
@@ -55,6 +58,7 @@ def load_tools(mcp_server):
         return result.model_dump()
 
     @mcp_server.tool()
+    @traced_tool(SERVER_NAME, "get_api_endpoint_schema")
     def get_api_endpoint_schema(endpoint_path: str, http_method: str) -> Dict[str, Any]:
         """
         Gets detailed schema information for a specific API endpoint
@@ -71,6 +75,7 @@ def load_tools(mcp_server):
         return result.model_dump()
 
     @mcp_server.tool()
+    @traced_tool(SERVER_NAME, "invoke_api_endpoint")
     def invoke_api_endpoint(
         endpoint_path: str,
         http_method: str,

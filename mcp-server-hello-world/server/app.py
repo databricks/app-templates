@@ -14,6 +14,7 @@ AI assistants and other clients. FastMCP makes it easy to expose these tools
 over HTTP using the MCP protocol standard.
 """
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -21,6 +22,7 @@ from fastapi.responses import FileResponse
 from fastmcp import FastMCP
 
 from .tools import load_tools
+from .tracing import TraceContextMiddleware, configure_mlflow_tracing
 from .utils import header_store
 
 mcp_server = FastMCP(name="custom-mcp-server")
@@ -42,6 +44,15 @@ load_tools(mcp_server)
 # different replicas.
 mcp_app = mcp_server.http_app(stateless_http=True)
 
+
+@asynccontextmanager
+async def lifespan(application):
+    """Validate tracing resources before accepting MCP traffic."""
+    configure_mlflow_tracing()
+    async with mcp_app.lifespan(application):
+        yield
+
+
 # ============================================================================
 # FastAPI Application Setup
 # ============================================================================
@@ -52,7 +63,7 @@ app = FastAPI(
     title="Custom MCP Server",
     description="Custom MCP Server for the app",
     version="0.1.0",
-    lifespan=mcp_app.lifespan,  # Share the lifespan context with MCP app
+    lifespan=lifespan,  # Share the lifespan context with MCP app
 )
 
 
@@ -73,8 +84,10 @@ combined_app = FastAPI(
         *mcp_app.routes,  # MCP protocol routes (tools, resources, etc.)
         *app.routes,  # Your custom API routes (if any)
     ],
-    lifespan=mcp_app.lifespan,  # Use MCP's lifespan for proper startup/shutdown
+    lifespan=lifespan,  # Use MCP's lifespan for proper startup/shutdown
 )
+
+combined_app.add_middleware(TraceContextMiddleware, server_name="custom-mcp-server")
 
 # Export the combined_app for uvicorn to import
 # Usage: uvicorn server.app:combined_app

@@ -13,6 +13,9 @@ Each tool should:
 """
 
 from server import utils
+from server.tracing import traced_tool
+
+SERVER_NAME = "custom-mcp-server"
 
 
 def load_tools(mcp_server):
@@ -37,6 +40,7 @@ def load_tools(mcp_server):
     """
 
     @mcp_server.tool
+    @traced_tool(SERVER_NAME, "health")
     def health() -> dict:
         """
         Check the health of the MCP server and Databricks connection.
@@ -64,6 +68,7 @@ def load_tools(mcp_server):
         }
 
     @mcp_server.tool
+    @traced_tool(SERVER_NAME, "get_current_user")
     def get_current_user() -> dict:
         """
         Get information about the current authenticated user.

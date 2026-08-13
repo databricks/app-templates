@@ -1,1 +1,17 @@
 command: ["uv", "run", "custom-mcp-server"]
+
+env:
+  - name: MLFLOW_TRACKING_URI
+    value: "databricks"
+  - name: MLFLOW_EXPERIMENT_ID
+    valueFrom: "mlflow-experiment"
+  - name: MLFLOW_TRACING_SQL_WAREHOUSE_ID
+    valueFrom: "mlflow-tracing-warehouse"
+  - name: MLFLOW_UC_CATALOG
+    value: "main"
+  - name: MLFLOW_UC_SCHEMA
+    value: "agent_traces"
+  - name: MLFLOW_UC_TABLE_PREFIX
+    value: "mcp_hello_world"
+  - name: MLFLOW_OTEL_SPANS_TABLE
+    value: "main.agent_traces.mcp_hello_world_otel_spans"

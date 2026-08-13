@@ -3,6 +3,7 @@
 """Main FastAPI application with MCP server for API interactions"""
 
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -10,6 +11,7 @@ from fastapi.responses import FileResponse
 from fastmcp import FastMCP
 
 from .tools import load_tools
+from .tracing import TraceContextMiddleware, configure_mlflow_tracing
 from .utils import app_setup_complete, header_store
 
 # Set up logging
@@ -25,14 +27,23 @@ mcp_server = FastMCP("Custom Open API Spec MCP Server")
 # Load MCP tools
 load_tools(mcp_server)
 
-# Create the MCP app
-mcp_app = mcp_server.http_app()
+# Stateless mode keeps each tool body inside the current HTTP request's W3C context.
+mcp_app = mcp_server.http_app(stateless_http=True)
+
+
+@asynccontextmanager
+async def lifespan(application):
+    """Validate tracing resources before accepting MCP traffic."""
+    configure_mlflow_tracing()
+    async with mcp_app.lifespan(application):
+        yield
+
 
 # Create FastAPI app
 app = FastAPI(
     title="Open API Spec MCP Server",
     description="MCP server for interacting with APIs using OpenAPI specifications",
-    lifespan=mcp_app.lifespan,
+    lifespan=lifespan,
 )
 
 
@@ -68,7 +79,12 @@ combined_app = FastAPI(
         *mcp_app.routes,  # MCP protocol routes (tools, resources, etc.)
         *app.routes,  # Your custom API routes (if any)
     ],
-    lifespan=mcp_app.lifespan,  # Use MCP's lifespan for proper startup/shutdown
+    lifespan=lifespan,  # Use MCP's lifespan for proper startup/shutdown
+)
+
+combined_app.add_middleware(
+    TraceContextMiddleware,
+    server_name="custom-open-api-spec-server",
 )
 
 

@@ -37,13 +37,14 @@ export async function sendChatAndGetMessageId(
   request: APIRequestContext,
   chatId: string,
   message: unknown,
+  visibility: 'public' | 'private' = 'private',
 ): Promise<string> {
   const chatResponse = await request.post('/api/chat', {
     data: {
       id: chatId,
       message,
       selectedChatModel: 'chat-model',
-      selectedVisibilityType: 'private',
+      selectedVisibilityType: visibility,
     },
   });
 

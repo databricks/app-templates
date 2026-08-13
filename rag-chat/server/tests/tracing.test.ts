@@ -10,7 +10,7 @@ const state = vi.hoisted(() => ({
   createAppConfig: undefined as any,
   streamFailure: undefined as
     | undefined
-    | { error: Error; usage: Record<string, unknown>; response: Record<string, unknown> },
+    | { error: Error & { usage: Record<string, unknown>; response: Record<string, unknown> } },
   throwOnTelemetry: false,
 }));
 
@@ -154,22 +154,15 @@ vi.mock('ai', async (importOriginal) => {
                   id: 'answer',
                   delta: 'Partial grounded answer',
                 });
-                options.onChunk?.({
-                  chunk: {
-                    type: 'finish',
-                    finishReason: 'error',
-                    totalUsage: state.streamFailure.usage,
-                    response: state.streamFailure.response,
-                  },
-                });
                 state.throwOnTelemetry = true;
                 await options.onError?.({
                   error: state.streamFailure.error,
-                  usage: state.streamFailure.usage,
-                  response: state.streamFailure.response,
-                  finishReason: 'error',
                 });
-                controller.error(state.streamFailure.error);
+                controller.enqueue({
+                  type: 'error',
+                  errorText: state.streamFailure.error.message,
+                });
+                controller.close();
                 return;
               }
               options.onChunk?.({
@@ -451,17 +444,18 @@ describe('RAG chat tracing', () => {
 
   test('stream failure retains partial output, usage, cost, persistence, and exporter isolation', async () => {
     state.streamFailure = {
-      error: new Error('provider stream failed'),
-      usage: {
-        inputTokens: 13,
-        outputTokens: 4,
-        totalTokens: 17,
-        inputTokenDetails: { cacheReadTokens: 2 },
-      },
-      response: {
-        modelId: 'databricks-gpt-5-4-mini',
-        body: { usage: { cost_usd: 0.004 } },
-      },
+      error: Object.assign(new Error('provider stream failed'), {
+        usage: {
+          inputTokens: 13,
+          outputTokens: 4,
+          totalTokens: 17,
+          inputTokenDetails: { cacheReadTokens: 2 },
+        },
+        response: {
+          modelId: 'databricks-gpt-5-4-mini',
+          body: { usage: { cost_usd: 0.004 } },
+        },
+      }),
     };
     const appkit = {
       lakebase: {

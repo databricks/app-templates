@@ -67,6 +67,38 @@ test.describe('/api/feedback', () => {
     expect(feedbackResponse.status()).toBe(403);
   });
 
+  test('POST /api/feedback remains owner-only when the message chat is public', async ({
+    adaContext,
+    babbageContext,
+  }) => {
+    const chatId = generateUUID();
+    const assistantMessageId = await sendChatAndGetMessageId(
+      adaContext.request,
+      chatId,
+      TEST_PROMPTS.SKY.MESSAGE,
+      'public',
+    );
+
+    const nonOwnerResponse = await babbageContext.request.post(
+      '/api/feedback',
+      {
+        data: {
+          messageId: assistantMessageId,
+          feedbackType: 'thumbs_down',
+        },
+      },
+    );
+    expect(nonOwnerResponse.status()).toBe(403);
+
+    const ownerResponse = await adaContext.request.post('/api/feedback', {
+      data: {
+        messageId: assistantMessageId,
+        feedbackType: 'thumbs_up',
+      },
+    });
+    expect(ownerResponse.status()).toBe(200);
+  });
+
   test('POST /api/feedback reports tracing unavailable when the exact message has no trace ID', async ({
     adaContext,
   }) => {

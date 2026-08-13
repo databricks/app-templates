@@ -180,9 +180,13 @@ function tokenCount(value: unknown): number {
 
 function normalizeUsage(raw: unknown, costSources: unknown[] = []): Usage {
   const usage = raw && typeof raw === 'object' ? (raw as Record<string, any>) : {};
-  const inputDetails = usage.inputTokenDetails ?? usage.input_token_details ?? usage.prompt_tokens_details ?? {};
-  const inputTokens = tokenCount(usage.inputTokens ?? usage.input_tokens ?? usage.prompt_tokens);
-  const outputTokens = tokenCount(usage.outputTokens ?? usage.output_tokens ?? usage.completion_tokens);
+  const v3Input = usage.inputTokens && typeof usage.inputTokens === 'object' ? usage.inputTokens : {};
+  const v3Output = usage.outputTokens && typeof usage.outputTokens === 'object' ? usage.outputTokens : {};
+  const inputDetails = usage.inputTokenDetails ?? usage.input_token_details ?? usage.prompt_tokens_details ?? v3Input;
+  const inputTokens = tokenCount(v3Input.total ?? usage.inputTokens ?? usage.input_tokens ?? usage.prompt_tokens);
+  const outputTokens = tokenCount(
+    v3Output.total ?? usage.outputTokens ?? usage.output_tokens ?? usage.completion_tokens
+  );
   const normalized: Usage = {
     inputTokens,
     outputTokens,
@@ -193,11 +197,13 @@ function normalizeUsage(raw: unknown, costSources: unknown[] = []): Usage {
     usage.cacheReadInputTokens ??
     usage.cache_read_input_tokens ??
     inputDetails.cacheReadTokens ??
+    inputDetails.cacheRead ??
     inputDetails.cached_tokens;
   const cacheCreation =
     usage.cacheCreationInputTokens ??
     usage.cache_creation_input_tokens ??
     inputDetails.cacheWriteTokens ??
+    inputDetails.cacheWrite ??
     inputDetails.cache_creation_input_tokens;
   if (cacheRead !== undefined) normalized.cacheReadInputTokens = tokenCount(cacheRead);
   if (cacheCreation !== undefined) normalized.cacheCreationInputTokens = tokenCount(cacheCreation);
@@ -363,9 +369,6 @@ export async function runRagWorkflow(request: RagRequest, rootSpan: Span): Promi
   let firstTokenNs: bigint | undefined;
   let output = '';
   let finalized = false;
-  let partialUsage: unknown;
-  let partialResponse: unknown;
-  let partialFinishReason: unknown;
   const state: WorkflowState = { output: '' };
 
   const finalizeModel = async (event: any, error?: unknown) => {
@@ -374,12 +377,14 @@ export async function runRagWorkflow(request: RagRequest, rootSpan: Span): Promi
     const finishedNs = process.hrtime.bigint();
     output = typeof event?.text === 'string' ? event.text : output;
     const errorRecord = error && typeof error === 'object' ? (error as Record<string, any>) : {};
-    const response = event?.response ?? errorRecord.response ?? partialResponse;
+    const response = event?.response ?? errorRecord.response;
     const responseRecord = response && typeof response === 'object' ? (response as Record<string, any>) : {};
-    const usage = normalizeUsage(
-      event?.usage ?? event?.totalUsage ?? errorRecord.usage ?? errorRecord.totalUsage ?? partialUsage,
-      [responseRecord.body, responseRecord, errorRecord.response?.body, errorRecord.response]
-    );
+    const usage = normalizeUsage(event?.usage ?? event?.totalUsage ?? errorRecord.usage ?? errorRecord.totalUsage, [
+      responseRecord.body,
+      responseRecord,
+      errorRecord.response?.body,
+      errorRecord.response,
+    ]);
     state.output = output;
     state.usage = usage;
     if (error) state.error = safeError(error);
@@ -390,7 +395,7 @@ export async function runRagWorkflow(request: RagRequest, rootSpan: Span): Promi
       {
         'appkit.model': String(responseRecord.modelId ?? endpoint),
         'appkit.provider': 'databricks',
-        'appkit.finish_reason': event?.finishReason ?? errorRecord.finishReason ?? partialFinishReason,
+        'appkit.finish_reason': event?.finishReason ?? errorRecord.finishReason,
         'appkit.ttft_ms': Math.max(0, Number((firstTokenNs ?? finishedNs) - startedNs) / 1_000_000),
         'appkit.stream_duration_ms': Math.max(0, Number(finishedNs - startedNs) / 1_000_000),
         ...usageAttributes(usage),
@@ -437,9 +442,6 @@ export async function runRagWorkflow(request: RagRequest, rootSpan: Span): Promi
         firstTokenNs ??= process.hrtime.bigint();
         output += String(chunk.text ?? chunk.delta ?? '');
       }
-      partialUsage = chunk?.totalUsage ?? chunk?.usage ?? partialUsage;
-      partialResponse = chunk?.response ?? partialResponse;
-      partialFinishReason = chunk?.finishReason ?? partialFinishReason;
     },
     onFinish: async (event: any) => finalizeModel(event),
     onError: async (event: any) => finalizeModel(event, event?.error),

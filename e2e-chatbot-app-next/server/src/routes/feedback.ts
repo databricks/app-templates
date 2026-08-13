@@ -6,6 +6,7 @@ import {
 } from 'express';
 import { authMiddleware, requireAuth } from '../middleware/auth';
 import {
+  getChatById,
   getMessageById,
   voteMessage,
   getVotesByChatId,
@@ -19,6 +20,7 @@ import {
   getAssessmentId,
   storeAssessmentId,
 } from '../lib/message-meta-store';
+import { canSubmitFeedback } from '../lib/feedback-ownership';
 
 export const feedbackRouter: RouterType = Router();
 
@@ -68,8 +70,11 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
         return res.status(response.status).json(response.json);
       }
       if (
-        metadata.visibility !== 'public' &&
-        metadata.ownerId !== session.user.id
+        !canSubmitFeedback({
+          actorId: session.user.id,
+          ownerId: metadata.ownerId,
+          visibility: metadata.visibility,
+        })
       ) {
         const error = new ChatSDKError('forbidden:chat');
         const response = error.toResponse();
@@ -82,8 +87,14 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       traceId = dbMessage.traceId;
       chatId = dbMessage.chatId;
 
-      const { allowed } = await checkChatAccess(chatId, session.user.id);
-      if (!allowed) {
+      const chat = await getChatById({ id: chatId });
+      if (
+        !canSubmitFeedback({
+          actorId: session.user.id,
+          ownerId: chat?.userId,
+          visibility: chat?.visibility,
+        })
+      ) {
         const error = new ChatSDKError('forbidden:chat');
         const response = error.toResponse();
         return res.status(response.status).json(response.json);

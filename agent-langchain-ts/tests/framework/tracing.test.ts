@@ -289,49 +289,53 @@ describe("MLflow tracing", () => {
     expect(safeLogError(new Error(message)).message).toBe(message);
   });
 
-  test("does not traverse configuration or environment properties", () => {
-    const accessed: PropertyKey[] = [];
-    const guardedError = new Proxy(
-      Object.assign(new Error(`clientSecret=${CREDENTIAL_SENTINEL}`), {
+  test("does not traverse or enumerate sensitive error properties", () => {
+    const forbiddenAccesses = {
+      config: 0,
+      env: 0,
+      headers: 0,
+      cookies: 0,
+    };
+    let enumerationAccesses = 0;
+    const guardedErrorTarget = Object.assign(
+      new Error(`clientSecret=${CREDENTIAL_SENTINEL}`),
+      {
         name: "ConfigError",
         code: "UNAUTHENTICATED",
-      }),
-      {
-        get(target, property, receiver) {
-          accessed.push(property);
-          if (
-            ["config", "env", "headers", "cause"].includes(String(property))
-          ) {
-            throw new Error(`unsafe property traversal: ${String(property)}`);
-          }
-          return Reflect.get(target, property, receiver);
-        },
-        ownKeys() {
-          throw new Error("safeLogError must not enumerate the error object");
-        },
       },
     );
 
-    Object.defineProperties(guardedError, {
+    Object.defineProperties(guardedErrorTarget, {
       config: {
         get: () => {
+          forbiddenAccesses.config += 1;
           throw new Error("config getter traversed");
         },
       },
       env: {
         get: () => {
+          forbiddenAccesses.env += 1;
           throw new Error("env getter traversed");
         },
       },
       headers: {
         get: () => {
+          forbiddenAccesses.headers += 1;
           throw new Error("headers getter traversed");
         },
       },
-      cause: {
+      cookies: {
         get: () => {
-          throw new Error("cause getter traversed");
+          forbiddenAccesses.cookies += 1;
+          throw new Error("cookies getter traversed");
         },
+      },
+    });
+
+    const guardedError = new Proxy(guardedErrorTarget, {
+      ownKeys() {
+        enumerationAccesses += 1;
+        throw new Error("safeLogError must not enumerate the error object");
       },
     });
 
@@ -340,9 +344,13 @@ describe("MLflow tracing", () => {
       code: "UNAUTHENTICATED",
       message: "clientSecret=[REDACTED]",
     });
-    expect(accessed.map(String)).not.toEqual(
-      expect.arrayContaining(["config", "env", "headers", "cause"]),
-    );
+    expect(forbiddenAccesses).toEqual({
+      config: 0,
+      env: 0,
+      headers: 0,
+      cookies: 0,
+    });
+    expect(enumerationAccesses).toBe(0);
   });
 
   test("reduces SDK configuration errors to safe actionable fields", () => {

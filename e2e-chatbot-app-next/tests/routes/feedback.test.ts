@@ -43,7 +43,7 @@ test.describe('/api/feedback', () => {
     // (depends on endpoint type; present when using the Responses API mock)
   });
 
-  test('POST /api/feedback succeeds without mlflowAssessmentId when message has no trace ID', async ({
+  test('POST /api/feedback reports tracing unavailable when the exact message has no trace ID', async ({
     adaContext,
   }) => {
     // Simulates a foundation model endpoint (e.g. databricks-claude-sonnet-4-5) that
@@ -58,11 +58,13 @@ test.describe('/api/feedback', () => {
     const feedbackResponse = await adaContext.request.post('/api/feedback', {
       data: { messageId, feedbackType: 'thumbs_up' },
     });
-    expect(feedbackResponse.status()).toBe(200);
+    expect(feedbackResponse.status()).toBe(409);
     const body = await feedbackResponse.json();
-    expect(body.success).toBe(true);
-    // No MLflow submission when there's no trace ID
-    expect(body.mlflowAssessmentId).toBeUndefined();
+    expect(body).toEqual({
+      error: 'Tracing unavailable for this message',
+      code: 'missing_trace_id',
+      messageId,
+    });
     // Note: DB vote persistence for the no-trace-ID path is verified separately in
     // "GET /api/feedback/chat/:chatId returns DB-backed feedback map", which uses a
     // real chat (message exists in DB). Here, the message is only in the in-memory

@@ -9,6 +9,7 @@
     "build:client": "tsc -b tsconfig.client.json && vite build --config client/vite.config.ts",
     "build:server": "tsdown -c tsdown.server.config.ts",
     "build": "npm run build:server && npm run build:client",
+    "test": "vitest run",
     "typecheck": "tsc -p ./tsconfig.server.json --noEmit && tsc -p ./tsconfig.client.json --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -21,7 +22,7 @@
     "predev": "npm run sync && npm run typegen",
     "sync": "appkit plugin sync --write --silent",
     "typegen": "appkit generate-types",
-    "setup": "appkit setup --write",
+    "setup": "appkit setup --write --mlflow-uc",
     "sync:bundle-vars": "node scripts/sync-bundle-vars.mjs",
     "deploy": "npm run sync:bundle-vars && databricks bundle deploy && databricks bundle run app"
   },
@@ -32,9 +33,10 @@
   "dependencies": {
     "@ai-sdk/openai": "^3.0.48",
     "@ai-sdk/react": "^3.0.140",
-    "@databricks/appkit": "0.40.0",
-    "@databricks/appkit-ui": "0.40.0",
+    "@databricks/appkit": "0.59.0",
+    "@databricks/appkit-ui": "0.59.0",
     "@databricks/sdk-experimental": "0.17.0",
+    "@opentelemetry/api": "1.9.0",
     "ai": "^6.0.138",
     "clsx": "2.1.1",
     "embla-carousel-react": "8.6.0",
@@ -77,7 +79,8 @@
     "tsx": "4.20.6",
     "typescript": "5.9.3",
     "typescript-eslint": "8.48.0",
-    "vite": "npm:rolldown-vite@7.1.14"
+    "vite": "npm:rolldown-vite@7.1.14",
+    "vitest": "4.0.14"
   },
   "overrides": {
     "vite": "npm:rolldown-vite@7.1.14"

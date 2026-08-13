@@ -82,8 +82,18 @@ test.describe('Deployed app: feedback round-trip', () => {
       (p) => (p as any)?.type === 'start' && (p as any)?.messageId,
     ) as { type: string; messageId: string } | undefined;
 
-    expect(startEvent?.messageId, 'Expected a start SSE event with messageId').toBeTruthy();
+    expect(
+      startEvent?.messageId,
+      'Expected a start SSE event with messageId',
+    ).toBeTruthy();
     const assistantMessageId = startEvent?.messageId;
+    const traceEvent = payloads.find(
+      (p) => (p as any)?.type === 'data-traceId',
+    ) as { type: string; data: string | null } | undefined;
+    expect(
+      traceEvent?.data,
+      'Expected the deployed response to expose its MLflow trace ID',
+    ).toBeTruthy();
 
     // Submit thumbs-up feedback for the assistant message.
     const feedbackResponse = await request.post('/api/feedback', {

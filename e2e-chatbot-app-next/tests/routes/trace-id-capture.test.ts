@@ -18,7 +18,8 @@
 
 import { generateUUID } from '@chat-template/core';
 import { expect, test } from '../fixtures';
-import { sendChatAndGetMessageId } from '../helpers';
+import { parseSSEPayloads, sendChatAndGetMessageId } from '../helpers';
+import { ChatPage } from '../pages/chat';
 
 const MOCK_TRACE_ID = 'mock-trace-id-from-databricks';
 const MOCK_ASSESSMENT_ID = `mock-assessment-${MOCK_TRACE_ID}`;
@@ -32,6 +33,28 @@ const TEST_MESSAGE = {
 test.describe('/api/chat — trace ID capture via providerOptions', () => {
   test.beforeEach(async ({ adaContext }) => {
     await adaContext.request.post('/api/test/reset-mlflow-store');
+    await adaContext.request.post('/api/test/reset-captured-requests');
+  });
+
+  test('every upstream request carries trace discovery and W3C/AppKit identity', async ({
+    adaContext,
+  }) => {
+    const chatId = generateUUID();
+
+    await sendChatAndGetMessageId(adaContext.request, chatId, TEST_MESSAGE);
+
+    const response = await adaContext.request.get(
+      '/api/test/serving-request-headers',
+    );
+    const headers = await response.json();
+    expect(headers['x-mlflow-return-trace-id']).toBe('true');
+    expect(headers['x-appkit-session-id']).toBe(chatId);
+    expect(headers['x-appkit-user-id']).toBe(`${adaContext.name}@example.com`);
+    expect(headers['x-request-id']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(headers.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$/);
+    expect(headers.tracestate).toMatch(/^appkit=[0-9a-f]{16}$/);
   });
 
   test('trace ID is captured and used in MLflow feedback submission', async ({
@@ -69,4 +92,115 @@ test.describe('/api/chat — trace ID capture via providerOptions', () => {
     expect(feedbackBody.mlflowAssessmentId).toBe(MOCK_ASSESSMENT_ID);
   });
 
+  test('continuation reuses the assistant message and attaches its returned trace', async ({
+    adaContext,
+  }) => {
+    const chatId = generateUUID();
+    const assistantMessageId = generateUUID();
+    const response = await adaContext.request.post('/api/chat', {
+      data: {
+        id: chatId,
+        selectedChatModel: 'chat-model',
+        selectedVisibilityType: 'private',
+        previousMessages: [
+          TEST_MESSAGE,
+          {
+            id: assistantMessageId,
+            role: 'assistant',
+            parts: [{ type: 'text', text: 'Previous response' }],
+          },
+        ],
+      },
+    });
+
+    expect(response.status()).toBe(200);
+    const payloads = parseSSEPayloads(await response.text()) as Array<{
+      type?: string;
+      messageId?: string;
+      data?: unknown;
+    }>;
+    expect(
+      payloads.find((payload) => payload.type === 'start')?.messageId,
+    ).toBe(assistantMessageId);
+    expect(
+      payloads.find((payload) => payload.type === 'data-traceId')?.data,
+    ).toBe(MOCK_TRACE_ID);
+
+    const feedback = await adaContext.request.post('/api/feedback', {
+      data: { messageId: assistantMessageId, feedbackType: 'thumbs_up' },
+    });
+    expect(feedback.status()).toBe(200);
+    expect((await feedback.json()).mlflowAssessmentId).toBe(MOCK_ASSESSMENT_ID);
+  });
+
+  test('approval resume sends trace discovery and identity on its continuation request', async ({
+    adaContext,
+  }) => {
+    const chatPage = new ChatPage(adaContext.page);
+    await chatPage.createNewChat();
+    await chatPage.sendUserMessage('Trigger MCP tool');
+    const allow = adaContext.page.getByTestId('mcp-approval-allow');
+    await expect(allow).toBeVisible({ timeout: 10_000 });
+
+    const continuation = adaContext.page.waitForResponse(
+      (response) =>
+        response.url().includes('/api/chat') &&
+        response.request().method() === 'POST',
+    );
+    await allow.click();
+    const continuationResponse = await continuation;
+    expect(continuationResponse.status()).toBe(200);
+    await expect(
+      adaContext.page.getByText('The tool has been executed successfully.'),
+    ).toBeVisible({ timeout: 10_000 });
+
+    const headers = await (
+      await adaContext.request.get('/api/test/serving-request-headers')
+    ).json();
+    const chatId = continuationResponse.request().postDataJSON().id;
+    expect(headers['x-mlflow-return-trace-id']).toBe('true');
+    expect(headers['x-appkit-session-id']).toBe(chatId);
+    expect(headers['x-appkit-user-id']).toBe(`${adaContext.name}@example.com`);
+    expect(headers['x-request-id']).toBeTruthy();
+    expect(headers.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$/);
+  });
+
+  test('non-streaming fallback still asks for a trace and exposes a missing trace without losing text', async ({
+    adaContext,
+  }) => {
+    const chatId = generateUUID();
+    const response = await adaContext.request.post('/api/chat', {
+      data: {
+        id: chatId,
+        message: {
+          id: generateUUID(),
+          role: 'user',
+          parts: [{ type: 'text', text: 'trigger stream error' }],
+        },
+        selectedChatModel: 'chat-model',
+        selectedVisibilityType: 'private',
+      },
+    });
+
+    expect(response.status()).toBe(200);
+    const payloads = parseSSEPayloads(await response.text()) as Array<{
+      type?: string;
+      data?: unknown;
+    }>;
+    expect(payloads.some((payload) => payload.type === 'text-delta')).toBe(
+      true,
+    );
+    expect(
+      payloads.find((payload) => payload.type === 'data-traceId')?.data,
+    ).toBeNull();
+    expect(
+      payloads.find((payload) => payload.type === 'data-error')?.data,
+    ).toMatch(/trace id/i);
+
+    const headers = await (
+      await adaContext.request.get('/api/test/serving-request-headers')
+    ).json();
+    expect(headers['x-mlflow-return-trace-id']).toBe('true');
+    expect(headers['x-appkit-session-id']).toBe(chatId);
+  });
 });

@@ -1,14 +1,67 @@
 bundle:
   name: support_agent
 
-include:
-  - resources/*.yml
-
 variables:
   catalog:
     description: The Unity Catalog catalog for reading silver/gold and writing output
   endpoint:
     description: The AI Gateway model serving endpoint to use
+  mlflow_experiment_id:
+    description: MLflow experiment ID with a Unity Catalog trace location
+  mlflow_tracing_warehouse_id:
+    description: SQL warehouse ID used by the MLflow UC trace exporter
+  mlflow_uc_catalog:
+    description: Unity Catalog catalog containing trace tables
+    default: main
+  mlflow_uc_schema:
+    description: Unity Catalog schema containing trace tables
+    default: agent_traces
+  mlflow_uc_table_prefix:
+    description: Prefix for support-agent trace tables
+    default: support_agent
+  mlflow_otel_spans_table:
+    description: Fully qualified MLflow OTel spans table
+    default: main.agent_traces.support_agent_otel_spans
+
+resources:
+  jobs:
+    support_agent_job:
+      name: support_agent_job
+      max_concurrent_runs: 1
+      queue:
+        enabled: false
+      schedule:
+        quartz_cron_expression: '0 * * * * ?'
+        timezone_id: UTC
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: endpoint
+          default: ${var.endpoint}
+        - name: mlflow_tracking_uri
+          default: databricks
+        - name: mlflow_experiment_id
+          default: ${var.mlflow_experiment_id}
+        - name: mlflow_tracing_warehouse_id
+          default: ${var.mlflow_tracing_warehouse_id}
+        - name: mlflow_uc_catalog
+          default: ${var.mlflow_uc_catalog}
+        - name: mlflow_uc_schema
+          default: ${var.mlflow_uc_schema}
+        - name: mlflow_uc_table_prefix
+          default: ${var.mlflow_uc_table_prefix}
+        - name: mlflow_otel_spans_table
+          default: ${var.mlflow_otel_spans_table}
+      tasks:
+        - task_key: generate_responses
+          notebook_task:
+            notebook_path: ./src/generate_responses.py
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: '4'
+            dependencies:
+              - mlflow
 
 targets:
   dev:
@@ -19,6 +72,8 @@ targets:
     variables:
       catalog: REPLACE_ME # your Unity Catalog catalog name
       endpoint: databricks-gpt-5-4-mini
+      mlflow_experiment_id: REPLACE_ME
+      mlflow_tracing_warehouse_id: REPLACE_ME
 
   prod:
     mode: production
@@ -27,3 +82,5 @@ targets:
     variables:
       catalog: REPLACE_ME
       endpoint: databricks-gpt-5-4-mini
+      mlflow_experiment_id: REPLACE_ME
+      mlflow_tracing_warehouse_id: REPLACE_ME

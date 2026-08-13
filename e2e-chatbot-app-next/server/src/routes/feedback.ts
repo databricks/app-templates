@@ -86,7 +86,10 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
 
         // Check for an existing assessment to update (deduplication).
         // Memory-first: check the in-memory assessment store.
-        const existingAssessmentId = getAssessmentId(messageId, session.user.id);
+        const existingAssessmentId = getAssessmentId(
+          messageId,
+          session.user.id,
+        );
 
         let mlflowResponse: globalThis.Response;
         if (existingAssessmentId) {
@@ -159,8 +162,13 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       }
     } else {
       console.warn(
-        'Message does not have a trace ID, skipping MLflow submission',
+        'Message does not have a trace ID; feedback cannot be traced',
       );
+      return res.status(409).json({
+        error: 'Tracing unavailable for this message',
+        code: 'missing_trace_id',
+        messageId,
+      });
     }
 
     // Also persist to DB for fast bulk reads on page load

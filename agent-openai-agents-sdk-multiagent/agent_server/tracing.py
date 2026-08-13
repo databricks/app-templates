@@ -55,6 +55,8 @@ _STANDALONE_SECRET_TEXT = re.compile(
     r"(?P<value>'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|[^\s,;)\]}\"']+)",
     re.IGNORECASE,
 )
+_TRACE_ID = re.compile(r"^(?:tr-)?(?P<hex>[0-9a-fA-F]{32})$")
+_SPAN_ID = re.compile(r"^[0-9a-fA-F]{16}$")
 
 
 def _redact_secret_text(value: str) -> str:
@@ -242,6 +244,22 @@ def _response_header(headers: Mapping[str, Any], *names: str) -> Any:
     )
 
 
+def _verified_remote_trace_id(value: Any) -> str | None:
+    if not isinstance(value, str) or not (match := _TRACE_ID.fullmatch(value)):
+        return None
+    trace_hex = match.group("hex").lower()
+    if int(trace_hex, 16) == 0:
+        return None
+    return f"tr-{trace_hex}" if value.startswith("tr-") else trace_hex
+
+
+def _verified_remote_span_id(value: Any) -> str | None:
+    if not isinstance(value, str) or not _SPAN_ID.fullmatch(value):
+        return None
+    span_id = value.lower()
+    return span_id if int(span_id, 16) != 0 else None
+
+
 def _remote_usage(response: Any) -> dict[str, Any]:
     raw = getattr(response, "usage", None)
     if hasattr(raw, "model_dump"):
@@ -331,17 +349,21 @@ async def traced_remote_agent_call(
         manager.__exit__(None, None, None)
         raise
 
-    remote_trace_id = _response_header(
-        response_headers,
-        "x-mlflow-trace-id",
-        "x-databricks-trace-id",
-    ) or _remote_value(response, "trace_id", "traceId", "mlflow_trace_id")
-    remote_span_id = _remote_value(
-        response, "root_span_id", "rootSpanId", "span_id", "spanId"
-    ) or _response_header(
-        response_headers,
-        "x-mlflow-span-id",
-        "x-databricks-span-id",
+    remote_trace_id = _verified_remote_trace_id(
+        _response_header(
+            response_headers,
+            "x-mlflow-trace-id",
+            "x-databricks-trace-id",
+        )
+        or _remote_value(response, "trace_id", "traceId", "mlflow_trace_id")
+    )
+    remote_span_id = _verified_remote_span_id(
+        _remote_value(response, "root_span_id", "rootSpanId", "span_id", "spanId")
+        or _response_header(
+            response_headers,
+            "x-mlflow-span-id",
+            "x-databricks-span-id",
+        )
     )
     if not remote_trace_id or not remote_span_id:
         safe_error = "Remote response did not provide verified trace and span identity"

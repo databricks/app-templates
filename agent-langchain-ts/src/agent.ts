@@ -74,6 +74,9 @@ export interface AgentConfig {
    * MCP servers for additional tools
    */
   mcpServers?: DatabricksMCPServer[];
+
+  /** Explicit Databricks SDK authentication for the model client. */
+  auth?: ConstructorParameters<typeof ChatDatabricks>[0]["auth"];
 }
 
 /**
@@ -188,12 +191,11 @@ export class StandardAgent implements AgentInterface {
     const textItemId = `msg_${randomUUID()}`;
     let textOutputIndex = -1; // set on first text delta
 
-    const eventStream = this.agent.streamEvents(
-      { messages },
-      { version: "v2", callbacks: [createLangChainTracingCallback()] },
-    );
-
     try {
+      const eventStream = this.agent.streamEvents(
+        { messages },
+        { version: "v2", callbacks: [createLangChainTracingCallback()] },
+      );
       for await (const event of eventStream) {
         // Tool call started — emit function_call output item
         if (event.event === "on_tool_start") {
@@ -348,6 +350,7 @@ export async function createAgent(
     maxTokens = 2000,
     systemPrompt = DEFAULT_SYSTEM_PROMPT,
     mcpServers,
+    auth,
   } = config;
 
   // Create chat model
@@ -356,6 +359,12 @@ export async function createAgent(
     useResponsesApi,
     temperature,
     maxTokens,
+    auth,
+    extraParams: {
+      onError: ({ error }: { error: unknown }) => {
+        throw sanitizePublicError(error);
+      },
+    },
   });
 
   // Load tools (basic + MCP if configured)

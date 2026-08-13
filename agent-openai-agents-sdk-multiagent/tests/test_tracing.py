@@ -6,6 +6,7 @@ import os
 from types import SimpleNamespace
 
 import httpx
+import pytest
 
 os.environ.setdefault("MLFLOW_DISABLE_TELEMETRY", "true")
 
@@ -50,6 +51,65 @@ def test_request_usage_retains_real_completed_output_for_later_failure():
     assert "first completed answer" in serialized
     assert "hidden" not in serialized
     assert "[REDACTED]" in serialized
+
+
+@pytest.mark.parametrize(
+    ("remote_trace_id", "remote_span_id", "stored_trace_id", "stored_span_id"),
+    [
+        ("bogus", "nope", None, None),
+        ("2" * 32, "short", "2" * 32, None),
+        ("0" * 32, "3" * 16, None, "3" * 16),
+        ("2" * 32, "0" * 16, "2" * 32, None),
+    ],
+)
+def test_remote_agent_rejects_malformed_trace_identity(
+    monkeypatch,
+    tmp_path,
+    remote_trace_id,
+    remote_span_id,
+    stored_trace_id,
+    stored_span_id,
+):
+    tracking_uri = f"sqlite:///{tmp_path / 'malformed-remote.db'}"
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment_id = mlflow.create_experiment(
+        "malformed-remote", artifact_location=artifact_dir.as_uri()
+    )
+    mlflow.set_experiment(experiment_id=experiment_id)
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", tracking_uri)
+    monkeypatch.setenv("MLFLOW_EXPERIMENT_ID", experiment_id)
+
+    from agent_server.tracing import traced_remote_agent_call
+
+    async def request(_carrier):
+        return SimpleNamespace(output_text="untrusted remote output"), {
+            "X-MLflow-Trace-Id": remote_trace_id,
+            "X-MLflow-Span-Id": remote_span_id,
+        }
+
+    with pytest.raises(RuntimeError, match="verified trace and span identity"):
+        asyncio.run(
+            traced_remote_agent_call(
+                name="remote.invalid",
+                target_type="app",
+                target_name="invalid-app",
+                delegated_input="question",
+                request=request,
+            )
+        )
+
+    mlflow.flush_trace_async_logging()
+    rows = mlflow.search_traces(locations=[experiment_id])
+    assert len(rows) == 1
+    trace = mlflow.get_trace(rows.iloc[0].trace_id)
+    remote = next(span for span in trace.data.spans if span.name == "remote.invalid")
+    assert remote.status.status_code == "ERROR"
+    assert remote.get_attribute("appkit.remote.trace_id") == stored_trace_id
+    assert remote.get_attribute("appkit.remote.root_span_id") == stored_span_id
+    assert remote.get_attribute("appkit.remote.relation") == "unverified"
+    assert remote.links == []
 
 
 def test_real_runner_remote_handoffs_propagate_and_link(monkeypatch, tmp_path):

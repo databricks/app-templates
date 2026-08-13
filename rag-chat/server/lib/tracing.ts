@@ -28,15 +28,20 @@ export interface AppKitRagContext {
   server: { extend(fn: (app: Application) => void): void };
 }
 
-interface Usage {
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-  cacheReadInputTokens?: number;
-  cacheCreationInputTokens?: number;
+type Usage = {
   costAvailable: boolean;
   costUsd?: number;
-}
+} & (
+  | { usageAvailable: false }
+  | {
+      usageAvailable: true;
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+      cacheReadInputTokens?: number;
+      cacheCreationInputTokens?: number;
+    }
+);
 
 interface WorkflowState {
   output: string;
@@ -179,7 +184,38 @@ function tokenCount(value: unknown): number {
 }
 
 function normalizeUsage(raw: unknown, costSources: unknown[] = []): Usage {
-  const usage = raw && typeof raw === 'object' ? (raw as Record<string, any>) : {};
+  const usage = raw && typeof raw === 'object' ? (raw as Record<string, any>) : undefined;
+  const usageAvailable = Boolean(
+    usage &&
+      [
+        'inputTokens',
+        'input_tokens',
+        'prompt_tokens',
+        'outputTokens',
+        'output_tokens',
+        'completion_tokens',
+        'totalTokens',
+        'total_tokens',
+        'cacheReadInputTokens',
+        'cache_read_input_tokens',
+        'cacheCreationInputTokens',
+        'cache_creation_input_tokens',
+      ].some((key) => key in usage)
+  );
+  if (!usageAvailable || !usage) {
+    const normalized: Usage = { usageAvailable: false, costAvailable: false };
+    for (const source of costSources) {
+      if (addAvailableCost(normalized, source)) break;
+    }
+    return normalized;
+  }
+  const normalized: Extract<Usage, { usageAvailable: true }> = {
+    usageAvailable: true,
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    costAvailable: false,
+  };
   const v3Input = usage.inputTokens && typeof usage.inputTokens === 'object' ? usage.inputTokens : {};
   const v3Output = usage.outputTokens && typeof usage.outputTokens === 'object' ? usage.outputTokens : {};
   const inputDetails = usage.inputTokenDetails ?? usage.input_token_details ?? usage.prompt_tokens_details ?? v3Input;
@@ -187,12 +223,9 @@ function normalizeUsage(raw: unknown, costSources: unknown[] = []): Usage {
   const outputTokens = tokenCount(
     v3Output.total ?? usage.outputTokens ?? usage.output_tokens ?? usage.completion_tokens
   );
-  const normalized: Usage = {
-    inputTokens,
-    outputTokens,
-    totalTokens: tokenCount(usage.totalTokens ?? usage.total_tokens ?? inputTokens + outputTokens),
-    costAvailable: false,
-  };
+  normalized.inputTokens = inputTokens;
+  normalized.outputTokens = outputTokens;
+  normalized.totalTokens = tokenCount(usage.totalTokens ?? usage.total_tokens ?? inputTokens + outputTokens);
   const cacheRead =
     usage.cacheReadInputTokens ??
     usage.cache_read_input_tokens ??
@@ -208,35 +241,41 @@ function normalizeUsage(raw: unknown, costSources: unknown[] = []): Usage {
   if (cacheRead !== undefined) normalized.cacheReadInputTokens = tokenCount(cacheRead);
   if (cacheCreation !== undefined) normalized.cacheCreationInputTokens = tokenCount(cacheCreation);
   for (const source of [usage, ...costSources]) {
-    if (!source || typeof source !== 'object') continue;
-    const record = source as Record<string, any>;
-    const nestedUsage = record.usage && typeof record.usage === 'object' ? record.usage : {};
-    const cost = numberValue(
-      record.costUsd ?? record.cost_usd ?? record.total_cost_usd ?? record.cost ?? nestedUsage.cost_usd
-    );
-    if (cost !== undefined) {
-      normalized.costAvailable = true;
-      normalized.costUsd = cost;
-      break;
-    }
+    if (addAvailableCost(normalized, source)) break;
   }
   return normalized;
 }
 
+function addAvailableCost(usage: Usage, source: unknown): boolean {
+  if (!source || typeof source !== 'object') return false;
+  const record = source as Record<string, any>;
+  const nestedUsage = record.usage && typeof record.usage === 'object' ? record.usage : {};
+  const cost = numberValue(
+    record.costUsd ?? record.cost_usd ?? record.total_cost_usd ?? record.cost ?? nestedUsage.cost_usd
+  );
+  if (cost === undefined) return false;
+  usage.costAvailable = true;
+  usage.costUsd = cost;
+  return true;
+}
+
 function usageAttributes(usage: Usage): Record<string, unknown> {
-  const tokenUsage: Record<string, number> = {
-    input_tokens: usage.inputTokens,
-    output_tokens: usage.outputTokens,
-    total_tokens: usage.totalTokens,
-  };
-  if (usage.cacheReadInputTokens !== undefined) tokenUsage.cache_read_input_tokens = usage.cacheReadInputTokens;
-  if (usage.cacheCreationInputTokens !== undefined)
-    tokenUsage.cache_creation_input_tokens = usage.cacheCreationInputTokens;
   const attributes: Record<string, unknown> = {
     'appkit.usage': usage,
-    'mlflow.chat.tokenUsage': tokenUsage,
+    'appkit.usage_available': usage.usageAvailable,
     'appkit.cost_available': usage.costAvailable,
   };
+  if (usage.usageAvailable) {
+    const tokenUsage: Record<string, number> = {
+      input_tokens: usage.inputTokens,
+      output_tokens: usage.outputTokens,
+      total_tokens: usage.totalTokens,
+    };
+    if (usage.cacheReadInputTokens !== undefined) tokenUsage.cache_read_input_tokens = usage.cacheReadInputTokens;
+    if (usage.cacheCreationInputTokens !== undefined)
+      tokenUsage.cache_creation_input_tokens = usage.cacheCreationInputTokens;
+    attributes['mlflow.chat.tokenUsage'] = tokenUsage;
+  }
   if (usage.costAvailable) {
     attributes['appkit.cost_usd'] = usage.costUsd!;
     attributes['mlflow.llm.cost'] = { total_cost: usage.costUsd! };

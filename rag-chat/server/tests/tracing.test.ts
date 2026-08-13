@@ -391,6 +391,7 @@ describe('RAG chat tracing', () => {
       text: 'What is a lakehouse?',
     });
     expect(attribute(embedding, 'appkit.usage')).toEqual({
+      usageAvailable: true,
       inputTokens: 4,
       outputTokens: 0,
       totalTokens: 4,
@@ -418,6 +419,7 @@ describe('RAG chat tracing', () => {
       partial: false,
     });
     expect(attribute(model, 'appkit.usage')).toEqual({
+      usageAvailable: true,
       inputTokens: 21,
       outputTokens: 3,
       totalTokens: 24,
@@ -546,6 +548,7 @@ describe('RAG chat tracing', () => {
       partial: true,
     });
     expect(attribute(model, 'appkit.usage')).toEqual({
+      usageAvailable: true,
       inputTokens: 13,
       outputTokens: 4,
       totalTokens: 17,

@@ -251,6 +251,7 @@ describe('RAG tracing through the installed AI SDK', () => {
       partial: true,
     });
     expect(attribute(model, 'appkit.usage')).toEqual({
+      usageAvailable: true,
       inputTokens: 13,
       outputTokens: 4,
       totalTokens: 17,
@@ -269,7 +270,7 @@ describe('RAG tracing through the installed AI SDK', () => {
     ).toBe(true);
   });
 
-  test('marks cost unavailable when a real streamText error has no usage metadata', async () => {
+  test('marks usage and cost unavailable when a real streamText error has no usage metadata', async () => {
     state.model = providerThatErrors(new Error('plain provider failure'));
 
     const response = await startRagRequest({
@@ -283,15 +284,122 @@ describe('RAG tracing through the installed AI SDK', () => {
         },
       ],
     });
-    await consume(response.stream);
+    const chunks = await consume(response.stream);
 
+    expect(chunks).toContainEqual({
+      type: 'error',
+      errorText: 'plain provider failure',
+    });
+    const root = state.spans.find((span) => span.name === 'rag-chat.request');
     const model = state.spans.find((span) => span.name === 'rag.generate');
+    const persistence = state.spans.find((span) => span.name === 'rag.memory.assistant');
+    expect(attribute(model, 'mlflow.spanOutputs')).toEqual({
+      text: 'Partial grounded answer',
+      partial: true,
+    });
     expect(attribute(model, 'appkit.usage')).toEqual({
+      usageAvailable: false,
+      costAvailable: false,
+    });
+    expect(model.attributes['appkit.usage_available']).toBe(false);
+    expect(model.attributes['mlflow.chat.tokenUsage']).toBeUndefined();
+    expect(model.attributes['appkit.cost_usd']).toBeUndefined();
+    expect(attribute(persistence, 'mlflow.spanOutputs')).toEqual(
+      expect.objectContaining({
+        role: 'assistant',
+        content: 'Partial grounded answer',
+      })
+    );
+    expect(attribute(root, 'appkit.usage')).toEqual({
+      usageAvailable: false,
+      costAvailable: false,
+    });
+    expect(root.attributes['appkit.usage_available']).toBe(false);
+    expect(root.attributes['mlflow.chat.tokenUsage']).toBeUndefined();
+    expect(attribute(root, 'mlflow.spanOutputs')).toEqual(
+      expect.objectContaining({
+        text: 'Partial grounded answer',
+        partial: true,
+        error: 'plain provider failure',
+        persisted: expect.objectContaining({
+          role: 'assistant',
+          content: 'Partial grounded answer',
+        }),
+      })
+    );
+  });
+
+  test('retains explicit zero usage from a real streamText error', async () => {
+    const error = Object.assign(new Error('zero-usage provider failure'), {
+      usage: {
+        inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+        outputTokens: { total: 0, text: 0, reasoning: 0 },
+      },
+    });
+    state.model = providerThatErrors(error);
+
+    const response = await startRagRequest({
+      chatId: 'chat-1',
+      userId: 'ada@example.com',
+      messages: [
+        {
+          id: 'user-message',
+          role: 'user',
+          parts: [{ type: 'text', text: 'What is a lakehouse?' }],
+        },
+      ],
+    });
+    const chunks = await consume(response.stream);
+
+    expect(chunks).toContainEqual({
+      type: 'error',
+      errorText: 'zero-usage provider failure',
+    });
+    const root = state.spans.find((span) => span.name === 'rag-chat.request');
+    const model = state.spans.find((span) => span.name === 'rag.generate');
+    const persistence = state.spans.find((span) => span.name === 'rag.memory.assistant');
+    const expectedUsage = {
+      usageAvailable: true,
       inputTokens: 0,
       outputTokens: 0,
       totalTokens: 0,
+      cacheReadInputTokens: 0,
+      cacheCreationInputTokens: 0,
       costAvailable: false,
+    };
+    expect(attribute(model, 'mlflow.spanOutputs')).toEqual({
+      text: 'Partial grounded answer',
+      partial: true,
+    });
+    expect(attribute(model, 'appkit.usage')).toEqual(expectedUsage);
+    expect(model.attributes['appkit.usage_available']).toBe(true);
+    expect(attribute(model, 'mlflow.chat.tokenUsage')).toEqual({
+      input_tokens: 0,
+      output_tokens: 0,
+      total_tokens: 0,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
     });
     expect(model.attributes['appkit.cost_usd']).toBeUndefined();
+    expect(attribute(persistence, 'mlflow.spanOutputs')).toEqual(
+      expect.objectContaining({
+        role: 'assistant',
+        content: 'Partial grounded answer',
+      })
+    );
+    expect(attribute(root, 'appkit.usage')).toEqual(expectedUsage);
+    expect(root.attributes['appkit.usage_available']).toBe(true);
+    expect(attribute(root, 'mlflow.chat.tokenUsage')).toEqual(attribute(model, 'mlflow.chat.tokenUsage'));
+    expect(attribute(root, 'mlflow.spanOutputs')).toEqual(
+      expect.objectContaining({
+        text: 'Partial grounded answer',
+        partial: true,
+        error: 'zero-usage provider failure',
+        persisted: expect.objectContaining({
+          role: 'assistant',
+          content: 'Partial grounded answer',
+        }),
+      })
+    );
   });
 });

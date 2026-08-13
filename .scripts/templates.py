@@ -50,5 +50,8 @@ TEMPLATES = {
     "agent-migration-from-model-serving": {
         "sdk": ["langgraph", "openai"],
         "bundle_name": "agent_migration",
+        "script_sources": {
+            "preflight.py": "agent-migration-from-model-serving/preflight.py",
+        },
     },
 }

@@ -4,7 +4,8 @@
 The source of truth is .scripts/source/. This script copies:
 
 - Shared Python scripts (verbatim copy) into each template's `scripts/`
-  or `agent_server/` directory, respecting per-template `exclude_scripts`.
+  or `agent_server/` directory, respecting per-template `exclude_scripts`
+  and explicit `script_sources` variants.
 - GitHub Actions workflows (with `{{BUNDLE_NAME}}` substitution) into
   each template's `.github/workflows/` directory, gated on the
   `has_actions` field in templates.py.
@@ -126,6 +127,7 @@ def sync_mlflow_uc_configuration(template: str, config: dict) -> list[str]:
 def sync_scripts(template: str, config: dict) -> list[str]:
     """Copy shared Python scripts into the template. Returns list of synced names."""
     exclude = config.get("exclude_scripts", [])
+    source_overrides = config.get("script_sources", {})
     scripts = [(s, d) for s, d in SCRIPTS_TO_SYNC if s not in exclude]
     synced: list[str] = []
     for script, dest_subdir in scripts:
@@ -133,7 +135,12 @@ def sync_scripts(template: str, config: dict) -> list[str]:
         if not dest_dir.exists():
             print(f"  Warning: {dest_dir} does not exist, skipping {script}")
             continue
-        shutil.copy2(SOURCE_DIR / script, dest_dir / script)
+        source_path = SOURCE_DIR / source_overrides.get(script, script)
+        if not source_path.is_file():
+            raise RuntimeError(
+                f"Configured source for {template}/{script} does not exist: {source_path}"
+            )
+        shutil.copy2(source_path, dest_dir / script)
         synced.append(script)
     return synced
 

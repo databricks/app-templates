@@ -195,7 +195,9 @@ def test_policy_builder_admits_detected_candidate_without_name_or_command_filter
     assert candidates[0].local_test_command is None
 
 
-def test_policy_builder_selects_trace_owners_without_using_evidence_as_a_filter(tmp_path):
+def test_policy_builder_selects_every_executable_behavior_without_using_evidence_as_a_filter(
+    tmp_path,
+):
     trace_owner = tmp_path / "support-surface"
     _write(
         trace_owner / "src/app.py",
@@ -204,18 +206,44 @@ def test_policy_builder_selects_trace_owners_without_using_evidence_as_a_filter(
     _write_agent_trace_manifest(trace_owner)
 
     client_app = tmp_path / "agent-client"
-    _write(client_app / "src/app.ts", "const client = createAgent({ endpoint });\n")
+    _write(
+        client_app / "src/app.ts",
+        'const result = client.responses.create(model="agents/c/s/a", input="hi");\n',
+    )
 
     mcp_server = tmp_path / "traced-mcp-server"
     _write(
         mcp_server / "src/app.py",
-        "while tool_calls:\n    response = model.invoke(messages)\n",
+        "while tool_calls:\n"
+        "    response = model.invoke(messages)\n"
+        "    messages.append(tool.execute(response.tool_calls[0]))\n",
     )
-    _write_agent_trace_manifest(mcp_server)
+
+    rag_app = tmp_path / "rag-app"
+    _write(
+        rag_app / "src/app.py",
+        "documents = retriever.invoke(question)\n"
+        "return model.generate([question, documents])\n",
+    )
 
     candidates = build_trace_policy_templates(root=tmp_path)
 
-    assert [candidate.name for candidate in candidates] == ["support-surface"]
+    assert [candidate.name for candidate in candidates] == [
+        "agent-client",
+        "rag-app",
+        "support-surface",
+        "traced-mcp-server",
+    ]
+    for candidate in candidates:
+        if candidate.name == "support-surface":
+            continue
+        with pytest.raises(AssertionError) as error:
+            assert_template_policy([candidate])
+        message = str(error.value)
+        assert candidate.name in message
+        assert "UC resources" in message
+        assert "deterministic local conformance" in message
+        assert "deployed verification" in message
 
 
 def test_policy_builder_does_not_share_deployed_proof_between_candidates(tmp_path):
@@ -229,8 +257,7 @@ def test_policy_builder_does_not_share_deployed_proof_between_candidates(tmp_pat
     candidates = build_trace_policy_templates(root=tmp_path)
 
     assert {
-        candidate.name: candidate.has_deployed_verification
-        for candidate in candidates
+        candidate.name: candidate.has_deployed_verification for candidate in candidates
     } == {"covered": False, "uncovered": False}
 
 

@@ -203,13 +203,8 @@ def _local_test_command(template: Path) -> tuple[str, ...] | None:
 
 
 def is_trace_policy_candidate(template: AgentTemplate) -> bool:
-    """Select surfaces that own trace creation, without consulting proof."""
-    if "agent-server" in template.signals:
-        return True
-    source = _production_source(template.path)
-    return "agent-constructor" in template.signals and re.search(
-        r"@mlflow/core|withAgentRequestTrace|runWithAgentTrace", source
-    ) is not None
+    """Admit every executable agent behavior, without consulting proof."""
+    return bool(template.signals)
 
 
 def discover_agentic_templates(root: Path | str) -> list[AgentTemplate]:

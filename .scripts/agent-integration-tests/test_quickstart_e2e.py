@@ -64,6 +64,7 @@ from helpers import (
     bundle_destroy,
     databricks_create_app,
     databricks_delete_app,
+    execute_trace_row_query,
     git_copy_template,
     read_env_value,
     run_quickstart,
@@ -76,6 +77,11 @@ from template_config import (
     DEFAULT_MLFLOW_UC_TABLE_PREFIX,
     REPO_ROOT,
 )
+
+TRACE_CONFORMANCE_DIR = REPO_ROOT / ".scripts" / "trace-conformance"
+sys.path.insert(0, str(TRACE_CONFORMANCE_DIR))
+from contract import assert_trace_contract  # noqa: E402
+from normalize import normalize_python_mlflow_trace, normalize_uc_rows  # noqa: E402
 
 # Fresh app startups can take 5-15 minutes depending on workspace load
 BUNDLE_RUN_FRESH_TIMEOUT = 900  # 15 minutes
@@ -652,7 +658,12 @@ def _verify_uc_trace_smoke(
     quickstart.grant_uc_trace_access_to_app(workspace, app_name, trace_config)
 
     invocation_request = {
-        "input": [{"role": "user", "content": "Reply with the word traced."}],
+        "input": [
+            {
+                "role": "user",
+                "content": "What time is it? Use the get_current_time tool.",
+            }
+        ],
         "custom_inputs": {
             "Authorization": "Bearer request-secret",
             "api_key": "provider-secret",
@@ -681,6 +692,7 @@ def _verify_uc_trace_smoke(
     )
 
     import mlflow
+    from mlflow.entities.trace_location import UnityCatalog
     from mlflow.tracing.utils import parse_trace_id_v4
 
     tracking_uri = f"databricks://{profile}"
@@ -688,37 +700,42 @@ def _verify_uc_trace_smoke(
     os.environ["MLFLOW_TRACING_SQL_WAREHOUSE_ID"] = trace_config.warehouse_id
     mlflow.set_tracking_uri(tracking_uri)
 
+    experiment = mlflow.get_experiment(trace_config.experiment_id)
+    expected_location = UnityCatalog(
+        catalog_name=trace_config.catalog_name,
+        schema_name=trace_config.schema_name,
+        table_prefix=trace_config.table_prefix,
+    )
+    assert experiment is not None, (
+        f"MLflow experiment {trace_config.experiment_id} does not exist"
+    )
+    assert experiment.trace_location == expected_location, (
+        "Deployed experiment is not bound to the exact immutable UC location: "
+        f"experiment={trace_config.experiment_id}, "
+        f"actual={experiment.trace_location!r}, expected={expected_location!r}"
+    )
+
     _, stored_trace_id = parse_trace_id_v4(trace_id)
     stored_trace_id = (stored_trace_id or trace_id).removeprefix("tr-").lower()
-    quoted_table = ".".join(
-        quickstart._quoted_identifier(part)
-        for part in trace_config.otel_spans_table_name.split(".")
-    )
     trace_candidates = [trace_id.lower(), stored_trace_id, f"tr-{stored_trace_id}"]
-    candidate_sql = ", ".join(
-        quickstart._quoted_string(candidate) for candidate in trace_candidates
-    )
-    row_query = (
-        f"SELECT COUNT(*) FROM {quoted_table} "
-        f"WHERE lower(CAST(trace_id AS STRING)) IN ({candidate_sql}) "
-        f"OR lower(hex(trace_id)) = {quickstart._quoted_string(stored_trace_id)}"
-    )
 
     deadline = time.monotonic() + TRACE_PROPAGATION_TIMEOUT
     trace = None
-    row_count = 0
+    trace_rows = []
     last_error = None
     while time.monotonic() < deadline:
         try:
             trace = mlflow.get_trace(trace_id, flush=True)
-            result = quickstart._execute_sql(
-                workspace,
-                trace_config.warehouse_id,
-                row_query,
-            )
-            rows = getattr(getattr(result, "result", None), "data_array", None) or []
-            row_count = int(rows[0][0]) if rows and rows[0] else 0
-            if trace is not None and row_count > 0:
+            for candidate in trace_candidates:
+                trace_rows = execute_trace_row_query(
+                    workspace,
+                    trace_config.warehouse_id,
+                    trace_config.otel_spans_table_name,
+                    candidate,
+                )
+                if trace_rows:
+                    break
+            if trace is not None and trace_rows:
                 break
         except Exception as error:
             last_error = error
@@ -726,10 +743,14 @@ def _verify_uc_trace_smoke(
 
     assert trace is not None, f"MLflow could not retrieve trace {trace_id}: {last_error}"
     _assert_trace_contract(trace, invocation_request, invocation_response)
-    assert row_count > 0, (
+    normalized_trace = normalize_python_mlflow_trace(workdir.name, trace)
+    assert_trace_contract(normalized_trace)
+    assert trace_rows, (
         f"UC spans table {trace_config.otel_spans_table_name} has no rows for "
         f"trace {trace_id}; last error: {last_error}"
     )
+    persisted_manifest = normalize_uc_rows(workdir.name, trace_rows)
+    assert_trace_contract(persisted_manifest)
 
     host = workspace.config.host.rstrip("/")
     trace_link = (
@@ -740,7 +761,7 @@ def _verify_uc_trace_smoke(
         f"{host}/explore/data/{trace_config.catalog_name}/"
         f"{trace_config.schema_name}/{trace_config.otel_spans_table_name.rsplit('.', 1)[-1]}"
     )
-    _log(f"[mlflow-uc-smoke] trace_id={trace_id} rows={row_count}")
+    _log(f"[mlflow-uc-smoke] trace_id={trace_id} rows={len(trace_rows)}")
     _log(f"[mlflow-uc-smoke] MLflow trace: {trace_link}")
     _log(f"[mlflow-uc-smoke] UC spans table: {table_link}")
     return {"trace_id": trace_id, "trace_link": trace_link, "table_link": table_link}

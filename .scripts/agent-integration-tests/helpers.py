@@ -6,6 +6,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import threading
 import time
 from collections import defaultdict
@@ -690,6 +691,255 @@ def query_with_openai_sdk(
         output_text = response.output_text
     _log(f"  OpenAI SDK response ({mode}): {output_text[:500]}")
     return output_text
+
+
+def run_local_trace_test(template, manifest_path: Path):
+    """Run a template's real deterministic trace suite and load its manifest."""
+    from template_config import REPO_ROOT
+
+    conformance_dir = REPO_ROOT / ".scripts" / "trace-conformance"
+    sys.path.insert(0, str(conformance_dir))
+    from normalize import load_trace_manifest
+
+    command = list(template.local_test_command or ())
+    assert command, f"{template.name} has no deterministic trace test command"
+    env = os.environ.copy()
+    env.update(
+        {
+            "TRACE_CONFORMANCE_MANIFEST": str(manifest_path),
+            "TRACE_CONFORMANCE_TEMPLATE": template.name,
+        }
+    )
+    existing_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = os.pathsep.join(
+        value
+        for value in (str(conformance_dir), existing_pythonpath)
+        if value
+    )
+    if command[0] == "uv":
+        env["PYTEST_PLUGINS"] = "normalize"
+        cwd = REPO_ROOT
+    else:
+        cwd = template.path
+    result = _run_cmd(command, cwd=cwd, env=env, timeout=EVALUATE_TIMEOUT, verbose=True)
+    assert result.returncode == 0, (
+        f"deterministic trace test failed for {template.name}:\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    if command[0] != "uv":
+        _run_typescript_trace_probe(template.path, manifest_path, conformance_dir)
+    assert manifest_path.exists(), (
+        f"{template.name} deterministic trace test did not write {manifest_path}"
+    )
+    return load_trace_manifest(manifest_path)
+
+
+def _run_typescript_trace_probe(
+    template_dir: Path, manifest_path: Path, conformance_dir: Path
+) -> None:
+    """Run the real @mlflow/core callback against a deterministic fake exporter."""
+    from contract import assert_trace_contract
+    from normalize import normalize_mlflow_core_trace, write_trace_manifest
+
+    raw_path = manifest_path.with_suffix(".raw.json")
+    probe_path = template_dir / "tests" / ".trace-conformance.generated.test.ts"
+    probe_path.write_text(
+        """import fs from "node:fs";
+import { jest, test } from "@jest/globals";
+
+jest.mock("@mlflow/core", () => ({
+  ...(() => {
+    const spans: any[] = [];
+    let active: any = null;
+    let next = 1;
+    class Span {
+      traceId: string;
+      spanId: string;
+      parentId: string | null;
+      name: string;
+      spanType: string;
+      inputs: unknown;
+      outputs: unknown;
+      attributes: Record<string, unknown>;
+      status = { code: "UNSET" };
+      started = Date.now();
+      ended = this.started;
+      constructor(options: any) {
+        const parent = options.parent ?? active;
+        this.traceId = parent?.traceId ?? "trace:/catalog_test.schema_test.langchain_test/0123456789abcdef0123456789abcdef";
+        this.spanId = (next++).toString(16).padStart(16, "0");
+        this.parentId = parent?.spanId ?? null;
+        this.name = options.name;
+        this.spanType = options.spanType;
+        this.inputs = options.inputs;
+        this.attributes = { ...(options.attributes ?? {}) };
+        spans.push(this);
+      }
+      setInputs(value: unknown) { this.inputs = value; }
+      setOutputs(value: unknown) { this.outputs = value; }
+      setAttribute(key: string, value: unknown) { this.attributes[key] = value; }
+      setAttributes(value: Record<string, unknown>) { Object.assign(this.attributes, value); }
+      setStatus(code: string) { this.status = { code }; }
+      recordException() {}
+      end(options?: any) {
+        if (options?.outputs !== undefined) this.outputs = options.outputs;
+        if (options?.attributes) this.setAttributes(options.attributes);
+        if (options?.status) this.setStatus(options.status);
+        this.ended = Date.now();
+      }
+    }
+    return {
+      SpanType: { AGENT: "AGENT", CHAIN: "CHAIN", CHAT_MODEL: "CHAT_MODEL", LLM: "LLM", TOOL: "TOOL", RETRIEVER: "RETRIEVER" },
+      SpanStatusCode: { OK: "OK", ERROR: "ERROR" },
+      init: jest.fn(),
+      flushTraces: jest.fn(async () => undefined),
+      getCurrentActiveSpan: () => active,
+      updateCurrentTrace: ({ metadata }: any) => Object.assign(active.attributes, metadata),
+      startSpan: (options: any) => new Span(options),
+      withSpan: async (callback: any, options: any) => {
+        const span = new Span(options);
+        const previous = active;
+        active = span;
+        try {
+          const value = await callback(span);
+          span.end();
+          return value;
+        } finally {
+          active = previous;
+        }
+      },
+      __spans: spans,
+    };
+  })(),
+}));
+
+import * as mlflow from "@mlflow/core";
+import { createLangChainTracingCallback, withAgentRequestTrace } from "../src/framework/tracing.js";
+
+test("writes a real production callback manifest", async () => {
+  await withAgentRequestTrace(
+    { messages: [{ role: "user", content: "Use the clock tool" }] },
+    { sessionId: "session-1", userId: "user-1", requestId: "request-1" },
+    async (request) => {
+      const callback = createLangChainTracingCallback();
+      callback.handleChatModelStart(
+        { id: ["ChatDatabricks"] },
+        [[{ role: "user", content: "Use the clock tool" }]],
+        "model-run",
+        undefined,
+        { invocation_params: { model: "test-model", provider: "databricks" } },
+        [],
+        { ls_provider: "databricks" },
+      );
+      callback.handleLLMNewToken("tool", undefined, "model-run");
+      callback.handleLLMEnd(
+        {
+          generations: [[{ message: { content: "done", usage_metadata: { input_tokens: 7, output_tokens: 3, total_tokens: 10 }, response_metadata: { finish_reason: "stop" } } }]],
+          llmOutput: {},
+        },
+        "model-run",
+      );
+      callback.handleToolStart({ id: ["clock"] }, JSON.stringify({ zone: "UTC" }), "tool-run");
+      callback.handleToolEnd({ time: "12:00" }, "tool-run");
+      request.setOutputs({ text: "done" });
+      return { text: "done" };
+    },
+  );
+  const spans = (mlflow as any).__spans.map((span: any) => ({
+    traceId: span.traceId,
+    spanId: span.spanId,
+    parentSpanId: span.parentId,
+    name: span.name,
+    spanType: span.spanType,
+    inputs: span.inputs,
+    outputs: span.outputs,
+    status: span.status,
+    latencyMs: Math.max(0, span.ended - span.started),
+    links: [],
+    attributes: { ...span.attributes, "mlflow.spanType": span.spanType },
+  }));
+  fs.writeFileSync(
+    process.env.TRACE_CONFORMANCE_RAW!,
+    JSON.stringify({ info: { traceId: spans[0].traceId }, data: { spans } }),
+  );
+});
+"""
+    )
+    try:
+        result = _run_cmd(
+            [
+                "npm",
+                "test",
+                "--",
+                "--runInBand",
+                "tests/.trace-conformance.generated.test.ts",
+            ],
+            cwd=template_dir,
+            env={**os.environ, "TRACE_CONFORMANCE_RAW": str(raw_path)},
+            timeout=EVALUATE_TIMEOUT,
+            verbose=True,
+        )
+        assert result.returncode == 0, (
+            f"TypeScript trace probe failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        raw = json.loads(raw_path.read_text())
+        manifest = normalize_mlflow_core_trace(template_dir.name, raw)
+        assert_trace_contract(manifest)
+        write_trace_manifest(manifest_path, manifest)
+    finally:
+        probe_path.unlink(missing_ok=True)
+        raw_path.unlink(missing_ok=True)
+
+
+def execute_trace_row_query(
+    workspace,
+    warehouse_id: str,
+    otel_spans_table: str,
+    trace_id: str,
+) -> list[dict[str, object]]:
+    """Query persisted OTel spans with named SQL parameters."""
+    from databricks.sdk.service.sql import StatementParameterListItem
+
+    statement = (
+        "SELECT trace_id, span_id, parent_span_id, name, attributes\n"
+        "FROM IDENTIFIER(:otel_spans_table)\n"
+        "WHERE trace_id = :trace_id\n"
+        "ORDER BY start_time_unix_nano"
+    )
+    response = workspace.statement_execution.execute_statement(
+        statement=statement,
+        warehouse_id=warehouse_id,
+        parameters=[
+            StatementParameterListItem(
+                name="otel_spans_table", type="STRING", value=otel_spans_table
+            ),
+            StatementParameterListItem(name="trace_id", type="STRING", value=trace_id),
+        ],
+        wait_timeout="50s",
+    )
+    for _ in range(120):
+        status = getattr(response, "status", None)
+        state = getattr(getattr(status, "state", None), "value", None)
+        if state == "SUCCEEDED":
+            values = getattr(getattr(response, "result", None), "data_array", None) or []
+            return [
+                dict(zip(("trace_id", "span_id", "parent_span_id", "name", "attributes"), row))
+                for row in values
+            ]
+        if state in {"FAILED", "CANCELED", "CLOSED"}:
+            error = getattr(status, "error", None)
+            raise RuntimeError(
+                f"UC trace row query {state.lower()}: "
+                f"{getattr(error, 'message', None) or 'unknown error'}"
+            )
+        statement_id = getattr(response, "statement_id", None)
+        if not statement_id:
+            raise RuntimeError(
+                f"UC trace row query is {state!r} without a statement ID"
+            )
+        response = workspace.statement_execution.get_statement(statement_id)
+        time.sleep(1)
+    raise TimeoutError("UC trace row query did not finish after 120 polls")
 
 
 # ---------------------------------------------------------------------------

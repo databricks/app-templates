@@ -394,6 +394,16 @@ def _run_deploy(
         for attempt in range(3):
             try:
                 _query_endpoints(template, app_url, token)
+                if template.name == "agent-langgraph":
+                    from test_quickstart_e2e import _verify_uc_trace_smoke
+
+                    _verify_uc_trace_smoke(
+                        template_dir,
+                        template.dev_app_name,
+                        app_url,
+                        token,
+                        profile,
+                    )
                 last_exc = None
                 break
             except Exception as exc:

@@ -1,3 +1,5 @@
+import asyncio
+import hashlib
 import io
 import json
 import re
@@ -306,6 +308,105 @@ def test_router_error_captures_bounded_request_lifecycle_without_method_leak(
     exported = json.dumps([dict(span.attributes) for span in spans], sort_keys=True)
     assert "method-secret" not in exported
     assert "body-secret" not in exported
+
+
+def test_streamed_response_capture_stays_bounded_until_last_body(monkeypatch, tmp_path) -> None:
+    """A many-chunk SSE response must not create an unbounded in-flight buffer."""
+    _get_combined_app(monkeypatch)
+    from custom_server import tracing
+
+    _set_valid_tracing_environment(monkeypatch, tmp_path)
+    tracing.configure_mlflow_tracing()
+    exporter = _capture_spans()
+    observed_buffer_sizes: list[int] = []
+    real_bytearray = bytearray
+
+    class TrackingBytearray(real_bytearray):
+        def extend(self, value) -> None:
+            super().extend(value)
+            observed_buffer_sizes.append(len(self))
+
+    monkeypatch.setattr(tracing, "bytearray", TrackingBytearray, raising=False)
+    prefix = (
+        b'event: message\ndata: {"jsonrpc":"2.0","id":"stream-17","error":'
+        b'{"message":"authorization: Bearer stream-secret"},"padding":"'
+    )
+    padding = [f"{index:04d}".encode() + b"x" * (8 * 1024 - 4) for index in range(128)]
+    response_chunks = [prefix, *padding, b'"}\n\n']
+    complete_response = b"".join(response_chunks)
+    finished_during_send: list[int] = []
+
+    async def streaming_app(_scope, receive, send) -> None:
+        await receive()
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 503,
+                "headers": [(b"content-type", b"text/event-stream")],
+            }
+        )
+        for index, chunk in enumerate(response_chunks):
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": chunk,
+                    "more_body": index < len(response_chunks) - 1,
+                }
+            )
+            finished_during_send.append(len(exporter.get_finished_spans()))
+
+    middleware = tracing.TraceContextMiddleware(streaming_app, server_name="bounded-test")
+    request_body = json.dumps(
+        {"jsonrpc": "2.0", "id": "stream-17", "method": "tools/list", "params": {}}
+    ).encode()
+    request_messages = [{"type": "http.request", "body": request_body, "more_body": False}]
+    sent_messages: list[dict] = []
+
+    async def receive():
+        if request_messages:
+            return request_messages.pop(0)
+        return {"type": "http.disconnect"}
+
+    async def send(message) -> None:
+        sent_messages.append(message)
+
+    asyncio.run(
+        middleware(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/mcp",
+                "headers": [
+                    (key.encode("latin-1"), value.encode("latin-1"))
+                    for key, value in TRACE_HEADERS.items()
+                ],
+            },
+            receive,
+            send,
+        )
+    )
+
+    assert max(observed_buffer_sizes) <= 4 * 64 * 1024
+    assert finished_during_send and set(finished_during_send) == {0}
+    span = exporter.get_finished_spans()[0]
+    output = _attribute(span, "mlflow.spanOutputs")
+    assert output["truncated"] is True
+    assert output["originalBytes"] == len(complete_response)
+    assert output["sha256"] == hashlib.sha256(complete_response).hexdigest()
+    assert "event: message" in output["preview"]
+    assert "[REDACTED]" in output["preview"]
+    assert "stream-secret" not in json.dumps(dict(span.attributes), sort_keys=True)
+    assert _attribute(span, "mcp.request.status") == "ERROR"
+    assert _attribute(span, "mcp.request.error") == "HTTP 503"
+    assert _attribute(span, "http.response.status_code") == 503
+    assert span.status.status_code.name == "ERROR"
+    response_start = next(
+        message for message in sent_messages if message["type"] == "http.response.start"
+    )
+    response_headers = dict(response_start["headers"])
+    assert response_headers[b"x-mlflow-trace-id"] == f"tr-{REMOTE_TRACE_ID}".encode()
+    assert re.fullmatch(rb"[0-9a-f]{16}", response_headers[b"x-mlflow-span-id"])
+    assert format(span.parent.span_id, "016x") == REMOTE_PARENT_ID
 
 
 def test_startup_reports_all_missing_and_invalid_tracing_configuration(monkeypatch) -> None:

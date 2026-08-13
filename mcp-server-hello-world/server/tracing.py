@@ -34,6 +34,8 @@ REQUIRED_TRACING_ENV = (
 )
 
 _MAX_CAPTURE_BYTES = 64 * 1024
+_MAX_RESPONSE_CAPTURE_BYTES = 4 * _MAX_CAPTURE_BYTES
+_RESPONSE_PREVIEW_BYTES = _MAX_CAPTURE_BYTES // 4
 _EXPERIMENT_ID = re.compile(r"^[0-9]+$")
 _WAREHOUSE_ID = re.compile(r"^[0-9a-f]{16}$", re.IGNORECASE)
 _UC_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,254}$")
@@ -434,6 +436,39 @@ def _response_output(body: bytes) -> Any:
         return safe_trace_value(text)
 
 
+class _BoundedResponseCapture:
+    """Retain a bounded parse window while counting and hashing every response byte."""
+
+    def __init__(self) -> None:
+        self._body = bytearray()
+        self._original_bytes = 0
+        self._sha256 = hashlib.sha256()
+        self._truncated = False
+
+    def extend(self, chunk: bytes) -> None:
+        self._original_bytes += len(chunk)
+        self._sha256.update(chunk)
+        remaining = _MAX_RESPONSE_CAPTURE_BYTES - len(self._body)
+        if remaining > 0:
+            self._body.extend(chunk[:remaining])
+        if len(chunk) > remaining:
+            self._truncated = True
+
+    def __bool__(self) -> bool:
+        return self._original_bytes > 0
+
+    def output(self) -> Any:
+        if not self._truncated:
+            return _response_output(bytes(self._body))
+        preview = bytes(self._body[:_RESPONSE_PREVIEW_BYTES]).decode("utf-8", errors="replace")
+        return {
+            "truncated": True,
+            "originalBytes": self._original_bytes,
+            "sha256": self._sha256.hexdigest(),
+            "preview": safe_trace_value(preview, max_bytes=_MAX_CAPTURE_BYTES // 2),
+        }
+
+
 def _finish_request_span(
     span: Any | None,
     *,
@@ -524,7 +559,7 @@ class TraceContextMiddleware:
                         shared["span_id"] = span.span_id
                         _safe_span_call(span, "set_inputs", _request_input(bytes(body)))
 
-                    response_body = bytearray()
+                    response_capture = _BoundedResponseCapture()
                     response_status = None
 
                     async def traced_send(message):
@@ -542,7 +577,7 @@ class TraceContextMiddleware:
                                 )
                             message = {**message, "headers": response_headers}
                         elif message["type"] == "http.response.body":
-                            response_body.extend(message.get("body", b""))
+                            response_capture.extend(message.get("body", b""))
                         await send(message)
 
                     try:
@@ -563,7 +598,7 @@ class TraceContextMiddleware:
                                 RuntimeError(f"{type(error).__name__}: {safe_error}"),
                             )
                         raise
-                    output = _response_output(bytes(response_body)) if response_body else None
+                    output = response_capture.output() if response_capture else None
                     _finish_request_span(
                         span,
                         started_ns=started_ns,

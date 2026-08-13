@@ -204,7 +204,7 @@ function normalizeUsage(raw: unknown, costSources: unknown[] = []): Usage {
   );
   if (!usageAvailable || !usage) {
     const normalized: Usage = { usageAvailable: false, costAvailable: false };
-    for (const source of costSources) {
+    for (const source of [usage, ...costSources]) {
       if (addAvailableCost(normalized, source)) break;
     }
     return normalized;

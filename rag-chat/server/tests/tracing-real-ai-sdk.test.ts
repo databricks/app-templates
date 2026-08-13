@@ -329,6 +329,74 @@ describe('RAG tracing through the installed AI SDK', () => {
     );
   });
 
+  test('retains upstream cost when standardized usage is absent on a real streamText error', async () => {
+    const error = Object.assign(new Error('cost-only provider failure'), {
+      usage: { cost_usd: 0.004 },
+    });
+    state.model = providerThatErrors(error);
+
+    const response = await startRagRequest({
+      chatId: 'chat-1',
+      userId: 'ada@example.com',
+      messages: [
+        {
+          id: 'user-message',
+          role: 'user',
+          parts: [{ type: 'text', text: 'What is a lakehouse?' }],
+        },
+      ],
+    });
+    const chunks = await consume(response.stream);
+
+    expect(chunks).toContainEqual({
+      type: 'error',
+      errorText: 'cost-only provider failure',
+    });
+    const root = state.spans.find((span) => span.name === 'rag-chat.request');
+    const model = state.spans.find((span) => span.name === 'rag.generate');
+    const persistence = state.spans.find((span) => span.name === 'rag.memory.assistant');
+    const expectedUsage = {
+      usageAvailable: false,
+      costAvailable: true,
+      costUsd: 0.004,
+    };
+    expect(attribute(model, 'mlflow.spanOutputs')).toEqual({
+      text: 'Partial grounded answer',
+      partial: true,
+    });
+    expect(attribute(model, 'appkit.usage')).toEqual(expectedUsage);
+    expect(model.attributes['appkit.usage_available']).toBe(false);
+    expect(model.attributes['appkit.cost_available']).toBe(true);
+    expect(model.attributes['appkit.cost_usd']).toBe(0.004);
+    expect(attribute(model, 'mlflow.llm.cost')).toEqual({ total_cost: 0.004 });
+    expect(model.attributes['mlflow.chat.tokenUsage']).toBeUndefined();
+    expect(model.exceptions).toHaveLength(1);
+    expect(model.exceptions[0]).toMatchObject({ message: 'cost-only provider failure' });
+    expect(attribute(persistence, 'mlflow.spanOutputs')).toEqual(
+      expect.objectContaining({
+        role: 'assistant',
+        content: 'Partial grounded answer',
+      })
+    );
+    expect(attribute(root, 'appkit.usage')).toEqual(expectedUsage);
+    expect(root.attributes['appkit.usage_available']).toBe(false);
+    expect(root.attributes['appkit.cost_available']).toBe(true);
+    expect(root.attributes['appkit.cost_usd']).toBe(0.004);
+    expect(attribute(root, 'mlflow.llm.cost')).toEqual({ total_cost: 0.004 });
+    expect(root.attributes['mlflow.chat.tokenUsage']).toBeUndefined();
+    expect(attribute(root, 'mlflow.spanOutputs')).toEqual(
+      expect.objectContaining({
+        text: 'Partial grounded answer',
+        partial: true,
+        error: 'cost-only provider failure',
+        persisted: expect.objectContaining({
+          role: 'assistant',
+          content: 'Partial grounded answer',
+        }),
+      })
+    );
+  });
+
   test('retains explicit zero usage from a real streamText error', async () => {
     const error = Object.assign(new Error('zero-usage provider failure'), {
       usage: {

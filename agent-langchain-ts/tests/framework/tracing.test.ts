@@ -797,7 +797,10 @@ describe("MLflow tracing", () => {
     expect(tools[0].outputs).toEqual({ temperature: 21, conditions: "sunny" });
     expect(tools[0].status.code).toBe("STATUS_CODE_OK");
     expect(tools[1].inputs).toEqual({ date: "tomorrow" });
-    expect(tools[1].outputs).toEqual({ error: "calendar unavailable" });
+    expect(tools[1].outputs).toEqual({
+      partial_output: { available: false, reason: "no output produced" },
+      error: "calendar unavailable",
+    });
     expect(tools[1].status.code).toBe("STATUS_CODE_ERROR");
     expect(tools[1].events).toEqual([
       { name: "exception", attributes: { message: "calendar unavailable" } },
@@ -1021,7 +1024,10 @@ describe("MLflow tracing", () => {
       (span) => span.spanType === "AGENT" && span.parentId === null,
     );
     expect(root?.status.code).toBe("STATUS_CODE_ERROR");
-    expect(root?.outputs).toEqual({ error: "Authorization: [REDACTED]" });
+    expect(root?.outputs).toEqual({
+      partial_output: { available: false, reason: "no output produced" },
+      error: "Authorization: [REDACTED]",
+    });
     expect(JSON.stringify(root)).not.toContain("request-secret");
   });
 
@@ -1041,7 +1047,10 @@ describe("MLflow tracing", () => {
       (span) => span.spanType === "AGENT" && span.parentId === null,
     );
     expect(root?.status.code).toBe("STATUS_CODE_ERROR");
-    expect(root?.outputs).toEqual({ error: "Authorization: [REDACTED]" });
+    expect(root?.outputs).toEqual({
+      partial_output: { available: false, reason: "no output produced" },
+      error: "Authorization: [REDACTED]",
+    });
     expect(JSON.stringify(root)).not.toContain("stream-secret");
   });
 

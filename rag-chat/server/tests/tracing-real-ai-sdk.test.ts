@@ -1,4 +1,5 @@
 import type { LanguageModel } from 'ai';
+import { writeFileSync } from 'node:fs';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 type LanguageModelV3 = Extract<LanguageModel, { readonly specificationVersion: 'v3' }>;
@@ -171,6 +172,54 @@ async function consume(stream: ReadableStream) {
   return chunks;
 }
 
+function writeFailureManifest(): void {
+  const destination = process.env.TRACE_CONFORMANCE_FAILURE_MANIFEST;
+  if (!destination) return;
+  const root = state.spans.find((span) => !span.parent && span.attributes['mlflow.spanType'] === 'AGENT');
+  const spans = state.spans.map((span) => {
+    const usage = attribute(span, 'mlflow.chat.tokenUsage') ?? {};
+    const spanType = String(span.attributes['mlflow.spanType']);
+    return {
+      name: span.name,
+      span_type: spanType,
+      span_id: span.spanId,
+      parent_span_id: span.parent?.spanId ?? null,
+      inputs: attribute(span, 'mlflow.spanInputs'),
+      outputs: attribute(span, 'mlflow.spanOutputs'),
+      status: (span.status as { code?: number } | undefined)?.code === 2 ? 'ERROR' : 'OK',
+      latency_ms: 0,
+      model: span.attributes['appkit.model'] ?? null,
+      provider: span.attributes['appkit.provider'] ?? null,
+      usage: {
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+        total_tokens: usage.total_tokens,
+      },
+      cost_usd: span.attributes['appkit.cost_usd'] ?? null,
+      cost_available: span.attributes['appkit.cost_available'] === true,
+      links: [],
+      attributes: {
+        ...span.attributes,
+        ...(spanType === 'AGENT'
+          ? {
+              app_id: span.attributes['appkit.app.name'],
+              user_id: span.attributes['mlflow.trace.user'],
+              session_id: span.attributes['mlflow.trace.session'],
+            }
+          : {}),
+      },
+    };
+  });
+  writeFileSync(
+    destination,
+    `${JSON.stringify({
+      template: process.env.TRACE_CONFORMANCE_TEMPLATE ?? 'rag-chat',
+      trace_id: root.traceId,
+      spans,
+    })}\n`
+  );
+}
+
 describe('RAG tracing through the installed AI SDK', () => {
   beforeEach(() => {
     state.spans.length = 0;
@@ -247,8 +296,8 @@ describe('RAG tracing through the installed AI SDK', () => {
     });
     const model = state.spans.find((span) => span.name === 'rag.generate');
     expect(attribute(model, 'mlflow.spanOutputs')).toEqual({
-      text: 'Partial grounded answer',
-      partial: true,
+      partial_output: { text: 'Partial grounded answer', partial: true },
+      error: 'provider stream failed',
     });
     expect(attribute(model, 'appkit.usage')).toEqual({
       usageAvailable: true,
@@ -268,6 +317,7 @@ describe('RAG tracing through the installed AI SDK', () => {
           params?.[2] === 'Partial grounded answer'
       )
     ).toBe(true);
+    writeFailureManifest();
   });
 
   test('marks usage and cost unavailable when a real streamText error has no usage metadata', async () => {
@@ -294,8 +344,8 @@ describe('RAG tracing through the installed AI SDK', () => {
     const model = state.spans.find((span) => span.name === 'rag.generate');
     const persistence = state.spans.find((span) => span.name === 'rag.memory.assistant');
     expect(attribute(model, 'mlflow.spanOutputs')).toEqual({
-      text: 'Partial grounded answer',
-      partial: true,
+      partial_output: { text: 'Partial grounded answer', partial: true },
+      error: 'plain provider failure',
     });
     expect(attribute(model, 'appkit.usage')).toEqual({
       usageAvailable: false,
@@ -318,13 +368,14 @@ describe('RAG tracing through the installed AI SDK', () => {
     expect(root.attributes['mlflow.chat.tokenUsage']).toBeUndefined();
     expect(attribute(root, 'mlflow.spanOutputs')).toEqual(
       expect.objectContaining({
-        text: 'Partial grounded answer',
-        partial: true,
-        error: 'plain provider failure',
-        persisted: expect.objectContaining({
-          role: 'assistant',
-          content: 'Partial grounded answer',
+        partial_output: expect.objectContaining({
+          text: 'Partial grounded answer',
+          persisted: expect.objectContaining({
+            role: 'assistant',
+            content: 'Partial grounded answer',
+          }),
         }),
+        error: 'plain provider failure',
       })
     );
   });
@@ -361,8 +412,8 @@ describe('RAG tracing through the installed AI SDK', () => {
       costUsd: 0.004,
     };
     expect(attribute(model, 'mlflow.spanOutputs')).toEqual({
-      text: 'Partial grounded answer',
-      partial: true,
+      partial_output: { text: 'Partial grounded answer', partial: true },
+      error: 'cost-only provider failure',
     });
     expect(attribute(model, 'appkit.usage')).toEqual(expectedUsage);
     expect(model.attributes['appkit.usage_available']).toBe(false);
@@ -386,13 +437,14 @@ describe('RAG tracing through the installed AI SDK', () => {
     expect(root.attributes['mlflow.chat.tokenUsage']).toBeUndefined();
     expect(attribute(root, 'mlflow.spanOutputs')).toEqual(
       expect.objectContaining({
-        text: 'Partial grounded answer',
-        partial: true,
-        error: 'cost-only provider failure',
-        persisted: expect.objectContaining({
-          role: 'assistant',
-          content: 'Partial grounded answer',
+        partial_output: expect.objectContaining({
+          text: 'Partial grounded answer',
+          persisted: expect.objectContaining({
+            role: 'assistant',
+            content: 'Partial grounded answer',
+          }),
         }),
+        error: 'cost-only provider failure',
       })
     );
   });
@@ -436,8 +488,8 @@ describe('RAG tracing through the installed AI SDK', () => {
       costAvailable: false,
     };
     expect(attribute(model, 'mlflow.spanOutputs')).toEqual({
-      text: 'Partial grounded answer',
-      partial: true,
+      partial_output: { text: 'Partial grounded answer', partial: true },
+      error: 'zero-usage provider failure',
     });
     expect(attribute(model, 'appkit.usage')).toEqual(expectedUsage);
     expect(model.attributes['appkit.usage_available']).toBe(true);
@@ -460,13 +512,14 @@ describe('RAG tracing through the installed AI SDK', () => {
     expect(attribute(root, 'mlflow.chat.tokenUsage')).toEqual(attribute(model, 'mlflow.chat.tokenUsage'));
     expect(attribute(root, 'mlflow.spanOutputs')).toEqual(
       expect.objectContaining({
-        text: 'Partial grounded answer',
-        partial: true,
-        error: 'zero-usage provider failure',
-        persisted: expect.objectContaining({
-          role: 'assistant',
-          content: 'Partial grounded answer',
+        partial_output: expect.objectContaining({
+          text: 'Partial grounded answer',
+          persisted: expect.objectContaining({
+            role: 'assistant',
+            content: 'Partial grounded answer',
+          }),
         }),
+        error: 'zero-usage provider failure',
       })
     );
   });

@@ -234,6 +234,14 @@ def _remote_value(response: Any, *keys: str) -> Any:
     return None
 
 
+def _response_header(headers: Mapping[str, Any], *names: str) -> Any:
+    normalized = {str(key).lower(): value for key, value in headers.items()}
+    return next(
+        (normalized[name.lower()] for name in names if name.lower() in normalized),
+        None,
+    )
+
+
 def _remote_usage(response: Any) -> dict[str, Any]:
     raw = getattr(response, "usage", None)
     if hasattr(raw, "model_dump"):
@@ -288,7 +296,11 @@ async def traced_remote_agent_call(
         carrier, context=set_span_in_context(span._span)
     )
     try:
-        response = await request(carrier)
+        result = await request(carrier)
+        if isinstance(result, tuple) and len(result) == 2:
+            response, response_headers = result
+        else:
+            response, response_headers = result, {}
     except BaseException as error:
         safe_error = safe_error_message(error)
         usage = {
@@ -319,10 +331,46 @@ async def traced_remote_agent_call(
         manager.__exit__(None, None, None)
         raise
 
-    remote_trace_id = _remote_value(response, "trace_id", "traceId", "mlflow_trace_id")
+    remote_trace_id = _response_header(
+        response_headers,
+        "x-mlflow-trace-id",
+        "x-databricks-trace-id",
+    ) or _remote_value(response, "trace_id", "traceId", "mlflow_trace_id")
     remote_span_id = _remote_value(
         response, "root_span_id", "rootSpanId", "span_id", "spanId"
+    ) or _response_header(
+        response_headers,
+        "x-mlflow-span-id",
+        "x-databricks-span-id",
     )
+    if not remote_trace_id or not remote_span_id:
+        safe_error = "Remote response did not provide verified trace and span identity"
+        span.set_outputs(
+            {
+                "error": safe_error,
+                "partial_output": safe_trace_value(
+                    getattr(response, "output_text", response)
+                ),
+            }
+        )
+        span.set_attributes(
+            {
+                "appkit.remote.trace_id": remote_trace_id,
+                "appkit.remote.root_span_id": remote_span_id,
+                "appkit.remote.status": "ERROR",
+                "appkit.remote.error": safe_error,
+                "appkit.remote.latency_ms": max(
+                    0.0, (time.perf_counter_ns() - started_ns) / 1_000_000
+                ),
+                "appkit.remote.relation": "unverified",
+                "appkit.usage": _remote_usage(response),
+                "appkit.cost_available": False,
+            }
+        )
+        span.record_exception(RuntimeError(safe_error))
+        span.set_status("ERROR")
+        manager.__exit__(None, None, None)
+        raise RuntimeError(safe_error)
     local_trace_hex = span.trace_id.removeprefix("tr-")
     remote_trace_hex = (
         str(remote_trace_id).removeprefix("tr-") if remote_trace_id else None
@@ -1042,7 +1090,15 @@ def _install_single_mlflow_agent_processor() -> None:
                 span.span_data.input = json.dumps(
                     safe_trace_value(span.span_data.input)
                 )
-                span.span_data.output = safe_trace_value(span.span_data.output)
+                if span.error:
+                    span.span_data.output = {
+                        "partial_output": unavailable_partial_output(),
+                        "error": safe_error_message(
+                            span.error.get("message", "function failed")
+                        ),
+                    }
+                else:
+                    span.span_data.output = safe_trace_value(span.span_data.output)
             super().on_span_end(span)
 
     processors = get_trace_provider()._multi_processor._processors

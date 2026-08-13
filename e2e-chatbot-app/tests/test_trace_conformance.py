@@ -49,6 +49,41 @@ def _create_provider_trace(mlflow):
         return root.trace_id
 
 
+def _create_provider_failure_trace(mlflow):
+    usage = {"inputTokens": 2, "outputTokens": 1, "totalTokens": 3}
+    partial = {"text": "partial"}
+    with mlflow.start_span(name="remote.agent", span_type="AGENT") as root:
+        root.set_inputs({"input": "INJECT_TRACE_FAILURE"})
+        root.set_attributes(
+            {
+                "appkit.usage": {**usage, "costAvailable": False},
+                "appkit.cost_available": False,
+            }
+        )
+        mlflow.update_current_trace(
+            metadata={
+                "appkit.app.name": "remote-agent",
+                "mlflow.trace.user": "local-user",
+                "mlflow.trace.session": "local-session",
+            }
+        )
+        with mlflow.start_span(name="remote.model", span_type="CHAT_MODEL") as model:
+            model.set_inputs({"messages": ["INJECT_TRACE_FAILURE"]})
+            model.set_outputs({"partial_output": partial, "error": "injected failure"})
+            model.set_attributes(
+                {
+                    "appkit.model": "test-model",
+                    "appkit.provider": "databricks",
+                    "appkit.usage": {**usage, "costAvailable": False},
+                    "appkit.cost_available": False,
+                }
+            )
+            model.set_status("ERROR")
+        root.set_outputs({"partial_output": partial, "error": "injected failure"})
+        root.set_status("ERROR")
+        return root.trace_id
+
+
 def test_deterministic_remote_agent_response_is_bound_to_conformant_mlflow_and_uc(
     monkeypatch,
     tmp_path,
@@ -96,6 +131,11 @@ def test_deterministic_remote_agent_response_is_bound_to_conformant_mlflow_and_u
         assert_trace_contract(mlflow_manifest)
         if destination := os.environ.get("TRACE_CONFORMANCE_MANIFEST"):
             write_trace_manifest(destination, mlflow_manifest)
+        if failure_destination := os.environ.get("TRACE_CONFORMANCE_FAILURE_MANIFEST"):
+            failure_trace_id = _create_provider_failure_trace(mlflow)
+            failure_manifest = retrieve_remote_trace(failure_trace_id)
+            assert_trace_contract(failure_manifest)
+            write_trace_manifest(failure_destination, failure_manifest)
     finally:
         mlflow.set_tracking_uri(previous_tracking_uri)
 

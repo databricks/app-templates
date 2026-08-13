@@ -6,12 +6,16 @@ A Databricks App powered by [AppKit](https://developers.databricks.com/docs/appk
 - **Analytics** -- SQL query execution against Databricks SQL Warehouses
 - **Lakebase** -- Fully managed Postgres database for transactional (OLTP) workloads on Databricks
 - **Genie** -- AI/BI Genie conversational interface for natural language data queries
+- **Agents** -- Composed planner/helper agents with MLflow tracing persisted in Unity Catalog
+- **Files** -- Governed Databricks Volume browsing
+- **Serving** -- Databricks Model Serving invocation
 - **Server** -- Express HTTP server with static file serving and Vite dev mode
 
 ## Prerequisites
 
 - Node.js v22+ and npm
 - Databricks CLI (for deployment)
+- [uv](https://docs.astral.sh/uv/) (for MLflow UC provisioning)
 - Access to a Databricks workspace
 
 ## Databricks Authentication
@@ -73,6 +77,18 @@ databricks bundle deploy --profile production
 **Note:** Personal Access Tokens (PATs) are legacy authentication. OAuth is strongly recommended for better security.
 
 ## Getting Started
+### First-run agent tracing setup
+
+The generated planner and helper emit one semantic trace per request. Before running the app, identify the deployed app service principal application ID, then provision the experiment, immutable UC trace location, and explicit grants:
+
+```bash
+npm install
+npm run setup -- --mlflow-runtime-principal <APP_SERVICE_PRINCIPAL_APPLICATION_ID> --mlflow-warehouse-id <SQL_WAREHOUSE_ID>
+```
+
+Setup grants that runtime identity `USE CATALOG`, `USE SCHEMA`, and explicit `MODIFY` and `SELECT` on every trace table, then verifies each grant. It fails if the runtime principal cannot be resolved or authorized; `ALL PRIVILEGES` is not accepted as proof.
+
+Run `npm run dev`, open the Agents page, and use the **Open trace in MLflow** link after a turn. Failed root, model, parser, and tool spans retain bounded, redacted `{ partial_output, error }` outputs; runtime export failures do not replace the agent response, while missing startup tracing configuration is fatal.
 
 ### Install Dependencies
 

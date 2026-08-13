@@ -34,6 +34,7 @@ REQUIRED_TRACING_ENV = (
 )
 
 _MAX_CAPTURE_BYTES = 64 * 1024
+_MAX_REQUEST_BODY_BYTES = 1024 * 1024
 _MAX_RESPONSE_CAPTURE_BYTES = 4 * _MAX_CAPTURE_BYTES
 _RESPONSE_PREVIEW_BYTES = _MAX_CAPTURE_BYTES // 4
 _MAX_STREAM_ERROR_BYTES = 2 * 1024
@@ -700,13 +701,32 @@ class TraceContextMiddleware:
         with propagation:
             started_ns = perf_counter_ns()
             body = bytearray()
+            request_too_large = False
             while True:
                 message = await receive()
                 if message["type"] != "http.request":
                     break
-                body.extend(message.get("body", b""))
+                chunk = message.get("body", b"")
+                if len(body) + len(chunk) > _MAX_REQUEST_BODY_BYTES:
+                    request_too_large = True
+                    break
+                body.extend(chunk)
                 if not message.get("more_body", False):
                     break
+            if request_too_large:
+                payload = b'{"error":"request body too large"}'
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": 413,
+                        "headers": [
+                            (b"content-type", b"application/json"),
+                            (b"content-length", str(len(payload)).encode("ascii")),
+                        ],
+                    }
+                )
+                await send({"type": "http.response.body", "body": payload})
+                return
             method, request_id = _jsonrpc_identity(bytes(body))
             delivered = False
 

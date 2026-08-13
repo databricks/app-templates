@@ -30,7 +30,10 @@ import type {
   InvokeParams,
 } from "./framework/agent-interface.js";
 import { getAllTools } from "./tools.js";
-import { createLangChainTracingCallback } from "./framework/tracing.js";
+import {
+  createLangChainTracingCallback,
+  sanitizePublicError,
+} from "./framework/tracing.js";
 
 /**
  * Agent configuration
@@ -133,10 +136,15 @@ export class StandardAgent implements AgentInterface {
       new HumanMessage(input),
     ];
 
-    const result = await this.agent.invoke(
-      { messages },
-      { callbacks: [createLangChainTracingCallback()] },
-    );
+    let result: Awaited<ReturnType<typeof this.agent.invoke>>;
+    try {
+      result = await this.agent.invoke(
+        { messages },
+        { callbacks: [createLangChainTracingCallback()] },
+      );
+    } catch (error) {
+      throw sanitizePublicError(error);
+    }
 
     const finalMessages = result.messages || [];
     const lastMessage = finalMessages[finalMessages.length - 1];
@@ -185,132 +193,136 @@ export class StandardAgent implements AgentInterface {
       { version: "v2", callbacks: [createLangChainTracingCallback()] },
     );
 
-    for await (const event of eventStream) {
-      // Tool call started — emit function_call output item
-      if (event.event === "on_tool_start") {
-        const callId = `call_${randomUUID()}`;
-        toolCallIds.set(`${event.name}_${event.run_id}`, callId);
+    try {
+      for await (const event of eventStream) {
+        // Tool call started — emit function_call output item
+        if (event.event === "on_tool_start") {
+          const callId = `call_${randomUUID()}`;
+          toolCallIds.set(`${event.name}_${event.run_id}`, callId);
 
-        const fcItem: ResponseFunctionToolCall = {
-          id: `fc_${randomUUID()}`,
-          call_id: callId,
-          name: event.name,
-          arguments: JSON.stringify(event.data?.input || {}),
-          type: "function_call",
+          const fcItem: ResponseFunctionToolCall = {
+            id: `fc_${randomUUID()}`,
+            call_id: callId,
+            name: event.name,
+            arguments: JSON.stringify(event.data?.input || {}),
+            type: "function_call",
+            status: "completed",
+          };
+
+          const currentIndex = outputIndex++;
+
+          const added: ResponseOutputItemAddedEvent = {
+            type: "response.output_item.added",
+            item: fcItem,
+            output_index: currentIndex,
+            sequence_number: seqNum++,
+          };
+          yield added;
+
+          const done: ResponseOutputItemDoneEvent = {
+            type: "response.output_item.done",
+            item: fcItem,
+            output_index: currentIndex,
+            sequence_number: seqNum++,
+          };
+          yield done;
+        }
+
+        // Tool result received — emit function_call_output item
+        if (event.event === "on_tool_end") {
+          const toolKey = `${event.name}_${event.run_id}`;
+          const callId = toolCallIds.get(toolKey) || `call_${randomUUID()}`;
+          toolCallIds.delete(toolKey);
+
+          const outputItem = {
+            id: `fco_${randomUUID()}`,
+            call_id: callId,
+            output: JSON.stringify(event.data?.output || ""),
+            type: "function_call_output" as const,
+          };
+
+          const currentIndex = outputIndex++;
+
+          yield {
+            type: "response.output_item.added",
+            item: outputItem,
+            output_index: currentIndex,
+            sequence_number: seqNum++,
+          } as unknown as ResponseStreamEvent;
+
+          yield {
+            type: "response.output_item.done",
+            item: outputItem,
+            output_index: currentIndex,
+            sequence_number: seqNum++,
+          } as unknown as ResponseStreamEvent;
+        }
+
+        // Text chunk from LLM
+        if (event.event === "on_chat_model_stream") {
+          const content = event.data?.chunk?.content;
+          if (content && typeof content === "string") {
+            // Emit output_item.added for the text message on first delta
+            if (textOutputIndex === -1) {
+              textOutputIndex = outputIndex++;
+
+              const msgItem: ResponseOutputMessage = {
+                id: textItemId,
+                type: "message",
+                role: "assistant",
+                status: "in_progress",
+                content: [],
+              };
+              const added: ResponseOutputItemAddedEvent = {
+                type: "response.output_item.added",
+                item: msgItem,
+                output_index: textOutputIndex,
+                sequence_number: seqNum++,
+              };
+              yield added;
+            }
+
+            const delta: ResponseTextDeltaEvent = {
+              type: "response.output_text.delta",
+              item_id: textItemId,
+              output_index: textOutputIndex,
+              content_index: 0,
+              delta: content,
+              logprobs: [],
+              sequence_number: seqNum++,
+            };
+            yield delta;
+          }
+        }
+      }
+
+      // Close the text output item if we streamed any text
+      if (textOutputIndex !== -1) {
+        const msgItem: ResponseOutputMessage = {
+          id: textItemId,
+          type: "message",
+          role: "assistant",
           status: "completed",
+          content: [],
         };
-
-        const currentIndex = outputIndex++;
-
-        const added: ResponseOutputItemAddedEvent = {
-          type: "response.output_item.added",
-          item: fcItem,
-          output_index: currentIndex,
-          sequence_number: seqNum++,
-        };
-        yield added;
-
         const done: ResponseOutputItemDoneEvent = {
           type: "response.output_item.done",
-          item: fcItem,
-          output_index: currentIndex,
+          item: msgItem,
+          output_index: textOutputIndex,
           sequence_number: seqNum++,
         };
         yield done;
       }
 
-      // Tool result received — emit function_call_output item
-      if (event.event === "on_tool_end") {
-        const toolKey = `${event.name}_${event.run_id}`;
-        const callId = toolCallIds.get(toolKey) || `call_${randomUUID()}`;
-        toolCallIds.delete(toolKey);
-
-        const outputItem = {
-          id: `fco_${randomUUID()}`,
-          call_id: callId,
-          output: JSON.stringify(event.data?.output || ""),
-          type: "function_call_output" as const,
-        };
-
-        const currentIndex = outputIndex++;
-
-        yield {
-          type: "response.output_item.added",
-          item: outputItem,
-          output_index: currentIndex,
-          sequence_number: seqNum++,
-        } as unknown as ResponseStreamEvent;
-
-        yield {
-          type: "response.output_item.done",
-          item: outputItem,
-          output_index: currentIndex,
-          sequence_number: seqNum++,
-        } as unknown as ResponseStreamEvent;
-      }
-
-      // Text chunk from LLM
-      if (event.event === "on_chat_model_stream") {
-        const content = event.data?.chunk?.content;
-        if (content && typeof content === "string") {
-          // Emit output_item.added for the text message on first delta
-          if (textOutputIndex === -1) {
-            textOutputIndex = outputIndex++;
-
-            const msgItem: ResponseOutputMessage = {
-              id: textItemId,
-              type: "message",
-              role: "assistant",
-              status: "in_progress",
-              content: [],
-            };
-            const added: ResponseOutputItemAddedEvent = {
-              type: "response.output_item.added",
-              item: msgItem,
-              output_index: textOutputIndex,
-              sequence_number: seqNum++,
-            };
-            yield added;
-          }
-
-          const delta: ResponseTextDeltaEvent = {
-            type: "response.output_text.delta",
-            item_id: textItemId,
-            output_index: textOutputIndex,
-            content_index: 0,
-            delta: content,
-            logprobs: [],
-            sequence_number: seqNum++,
-          };
-          yield delta;
-        }
-      }
-    }
-
-    // Close the text output item if we streamed any text
-    if (textOutputIndex !== -1) {
-      const msgItem: ResponseOutputMessage = {
-        id: textItemId,
-        type: "message",
-        role: "assistant",
-        status: "completed",
-        content: [],
-      };
-      const done: ResponseOutputItemDoneEvent = {
-        type: "response.output_item.done",
-        item: msgItem,
-        output_index: textOutputIndex,
+      // Signal end of response.
+      yield {
+        type: "response.completed",
         sequence_number: seqNum++,
-      };
-      yield done;
+        response: {} as any,
+      } as unknown as ResponseStreamEvent;
+    } catch (error) {
+      throw sanitizePublicError(error);
     }
-
-    // Signal end of response.
-    yield {
-      type: "response.completed",
-      sequence_number: seqNum++,
-      response: {} as any,
-    } as unknown as ResponseStreamEvent;
   }
 }
 

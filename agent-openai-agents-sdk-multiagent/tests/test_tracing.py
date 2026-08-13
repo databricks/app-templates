@@ -202,12 +202,17 @@ def test_real_runner_remote_handoffs_propagate_and_link(monkeypatch, tmp_path):
                 "cost_usd": 0.01,
             },
             "user": None,
-            "metadata": {
-                "trace_id": remote_trace_id,
-                "root_span_id": remote_span_id,
-            },
+            "metadata": {},
         }
-        return httpx.Response(200, json=payload, request=request)
+        return httpx.Response(
+            200,
+            json=payload,
+            headers={
+                "X-MLflow-Trace-Id": remote_trace_id,
+                "x-MlFlOw-SpAn-Id": remote_span_id,
+            },
+            request=request,
+        )
 
     remote_client = AsyncOpenAI(
         api_key="remote-key",
@@ -264,6 +269,10 @@ def test_real_runner_remote_handoffs_propagate_and_link(monkeypatch, tmp_path):
         for item in final_wire_requests
     )
     traceparents = [item["headers"]["traceparent"] for item in final_wire_requests]
+    assert all(
+        item["headers"]["x-mlflow-return-trace-id"] == "true"
+        for item in final_wire_requests
+    )
     assert len(set(traceparents)) == 2
     assert [item["body"]["model"] for item in final_wire_requests] == [
         "apps/specialist-app",
@@ -369,15 +378,16 @@ def test_real_runner_remote_handoffs_propagate_and_link(monkeypatch, tmp_path):
     assert remote_spans[1].get_attribute("appkit.remote.relation") == "linked"
     assert len(remote_spans[1].links) == 1
     assert remote_spans[1].links[0].span_id == "3333333333333333"
-    assert len(model_spans) == 3
+    assert len(model_spans) == 5
     assert all(span.parent_id is not None for span in model_spans + remote_spans)
     assert all(
         span.trace_id == roots[0].trace_id for span in model_spans + remote_spans
     )
     assert roots[0].get_attribute("appkit.usage") == {
-        "inputTokens": 36,
-        "outputTokens": 7,
-        "totalTokens": 43,
+        "inputTokens": 44,
+        "outputTokens": 11,
+        "totalTokens": 55,
+        "cacheReadInputTokens": 0,
         "costAvailable": False,
     }
     serialized = json.dumps([span.to_dict() for span in trace.data.spans])
@@ -451,9 +461,12 @@ def test_real_runner_failed_remote_has_stable_safe_schema(monkeypatch, tmp_path)
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(local_transport)),
     )
 
-    class FailingResponses:
+    class FailingRawResponses:
         async def create(self, **_kwargs):
             raise RuntimeError("authorization Bearer remotefailuresecret")
+
+    class FailingResponses:
+        with_raw_response = FailingRawResponses()
 
     remote_client = SimpleNamespace(responses=FailingResponses())
     clients = iter([local_client, remote_client])

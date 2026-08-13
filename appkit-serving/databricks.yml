@@ -11,6 +11,10 @@ resources:
       name: "appkit-serving"
       description: "Node.js app with Databricks Model Serving endpoint integration"
       source_code_path: ./
+
+      # Start the app automatically on deploy.
+      lifecycle:
+        started: true
       user_api_scopes:
         - serving.serving-endpoints
 

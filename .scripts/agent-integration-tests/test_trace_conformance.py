@@ -83,6 +83,41 @@ def test_generated_owner_runs_the_full_conformance_file(monkeypatch, tmp_path):
     assert kwargs["cwd"] == owner
 
 
+def test_local_runner_requires_distinct_success_and_injected_failure_manifests(
+    monkeypatch, tmp_path
+):
+    import helpers
+
+    template_path = tmp_path / "single-manifest-owner"
+    template_path.mkdir()
+    success = tmp_path / "success.json"
+    failure = tmp_path / "failure.json"
+    success.write_text('{"template":"owner","trace_id":"one","spans":[]}\n')
+
+    monkeypatch.setattr(
+        helpers,
+        "_run_cmd",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    template = SimpleNamespace(
+        name="owner",
+        path=template_path,
+        local_test_command=("npx", "vitest", "run"),
+    )
+
+    with pytest.raises(AssertionError, match="injected-failure manifest"):
+        run_local_trace_test(template, success, failure)
+
+
+def test_generated_appkit_consumers_use_published_060_runtime():
+    for name in ("appkit-agents", "appkit-all-in-one", "rag-chat"):
+        package = __import__("json").loads(
+            (REPO_ROOT / name / "package.json").read_text()
+        )
+        assert package["dependencies"]["@databricks/appkit"] == "0.60.0"
+        assert package["dependencies"]["@databricks/appkit-ui"] == "0.60.0"
+
+
 def test_primary_template_policy_is_derived_from_behavior():
     discovered = [
         template
@@ -102,13 +137,24 @@ def test_primary_template_policy_is_derived_from_behavior():
     ids=lambda template: template.name,
 )
 def test_deterministic_template_turn_writes_a_conformant_manifest(template, tmp_path):
-    manifest_path = tmp_path / f"{template.name}.json"
+    manifest_path = tmp_path / f"{template.name}.success.json"
+    failure_manifest_path = tmp_path / f"{template.name}.failure.json"
 
-    manifest = run_local_trace_test(template, manifest_path)
+    success, failure = run_local_trace_test(
+        template, manifest_path, failure_manifest_path
+    )
 
     assert manifest_path.exists()
-    assert manifest.template == template.name
-    assert_trace_contract(manifest)
+    assert failure_manifest_path.exists()
+    for manifest in (success, failure):
+        assert manifest.template == template.name
+        assert_trace_contract(manifest)
+    assert all(span.status != "ERROR" for span in success.spans), (
+        f"{template.name} success manifest contains an ERROR span"
+    )
+    assert any(span.status == "ERROR" for span in failure.spans), (
+        f"{template.name} failure manifest did not execute a real failure"
+    )
 
 
 class _StatementExecution:

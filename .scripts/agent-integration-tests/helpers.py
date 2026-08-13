@@ -303,7 +303,7 @@ def uv_sync(template_dir: Path, max_attempts: int = 3):
             )
             time.sleep(10)
 
-    _log(f"  uv sync failed online; falling back to UV_OFFLINE=true (cache-only)...")
+    _log("  uv sync failed online; falling back to UV_OFFLINE=true (cache-only)...")
     env = os.environ.copy()
     env["UV_OFFLINE"] = "true"
     result = _run_cmd(
@@ -729,8 +729,10 @@ def query_with_openai_sdk(
     return output_text
 
 
-def run_local_trace_test(template, manifest_path: Path):
-    """Run a template's real deterministic trace suite and load its manifest."""
+def run_local_trace_test(
+    template, manifest_path: Path, failure_manifest_path: Path | None = None
+):
+    """Run a real deterministic suite and require success plus injected failure."""
     from template_config import REPO_ROOT
 
     conformance_dir = REPO_ROOT / ".scripts" / "trace-conformance"
@@ -746,6 +748,8 @@ def run_local_trace_test(template, manifest_path: Path):
             "TRACE_CONFORMANCE_TEMPLATE": template.name,
         }
     )
+    if failure_manifest_path is not None:
+        env["TRACE_CONFORMANCE_FAILURE_MANIFEST"] = str(failure_manifest_path)
     existing_pythonpath = env.get("PYTHONPATH")
     env["PYTHONPATH"] = os.pathsep.join(
         value for value in (str(conformance_dir), existing_pythonpath) if value
@@ -778,16 +782,34 @@ def run_local_trace_test(template, manifest_path: Path):
         f"deterministic trace test failed for {template.name}:\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
     )
-    if command[0] not in {"uv", "npx"} and not manifest_path.exists():
-        _run_typescript_trace_probe(template.path, manifest_path, conformance_dir)
+    if command[0] not in {"uv", "npx"} and (
+        not manifest_path.exists()
+        or (failure_manifest_path is not None and not failure_manifest_path.exists())
+    ):
+        _run_typescript_trace_probe(
+            template.path,
+            manifest_path,
+            conformance_dir,
+            failure_manifest_path,
+        )
     assert manifest_path.exists(), (
         f"{template.name} deterministic trace test did not write {manifest_path}"
     )
-    return load_trace_manifest(manifest_path)
+    success = load_trace_manifest(manifest_path)
+    if failure_manifest_path is None:
+        return success
+    assert failure_manifest_path.exists(), (
+        f"{template.name} deterministic trace test did not write an "
+        f"injected-failure manifest at {failure_manifest_path}"
+    )
+    return success, load_trace_manifest(failure_manifest_path)
 
 
 def _run_typescript_trace_probe(
-    template_dir: Path, manifest_path: Path, conformance_dir: Path
+    template_dir: Path,
+    manifest_path: Path,
+    conformance_dir: Path,
+    failure_manifest_path: Path | None = None,
 ) -> None:
     """Run the real @mlflow/core callback against a deterministic fake exporter."""
     from contract import assert_trace_contract
@@ -806,7 +828,7 @@ import { createLangChainTracingCallback, withAgentRequestTrace } from "../src/fr
 
 test("writes a real production callback manifest", async () => {
   const spans: any[] = [];
-  let traceMetadata: Record<string, unknown> = {};
+  const traceMetadata = new Map<string, Record<string, unknown>>();
   const server = http.createServer((request, response) => {
     let body = "";
     request.setEncoding("utf8");
@@ -820,7 +842,7 @@ test("writes a real production callback manifest", async () => {
           process.env.TRACE_CONFORMANCE_ARTIFACTS!,
         ).href,
       };
-      traceMetadata = traceInfo.trace_metadata ?? {};
+      traceMetadata.set(traceInfo.trace_id, traceInfo.trace_metadata ?? {});
       response.setHeader("content-type", "application/json");
       response.end(JSON.stringify({ trace: { trace_info: traceInfo } }));
     });
@@ -864,6 +886,29 @@ test("writes a real production callback manifest", async () => {
         return { text: "done" };
       },
     );
+    try {
+      await withAgentRequestTrace(
+        { messages: [{ role: "user", content: "INJECT_TRACE_FAILURE" }] },
+        { sessionId: "session-failure", userId: "user-1", requestId: "request-failure" },
+        async () => {
+          const callback = createLangChainTracingCallback();
+          callback.handleChatModelStart(
+            { id: ["ChatDatabricks"] },
+            [[{ role: "user", content: "INJECT_TRACE_FAILURE" }]],
+            "failed-model-run",
+            undefined,
+            { invocation_params: { model: "test-model", provider: "databricks" } },
+            [],
+            { ls_provider: "databricks" },
+          );
+          callback.handleLLMNewToken("partial", undefined, "failed-model-run");
+          callback.handleLLMError(new Error("injected model failure"), "failed-model-run");
+          throw new Error("injected request failure");
+        },
+      );
+    } catch {
+      // The trace is the product under test; the injected operation must fail.
+    }
     await mlflow.flushTraces();
   } finally {
     await new Promise<void>((resolve, reject) => {
@@ -887,15 +932,12 @@ test("writes a real production callback manifest", async () => {
     links: [],
     attributes: {
       ...span.attributes,
-      ...(span.parentId === null ? traceMetadata : {}),
+      ...(span.parentId === null ? traceMetadata.get(span.traceId) ?? {} : {}),
     },
   }));
   fs.writeFileSync(
     process.env.TRACE_CONFORMANCE_RAW!,
-    JSON.stringify({
-      info: { traceId: normalizedSpans[0].traceId, traceMetadata },
-      data: { spans: normalizedSpans },
-    }),
+    JSON.stringify({ spans: normalizedSpans }),
   );
 });
 """
@@ -922,9 +964,33 @@ test("writes a real production callback manifest", async () => {
             f"TypeScript trace probe failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
         )
         raw = json.loads(raw_path.read_text())
-        manifest = normalize_mlflow_core_trace(template_dir.name, raw)
-        assert_trace_contract(manifest)
-        write_trace_manifest(manifest_path, manifest)
+        trace_ids = list(dict.fromkeys(span["traceId"] for span in raw["spans"]))
+        manifests = []
+        for trace_id in trace_ids:
+            trace_raw = {
+                "info": {"traceId": trace_id},
+                "data": {
+                    "spans": [
+                        span for span in raw["spans"] if span["traceId"] == trace_id
+                    ]
+                },
+            }
+            manifest = normalize_mlflow_core_trace(template_dir.name, trace_raw)
+            assert_trace_contract(manifest)
+            manifests.append(manifest)
+        success = next(
+            manifest
+            for manifest in manifests
+            if not any(span.status == "ERROR" for span in manifest.spans)
+        )
+        write_trace_manifest(manifest_path, success)
+        if failure_manifest_path is not None:
+            failure = next(
+                manifest
+                for manifest in manifests
+                if any(span.status == "ERROR" for span in manifest.spans)
+            )
+            write_trace_manifest(failure_manifest_path, failure)
     finally:
         probe_path.unlink(missing_ok=True)
         raw_path.unlink(missing_ok=True)
@@ -1228,9 +1294,9 @@ def bundle_run_nowait(
         stderr_flat = " ".join(result.stderr.split())
         if "Invalid source code path" in stderr_flat and app_name and attempt == 1:
             _log(
-                f"bundle run failed: source_code_path missing on workspace "
-                f"(likely stale state from prior run); re-deploying to "
-                f"re-upload source, then retrying..."
+                "bundle run failed: source_code_path missing on workspace "
+                "(likely stale state from prior run); re-deploying to "
+                "re-upload source, then retrying..."
             )
             bundle_deploy(template_dir, profile, resource_key, app_name)
             continue

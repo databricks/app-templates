@@ -29,8 +29,8 @@
   "license": "Unlicensed",
   "description": "Node.js agent app with MLflow Unity Catalog tracing and a composed planner/helper example",
   "dependencies": {
-    "@databricks/appkit": "0.59.0",
-    "@databricks/appkit-ui": "0.59.0",
+    "@databricks/appkit": "0.60.0",
+    "@databricks/appkit-ui": "0.60.0",
     "@databricks/sdk-experimental": "0.17.0",
     "clsx": "2.1.1",
     "embla-carousel-react": "8.6.0",

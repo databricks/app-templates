@@ -413,6 +413,57 @@ def test_streamed_response_capture_stays_bounded_until_last_body(monkeypatch, tm
     assert format(span.parent.span_id, "016x") == REMOTE_PARENT_ID
 
 
+def test_chunked_request_body_over_limit_returns_413_without_calling_server(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(databricks.sdk, "WorkspaceClient", lambda *args, **kwargs: _Workspace())
+    monkeypatch.setenv("UC_CONNECTION_NAME", "test-connection")
+    monkeypatch.setenv("SPEC_VOLUME_PATH", "/Volumes/catalog/schema/specs")
+    monkeypatch.setenv("SPEC_FILE_NAME", "spec.json")
+    from custom_server import tracing
+
+    _set_valid_tracing_environment(monkeypatch, tmp_path)
+    tracing.configure_mlflow_tracing()
+    called = False
+
+    async def downstream(_scope, _receive, send) -> None:
+        nonlocal called
+        called = True
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    middleware = tracing.TraceContextMiddleware(downstream, server_name="bounded-test")
+    chunks = [b"x" * (300 * 1024) for _ in range(5)]
+    messages = [
+        {"type": "http.request", "body": chunk, "more_body": index < len(chunks) - 1}
+        for index, chunk in enumerate(chunks)
+    ]
+    sent: list[dict] = []
+
+    async def receive():
+        return messages.pop(0)
+
+    async def send(message):
+        sent.append(message)
+
+    asyncio.run(
+        middleware(
+            {"type": "http", "method": "POST", "path": "/mcp", "headers": []},
+            receive,
+            send,
+        )
+    )
+
+    assert called is False
+    assert (
+        next(message for message in sent if message["type"] == "http.response.start")["status"]
+        == 413
+    )
+    assert (
+        b"request body too large" in b"".join(message.get("body", b"") for message in sent).lower()
+    )
+
+
 def test_startup_reports_all_missing_and_invalid_tracing_configuration(monkeypatch) -> None:
     """Dropping aggregate startup validation must admit a partially configured server."""
     combined_app = _get_combined_app(monkeypatch)

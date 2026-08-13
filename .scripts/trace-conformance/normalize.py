@@ -370,35 +370,97 @@ _PROCESS_TRACE_IDS: list[str] = []
 _PROCESS_TRACE_LOCATIONS: dict[str, str] = {}
 
 
-def _install_trace_id_recorder(mlflow) -> None:
-    original_start_span = mlflow.start_span
-    if getattr(original_start_span, "_trace_conformance_recorder", False):
-        return
+def _install_trace_id_recorder(span_api, tracking_api=None) -> None:
+    tracking_api = tracking_api or span_api
 
-    @wraps(original_start_span)
-    @contextmanager
-    def recording_start_span(*args, **kwargs):
-        with original_start_span(*args, **kwargs) as span:
-            trace_id = getattr(span, "trace_id", None)
-            if trace_id and trace_id not in _PROCESS_TRACE_IDS:
-                _PROCESS_TRACE_IDS.append(trace_id)
-                _PROCESS_TRACE_LOCATIONS[trace_id] = str(mlflow.get_tracking_uri())
-            yield span
+    def record_trace_id(trace_id) -> None:
+        if trace_id and trace_id not in _PROCESS_TRACE_IDS:
+            _PROCESS_TRACE_IDS.append(trace_id)
+            _PROCESS_TRACE_LOCATIONS[trace_id] = str(tracking_api.get_tracking_uri())
 
-    recording_start_span._trace_conformance_recorder = True
-    mlflow.start_span = recording_start_span
+    def record(span) -> None:
+        record_trace_id(getattr(span, "trace_id", None))
+
+    original_start_span = getattr(span_api, "start_span", None)
+    if original_start_span is not None and not getattr(
+        original_start_span, "_trace_conformance_recorder", False
+    ):
+
+        @wraps(original_start_span)
+        @contextmanager
+        def recording_start_span(*args, **kwargs):
+            with original_start_span(*args, **kwargs) as span:
+                record(span)
+                yield span
+
+        recording_start_span._trace_conformance_recorder = True
+        span_api.start_span = recording_start_span
+
+    original_start_span_no_context = getattr(span_api, "start_span_no_context", None)
+    if original_start_span_no_context is not None and not getattr(
+        original_start_span_no_context, "_trace_conformance_recorder", False
+    ):
+
+        @wraps(original_start_span_no_context)
+        def recording_start_span_no_context(*args, **kwargs):
+            span = original_start_span_no_context(*args, **kwargs)
+            record(span)
+            return span
+
+        recording_start_span_no_context._trace_conformance_recorder = True
+        span_api.start_span_no_context = recording_start_span_no_context
+
+    original_get_trace = getattr(span_api, "get_trace", None)
+    if original_get_trace is not None and not getattr(
+        original_get_trace, "_trace_conformance_recorder", False
+    ):
+
+        @wraps(original_get_trace)
+        def recording_get_trace(*args, **kwargs):
+            trace = original_get_trace(*args, **kwargs)
+            info = _get(trace, "info", default={})
+            record_trace_id(
+                _get(info, "trace_id", "traceId") or _get(trace, "trace_id", "traceId")
+            )
+            return trace
+
+        recording_get_trace._trace_conformance_recorder = True
+        span_api.get_trace = recording_get_trace
+
+    original_get_last_active_trace_id = getattr(
+        span_api, "get_last_active_trace_id", None
+    )
+    if original_get_last_active_trace_id is not None and not getattr(
+        original_get_last_active_trace_id, "_trace_conformance_recorder", False
+    ):
+
+        @wraps(original_get_last_active_trace_id)
+        def recording_get_last_active_trace_id(*args, **kwargs):
+            trace_id = original_get_last_active_trace_id(*args, **kwargs)
+            record_trace_id(trace_id)
+            return trace_id
+
+        recording_get_last_active_trace_id._trace_conformance_recorder = True
+        span_api.get_last_active_trace_id = recording_get_last_active_trace_id
 
 
 def _capture_active_pytest_trace() -> None:
-    """Write the first production trace that satisfies the shared contract.
+    """Write the first conformant success and injected-failure traces.
 
     This hook is activated only by ``run_local_trace_test`` in a child pytest
     process. The template's real deterministic test owns trace creation; this
     module only reads the resulting local MLflow store and normalizes it.
     """
     destination = os.environ.get("TRACE_CONFORMANCE_MANIFEST")
+    failure_destination = os.environ.get("TRACE_CONFORMANCE_FAILURE_MANIFEST")
     template = os.environ.get("TRACE_CONFORMANCE_TEMPLATE")
-    if not destination or not template or Path(destination).exists():
+    if not destination or not template:
+        return
+    success_missing = not Path(destination).exists()
+    failure_missing = (
+        bool(failure_destination) and not Path(failure_destination).exists()
+    )
+    if not success_missing and not failure_missing:
         return
     try:
         import mlflow
@@ -406,12 +468,11 @@ def _capture_active_pytest_trace() -> None:
         from contract import assert_trace_contract
 
         tracking_uri = str(mlflow.get_tracking_uri())
-        if tracking_uri.startswith("databricks"):
-            return
-        trace_id = mlflow.get_last_active_trace_id()
-        if trace_id and trace_id not in _PROCESS_TRACE_IDS:
-            _PROCESS_TRACE_IDS.append(trace_id)
-            _PROCESS_TRACE_LOCATIONS[trace_id] = tracking_uri
+        if not tracking_uri.startswith("databricks"):
+            trace_id = mlflow.get_last_active_trace_id()
+            if trace_id and trace_id not in _PROCESS_TRACE_IDS:
+                _PROCESS_TRACE_IDS.append(trace_id)
+                _PROCESS_TRACE_LOCATIONS[trace_id] = tracking_uri
         candidates = []
         for trace_id in reversed(_PROCESS_TRACE_IDS):
             from mlflow.tracing.trace_manager import InMemoryTraceManager
@@ -435,8 +496,15 @@ def _capture_active_pytest_trace() -> None:
             except AssertionError as error:
                 _TRACE_CAPTURE_ERRORS.append(str(error))
                 continue
-            write_trace_manifest(destination, manifest)
-            return
+            is_failure = any(span.status == "ERROR" for span in manifest.spans)
+            if is_failure and failure_missing and failure_destination:
+                write_trace_manifest(failure_destination, manifest)
+                failure_missing = False
+            elif not is_failure and success_missing:
+                write_trace_manifest(destination, manifest)
+                success_missing = False
+            if not success_missing and not failure_missing:
+                return
     except Exception as error:
         _TRACE_CAPTURE_ERRORS.append(f"capture error: {type(error).__name__}: {error}")
         # Individual tests may not have created a trace yet. The session-finish
@@ -447,8 +515,10 @@ def _capture_active_pytest_trace() -> None:
 if os.environ.get("TRACE_CONFORMANCE_MANIFEST"):
     import mlflow
     import pytest
+    from mlflow.tracing import fluent
 
     _install_trace_id_recorder(mlflow)
+    _install_trace_id_recorder(fluent, tracking_api=mlflow)
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_call(item):
@@ -458,10 +528,20 @@ if os.environ.get("TRACE_CONFORMANCE_MANIFEST"):
 
     def pytest_sessionfinish(session, exitstatus):
         destination = Path(os.environ["TRACE_CONFORMANCE_MANIFEST"])
-        if exitstatus == 0 and not destination.exists():
+        failure_value = os.environ.get("TRACE_CONFORMANCE_FAILURE_MANIFEST")
+        failure_destination = Path(failure_value) if failure_value else None
+        missing = []
+        if not destination.exists():
+            missing.append("success")
+        if failure_destination is not None and not failure_destination.exists():
+            missing.append("injected-failure")
+        if exitstatus == 0 and missing:
             session.exitstatus = pytest.ExitCode.TESTS_FAILED
             session.config.pluginmanager.get_plugin("terminalreporter").write_line(
-                "trace conformance manifest was not produced by any deterministic test"
+                "trace conformance "
+                + " and ".join(missing)
+                + " manifest was not produced by any deterministic test"
+                + f"; recorded trace IDs: {len(_PROCESS_TRACE_IDS)}"
                 + (
                     "; failures: " + " | ".join(dict.fromkeys(_TRACE_CAPTURE_ERRORS))
                     if _TRACE_CAPTURE_ERRORS

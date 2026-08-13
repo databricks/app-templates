@@ -170,6 +170,50 @@ def test_deterministic_local_turn_emits_a_conformant_real_mlflow_trace(
             "agentic-support-console", mlflow.get_trace(trace_id)
         )
         assert_trace_contract(manifest)
+
+        class InjectedModelFailure(RuntimeError):
+            response = response(
+                "Partial answer before failure",
+                model="databricks-gpt-5-4-mini",
+                usage={
+                    "prompt_tokens": 2,
+                    "completion_tokens": 1,
+                    "total_tokens": 3,
+                    "cost_usd": 0.001,
+                },
+            )
+
+        failed = module.process_messages(
+            [
+                {
+                    "message_id": b"failure",
+                    "case_id": b"case-failure",
+                    "case_id_hex": "02",
+                    "user_id": "user-failure",
+                    "subject": "Injected deterministic failure",
+                    "status": "open",
+                }
+            ],
+            prompt_builder=lambda _message: "Trigger the deterministic failure",
+            model_caller=lambda _prompt: (_ for _ in ()).throw(
+                InjectedModelFailure("injected model failure")
+            ),
+            generated_at=datetime(2026, 8, 12, tzinfo=timezone.utc),
+            identity={
+                "session_id": "failure-session",
+                "user_id": "failure-user",
+                "request_id": "failure-request",
+            },
+        )
+        assert failed == []
+        mlflow.flush_trace_async_logging()
+        failure_trace_id = mlflow.get_last_active_trace_id()
+        assert failure_trace_id and failure_trace_id != trace_id
+        failure_manifest = normalize_python_mlflow_trace(
+            "agentic-support-console", mlflow.get_trace(failure_trace_id)
+        )
+        assert_trace_contract(failure_manifest)
+        assert any(span.status == "ERROR" for span in failure_manifest.spans)
     finally:
         mlflow.set_tracking_uri(previous_tracking_uri)
 
@@ -353,10 +397,10 @@ def test_batch_trace_has_per_ticket_children_identity_usage_and_partial_parser_f
 
     failed_parser = [span for span in children if span.span_type == "PARSER"][1]
     assert failed_parser.status == "ERROR"
-    assert failed_parser.outputs["partialOutputs"][0]["suggested_action"] == "credit"
+    assert failed_parser.outputs["partial_output"][0]["suggested_action"] == "credit"
     assert root.status == "ERROR"
-    assert root.outputs["partialOutputs"][0]["suggested_action"] == "credit"
-    assert root.outputs["errors"][0]["ticketIndex"] == 1
+    assert root.outputs["partial_output"][0]["suggested_action"] == "credit"
+    assert root.outputs["error"]
     assert root.attributes["appkit.usage"] == {
         "inputTokens": 18,
         "outputTokens": 7,
@@ -428,7 +472,7 @@ def test_model_failure_keeps_semantic_usage_cost_partial_output_and_skipped_pars
     ]
     model = children[1]
     assert model.status == "ERROR"
-    assert model.outputs["partialOutput"]["choices"][0]["message"]["content"] == (
+    assert model.outputs["partial_output"]["choices"][0]["message"]["content"] == (
         "Partial answer before failure"
     )
     assert model.attributes["appkit.model"] == "databricks-gpt-5-4-mini"
@@ -453,7 +497,7 @@ def test_model_failure_keeps_semantic_usage_cost_partial_output_and_skipped_pars
     assert model.attributes["mlflow.llm.cost"] == {"total_cost": 0.0025}
 
     parser = children[2]
-    assert parser.status == "UNSET"
+    assert parser.status == "OK"
     assert parser.inputs == {
         "ticketIndex": 0,
         "content": "Partial answer before failure",

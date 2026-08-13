@@ -24,8 +24,13 @@ from contextlib import AsyncExitStack
 from typing import AsyncGenerator
 from uuid import uuid4
 
-import mlflow
-from agents import Agent, Runner, function_tool, set_default_openai_api, set_default_openai_client
+from agents import (
+    Agent,
+    Runner,
+    function_tool,
+    set_default_openai_api,
+    set_default_openai_client,
+)
 from agents.tracing import set_trace_processors
 from databricks_openai import AsyncDatabricksOpenAI
 from databricks_openai.agents import McpServer
@@ -40,7 +45,6 @@ from openai import AsyncOpenAI
 from agent_server.utils import (
     build_mcp_url,
     get_session_id,
-    get_user_workspace_client,
     process_agent_stream_events,
 )
 from agent_server.tracing import (
@@ -60,6 +64,7 @@ def _create_openai_client():
             base_url="http://127.0.0.1:1/v1",
             max_retries=0,
         )
+
 
 # ---------------------------------------------------------------------------
 # TODO: Configure the subagents for your environment.
@@ -144,14 +149,14 @@ def _make_subagent_tool(subagent: dict):
 
     async def _call(question: str) -> str:
         async def request(carrier: dict[str, str]):
-            create = type(_tool_client.responses).create
-            create_without_local_autolog = getattr(create, "__wrapped__", create)
-            return await create_without_local_autolog(
-                _tool_client.responses,
+            carrier = {**carrier, "x-mlflow-return-trace-id": "true"}
+            raw_responses = _tool_client.responses.with_raw_response
+            raw_response = await raw_responses.create(
                 model=model,
                 input=[{"role": "user", "content": question}],
                 extra_headers=carrier,
             )
+            return raw_response.parse(), dict(raw_response.headers)
 
         response = await traced_remote_agent_call(
             name=f"remote.{subagent['name']}",
@@ -211,10 +216,14 @@ async def connect_healthy_mcp_servers(
         name = getattr(server, "name", "MCP server")
         try:
             connected = await stack.enter_async_context(server)
-            await connected.list_tools()  # forces the connectivity + authorization check now
+            await (
+                connected.list_tools()
+            )  # forces the connectivity + authorization check now
             healthy.append(connected)
         except Exception:
-            logger.warning("MCP server %r unavailable; continuing without it.", name, exc_info=True)
+            logger.warning(
+                "MCP server %r unavailable; continuing without it.", name, exc_info=True
+            )
             unavailable.append(name)
     return healthy, unavailable
 
@@ -269,15 +278,21 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
     async with AsyncExitStack() as stack:
-        servers, unavailable = await connect_healthy_mcp_servers(stack, build_mcp_servers())
+        servers, unavailable = await connect_healthy_mcp_servers(
+            stack, build_mcp_servers()
+        )
         agent = create_orchestrator_agent(servers, unavailable)
         messages = [i.model_dump() for i in request.input]
         result = await Runner.run(agent, messages)
-        return ResponsesAgentResponse(output=[item.to_input_item() for item in result.new_items])
+        return ResponsesAgentResponse(
+            output=[item.to_input_item() for item in result.new_items]
+        )
 
 
 @stream()
-async def stream_handler(request: ResponsesAgentRequest) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
+async def stream_handler(
+    request: ResponsesAgentRequest,
+) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
     custom_inputs = dict(request.custom_inputs or {})
     session_id = get_session_id(request) or str(uuid4())
     set_request_trace_identity(
@@ -289,7 +304,9 @@ async def stream_handler(request: ResponsesAgentRequest) -> AsyncGenerator[Respo
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
     async with AsyncExitStack() as stack:
-        servers, unavailable = await connect_healthy_mcp_servers(stack, build_mcp_servers())
+        servers, unavailable = await connect_healthy_mcp_servers(
+            stack, build_mcp_servers()
+        )
         agent = create_orchestrator_agent(servers, unavailable)
         messages = [i.model_dump() for i in request.input]
         result = Runner.run_streamed(agent, input=messages)

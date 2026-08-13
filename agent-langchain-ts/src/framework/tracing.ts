@@ -449,6 +449,8 @@ export class LangChainTracingCallback extends BaseCallbackHandler {
     if (run) {
       const endedNs = process.hrtime.bigint();
       run.span.setAttributes({
+        "appkit.model": safeTraceValue(run.model),
+        "appkit.provider": safeTraceValue(run.provider),
         "appkit.usage": usage,
         "appkit.ttft_ms": nsToMs((run.firstTokenNs ?? endedNs) - run.startedNs),
         "appkit.stream_duration_ms": nsToMs(endedNs - run.startedNs),
@@ -525,7 +527,10 @@ export class LangChainTracingCallback extends BaseCallbackHandler {
     const normalized = safeError(error);
     run.span.recordException(new Error(normalized));
     run.span.end({
-      outputs: { error: normalized },
+      outputs: {
+        partial_output: { available: false, reason: "no output produced" },
+        error: normalized,
+      },
       status: mlflow.SpanStatusCode.ERROR,
     });
   }
@@ -554,7 +559,10 @@ export async function withAgentRequestTrace<T>(
         recordError: (error) => {
           recordedError = true;
           const message = safeError(error);
-          span.setOutputs({ error: message });
+          span.setOutputs({
+            partial_output: { available: false, reason: "no output produced" },
+            error: message,
+          });
           span.setStatus(mlflow.SpanStatusCode.ERROR, message);
           span.recordException(new Error(message));
           return message;
@@ -567,7 +575,10 @@ export async function withAgentRequestTrace<T>(
       } catch (error) {
         const details = safeLogError(error);
         const message = details.message;
-        span.setOutputs({ error: message });
+        span.setOutputs({
+          partial_output: { available: false, reason: "no output produced" },
+          error: message,
+        });
         span.setStatus(mlflow.SpanStatusCode.ERROR, message);
         throw safeErrorForThrow(details);
       } finally {
@@ -839,6 +850,10 @@ function safeErrorForThrow(details: SafeLogError): Error {
     });
   }
   return error;
+}
+
+export function sanitizePublicError(error: unknown): Error {
+  return safeErrorForThrow(safeLogError(error));
 }
 
 function safeError(error: unknown): string {

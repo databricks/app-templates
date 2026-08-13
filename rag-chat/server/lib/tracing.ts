@@ -137,7 +137,7 @@ function finish(
   attributes: Record<string, unknown> = {},
   error?: unknown
 ): void {
-  recordOutputs(span, outputs);
+  recordOutputs(span, error ? { partial_output: outputs, error: safeError(error) } : outputs);
   setMany(span, { ...attributes, 'appkit.duration_ms': elapsedMs(startedNs) });
   try {
     if (error) {
@@ -512,12 +512,14 @@ function wrapRootStream(
     if (ended) return;
     ended = true;
     if (error) state.error = safeError(error);
-    recordOutputs(rootSpan, {
+    const rootPartialOutput = {
       text: state.output,
-      partial: Boolean(state.error),
       persisted: state.persisted,
-      error: state.error,
-    });
+    };
+    recordOutputs(
+      rootSpan,
+      state.error ? { partial_output: rootPartialOutput, error: state.error } : rootPartialOutput
+    );
     if (state.usage) setMany(rootSpan, usageAttributes(state.usage));
     set(rootSpan, 'appkit.duration_ms', elapsedMs(startedNs));
     try {
@@ -586,7 +588,10 @@ export async function startRagRequest(request: RagRequest): Promise<RagResponse>
         try {
           return await runRagWorkflow({ ...request, requestId }, span);
         } catch (error) {
-          recordOutputs(span, { error: safeError(error) });
+          recordOutputs(span, {
+            partial_output: { available: false, reason: 'no output produced' },
+            error: safeError(error),
+          });
           try {
             span.recordException(error as Error);
             span.setStatus({ code: SpanStatusCode.ERROR, message: safeError(error) });

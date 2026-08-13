@@ -136,6 +136,10 @@ def safe_error(error: BaseException | str) -> str:
     return json.dumps(safe_trace_value(message, max_bytes=2048), sort_keys=True)
 
 
+def unavailable_partial_output() -> dict[str, object]:
+    return {"available": False, "reason": "no output produced"}
+
+
 def elapsed_ms(started_ns: int) -> float:
     return max(0.0, (perf_counter_ns() - started_ns) / 1_000_000)
 
@@ -460,7 +464,9 @@ def process_messages(
                             context_span,
                             outputs={
                                 "error": safe_error(error),
-                                "partialOutputs": results,
+                                "partial_output": (
+                                    results if results else unavailable_partial_output()
+                                ),
                             },
                             attributes={
                                 "appkit.ticket_index": index,
@@ -535,7 +541,11 @@ def process_messages(
                             model_span,
                             outputs={
                                 "error": safe_error(error),
-                                "partialOutput": error_response,
+                                "partial_output": (
+                                    error_response
+                                    if error_response
+                                    else unavailable_partial_output()
+                                ),
                             },
                             attributes=failure_attributes,
                             status="ERROR",
@@ -579,7 +589,7 @@ def process_messages(
                                 "appkit.skip_reason": "model_error",
                                 "appkit.duration_ms": elapsed_ms(parser_started),
                             },
-                            status="UNSET",
+                            status="OK",
                         )
                     raise model_error
 
@@ -596,7 +606,9 @@ def process_messages(
                             parser_span,
                             outputs={
                                 "error": safe_error(error),
-                                "partialOutputs": results,
+                                "partial_output": (
+                                    results if results else unavailable_partial_output()
+                                ),
                             },
                             attributes={
                                 "appkit.ticket_index": index,
@@ -649,13 +661,19 @@ def process_messages(
         if aggregate["costAvailable"]:
             root_attributes["appkit.cost_usd"] = aggregate["costUsd"]
             root_attributes["mlflow.llm.cost"] = {"total_cost": aggregate["costUsd"]}
+        root_outputs = (
+            {
+                "partial_output": (
+                    results if results else unavailable_partial_output()
+                ),
+                "error": errors[0]["error"],
+            }
+            if errors
+            else {"results": results}
+        )
         finish_span(
             root,
-            outputs={
-                "results": results,
-                "partialOutputs": results,
-                "errors": errors,
-            },
+            outputs=root_outputs,
             attributes=root_attributes,
             status="ERROR" if errors else "OK",
             error=RuntimeError(errors[0]["error"]) if errors else None,
@@ -907,4 +925,4 @@ def run_job(spark: Any, dbutils: Any) -> None:
 
 # Databricks notebooks execute as __main__; imports used by tests and tooling remain inert.
 if __name__ == "__main__":
-    run_job(spark, dbutils)
+    run_job(spark, dbutils)  # noqa: F821 - provided by the Databricks notebook runtime

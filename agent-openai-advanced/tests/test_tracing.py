@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from pathlib import Path
+import sys
 from types import SimpleNamespace
 
 import httpx
@@ -192,6 +194,86 @@ def test_real_runner_traces_memory_read_and_write(monkeypatch, tmp_path):
         "totalTokens": 12,
         "costAvailable": False,
     }
+
+
+def test_real_runner_model_failure_emits_a_conformant_trace(monkeypatch, tmp_path):
+    tracking_uri = f"sqlite:///{tmp_path / 'advanced-model-failure.db'}"
+    artifact_dir = tmp_path / "model-failure-artifacts"
+    artifact_dir.mkdir()
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment_id = mlflow.create_experiment(
+        "advanced-model-failure", artifact_location=artifact_dir.as_uri()
+    )
+    mlflow.set_experiment(experiment_id=experiment_id)
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", tracking_uri)
+    monkeypatch.setenv("MLFLOW_EXPERIMENT_ID", experiment_id)
+    monkeypatch.setenv("LAKEBASE_AUTOSCALING_ENDPOINT", "test-endpoint")
+
+    async def failing_transport(request):
+        return httpx.Response(
+            500,
+            json={"error": {"message": "injected model failure"}},
+            request=request,
+        )
+
+    client = AsyncOpenAI(
+        api_key="test",
+        base_url="https://example.invalid/v1",
+        max_retries=0,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(failing_transport)),
+    )
+
+    class FakeSession:
+        def __init__(self, *, session_id, **_kwargs):
+            self.session_id = session_id
+            self.items = []
+
+        async def get_items(self, *args, **kwargs):
+            return list(self.items)
+
+        async def add_items(self, items):
+            self.items.extend(items)
+
+        async def pop_item(self):
+            return self.items.pop() if self.items else None
+
+        async def clear_session(self):
+            self.items.clear()
+
+    import databricks_openai
+    import databricks_openai.agents
+
+    monkeypatch.setattr(databricks_openai, "AsyncDatabricksOpenAI", lambda: client)
+    monkeypatch.setattr(databricks_openai.agents, "AsyncDatabricksSession", FakeSession)
+    set_default_openai_client(client)
+    from agent_server import agent
+
+    monkeypatch.setattr(agent, "AsyncDatabricksSession", FakeSession)
+    request = ResponsesAgentRequest(
+        input=[{"role": "user", "content": "Trigger model failure."}],
+        custom_inputs={
+            "session_id": "model-failure-session",
+            "user_id": "model-failure-user",
+            "request_id": "model-failure-request",
+        },
+    )
+    with pytest.raises(Exception, match="injected model failure"):
+        asyncio.run(agent.invoke_handler(request))
+
+    mlflow.flush_trace_async_logging()
+    rows = mlflow.search_traces(experiment_ids=[experiment_id])
+    assert len(rows) == 1
+    trace = mlflow.get_trace(rows.iloc[0].trace_id)
+    conformance_dir = Path(__file__).parents[2] / ".scripts" / "trace-conformance"
+    sys.path.insert(0, str(conformance_dir))
+    from contract import assert_trace_contract
+    from normalize import normalize_python_mlflow_trace, write_trace_manifest
+
+    manifest = normalize_python_mlflow_trace("agent-openai-advanced", trace)
+    assert_trace_contract(manifest)
+    assert any(span.status == "ERROR" for span in manifest.spans)
+    if destination := os.environ.get("TRACE_CONFORMANCE_FAILURE_MANIFEST"):
+        write_trace_manifest(destination, manifest)
 
 
 def test_real_runner_memory_failure_finalizes_safe_error(monkeypatch, tmp_path):

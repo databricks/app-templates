@@ -81,6 +81,59 @@ class FakeWorkspaceClient:
         return self._client
 
 
+def test_successful_batch_emits_a_complete_trace(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    tracking_uri = f"sqlite:///{tmp_path / 'success.db'}"
+    artifact_dir = tmp_path / "success-artifacts"
+    artifact_dir.mkdir()
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment_id = mlflow.create_experiment(
+        "batch-success", artifact_location=artifact_dir.as_uri()
+    )
+    mlflow.set_experiment(experiment_id=experiment_id)
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", tracking_uri)
+    monkeypatch.setenv("MLFLOW_EXPERIMENT_ID", experiment_id)
+    for name, value in REQUIRED_TRACING_ENV.items():
+        monkeypatch.setenv(name, value)
+
+    workspace = FakeWorkspaceClient(
+        [
+            FakeCompletion(
+                content='{"answer":"Yes","reasoning":"Present."}',
+                input_tokens=4,
+                output_tokens=2,
+                cost_usd=0.001,
+            )
+        ]
+    )
+    monkeypatch.setattr(databricks.sdk, "WorkspaceClient", lambda: workspace)
+    sys.modules.pop("agent_server.agent", None)
+    sys.modules.pop("agent_server.tracing", None)
+    monkeypatch.setattr(server, "_invoke_function", None)
+    agent = importlib.import_module("agent_server.agent")
+
+    result = asyncio.run(
+        agent.invoke_handler(
+            {
+                "document_text": "The document has a balance sheet.",
+                "questions": ["Balance sheet?"],
+                "session_id": "success-session",
+                "user_id": "success-user",
+                "request_id": "success-request",
+            }
+        )
+    )
+
+    assert result["results"][0]["answer"] == "Yes"
+    traces = mlflow.search_traces(
+        locations=[experiment_id], return_type="list", flush=True
+    )
+    assert len(traces) == 1
+    trace = mlflow.get_trace(traces[0].info.trace_id, flush=True)
+    assert all(span.status.status_code == "OK" for span in trace.data.spans)
+
+
 def test_malformed_second_answer_preserves_batch_trace_and_usage(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

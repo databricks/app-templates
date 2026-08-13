@@ -91,10 +91,17 @@ def _assert_redacted(trace: TraceManifest, span: SpanManifest, value: Any) -> No
     elif isinstance(value, str):
         leaked = re.search(
             r"(?i)\b(?:authorization|api[ _-]?key|password|secret|token|credentials?)\b"
-            r"\s*(?::|=|is)?\s+(?!\[REDACTED\])(?:Bearer\s+)?[^\s,;}]+",
+            r"\s*(?::|=|is)?\s+(?:"
+            r"Bearer\s+(?P<bearer_value>[^\s,;}]+)"
+            r"|(?P<plain_value>(?!Bearer\b)[^\s,;}]+))",
             value,
         )
-        if leaked:
+        captured = (
+            leaked.group("bearer_value") or leaked.group("plain_value")
+            if leaked
+            else None
+        )
+        if captured and captured != _REDACTED:
             _fail(
                 trace,
                 span,
@@ -174,6 +181,10 @@ def assert_trace_contract(trace: TraceManifest) -> None:
     for span in trace.spans:
         if not isinstance(span.name, str) or not span.name:
             _fail(trace, span, "name", "missing span name")
+        if span.name != span.name.strip() or any(
+            ord(character) < 32 for character in span.name
+        ):
+            _fail(trace, span, "name", "span name is not canonical")
         if span.span_type not in _SPAN_TYPES:
             _fail(
                 trace,

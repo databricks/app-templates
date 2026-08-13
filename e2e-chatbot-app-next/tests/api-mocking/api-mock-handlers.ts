@@ -455,6 +455,14 @@ export const handlers = [
     const traceIdMatch = url.match(/\/traces\/([^/]+)$/);
     const traceId = traceIdMatch?.[1] ?? 'unknown';
     const assessments = mlflowAssessmentStore[traceId] ?? [];
+    const injectedFailure = traceId.includes('failure');
+    const outputs = injectedFailure
+      ? { partial_output: { text: 'partial' }, error: 'injected failure' }
+      : { output: "It's just blue duh!" };
+    const modelOutputs = injectedFailure
+      ? { partial_output: { text: 'partial' }, error: 'injected failure' }
+      : { text: "It's just blue duh!" };
+    const status = { status_code: injectedFailure ? 'ERROR' : 'OK' };
 
     return HttpResponse.json({
       trace: {
@@ -474,8 +482,8 @@ export const handlers = [
               name: 'remote.agent',
               span_type: 'AGENT',
               inputs: { input: 'Why is the sky blue?' },
-              outputs: { output: "It's just blue duh!" },
-              status: { status_code: 'OK' },
+              outputs,
+              status,
               latency_ms: 2,
               attributes: {
                 'mlflow.trace.tokenUsage': {
@@ -493,8 +501,8 @@ export const handlers = [
               name: 'remote.model',
               span_type: 'CHAT_MODEL',
               inputs: { messages: ['Why is the sky blue?'] },
-              outputs: { text: "It's just blue duh!" },
-              status: { status_code: 'OK' },
+              outputs: modelOutputs,
+              status,
               latency_ms: 1,
               attributes: {
                 'mlflow.chat.model': 'test-model',

@@ -43,6 +43,7 @@ _SECRET_TEXT = re.compile(
     re.IGNORECASE,
 )
 _RESERVED_CAPTURE_ATTRIBUTES = {"mlflow.spanInputs", "mlflow.spanOutputs"}
+_SAFE_SEMANTIC_ATTRIBUTES = {"mlflow.chat.tokenUsage", "mlflow.trace.tokenUsage"}
 _EXPERIMENT_ID = re.compile(r"^[0-9]+$")
 _WAREHOUSE_ID = re.compile(r"^[0-9a-f]{16}$", re.IGNORECASE)
 _UC_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,254}$")
@@ -120,12 +121,21 @@ def safe_error_message(error: BaseException | str) -> str:
     return safe if isinstance(safe, str) else json.dumps(safe, sort_keys=True)
 
 
+def unavailable_partial_output() -> dict[str, object]:
+    return {"available": False, "reason": "no output produced"}
+
+
 def _safe_identity_text(value: str) -> str:
     safe = safe_trace_value(str(value), max_bytes=2048)
     return safe if isinstance(safe, str) else json.dumps(safe, sort_keys=True)
 
 
 def _safe_attribute(key: str, value: Any) -> Any:
+    if key in _SAFE_SEMANTIC_ATTRIBUTES and isinstance(value, Mapping):
+        return {
+            str(nested_key): safe_trace_value(nested_value)
+            for nested_key, nested_value in value.items()
+        }
     if _SECRET_KEY.search(key):
         return "[REDACTED]"
     return safe_trace_value(value)
@@ -135,7 +145,30 @@ def sanitize_span_for_export(span: Any) -> None:
     """Apply one framework-neutral sanitizing boundary before span export."""
     if span.inputs is not None:
         span.set_inputs(safe_trace_value(span.inputs))
-    if span.outputs is not None:
+    status_code = getattr(span.status.status_code, "value", span.status.status_code)
+    if str(status_code).upper() == "ERROR":
+        outputs = safe_trace_value(span.outputs)
+        if isinstance(outputs, Mapping):
+            error = outputs.get("error")
+            partial_output = outputs.get("partial_output")
+            if partial_output is None:
+                partial_output = {
+                    key: value for key, value in outputs.items() if key != "error"
+                }
+        else:
+            error = None
+            partial_output = outputs
+        if not partial_output:
+            partial_output = unavailable_partial_output()
+        if not error:
+            error = span.status.description or "span failed"
+        span.set_outputs(
+            {
+                "partial_output": partial_output,
+                "error": safe_error_message(error),
+            }
+        )
+    elif span.outputs is not None:
         span.set_outputs(safe_trace_value(span.outputs))
     span.set_attributes(
         {
@@ -202,7 +235,9 @@ def validate_tracing_environment(
 ) -> dict[str, str]:
     """Return mandatory tracing configuration or report every missing value."""
     source = os.environ if environ is None else environ
-    missing = [name for name in REQUIRED_TRACING_ENV if not source.get(name, "").strip()]
+    missing = [
+        name for name in REQUIRED_TRACING_ENV if not source.get(name, "").strip()
+    ]
     if missing:
         raise RuntimeError(
             "Missing required tracing configuration: " + ", ".join(missing)

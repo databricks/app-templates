@@ -17,8 +17,10 @@
 
 import { generateUUID } from '@chat-template/core';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { expect, test } from '../fixtures';
 import { sendChatAndGetMessageId } from '../helpers';
+import { captureRemoteTraceManifest } from '../../server/src/lib/mlflow-trace-manifest';
 
 const MOCK_TRACE_ID = 'mock-mlflow-trace-id';
 const MOCK_ASSESSMENT_ID = `mock-assessment-${MOCK_TRACE_ID}`;
@@ -31,11 +33,16 @@ const TEST_MESSAGE = {
 
 test.describe('/api/chat — trace ID capture via x-mlflow-return-trace-id header (API_PROXY mode)', () => {
   test.describe.configure({ mode: 'serial' });
+  test.beforeAll(() => {
+    for (const destination of [
+      process.env.TRACE_CONFORMANCE_MANIFEST,
+      process.env.TRACE_CONFORMANCE_FAILURE_MANIFEST,
+    ]) {
+      if (destination) rmSync(destination, { force: true });
+    }
+  });
   test.beforeEach(async ({ adaContext }) => {
     await adaContext.request.post('/api/test/reset-mlflow-store');
-    if (process.env.TRACE_CONFORMANCE_MANIFEST) {
-      rmSync(process.env.TRACE_CONFORMANCE_MANIFEST, { force: true });
-    }
   });
 
   test('trace ID is captured from MLflow AgentServer and used in feedback submission', async ({
@@ -109,5 +116,118 @@ test.describe('/api/chat — trace ID capture via x-mlflow-return-trace-id heade
     expect(secondResponse.status()).toBe(200);
     const secondBody = await secondResponse.json();
     expect(secondBody.mlflowAssessmentId).toBe(MOCK_ASSESSMENT_ID);
+  });
+
+  test('captures an injected remote failure manifest with canonical partial output', async () => {
+    const destination = process.env.TRACE_CONFORMANCE_FAILURE_MANIFEST;
+    test.skip(
+      !destination,
+      'failure manifest capture is enabled by the conformance runner',
+    );
+    if (!destination) return;
+
+    const server = createServer((_request, response) => {
+      response.setHeader('content-type', 'application/json');
+      response.end(
+        JSON.stringify({
+          trace: {
+            trace_info: {
+              trace_id: 'mock-mlflow-failure-trace-id',
+              app_id: 'e2e-chatbot-app-next',
+              user_id: 'test-user',
+              session_id: 'test-session',
+            },
+            data: {
+              spans: [
+                {
+                  span_id: 'root-span',
+                  parent_span_id: null,
+                  name: 'remote.agent',
+                  span_type: 'AGENT',
+                  inputs: { input: 'inject failure' },
+                  outputs: {
+                    partial_output: { text: 'partial' },
+                    error: 'injected failure',
+                  },
+                  status: { status_code: 'ERROR' },
+                  latency_ms: 2,
+                  attributes: {
+                    'mlflow.trace.tokenUsage': {
+                      input_tokens: 4,
+                      output_tokens: 2,
+                      total_tokens: 6,
+                    },
+                    'appkit.cost_available': false,
+                    'appkit.app.name': 'e2e-chatbot-app-next',
+                    'mlflow.trace.user': 'test-user',
+                    'mlflow.trace.session': 'test-session',
+                  },
+                },
+                {
+                  span_id: 'model-span',
+                  parent_span_id: 'root-span',
+                  name: 'remote.model',
+                  span_type: 'CHAT_MODEL',
+                  inputs: { messages: ['inject failure'] },
+                  outputs: {
+                    partial_output: { text: 'partial' },
+                    error: 'injected failure',
+                  },
+                  status: { status_code: 'ERROR' },
+                  latency_ms: 1,
+                  attributes: {
+                    'mlflow.chat.model': 'test-model',
+                    'mlflow.chat.provider': 'databricks',
+                    'mlflow.chat.tokenUsage': {
+                      input_tokens: 4,
+                      output_tokens: 2,
+                      total_tokens: 6,
+                    },
+                    'appkit.cost_available': false,
+                  },
+                },
+              ],
+            },
+          },
+        }),
+      );
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve),
+    );
+    const address = server.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('failure trace fixture server did not bind');
+    }
+    try {
+      await captureRemoteTraceManifest({
+        traceId: 'mock-mlflow-failure-trace-id',
+        hostUrl: `http://127.0.0.1:${address.port}`,
+        token: 'test-token',
+        destination,
+        template:
+          process.env.TRACE_CONFORMANCE_TEMPLATE ?? 'e2e-chatbot-app-next',
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => {
+          if (error) reject(error);
+          else resolve();
+        }),
+      );
+    }
+
+    const manifest = JSON.parse(readFileSync(destination, 'utf8'));
+    expect(
+      manifest.spans.every(
+        (span: { status: string }) => span.status === 'ERROR',
+      ),
+    ).toBe(true);
+    expect(
+      manifest.spans.every(
+        (span: { outputs: { partial_output?: unknown } }) =>
+          span.outputs.partial_output,
+      ),
+    ).toBe(true);
   });
 });

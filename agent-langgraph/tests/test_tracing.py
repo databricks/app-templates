@@ -1,6 +1,7 @@
 import importlib
 import hashlib
 import json
+import os
 import time
 
 import mlflow
@@ -824,3 +825,10 @@ async def test_handler_model_failure_finalizes_enriched_model_span_safely(
     exported = json.dumps(model_span.to_dict(), sort_keys=True)
     assert "super-secret" not in exported
     assert "[REDACTED]" in exported
+    if destination := os.environ.get("TRACE_CONFORMANCE_FAILURE_MANIFEST"):
+        from contract import assert_trace_contract
+        from normalize import normalize_python_mlflow_trace, write_trace_manifest
+
+        manifest = normalize_python_mlflow_trace("agent-langgraph", trace)
+        assert_trace_contract(manifest)
+        write_trace_manifest(destination, manifest)

@@ -154,6 +154,10 @@ def safe_error_message(error: BaseException | str) -> str:
     return json.dumps(safe_trace_value(message, max_bytes=2048), sort_keys=True)
 
 
+def unavailable_partial_output() -> dict[str, object]:
+    return {"available": False, "reason": "no output produced"}
+
+
 def safe_trace_value(value: Any, *, max_bytes: int = _MAX_CAPTURE_BYTES) -> Any:
     """Redact secrets and capture a deterministic, UTF-8-safe bounded value."""
     redacted = _jsonable(value)
@@ -463,6 +467,20 @@ class LangChainUsageCallback(_MlflowLangchainTracer):
             RuntimeError(f"{type(error).__name__}: {safe_error}"), run_id=run_id
         )
 
+    def on_chain_error(self, error: BaseException, **kwargs: Any) -> None:
+        run_id = kwargs.get("run_id")
+        safe_error = safe_error_message(error)
+        if run_id is not None:
+            self._get_span_by_run_id(run_id).set_outputs(
+                {
+                    "partial_output": unavailable_partial_output(),
+                    "error": safe_error,
+                }
+            )
+        super().on_chain_error(
+            RuntimeError(f"{type(error).__name__}: {safe_error}"), run_id=run_id
+        )
+
     def _pop_model_run(self, run_id: Any) -> dict[str, Any]:
         with self._model_runs_lock:
             return self._model_runs.pop(str(run_id), {})
@@ -508,6 +526,10 @@ class LangChainUsageCallback(_MlflowLangchainTracer):
             attributes["appkit.cost_usd"] = usage["costUsd"]
             attributes["mlflow.llm.cost"] = usage["costUsd"]
         span.set_attributes(attributes)
+        if error is not None:
+            span.set_outputs(
+                {"partial_output": unavailable_partial_output(), "error": error}
+            )
 
 
 def _first_generation_message(response: Any) -> Any:
@@ -576,7 +598,9 @@ def agent_request_span(name: str, inputs: Any) -> Iterator[AgentRequestTrace]:
         yield request_trace
     except BaseException as error:
         safe_error = safe_error_message(error)
-        span.set_outputs({"error": safe_error})
+        span.set_outputs(
+            {"partial_output": unavailable_partial_output(), "error": safe_error}
+        )
         span.record_exception(f"{type(error).__name__}: {safe_error}")
         request_trace.finalize()
         manager.__exit__(None, None, None)
@@ -599,7 +623,9 @@ def traced_operation(
         yield operation
     except BaseException as error:
         safe_error = safe_error_message(error)
-        span.set_outputs({"error": safe_error})
+        span.set_outputs(
+            {"partial_output": unavailable_partial_output(), "error": safe_error}
+        )
         span.record_exception(f"{type(error).__name__}: {safe_error}")
         manager.__exit__(None, None, None)
         raise

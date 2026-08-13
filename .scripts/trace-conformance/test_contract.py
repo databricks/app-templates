@@ -22,6 +22,8 @@ from normalize import (
 
 TRACE_ID = "0123456789abcdef0123456789abcdef"
 REMOTE_TRACE_ID = "fedcba9876543210fedcba9876543210"
+RETRIEVED_TRACE_ID = "00112233445566778899aabbccddeeff"
+ACTIVE_TRACE_ID = "ffeeddccbbaa99887766554433221100"
 
 
 def _span(
@@ -159,6 +161,17 @@ def test_contract_accepts_complete_workload_shapes(manifest):
     assert_trace_contract(manifest)
 
 
+def test_contract_accepts_explicitly_redacted_bearer_error_text():
+    model = _model()
+    model.status = "ERROR"
+    model.outputs = {
+        "partial_output": {"available": False, "reason": "no output produced"},
+        "error": "authorization Bearer [REDACTED]",
+    }
+
+    assert_trace_contract(_manifest(model))
+
+
 @pytest.mark.parametrize(
     ("mutation", "expected_span", "expected_field"),
     [
@@ -174,6 +187,7 @@ def test_contract_accepts_complete_workload_shapes(manifest):
         ("failure-without-partial-output", "model call", "outputs"),
         ("wrong-aggregate-usage", "request", "usage.total_tokens"),
         ("credential-leak", "get weather", "credentials"),
+        ("noncanonical-name", " model\ncall ", "name"),
     ],
 )
 def test_contract_rejects_incomplete_or_untruthful_traces(
@@ -220,6 +234,8 @@ def test_contract_rejects_incomplete_or_untruthful_traces(
         manifest.spans[0].usage["total_tokens"] = 9
     elif mutation == "credential-leak":
         manifest.spans[2].inputs = {"Authorization": "Bearer provider-secret"}
+    elif mutation == "noncanonical-name":
+        manifest.spans[1].name = " model\ncall "
 
     with pytest.raises(AssertionError) as error:
         assert_trace_contract(manifest)
@@ -476,6 +492,13 @@ def test_pytest_capture_records_trace_ids_at_their_creation_location():
         yield SimpleNamespace(trace_id=TRACE_ID)
 
     fake_mlflow.start_span = start_span
+    fake_mlflow.start_span_no_context = lambda *_args, **_kwargs: SimpleNamespace(
+        trace_id=REMOTE_TRACE_ID
+    )
+    fake_mlflow.get_trace = lambda *_args, **_kwargs: SimpleNamespace(
+        info=SimpleNamespace(trace_id=RETRIEVED_TRACE_ID)
+    )
+    fake_mlflow.get_last_active_trace_id = lambda: ACTIVE_TRACE_ID
     fake_mlflow.get_tracking_uri = lambda: "sqlite:///created.db"
     normalize._PROCESS_TRACE_IDS.clear()
     normalize._PROCESS_TRACE_LOCATIONS.clear()
@@ -483,12 +506,25 @@ def test_pytest_capture_records_trace_ids_at_their_creation_location():
     normalize._install_trace_id_recorder(fake_mlflow)
     with fake_mlflow.start_span("request") as span:
         assert span.trace_id == TRACE_ID
+    assert fake_mlflow.start_span_no_context("detached").trace_id == REMOTE_TRACE_ID
+    assert fake_mlflow.get_trace(RETRIEVED_TRACE_ID).info.trace_id == RETRIEVED_TRACE_ID
+    assert fake_mlflow.get_last_active_trace_id() == ACTIVE_TRACE_ID
 
-    assert normalize._PROCESS_TRACE_IDS == [TRACE_ID]
-    assert normalize._PROCESS_TRACE_LOCATIONS == {TRACE_ID: "sqlite:///created.db"}
+    assert normalize._PROCESS_TRACE_IDS == [
+        TRACE_ID,
+        REMOTE_TRACE_ID,
+        RETRIEVED_TRACE_ID,
+        ACTIVE_TRACE_ID,
+    ]
+    assert normalize._PROCESS_TRACE_LOCATIONS == {
+        TRACE_ID: "sqlite:///created.db",
+        REMOTE_TRACE_ID: "sqlite:///created.db",
+        RETRIEVED_TRACE_ID: "sqlite:///created.db",
+        ACTIVE_TRACE_ID: "sqlite:///created.db",
+    }
 
 
-def test_pytest_capture_retrieves_only_the_current_process_trace_id(
+def test_pytest_capture_retrieves_recorded_local_trace_after_current_uri_is_restored(
     monkeypatch,
     tmp_path,
 ):
@@ -497,7 +533,7 @@ def test_pytest_capture_retrieves_only_the_current_process_trace_id(
         data=SimpleNamespace(spans=[_OtelSpan(root=True), _OtelSpan(root=False)]),
     )
     calls = []
-    current_tracking_uri = [str(tmp_path / "current")]
+    current_tracking_uri = ["databricks"]
     created_tracking_uri = str(tmp_path / "created")
     fake_mlflow = ModuleType("mlflow")
     fake_mlflow.get_tracking_uri = lambda: current_tracking_uri[0]
@@ -540,7 +576,7 @@ def test_pytest_capture_retrieves_only_the_current_process_trace_id(
     assert captured.trace_id == TRACE_ID
     assert calls == [(TRACE_ID, {"silent": True})]
     assert normalize._TRACE_CAPTURE_ERRORS == []
-    assert current_tracking_uri[0] == str(tmp_path / "current")
+    assert current_tracking_uri[0] == "databricks"
 
 
 def test_normalizes_appkit_otel_shape_and_stream_timing():

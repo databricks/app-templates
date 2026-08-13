@@ -530,9 +530,7 @@ def test_selected_autologger_exports_only_sanitized_bounded_spans(
                         '{"api_key":"json-string-secret-value",'
                         '"Authorization":"Bearer json-auth-secret-value"}'
                     ),
-                    "python_mapping_repr": (
-                        "{'api_key': 'mapping-repr-secret-value'}"
-                    ),
+                    "python_mapping_repr": ("{'api_key': 'mapping-repr-secret-value'}"),
                     "opaque_context": SecretRepr(),
                 }
             )
@@ -540,9 +538,7 @@ def test_selected_autologger_exports_only_sanitized_bounded_spans(
                 {
                     "sdk_token": "sdk-token-value",
                     "Set-Cookie": "tool-session=cookie-output-value",
-                    "serialized_output": (
-                        '{"credential":"output-json-secret-value"}'
-                    ),
+                    "serialized_output": ('{"credential":"output-json-secret-value"}'),
                 }
             )
             root.set_attribute(
@@ -554,8 +550,7 @@ def test_selected_autologger_exports_only_sanitized_bounded_spans(
                     {
                         "payload": (
                             r'Opaque({"api_key": "oversized-prefix\"'
-                            r'oversized-middle\"oversized-suffix"}):'
-                            + "x" * 70_000
+                            r'oversized-middle\"oversized-suffix"}):' + "x" * 70_000
                         ),
                         "credentials": {"secret": "tool-secret-value"},
                     }
@@ -659,6 +654,7 @@ def test_selected_autologger_exports_only_sanitized_bounded_spans(
         tool_span = next(
             span for span in trace.data.spans if span.span_type == SpanType.TOOL
         )
+        assert set(tool_span.outputs) == {"partial_output", "error"}
         assert tool_span.inputs["truncated"] is True
         expected_safe_inputs = {
             "credentials": "[REDACTED]",
@@ -672,9 +668,9 @@ def test_selected_autologger_exports_only_sanitized_bounded_spans(
         ).encode("utf-8")
         assert tool_span.inputs["preview"] == expected_encoded[: 64 * 1024].decode()
         assert tool_span.inputs["originalBytes"] == len(expected_encoded)
-        assert tool_span.inputs["sha256"] == hashlib.sha256(
-            expected_encoded
-        ).hexdigest()
+        assert (
+            tool_span.inputs["sha256"] == hashlib.sha256(expected_encoded).hexdigest()
+        )
     finally:
         reset_config()
         mlflow.set_tracking_uri(original_tracking_uri)
@@ -696,6 +692,8 @@ def test_migration_scaffold_emits_a_complete_local_framework_trace(
     monkeypatch.setenv("DATABRICKS_APP_NAME", "agent-migration")
     from agent_server import tracing
 
+    tracing.install_sanitizing_export_boundary()
+
     usage = {
         "inputTokens": 7,
         "outputTokens": 3,
@@ -703,9 +701,7 @@ def test_migration_scaffold_emits_a_complete_local_framework_trace(
         "costAvailable": False,
     }
     try:
-        with mlflow.start_span(
-            "migration.request", span_type=SpanType.AGENT
-        ) as root:
+        with mlflow.start_span("migration.request", span_type=SpanType.AGENT) as root:
             tracing.set_request_trace_identity(
                 session_id="migration-session",
                 user_id="migration-user",
@@ -755,5 +751,69 @@ def test_migration_scaffold_emits_a_complete_local_framework_trace(
             "migration.request",
             "migration.model",
         ]
+
+        with mlflow.start_span(
+            "migration.failure.request", span_type=SpanType.AGENT
+        ) as root:
+            tracing.set_request_trace_identity(
+                session_id="migration-failure-session",
+                user_id="migration-failure-user",
+                request_id="migration-failure-request",
+                template_name="agent-migration-from-model-serving",
+            )
+            root.set_inputs({"input": "inject migrated framework failure"})
+            with mlflow.start_span(
+                "migration.failure.model", span_type=SpanType.CHAT_MODEL
+            ) as model:
+                model.set_inputs({"messages": [{"role": "user", "content": "fail"}]})
+                model.set_outputs({"text": "partial framework output"})
+                model.set_attributes(
+                    {
+                        "appkit.model": "migration-test-model",
+                        "appkit.provider": "databricks",
+                        "appkit.usage": usage,
+                        "mlflow.chat.tokenUsage": {
+                            "input_tokens": 7,
+                            "output_tokens": 3,
+                            "total_tokens": 10,
+                        },
+                        "appkit.cost_available": False,
+                    }
+                )
+                model.set_status(
+                    SpanStatus(
+                        status_code="ERROR", description="injected model failure"
+                    )
+                )
+            root.set_outputs({"text": "partial framework output"})
+            root.set_attributes(
+                {
+                    "appkit.usage": usage,
+                    "mlflow.trace.tokenUsage": {
+                        "input_tokens": 7,
+                        "output_tokens": 3,
+                        "total_tokens": 10,
+                    },
+                    "appkit.cost_available": False,
+                }
+            )
+            root.set_status(
+                SpanStatus(status_code="ERROR", description="injected request failure")
+            )
+
+        failure_trace_id = mlflow.get_last_active_trace_id()
+        assert failure_trace_id and failure_trace_id != trace.info.trace_id
+        failure_trace = mlflow.get_trace(failure_trace_id, flush=True)
+        conformance_dir = Path(__file__).parents[2] / ".scripts" / "trace-conformance"
+        sys.path.insert(0, str(conformance_dir))
+        from contract import assert_trace_contract
+        from normalize import normalize_python_mlflow_trace, write_trace_manifest
+
+        failure_manifest = normalize_python_mlflow_trace(
+            "agent-migration-from-model-serving", failure_trace
+        )
+        assert_trace_contract(failure_manifest)
+        if destination := os.environ.get("TRACE_CONFORMANCE_FAILURE_MANIFEST"):
+            write_trace_manifest(destination, failure_manifest)
     finally:
         mlflow.set_tracking_uri(original_tracking_uri)

@@ -234,7 +234,11 @@ function assertTraceContract(spans: any[]) {
   for (const key of ['input_tokens', 'output_tokens', 'total_tokens']) {
     expect(rootUsage[key]).toBe(modelUsage.reduce((sum, usage) => sum + usage[key], 0));
   }
-  if (process.env.TRACE_CONFORMANCE_MANIFEST) {
+  const failed = spans.some((span) => (span.status as { code?: number } | undefined)?.code === 2);
+  const manifestDestination = failed
+    ? process.env.TRACE_CONFORMANCE_FAILURE_MANIFEST
+    : process.env.TRACE_CONFORMANCE_MANIFEST;
+  if (manifestDestination) {
     const manifestSpans = spans.map((span) => {
       const spanType = String(span.attributes['mlflow.spanType']);
       const usage = attribute(span, 'mlflow.chat.tokenUsage') ?? {};
@@ -256,7 +260,7 @@ function assertTraceContract(spans: any[]) {
         parent_span_id: span.parent?.spanId ?? null,
         inputs: attribute(span, 'mlflow.spanInputs'),
         outputs: attribute(span, 'mlflow.spanOutputs'),
-        status: 'OK',
+        status: (span.status as { code?: number } | undefined)?.code === 2 ? 'ERROR' : 'OK',
         latency_ms: 0,
         model: span.attributes['appkit.model'] ?? null,
         provider: span.attributes['appkit.provider'] ?? null,
@@ -268,7 +272,7 @@ function assertTraceContract(spans: any[]) {
       };
     });
     writeFileSync(
-      process.env.TRACE_CONFORMANCE_MANIFEST,
+      manifestDestination,
       `${JSON.stringify({
         template: process.env.TRACE_CONFORMANCE_TEMPLATE ?? 'rag-chat',
         trace_id: root.traceId,
@@ -609,8 +613,11 @@ describe('RAG chat tracing', () => {
     const model = state.spans.find((span) => span.name === 'rag.generate');
     const persistence = state.spans.find((span) => span.name === 'rag.memory.assistant');
     expect(attribute(model, 'mlflow.spanOutputs')).toEqual({
-      text: 'Partial grounded answer',
-      partial: true,
+      partial_output: {
+        text: 'Partial grounded answer',
+        partial: true,
+      },
+      error: 'provider stream failed',
     });
     expect(attribute(model, 'appkit.usage')).toEqual({
       usageAvailable: true,
@@ -639,11 +646,12 @@ describe('RAG chat tracing', () => {
     ).toBe(true);
     expect(attribute(root, 'mlflow.spanOutputs')).toEqual(
       expect.objectContaining({
-        text: 'Partial grounded answer',
-        partial: true,
-        persisted: expect.objectContaining({
-          role: 'assistant',
-          content: 'Partial grounded answer',
+        partial_output: expect.objectContaining({
+          text: 'Partial grounded answer',
+          persisted: expect.objectContaining({
+            role: 'assistant',
+            content: 'Partial grounded answer',
+          }),
         }),
         error: 'provider stream failed',
       })

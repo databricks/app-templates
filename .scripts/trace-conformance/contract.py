@@ -214,6 +214,16 @@ def assert_trace_contract(trace: TraceManifest) -> None:
         if span is not root and span.parent_span_id not in span_ids:
             _fail(trace, span, "parent_span_id", "span has an orphan parent")
 
+    spans_by_id = {span.span_id: span for span in trace.spans}
+    for span in trace.spans:
+        ancestry: set[str] = set()
+        current = span
+        while current.parent_span_id is not None:
+            if current.span_id in ancestry:
+                _fail(trace, span, "parent_span_id", "span ancestry contains a cycle")
+            ancestry.add(current.span_id)
+            current = spans_by_id[current.parent_span_id]
+
     model_spans = [span for span in trace.spans if span.span_type in _MODEL_TYPES]
     if not model_spans:
         _fail(trace, root, "semantic child", "trace has no model child")

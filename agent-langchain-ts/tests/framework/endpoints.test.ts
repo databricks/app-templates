@@ -13,39 +13,7 @@ import {
   jest,
 } from "@jest/globals";
 
-jest.mock("@mlflow/core", () => {
-  let nextTraceId = 1;
-  let activeSpan: Record<string, any> | null = null;
-
-  return {
-    SpanType: { AGENT: "AGENT" },
-    SpanStatusCode: { OK: "OK", ERROR: "ERROR" },
-    init: jest.fn(),
-    updateCurrentTrace: jest.fn(),
-    getCurrentActiveSpan: () => activeSpan,
-    startSpan: jest.fn(),
-    withSpan: async (callback: (span: Record<string, any>) => unknown) => {
-      const span = {
-        traceId: `trace:/catalog_test.schema_test.langchain_test/${(nextTraceId++).toString(16).padStart(32, "0")}`,
-        setInputs: jest.fn(),
-        setOutputs: jest.fn(),
-        setAttribute: jest.fn(),
-        setStatus: jest.fn(),
-        recordException: jest.fn(),
-      };
-      const previous = activeSpan;
-      activeSpan = span;
-      try {
-        return await callback(span);
-      } finally {
-        activeSpan = previous;
-      }
-    },
-    flushTraces: jest.fn(async () => undefined),
-  };
-});
-
-import type { Server } from "http";
+import http, { type Server } from "http";
 import express from "express";
 import OpenAI from "openai";
 import type { AgentInterface } from "../../src/framework/agent-interface.js";
@@ -58,15 +26,41 @@ import {
 
 describe("API Endpoints", () => {
   let server: Server;
+  let exporterServer: Server;
   let baseUrl: string;
   let client: OpenAI;
   const allowedOrigins = new Set<string>();
   const externalRequests: string[] = [];
   const nativeFetch = globalThis.fetch;
   let restoreFetchGuard: (() => void) | undefined;
+  const exportedInfoUrls: string[] = [];
 
   beforeAll(async () => {
-    process.env.MLFLOW_TRACKING_URI = "http://127.0.0.1:65535";
+    exporterServer = http.createServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+      request.on("end", () => {
+        if (request.url?.endsWith("/info")) {
+          exportedInfoUrls.push(request.url);
+        }
+        const body = Buffer.concat(chunks);
+        const json = request.url?.endsWith("/info")
+          ? JSON.parse(body.toString("utf8"))
+          : {};
+        response.setHeader("content-type", "application/json");
+        response.end(JSON.stringify(json));
+      });
+    });
+    await new Promise<void>((resolve) => {
+      exporterServer.listen(0, "127.0.0.1", resolve);
+    });
+    const exporterAddress = exporterServer.address();
+    if (!exporterAddress || typeof exporterAddress === "string") {
+      throw new Error("test MLflow exporter did not bind to a TCP port");
+    }
+    const exporterOrigin = `http://127.0.0.1:${exporterAddress.port}`;
+    allowedOrigins.add(exporterOrigin);
+    process.env.MLFLOW_TRACKING_URI = exporterOrigin;
     process.env.MLFLOW_EXPERIMENT_ID = "123456789";
     process.env.MLFLOW_UC_CATALOG = "catalog_test";
     process.env.MLFLOW_UC_SCHEMA = "schema_test";
@@ -109,6 +103,7 @@ describe("API Endpoints", () => {
     await flushTracing();
     const attempted = externalRequests.splice(0);
     expect(attempted).toEqual([]);
+    exportedInfoUrls.length = 0;
   });
 
   afterAll(async () => {
@@ -116,6 +111,9 @@ describe("API Endpoints", () => {
     restoreFetchGuard?.();
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
+    });
+    await new Promise<void>((resolve, reject) => {
+      exporterServer.close((error) => (error ? reject(error) : resolve()));
     });
   });
 
@@ -140,6 +138,11 @@ describe("API Endpoints", () => {
         /^trace:\/catalog_test\.schema_test\.langchain_test\/[0-9a-f]{32}$/,
       );
       await response.text();
+      await flushTracing();
+      const traceId = response.headers.get("x-mlflow-trace-id")!;
+      expect(exportedInfoUrls).toContain(
+        `/api/4.0/mlflow/traces/catalog_test.schema_test.langchain_test/${traceId.split("/").pop()}/info`,
+      );
     });
 
     test("returns the same V4 MLflow trace ID for a non-streaming request", async () => {

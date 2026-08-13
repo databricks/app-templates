@@ -742,110 +742,83 @@ def _run_typescript_trace_probe(
     from normalize import normalize_mlflow_core_trace, write_trace_manifest
 
     raw_path = manifest_path.with_suffix(".raw.json")
+    artifact_dir = manifest_path.with_suffix(".artifacts")
     probe_path = template_dir / "tests" / ".trace-conformance.generated.test.ts"
     probe_path.write_text(
         """import fs from "node:fs";
-import { jest, test } from "@jest/globals";
-
-jest.mock("@mlflow/core", () => ({
-  ...(() => {
-    const spans: any[] = [];
-    let active: any = null;
-    let next = 1;
-    class Span {
-      traceId: string;
-      spanId: string;
-      parentId: string | null;
-      name: string;
-      spanType: string;
-      inputs: unknown;
-      outputs: unknown;
-      attributes: Record<string, unknown>;
-      status = { code: "UNSET" };
-      started = Date.now();
-      ended = this.started;
-      constructor(options: any) {
-        const parent = options.parent ?? active;
-        this.traceId = parent?.traceId ?? "trace:/catalog_test.schema_test.langchain_test/0123456789abcdef0123456789abcdef";
-        this.spanId = (next++).toString(16).padStart(16, "0");
-        this.parentId = parent?.spanId ?? null;
-        this.name = options.name;
-        this.spanType = options.spanType;
-        this.inputs = options.inputs;
-        this.attributes = { ...(options.attributes ?? {}) };
-        spans.push(this);
-      }
-      setInputs(value: unknown) { this.inputs = value; }
-      setOutputs(value: unknown) { this.outputs = value; }
-      setAttribute(key: string, value: unknown) { this.attributes[key] = value; }
-      setAttributes(value: Record<string, unknown>) { Object.assign(this.attributes, value); }
-      setStatus(code: string) { this.status = { code }; }
-      recordException() {}
-      end(options?: any) {
-        if (options?.outputs !== undefined) this.outputs = options.outputs;
-        if (options?.attributes) this.setAttributes(options.attributes);
-        if (options?.status) this.setStatus(options.status);
-        this.ended = Date.now();
-      }
-    }
-    return {
-      SpanType: { AGENT: "AGENT", CHAIN: "CHAIN", CHAT_MODEL: "CHAT_MODEL", LLM: "LLM", TOOL: "TOOL", RETRIEVER: "RETRIEVER" },
-      SpanStatusCode: { OK: "OK", ERROR: "ERROR" },
-      init: jest.fn(),
-      flushTraces: jest.fn(async () => undefined),
-      getCurrentActiveSpan: () => active,
-      updateCurrentTrace: ({ metadata }: any) => Object.assign(active.attributes, metadata),
-      startSpan: (options: any) => new Span(options),
-      withSpan: async (callback: any, options: any) => {
-        const span = new Span(options);
-        const previous = active;
-        active = span;
-        try {
-          const value = await callback(span);
-          span.end();
-          return value;
-        } finally {
-          active = previous;
-        }
-      },
-      __spans: spans,
-    };
-  })(),
-}));
-
+import http from "node:http";
+import { pathToFileURL } from "node:url";
+import { test } from "@jest/globals";
 import * as mlflow from "@mlflow/core";
 import { createLangChainTracingCallback, withAgentRequestTrace } from "../src/framework/tracing.js";
 
 test("writes a real production callback manifest", async () => {
-  await withAgentRequestTrace(
-    { messages: [{ role: "user", content: "Use the clock tool" }] },
-    { sessionId: "session-1", userId: "user-1", requestId: "request-1" },
-    async (request) => {
-      const callback = createLangChainTracingCallback();
-      callback.handleChatModelStart(
-        { id: ["ChatDatabricks"] },
-        [[{ role: "user", content: "Use the clock tool" }]],
-        "model-run",
-        undefined,
-        { invocation_params: { model: "test-model", provider: "databricks" } },
-        [],
-        { ls_provider: "databricks" },
-      );
-      callback.handleLLMNewToken("tool", undefined, "model-run");
-      callback.handleLLMEnd(
-        {
-          generations: [[{ message: { content: "done", usage_metadata: { input_tokens: 7, output_tokens: 3, total_tokens: 10 }, response_metadata: { finish_reason: "stop" } } }]],
-          llmOutput: {},
-        },
-        "model-run",
-      );
-      callback.handleToolStart({ id: ["clock"] }, JSON.stringify({ zone: "UTC" }), "tool-run");
-      callback.handleToolEnd({ time: "12:00" }, "tool-run");
-      request.setOutputs({ text: "done" });
-      return { text: "done" };
-    },
-  );
-  const spans = (mlflow as any).__spans.map((span: any) => ({
+  const spans: any[] = [];
+  let traceMetadata: Record<string, unknown> = {};
+  const server = http.createServer((request, response) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => { body += chunk; });
+    request.on("end", () => {
+      const payload = JSON.parse(body);
+      const traceInfo = payload.trace.trace_info;
+      traceInfo.tags = {
+        ...(traceInfo.tags ?? {}),
+        "mlflow.artifactLocation": pathToFileURL(
+          process.env.TRACE_CONFORMANCE_ARTIFACTS!,
+        ).href,
+      };
+      traceMetadata = traceInfo.trace_metadata ?? {};
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ trace: { trace_info: traceInfo } }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("loopback MLflow exporter did not bind a TCP port");
+  }
+  mlflow.registerOnSpanEndHook((span) => spans.push(span));
+  mlflow.init({
+    trackingUri: `http://127.0.0.1:${address.port}`,
+    experimentId: "1",
+  });
+  try {
+    await withAgentRequestTrace(
+      { messages: [{ role: "user", content: "Use the clock tool" }] },
+      { sessionId: "session-1", userId: "user-1", requestId: "request-1" },
+      async (request) => {
+        const callback = createLangChainTracingCallback();
+        callback.handleChatModelStart(
+          { id: ["ChatDatabricks"] },
+          [[{ role: "user", content: "Use the clock tool" }]],
+          "model-run",
+          undefined,
+          { invocation_params: { model: "test-model", provider: "databricks" } },
+          [],
+          { ls_provider: "databricks" },
+        );
+        callback.handleLLMNewToken("tool", undefined, "model-run");
+        callback.handleLLMEnd(
+          {
+            generations: [[{ message: { content: "done", usage_metadata: { input_tokens: 7, output_tokens: 3, total_tokens: 10 }, response_metadata: { finish_reason: "stop" } } }]],
+            llmOutput: {},
+          },
+          "model-run",
+        );
+        callback.handleToolStart({ id: ["clock"] }, JSON.stringify({ zone: "UTC" }), "tool-run");
+        callback.handleToolEnd({ time: "12:00" }, "tool-run");
+        request.setOutputs({ text: "done" });
+        return { text: "done" };
+      },
+    );
+    await mlflow.flushTraces();
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  }
+  const normalizedSpans = spans.map((span: any) => ({
     traceId: span.traceId,
     spanId: span.spanId,
     parentSpanId: span.parentId,
@@ -853,14 +826,24 @@ test("writes a real production callback manifest", async () => {
     spanType: span.spanType,
     inputs: span.inputs,
     outputs: span.outputs,
-    status: span.status,
-    latencyMs: Math.max(0, span.ended - span.started),
+    status: { code: span.status.statusCode },
+    latencyMs: Math.max(
+      0,
+      (span.endTime[0] - span.startTime[0]) * 1000 +
+        (span.endTime[1] - span.startTime[1]) / 1_000_000,
+    ),
     links: [],
-    attributes: { ...span.attributes, "mlflow.spanType": span.spanType },
+    attributes: {
+      ...span.attributes,
+      ...(span.parentId === null ? traceMetadata : {}),
+    },
   }));
   fs.writeFileSync(
     process.env.TRACE_CONFORMANCE_RAW!,
-    JSON.stringify({ info: { traceId: spans[0].traceId }, data: { spans } }),
+    JSON.stringify({
+      info: { traceId: normalizedSpans[0].traceId, traceMetadata },
+      data: { spans: normalizedSpans },
+    }),
   );
 });
 """
@@ -875,7 +858,11 @@ test("writes a real production callback manifest", async () => {
                 "tests/.trace-conformance.generated.test.ts",
             ],
             cwd=template_dir,
-            env={**os.environ, "TRACE_CONFORMANCE_RAW": str(raw_path)},
+            env={
+                **os.environ,
+                "TRACE_CONFORMANCE_RAW": str(raw_path),
+                "TRACE_CONFORMANCE_ARTIFACTS": str(artifact_dir),
+            },
             timeout=EVALUATE_TIMEOUT,
             verbose=True,
         )
@@ -889,6 +876,7 @@ test("writes a real production callback manifest", async () => {
     finally:
         probe_path.unlink(missing_ok=True)
         raw_path.unlink(missing_ok=True)
+        shutil.rmtree(artifact_dir, ignore_errors=True)
 
 
 def execute_trace_row_query(

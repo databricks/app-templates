@@ -217,7 +217,7 @@ async def invoke_handler(data: dict) -> dict:
                         parser_span,
                         outputs={
                             "error": safe_error,
-                            "partialOutputs": partial_outputs,
+                            "partial_output": partial_outputs,
                         },
                         attributes={
                             "appkit.question_index": index,
@@ -248,7 +248,10 @@ async def invoke_handler(data: dict) -> dict:
             )
 
         output = AgentOutput(results=analysis_results).model_dump()
-        root_outputs = {"results": output["results"], "partialOutputs": partial_outputs}
+        root_outputs = {
+            "results": output["results"],
+            "partial_output": partial_outputs,
+        }
         aggregate_snapshot = aggregate_usage.snapshot()
         root_attributes = {
             "appkit.usage": aggregate_snapshot,

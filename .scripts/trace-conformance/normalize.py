@@ -1,6 +1,8 @@
 import json
 import os
+from contextlib import contextmanager
 from dataclasses import asdict
+from functools import wraps
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -350,6 +352,29 @@ def load_trace_manifest(path: Path | str) -> TraceManifest:
 
 
 _TRACE_CAPTURE_ERRORS: list[str] = []
+_PROCESS_TRACE_IDS: list[str] = []
+_PROCESS_TRACE_LOCATIONS: dict[str, str] = {}
+
+
+def _install_trace_id_recorder(mlflow) -> None:
+    original_start_span = mlflow.start_span
+    if getattr(original_start_span, "_trace_conformance_recorder", False):
+        return
+
+    @wraps(original_start_span)
+    @contextmanager
+    def recording_start_span(*args, **kwargs):
+        with original_start_span(*args, **kwargs) as span:
+            trace_id = getattr(span, "trace_id", None)
+            if trace_id and trace_id not in _PROCESS_TRACE_IDS:
+                _PROCESS_TRACE_IDS.append(trace_id)
+                _PROCESS_TRACE_LOCATIONS[trace_id] = str(
+                    mlflow.get_tracking_uri()
+                )
+            yield span
+
+    recording_start_span._trace_conformance_recorder = True
+    mlflow.start_span = recording_start_span
 
 
 def _capture_active_pytest_trace() -> None:
@@ -371,20 +396,26 @@ def _capture_active_pytest_trace() -> None:
         tracking_uri = str(mlflow.get_tracking_uri())
         if tracking_uri.startswith("databricks"):
             return
-        candidates = []
         trace_id = mlflow.get_last_active_trace_id()
-        if trace_id:
+        if trace_id and trace_id not in _PROCESS_TRACE_IDS:
+            _PROCESS_TRACE_IDS.append(trace_id)
+            _PROCESS_TRACE_LOCATIONS[trace_id] = tracking_uri
+        candidates = []
+        for trace_id in reversed(_PROCESS_TRACE_IDS):
             from mlflow.tracing.trace_manager import InMemoryTraceManager
 
             with InMemoryTraceManager.get_instance().get_trace(trace_id) as pending:
                 if pending is not None:
                     candidates.append(pending.to_mlflow_trace())
-        for experiment in mlflow.search_experiments():
-            candidates.extend(
-                mlflow.search_traces(
-                    experiment_ids=[experiment.experiment_id], return_type="list"
-                )
-            )
+                    continue
+            current_tracking_uri = str(mlflow.get_tracking_uri())
+            try:
+                mlflow.set_tracking_uri(_PROCESS_TRACE_LOCATIONS[trace_id])
+                trace = mlflow.get_trace(trace_id, silent=True)
+            finally:
+                mlflow.set_tracking_uri(current_tracking_uri)
+            if trace is not None:
+                candidates.append(trace)
         for trace in candidates:
             manifest = normalize_python_mlflow_trace(template, trace)
             try:
@@ -402,7 +433,10 @@ def _capture_active_pytest_trace() -> None:
 
 
 if os.environ.get("TRACE_CONFORMANCE_MANIFEST"):
+    import mlflow
     import pytest
+
+    _install_trace_id_recorder(mlflow)
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_call(item):

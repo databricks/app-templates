@@ -1,14 +1,17 @@
 import copy
 import json
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
+from types import ModuleType
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
 from contract import SpanManifest, TraceManifest, assert_trace_contract
+import normalize
 from normalize import (
     normalize_appkit_otel_trace,
     normalize_mlflow_core_trace,
@@ -283,6 +286,25 @@ def test_contract_accepts_failed_span_with_bounded_partial_output():
     assert_trace_contract(manifest)
 
 
+def test_contract_rejects_parent_cycle_disconnected_from_the_root():
+    model = _model(parent_span_id="tool")
+    tool = _span(
+        "get weather",
+        "TOOL",
+        "tool",
+        "model",
+        inputs={"city": "San Francisco"},
+        outputs={"temperature": 65},
+    )
+
+    with pytest.raises(AssertionError) as error:
+        assert_trace_contract(_manifest(model, tool))
+
+    assert "fixture-template" in str(error.value)
+    assert "parent_span_id" in str(error.value)
+    assert "cycle" in str(error.value)
+
+
 def _complete_attributes(span_type, *, root=False, streaming=False):
     attributes = {
         "mlflow.spanType": span_type,
@@ -444,6 +466,85 @@ class _OtelSpan:
 
     def spanContext(self):
         return self._span_context
+
+
+def test_pytest_capture_records_trace_ids_at_their_creation_location():
+    fake_mlflow = ModuleType("mlflow")
+
+    @contextmanager
+    def start_span(*_args, **_kwargs):
+        yield SimpleNamespace(trace_id=TRACE_ID)
+
+    fake_mlflow.start_span = start_span
+    fake_mlflow.get_tracking_uri = lambda: "sqlite:///created.db"
+    normalize._PROCESS_TRACE_IDS.clear()
+    normalize._PROCESS_TRACE_LOCATIONS.clear()
+
+    normalize._install_trace_id_recorder(fake_mlflow)
+    with fake_mlflow.start_span("request") as span:
+        assert span.trace_id == TRACE_ID
+
+    assert normalize._PROCESS_TRACE_IDS == [TRACE_ID]
+    assert normalize._PROCESS_TRACE_LOCATIONS == {
+        TRACE_ID: "sqlite:///created.db"
+    }
+
+
+def test_pytest_capture_retrieves_only_the_current_process_trace_id(
+    monkeypatch,
+    tmp_path,
+):
+    trace = SimpleNamespace(
+        info=SimpleNamespace(trace_id=TRACE_ID),
+        data=SimpleNamespace(spans=[_OtelSpan(root=True), _OtelSpan(root=False)]),
+    )
+    calls = []
+    current_tracking_uri = [str(tmp_path / "current")]
+    created_tracking_uri = str(tmp_path / "created")
+    fake_mlflow = ModuleType("mlflow")
+    fake_mlflow.get_tracking_uri = lambda: current_tracking_uri[0]
+    fake_mlflow.set_tracking_uri = lambda uri: current_tracking_uri.__setitem__(0, uri)
+    fake_mlflow.get_last_active_trace_id = lambda: TRACE_ID
+
+    def get_trace(trace_id, **kwargs):
+        assert current_tracking_uri[0] == created_tracking_uri
+        calls.append((trace_id, kwargs))
+        return trace
+
+    fake_mlflow.get_trace = get_trace
+    fake_mlflow.search_experiments = lambda: (_ for _ in ()).throw(
+        AssertionError("capture must not scan experiments")
+    )
+
+    @contextmanager
+    def no_pending_trace(_trace_id):
+        yield None
+
+    manager = SimpleNamespace(get_trace=no_pending_trace)
+    trace_manager = ModuleType("mlflow.tracing.trace_manager")
+    trace_manager.InMemoryTraceManager = SimpleNamespace(
+        get_instance=lambda: manager
+    )
+    tracing = ModuleType("mlflow.tracing")
+    monkeypatch.setitem(sys.modules, "mlflow", fake_mlflow)
+    monkeypatch.setitem(sys.modules, "mlflow.tracing", tracing)
+    monkeypatch.setitem(sys.modules, "mlflow.tracing.trace_manager", trace_manager)
+    destination = tmp_path / "manifest.json"
+    monkeypatch.setenv("TRACE_CONFORMANCE_MANIFEST", str(destination))
+    monkeypatch.setenv("TRACE_CONFORMANCE_TEMPLATE", "current-template")
+    normalize._TRACE_CAPTURE_ERRORS.clear()
+    normalize._PROCESS_TRACE_IDS.clear()
+    normalize._PROCESS_TRACE_LOCATIONS.clear()
+    normalize._PROCESS_TRACE_IDS.append(TRACE_ID)
+    normalize._PROCESS_TRACE_LOCATIONS[TRACE_ID] = created_tracking_uri
+
+    normalize._capture_active_pytest_trace()
+
+    captured = normalize.load_trace_manifest(destination)
+    assert captured.trace_id == TRACE_ID
+    assert calls == [(TRACE_ID, {"silent": True})]
+    assert normalize._TRACE_CAPTURE_ERRORS == []
+    assert current_tracking_uri[0] == str(tmp_path / "current")
 
 
 def test_normalizes_appkit_otel_shape_and_stream_timing():

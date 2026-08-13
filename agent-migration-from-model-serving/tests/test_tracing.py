@@ -678,3 +678,82 @@ def test_selected_autologger_exports_only_sanitized_bounded_spans(
     finally:
         reset_config()
         mlflow.set_tracking_uri(original_tracking_uri)
+
+
+def test_migration_scaffold_emits_a_complete_local_framework_trace(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    tracking_uri = f"sqlite:///{tmp_path / 'conformance.db'}"
+    artifact_dir = tmp_path / "conformance-artifacts"
+    artifact_dir.mkdir()
+    original_tracking_uri = mlflow.get_tracking_uri()
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment_id = mlflow.create_experiment(
+        "migration-conformance", artifact_location=artifact_dir.as_uri()
+    )
+    mlflow.set_experiment(experiment_id=experiment_id)
+    monkeypatch.setenv("DATABRICKS_APP_NAME", "agent-migration")
+    from agent_server import tracing
+
+    usage = {
+        "inputTokens": 7,
+        "outputTokens": 3,
+        "totalTokens": 10,
+        "costAvailable": False,
+    }
+    try:
+        with mlflow.start_span(
+            "migration.request", span_type=SpanType.AGENT
+        ) as root:
+            tracing.set_request_trace_identity(
+                session_id="migration-session",
+                user_id="migration-user",
+                request_id="migration-request",
+                template_name="agent-migration-from-model-serving",
+            )
+            root.set_inputs({"input": "validate migrated framework tracing"})
+            with mlflow.start_span(
+                "migration.model", span_type=SpanType.CHAT_MODEL
+            ) as model:
+                model.set_inputs({"messages": [{"role": "user", "content": "test"}]})
+                model.set_outputs({"text": "framework trace complete"})
+                model.set_attributes(
+                    {
+                        "appkit.model": "migration-test-model",
+                        "appkit.provider": "databricks",
+                        "appkit.usage": usage,
+                        "mlflow.chat.tokenUsage": {
+                            "input_tokens": 7,
+                            "output_tokens": 3,
+                            "total_tokens": 10,
+                        },
+                        "appkit.cost_available": False,
+                    }
+                )
+                model.set_status("OK")
+            root.set_outputs({"text": "framework trace complete"})
+            root.set_attributes(
+                {
+                    "appkit.usage": usage,
+                    "mlflow.trace.tokenUsage": {
+                        "input_tokens": 7,
+                        "output_tokens": 3,
+                        "total_tokens": 10,
+                    },
+                    "appkit.cost_available": False,
+                }
+            )
+            root.set_status("OK")
+
+        traces = mlflow.search_traces(
+            locations=[experiment_id], return_type="list", flush=True
+        )
+        assert len(traces) == 1
+        trace = mlflow.get_trace(traces[0].info.trace_id, flush=True)
+        assert [span.name for span in trace.data.spans] == [
+            "migration.request",
+            "migration.model",
+        ]
+    finally:
+        mlflow.set_tracking_uri(original_tracking_uri)

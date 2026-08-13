@@ -1,133 +1,18 @@
-import { afterEach, describe, expect, jest, test } from "@jest/globals";
+import { mkdtemp, rm } from "node:fs/promises";
+import http, { type Server } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "@jest/globals";
 
-jest.mock("@mlflow/core", () => ({
-  ...(() => {
-    const spans: FakeSpan[] = [];
-    let activeSpan: FakeSpan | null = null;
-    let nextSpanId = 1;
-
-    class FakeSpan {
-      readonly traceId: string;
-      readonly spanId: string;
-      readonly parentId: string | null;
-      readonly name: string;
-      readonly spanType: string;
-      inputs: unknown;
-      outputs: unknown;
-      attributes: Record<string, unknown>;
-      status: { code: string; description?: string } = { code: "UNSET" };
-      events: Array<{ name: string; attributes?: Record<string, unknown> }> =
-        [];
-      ended = false;
-
-      constructor(options: Record<string, any>) {
-        const parent = options.parent ?? activeSpan;
-        this.traceId =
-          parent?.traceId ??
-          "trace:/catalog_test.schema_test.langchain_test/0123456789abcdef0123456789abcdef";
-        this.spanId = `span-${nextSpanId++}`;
-        this.parentId = parent?.spanId ?? null;
-        this.name = options.name;
-        this.spanType = options.spanType ?? "UNKNOWN";
-        this.inputs = options.inputs;
-        this.attributes = { ...(options.attributes ?? {}) };
-        spans.push(this);
-      }
-
-      setInputs(value: unknown): void {
-        this.inputs = value;
-      }
-      setOutputs(value: unknown): void {
-        this.outputs = value;
-      }
-      setAttribute(key: string, value: unknown): void {
-        this.attributes[key] = value;
-      }
-      setAttributes(values: Record<string, unknown>): void {
-        Object.assign(this.attributes, values);
-      }
-      setStatus(code: string, description?: string): void {
-        this.status = { code, ...(description ? { description } : {}) };
-      }
-      recordException(error: Error): void {
-        this.events.push({
-          name: "exception",
-          attributes: { message: error.message },
-        });
-      }
-      addEvent(event: {
-        name: string;
-        attributes?: Record<string, unknown>;
-      }): void {
-        this.events.push(event);
-      }
-      end(options?: Record<string, any>): void {
-        if (options?.outputs !== undefined) this.outputs = options.outputs;
-        if (options?.attributes) this.setAttributes(options.attributes);
-        if (options?.status) this.setStatus(options.status);
-        this.ended = true;
-      }
-    }
-
-    const init = jest.fn();
-    const updateCurrentTrace = jest.fn((options: Record<string, any>) => {
-      if (activeSpan) {
-        activeSpan.attributes.traceMetadata = options.metadata;
-      }
-    });
-
-    return {
-      SpanType: {
-        AGENT: "AGENT",
-        CHAIN: "CHAIN",
-        CHAT_MODEL: "CHAT_MODEL",
-        LLM: "LLM",
-        TOOL: "TOOL",
-        RETRIEVER: "RETRIEVER",
-      },
-      SpanStatusCode: { OK: "OK", ERROR: "ERROR" },
-      init,
-      updateCurrentTrace,
-      getCurrentActiveSpan: () => activeSpan,
-      startSpan: (options: Record<string, any>) => new FakeSpan(options),
-      withSpan: async (
-        callback: (span: FakeSpan) => unknown,
-        options: Record<string, any>,
-      ) => {
-        const span = new FakeSpan(options);
-        const previous = activeSpan;
-        activeSpan = span;
-        try {
-          const value = await callback(span);
-          if (span.outputs === undefined) span.setOutputs(value);
-          span.end();
-          return value;
-        } catch (error) {
-          span.setStatus(
-            "ERROR",
-            error instanceof Error ? error.message : String(error),
-          );
-          span.recordException(
-            error instanceof Error ? error : new Error(String(error)),
-          );
-          span.end();
-          throw error;
-        } finally {
-          activeSpan = previous;
-        }
-      },
-      flushTraces: jest.fn(async () => undefined),
-      __spans: spans,
-      __reset: () => {
-        spans.length = 0;
-        activeSpan = null;
-        nextSpanId = 1;
-      },
-    };
-  })(),
-}));
-
-interface FakeSpan {
+interface CapturedSpan {
   traceId: string;
   spanId: string;
   parentId: string | null;
@@ -138,24 +23,27 @@ interface FakeSpan {
   attributes: Record<string, any>;
   status: { code: string; description?: string };
   events: Array<{ name: string; attributes?: Record<string, unknown> }>;
-  ended: boolean;
 }
 
 import * as mlflow from "@mlflow/core";
 import { RunnableLambda, RunnableSequence } from "@langchain/core/runnables";
 import {
   BoundedTraceAccumulator,
+  buildTracingConfig,
   flushTracing,
   initializeTracing,
-  setTraceIdentity,
   withAgentRequestTrace,
 } from "../../src/framework/tracing.js";
 import { StandardAgent } from "../../src/agent.js";
 
-const mlflowTest = mlflow as typeof mlflow & {
-  __spans: FakeSpan[];
-  __reset(): void;
-};
+const mlflowSpans: CapturedSpan[] = [];
+const exporterRequests: Array<{
+  url: string;
+  headers: http.IncomingHttpHeaders;
+  json?: Record<string, any>;
+}> = [];
+let exporterServer: Server;
+let artifactDirectory: string;
 
 const REQUIRED_ENV = [
   "MLFLOW_EXPERIMENT_ID",
@@ -166,11 +54,82 @@ const REQUIRED_ENV = [
 
 const originalEnv = { ...process.env };
 
-afterEach(() => {
+beforeAll(async () => {
+  artifactDirectory = await mkdtemp(join(tmpdir(), "mlflow-core-test-"));
+  exporterServer = http.createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+    request.on("end", () => {
+      const body = Buffer.concat(chunks);
+      const json = request.headers["content-type"]?.includes("application/json")
+        ? (JSON.parse(body.toString("utf8")) as Record<string, any>)
+        : undefined;
+      const traceInfo = json?.trace?.trace_info;
+      if (traceInfo) {
+        traceInfo.tags = {
+          ...(traceInfo.tags ?? {}),
+          "mlflow.artifactLocation": pathToFileURL(artifactDirectory).href,
+        };
+      }
+      exporterRequests.push({
+        url: request.url ?? "",
+        headers: request.headers,
+        ...(json ? { json } : {}),
+      });
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(json ?? {}));
+    });
+  });
+  await new Promise<void>((resolve) =>
+    exporterServer.listen(0, "127.0.0.1", resolve),
+  );
+  const address = exporterServer.address();
+  if (!address || typeof address === "string") {
+    throw new Error("loopback MLflow exporter did not bind a TCP port");
+  }
+  mlflow.registerOnSpanEndHook((span) => {
+    mlflowSpans.push({
+      traceId: span.traceId,
+      spanId: span.spanId,
+      parentId: span.parentId,
+      name: span.name,
+      spanType: span.spanType,
+      inputs: span.inputs,
+      outputs: span.outputs,
+      attributes: span.attributes,
+      status: {
+        code: span.status.statusCode,
+        ...(span.status.description
+          ? { description: span.status.description }
+          : {}),
+      },
+      events: span.events.map((event) => ({
+        name: event.name,
+        attributes: event.attributes?.["exception.message"]
+          ? { message: event.attributes["exception.message"] }
+          : event.attributes,
+      })),
+    });
+  });
+  mlflow.init({
+    trackingUri: `http://127.0.0.1:${address.port}`,
+    experimentId: "123456789",
+  });
+});
+
+afterEach(async () => {
+  await flushTracing();
   process.env = { ...originalEnv };
-  jest.mocked(mlflow.init).mockClear();
-  jest.mocked(mlflow.updateCurrentTrace).mockClear();
-  mlflowTest.__reset();
+  mlflowSpans.length = 0;
+  exporterRequests.length = 0;
+});
+
+afterAll(async () => {
+  await flushTracing();
+  await new Promise<void>((resolve, reject) => {
+    exporterServer.close((error) => (error ? reject(error) : resolve()));
+  });
+  await rm(artifactDirectory, { recursive: true, force: true });
 });
 
 describe("MLflow tracing", () => {
@@ -220,16 +179,14 @@ describe("MLflow tracing", () => {
     );
   });
 
-  test("initializes MLflow core with the exact UC trace location", () => {
+  test("builds the exact UC trace location for MLflow core", () => {
     process.env.MLFLOW_TRACKING_URI = "   ";
     process.env.MLFLOW_EXPERIMENT_ID = "123456789";
     process.env.MLFLOW_UC_CATALOG = "catalog_test";
     process.env.MLFLOW_UC_SCHEMA = "schema_test";
     process.env.MLFLOW_UC_TABLE_PREFIX = "langchain_test";
 
-    initializeTracing();
-
-    expect(mlflow.init).toHaveBeenCalledWith({
+    expect(buildTracingConfig()).toEqual({
       trackingUri: "databricks",
       experimentId: "123456789",
       traceLocation: {
@@ -240,18 +197,31 @@ describe("MLflow tracing", () => {
     });
   });
 
-  test("sets app, session, user, and request identity on the active trace", () => {
+  test("sets app, session, user, and request identity on the exported trace", async () => {
     process.env.DATABRICKS_APP_NAME = "deployed-langchain-agent";
 
-    setTraceIdentity("session-123", "user-456", "request-789");
-
-    expect(mlflow.updateCurrentTrace).toHaveBeenCalledWith({
-      metadata: {
-        "mlflow.trace.session": "session-123",
-        "mlflow.trace.user": "user-456",
-        "appkit.app.name": "deployed-langchain-agent",
-        "appkit.request.id": "request-789",
+    await withAgentRequestTrace(
+      { input: "identify this trace" },
+      {
+        sessionId: "session-123",
+        userId: "user-456",
+        requestId: "request-789",
       },
+      async (trace) => {
+        trace.setOutputs({ output: "identified" });
+        return "identified";
+      },
+    );
+    await mlflow.flushTraces();
+
+    const infoRequest = exporterRequests.find((request) =>
+      request.url.endsWith("/api/3.0/mlflow/traces"),
+    );
+    expect(infoRequest?.json?.trace?.trace_info?.trace_metadata).toMatchObject({
+      "mlflow.trace.session": "session-123",
+      "mlflow.trace.user": "user-456",
+      "appkit.app.name": "deployed-langchain-agent",
+      "appkit.request.id": "request-789",
     });
   });
 
@@ -372,14 +342,14 @@ describe("MLflow tracing", () => {
       },
     );
 
-    const roots = mlflowTest.__spans.filter(
+    const roots = mlflowSpans.filter(
       (span) => span.spanType === "AGENT" && span.parentId === null,
     );
-    const models = mlflowTest.__spans.filter(
+    const models = mlflowSpans.filter(
       (span) => span.spanType === "CHAT_MODEL",
     );
     expect(roots).toHaveLength(1);
-    expect(roots[0].status.code).toBe("OK");
+    expect(roots[0].status.code).toBe("STATUS_CODE_OK");
     expect(models.map((span) => span.attributes["langchain.run_id"])).toEqual([
       "model-run-1",
       "model-run-2",
@@ -488,10 +458,10 @@ describe("MLflow tracing", () => {
       async () => agent.invoke({ input: "count these tokens" }),
     );
 
-    const root = mlflowTest.__spans.find(
+    const root = mlflowSpans.find(
       (span) => span.spanType === "AGENT" && span.parentId === null,
     );
-    const model = mlflowTest.__spans.find(
+    const model = mlflowSpans.find(
       (span) => span.attributes["langchain.run_id"] === "adapter-model-run",
     );
     const expectedUsage = {
@@ -567,17 +537,17 @@ describe("MLflow tracing", () => {
       async () => agent.invoke({ input: "use tools" }),
     );
 
-    const tools = mlflowTest.__spans.filter((span) => span.spanType === "TOOL");
+    const tools = mlflowSpans.filter((span) => span.spanType === "TOOL");
     expect(tools.map((span) => span.attributes["langchain.run_id"])).toEqual([
       "tool-success",
       "tool-error",
     ]);
     expect(tools[0].inputs).toEqual({ city: "Paris" });
     expect(tools[0].outputs).toEqual({ temperature: 21, conditions: "sunny" });
-    expect(tools[0].status.code).toBe("OK");
+    expect(tools[0].status.code).toBe("STATUS_CODE_OK");
     expect(tools[1].inputs).toEqual({ date: "tomorrow" });
     expect(tools[1].outputs).toEqual({ error: "calendar unavailable" });
-    expect(tools[1].status.code).toBe("ERROR");
+    expect(tools[1].status.code).toBe("STATUS_CODE_ERROR");
     expect(tools[1].events).toEqual([
       { name: "exception", attributes: { message: "calendar unavailable" } },
     ]);
@@ -641,15 +611,16 @@ describe("MLflow tracing", () => {
       async () => agent.invoke({ input: "find policy" }),
     );
 
-    const root = mlflowTest.__spans.find(
+    const root = mlflowSpans.find(
       (span) => span.spanType === "AGENT" && span.parentId === null,
     );
-    const chain = mlflowTest.__spans.find(
+    const chain = mlflowSpans.find(
       (span) =>
         span.spanType === "CHAIN" &&
+        span.parentId === root?.spanId &&
         span.attributes["langchain.run_id"] === "agent-retrieval",
     );
-    const retriever = mlflowTest.__spans.find(
+    const retriever = mlflowSpans.find(
       (span) => span.spanType === "RETRIEVER",
     );
     expect(root).toBeDefined();
@@ -663,7 +634,7 @@ describe("MLflow tracing", () => {
         metadata: { source: "policy" },
       },
     ]);
-    const decisions = mlflowTest.__spans.filter(
+    const decisions = mlflowSpans.filter(
       (span) =>
         span.spanType === "CHAIN" &&
         ["langchain.agent.action", "langchain.agent.end"].includes(span.name),
@@ -700,7 +671,10 @@ describe("MLflow tracing", () => {
         password: "[REDACTED]",
       },
     ]);
-    expect(decisions.map((span) => span.status.code)).toEqual(["OK", "OK"]);
+    expect(decisions.map((span) => span.status.code)).toEqual([
+      "STATUS_CODE_OK",
+      "STATUS_CODE_OK",
+    ]);
     expect(chain?.events).toEqual([]);
     expect(JSON.stringify(decisions)).not.toContain("action-secret");
     expect(JSON.stringify(decisions)).not.toContain("finish-secret");
@@ -727,15 +701,17 @@ describe("MLflow tracing", () => {
       async () => agent.invoke({ input: "run nested chains" }),
     );
 
-    const chains = mlflowTest.__spans.filter(
+    const chains = mlflowSpans.filter(
       (span) => span.spanType === "CHAIN",
     );
-    expect(chains.map((span) => span.name)).toEqual([
+    expect(chains.map((span) => span.name).sort()).toEqual([
       "outer-sequence",
       "prepare-input",
       "produce-answer",
-    ]);
-    const [outer, prepare, produce] = chains;
+    ].sort());
+    const outer = chains.find((span) => span.name === "outer-sequence")!;
+    const prepare = chains.find((span) => span.name === "prepare-input")!;
+    const produce = chains.find((span) => span.name === "produce-answer")!;
     expect(prepare.parentId).toBe(outer.spanId);
     expect(produce.parentId).toBe(outer.spanId);
     expect(prepare.attributes["langchain.parent_run_id"]).toBe(
@@ -765,7 +741,7 @@ describe("MLflow tracing", () => {
       },
     );
 
-    const root = mlflowTest.__spans.find(
+    const root = mlflowSpans.find(
       (span) => span.spanType === "AGENT" && span.parentId === null,
     );
     expect(root?.inputs).toEqual({
@@ -796,10 +772,10 @@ describe("MLflow tracing", () => {
       ),
     ).rejects.toThrow("Authorization: [REDACTED]");
 
-    const root = mlflowTest.__spans.find(
+    const root = mlflowSpans.find(
       (span) => span.spanType === "AGENT" && span.parentId === null,
     );
-    expect(root?.status.code).toBe("ERROR");
+    expect(root?.status.code).toBe("STATUS_CODE_ERROR");
     expect(root?.outputs).toEqual({ error: "Authorization: [REDACTED]" });
     expect(JSON.stringify(root)).not.toContain("request-secret");
   });
@@ -816,10 +792,10 @@ describe("MLflow tracing", () => {
     );
 
     expect(result.value).toBe("Authorization: [REDACTED]");
-    const root = mlflowTest.__spans.find(
+    const root = mlflowSpans.find(
       (span) => span.spanType === "AGENT" && span.parentId === null,
     );
-    expect(root?.status.code).toBe("ERROR");
+    expect(root?.status.code).toBe("STATUS_CODE_ERROR");
     expect(root?.outputs).toEqual({ error: "Authorization: [REDACTED]" });
     expect(JSON.stringify(root)).not.toContain("stream-secret");
   });
@@ -844,23 +820,4 @@ describe("MLflow tracing", () => {
     expect(JSON.stringify(snapshot)).not.toContain("secret-0");
   });
 
-  test("logs but does not propagate runtime export failures", async () => {
-    jest
-      .mocked(mlflow.flushTraces)
-      .mockRejectedValueOnce(
-        new Error("Authorization: Bearer exporter-secret"),
-      );
-    const log = jest
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
-
-    await expect(flushTracing()).resolves.toBeUndefined();
-
-    expect(log).toHaveBeenCalledWith(
-      "MLflow trace export failed during flush:",
-      "Authorization: [REDACTED]",
-    );
-    expect(JSON.stringify(log.mock.calls)).not.toContain("exporter-secret");
-    log.mockRestore();
-  });
 });

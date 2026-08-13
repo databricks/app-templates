@@ -271,6 +271,9 @@ def test_real_runner_tool_turn_has_one_root_and_one_model_span_per_call(
         key=lambda span: span.start_time_ns,
     )
     tool_spans = [span for span in trace.data.spans if span.span_type == "TOOL"]
+    workflow = next(span for span in trace.data.spans if span.name == "Agent workflow")
+    assert workflow.inputs["data"]["sdk_span_type"] == "task"
+    assert workflow.inputs["data"]["name"] == workflow.name
     assert [(span.name, span.span_type) for span in roots] == [
         ("AgentRunner.run", "AGENT")
     ]
@@ -388,6 +391,8 @@ def test_model_failure_finalizes_root_and_model_with_safe_error(monkeypatch, tmp
     model = models[0]
     assert root.status.status_code == "ERROR"
     assert model.status.status_code == "ERROR"
+    assert root.outputs["partial_output"] == {"model_calls_completed": 1}
+    assert model.outputs["partial_output"] == {"events": []}
     assert root.get_attribute("appkit.usage") == {
         "inputTokens": 0,
         "outputTokens": 0,
@@ -656,6 +661,10 @@ def test_failed_stream_resets_capture_before_later_success(monkeypatch, tmp_path
         roots.extend(trace_roots)
     assert sorted(root.status.status_code for root in roots) == ["ERROR", "OK"]
     assert all(root.get_attribute("appkit.stream.capture") is not None for root in roots)
+    failed_root = next(root for root in roots if root.status.status_code == "ERROR")
+    assert failed_root.outputs["partial_output"] == {
+        "events": failed_root.get_attribute("appkit.stream.capture")
+    }
     serialized = json.dumps(
         [span.to_dict() for trace in traces for span in trace.data.spans]
     )

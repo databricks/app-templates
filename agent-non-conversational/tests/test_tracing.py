@@ -195,9 +195,12 @@ def test_malformed_second_answer_preserves_batch_trace_and_usage(
     }
     assert root.get_attribute("appkit.cost_available") is False
     assert "appkit.cost_usd" not in root.attributes
-    assert [item["question_text"] for item in root.outputs["partialOutputs"]] == [
+    assert [item["question_text"] for item in root.outputs["partial_output"]] == [
         "Balance sheet?"
     ]
+    assert [
+        item["question_text"] for item in parsers[1].outputs["partial_output"]
+    ] == ["Balance sheet?"]
     assert root.outputs["results"] == result["results"]
     assert all(span.get_attribute("appkit.duration_ms") >= 0 for span in models + parsers)
     assert trace.info.trace_metadata["mlflow.trace.session"] == "batch-session"
@@ -276,7 +279,7 @@ def test_schema_invalid_second_answer_is_parser_error_and_batch_continues(
     assert len(models) == 3
     assert [span.status.status_code for span in parsers] == ["OK", "ERROR", "OK"]
     assert root.status.status_code == "ERROR"
-    assert [item["question_text"] for item in root.outputs["partialOutputs"]] == [
+    assert [item["question_text"] for item in root.outputs["partial_output"]] == [
         "First?"
     ]
 

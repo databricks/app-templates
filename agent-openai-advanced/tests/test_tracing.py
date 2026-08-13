@@ -108,6 +108,9 @@ def test_real_runner_traces_memory_read_and_write(monkeypatch, tmp_path):
     model_spans = [
         span for span in trace.data.spans if span.span_type == "CHAT_MODEL"
     ]
+    workflow = next(span for span in trace.data.spans if span.name == "Agent workflow")
+    assert workflow.inputs["data"]["sdk_span_type"] == "task"
+    assert workflow.inputs["data"]["name"] == workflow.name
     assert [(span.name, span.span_type) for span in roots] == [
         ("AgentRunner.run", "AGENT")
     ]
@@ -115,6 +118,11 @@ def test_real_runner_traces_memory_read_and_write(monkeypatch, tmp_path):
         ("memory.read", "OK"),
         ("memory.write", "OK"),
         ("memory.write", "OK"),
+    ]
+    assert memory_spans[0].outputs == {"items": []}
+    assert [span.outputs for span in memory_spans[1:]] == [
+        {"completed": True},
+        {"completed": True},
     ]
     assert len(model_spans) == 1
     model = model_spans[0]
@@ -209,8 +217,14 @@ def test_real_runner_memory_failure_finalizes_safe_error(monkeypatch, tmp_path):
     memory = memories[0]
     assert memory.name == "memory.read"
     assert memory.status.status_code == "ERROR"
-    assert memory.outputs == {"error": "token [REDACTED]"}
+    assert memory.outputs == {
+        "error": "token [REDACTED]",
+        "partial_output": {"items": []},
+    }
     assert roots[0].status.status_code == "ERROR"
+    assert roots[0].outputs["partial_output"] == {
+        "model_calls_completed": 0
+    }
     assert roots[0].get_attribute("appkit.usage") == {
         "inputTokens": 0,
         "outputTokens": 0,

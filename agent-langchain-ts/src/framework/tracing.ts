@@ -56,8 +56,8 @@ function resolveTrackingUri(): string {
   );
 }
 
-export function initializeTracing(): void {
-  mlflow.init({
+export function buildTracingConfig() {
+  return {
     trackingUri: resolveTrackingUri(),
     experimentId: requireExperimentId(),
     traceLocation: {
@@ -65,7 +65,11 @@ export function initializeTracing(): void {
       schemaName: requireUcIdentifier("MLFLOW_UC_SCHEMA"),
       tablePrefix: requireUcIdentifier("MLFLOW_UC_TABLE_PREFIX"),
     },
-  });
+  };
+}
+
+export function initializeTracing(): void {
+  mlflow.init(buildTracingConfig());
 }
 
 export function setTraceIdentity(

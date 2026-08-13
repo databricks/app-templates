@@ -233,12 +233,25 @@ class TracedSession:
             result = await method(*args, **kwargs)
         except BaseException as error:
             safe_error = safe_error_message(error)
-            span.set_outputs({"error": safe_error})
+            partial_output = (
+                {"items": []}
+                if name == "memory.read"
+                else {"completed": False}
+            )
+            span.set_outputs(
+                {"error": safe_error, "partial_output": partial_output}
+            )
             span.record_exception(RuntimeError(f"{type(error).__name__}: {safe_error}"))
             manager.__exit__(None, None, None)
             raise
         else:
-            span.set_outputs(safe_trace_value(result))
+            if name == "memory.read":
+                outputs = {"items": safe_trace_value(result)}
+            elif result is None:
+                outputs = {"completed": True}
+            else:
+                outputs = {"result": safe_trace_value(result)}
+            span.set_outputs(outputs)
             span.set_status("OK")
             manager.__exit__(None, None, None)
             return result
@@ -368,6 +381,10 @@ class AgentRequestUsage:
         with _request_traces_lock:
             _request_traces.pop(self._span.trace_id, None)
 
+    def partial_output(self) -> dict[str, int]:
+        with self._lock:
+            return {"model_calls_completed": self._model_calls}
+
 
 def _nonnegative_int(value: Any) -> int:
     if isinstance(value, bool):
@@ -477,7 +494,12 @@ async def _appkit_patched_agent_run(original, self, *args, **kwargs):
         result = await original(self, *args, **kwargs)
     except BaseException as error:
         safe_error = safe_error_message(error)
-        span.set_outputs({"error": safe_error})
+        span.set_outputs(
+            {
+                "error": safe_error,
+                "partial_output": request_usage.partial_output(),
+            }
+        )
         span.record_exception(RuntimeError(f"{type(error).__name__}: {safe_error}"))
         request_usage.finalize()
         manager.__exit__(None, None, None)
@@ -740,6 +762,77 @@ def _install_single_mlflow_agent_processor() -> None:
         def on_span_end(self, span):
             if span.span_id in self._ignored_generation_spans:
                 self._ignored_generation_spans.discard(span.span_id)
+                return
+            if span.span_data.type in {
+                OpenAISpanType.AGENT,
+                "task",
+                "turn",
+            }:
+                from mlflow.entities import SpanEvent, SpanStatus, SpanStatusCode
+                from mlflow.openai import _agent_tracer
+
+                span_with_token = self._span_id_to_mlflow_span.pop(
+                    span.span_id, None
+                )
+                if span_with_token is None:
+                    return
+                _agent_tracer.detach_span_from_context(span_with_token.token)
+                mlflow_span = span_with_token.span
+                agent_inputs = safe_trace_value(span.span_data.export())
+                mlflow_span.set_inputs(agent_inputs)
+                if span.span_data.type == OpenAISpanType.AGENT:
+                    mlflow_span.set_attributes(
+                        {
+                            "handoffs": safe_trace_value(
+                                span.span_data.handoffs
+                            ),
+                            "tools": safe_trace_value(span.span_data.tools),
+                            "output_type": safe_trace_value(
+                                span.span_data.output_type
+                            ),
+                        }
+                    )
+                if span.error:
+                    safe_error = safe_error_message(
+                        span.error.get("message", "error")
+                    )
+                    mlflow_span.set_outputs(
+                        {
+                            "error": safe_error,
+                            "partial_output": agent_inputs,
+                        }
+                    )
+                    mlflow_span.add_event(
+                        SpanEvent(
+                            name="exception",
+                            attributes={
+                                "exception.message": safe_error,
+                                "exception.type": "",
+                                "exception.stacktrace": json.dumps(
+                                    safe_trace_value(
+                                        span.error.get("data", {})
+                                    )
+                                ),
+                            },
+                        )
+                    )
+                    status = SpanStatus(
+                        status_code=SpanStatusCode.ERROR,
+                        description=safe_error,
+                    )
+                else:
+                    outputs = (
+                        {
+                            "output_type": safe_trace_value(
+                                span.span_data.output_type
+                            )
+                        }
+                        if span.span_data.type == OpenAISpanType.AGENT
+                        else {"completed": True}
+                    )
+                    mlflow_span.set_outputs(outputs)
+                    status = SpanStatusCode.OK
+                mlflow_span.end(status=status)
                 return
             if span.error:
                 span.set_error(

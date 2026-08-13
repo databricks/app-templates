@@ -1,4 +1,3 @@
-import ast
 import re
 import sys
 from dataclasses import dataclass, field, replace
@@ -242,8 +241,11 @@ def build_templates(
     return templates
 
 
-def build_trace_policy_templates():
-    """Discover primary agent templates and attach shared deployed proof.
+def build_trace_policy_templates(
+    root: Path = REPO_ROOT,
+    deployed_template_names: set[str] | None = None,
+):
+    """Discover primary agent templates and attach per-template deployed proof.
 
     Candidate selection is a repository convention plus source behavior, not a
     hand-maintained list: any new ``agent-*`` directory detected by the shared
@@ -251,44 +253,17 @@ def build_trace_policy_templates():
     """
     conformance_dir = REPO_ROOT / ".scripts" / "trace-conformance"
     sys.path.insert(0, str(conformance_dir))
-    from discovery import discover_agentic_templates
+    from discovery import discover_agentic_templates, is_trace_policy_candidate
 
-    deployed_harness = (
-        REPO_ROOT
-        / ".scripts"
-        / "agent-integration-tests"
-        / "test_quickstart_e2e.py"
-    ).read_text()
-    tree = ast.parse(deployed_harness)
-    imported = {
-        alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
-        for alias in node.names
-    }
-    called = {
-        node.func.id
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-    }
-    called.update(
-        node.func.attr
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-    )
-    shared_deployed_proof = {
-        "assert_trace_contract",
-        "execute_trace_row_query",
-        "normalize_python_mlflow_trace",
-        "normalize_uc_rows",
-    }.issubset(imported | called)
+    deployed_template_names = deployed_template_names or set()
     return [
         replace(
             template,
             has_deployed_verification=(
-                template.has_deployed_verification or shared_deployed_proof
+                template.has_deployed_verification
+                or template.name in deployed_template_names
             ),
         )
-        for template in discover_agentic_templates(REPO_ROOT)
-        if template.name.startswith("agent-") and template.local_test_command
+        for template in discover_agentic_templates(root)
+        if is_trace_policy_candidate(template)
     ]

@@ -936,6 +936,77 @@ def _install_single_mlflow_agent_processor() -> None:
             if span.span_id in self._ignored_generation_spans:
                 self._ignored_generation_spans.discard(span.span_id)
                 return
+            if span.span_data.type in {
+                OpenAISpanType.AGENT,
+                "task",
+                "turn",
+            }:
+                from mlflow.entities import SpanEvent, SpanStatus, SpanStatusCode
+                from mlflow.openai import _agent_tracer
+
+                span_with_token = self._span_id_to_mlflow_span.pop(
+                    span.span_id, None
+                )
+                if span_with_token is None:
+                    return
+                _agent_tracer.detach_span_from_context(span_with_token.token)
+                mlflow_span = span_with_token.span
+                agent_inputs = safe_trace_value(span.span_data.export())
+                mlflow_span.set_inputs(agent_inputs)
+                if span.span_data.type == OpenAISpanType.AGENT:
+                    mlflow_span.set_attributes(
+                        {
+                            "handoffs": safe_trace_value(
+                                span.span_data.handoffs
+                            ),
+                            "tools": safe_trace_value(span.span_data.tools),
+                            "output_type": safe_trace_value(
+                                span.span_data.output_type
+                            ),
+                        }
+                    )
+                if span.error:
+                    safe_error = safe_error_message(
+                        span.error.get("message", "error")
+                    )
+                    mlflow_span.set_outputs(
+                        {
+                            "error": safe_error,
+                            "partial_output": agent_inputs,
+                        }
+                    )
+                    mlflow_span.add_event(
+                        SpanEvent(
+                            name="exception",
+                            attributes={
+                                "exception.message": safe_error,
+                                "exception.type": "",
+                                "exception.stacktrace": json.dumps(
+                                    safe_trace_value(
+                                        span.error.get("data", {})
+                                    )
+                                ),
+                            },
+                        )
+                    )
+                    status = SpanStatus(
+                        status_code=SpanStatusCode.ERROR,
+                        description=safe_error,
+                    )
+                else:
+                    outputs = (
+                        {
+                            "output_type": safe_trace_value(
+                                span.span_data.output_type
+                            )
+                        }
+                        if span.span_data.type == OpenAISpanType.AGENT
+                        else {"completed": True}
+                    )
+                    mlflow_span.set_outputs(outputs)
+                    status = SpanStatusCode.OK
+                mlflow_span.end(status=status)
+                return
             if span.error:
                 span.set_error(
                     {

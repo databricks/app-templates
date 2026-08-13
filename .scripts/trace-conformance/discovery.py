@@ -140,7 +140,10 @@ def _has_local_conformance(template: Path) -> bool:
             source,
             re.IGNORECASE,
         )
-        if direct_contract or real_trace_test:
+        sdk_hook_trace_test = "registerOnSpanEndHook" in source and re.search(
+            r"spyOn|mockImplementation|loopback", source, re.IGNORECASE
+        )
+        if direct_contract or real_trace_test or sdk_hook_trace_test:
             return True
     return False
 
@@ -148,12 +151,19 @@ def _has_local_conformance(template: Path) -> bool:
 def _has_deployed_verification(template: Path) -> bool:
     for path, source in _test_files(template):
         relative = path.relative_to(template).as_posix().lower()
-        if "deployed" not in relative and "e2e" not in relative:
+        deployed_test = "deployed" in relative or "e2e" in relative
+        deployment_preflight = (
+            "verify_deployment_trace_resources" in source
+            and "verify_smoke_trace" in source
+        )
+        if not deployed_test and not deployment_preflight:
             continue
         has_invoke = re.search(r"invoke|request|fetch|post", source, re.IGNORECASE)
         has_trace = re.search(r"trace_id|traceId|get_trace|getTrace", source)
         has_uc = re.search(
-            r"otel_spans|otelSpans|query_otel|Unity Catalog|\bUC\b", source
+            r"otel_spans|otelSpans|query_otel|unity[_ ]catalog|\bUC\b",
+            source,
+            re.IGNORECASE,
         )
         if has_invoke and has_trace and has_uc:
             return True
@@ -168,6 +178,7 @@ def _local_test_command(template: Path) -> tuple[str, ...] | None:
             "uv",
             "run",
             "--offline",
+            "--frozen",
             "--project",
             template.name,
             "pytest",
@@ -191,10 +202,24 @@ def _local_test_command(template: Path) -> tuple[str, ...] | None:
     return None
 
 
+def is_trace_policy_candidate(template: AgentTemplate) -> bool:
+    """Select surfaces that own trace creation, without consulting proof."""
+    if "agent-server" in template.signals:
+        return True
+    source = _production_source(template.path)
+    return "agent-constructor" in template.signals and re.search(
+        r"@mlflow/core|withAgentRequestTrace|runWithAgentTrace", source
+    ) is not None
+
+
 def discover_agentic_templates(root: Path | str) -> list[AgentTemplate]:
     root = Path(root)
     discovered = []
-    for template in sorted(path for path in root.iterdir() if path.is_dir()):
+    for template in sorted(
+        path
+        for path in root.iterdir()
+        if path.is_dir() and not path.name.startswith(".")
+    ):
         signals = _signals(_production_source(template))
         if not signals:
             continue

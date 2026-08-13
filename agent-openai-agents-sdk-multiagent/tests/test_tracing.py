@@ -239,6 +239,9 @@ def test_real_runner_remote_handoffs_propagate_and_link(monkeypatch, tmp_path):
         if span.name in {"remote.app_agent", "remote.serving_endpoint"}
     ]
     model_spans = [span for span in trace.data.spans if span.span_type == "CHAT_MODEL"]
+    workflow = next(span for span in trace.data.spans if span.name == "Agent workflow")
+    assert workflow.inputs["data"]["sdk_span_type"] == "task"
+    assert workflow.inputs["data"]["name"] == workflow.name
     assert [(span.name, span.span_type) for span in roots] == [
         ("AgentRunner.run", "AGENT")
     ]

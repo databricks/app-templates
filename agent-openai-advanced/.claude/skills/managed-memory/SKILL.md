@@ -413,6 +413,8 @@ Save only what will still matter in a future, unrelated conversation — a stabl
 - Briefly tell the user whenever you save, update, or delete."""
 ```
 
+**Then confirm the instructions with the user before moving on — don't skip this.** Show them the full `MEMORY_INSTRUCTIONS` text you added and explain in a sentence or two what it controls: when the agent *recalls* memory (personalized questions) and what it *saves* (durable preferences, facts, and decisions — not passing chatter). **Ask with `AskUserQuestion`** whether to keep it as-is or change it — offer options like *"Looks good"*, *"Adjust when it saves/recalls"*, and *"I'll rewrite it"*. Apply whatever they ask for, matching the wording to the scope you chose in Step 1. **Don't proceed to Test until they've signed off.**
+
 ## Test
 
 Run the server for API-only testing with `uv run start-app --no-ui --port 8000` — plain `start-app` also clones and builds the Next.js chat UI (slow, and unneeded for curl); `--no-ui` skips it and `--port` sets the port (match it in the curls below).

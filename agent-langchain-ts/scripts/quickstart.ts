@@ -10,11 +10,11 @@
  * - Dependency installation
  */
 
-import { execSync } from "child_process";
+import { execFileSync, execSync } from "child_process";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 import * as readline from "readline/promises";
-import { WorkspaceClient } from "@databricks/sdk-experimental";
+import { safeLogError } from "../src/framework/tracing.js";
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -25,7 +25,6 @@ interface Config {
   databricksHost: string;
   configProfile: string;
   model: string;
-  experimentId?: string;
 }
 
 interface DatabricksProfile {
@@ -33,7 +32,10 @@ interface DatabricksProfile {
   host: string;
 }
 
-async function prompt(question: string, defaultValue?: string): Promise<string> {
+async function prompt(
+  question: string,
+  defaultValue?: string,
+): Promise<string> {
   const promptText = defaultValue
     ? `${question} (${defaultValue}): `
     : `${question}: `;
@@ -92,7 +94,7 @@ async function setupEnvironment(): Promise<Config> {
 
     const choice = await prompt(
       `Select profile (1-${profiles.length + 1})`,
-      "1"
+      "1",
     );
     const idx = parseInt(choice) - 1;
 
@@ -107,16 +109,20 @@ async function setupEnvironment(): Promise<Config> {
   if (!config.configProfile) {
     const host = await prompt(
       "Databricks workspace URL",
-      "https://your-workspace.cloud.databricks.com"
+      "https://your-workspace.cloud.databricks.com",
     );
     console.log("\nOpening browser for Databricks login...");
     try {
-      execSync(`databricks auth login --host ${host} --profile DEFAULT`, { stdio: "inherit" });
+      execSync(`databricks auth login --host ${host} --profile DEFAULT`, {
+        stdio: "inherit",
+      });
       config.configProfile = "DEFAULT";
       config.databricksHost = host;
       console.log(`   ✅ Logged in and saved as profile: DEFAULT`);
     } catch {
-      console.error("❌ Login failed. Run 'databricks auth login' manually and re-run quickstart.");
+      console.error(
+        "❌ Login failed. Run 'databricks auth login' manually and re-run quickstart.",
+      );
       process.exit(1);
     }
   }
@@ -146,42 +152,6 @@ async function setupEnvironment(): Promise<Config> {
 
   console.log(`   Using model: ${config.model}`);
 
-  // MLflow experiment
-  console.log("\n📊 MLflow Configuration");
-  const createExperiment = await confirm(
-    "Create MLflow experiment?",
-    true
-  );
-
-  if (createExperiment) {
-    try {
-      const client = new WorkspaceClient({ profile: config.configProfile });
-
-      const me = await client.currentUser.me();
-      const experimentPath = `/Users/${me.userName}/agent-langchain-ts`;
-      console.log(`   Creating experiment: ${experimentPath}`);
-
-      try {
-        const created = await client.experiments.createExperiment({ name: experimentPath });
-        config.experimentId = created.experiment_id;
-        console.log(`   ✅ Experiment created: ${config.experimentId}`);
-      } catch (createError: any) {
-        if (createError?.message?.includes("RESOURCE_ALREADY_EXISTS")) {
-          const existing = await client.experiments.getByName({ experiment_name: experimentPath });
-          config.experimentId = existing.experiment?.experiment_id;
-          console.log(`   ✅ Using existing experiment: ${config.experimentId}`);
-        } else {
-          throw createError;
-        }
-      }
-    } catch (error) {
-      console.log("   ⚠️  Could not auto-create experiment:", error);
-      config.experimentId = await prompt("Enter experiment ID (optional)");
-    }
-  } else {
-    config.experimentId = await prompt("Enter experiment ID (optional)");
-  }
-
   return config;
 }
 
@@ -206,10 +176,6 @@ function writeEnvFile(config: Config): void {
   envContent = envContent.replace(/^DATABRICKS_HOST=.*\n?/m, "");
   envContent = envContent.replace(/^DATABRICKS_TOKEN=.*\n?/m, "");
 
-  if (config.experimentId) {
-    updates.MLFLOW_EXPERIMENT_ID = config.experimentId;
-  }
-
   // Replace or append variables
   for (const [key, value] of Object.entries(updates)) {
     const regex = new RegExp(`^${key}=.*$`, "m");
@@ -222,6 +188,52 @@ function writeEnvFile(config: Config): void {
 
   writeFileSync(envPath, envContent.trim() + "\n");
   console.log(`\n✅ Environment configuration saved to .env`);
+}
+
+function sharedPythonQuickstart(): string {
+  const candidates = [
+    join(process.cwd(), "..", ".scripts", "source", "quickstart.py"),
+    join(process.cwd(), "..", "agent-langgraph", "scripts", "quickstart.py"),
+  ];
+  const script = candidates.find((candidate) => existsSync(candidate));
+  if (!script) {
+    throw new Error(
+      "Shared Task 10 Python quickstart was not found. Run this command from the app-templates checkout.",
+    );
+  }
+  return script;
+}
+
+function provisionMlflowUc(config: Config): void {
+  console.log("\n📊 Provisioning the MLflow Unity Catalog trace location...");
+  const args = [
+    "run",
+    "--no-project",
+    "--with",
+    "mlflow[databricks]>=3.14.0,<4",
+    "--with",
+    "ruamel.yaml>=0.18.0",
+    "python",
+    sharedPythonQuickstart(),
+    "--profile",
+    config.configProfile,
+    "--skip-lakebase",
+    "--mlflow-catalog",
+    process.env.MLFLOW_UC_CATALOG?.trim() || "main",
+    "--mlflow-schema",
+    process.env.MLFLOW_UC_SCHEMA?.trim() || "agent_traces",
+    "--mlflow-table-prefix",
+    process.env.MLFLOW_UC_TABLE_PREFIX?.trim() || "agents_on_apps",
+  ];
+  const warehouseId = process.env.MLFLOW_TRACING_SQL_WAREHOUSE_ID?.trim();
+  if (warehouseId) args.push("--mlflow-warehouse-id", warehouseId);
+  const experimentName = process.env.MLFLOW_EXPERIMENT_NAME?.trim();
+  if (experimentName) args.push("--mlflow-experiment-name", experimentName);
+
+  execFileSync("uv", args, { cwd: process.cwd(), stdio: "inherit" });
+  console.log(
+    "✅ MLflow UC tracing provisioned through the shared supported workflow",
+  );
 }
 
 async function installDependencies(): Promise<void> {
@@ -251,6 +263,9 @@ async function main() {
     // Write .env file
     writeEnvFile(config);
 
+    // Provision the immutable UC-backed MLflow experiment through Task 10.
+    provisionMlflowUc(config);
+
     // Install dependencies
     await installDependencies();
 
@@ -269,7 +284,7 @@ async function main() {
     console.log("\n📚 Documentation: README.md");
     console.log("");
   } catch (error) {
-    console.error("\n❌ Setup failed:", error);
+    console.error("\n❌ Setup failed:", safeLogError(error));
     process.exit(1);
   } finally {
     rl.close();

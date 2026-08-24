@@ -9,3 +9,15 @@ env:
     value: "false"
   - name: "SERVING_ENDPOINT"
     valueFrom: "serving-endpoint"
+  - name: MLFLOW_EXPERIMENT_ID
+    valueFrom: mlflow-experiment
+  - name: MLFLOW_TRACING_SQL_WAREHOUSE_ID
+    valueFrom: mlflow-tracing-warehouse
+  - name: MLFLOW_UC_CATALOG
+    value: main
+  - name: MLFLOW_UC_SCHEMA
+    value: agent_traces
+  - name: MLFLOW_UC_TABLE_PREFIX
+    value: e2e_chatbot
+  - name: MLFLOW_OTEL_SPANS_TABLE
+    value: main.agent_traces.e2e_chatbot_otel_spans

@@ -102,13 +102,22 @@ export default defineConfig({
     },
     {
       name: 'routes',
-      testMatch: /routes\/.*(?<!\.api-proxy)\.test\.ts$/,
+      testMatch: /routes\/.*\.test\.ts$/,
+      testIgnore: [
+        /routes\/.*\.api-proxy\.test\.ts$/,
+        /routes\/.*\.direct-invocations\.test\.ts$/,
+      ],
       use: { ...devices['Desktop Chrome'] },
     },
     {
       name: 'routes-api-proxy',
       testMatch: /routes\/.*\.api-proxy\.test\.ts$/,
       use: { baseURL: 'http://localhost:3003' },
+    },
+    {
+      name: 'routes-direct-invocations',
+      testMatch: /routes\/.*\.direct-invocations\.test\.ts$/,
+      use: { baseURL: 'http://localhost:3004' },
     },
     // Deployed tests run against a live Databricks App.
     // Only included when DEPLOYED_APP_URL is set.
@@ -128,7 +137,7 @@ export default defineConfig({
   // Start dev server before running tests
   webServer: [
     {
-      command: 'npm run dev',
+      command: 'npm run dev:test',
       url: `${baseURL}/ping`,
       timeout: 20 * 1000,
       reuseExistingServer: !process.env.CI,
@@ -171,7 +180,7 @@ export default defineConfig({
     },
     {
       // API_PROXY mode — Express backend only, port 3003
-      command: 'npm run dev:server',
+      command: 'npm run dev:test --workspace=@databricks/chatbot-server',
       url: 'http://localhost:3003/ping',
       timeout: 20 * 1000,
       reuseExistingServer: !process.env.CI,
@@ -183,6 +192,28 @@ export default defineConfig({
         DATABRICKS_CLIENT_SECRET: 'mock-value',
         DATABRICKS_HOST: 'mock-value',
         // Always ephemeral in API_PROXY test mode
+        POSTGRES_URL: '',
+        PGHOST: '',
+        PGDATABASE: '',
+        PGUSER: '',
+        PGPASSWORD: '',
+        PGSSLMODE: '',
+      },
+    },
+    {
+      // Direct agent/v2/chat (Invocations schema) — Express backend only.
+      command: 'npm run dev:test --workspace=@databricks/chatbot-server',
+      url: 'http://localhost:3004/ping',
+      timeout: 20 * 1000,
+      reuseExistingServer: !process.env.CI,
+      env: {
+        PLAYWRIGHT: 'True',
+        CHAT_APP_PORT: '3004',
+        MOCK_ENDPOINT_TASK: 'agent/v2/chat',
+        DATABRICKS_SERVING_ENDPOINT: 'mock-direct-agent',
+        DATABRICKS_CLIENT_ID: 'mock-value',
+        DATABRICKS_CLIENT_SECRET: 'mock-value',
+        DATABRICKS_HOST: 'mock-value',
         POSTGRES_URL: '',
         PGHOST: '',
         PGDATABASE: '',

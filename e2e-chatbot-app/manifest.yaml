@@ -7,3 +7,11 @@ resource_specs:
     description: "The Databricks Model Serving endpoint hosting the LLM or agent that powers the app's responses."
     serving_endpoint_spec:
       permission: "CAN_QUERY"
+  - name: mlflow-experiment
+    description: The remote agent's MLflow experiment with immutable UC trace storage.
+    experiment_spec:
+      permission: CAN_READ
+  - name: mlflow-tracing-warehouse
+    description: SQL warehouse used to verify the remote trace in Unity Catalog.
+    sql_warehouse_spec:
+      permission: CAN_USE

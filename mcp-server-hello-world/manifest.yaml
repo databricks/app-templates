@@ -1,3 +1,13 @@
 version: 1
 name: "MCP Server - Hello World"
 description: "A basic MCP server."
+
+resource_specs:
+  - name: "mlflow-experiment"
+    description: "The destination experiment for MCP request and tool traces."
+    experiment_spec:
+      permission: "CAN_EDIT"
+  - name: "mlflow-tracing-warehouse"
+    description: "The SQL warehouse used to export MLflow traces to Unity Catalog."
+    sql_warehouse_spec:
+      permission: "CAN_USE"

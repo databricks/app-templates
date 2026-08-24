@@ -128,7 +128,7 @@ function HomePage() {
             </li>
             <li>
               <a
-                href="https://www.databricks.com/devhub/docs/appkit/v0/"
+                href="https://developers.databricks.com/docs/appkit/v0/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary underline underline-offset-4 hover:text-primary/80"

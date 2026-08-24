@@ -1,6 +1,6 @@
 import re
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -17,6 +17,12 @@ DEFAULT_SERVING_ENDPOINT = "agents_dev-bbqiu-test-bb-2-25"
 # sets this to a persistent app in the workspace to exercise the
 # feature end-to-end.
 DEFAULT_TARGET_APP_NAME = ""
+DEFAULT_MLFLOW_UC_CATALOG = "main"
+DEFAULT_MLFLOW_UC_SCHEMA = "agent_traces"
+DEFAULT_MLFLOW_UC_TABLE_PREFIX = "agents_on_apps"
+DEFAULT_MLFLOW_OTEL_SPANS_TABLE = (
+    "main.agent_traces.agents_on_apps_otel_spans"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -177,49 +183,40 @@ def build_templates(
     serving_endpoint: str = DEFAULT_SERVING_ENDPOINT,
     target_app_name: str = DEFAULT_TARGET_APP_NAME,
 ) -> list[TemplateConfig]:
-    # (name, needs_lakebase, overrides)
-    configs: list[tuple[str, bool, dict]] = [
-        ("agent-langgraph", False, {}),
-        ("agent-langgraph-advanced", True, {"is_advanced": True}),
-        ("agent-openai-agents-sdk", False, {}),
-        ("agent-openai-advanced", True, {"is_advanced": True}),
-        (
-            "agent-openai-agents-sdk-multiagent",
-            False,
-            {
-                "pre_test_edits": _multiagent_edits(
-                    "agent-openai-agents-sdk-multiagent",
-                    genie_space_id,
-                    serving_endpoint,
-                    target_app_name,
-                ),
-                "validate_time": False,
-            },
-        ),
-        ("agent-non-conversational", False, {"is_conversational": False, "has_evaluate": False}),
-        ("agent-migration-from-model-serving", False, {}),
-    ]
-
-    # Templates to skip in tests (still listed above for registry validation)
-    skip_templates = {"agent-migration-from-model-serving"}
-
-    # Validate that all templates from the canonical registry are covered
-    sys.path.insert(0, str(REPO_ROOT / ".scripts"))
-    from templates import TEMPLATES as CANONICAL_TEMPLATES
-
-    config_names = {name for name, _, _ in configs}
-    canonical_names = set(CANONICAL_TEMPLATES.keys())
-    missing = canonical_names - config_names
-    if missing:
-        raise ValueError(
-            f"Templates in .scripts/templates.py but not in template_config.py: {missing}. "
-            "Add them to the configs list or explicitly exclude them."
-        )
+    policy_templates = build_trace_policy_templates()
+    configs: list[tuple[str, bool, dict]] = []
+    for policy in policy_templates:
+        # The Python E2E runner requires the MLflow AgentServer layout. Other
+        # discovered surfaces (currently standalone TypeScript) retain their
+        # own documented local/deployed commands and stay in the policy gate.
+        if not (policy.path / "agent_server" / "start_server.py").exists():
+            continue
+        if policy.name == "agent-migration-from-model-serving":
+            # Migration is a reference template without a runnable Apps target.
+            continue
+        deployment = (policy.path / "databricks.yml").read_text()
+        needs_lakebase = bool(re.search(r"\bpostgres:\s*$", deployment, re.MULTILINE))
+        overrides: dict = {}
+        if "advanced" in policy.name:
+            overrides["is_advanced"] = True
+        if "multiagent" in policy.name:
+            overrides.update(
+                {
+                    "pre_test_edits": _multiagent_edits(
+                        policy.name,
+                        genie_space_id,
+                        serving_endpoint,
+                        target_app_name,
+                    ),
+                    "validate_time": False,
+                }
+            )
+        if "non-conversational" in policy.name:
+            overrides.update({"is_conversational": False, "has_evaluate": False})
+        configs.append((policy.name, needs_lakebase, overrides))
 
     templates = []
     for name, needs_lakebase, overrides in configs:
-        if name in skip_templates:
-            continue
         dev_app_name, app_resource_key = _parse_databricks_yml(name)
         if needs_lakebase:
             templates.append(
@@ -242,3 +239,31 @@ def build_templates(
                 )
             )
     return templates
+
+
+def build_trace_policy_templates(
+    root: Path = REPO_ROOT,
+    deployed_template_names: set[str] | None = None,
+):
+    """Discover primary agent templates and attach per-template deployed proof.
+
+    Candidate selection is a repository convention plus source behavior, not a
+    hand-maintained list: any new ``agent-*`` directory detected by the shared
+    discovery engine enters this gate automatically.
+    """
+    conformance_dir = REPO_ROOT / ".scripts" / "trace-conformance"
+    sys.path.insert(0, str(conformance_dir))
+    from discovery import discover_agentic_templates, is_trace_policy_candidate
+
+    deployed_template_names = deployed_template_names or set()
+    return [
+        replace(
+            template,
+            has_deployed_verification=(
+                template.has_deployed_verification
+                or template.name in deployed_template_names
+            ),
+        )
+        for template in discover_agentic_templates(root)
+        if is_trace_policy_candidate(template)
+    ]

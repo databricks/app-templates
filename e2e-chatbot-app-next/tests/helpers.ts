@@ -37,13 +37,14 @@ export async function sendChatAndGetMessageId(
   request: APIRequestContext,
   chatId: string,
   message: unknown,
+  visibility: 'public' | 'private' = 'private',
 ): Promise<string> {
   const chatResponse = await request.post('/api/chat', {
     data: {
       id: chatId,
       message,
       selectedChatModel: 'chat-model',
-      selectedVisibilityType: 'private',
+      selectedVisibilityType: visibility,
     },
   });
 
@@ -106,10 +107,14 @@ export function generateRandomTestUser() {
   return { email, password };
 }
 
-export const createMockStreamResponse = (SSEs: string[]) => {
+export const createMockStreamResponse = (
+  SSEs: string[],
+  headers?: HeadersInit,
+) => {
   return new Response(stringsToStream(SSEs), {
     headers: {
       'Content-Type': 'text/event-stream',
+      ...Object.fromEntries(new Headers(headers).entries()),
     },
   });
 };

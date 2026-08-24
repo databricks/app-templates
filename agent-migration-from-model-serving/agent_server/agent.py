@@ -8,7 +8,9 @@ original Model Serving agent.
 """
 
 import logging
+import os
 from typing import AsyncGenerator
+from uuid import uuid4
 
 import mlflow
 from mlflow.genai.agent_server import invoke, stream
@@ -19,6 +21,12 @@ from mlflow.types.responses import (
 )
 
 from agent_server.utils import get_session_id
+from agent_server.tracing import (
+    install_sanitizing_export_boundary,
+    mark_autologger_called,
+    set_request_trace_identity,
+    validate_tracing_environment,
+)
 
 # ──────────────────────────────────────────────
 # TODO: Import your agent framework and tools here.
@@ -38,6 +46,17 @@ from agent_server.utils import get_session_id
 # ──────────────────────────────────────────────
 
 logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
+
+validate_tracing_environment()
+install_sanitizing_export_boundary()
+framework = os.environ["AGENT_FRAMEWORK"]
+if framework == "langgraph":
+    mlflow.langchain.autolog(log_traces=True)
+elif framework == "openai":
+    mlflow.openai.autolog(log_traces=True)
+else:
+    raise RuntimeError("AGENT_FRAMEWORK must be 'langgraph' or 'openai'")
+mark_autologger_called(framework)
 
 
 # ──────────────────────────────────────────────
@@ -75,8 +94,25 @@ async def stream_handler(
 
     TODO: Replace the body of this function with your agent's streaming logic.
     """
-    if session_id := get_session_id(request):
-        mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
+    custom_inputs = dict(request.custom_inputs or {})
+    session_id = get_session_id(request) or str(uuid4())
+    user_id = (
+        request.user
+        or custom_inputs.get("user_id")
+        or (getattr(request.context, "user_id", None) if request.context else None)
+        or "anonymous"
+    )
+    request_id = (
+        custom_inputs.get("request_id")
+        or (request.metadata or {}).get("request_id")
+        or str(uuid4())
+    )
+    set_request_trace_identity(
+        session_id=str(session_id),
+        user_id=str(user_id),
+        request_id=str(request_id),
+        template_name="agent-migration-from-model-serving",
+    )
     raise NotImplementedError(
         "Replace this with your migrated agent's streaming implementation."
     )

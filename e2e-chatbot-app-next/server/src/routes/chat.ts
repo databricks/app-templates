@@ -9,10 +9,12 @@ import {
   createUIMessageStream,
   streamText,
   generateText,
+  type FinishReason,
   type LanguageModelUsage,
   pipeUIMessageStreamToResponse,
 } from 'ai';
 import type { LanguageModelV3Usage } from '@ai-sdk/provider';
+import { randomBytes } from 'node:crypto';
 
 // Convert ai's LanguageModelUsage to @ai-sdk/provider's LanguageModelV3Usage
 function toV3Usage(usage: LanguageModelUsage): LanguageModelV3Usage {
@@ -61,11 +63,74 @@ import {
 } from '@chat-template/core';
 import { ChatSDKError } from '@chat-template/core/errors';
 import { storeMessageMeta } from '../lib/message-meta-store';
-import { drainStreamToWriter, fallbackToGenerateText } from '../lib/stream-fallback';
+import {
+  drainStreamToWriter,
+  fallbackToGenerateText,
+} from '../lib/stream-fallback';
 
 export const chatRouter: RouterType = Router();
 
 const streamCache = new StreamCache();
+
+const TRACEPARENT_PATTERN = /^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$/i;
+const TRACESTATE_PATTERN = /^[\x20-\x7e]{1,512}$/;
+
+function requestTraceHeaders(
+  req: Request,
+  sessionId: string,
+  userId: string,
+): Record<string, string> {
+  const requestId = generateUUID();
+  const incomingTraceparent = req.header('traceparent')?.trim();
+  const incomingTracestate = req.header('tracestate')?.trim();
+  return {
+    traceparent:
+      incomingTraceparent && TRACEPARENT_PATTERN.test(incomingTraceparent)
+        ? incomingTraceparent.toLowerCase()
+        : `00-${randomBytes(16).toString('hex')}-${randomBytes(8).toString('hex')}-01`,
+    tracestate:
+      incomingTracestate && TRACESTATE_PATTERN.test(incomingTracestate)
+        ? incomingTracestate
+        : `appkit=${requestId.replaceAll('-', '').slice(0, 16)}`,
+    'X-AppKit-Session-Id': sessionId,
+    'X-AppKit-User-Id': userId,
+    'X-Request-Id': requestId,
+    'x-mlflow-return-trace-id': 'true',
+  };
+}
+
+function traceIdFromValue(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, any>;
+  const candidates = [
+    record.trace_id,
+    record.traceId,
+    record.metadata?.trace_id,
+    record.databricks_output?.trace?.info?.trace_id,
+    record.trace?.info?.trace_id,
+  ];
+  return (
+    candidates.find(
+      (candidate) =>
+        typeof candidate === 'string' && candidate.trim().length > 0,
+    ) ?? null
+  );
+}
+
+function traceIdFromHeaders(headers: unknown): string | null {
+  if (!headers) return null;
+  if (headers instanceof Headers) {
+    return headers.get('x-mlflow-trace-id');
+  }
+  if (typeof headers === 'object') {
+    const entries = Object.entries(headers as Record<string, unknown>);
+    const value = entries.find(
+      ([key]) => key.toLowerCase() === 'x-mlflow-trace-id',
+    )?.[1];
+    return typeof value === 'string' && value.trim() ? value : null;
+  }
+  return null;
+}
 // Apply auth middleware to all chat routes
 chatRouter.use(authMiddleware);
 
@@ -146,10 +211,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
               (part) => part.type === 'text',
             )?.text;
             if (textFromUserMessage) {
-              const fallback = truncatePreserveWords(
-                textFromUserMessage,
-                128,
-              );
+              const fallback = truncatePreserveWords(textFromUserMessage, 128);
               await updateChatTitleById({ chatId: id, title: fallback });
               return fallback;
             }
@@ -244,17 +306,25 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     streamCache.clearActiveStream(id);
 
     let finalUsage: LanguageModelUsage | undefined;
+    let finalFinishReason: FinishReason | undefined;
     let traceId: string | null = null;
     const streamId = generateUUID();
 
     const model = await myProvider.languageModel(selectedChatModel);
     const modelMessages = await convertToModelMessages(uiMessages);
+    const userIdentity = session.user.email ?? session.user.id;
+    const traceHeaders = requestTraceHeaders(req, id, userIdentity);
     const requestHeaders = {
       [CONTEXT_HEADER_CONVERSATION_ID]: id,
-      [CONTEXT_HEADER_USER_ID]: session.user.email ?? session.user.id,
+      [CONTEXT_HEADER_USER_ID]: userIdentity,
+      ...traceHeaders,
       // Forward OBO user token to the backend/serving endpoint
       ...(req.headers['x-forwarded-access-token']
-        ? { 'x-forwarded-access-token': req.headers['x-forwarded-access-token'] as string }
+        ? {
+            'x-forwarded-access-token': req.headers[
+              'x-forwarded-access-token'
+            ] as string,
+          }
         : {}),
     };
 
@@ -269,24 +339,25 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       onChunk: ({ chunk }) => {
         if (chunk.type === 'raw') {
           const raw = chunk.rawValue as any;
-          // Extract trace in Databricks serving endpoint output format, if present
-          if (raw?.type === 'response.output_item.done') {
-            const traceIdFromChunk =
-              raw?.databricks_output?.trace?.info?.trace_id;
-            if (typeof traceIdFromChunk === 'string') {
-              traceId = traceIdFromChunk;
-            }
-          }
-          // Extract trace from MLflow AgentServer output format, if present
-          if (!traceId && typeof raw?.trace_id === 'string') {
-            traceId = raw.trace_id;
-          }
+          traceId ||= traceIdFromValue(raw);
         }
       },
-      onFinish: ({ usage }) => {
+      onFinish: ({ usage, finishReason }) => {
         finalUsage = usage;
+        finalFinishReason = finishReason;
       },
     });
+
+    const responseTraceId = Promise.resolve(result.response)
+      .then((responseMetadata) => {
+        const response = responseMetadata as Record<string, unknown>;
+        return (
+          traceIdFromHeaders(response.headers) ??
+          traceIdFromValue(response.body) ??
+          traceIdFromValue(response)
+        );
+      })
+      .catch(() => null);
 
     /**
      * We manually read from toUIMessageStream instead of using writer.merge
@@ -315,8 +386,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           sendSources: true,
           sendFinish: false,
           onError: (error) => {
-            const msg =
-              error instanceof Error ? error.message : String(error);
+            const msg = error instanceof Error ? error.message : String(error);
             writer.onError?.(error);
             return msg;
           },
@@ -326,13 +396,38 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
 
         if (failed) {
           console.log('Streaming failed, falling back to generateText...');
+          const fallbackModel = new Proxy(model, {
+            get(target, property, receiver) {
+              if (property !== 'doGenerate') {
+                return Reflect.get(target, property, receiver);
+              }
+              return async (
+                ...args: Parameters<typeof target.doGenerate>
+              ): ReturnType<typeof target.doGenerate> => {
+                const generated = await target.doGenerate(...args);
+                traceId ||=
+                  traceIdFromHeaders(generated.response?.headers) ??
+                  traceIdFromValue(generated.response?.body) ??
+                  traceIdFromValue(generated);
+                return generated;
+              };
+            },
+          });
           const fallbackResult = await fallbackToGenerateText(
-            { model, messages: modelMessages, headers: requestHeaders },
+            {
+              model: fallbackModel,
+              messages: modelMessages,
+              headers: requestHeaders,
+            },
             writer,
           );
 
           finalUsage = fallbackResult?.usage;
-          traceId = fallbackResult?.traceId ?? null;
+          finalFinishReason = fallbackResult?.finishReason ?? 'error';
+          traceId = fallbackResult?.traceId ?? traceId;
+        }
+        if (!failed) {
+          traceId ||= await responseTraceId;
         }
         if (titlePromise) {
           const generatedTitle = await titlePromise;
@@ -341,12 +436,31 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           }
         }
 
+        if (!traceId) {
+          writer.write({
+            type: 'data-error',
+            data: `Tracing unavailable: the agent response did not include a trace ID (request ${traceHeaders['X-Request-Id']}).`,
+          });
+        }
+
         // Write traceId so the client knows whether feedback is supported.
         writer.write({ type: 'data-traceId', data: traceId });
+        // Keep finish as the terminal protocol chunk. The client uses it to
+        // distinguish a complete response from an interrupted stream.
+        writer.write({
+          type: 'finish',
+          finishReason: finalFinishReason ?? (failed ? 'error' : 'other'),
+        });
       },
       onFinish: async ({ responseMessage }) => {
         // Store in-memory for ephemeral mode (also useful when DB is available)
-        storeMessageMeta(responseMessage.id, id, traceId);
+        storeMessageMeta(
+          responseMessage.id,
+          id,
+          traceId,
+          session.user.id,
+          selectedVisibilityType,
+        );
 
         try {
           await saveMessages({
@@ -614,4 +728,3 @@ function truncatePreserveWords(input: string, maxLength: number): string {
 
   return slice.slice(0, lastSpaceIndex);
 }
-

@@ -4,6 +4,7 @@ config();
 import { createAgent } from "./agent.js";
 import { getMCPServers } from "./mcp-servers.js";
 import { startServer } from "./framework/server.js";
+import { safeLogError } from "./framework/tracing.js";
 
 const agent = await createAgent({
   model: process.env.DATABRICKS_MODEL || "databricks-claude-sonnet-4-5",
@@ -14,6 +15,6 @@ const agent = await createAgent({
 });
 
 startServer(agent).catch((error) => {
-  console.error("❌ Failed to start server:", error);
+  console.error("❌ Failed to start server:", safeLogError(error));
   process.exit(1);
 });

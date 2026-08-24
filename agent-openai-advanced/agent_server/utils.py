@@ -15,6 +15,8 @@ from mlflow.genai.agent_server import get_request_headers
 from mlflow.types.responses import ResponsesAgentRequest, ResponsesAgentStreamEvent
 from uuid_utils import uuid7
 
+from agent_server.tracing import capture_stream_event
+
 logger = logging.getLogger(__name__)
 
 
@@ -89,8 +91,12 @@ def get_lakebase_access_error_message(lakebase_description: str) -> str:
         )
 
 
-# Module-level singleton — initialized once at import time, shared by agent.py and start_server.py
-lakebase_config = init_lakebase_config()
+# Module-level singleton — missing configuration is surfaced when a request opens a session,
+# while imports and static tooling remain side-effect safe.
+try:
+    lakebase_config = init_lakebase_config()
+except ValueError:
+    lakebase_config = LakebaseConfig(None, None, None)
 
 
 def get_session_id(request: ResponsesAgentRequest) -> str:
@@ -179,9 +185,12 @@ async def process_agent_stream_events(
                 event_data["item"]["id"] = curr_item_id
             elif event_data.get("item_id") is not None:
                 event_data["item_id"] = curr_item_id
+            capture_stream_event(event_data)
             yield event_data
         elif event.type == "run_item_stream_event" and event.item.type == "tool_call_output_item":
-            yield ResponsesAgentStreamEvent(
+            output_event = ResponsesAgentStreamEvent(
                 type="response.output_item.done",
                 item=event.item.to_input_item(),
             )
+            capture_stream_event(output_event)
+            yield output_event

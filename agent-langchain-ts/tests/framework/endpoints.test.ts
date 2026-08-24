@@ -3,44 +3,305 @@
  * Tests both /invocations (Responses API) and /api/chat (AI SDK + useChat)
  */
 
-import { describe, test, expect, beforeAll, afterAll } from "@jest/globals";
-import { spawn } from "child_process";
-import type { ChildProcess } from "child_process";
+import {
+  describe,
+  test,
+  expect,
+  beforeAll,
+  afterAll,
+  afterEach,
+  jest,
+} from "@jest/globals";
+
+import http, { type Server } from "http";
+import express from "express";
 import OpenAI from "openai";
+import { format } from "util";
+import type { AgentInterface } from "../../src/framework/agent-interface.js";
+import { createInvocationsRouter } from "../../src/framework/routes/invocations.js";
+import { StubAgent } from "./stub-agent.js";
+import {
+  flushTracing,
+  initializeTracing,
+} from "../../src/framework/tracing.js";
 
 describe("API Endpoints", () => {
-  let agentProcess: ChildProcess;
-  const PORT = 5555; // Use different port to avoid conflicts
-  const BASE_URL = `http://localhost:${PORT}`;
+  let server: Server;
+  let exporterServer: Server;
+  let baseUrl: string;
   let client: OpenAI;
+  const allowedOrigins = new Set<string>();
+  const externalRequests: string[] = [];
+  const nativeFetch = globalThis.fetch;
+  let restoreFetchGuard: (() => void) | undefined;
+  const exportedInfoUrls: string[] = [];
 
   beforeAll(async () => {
-    // Start framework server with stub agent (no LLM required)
-    agentProcess = spawn("node_modules/.bin/tsx", ["tests/framework/stub-server.ts"], {
-      env: { ...process.env, PORT: PORT.toString(), MLFLOW_TRACKING_URI: "noop" },
-      stdio: ["ignore", "pipe", "pipe"],
+    exporterServer = http.createServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+      request.on("end", () => {
+        if (request.url?.endsWith("/info")) {
+          exportedInfoUrls.push(request.url);
+        }
+        const body = Buffer.concat(chunks);
+        const json = request.url?.endsWith("/info")
+          ? JSON.parse(body.toString("utf8"))
+          : {};
+        response.setHeader("content-type", "application/json");
+        response.end(JSON.stringify(json));
+      });
     });
-
-    // Poll /health until server is ready (max 20s)
-    const start = Date.now();
-    while (Date.now() - start < 20000) {
-      try {
-        const r = await fetch(`${BASE_URL}/health`);
-        if (r.ok) break;
-      } catch {}
-      await new Promise((r) => setTimeout(r, 200));
+    await new Promise<void>((resolve) => {
+      exporterServer.listen(0, "127.0.0.1", resolve);
+    });
+    const exporterAddress = exporterServer.address();
+    if (!exporterAddress || typeof exporterAddress === "string") {
+      throw new Error("test MLflow exporter did not bind to a TCP port");
     }
+    const exporterOrigin = `http://127.0.0.1:${exporterAddress.port}`;
+    allowedOrigins.add(exporterOrigin);
+    process.env.MLFLOW_TRACKING_URI = exporterOrigin;
+    process.env.MLFLOW_EXPERIMENT_ID = "123456789";
+    process.env.MLFLOW_UC_CATALOG = "catalog_test";
+    process.env.MLFLOW_UC_SCHEMA = "schema_test";
+    process.env.MLFLOW_UC_TABLE_PREFIX = "langchain_test";
+    initializeTracing();
 
-    client = new OpenAI({ baseURL: BASE_URL, apiKey: "not-needed" });
+    const app = express();
+    app.use(express.json());
+    const router = createInvocationsRouter(new StubAgent());
+    app.use("/invocations", router);
+    app.use("/responses", router);
+    server = await new Promise<Server>((resolve) => {
+      const listener = app.listen(0, () => resolve(listener));
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("test server did not bind to a TCP port");
+    }
+    baseUrl = `http://127.0.0.1:${address.port}`;
+    allowedOrigins.add(baseUrl);
+
+    const fetchGuard = jest
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (input, init) => {
+        const url = new URL(
+          input instanceof Request ? input.url : input.toString(),
+        );
+        if (!allowedOrigins.has(url.origin)) {
+          externalRequests.push(url.toString());
+          throw new Error(`Unit test attempted external request: ${url}`);
+        }
+        return nativeFetch(input, init);
+      });
+    restoreFetchGuard = () => fetchGuard.mockRestore();
+
+    client = new OpenAI({ baseURL: baseUrl, apiKey: "not-needed" });
   }, 30000);
 
+  afterEach(async () => {
+    await flushTracing();
+    const attempted = externalRequests.splice(0);
+    expect(attempted).toEqual([]);
+    exportedInfoUrls.length = 0;
+  });
+
   afterAll(async () => {
-    if (agentProcess) {
-      agentProcess.kill();
-    }
+    await flushTracing();
+    restoreFetchGuard?.();
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+    await new Promise<void>((resolve, reject) => {
+      exporterServer.close((error) => (error ? reject(error) : resolve()));
+    });
   });
 
   describe("/invocations endpoint", () => {
+    test("returns the V4 MLflow trace ID for a streaming request", async () => {
+      const response = await fetch(`${baseUrl}/invocations`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Session-Id": "session-stream",
+          "X-User-Id": "user-stream",
+          "X-Request-Id": "request-stream",
+        },
+        body: JSON.stringify({
+          input: [{ role: "user", content: "trace this stream" }],
+          stream: true,
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("x-mlflow-trace-id")).toMatch(
+        /^trace:\/catalog_test\.schema_test\.langchain_test\/[0-9a-f]{32}$/,
+      );
+      await response.text();
+      await flushTracing();
+      const traceId = response.headers.get("x-mlflow-trace-id")!;
+      expect(exportedInfoUrls).toContain(
+        `/api/4.0/mlflow/traces/catalog_test.schema_test.langchain_test/${traceId.split("/").pop()}/info`,
+      );
+    });
+
+    test("returns the same V4 MLflow trace ID for a non-streaming request", async () => {
+      const response = await fetch(`${baseUrl}/invocations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          input: [{ role: "user", content: "trace this response" }],
+          stream: false,
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      const traceId = response.headers.get("x-mlflow-trace-id");
+      expect(traceId).toMatch(
+        /^trace:\/catalog_test\.schema_test\.langchain_test\/[0-9a-f]{32}$/,
+      );
+      const body = (await response.json()) as { trace_id?: string };
+      expect(body.trace_id).toBe(traceId);
+    });
+
+    test("returns the V4 MLflow trace ID when a non-streaming invocation fails", async () => {
+      const failingAgent: AgentInterface = {
+        async invoke() {
+          throw new Error("expected invocation failure");
+        },
+        async *stream() {
+          throw new Error("stream should not be called");
+        },
+      };
+      const app = express();
+      app.use(express.json());
+      app.use("/invocations", createInvocationsRouter(failingAgent));
+      const server = await new Promise<Server>((resolve) => {
+        const listener = app.listen(0, () => resolve(listener));
+      });
+      const errorLog = jest
+        .spyOn(console, "error")
+        .mockImplementation(() => undefined);
+
+      try {
+        const address = server.address();
+        if (!address || typeof address === "string") {
+          throw new Error("test server did not bind to a TCP port");
+        }
+        const origin = `http://127.0.0.1:${address.port}`;
+        allowedOrigins.add(origin);
+        const response = await fetch(`${origin}/invocations`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            input: [{ role: "user", content: "fail with a trace" }],
+            stream: false,
+          }),
+        });
+
+        expect(response.status).toBe(500);
+        expect(response.headers.get("x-mlflow-trace-id")).toMatch(
+          /^trace:\/catalog_test\.schema_test\.langchain_test\/[0-9a-f]{32}$/,
+        );
+        await flushTracing();
+        expect(errorLog).toHaveBeenCalledWith(
+          "Agent invocation error:",
+          expect.objectContaining({ message: "expected invocation failure" }),
+        );
+      } finally {
+        await flushTracing();
+        errorLog.mockRestore();
+        const address = server.address();
+        if (address && typeof address !== "string") {
+          allowedOrigins.delete(`http://127.0.0.1:${address.port}`);
+        }
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => (error ? reject(error) : resolve()));
+        });
+      }
+    });
+
+    test("logs SDK authentication failures without serializing credentials or environment", async () => {
+      const sentinelCredential = "test-only-sentinel-value";
+      const environmentMarker = "TEST_FULL_ENV_MARKER";
+      class ConfigError extends Error {
+        readonly code = "UNAUTHENTICATED";
+        readonly config = {
+          env: {
+            DATABRICKS_TOKEN: sentinelCredential,
+            [environmentMarker]: "present-only-in-sdk-config",
+          },
+          headers: {
+            authorization: `Bearer ${sentinelCredential}`,
+            cookie: `session=${sentinelCredential}`,
+            "x-api-key": sentinelCredential,
+          },
+        };
+      }
+
+      const failingAgent: AgentInterface = {
+        async invoke() {
+          throw new ConfigError(
+            `authentication failed: Authorization: Bearer ${sentinelCredential}`,
+          );
+        },
+        async *stream() {
+          throw new Error("stream should not be called");
+        },
+      };
+      const app = express();
+      app.use(express.json());
+      app.use("/invocations", createInvocationsRouter(failingAgent));
+      const server = await new Promise<Server>((resolve) => {
+        const listener = app.listen(0, () => resolve(listener));
+      });
+      const logged: string[] = [];
+      const errorLog = jest
+        .spyOn(console, "error")
+        .mockImplementation((...args: unknown[]) => {
+          logged.push(format(...args));
+        });
+
+      try {
+        const address = server.address();
+        if (!address || typeof address === "string") {
+          throw new Error("test server did not bind to a TCP port");
+        }
+        const origin = `http://127.0.0.1:${address.port}`;
+        allowedOrigins.add(origin);
+        const response = await fetch(`${origin}/invocations`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            input: [{ role: "user", content: "fail authentication" }],
+            stream: false,
+          }),
+        });
+
+        expect(response.status).toBe(500);
+        await flushTracing();
+        const output = logged.join("\n");
+        expect(output).toContain("ConfigError");
+        expect(output).toContain("UNAUTHENTICATED");
+        expect(output).toContain("authentication failed");
+        expect(output).toContain("Authorization: [REDACTED]");
+        expect(output).not.toContain(sentinelCredential);
+        expect(output).not.toContain(environmentMarker);
+        expect(output).not.toContain("present-only-in-sdk-config");
+      } finally {
+        await flushTracing();
+        errorLog.mockRestore();
+        const address = server.address();
+        if (address && typeof address !== "string") {
+          allowedOrigins.delete(`http://127.0.0.1:${address.port}`);
+        }
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => (error ? reject(error) : resolve()));
+        });
+      }
+    });
+
     test("should respond with Responses API format", async () => {
       const stream = await client.responses.create({
         model: "test-model",
@@ -84,6 +345,5 @@ describe("API Endpoints", () => {
 
       expect(hasTextDelta).toBe(true);
     }, 30000);
-
   });
 });

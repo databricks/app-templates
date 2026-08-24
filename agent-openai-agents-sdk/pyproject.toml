@@ -12,10 +12,11 @@ dependencies = [
     "uvicorn>=0.41.0",
     "databricks-openai>=0.13.0",
     "databricks-agents>=1.9.3",
-    "mlflow>=3.10.0",
+    "mlflow[databricks]>=3.14.0,<4",
     "openai-agents>=0.4.1",
     "python-dotenv>=1.2.1",
     "opentelemetry-exporter-otlp-proto-grpc>=1.25.0",
+    "opentelemetry-api>=1.25.0",
 ]
 
 [build-system]

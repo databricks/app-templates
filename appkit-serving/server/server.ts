@@ -1,8 +1,10 @@
 import { createApp, server, serving } from '@databricks/appkit';
 
-createApp({
+export const app = createApp({
   plugins: [
     server(),
     serving(),
   ],
-}).catch(console.error);
+});
+
+app.catch(console.error);

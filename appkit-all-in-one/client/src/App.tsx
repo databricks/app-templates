@@ -13,10 +13,12 @@ import {
   useIsMobile,
 } from '@databricks/appkit-ui/react';
 import { Menu } from 'lucide-react';
+import { AgentChat } from './pages/agents/AgentChat';
 import { AnalyticsPage } from './pages/analytics/AnalyticsPage';
 import { LakebasePage } from './pages/lakebase/LakebasePage';
 import { GeniePage } from './pages/genie/GeniePage';
 import { FilesPage } from './pages/files/FilesPage';
+import { ServingPage } from './pages/serving/ServingPage';
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   `px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
@@ -40,6 +42,9 @@ function NavLinks({ className, linkClass, onClick }: { className?: string; linkC
       <NavLink to="/" end className={linkClass} onClick={onClick}>
         Home
       </NavLink>
+      <NavLink to="/agents" className={linkClass} onClick={onClick}>
+        Agents
+      </NavLink>
       <NavLink to="/analytics" className={linkClass} onClick={onClick}>
         Analytics
       </NavLink>
@@ -51,6 +56,9 @@ function NavLinks({ className, linkClass, onClick }: { className?: string; linkC
       </NavLink>
       <NavLink to="/files" className={linkClass} onClick={onClick}>
         Files
+      </NavLink>
+      <NavLink to="/serving" className={linkClass} onClick={onClick}>
+        Serving
       </NavLink>
     </nav>
   );
@@ -100,10 +108,12 @@ const router = createBrowserRouter([
     element: <Layout />,
     children: [
       { path: '/', element: <HomePage /> },
+      { path: '/agents', element: <AgentChat /> },
       { path: '/analytics', element: <AnalyticsPage /> },
       { path: '/lakebase', element: <LakebasePage /> },
       { path: '/genie', element: <GeniePage /> },
       { path: '/files', element: <FilesPage /> },
+      { path: '/serving', element: <ServingPage /> },
     ],
   },
 ]);
@@ -143,7 +153,7 @@ function HomePage() {
             </li>
             <li>
               <a
-                href="https://www.databricks.com/devhub/docs/appkit/v0/"
+                href="https://developers.databricks.com/docs/appkit/v0/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary underline underline-offset-4 hover:text-primary/80"

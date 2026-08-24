@@ -3,21 +3,107 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Any, AsyncIterator, Optional, Sequence, Tuple
 
 from databricks_langchain import AsyncCheckpointSaver, AsyncDatabricksStore
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langgraph.store.base import BaseStore
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from mlflow.entities import SpanType
 from mlflow.types.responses import ResponsesAgentRequest
 
 from agent_server.utils import _is_databricks_app_env
+from agent_server.tracing import traced_async_operation, traced_operation
 
 logger = logging.getLogger(__name__)
 
 # Long-lived Lakebase resources, opened once at app startup in start_server.py's
 # lifespan and reused across all requests.
 _lakebase_resources: Optional[Tuple[AsyncCheckpointSaver, AsyncDatabricksStore]] = None
+
+
+class TracedCheckpointSaver(BaseCheckpointSaver):
+    """Delegate Lakebase checkpoints while tracing every read and write."""
+
+    def __init__(self, delegate: Any):
+        super().__init__(serde=delegate.serde)
+        self._delegate = delegate
+
+    @property
+    def config_specs(self):
+        return self._delegate.config_specs
+
+    async def aget_tuple(self, config):
+        async with traced_async_operation(
+            "lakebase.checkpoint.read", SpanType.MEMORY, {"config": config}
+        ) as operation:
+            result = await self._delegate.aget_tuple(config)
+            operation.set_outputs({"checkpoint": result})
+            return result
+
+    async def alist(
+        self, config, *, filter=None, before=None, limit=None
+    ) -> AsyncIterator[Any]:
+        async with traced_async_operation(
+            "lakebase.checkpoint.list",
+            SpanType.MEMORY,
+            {"config": config, "filter": filter, "before": before, "limit": limit},
+        ) as operation:
+            results = []
+            async for item in self._delegate.alist(
+                config, filter=filter, before=before, limit=limit
+            ):
+                results.append(item)
+                yield item
+            operation.set_outputs({"checkpoints": results})
+
+    async def aput(self, config, checkpoint, metadata, new_versions):
+        async with traced_async_operation(
+            "lakebase.checkpoint.write",
+            SpanType.MEMORY,
+            {
+                "config": config,
+                "checkpoint": checkpoint,
+                "metadata": metadata,
+                "new_versions": new_versions,
+            },
+        ) as operation:
+            result = await self._delegate.aput(
+                config, checkpoint, metadata, new_versions
+            )
+            operation.set_outputs({"config": result})
+            return result
+
+    async def aput_writes(
+        self,
+        config,
+        writes: Sequence[tuple[str, Any]],
+        task_id: str,
+        task_path: str = "",
+    ) -> None:
+        async with traced_async_operation(
+            "lakebase.checkpoint.write_batch",
+            SpanType.MEMORY,
+            {
+                "config": config,
+                "writes": writes,
+                "task_id": task_id,
+                "task_path": task_path,
+            },
+        ) as operation:
+            await self._delegate.aput_writes(config, writes, task_id, task_path)
+            operation.set_outputs({"written": len(writes)})
+
+    async def adelete_thread(self, thread_id: str) -> None:
+        async with traced_async_operation(
+            "lakebase.checkpoint.delete", SpanType.MEMORY, {"thread_id": thread_id}
+        ) as operation:
+            await self._delegate.adelete_thread(thread_id)
+            operation.set_outputs({"deleted": True})
+
+    def get_next_version(self, current, channel):
+        return self._delegate.get_next_version(current, channel)
 
 
 def set_lakebase_resources(
@@ -161,7 +247,15 @@ def memory_tools():
             return "Memory not available - store not configured."
 
         namespace = ("user_memories", user_id.replace(".", "-"))
-        results = await store.asearch(namespace, query=query, limit=5)
+        async with traced_async_operation(
+            "lakebase.memory.read",
+            SpanType.MEMORY,
+            {"namespace": namespace, "query": query, "limit": 5},
+        ) as operation:
+            results = await store.asearch(namespace, query=query, limit=5)
+            operation.set_outputs(
+                {"items": [{"key": item.key, "value": item.value} for item in results]}
+            )
 
         if not results:
             return "No memories found for this user."
@@ -183,10 +277,22 @@ def memory_tools():
         namespace = ("user_memories", user_id.replace(".", "-"))
 
         try:
-            memory_data = json.loads(memory_data_json)
+            with traced_operation(
+                "memory.json.parse",
+                SpanType.PARSER,
+                {"memory_data_json": memory_data_json},
+            ) as parser:
+                memory_data = json.loads(memory_data_json)
+                parser.set_outputs({"memory_data": memory_data})
             if not isinstance(memory_data, dict):
                 return f"Failed: memory_data must be a JSON object, not {type(memory_data).__name__}"
-            await store.aput(namespace, memory_key, memory_data)
+            async with traced_async_operation(
+                "lakebase.memory.write",
+                SpanType.MEMORY,
+                {"namespace": namespace, "key": memory_key, "value": memory_data},
+            ) as operation:
+                await store.aput(namespace, memory_key, memory_data)
+                operation.set_outputs({"saved": True, "key": memory_key})
             return f"Successfully saved memory '{memory_key}' for user."
         except json.JSONDecodeError as e:
             return f"Failed to save memory: Invalid JSON - {e}"
@@ -203,7 +309,13 @@ def memory_tools():
             return "Cannot delete memory - store not configured."
 
         namespace = ("user_memories", user_id.replace(".", "-"))
-        await store.adelete(namespace, memory_key)
+        async with traced_async_operation(
+            "lakebase.memory.delete",
+            SpanType.MEMORY,
+            {"namespace": namespace, "key": memory_key},
+        ) as operation:
+            await store.adelete(namespace, memory_key)
+            operation.set_outputs({"deleted": True, "key": memory_key})
         return f"Successfully deleted memory '{memory_key}' for user."
 
     return [get_user_memory, save_user_memory, delete_user_memory]

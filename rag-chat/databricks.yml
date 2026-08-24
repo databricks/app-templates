@@ -3,17 +3,67 @@ bundle:
 
 variables:
   postgres_branch:
-    description: Full Lakebase Postgres branch resource name. Obtain by running `databricks postgres list-branches projects/{project-id}`, select the desired item from the output array and use its .name value.
+    description: Full Lakebase Postgres branch resource name
   postgres_database:
-    description: Full Lakebase Postgres database resource name. Obtain by running `databricks postgres list-databases {branch-name}`, select the desired item from the output array and use its .name value. Requires the branch resource name.
+    description: Full Lakebase Postgres database resource name
+  mlflow_experiment_id:
+    description: MLflow experiment ID with an immutable Unity Catalog trace location
+  mlflow_tracing_warehouse_id:
+    description: SQL warehouse ID used by the MLflow UC trace exporter
+  chat_serving_endpoint_name:
+    description: AI Gateway chat serving endpoint name
+    default: databricks-gpt-5-4-mini
+  embedding_serving_endpoint_name:
+    description: Embedding serving endpoint name
+    default: databricks-gte-large-en
+  MLFLOW_UC_CATALOG:
+    description: Unity Catalog catalog for MLflow trace tables
+    default: main
+  MLFLOW_UC_SCHEMA:
+    description: Unity Catalog schema for MLflow trace tables
+    default: agent_traces
+  MLFLOW_UC_TABLE_PREFIX:
+    description: Prefix for the MLflow UC trace tables
+    default: rag_chat
+  MLFLOW_OTEL_SPANS_TABLE:
+    description: Fully qualified MLflow OTel spans table
+    default: main.agent_traces.rag_chat_otel_spans
 
 resources:
   apps:
     app:
-      name: 'rag-chat-app'
-      description: 'Streaming RAG chat app with pgvector retrieval and Lakebase-backed chat history'
+      name: rag-chat-app
+      description: Streaming RAG chat app with MLflow Unity Catalog tracing
       source_code_path: ./
+      lifecycle:
+        started: true
       resources:
+        - name: mlflow-experiment
+          experiment:
+            experiment_id: ${var.mlflow_experiment_id}
+            permission: CAN_MANAGE
+        - name: mlflow-tracing-warehouse
+          sql_warehouse:
+            id: ${var.mlflow_tracing_warehouse_id}
+            permission: CAN_USE
+        - name: mlflow-traces-catalog
+          uc_securable:
+            securable_full_name: ${var.MLFLOW_UC_CATALOG}
+            securable_type: CATALOG
+            permission: USE_CATALOG
+        - name: mlflow-traces-schema
+          uc_securable:
+            securable_full_name: ${var.MLFLOW_UC_CATALOG}.${var.MLFLOW_UC_SCHEMA}
+            securable_type: SCHEMA
+            permission: USE_SCHEMA
+        - name: chat-serving-endpoint
+          serving_endpoint:
+            name: ${var.chat_serving_endpoint_name}
+            permission: CAN_QUERY
+        - name: embedding-serving-endpoint
+          serving_endpoint:
+            name: ${var.embedding_serving_endpoint_name}
+            permission: CAN_QUERY
         - name: postgres
           postgres:
             branch: ${var.postgres_branch}
@@ -23,3 +73,14 @@ resources:
 targets:
   default:
     default: true
+    variables:
+      postgres_branch: placeholder
+      postgres_database: placeholder
+      mlflow_experiment_id: placeholder
+      mlflow_tracing_warehouse_id: placeholder
+      chat_serving_endpoint_name: databricks-gpt-5-4-mini
+      embedding_serving_endpoint_name: databricks-gte-large-en
+      MLFLOW_UC_CATALOG: main
+      MLFLOW_UC_SCHEMA: agent_traces
+      MLFLOW_UC_TABLE_PREFIX: rag_chat
+      MLFLOW_OTEL_SPANS_TABLE: main.agent_traces.rag_chat_otel_spans

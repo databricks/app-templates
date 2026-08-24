@@ -17,7 +17,8 @@ dependencies = [
     "uvicorn>=0.34.2",
     "databricks-sdk>=0.60.0",
     "pydantic>=2",
-    "fastmcp>=2.12.5"
+    "fastmcp>=2.12.5",
+    "mlflow[databricks]>=3.14.0,<4"
 ]
 
 [dependency-groups]
@@ -25,6 +26,7 @@ dev = [
     "ruff>=0.8.0",
     "databricks-sdk",
     "databricks-mcp",
+    "httpx2",
     "pytest",
     "requests"
 ]

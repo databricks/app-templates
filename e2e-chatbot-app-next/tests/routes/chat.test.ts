@@ -1,27 +1,13 @@
 import { generateUUID, getMessageByErrorCode } from '@chat-template/core';
 import { expect, test } from '../fixtures';
 import { TEST_PROMPTS } from '../prompts/routes';
-import { skipInEphemeralMode, skipInWithDatabaseMode } from 'tests/helpers';
+import {
+  parseSSEPayloads,
+  skipInEphemeralMode,
+  skipInWithDatabaseMode,
+} from 'tests/helpers';
 
 const chatIdsCreatedByAda: Array<string> = [];
-
-// Helper function to normalize stream data for comparison
-function normalizeStreamData(lines: string[]): string[] {
-  return lines.filter(Boolean).map((line) => {
-    if (line.startsWith('data: ')) {
-      try {
-        const data = JSON.parse(line.slice(6)); // Remove 'data: ' prefix
-        // Replace dynamic ids with a static one for comparison
-        if (data.id) data.id = 'STATIC_ID';
-        if (data.messageId) data.messageId = 'STATIC_MESSAGE_ID';
-        return `data: ${JSON.stringify(data)}`;
-      } catch {
-        return line; // Return as-is if it's not valid JSON
-      }
-    }
-    return line;
-  });
-}
 
 test.describe
   .serial('/api/chat', () => {
@@ -52,12 +38,35 @@ test.describe
       expect(response.status()).toBe(200);
 
       const text = await response.text();
-      const lines = normalizeStreamData(text.split('\n'));
-      lines.forEach((line, index) => {
-        expect(line).toContain(
-          TEST_PROMPTS.SKY.OUTPUT_STREAM.expectedSSE[index],
-        );
-      });
+      const payloads = parseSSEPayloads(text) as Array<{
+        type?: string;
+        delta?: string;
+        data?: unknown;
+        finishReason?: string;
+      }>;
+      const textDeltas = payloads
+        .filter((payload) => payload.type === 'text-delta')
+        .map((payload) => payload.delta)
+        .join('');
+      const traceParts = payloads.filter(
+        (payload) => payload.type === 'data-traceId',
+      );
+      const finishParts = payloads.filter(
+        (payload) => payload.type === 'finish',
+      );
+
+      expect(textDeltas).toBe(TEST_PROMPTS.SKY.OUTPUT_STREAM.expectedText);
+      expect(traceParts).toEqual([
+        {
+          type: 'data-traceId',
+          data: 'mock-trace-id-from-databricks',
+        },
+      ]);
+      expect(finishParts).toEqual([
+        { type: 'finish', finishReason: 'stop' },
+      ]);
+      expect(payloads.at(-1)?.type).toBe('finish');
+      expect(text.trimEnd().endsWith('data: [DONE]')).toBe(true);
 
       chatIdsCreatedByAda.push(chatId);
     });

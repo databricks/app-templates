@@ -25,6 +25,7 @@ import {
   buildMCPServerConfig,
 } from "@databricks/langchainjs";
 import { MultiServerMCPClient } from "@langchain/mcp-adapters";
+import { safeLogError } from "./framework/tracing.js";
 
 /**
  * Example: Weather lookup tool
@@ -47,7 +48,7 @@ export const weatherTool = tool(
         .string()
         .describe("The city and state, e.g. 'San Francisco, CA'"),
     }),
-  }
+  },
 );
 
 /**
@@ -73,7 +74,7 @@ export const calculatorTool = tool(
         .string()
         .describe("Mathematical expression to evaluate, e.g. '2 + 2 * 3'"),
     }),
-  }
+  },
 );
 
 /**
@@ -94,10 +95,10 @@ export const timeTool = tool(
         .string()
         .optional()
         .describe(
-          "IANA timezone name, e.g. 'America/New_York', 'Europe/London', defaults to UTC"
+          "IANA timezone name, e.g. 'America/New_York', 'Europe/London', defaults to UTC",
         ),
     }),
-  }
+  },
 );
 
 /**
@@ -151,13 +152,12 @@ export async function getMCPTools(servers: DatabricksMCPServer[]) {
     const tools = await globalMCPClient.getTools();
 
     console.log(
-      `✅ Loaded ${tools.length} MCP tools from ${servers.length} server(s)`
+      `✅ Loaded ${tools.length} MCP tools from ${servers.length} server(s)`,
     );
 
     return tools;
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error("Error loading MCP tools:", message);
+    console.error("Error loading MCP tools:", safeLogError(error));
     throw error;
   }
 }
@@ -185,8 +185,10 @@ export async function getAllTools(mcpServers?: DatabricksMCPServer[]) {
     const mcpTools = await getMCPTools(mcpServers);
     return [...basicTools, ...mcpTools];
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error("Failed to load MCP tools, using basic tools only:", message);
+    console.error(
+      "Failed to load MCP tools, using basic tools only:",
+      safeLogError(error),
+    );
     return basicTools;
   }
 }

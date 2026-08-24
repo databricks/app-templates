@@ -1,0 +1,819 @@
+import asyncio
+import hashlib
+import importlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+import mlflow.langchain
+import mlflow.openai
+import pytest
+from mlflow.entities import SpanEvent, SpanStatus, SpanType
+from mlflow.entities import Experiment, UnityCatalog
+from mlflow.genai.agent_server import server
+from mlflow.tracing.config import reset_config
+from mlflow.types.responses import ResponsesAgentRequest
+from scripts import preflight
+
+
+REQUIRED_TRACING_ENV = {
+    "MLFLOW_TRACKING_URI": "file:///tmp/appkit-migration-test-tracking",
+    "MLFLOW_EXPERIMENT_ID": "1",
+    "MLFLOW_TRACING_SQL_WAREHOUSE_ID": "0123456789abcdef",
+    "MLFLOW_UC_CATALOG": "catalog_test",
+    "MLFLOW_UC_SCHEMA": "schema_test",
+    "MLFLOW_UC_TABLE_PREFIX": "migration_test",
+    "MLFLOW_OTEL_SPANS_TABLE": "catalog_test.schema_test.migration_test_otel_spans",
+}
+PROJECT_ROOT = Path(__file__).parents[1]
+
+
+@pytest.mark.parametrize("framework", ["langgraph", "openai"])
+def test_agent_import_enables_only_the_selected_autologger(
+    monkeypatch: pytest.MonkeyPatch, framework: str
+) -> None:
+    for name, value in REQUIRED_TRACING_ENV.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("AGENT_FRAMEWORK", framework)
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        mlflow.langchain,
+        "autolog",
+        lambda **kwargs: calls.append(f"langgraph:{kwargs['log_traces']}"),
+    )
+    monkeypatch.setattr(
+        mlflow.openai,
+        "autolog",
+        lambda **kwargs: calls.append(f"openai:{kwargs['log_traces']}"),
+    )
+    sys.modules.pop("agent_server.agent", None)
+    sys.modules.pop("agent_server.tracing", None)
+    monkeypatch.setattr(server, "_invoke_function", None)
+    monkeypatch.setattr(server, "_stream_function", None)
+
+    importlib.import_module("agent_server.agent")
+
+    assert calls == [f"{framework}:True"]
+
+
+def test_agent_import_rejects_an_unknown_framework(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name, value in REQUIRED_TRACING_ENV.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("AGENT_FRAMEWORK", "custom")
+    sys.modules.pop("agent_server.agent", None)
+    monkeypatch.setattr(server, "_invoke_function", None)
+    monkeypatch.setattr(server, "_stream_function", None)
+
+    with pytest.raises(
+        RuntimeError, match="AGENT_FRAMEWORK must be 'langgraph' or 'openai'"
+    ):
+        importlib.import_module("agent_server.agent")
+
+
+def test_agent_import_reports_every_missing_tracing_setting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AGENT_FRAMEWORK", "langgraph")
+    for name in REQUIRED_TRACING_ENV:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(mlflow.langchain, "autolog", lambda **kwargs: None)
+    sys.modules.pop("agent_server.agent", None)
+    sys.modules.pop("agent_server.tracing", None)
+    monkeypatch.setattr(server, "_invoke_function", None)
+    monkeypatch.setattr(server, "_stream_function", None)
+
+    with pytest.raises(RuntimeError) as caught:
+        importlib.import_module("agent_server.agent")
+
+    for name in REQUIRED_TRACING_ENV:
+        assert name in str(caught.value)
+
+
+def test_tracing_config_reports_every_invalid_identifier_and_table() -> None:
+    from agent_server.tracing import validate_tracing_environment
+
+    invalid = {
+        "MLFLOW_TRACKING_URI": "databricks",
+        "MLFLOW_EXPERIMENT_ID": "not-an-id",
+        "MLFLOW_TRACING_SQL_WAREHOUSE_ID": "not-a-warehouse",
+        "MLFLOW_UC_CATALOG": "bad.catalog",
+        "MLFLOW_UC_SCHEMA": "bad-schema",
+        "MLFLOW_UC_TABLE_PREFIX": "1bad-prefix",
+        "MLFLOW_OTEL_SPANS_TABLE": "other.schema.unrelated_otel_spans",
+    }
+
+    with pytest.raises(RuntimeError) as caught:
+        validate_tracing_environment(invalid)
+
+    for name in (
+        "MLFLOW_EXPERIMENT_ID",
+        "MLFLOW_TRACING_SQL_WAREHOUSE_ID",
+        "MLFLOW_UC_CATALOG",
+        "MLFLOW_UC_SCHEMA",
+        "MLFLOW_UC_TABLE_PREFIX",
+        "MLFLOW_OTEL_SPANS_TABLE",
+    ):
+        assert name in str(caught.value)
+
+
+def test_preflight_fails_when_selected_autologger_did_not_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name, value in REQUIRED_TRACING_ENV.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("AGENT_FRAMEWORK", "langgraph")
+    monkeypatch.setattr(mlflow.langchain, "autolog", lambda **kwargs: None)
+    sys.modules.pop("agent_server.agent", None)
+    sys.modules.pop("agent_server.tracing", None)
+    tracing = importlib.import_module("agent_server.tracing")
+    monkeypatch.setattr(tracing, "mark_autologger_called", lambda framework: None)
+    monkeypatch.setattr(server, "_invoke_function", None)
+    monkeypatch.setattr(server, "_stream_function", None)
+
+    with pytest.raises(RuntimeError, match="selected autologger did not run"):
+        preflight.verify_agent_tracing()
+
+
+def test_deployment_preflight_rejects_wrong_uc_location_and_missing_warehouse() -> None:
+    wrong_location = UnityCatalog("wrong_catalog", "wrong_schema", "wrong_prefix")
+    wrong_location._otel_spans_table_name = (
+        "wrong_catalog.wrong_schema.wrong_prefix_otel_spans"
+    )
+    experiment = Experiment(
+        experiment_id="123",
+        name="wrong-location",
+        artifact_location="dbfs:/tmp/test",
+        lifecycle_stage="active",
+        trace_location=wrong_location,
+    )
+
+    class LocalMlflowClient:
+        def get_experiment(self, _experiment_id):
+            return experiment
+
+    class LocalWarehouses:
+        def get(self, _warehouse_id):
+            raise RuntimeError("warehouse does not exist")
+
+    workspace = type("Workspace", (), {"warehouses": LocalWarehouses()})()
+    config = {
+        "MLFLOW_TRACKING_URI": "databricks",
+        "MLFLOW_EXPERIMENT_ID": "123",
+        "MLFLOW_TRACING_SQL_WAREHOUSE_ID": "0123456789abcdef",
+        "MLFLOW_UC_CATALOG": "catalog_test",
+        "MLFLOW_UC_SCHEMA": "schema_test",
+        "MLFLOW_UC_TABLE_PREFIX": "migration_test",
+        "MLFLOW_OTEL_SPANS_TABLE": (
+            "catalog_test.schema_test.migration_test_otel_spans"
+        ),
+    }
+
+    with pytest.raises(RuntimeError) as caught:
+        preflight.verify_deployment_trace_resources(
+            config,
+            mlflow_client=LocalMlflowClient(),
+            workspace_client=workspace,
+        )
+
+    assert "wrong UC trace location" in str(caught.value)
+    assert "warehouse does not exist" in str(caught.value)
+
+
+def test_real_deployment_preflight_verifies_resources_before_server_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = dict(REQUIRED_TRACING_ENV)
+    monkeypatch.setattr(sys, "argv", ["preflight.py"])
+    monkeypatch.setattr(preflight, "verify_agent_tracing", lambda: config)
+
+    def reject_resources(_config):
+        raise RuntimeError("deployment resources are unavailable")
+
+    monkeypatch.setattr(
+        preflight, "verify_deployment_trace_resources", reject_resources
+    )
+
+    def server_must_not_start():
+        raise AssertionError("server setup ran before deployment resource verification")
+
+    monkeypatch.setattr(preflight, "find_free_port", server_must_not_start)
+
+    with pytest.raises(RuntimeError, match="deployment resources are unavailable"):
+        preflight.main()
+
+
+def test_deployment_preflight_rejects_deleted_warehouse_state() -> None:
+    location = UnityCatalog("catalog_test", "schema_test", "migration_test")
+    location._otel_spans_table_name = (
+        "catalog_test.schema_test.migration_test_otel_spans"
+    )
+    experiment = Experiment(
+        experiment_id="123",
+        name="correct-location",
+        artifact_location="dbfs:/tmp/test",
+        lifecycle_stage="active",
+        trace_location=location,
+    )
+
+    class LocalMlflowClient:
+        def get_experiment(self, _experiment_id):
+            return experiment
+
+    class LocalWarehouses:
+        def get(self, warehouse_id):
+            return type("Warehouse", (), {"id": warehouse_id, "state": "DELETED"})()
+
+    workspace = type("Workspace", (), {"warehouses": LocalWarehouses()})()
+    config = {
+        "MLFLOW_TRACKING_URI": "databricks",
+        "MLFLOW_EXPERIMENT_ID": "123",
+        "MLFLOW_TRACING_SQL_WAREHOUSE_ID": "0123456789abcdef",
+        "MLFLOW_UC_CATALOG": "catalog_test",
+        "MLFLOW_UC_SCHEMA": "schema_test",
+        "MLFLOW_UC_TABLE_PREFIX": "migration_test",
+        "MLFLOW_OTEL_SPANS_TABLE": (
+            "catalog_test.schema_test.migration_test_otel_spans"
+        ),
+    }
+
+    with pytest.raises(RuntimeError, match="state: DELETED"):
+        preflight.verify_deployment_trace_resources(
+            config,
+            mlflow_client=LocalMlflowClient(),
+            workspace_client=workspace,
+        )
+
+
+def test_deployment_preflight_rejects_deleted_experiment() -> None:
+    location = UnityCatalog("catalog_test", "schema_test", "migration_test")
+    location._otel_spans_table_name = (
+        "catalog_test.schema_test.migration_test_otel_spans"
+    )
+    experiment = Experiment(
+        experiment_id="123",
+        name="deleted-experiment",
+        artifact_location="dbfs:/tmp/test",
+        lifecycle_stage="deleted",
+        trace_location=location,
+    )
+
+    class LocalMlflowClient:
+        def get_experiment(self, _experiment_id):
+            return experiment
+
+    class LocalWarehouses:
+        def get(self, warehouse_id):
+            return type("Warehouse", (), {"id": warehouse_id, "state": "RUNNING"})()
+
+    workspace = type("Workspace", (), {"warehouses": LocalWarehouses()})()
+    config = {
+        "MLFLOW_TRACKING_URI": "databricks",
+        "MLFLOW_EXPERIMENT_ID": "123",
+        "MLFLOW_TRACING_SQL_WAREHOUSE_ID": "0123456789abcdef",
+        "MLFLOW_UC_CATALOG": "catalog_test",
+        "MLFLOW_UC_SCHEMA": "schema_test",
+        "MLFLOW_UC_TABLE_PREFIX": "migration_test",
+        "MLFLOW_OTEL_SPANS_TABLE": (
+            "catalog_test.schema_test.migration_test_otel_spans"
+        ),
+    }
+
+    with pytest.raises(RuntimeError, match="lifecycle stage: deleted"):
+        preflight.verify_deployment_trace_resources(
+            config,
+            mlflow_client=LocalMlflowClient(),
+            workspace_client=workspace,
+        )
+
+
+@pytest.mark.filterwarnings(
+    "ignore:The ``noload`` loader strategy is deprecated:sqlalchemy.exc.SADeprecationWarning"
+)
+def test_preflight_fails_when_smoke_trace_cannot_be_retrieved(tmp_path) -> None:
+    original_tracking_uri = mlflow.get_tracking_uri()
+    tracking_uri = f"sqlite:///{tmp_path / 'tracking.db'}"
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment_id = mlflow.MlflowClient().create_experiment("empty-smoke-test")
+
+    try:
+        with pytest.raises(RuntimeError, match="smoke trace was not retrievable"):
+            preflight.verify_smoke_trace(
+                experiment_id=experiment_id,
+                started_ms=0,
+                request_id="missing-smoke-request",
+                timeout_seconds=0,
+            )
+    finally:
+        mlflow.set_tracking_uri(original_tracking_uri)
+
+
+def test_smoke_retrieval_rejects_unrelated_newer_trace(tmp_path: Path) -> None:
+    original_tracking_uri = mlflow.get_tracking_uri()
+    tracking_uri = f"sqlite:///{tmp_path / 'busy-tracking.db'}"
+    artifact_dir = tmp_path / "busy-artifacts"
+    artifact_dir.mkdir()
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment_id = mlflow.create_experiment(
+        "busy-smoke-test", artifact_location=artifact_dir.as_uri()
+    )
+    mlflow.set_experiment(experiment_id=experiment_id)
+
+    try:
+        started_ms = 0
+        with mlflow.start_span("unrelated", span_type=SpanType.AGENT):
+            mlflow.update_current_trace(
+                metadata={"appkit.request.id": "unrelated-request"}
+            )
+
+        with pytest.raises(RuntimeError, match="exact smoke trace was not retrievable"):
+            preflight.verify_smoke_trace(
+                experiment_id=experiment_id,
+                started_ms=started_ms,
+                request_id="target-smoke-request",
+                timeout_seconds=0,
+            )
+    finally:
+        mlflow.set_tracking_uri(original_tracking_uri)
+
+
+def test_smoke_retrieval_matches_root_request_attribute(tmp_path: Path) -> None:
+    original_tracking_uri = mlflow.get_tracking_uri()
+    tracking_uri = f"sqlite:///{tmp_path / 'attribute-tracking.db'}"
+    artifact_dir = tmp_path / "attribute-artifacts"
+    artifact_dir.mkdir()
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment_id = mlflow.create_experiment(
+        "attribute-smoke-test", artifact_location=artifact_dir.as_uri()
+    )
+    mlflow.set_experiment(experiment_id=experiment_id)
+
+    try:
+        with mlflow.start_span("matching", span_type=SpanType.AGENT) as root:
+            root.set_attribute("appkit.request.id", "attribute-smoke-request")
+
+        assert preflight.verify_smoke_trace(
+            experiment_id=experiment_id,
+            started_ms=0,
+            request_id="attribute-smoke-request",
+            timeout_seconds=0,
+        )
+    finally:
+        mlflow.set_tracking_uri(original_tracking_uri)
+
+
+def test_smoke_invocation_carries_unique_request_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_payload: dict = {}
+
+    class LocalResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return json.dumps({"output": [{"type": "message"}]}).encode()
+
+    def local_urlopen(request, timeout):
+        assert timeout == preflight.REQUEST_TIMEOUT
+        observed_payload.update(json.loads(request.data))
+        return LocalResponse()
+
+    monkeypatch.setattr(preflight.urllib.request, "urlopen", local_urlopen)
+
+    assert preflight.check_invocations(
+        "http://local.invalid", request_id="unique-smoke-request", retries=0
+    )
+    assert observed_payload["custom_inputs"]["request_id"] == "unique-smoke-request"
+
+
+def test_migration_handler_attaches_request_identity_to_trace(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    tracking_uri = f"sqlite:///{tmp_path / 'identity.db'}"
+    artifact_dir = tmp_path / "identity-artifacts"
+    artifact_dir.mkdir()
+    original_tracking_uri = mlflow.get_tracking_uri()
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment_id = mlflow.create_experiment(
+        "migration-handler-identity", artifact_location=artifact_dir.as_uri()
+    )
+    mlflow.set_experiment(experiment_id=experiment_id)
+    for name, value in REQUIRED_TRACING_ENV.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", tracking_uri)
+    monkeypatch.setenv("MLFLOW_EXPERIMENT_ID", experiment_id)
+    monkeypatch.setenv("AGENT_FRAMEWORK", "langgraph")
+    monkeypatch.setattr(mlflow.langchain, "autolog", lambda **_kwargs: None)
+    sys.modules.pop("agent_server.agent", None)
+    sys.modules.pop("agent_server.tracing", None)
+    monkeypatch.setattr(server, "_invoke_function", None)
+    monkeypatch.setattr(server, "_stream_function", None)
+    reset_config()
+
+    try:
+        agent = importlib.import_module("agent_server.agent")
+        request = ResponsesAgentRequest(
+            input=[{"role": "user", "content": "hello"}],
+            user="migration-user",
+            custom_inputs={
+                "session_id": "migration-session",
+                "request_id": "migration-request",
+            },
+        )
+
+        async def consume_scaffold():
+            await agent.stream_handler(request)
+
+        with mlflow.start_span("migration.request", span_type=SpanType.AGENT):
+            with pytest.raises(NotImplementedError):
+                asyncio.run(consume_scaffold())
+
+        traces = mlflow.search_traces(
+            locations=[experiment_id], return_type="list", flush=True
+        )
+        trace = mlflow.get_trace(traces[0].info.trace_id, flush=True)
+        assert trace.info.trace_metadata["mlflow.trace.session"] == "migration-session"
+        assert trace.info.trace_metadata["mlflow.trace.user"] == "migration-user"
+        assert trace.info.trace_metadata["appkit.request.id"] == "migration-request"
+        assert trace.info.tags["template"] == "agent-migration-from-model-serving"
+    finally:
+        reset_config()
+        mlflow.set_tracking_uri(original_tracking_uri)
+
+
+def test_offline_preflight_proves_autologging_and_trace_retrieval() -> None:
+    env = os.environ.copy()
+    for name in (*REQUIRED_TRACING_ENV, "DATABRICKS_HOST", "DATABRICKS_TOKEN"):
+        env.pop(name, None)
+    env["AGENT_FRAMEWORK"] = "langgraph"
+
+    completed = subprocess.run(
+        [sys.executable, "scripts/preflight.py", "--offline-test"],
+        cwd=PROJECT_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert (
+        "TEST-ONLY: synthetic local tracing configuration; "
+        "deployment UC validation is not performed" in completed.stdout
+    )
+    assert "selected autologger ran: langgraph" in completed.stdout
+    assert "smoke trace retrieved:" in completed.stdout
+    assert not (PROJECT_ROOT / "mlruns").exists()
+
+
+@pytest.mark.parametrize("framework", ["langgraph", "openai"])
+def test_selected_autologger_exports_only_sanitized_bounded_spans(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, framework: str
+) -> None:
+    class SecretRepr:
+        def __repr__(self) -> str:
+            return (
+                r"OpaqueContext({'api_key': 'repr-single-prefix\'"
+                r"repr-single-middle\'repr-single-suffix', "
+                r'"token": "repr-double-prefix\"repr-double-middle\"'
+                r'repr-double-suffix"})'
+            )
+
+    tracking_uri = f"sqlite:///{tmp_path / f'{framework}.db'}"
+    artifact_dir = tmp_path / f"{framework}-artifacts"
+    artifact_dir.mkdir()
+    original_tracking_uri = mlflow.get_tracking_uri()
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment_id = mlflow.create_experiment(
+        f"migration-{framework}-sanitizer", artifact_location=artifact_dir.as_uri()
+    )
+    mlflow.set_experiment(experiment_id=experiment_id)
+    for name, value in REQUIRED_TRACING_ENV.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", tracking_uri)
+    monkeypatch.setenv("MLFLOW_EXPERIMENT_ID", experiment_id)
+    monkeypatch.setenv("AGENT_FRAMEWORK", framework)
+    monkeypatch.setattr(mlflow.langchain, "autolog", lambda **_kwargs: None)
+    monkeypatch.setattr(mlflow.openai, "autolog", lambda **_kwargs: None)
+    sys.modules.pop("agent_server.agent", None)
+    sys.modules.pop("agent_server.tracing", None)
+    monkeypatch.setattr(server, "_invoke_function", None)
+    monkeypatch.setattr(server, "_stream_function", None)
+    reset_config()
+
+    try:
+        importlib.import_module("agent_server.agent")
+        tracing = importlib.import_module("agent_server.tracing")
+        with mlflow.start_span("framework.agent", span_type=SpanType.AGENT) as root:
+            tracing.set_request_trace_identity(
+                session_id="token identity-session-value",
+                user_id="identity-user",
+                request_id="identity-request",
+                template_name="identity-template",
+            )
+            root.set_inputs(
+                {
+                    "headers": {
+                        "Authorization": "Bearer auth-header-value",
+                        "Cookie": "session=cookie-header-value",
+                    },
+                    "api_key": "api-key-value",
+                    "serialized_json": (
+                        '{"api_key":"json-string-secret-value",'
+                        '"Authorization":"Bearer json-auth-secret-value"}'
+                    ),
+                    "python_mapping_repr": ("{'api_key': 'mapping-repr-secret-value'}"),
+                    "opaque_context": SecretRepr(),
+                }
+            )
+            root.set_outputs(
+                {
+                    "sdk_token": "sdk-token-value",
+                    "Set-Cookie": "tool-session=cookie-output-value",
+                    "serialized_output": ('{"credential":"output-json-secret-value"}'),
+                }
+            )
+            root.set_attribute(
+                "tool.credentials",
+                {"username": "tool-user", "password": "tool-password-value"},
+            )
+            with mlflow.start_span("framework.tool", span_type=SpanType.TOOL) as tool:
+                tool.set_inputs(
+                    {
+                        "payload": (
+                            r'Opaque({"api_key": "oversized-prefix\"'
+                            r'oversized-middle\"oversized-suffix"}):' + "x" * 70_000
+                        ),
+                        "credentials": {"secret": "tool-secret-value"},
+                    }
+                )
+                tool.set_outputs(
+                    {
+                        "authorization": "Bearer tool-output-value",
+                        "serialized": "{'token': 'tool-repr-secret-value'}",
+                    }
+                )
+                tool.set_attribute(
+                    "sdk.context",
+                    '{"token":"attribute-json-secret-value"}',
+                )
+                tool.add_event(
+                    SpanEvent(
+                        name="fallback-event",
+                        attributes={
+                            "details": (
+                                r"event {'credential': 'event-single-prefix\'"
+                                r"event-single-middle\'event-single-suffix'} "
+                                r'{"token": "event-double-prefix\"'
+                                r'event-double-middle\"event-double-suffix"}'
+                            )
+                        },
+                    )
+                )
+                tool.set_status(
+                    SpanStatus(
+                        status_code="ERROR",
+                        description=(
+                            r"status {'password': 'status-single-prefix\'"
+                            r"status-single-middle\'status-single-suffix'} "
+                            r'{"api_key": "status-double-prefix\"'
+                            r'status-double-middle\"status-double-suffix"}'
+                        ),
+                    )
+                )
+            root.record_exception(
+                RuntimeError(
+                    r"exception {'secret': 'exception-single-prefix\'"
+                    r"exception-single-middle\'exception-single-suffix'} "
+                    r'{"Authorization": "Bearer exception-double-prefix\"'
+                    r'exception-double-middle\"exception-double-suffix"}'
+                )
+            )
+
+        traces = mlflow.search_traces(
+            locations=[experiment_id], return_type="list", flush=True
+        )
+        trace = mlflow.get_trace(traces[0].info.trace_id, flush=True)
+        exported = json.dumps(
+            [span.to_dict() for span in trace.data.spans], sort_keys=True
+        )
+        for secret in (
+            "auth-header-value",
+            "cookie-header-value",
+            "api-key-value",
+            "sdk-token-value",
+            "cookie-output-value",
+            "tool-password-value",
+            "tool-secret-value",
+            "tool-output-value",
+            "identity-session-value",
+            "json-string-secret-value",
+            "json-auth-secret-value",
+            "mapping-repr-secret-value",
+            "output-json-secret-value",
+            "tool-repr-secret-value",
+            "attribute-json-secret-value",
+            "repr-single-prefix",
+            "repr-single-middle",
+            "repr-single-suffix",
+            "repr-double-prefix",
+            "repr-double-middle",
+            "repr-double-suffix",
+            "event-single-prefix",
+            "event-single-middle",
+            "event-single-suffix",
+            "event-double-prefix",
+            "event-double-middle",
+            "event-double-suffix",
+            "status-single-prefix",
+            "status-single-middle",
+            "status-single-suffix",
+            "status-double-prefix",
+            "status-double-middle",
+            "status-double-suffix",
+            "exception-single-prefix",
+            "exception-single-middle",
+            "exception-single-suffix",
+            "exception-double-prefix",
+            "exception-double-middle",
+            "exception-double-suffix",
+            "oversized-prefix",
+            "oversized-middle",
+            "oversized-suffix",
+        ):
+            assert secret not in exported
+        assert "[REDACTED]" in exported
+        tool_span = next(
+            span for span in trace.data.spans if span.span_type == SpanType.TOOL
+        )
+        assert set(tool_span.outputs) == {"partial_output", "error"}
+        assert tool_span.inputs["truncated"] is True
+        expected_safe_inputs = {
+            "credentials": "[REDACTED]",
+            "payload": 'Opaque({"api_key": "[REDACTED]"}):' + "x" * 70_000,
+        }
+        expected_encoded = json.dumps(
+            expected_safe_inputs,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        assert tool_span.inputs["preview"] == expected_encoded[: 64 * 1024].decode()
+        assert tool_span.inputs["originalBytes"] == len(expected_encoded)
+        assert (
+            tool_span.inputs["sha256"] == hashlib.sha256(expected_encoded).hexdigest()
+        )
+    finally:
+        reset_config()
+        mlflow.set_tracking_uri(original_tracking_uri)
+
+
+def test_migration_scaffold_emits_a_complete_local_framework_trace(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    tracking_uri = f"sqlite:///{tmp_path / 'conformance.db'}"
+    artifact_dir = tmp_path / "conformance-artifacts"
+    artifact_dir.mkdir()
+    original_tracking_uri = mlflow.get_tracking_uri()
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment_id = mlflow.create_experiment(
+        "migration-conformance", artifact_location=artifact_dir.as_uri()
+    )
+    mlflow.set_experiment(experiment_id=experiment_id)
+    monkeypatch.setenv("DATABRICKS_APP_NAME", "agent-migration")
+    from agent_server import tracing
+
+    tracing.install_sanitizing_export_boundary()
+
+    usage = {
+        "inputTokens": 7,
+        "outputTokens": 3,
+        "totalTokens": 10,
+        "costAvailable": False,
+    }
+    try:
+        with mlflow.start_span("migration.request", span_type=SpanType.AGENT) as root:
+            tracing.set_request_trace_identity(
+                session_id="migration-session",
+                user_id="migration-user",
+                request_id="migration-request",
+                template_name="agent-migration-from-model-serving",
+            )
+            root.set_inputs({"input": "validate migrated framework tracing"})
+            with mlflow.start_span(
+                "migration.model", span_type=SpanType.CHAT_MODEL
+            ) as model:
+                model.set_inputs({"messages": [{"role": "user", "content": "test"}]})
+                model.set_outputs({"text": "framework trace complete"})
+                model.set_attributes(
+                    {
+                        "appkit.model": "migration-test-model",
+                        "appkit.provider": "databricks",
+                        "appkit.usage": usage,
+                        "mlflow.chat.tokenUsage": {
+                            "input_tokens": 7,
+                            "output_tokens": 3,
+                            "total_tokens": 10,
+                        },
+                        "appkit.cost_available": False,
+                    }
+                )
+                model.set_status("OK")
+            root.set_outputs({"text": "framework trace complete"})
+            root.set_attributes(
+                {
+                    "appkit.usage": usage,
+                    "mlflow.trace.tokenUsage": {
+                        "input_tokens": 7,
+                        "output_tokens": 3,
+                        "total_tokens": 10,
+                    },
+                    "appkit.cost_available": False,
+                }
+            )
+            root.set_status("OK")
+
+        traces = mlflow.search_traces(
+            locations=[experiment_id], return_type="list", flush=True
+        )
+        assert len(traces) == 1
+        trace = mlflow.get_trace(traces[0].info.trace_id, flush=True)
+        assert [span.name for span in trace.data.spans] == [
+            "migration.request",
+            "migration.model",
+        ]
+
+        with mlflow.start_span(
+            "migration.failure.request", span_type=SpanType.AGENT
+        ) as root:
+            tracing.set_request_trace_identity(
+                session_id="migration-failure-session",
+                user_id="migration-failure-user",
+                request_id="migration-failure-request",
+                template_name="agent-migration-from-model-serving",
+            )
+            root.set_inputs({"input": "inject migrated framework failure"})
+            with mlflow.start_span(
+                "migration.failure.model", span_type=SpanType.CHAT_MODEL
+            ) as model:
+                model.set_inputs({"messages": [{"role": "user", "content": "fail"}]})
+                model.set_outputs({"text": "partial framework output"})
+                model.set_attributes(
+                    {
+                        "appkit.model": "migration-test-model",
+                        "appkit.provider": "databricks",
+                        "appkit.usage": usage,
+                        "mlflow.chat.tokenUsage": {
+                            "input_tokens": 7,
+                            "output_tokens": 3,
+                            "total_tokens": 10,
+                        },
+                        "appkit.cost_available": False,
+                    }
+                )
+                model.set_status(
+                    SpanStatus(
+                        status_code="ERROR", description="injected model failure"
+                    )
+                )
+            root.set_outputs({"text": "partial framework output"})
+            root.set_attributes(
+                {
+                    "appkit.usage": usage,
+                    "mlflow.trace.tokenUsage": {
+                        "input_tokens": 7,
+                        "output_tokens": 3,
+                        "total_tokens": 10,
+                    },
+                    "appkit.cost_available": False,
+                }
+            )
+            root.set_status(
+                SpanStatus(status_code="ERROR", description="injected request failure")
+            )
+
+        failure_trace_id = mlflow.get_last_active_trace_id()
+        assert failure_trace_id and failure_trace_id != trace.info.trace_id
+        failure_trace = mlflow.get_trace(failure_trace_id, flush=True)
+        conformance_dir = Path(__file__).parents[2] / ".scripts" / "trace-conformance"
+        sys.path.insert(0, str(conformance_dir))
+        from contract import assert_trace_contract
+        from normalize import normalize_python_mlflow_trace, write_trace_manifest
+
+        failure_manifest = normalize_python_mlflow_trace(
+            "agent-migration-from-model-serving", failure_trace
+        )
+        assert_trace_contract(failure_manifest)
+        if destination := os.environ.get("TRACE_CONFORMANCE_FAILURE_MANIFEST"):
+            write_trace_manifest(destination, failure_manifest)
+    finally:
+        mlflow.set_tracking_uri(original_tracking_uri)

@@ -1,10 +1,22 @@
 command: ['npm', 'run', 'start']
 env:
+  - name: MLFLOW_EXPERIMENT_ID
+    valueFrom: mlflow-experiment
+  - name: MLFLOW_TRACING_SQL_WAREHOUSE_ID
+    valueFrom: mlflow-tracing-warehouse
+  - name: MLFLOW_UC_CATALOG
+    value: main
+  - name: MLFLOW_UC_SCHEMA
+    value: agent_traces
+  - name: MLFLOW_UC_TABLE_PREFIX
+    value: rag_chat
+  - name: MLFLOW_OTEL_SPANS_TABLE
+    value: main.agent_traces.rag_chat_otel_spans
   - name: LAKEBASE_ENDPOINT
     valueFrom: postgres
   - name: DATABRICKS_ENDPOINT
-    value: 'databricks-gpt-5-4-mini'
+    valueFrom: chat-serving-endpoint
   - name: DATABRICKS_EMBEDDING_ENDPOINT
-    value: 'databricks-gte-large-en'
+    valueFrom: embedding-serving-endpoint
   - name: RAG_RESEED
     value: 'false'

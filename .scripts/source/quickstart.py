@@ -16,9 +16,9 @@ Steps:
      If the app has an experiment resource, use that ID instead of creating a new one.
      If the app has a postgres or database resource, build the lakebase config from it
      (and resolve the endpoint name for local dev .env via the API).
-  5. MLflow experiment — if not already set from app resources (step 4), get username,
-     seed MLFLOW_EXPERIMENT_ID from databricks.yml if not in .env, then create or
-     reuse an experiment. Update .env and databricks.yml.
+  5. MLflow experiment — provision or reuse an experiment permanently bound to a
+     Unity Catalog trace location through the supported MLflow API. Persist the
+     experiment, warehouse, catalog, schema, prefix, and spans table atomically.
   6. Lakebase setup — skip if already resolved from app resources (step 4).
      Otherwise: if the template requires Lakebase (has LAKEBASE_* in databricks.yml)
      or CLI flags are provided, set up via CLI args or interactive selection.
@@ -36,6 +36,10 @@ Options:
     --lakebase-create-new NAME  Create a new Lakebase autoscaling project with this name
     --skip-lakebase   Skip Lakebase setup (non-interactive / CI use)
     --app-name NAME   Existing Databricks app name to bind this bundle to
+    --mlflow-catalog NAME       UC catalog for trace tables (default: main)
+    --mlflow-schema NAME        UC schema for trace tables (default: agent_traces)
+    --mlflow-table-prefix NAME  UC trace table prefix (default: agents_on_apps)
+    --mlflow-warehouse-id ID    SQL warehouse for UC trace provisioning
     -h, --help        Show this help message
 """
 
@@ -44,14 +48,30 @@ import json
 import os
 import platform
 import re
-import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
+import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from ruamel.yaml import YAML
 from ruamel.yaml.scalarstring import DoubleQuotedScalarString
+
+
+@dataclass(frozen=True)
+class MlflowTraceConfig:
+    """Provisioned MLflow experiment and immutable Unity Catalog trace location."""
+
+    experiment_name: str
+    experiment_id: str
+    warehouse_id: str
+    catalog_name: str
+    schema_name: str
+    table_prefix: str
+    otel_spans_table_name: str
 
 
 def _load_yml(path: Path):
@@ -500,51 +520,167 @@ def get_databricks_username(profile_name: str) -> str:
         sys.exit(1)
 
 
-def create_mlflow_experiment(profile_name: str, username: str) -> tuple[str, str]:
-    """Create (or reuse) an MLflow experiment and return (name, id)."""
-    print_step("Setting up MLflow experiment...")
+def _location_name(location: Any) -> str:
+    """Return a stable display name for an MLflow trace location."""
+    if location is None:
+        return "<unbound>"
+    values = (
+        getattr(location, "catalog_name", None),
+        getattr(location, "schema_name", None),
+        getattr(location, "table_prefix", None),
+    )
+    if all(isinstance(value, str) and value for value in values):
+        return ".".join(values)
+    return repr(location)
 
-    w = get_workspace_client(profile_name)
-    if not w:
-        print_error("Could not connect to Databricks workspace")
-        print_troubleshooting_api()
-        sys.exit(1)
 
-    # Check if we already have an experiment ID in .env (idempotency)
-    existing_id = get_env_value("MLFLOW_EXPERIMENT_ID")
-    if existing_id:
+def _warehouse_state(warehouse: Any) -> str:
+    state = getattr(warehouse, "state", None)
+    return str(getattr(state, "value", state) or "").upper()
+
+
+def _resolve_mlflow_warehouse(workspace: Any, warehouse_id: str) -> str:
+    if not warehouse_id:
         try:
-            exp = w.experiments.get_experiment(experiment_id=existing_id).experiment
-            if exp and exp.name:
-                print_success(f"Reusing existing experiment '{exp.name}' (ID: {existing_id})")
-                return exp.name, existing_id
-        except Exception:
-            pass
-        print("Existing experiment not found or invalid, creating a new one...")
-
-    experiment_name = f"/Users/{username}/agents-on-apps"
-
+            warehouses = list(workspace.warehouses.list())
+        except Exception as error:
+            raise RuntimeError(
+                f"Could not list SQL warehouses for MLflow Unity Catalog tracing: {error}"
+            ) from error
+        state_priority = {"RUNNING": 0, "STARTING": 1, "STOPPED": 2, "STOPPING": 3}
+        warehouses.sort(key=lambda item: state_priority.get(_warehouse_state(item), 99))
+        warehouse_id = next(
+            (
+                str(getattr(warehouse, "id", "") or "")
+                for warehouse in warehouses
+                if getattr(warehouse, "id", None)
+                and _warehouse_state(warehouse) not in {"DELETED", "DELETING"}
+            ),
+            "",
+        )
+    if not warehouse_id:
+        raise RuntimeError(
+            "No available SQL warehouse was found for MLflow Unity Catalog tracing. "
+            "Pass --mlflow-warehouse-id or set MLFLOW_TRACING_SQL_WAREHOUSE_ID."
+        )
     try:
-        # Try to create with default name
-        try:
-            experiment_id = w.experiments.create_experiment(name=experiment_name).experiment_id or ""
-            print_success(f"Created experiment '{experiment_name}' with ID: {experiment_id}")
-            return experiment_name, experiment_id
-        except Exception:
-            pass
+        warehouse = workspace.warehouses.get(warehouse_id)
+    except Exception as error:
+        raise RuntimeError(
+            f"SQL warehouse {warehouse_id!r} is unavailable: {error}"
+        ) from error
+    if _warehouse_state(warehouse) in {"DELETED", "DELETING"}:
+        raise RuntimeError(
+            f"SQL warehouse {warehouse_id!r} is unavailable "
+            f"(state: {_warehouse_state(warehouse)})"
+        )
+    return warehouse_id
 
-        # Name already exists, try with random suffix
-        print("Experiment name already exists, creating with random suffix...")
-        random_suffix = secrets.token_hex(4)
-        experiment_name = f"/Users/{username}/agents-on-apps-{random_suffix}"
-        experiment_id = w.experiments.create_experiment(name=experiment_name).experiment_id or ""
-        print_success(f"Created experiment '{experiment_name}' with ID: {experiment_id}")
-        return experiment_name, experiment_id
 
-    except Exception as e:
-        print_error(f"Failed to create MLflow experiment: {e}")
-        print_troubleshooting_api()
-        sys.exit(1)
+def create_or_reuse_uc_trace_experiment(
+    profile_name: str,
+    username: str,
+    trace_config: Any,
+) -> MlflowTraceConfig:
+    """Create or reuse the fixed agent experiment with an immutable UC location."""
+    print_step("Setting up MLflow experiment with Unity Catalog tracing...")
+
+    workspace = get_workspace_client(profile_name)
+    if not workspace:
+        raise RuntimeError("Could not connect to Databricks workspace")
+
+    warehouse_id = str(getattr(trace_config, "warehouse_id", "") or "")
+    catalog_name = str(getattr(trace_config, "catalog_name", "") or "")
+    schema_name = str(getattr(trace_config, "schema_name", "") or "")
+    table_prefix = str(getattr(trace_config, "table_prefix", "") or "")
+    for label, value in (
+        ("catalog", catalog_name),
+        ("schema", schema_name),
+        ("table prefix", table_prefix),
+    ):
+        if not value:
+            raise RuntimeError(f"MLflow Unity Catalog {label} cannot be empty")
+    warehouse_id = _resolve_mlflow_warehouse(workspace, warehouse_id)
+
+    # Import only after Databricks authentication has been validated so importing
+    # the quickstart module itself never initializes an MLflow client/provider.
+    import mlflow
+    from mlflow.entities.trace_location import UnityCatalog
+
+    tracking_uri = f"databricks://{profile_name}"
+    os.environ["MLFLOW_TRACKING_URI"] = tracking_uri
+    os.environ["MLFLOW_TRACING_SQL_WAREHOUSE_ID"] = warehouse_id
+    mlflow.set_tracking_uri(tracking_uri)
+
+    experiment_name = str(
+        getattr(trace_config, "experiment_name", "")
+        or f"/Users/{username}/agents-on-apps"
+    )
+    requested_location = UnityCatalog(
+        catalog_name=catalog_name,
+        schema_name=schema_name,
+        table_prefix=table_prefix,
+    )
+    previous_profile = os.environ.get("DATABRICKS_CONFIG_PROFILE")
+    os.environ["DATABRICKS_CONFIG_PROFILE"] = profile_name
+    try:
+        existing_experiment = mlflow.get_experiment_by_name(experiment_name)
+        existing_location = getattr(existing_experiment, "trace_location", None)
+        if existing_experiment is not None and existing_location != requested_location:
+            suggested_name = f"{experiment_name}-uc"
+            raise RuntimeError(
+                "MLflow experiment trace locations are immutable. "
+                f"Experiment: {experiment_name}; "
+                f"current location: {_location_name(existing_location)}; "
+                f"requested location: {_location_name(requested_location)}. "
+                "Select a new experiment name before retrying, for example: "
+                f"uv run quickstart --mlflow-experiment-name {suggested_name}"
+            )
+
+        # This is the only creation path. Do not replace it with the workspace
+        # create_experiment API: that would silently create an ordinary experiment.
+        experiment = mlflow.set_experiment(
+            experiment_name=experiment_name,
+            trace_location=requested_location,
+        )
+    finally:
+        if previous_profile is None:
+            os.environ.pop("DATABRICKS_CONFIG_PROFILE", None)
+        else:
+            os.environ["DATABRICKS_CONFIG_PROFILE"] = previous_profile
+    resolved_location = getattr(experiment, "trace_location", None)
+    if resolved_location != requested_location:
+        raise RuntimeError(
+            "MLflow did not bind the requested immutable Unity Catalog location: "
+            f"experiment={experiment_name}, "
+            f"current={_location_name(resolved_location)}, "
+            f"requested={_location_name(requested_location)}"
+        )
+    experiment_id = str(getattr(experiment, "experiment_id", "") or "")
+    if not experiment_id:
+        raise RuntimeError(
+            f"MLflow returned no experiment ID for {experiment_name!r}"
+        )
+
+    if existing_experiment is None:
+        print_success(
+            f"Created UC-bound experiment '{experiment_name}' (ID: {experiment_id})"
+        )
+    else:
+        print_success(
+            f"Reusing existing experiment '{experiment_name}' (ID: {experiment_id})"
+        )
+
+    spans_table = f"{catalog_name}.{schema_name}.{table_prefix}_otel_spans"
+    return MlflowTraceConfig(
+        experiment_name=experiment_name,
+        experiment_id=experiment_id,
+        warehouse_id=warehouse_id,
+        catalog_name=catalog_name,
+        schema_name=schema_name,
+        table_prefix=table_prefix,
+        otel_spans_table_name=spans_table,
+    )
 
 
 def check_lakebase_required() -> bool:
@@ -606,32 +742,225 @@ def get_workspace_client(profile_name: str):
         return None
 
 
-def get_app_resources(profile_name: str, app_name: str) -> list[dict]:
+def _quoted_identifier(value: str) -> str:
+    return f"`{value.replace('`', '``')}`"
+
+
+def _quoted_string(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _execute_sql(workspace: Any, warehouse_id: str, statement: str) -> Any:
+    """Execute SQL and wait for a successful terminal status."""
+    response = workspace.statement_execution.execute_statement(
+        statement=statement,
+        warehouse_id=warehouse_id,
+        wait_timeout="50s",
+    )
+    for _ in range(120):
+        status = getattr(response, "status", None)
+        state = getattr(status, "state", None)
+        state_value = getattr(state, "value", state)
+        if state_value == "SUCCEEDED":
+            return response
+        if state_value in {"FAILED", "CANCELED", "CLOSED"}:
+            error = getattr(status, "error", None)
+            code = getattr(error, "error_code", None)
+            message = getattr(error, "message", None)
+            detail = ": ".join(str(value) for value in (code, message) if value)
+            raise RuntimeError(
+                f"SQL statement {str(state_value).lower()}: {detail or statement}"
+            )
+        if state_value not in {"PENDING", "RUNNING"}:
+            raise RuntimeError(
+                f"SQL statement returned unknown status {state_value!r}: {statement}"
+            )
+        statement_id = getattr(response, "statement_id", None)
+        if not isinstance(statement_id, str) or not statement_id:
+            raise RuntimeError(
+                f"SQL statement is {str(state_value).lower()} without a statement ID"
+            )
+        response = workspace.statement_execution.get_statement(statement_id)
+        next_state = getattr(getattr(response, "status", None), "state", None)
+        if getattr(next_state, "value", next_state) in {"PENDING", "RUNNING"}:
+            time.sleep(1)
+    raise TimeoutError(f"SQL statement did not finish after 120 polls: {statement}")
+
+
+def _discover_uc_trace_tables(
+    workspace: Any, config: MlflowTraceConfig
+) -> list[tuple[str, str]]:
+    response = _execute_sql(
+        workspace,
+        config.warehouse_id,
+        " ".join(
+            [
+                "SELECT table_name, table_type",
+                f"FROM {_quoted_identifier(config.catalog_name)}.information_schema.tables",
+                f"WHERE table_schema = {_quoted_string(config.schema_name)}",
+                f"AND table_name LIKE {_quoted_string(f'{config.table_prefix}%')}",
+                "ORDER BY table_name",
+            ]
+        ),
+    )
+    rows = getattr(getattr(response, "result", None), "data_array", None) or []
+    return [
+        (str(row[0]), str(row[1]).upper())
+        for row in rows
+        if len(row) >= 2
+        and row[0] is not None
+        and row[1] is not None
+        and str(row[0]).startswith(config.table_prefix)
+    ]
+
+
+def get_existing_app(workspace: Any, app_name: str) -> Any | None:
+    """Return an app, deferring only the expected pre-deploy NotFound case."""
+    from databricks.sdk.errors import NotFound
+
+    try:
+        return workspace.apps.get(app_name)
+    except NotFound:
+        return None
+    except Exception as error:
+        raise RuntimeError(
+            f"Could not resolve Databricks app {app_name!r}: {error}"
+        ) from error
+
+
+def grant_uc_trace_access_to_app(
+    workspace: Any,
+    app_name: str,
+    trace_config: MlflowTraceConfig,
+) -> None:
+    """Grant an existing app service principal explicit UC trace-table access."""
+    app = get_existing_app(workspace, app_name)
+    if app is None:
+        raise RuntimeError(
+            f"Databricks app {app_name!r} does not exist; deploy it before applying "
+            "the required MLflow UC trace grants"
+        )
+    principal = getattr(app, "service_principal_client_id", None)
+    if not isinstance(principal, str) or not principal:
+        raise RuntimeError(
+            f"Databricks app {app_name!r} has no service-principal application ID"
+        )
+
+    trace_entities = _discover_uc_trace_tables(workspace, trace_config)
+    table_names = [name for name, _table_type in trace_entities]
+    expected_spans_table = f"{trace_config.table_prefix}_otel_spans"
+    if expected_spans_table not in table_names:
+        raise RuntimeError(
+            f"Required MLflow trace table {trace_config.otel_spans_table_name} "
+            f"was not found; discovered: {', '.join(table_names) or '<none>'}"
+        )
+
+    catalog = _quoted_identifier(trace_config.catalog_name)
+    schema = _quoted_identifier(trace_config.schema_name)
+    grantee = _quoted_identifier(principal)
+    statements = [
+        f"GRANT USE CATALOG ON CATALOG {catalog} TO {grantee}",
+        f"GRANT USE SCHEMA ON SCHEMA {catalog}.{schema} TO {grantee}",
+    ]
+    for table_name, table_type in trace_entities:
+        entity = f"{catalog}.{schema}.{_quoted_identifier(table_name)}"
+        if table_type == "VIEW":
+            statements.append(f"GRANT SELECT ON VIEW {entity} TO {grantee}")
+        else:
+            statements.extend(
+                [
+                    f"GRANT MODIFY ON TABLE {entity} TO {grantee}",
+                    f"GRANT SELECT ON TABLE {entity} TO {grantee}",
+                ]
+            )
+    for statement in statements:
+        _execute_sql(workspace, trace_config.warehouse_id, statement)
+
+
+def write_mlflow_trace_env_atomically(
+    trace_config: MlflowTraceConfig | Any,
+    env_file: Path = Path(".env"),
+) -> None:
+    """Persist all six MLflow trace variables with one atomic replacement."""
+    values = {
+        "MLFLOW_EXPERIMENT_ID": str(trace_config.experiment_id),
+        "MLFLOW_TRACING_SQL_WAREHOUSE_ID": str(trace_config.warehouse_id),
+        "MLFLOW_UC_CATALOG": str(trace_config.catalog_name),
+        "MLFLOW_UC_SCHEMA": str(trace_config.schema_name),
+        "MLFLOW_UC_TABLE_PREFIX": str(trace_config.table_prefix),
+        "MLFLOW_OTEL_SPANS_TABLE": str(trace_config.otel_spans_table_name),
+    }
+    content = env_file.read_text() if env_file.exists() else ""
+    keys = "|".join(re.escape(key) for key in values)
+    content = re.sub(
+        rf"^(?:#\s*)?(?:{keys})=.*(?:\n|$)",
+        "",
+        content,
+        flags=re.MULTILINE,
+    )
+    if content and not content.endswith("\n"):
+        content += "\n"
+    content += "".join(f"{key}={value}\n" for key, value in values.items())
+
+    env_file.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=env_file.parent,
+        prefix=f".{env_file.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as temporary:
+        temporary.write(content)
+        temporary.flush()
+        os.fsync(temporary.fileno())
+        temporary_path = Path(temporary.name)
+    os.replace(temporary_path, env_file)
+
+
+def get_app_resources(
+    profile_name: str, app_name: str, existing_app: Any | None
+) -> list[dict]:
     """Fetch resources from an existing Databricks app.
 
-    Returns the resources list from the apps API, or empty list on failure.
+    A missing pre-deploy app skips this lookup. Once the SDK confirms that the
+    app exists, command, JSON, and response-shape failures are fatal.
     """
+    if existing_app is None:
+        return []
+
     print(f"Fetching resources from app '{app_name}'...")
     result = run_command(
         ["databricks", "-p", profile_name, "apps", "get", app_name, "--output", "json"],
         check=False,
     )
     if result.returncode != 0:
-        print(
-            f"  Could not fetch app details: "
-            f"{result.stderr.strip() if result.stderr else 'Unknown error'}"
+        detail = result.stderr.strip() if result.stderr else "Unknown error"
+        raise RuntimeError(
+            f"Could not fetch resources for existing app {app_name!r}: {detail}"
         )
-        return []
     try:
         data = json.loads(result.stdout)
-        resources = data.get("resources", [])
-        if resources:
-            print_success(f"Found {len(resources)} resource(s) in app '{app_name}'")
-        else:
-            print(f"  App '{app_name}' has no resources configured")
-        return resources
-    except (json.JSONDecodeError, KeyError):
-        return []
+    except json.JSONDecodeError as error:
+        raise RuntimeError(
+            f"Existing app {app_name!r} returned malformed JSON: {error}"
+        ) from error
+    if not isinstance(data, dict):
+        raise RuntimeError(
+            f"Existing app {app_name!r} returned an invalid response object"
+        )
+    resources = data.get("resources", [])
+    if not isinstance(resources, list) or any(
+        not isinstance(resource, dict) for resource in resources
+    ):
+        raise RuntimeError(
+            f"Existing app {app_name!r} returned invalid resources; expected a list of objects"
+        )
+    if resources:
+        print_success(f"Found {len(resources)} resource(s) in app '{app_name}'")
+    else:
+        print(f"  App '{app_name}' has no resources configured")
+    return resources
 
 
 def create_lakebase_instance(profile_name: str, name: str = None) -> dict:
@@ -1294,6 +1623,101 @@ def update_databricks_yml_experiment(experiment_id: str) -> None:
     print_success("Updated databricks.yml with experiment ID")
 
 
+def _replace_mlflow_env_entries(
+    existing: list[Any],
+    trace_config: MlflowTraceConfig,
+    *,
+    value_from_key: str,
+) -> list[Any]:
+    names = {
+        "MLFLOW_EXPERIMENT_ID",
+        "MLFLOW_TRACING_SQL_WAREHOUSE_ID",
+        "MLFLOW_UC_CATALOG",
+        "MLFLOW_UC_SCHEMA",
+        "MLFLOW_UC_TABLE_PREFIX",
+        "MLFLOW_OTEL_SPANS_TABLE",
+    }
+    retained = [entry for entry in existing if entry.get("name") not in names]
+    retained.extend(
+        [
+            {
+                "name": "MLFLOW_EXPERIMENT_ID",
+                value_from_key: "experiment",
+            },
+            {
+                "name": "MLFLOW_TRACING_SQL_WAREHOUSE_ID",
+                value_from_key: "mlflow-tracing-warehouse",
+            },
+            {"name": "MLFLOW_UC_CATALOG", "value": trace_config.catalog_name},
+            {"name": "MLFLOW_UC_SCHEMA", "value": trace_config.schema_name},
+            {"name": "MLFLOW_UC_TABLE_PREFIX", "value": trace_config.table_prefix},
+            {
+                "name": "MLFLOW_OTEL_SPANS_TABLE",
+                "value": trace_config.otel_spans_table_name,
+            },
+        ]
+    )
+    return retained
+
+
+def update_mlflow_trace_runtime_config(trace_config: MlflowTraceConfig) -> None:
+    """Persist trace config to the bundle and direct app runtime configuration."""
+    bundle_path = Path("databricks.yml")
+    if bundle_path.exists():
+        yaml, data = _load_yml(bundle_path)
+        apps = data.get("resources", {}).get("apps", {})
+        for app in apps.values():
+            config = app.setdefault("config", {})
+            config["env"] = _replace_mlflow_env_entries(
+                list(config.get("env", [])),
+                trace_config,
+                value_from_key="value_from",
+            )
+            resources = list(app.get("resources", []))
+            experiment_found = False
+            warehouse_found = False
+            for resource in resources:
+                if "experiment" in resource:
+                    resource["experiment"]["experiment_id"] = (
+                        DoubleQuotedScalarString(trace_config.experiment_id)
+                    )
+                    experiment_found = True
+                if resource.get("name") == "mlflow-tracing-warehouse":
+                    resource["sql_warehouse"] = {
+                        "id": trace_config.warehouse_id,
+                        "permission": "CAN_USE",
+                    }
+                    warehouse_found = True
+            if not experiment_found:
+                raise RuntimeError(
+                    "databricks.yml app resource is missing its MLflow experiment binding"
+                )
+            if not warehouse_found:
+                resources.append(
+                    {
+                        "name": "mlflow-tracing-warehouse",
+                        "sql_warehouse": {
+                            "id": trace_config.warehouse_id,
+                            "permission": "CAN_USE",
+                        },
+                    }
+                )
+            app["resources"] = resources
+        _save_yml(yaml, data, bundle_path)
+        print_success("Updated databricks.yml with MLflow UC tracing config")
+
+    app_path = Path("app.yaml")
+    if app_path.exists():
+        yaml, data = _load_yml(app_path)
+        data["env"] = _replace_mlflow_env_entries(
+            list(data.get("env", [])),
+            trace_config,
+            value_from_key="valueFrom",
+        )
+        _save_yml(yaml, data, app_path)
+        print_success("Updated app.yaml with MLflow UC tracing config")
+
+
 def update_databricks_yml_app_name(app_name: str, budget_policy_id: str | None = None) -> str:
     """Update the app name field in databricks.yml.
 
@@ -1328,7 +1752,7 @@ def update_databricks_yml_app_name(app_name: str, budget_policy_id: str | None =
     return app_key
 
 
-def main():
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Quickstart setup for Databricks agent development",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1373,8 +1797,45 @@ Examples:
         help="Existing Databricks app name to bind this bundle to",
         metavar="NAME",
     )
+    parser.add_argument(
+        "--mlflow-catalog",
+        default=os.environ.get("MLFLOW_UC_CATALOG", "main"),
+        help="Unity Catalog catalog for MLflow trace tables",
+        metavar="NAME",
+    )
+    parser.add_argument(
+        "--mlflow-schema",
+        default=os.environ.get("MLFLOW_UC_SCHEMA", "agent_traces"),
+        help="Unity Catalog schema for MLflow trace tables",
+        metavar="NAME",
+    )
+    parser.add_argument(
+        "--mlflow-table-prefix",
+        default=os.environ.get("MLFLOW_UC_TABLE_PREFIX", "agents_on_apps"),
+        help="Table prefix for MLflow Unity Catalog trace tables",
+        metavar="NAME",
+    )
+    parser.add_argument(
+        "--mlflow-warehouse-id",
+        default=os.environ.get("MLFLOW_TRACING_SQL_WAREHOUSE_ID"),
+        help="SQL warehouse used to provision and query MLflow UC trace tables",
+        metavar="ID",
+    )
+    parser.add_argument(
+        "--mlflow-experiment-name",
+        default=os.environ.get("MLFLOW_EXPERIMENT_NAME"),
+        help="Absolute MLflow experiment name (defaults to /Users/<user>/agents-on-apps)",
+        metavar="PATH",
+    )
+    return parser
 
-    args = parser.parse_args()
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    return _build_parser().parse_args(argv)
+
+
+def main():
+    args = _parse_args()
 
     try:
         print_header("Agent on Apps - Quickstart Setup")
@@ -1417,19 +1878,17 @@ Examples:
 
         bundle_key = ""
         lakebase_config = None
-        app_experiment_id = None
+        existing_app = None
         if app_name:
             bundle_key = update_databricks_yml_app_name(app_name)
+            workspace = get_workspace_client(profile_name)
+            if not workspace:
+                raise RuntimeError("Could not connect to Databricks workspace")
+            existing_app = get_existing_app(workspace, app_name)
 
             # Fetch resources from the existing app and use them in databricks.yml
-            app_resources = get_app_resources(profile_name, app_name)
+            app_resources = get_app_resources(profile_name, app_name, existing_app)
             for resource in app_resources:
-                if "experiment" in resource:
-                    app_exp_id = resource["experiment"].get("experiment_id", "")
-                    if app_exp_id:
-                        app_experiment_id = app_exp_id
-                        print_success(f"Found experiment ID from app: {app_exp_id}")
-
                 if "postgres" in resource:
                     pg = resource["postgres"]
                     lakebase_config = {"type": "autoscaling"}
@@ -1481,36 +1940,37 @@ Examples:
             update_env_file("PGUSER", username)
             print_success(f"PGUSER set to '{username}'")
 
-        # Use experiment ID from app if available, otherwise create/reuse one
-        if app_experiment_id:
-            experiment_id = app_experiment_id
-            experiment_name = experiment_id
-            # Try to resolve experiment name for display
-            w = get_workspace_client(profile_name)
-            if w:
-                try:
-                    exp = w.experiments.get_experiment(experiment_id=experiment_id).experiment
-                    if exp and exp.name:
-                        experiment_name = exp.name
-                except Exception:
-                    pass
-            update_env_file("MLFLOW_EXPERIMENT_ID", experiment_id)
-            update_databricks_yml_experiment(experiment_id)
-            print_success(f"Using experiment ID from app: {experiment_id}")
-        else:
-            # Seed MLFLOW_EXPERIMENT_ID from databricks.yml if not already in .env.
-            # This handles the case where the user created the app via the Databricks UI,
-            # downloaded the template (which has the experiment_id in databricks.yml already),
-            # and is now running quickstart for the first time locally.
-            if not get_env_value("MLFLOW_EXPERIMENT_ID"):
-                yml_experiment_id = get_databricks_yml_experiment_id()
-                if yml_experiment_id:
-                    update_env_file("MLFLOW_EXPERIMENT_ID", yml_experiment_id)
+        requested_trace_config = argparse.Namespace(
+            experiment_name=args.mlflow_experiment_name,
+            warehouse_id=args.mlflow_warehouse_id,
+            catalog_name=args.mlflow_catalog,
+            schema_name=args.mlflow_schema,
+            table_prefix=args.mlflow_table_prefix,
+        )
+        trace_config = create_or_reuse_uc_trace_experiment(
+            profile_name,
+            username,
+            requested_trace_config,
+        )
+        write_mlflow_trace_env_atomically(trace_config)
+        print_success("Updated .env with complete MLflow UC tracing config")
+        update_mlflow_trace_runtime_config(trace_config)
+        experiment_name = trace_config.experiment_name
+        experiment_id = trace_config.experiment_id
 
-            experiment_name, experiment_id = create_mlflow_experiment(profile_name, username)
-            update_env_file("MLFLOW_EXPERIMENT_ID", experiment_id)
-            print_success("Updated .env with experiment ID")
-            update_databricks_yml_experiment(experiment_id)
+        if app_name and existing_app is not None:
+            workspace = get_workspace_client(profile_name)
+            if not workspace:
+                raise RuntimeError("Could not connect to Databricks workspace")
+            grant_uc_trace_access_to_app(workspace, app_name, trace_config)
+            print_success(
+                f"Granted app '{app_name}' explicit access to MLflow UC trace tables"
+            )
+        elif app_name:
+            print(
+                f"App '{app_name}' does not exist yet. After the first deploy, rerun "
+                "quickstart with the same --app-name to apply required MLflow UC grants."
+            )
 
         # Step 6: Lakebase setup
         # lakebase_config may already be set from app resources above
@@ -1572,7 +2032,9 @@ Examples:
 ✓ Configuration files created (.env)
 
 ✓ MLflow experiment set up for tracing and evaluation: {experiment_name}
-✓ Experiment ID: {experiment_id}"""
+✓ Experiment ID: {experiment_id}
+✓ MLflow UC spans table: {trace_config.otel_spans_table_name}
+✓ MLflow tracing SQL warehouse: {trace_config.warehouse_id}"""
 
         if host and experiment_id:
             summary += f"\n  {host}/ml/experiments/{experiment_id}"

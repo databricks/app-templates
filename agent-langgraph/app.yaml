@@ -14,3 +14,13 @@ env:
     value: "300"
   - name: MLFLOW_EXPERIMENT_ID
     valueFrom: "experiment"
+  - name: MLFLOW_TRACING_SQL_WAREHOUSE_ID
+    valueFrom: "mlflow-tracing-warehouse"
+  - name: MLFLOW_UC_CATALOG
+    value: "main"
+  - name: MLFLOW_UC_SCHEMA
+    value: "agent_traces"
+  - name: MLFLOW_UC_TABLE_PREFIX
+    value: "agents_on_apps"
+  - name: MLFLOW_OTEL_SPANS_TABLE
+    value: "main.agent_traces.agents_on_apps_otel_spans"

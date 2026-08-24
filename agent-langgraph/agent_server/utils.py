@@ -5,12 +5,15 @@ from databricks.sdk import WorkspaceClient
 from databricks_langchain.chat_models import json
 from langchain.messages import AIMessageChunk, ToolMessage
 from mlflow.genai.agent_server import get_request_headers
+from mlflow.entities import SpanType
 from mlflow.types.responses import (
     ResponsesAgentRequest,
     ResponsesAgentStreamEvent,
     create_text_delta,
     output_to_responses_items_stream,
 )
+
+from agent_server.tracing import BoundedTraceAccumulator, traced_async_operation
 
 
 def get_session_id(request: ResponsesAgentRequest) -> str | None:
@@ -35,6 +38,18 @@ def get_databricks_host_from_env() -> Optional[str]:
         return None
 
 
+async def get_mcp_tools(client: Any) -> list[Any]:
+    """Fetch MCP tools through one explicit initialization/health span."""
+    async with traced_async_operation(
+        "mcp.health", SpanType.TOOL, {"operation": "get_tools"}
+    ) as operation:
+        tools = await client.get_tools()
+        operation.set_outputs(
+            {"tools": [getattr(item, "name", type(item).__name__) for item in tools]}
+        )
+        return tools
+
+
 async def process_agent_astream_events(
     async_stream: AsyncIterator[Any],
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
@@ -44,21 +59,30 @@ async def process_agent_astream_events(
     Args:
         async_stream: The async iterator from agent.astream()
     """
-    async for event in async_stream:
-        if event[0] == "updates":
-            for node_data in event[1].values():
-                if len(node_data.get("messages", [])) > 0:
-                    for msg in node_data["messages"]:
-                        if isinstance(msg, ToolMessage) and not isinstance(msg.content, str):
-                            msg.content = json.dumps(msg.content)
-                    for item in output_to_responses_items_stream(node_data["messages"]):
-                        yield item
-        elif event[0] == "messages":
-            try:
+    async with traced_async_operation(
+        "langgraph.response.parse", SpanType.PARSER, {"source": "agent.astream"}
+    ) as operation:
+        outputs = BoundedTraceAccumulator()
+        async for event in async_stream:
+            if event[0] == "updates":
+                for node_data in event[1].values():
+                    if len(node_data.get("messages", [])) > 0:
+                        for msg in node_data["messages"]:
+                            if isinstance(msg, ToolMessage) and not isinstance(
+                                msg.content, str
+                            ):
+                                msg.content = json.dumps(msg.content)
+                        for item in output_to_responses_items_stream(
+                            node_data["messages"]
+                        ):
+                            outputs.add(item.model_dump(exclude_none=True))
+                            yield item
+            elif event[0] == "messages":
                 chunk = event[1][0]
                 if isinstance(chunk, AIMessageChunk) and (content := chunk.content):
-                    yield ResponsesAgentStreamEvent(
+                    parsed = ResponsesAgentStreamEvent(
                         **create_text_delta(delta=content, item_id=chunk.id)
                     )
-            except Exception as e:
-                logging.exception(f"Error processing agent stream event: {e}")
+                    outputs.add(parsed.model_dump(exclude_none=True))
+                    yield parsed
+        operation.set_outputs({"events": outputs.snapshot()})

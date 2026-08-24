@@ -1,0 +1,340 @@
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+INTEGRATION_DIR = Path(__file__).parent
+REPO_ROOT = INTEGRATION_DIR.parents[1]
+CONFORMANCE_DIR = REPO_ROOT / ".scripts" / "trace-conformance"
+sys.path.insert(0, str(CONFORMANCE_DIR))
+
+from contract import assert_trace_contract  # noqa: E402
+from discovery import (  # noqa: E402
+    assert_template_policy,
+    discover_agentic_templates,
+    is_trace_policy_candidate,
+)
+from helpers import (  # noqa: E402
+    _run_typescript_trace_probe,
+    execute_trace_row_query,
+    poll_trace_rows,
+    run_local_trace_test,
+)
+from normalize import load_trace_manifest  # noqa: E402
+from template_config import (  # noqa: E402
+    TemplateConfig,
+    build_templates,
+    build_trace_policy_templates,
+)
+
+
+DEPLOYED_TEMPLATE_NAMES = {template.name for template in build_templates()}
+TRACE_POLICY_TEMPLATES = build_trace_policy_templates(
+    deployed_template_names=DEPLOYED_TEMPLATE_NAMES,
+)
+RUNNABLE_TRACE_POLICY_TEMPLATES = [
+    template
+    for template in TRACE_POLICY_TEMPLATES
+    if template.local_test_command is not None
+]
+
+
+def test_generated_owner_runs_the_full_conformance_file(monkeypatch, tmp_path):
+    import helpers
+
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    template_path = tmp_path / "generated-agent"
+    template_path.mkdir()
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        '{"template":"generated-agent","trace_id":"trace-id","spans":[]}\n'
+    )
+    observed = []
+
+    def fake_run(command, **kwargs):
+        observed.append((command, kwargs))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(helpers, "_run_cmd", fake_run)
+    template = SimpleNamespace(
+        name="generated-agent",
+        path=template_path,
+        local_test_command=(
+            "__appkit_generated_owner__",
+            str(owner),
+            "generated-agent",
+        ),
+    )
+
+    run_local_trace_test(template, manifest_path)
+
+    command, kwargs = observed[0]
+    assert command == [
+        "npx",
+        "--yes",
+        "pnpm@10.21.0",
+        "exec",
+        "vitest",
+        "run",
+        "packages/appkit/src/plugins/agents/tests/trace-conformance.integration.test.ts",
+    ]
+    assert kwargs["cwd"] == owner
+
+
+def test_local_runner_requires_distinct_success_and_injected_failure_manifests(
+    monkeypatch, tmp_path
+):
+    import helpers
+
+    template_path = tmp_path / "single-manifest-owner"
+    template_path.mkdir()
+    success = tmp_path / "success.json"
+    failure = tmp_path / "failure.json"
+    success.write_text('{"template":"owner","trace_id":"one","spans":[]}\n')
+
+    monkeypatch.setattr(
+        helpers,
+        "_run_cmd",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    template = SimpleNamespace(
+        name="owner",
+        path=template_path,
+        local_test_command=("npx", "vitest", "run"),
+    )
+
+    with pytest.raises(AssertionError, match="injected-failure manifest"):
+        run_local_trace_test(template, success, failure)
+
+
+def test_generated_appkit_consumers_use_published_060_runtime():
+    for name in ("appkit-agents", "appkit-all-in-one", "rag-chat"):
+        package = __import__("json").loads(
+            (REPO_ROOT / name / "package.json").read_text()
+        )
+        assert package["dependencies"]["@databricks/appkit"] == "0.60.0"
+        assert package["dependencies"]["@databricks/appkit-ui"] == "0.60.0"
+
+
+def test_primary_template_policy_is_derived_from_behavior():
+    discovered = [
+        template
+        for template in discover_agentic_templates(REPO_ROOT)
+        if is_trace_policy_candidate(template)
+    ]
+
+    assert {template.name for template in TRACE_POLICY_TEMPLATES} == {
+        template.name for template in discovered
+    }
+    assert_template_policy(TRACE_POLICY_TEMPLATES)
+
+
+@pytest.mark.parametrize(
+    "template",
+    RUNNABLE_TRACE_POLICY_TEMPLATES,
+    ids=lambda template: template.name,
+)
+def test_deterministic_template_turn_writes_a_conformant_manifest(template, tmp_path):
+    manifest_path = tmp_path / f"{template.name}.success.json"
+    failure_manifest_path = tmp_path / f"{template.name}.failure.json"
+
+    success, failure = run_local_trace_test(
+        template, manifest_path, failure_manifest_path
+    )
+
+    assert manifest_path.exists()
+    assert failure_manifest_path.exists()
+    for manifest in (success, failure):
+        assert manifest.template == template.name
+        assert_trace_contract(manifest)
+    assert all(span.status != "ERROR" for span in success.spans), (
+        f"{template.name} success manifest contains an ERROR span"
+    )
+    assert any(span.status == "ERROR" for span in failure.spans), (
+        f"{template.name} failure manifest did not execute a real failure"
+    )
+
+
+class _StatementExecution:
+    def __init__(self):
+        self.calls = []
+
+    def execute_statement(self, **kwargs):
+        self.calls.append(kwargs)
+        return SimpleNamespace(
+            status=SimpleNamespace(state=SimpleNamespace(value="SUCCEEDED")),
+            result=SimpleNamespace(
+                data_array=[
+                    [
+                        "trace-id",
+                        "span-id",
+                        None,
+                        "request",
+                        '{"mlflow.spanType":"AGENT"}',
+                    ]
+                ]
+            ),
+        )
+
+
+def test_deployed_uc_query_is_parameterized_by_table_and_trace_id():
+    execution = _StatementExecution()
+    workspace = SimpleNamespace(statement_execution=execution)
+
+    rows = execute_trace_row_query(
+        workspace,
+        "0123456789abcdef",
+        "main.agent_traces.agents_on_apps_otel_spans",
+        "trace-id",
+    )
+
+    assert rows == [
+        {
+            "trace_id": "trace-id",
+            "span_id": "span-id",
+            "parent_span_id": None,
+            "name": "request",
+            "attributes": '{"mlflow.spanType":"AGENT"}',
+        }
+    ]
+    assert len(execution.calls) == 1
+    call = execution.calls[0]
+    assert call["statement"] == (
+        "SELECT trace_id, span_id, parent_span_id, name, attributes\n"
+        "FROM IDENTIFIER(:otel_spans_table)\n"
+        "WHERE trace_id = :trace_id\n"
+        "ORDER BY start_time_unix_nano"
+    )
+    assert call["warehouse_id"] == "0123456789abcdef"
+    assert [parameter.as_dict() for parameter in call["parameters"]] == [
+        {
+            "name": "otel_spans_table",
+            "type": "STRING",
+            "value": "main.agent_traces.agents_on_apps_otel_spans",
+        },
+        {"name": "trace_id", "type": "STRING", "value": "trace-id"},
+    ]
+    assert call["wait_timeout"] == "50s"
+
+
+class _DelayedUcExecution:
+    def __init__(self, batches):
+        self.batches = iter(batches)
+
+    def execute_statement(self, **_kwargs):
+        return SimpleNamespace(
+            status=SimpleNamespace(state=SimpleNamespace(value="SUCCEEDED")),
+            result=SimpleNamespace(data_array=next(self.batches)),
+        )
+
+
+def test_uc_ingestion_polling_waits_for_current_trace_rows():
+    execution = _DelayedUcExecution(
+        [
+            [],
+            [],
+            [["current-trace", "span-id", None, "request", "{}"]],
+        ]
+    )
+
+    rows = poll_trace_rows(
+        SimpleNamespace(statement_execution=execution),
+        "0123456789abcdef",
+        "main.agent_traces.support_otel_spans",
+        "current-trace",
+        max_attempts=3,
+        sleep=lambda _seconds: None,
+    )
+
+    assert [row["trace_id"] for row in rows] == ["current-trace"]
+
+
+def test_uc_ingestion_polling_rejects_foreign_rows():
+    execution = _DelayedUcExecution(
+        [[["foreign-trace", "span-id", None, "request", "{}"]]]
+    )
+
+    with pytest.raises(AssertionError, match="foreign trace"):
+        poll_trace_rows(
+            SimpleNamespace(statement_execution=execution),
+            "0123456789abcdef",
+            "main.agent_traces.support_otel_spans",
+            "current-trace",
+            max_attempts=1,
+            sleep=lambda _seconds: None,
+        )
+
+
+def test_uc_ingestion_polling_times_out_on_missing_rows():
+    execution = _DelayedUcExecution([[], []])
+
+    with pytest.raises(AssertionError, match="not ingested"):
+        poll_trace_rows(
+            SimpleNamespace(statement_execution=execution),
+            "0123456789abcdef",
+            "main.agent_traces.support_otel_spans",
+            "current-trace",
+            max_attempts=2,
+            sleep=lambda _seconds: None,
+        )
+
+
+def test_deploy_runner_verifies_uc_trace_for_each_parameterized_template(
+    monkeypatch,
+    tmp_path,
+):
+    import test_e2e as e2e
+    import test_quickstart_e2e as quickstart_e2e
+
+    template = TemplateConfig(
+        name="support-agent",
+        dev_app_name="dev-support-agent",
+        app_resource_key="support_agent",
+    )
+    monkeypatch.setattr(e2e, "bundle_deploy", lambda *args: None)
+    monkeypatch.setattr(e2e, "bundle_run_nowait", lambda *args: None)
+    monkeypatch.setattr(
+        e2e,
+        "wait_for_app_ready",
+        lambda *args: ("https://support-agent.example", "token"),
+    )
+    monkeypatch.setattr(e2e, "_query_endpoints", lambda *args: None)
+    observed = []
+    monkeypatch.setattr(
+        quickstart_e2e,
+        "_verify_uc_trace_smoke",
+        lambda *args: observed.append(args),
+    )
+
+    e2e._run_deploy(
+        template,
+        tmp_path,
+        "dev",
+        tmp_path / "deploy.log",
+        no_destroy=True,
+    )
+
+    assert observed == [
+        (
+            tmp_path,
+            "dev-support-agent",
+            "https://support-agent.example",
+            "token",
+            "dev",
+        )
+    ]
+
+
+def test_independent_typescript_captures_use_sdk_generated_trace_identity(tmp_path):
+    template_dir = REPO_ROOT / "agent-langchain-ts"
+    first_path = tmp_path / "first.json"
+    second_path = tmp_path / "second.json"
+
+    _run_typescript_trace_probe(template_dir, first_path, CONFORMANCE_DIR)
+    _run_typescript_trace_probe(template_dir, second_path, CONFORMANCE_DIR)
+
+    first = load_trace_manifest(first_path)
+    second = load_trace_manifest(second_path)
+    assert first.trace_id != second.trace_id

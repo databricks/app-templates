@@ -1,5 +1,11 @@
 command: ['npm', 'run', 'start']
 env:
+  - name: MLFLOW_EXPERIMENT_ID
+    valueFrom: mlflow-experiment
+  - name: MLFLOW_TRACING_SQL_WAREHOUSE_ID
+    valueFrom: mlflow-tracing-warehouse
+  - name: DATABRICKS_AGENT_SERVING_ENDPOINT_NAME
+    valueFrom: agents-serving-endpoint
   - name: DATABRICKS_WAREHOUSE_ID
     valueFrom: sql-warehouse
   - name: DATABRICKS_VOLUME_FILES
@@ -8,3 +14,15 @@ env:
     valueFrom: genie-space
   - name: LAKEBASE_ENDPOINT
     valueFrom: postgres
+  - name: DATABRICKS_SERVING_ENDPOINT_NAME
+    valueFrom: serving-endpoint
+  # UC coordinates are runtime configuration, not fields on the experiment
+  # resource binding. `npm run setup` replaces these defaults after provisioning.
+  - name: MLFLOW_UC_CATALOG
+    value: main
+  - name: MLFLOW_UC_SCHEMA
+    value: agent_traces
+  - name: MLFLOW_UC_TABLE_PREFIX
+    value: appkit
+  - name: MLFLOW_OTEL_SPANS_TABLE
+    value: main.agent_traces.appkit_otel_spans

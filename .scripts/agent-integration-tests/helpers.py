@@ -6,6 +6,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import threading
 import time
 from collections import defaultdict
@@ -30,10 +31,13 @@ os.environ["UV_NO_CONFIG"] = "1"
 POLL_INTERVAL = 30  # seconds between polls
 MAX_POLLS = 20  # max number of polls before giving up (10 min for cold starts)
 QUERY_TIMEOUT = 120  # seconds for HTTP requests
-BUNDLE_TIMEOUT = 600  # seconds for bundle deploy/run/destroy commands (10 min for parallel runs)
+BUNDLE_TIMEOUT = (
+    600  # seconds for bundle deploy/run/destroy commands (10 min for parallel runs)
+)
 QUICKSTART_TIMEOUT = 600  # seconds for quickstart command (10 min for parallel runs)
 EVALUATE_TIMEOUT = 900  # seconds for agent-evaluate
 SERVER_START_TIMEOUT = 600  # seconds to wait for local server to start (accommodates cold CI runners + heavy template imports)
+EXPERIMENT_ACCESS_MAX_ATTEMPTS = 6
 
 # ---------------------------------------------------------------------------
 # Logging & subprocess
@@ -114,7 +118,9 @@ def _gh_endgroup() -> None:
         print("::endgroup::")
 
 
-def _run_cmd(cmd: list[str], *, verbose: bool = False, **kwargs) -> subprocess.CompletedProcess:
+def _run_cmd(
+    cmd: list[str], *, verbose: bool = False, **kwargs
+) -> subprocess.CompletedProcess:
     """Run a subprocess and return the result.
 
     Logging behaviour:
@@ -154,7 +160,9 @@ def _run_cmd(cmd: list[str], *, verbose: bool = False, **kwargs) -> subprocess.C
         print(f"[{_ts()}] ✓ {short_cmd}  ({_fmt_duration(duration)})")
     else:
         marker = "✓" if result.returncode == 0 else "✗"
-        print(f"[{_ts()}] {marker} {cmd_str}  (exit {result.returncode}, {_fmt_duration(duration)})")
+        print(
+            f"[{_ts()}] {marker} {cmd_str}  (exit {result.returncode}, {_fmt_duration(duration)})"
+        )
         if result.stdout:
             print(f"  stdout:\n{result.stdout.rstrip()}")
         if result.stderr:
@@ -182,12 +190,20 @@ def _run_with_retries(
             result = _run_cmd(cmd, cwd=cwd, timeout=timeout)
         except subprocess.TimeoutExpired:
             _log(f"  timed out after {timeout}s")
-            if attempt < max_attempts and recover and recover(f"timed out after {timeout}s", attempt, max_attempts):
+            if (
+                attempt < max_attempts
+                and recover
+                and recover(f"timed out after {timeout}s", attempt, max_attempts)
+            ):
                 continue
             raise
         if result.returncode == 0:
             return result
-        if attempt < max_attempts and recover and recover(result.stderr, attempt, max_attempts):
+        if (
+            attempt < max_attempts
+            and recover
+            and recover(result.stderr, attempt, max_attempts)
+        ):
             continue
         break
     assert result.returncode == 0, (
@@ -215,7 +231,9 @@ def copy_template(template_dir: Path, app_name_suffix: str = "-p") -> Path:
     shutil.copytree(
         template_dir,
         tmp_dir,
-        ignore=shutil.ignore_patterns(".venv", ".bundle", ".databricks", ".env", "__pycache__", "*.pyc"),
+        ignore=shutil.ignore_patterns(
+            ".venv", ".bundle", ".databricks", ".env", "__pycache__", "*.pyc"
+        ),
     )
 
     yml_path = tmp_dir / "databricks.yml"
@@ -280,13 +298,17 @@ def uv_sync(template_dir: Path, max_attempts: int = 3):
         if result.returncode == 0:
             return
         if attempt < max_attempts:
-            _log(f"  uv sync attempt {attempt}/{max_attempts} failed, retrying in 10s...")
+            _log(
+                f"  uv sync attempt {attempt}/{max_attempts} failed, retrying in 10s..."
+            )
             time.sleep(10)
 
-    _log(f"  uv sync failed online; falling back to UV_OFFLINE=true (cache-only)...")
+    _log("  uv sync failed online; falling back to UV_OFFLINE=true (cache-only)...")
     env = os.environ.copy()
     env["UV_OFFLINE"] = "true"
-    result = _run_cmd(["uv", "sync"], cwd=template_dir, timeout=QUICKSTART_TIMEOUT, env=env)
+    result = _run_cmd(
+        ["uv", "sync"], cwd=template_dir, timeout=QUICKSTART_TIMEOUT, env=env
+    )
     assert result.returncode == 0, (
         f"uv sync failed in {template_dir.name}:\n"
         f"stdout: {result.stdout}\n"
@@ -352,8 +374,9 @@ def run_quickstart(
     return result
 
 
-
-def git_copy_template(template_name: str, dest: Path, git_ref: str | None = None) -> Path:
+def git_copy_template(
+    template_name: str, dest: Path, git_ref: str | None = None
+) -> Path:
     """Copy a template directory to dest using git-tracked files only.
 
     Without git_ref: uses `git ls-files` so uncommitted modifications to tracked
@@ -415,7 +438,16 @@ def databricks_create_app(app_name: str, profile: str):
     'compute is in STARTING state' error when bundle deploy tries to update it.
     """
     result = _run_cmd(
-        ["databricks", "apps", "create", app_name, "-p", profile, "--no-compute", "--no-wait"],
+        [
+            "databricks",
+            "apps",
+            "create",
+            app_name,
+            "-p",
+            profile,
+            "--no-compute",
+            "--no-wait",
+        ],
         timeout=60,
     )
     assert result.returncode == 0, f"Failed to create app {app_name}: {result.stderr}"
@@ -518,7 +550,9 @@ def _start_server_once(template_dir: Path, port: int) -> tuple[subprocess.Popen,
     raise TimeoutError(f"Server did not start within {SERVER_START_TIMEOUT} seconds")
 
 
-def start_server(template_dir: Path, port: int = 0, max_attempts: int = 2) -> tuple[subprocess.Popen, int]:
+def start_server(
+    template_dir: Path, port: int = 0, max_attempts: int = 2
+) -> tuple[subprocess.Popen, int]:
     """Start `uv run start-server` as a background process, with one retry.
 
     If port is 0, dynamically allocates a free port. Watches stderr for
@@ -548,7 +582,9 @@ def start_server(template_dir: Path, port: int = 0, max_attempts: int = 2) -> tu
             )
             # fall through to next iteration — allocates a new port,
             # spawns a new subprocess.
-    raise RuntimeError("start_server exited the retry loop without a result")  # unreachable
+    raise RuntimeError(
+        "start_server exited the retry loop without a result"
+    )  # unreachable
 
 
 def stop_server(proc: subprocess.Popen):
@@ -625,7 +661,9 @@ def query_endpoint(
             f"Expected text/event-stream, got {content_type}"
         )
         has_data = any(
-            line.startswith("data:") for line in resp.iter_lines(decode_unicode=True) if line
+            line.startswith("data:")
+            for line in resp.iter_lines(decode_unicode=True)
+            if line
         )
         _log(f"  streaming: content_type={content_type}, has_data={has_data}")
         assert has_data, "No SSE data: events received in stream response"
@@ -691,6 +729,364 @@ def query_with_openai_sdk(
     return output_text
 
 
+def run_local_trace_test(
+    template, manifest_path: Path, failure_manifest_path: Path | None = None
+):
+    """Run a real deterministic suite and require success plus injected failure."""
+    from template_config import REPO_ROOT
+
+    conformance_dir = REPO_ROOT / ".scripts" / "trace-conformance"
+    sys.path.insert(0, str(conformance_dir))
+    from normalize import load_trace_manifest
+
+    command = list(template.local_test_command or ())
+    assert command, f"{template.name} has no deterministic trace test command"
+    env = os.environ.copy()
+    env.update(
+        {
+            "TRACE_CONFORMANCE_MANIFEST": str(manifest_path),
+            "TRACE_CONFORMANCE_TEMPLATE": template.name,
+        }
+    )
+    if failure_manifest_path is not None:
+        env["TRACE_CONFORMANCE_FAILURE_MANIFEST"] = str(failure_manifest_path)
+    existing_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = os.pathsep.join(
+        value for value in (str(conformance_dir), existing_pythonpath) if value
+    )
+    if command[0] == "__appkit_generated_owner__":
+        owner_root = Path(command[1])
+        command = [
+            "npx",
+            "--yes",
+            "pnpm@10.21.0",
+            "exec",
+            "vitest",
+            "run",
+            "packages/appkit/src/plugins/agents/tests/trace-conformance.integration.test.ts",
+        ]
+        env.update(
+            {
+                "APPKIT_TRACE_CONFORMANCE_CANDIDATE": template.name,
+                "APPKIT_TRACE_CONFORMANCE_SOURCE_DIRECTORY": str(template.path),
+            }
+        )
+        cwd = owner_root
+    elif command[0] == "uv":
+        env["PYTEST_PLUGINS"] = "normalize"
+        cwd = REPO_ROOT
+    else:
+        cwd = template.path
+    result = _run_cmd(command, cwd=cwd, env=env, timeout=EVALUATE_TIMEOUT, verbose=True)
+    assert result.returncode == 0, (
+        f"deterministic trace test failed for {template.name}:\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    if command[0] not in {"uv", "npx"} and (
+        not manifest_path.exists()
+        or (failure_manifest_path is not None and not failure_manifest_path.exists())
+    ):
+        _run_typescript_trace_probe(
+            template.path,
+            manifest_path,
+            conformance_dir,
+            failure_manifest_path,
+        )
+    assert manifest_path.exists(), (
+        f"{template.name} deterministic trace test did not write {manifest_path}"
+    )
+    success = load_trace_manifest(manifest_path)
+    if failure_manifest_path is None:
+        return success
+    assert failure_manifest_path.exists(), (
+        f"{template.name} deterministic trace test did not write an "
+        f"injected-failure manifest at {failure_manifest_path}"
+    )
+    return success, load_trace_manifest(failure_manifest_path)
+
+
+def _run_typescript_trace_probe(
+    template_dir: Path,
+    manifest_path: Path,
+    conformance_dir: Path,
+    failure_manifest_path: Path | None = None,
+) -> None:
+    """Run the real @mlflow/core callback against a deterministic fake exporter."""
+    from contract import assert_trace_contract
+    from normalize import normalize_mlflow_core_trace, write_trace_manifest
+
+    raw_path = manifest_path.with_suffix(".raw.json")
+    artifact_dir = manifest_path.with_suffix(".artifacts")
+    probe_path = template_dir / "tests" / ".trace-conformance.generated.test.ts"
+    probe_path.write_text(
+        """import fs from "node:fs";
+import http from "node:http";
+import { pathToFileURL } from "node:url";
+import { test } from "@jest/globals";
+import * as mlflow from "@mlflow/core";
+import { createLangChainTracingCallback, withAgentRequestTrace } from "../src/framework/tracing.js";
+
+test("writes a real production callback manifest", async () => {
+  const spans: any[] = [];
+  const traceMetadata = new Map<string, Record<string, unknown>>();
+  const server = http.createServer((request, response) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => { body += chunk; });
+    request.on("end", () => {
+      const payload = JSON.parse(body);
+      const traceInfo = payload.trace.trace_info;
+      traceInfo.tags = {
+        ...(traceInfo.tags ?? {}),
+        "mlflow.artifactLocation": pathToFileURL(
+          process.env.TRACE_CONFORMANCE_ARTIFACTS!,
+        ).href,
+      };
+      traceMetadata.set(traceInfo.trace_id, traceInfo.trace_metadata ?? {});
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ trace: { trace_info: traceInfo } }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("loopback MLflow exporter did not bind a TCP port");
+  }
+  mlflow.registerOnSpanEndHook((span) => spans.push(span));
+  mlflow.init({
+    trackingUri: `http://127.0.0.1:${address.port}`,
+    experimentId: "1",
+  });
+  try {
+    await withAgentRequestTrace(
+      { messages: [{ role: "user", content: "Use the clock tool" }] },
+      { sessionId: "session-1", userId: "user-1", requestId: "request-1" },
+      async (request) => {
+        const callback = createLangChainTracingCallback();
+        callback.handleChatModelStart(
+          { id: ["ChatDatabricks"] },
+          [[{ role: "user", content: "Use the clock tool" }]],
+          "model-run",
+          undefined,
+          { invocation_params: { model: "test-model", provider: "databricks" } },
+          [],
+          { ls_provider: "databricks" },
+        );
+        callback.handleLLMNewToken("tool", undefined, "model-run");
+        callback.handleLLMEnd(
+          {
+            generations: [[{ message: { content: "done", usage_metadata: { input_tokens: 7, output_tokens: 3, total_tokens: 10 }, response_metadata: { finish_reason: "stop" } } }]],
+            llmOutput: {},
+          },
+          "model-run",
+        );
+        callback.handleToolStart({ id: ["clock"] }, JSON.stringify({ zone: "UTC" }), "tool-run");
+        callback.handleToolEnd({ time: "12:00" }, "tool-run");
+        request.setOutputs({ text: "done" });
+        return { text: "done" };
+      },
+    );
+    try {
+      await withAgentRequestTrace(
+        { messages: [{ role: "user", content: "INJECT_TRACE_FAILURE" }] },
+        { sessionId: "session-failure", userId: "user-1", requestId: "request-failure" },
+        async () => {
+          const callback = createLangChainTracingCallback();
+          callback.handleChatModelStart(
+            { id: ["ChatDatabricks"] },
+            [[{ role: "user", content: "INJECT_TRACE_FAILURE" }]],
+            "failed-model-run",
+            undefined,
+            { invocation_params: { model: "test-model", provider: "databricks" } },
+            [],
+            { ls_provider: "databricks" },
+          );
+          callback.handleLLMNewToken("partial", undefined, "failed-model-run");
+          callback.handleLLMError(new Error("injected model failure"), "failed-model-run");
+          throw new Error("injected request failure");
+        },
+      );
+    } catch {
+      // The trace is the product under test; the injected operation must fail.
+    }
+    await mlflow.flushTraces();
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  }
+  const normalizedSpans = spans.map((span: any) => ({
+    traceId: span.traceId,
+    spanId: span.spanId,
+    parentSpanId: span.parentId,
+    name: span.name,
+    spanType: span.spanType,
+    inputs: span.inputs,
+    outputs: span.outputs,
+    status: { code: span.status.statusCode },
+    latencyMs: Math.max(
+      0,
+      (span.endTime[0] - span.startTime[0]) * 1000 +
+        (span.endTime[1] - span.startTime[1]) / 1_000_000,
+    ),
+    links: [],
+    attributes: {
+      ...span.attributes,
+      ...(span.parentId === null ? traceMetadata.get(span.traceId) ?? {} : {}),
+    },
+  }));
+  fs.writeFileSync(
+    process.env.TRACE_CONFORMANCE_RAW!,
+    JSON.stringify({ spans: normalizedSpans }),
+  );
+});
+"""
+    )
+    try:
+        result = _run_cmd(
+            [
+                "npm",
+                "test",
+                "--",
+                "--runInBand",
+                "tests/.trace-conformance.generated.test.ts",
+            ],
+            cwd=template_dir,
+            env={
+                **os.environ,
+                "TRACE_CONFORMANCE_RAW": str(raw_path),
+                "TRACE_CONFORMANCE_ARTIFACTS": str(artifact_dir),
+            },
+            timeout=EVALUATE_TIMEOUT,
+            verbose=True,
+        )
+        assert result.returncode == 0, (
+            f"TypeScript trace probe failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        raw = json.loads(raw_path.read_text())
+        trace_ids = list(dict.fromkeys(span["traceId"] for span in raw["spans"]))
+        manifests = []
+        for trace_id in trace_ids:
+            trace_raw = {
+                "info": {"traceId": trace_id},
+                "data": {
+                    "spans": [
+                        span for span in raw["spans"] if span["traceId"] == trace_id
+                    ]
+                },
+            }
+            manifest = normalize_mlflow_core_trace(template_dir.name, trace_raw)
+            assert_trace_contract(manifest)
+            manifests.append(manifest)
+        success = next(
+            manifest
+            for manifest in manifests
+            if not any(span.status == "ERROR" for span in manifest.spans)
+        )
+        write_trace_manifest(manifest_path, success)
+        if failure_manifest_path is not None:
+            failure = next(
+                manifest
+                for manifest in manifests
+                if any(span.status == "ERROR" for span in manifest.spans)
+            )
+            write_trace_manifest(failure_manifest_path, failure)
+    finally:
+        probe_path.unlink(missing_ok=True)
+        raw_path.unlink(missing_ok=True)
+        shutil.rmtree(artifact_dir, ignore_errors=True)
+
+
+def execute_trace_row_query(
+    workspace,
+    warehouse_id: str,
+    otel_spans_table: str,
+    trace_id: str,
+) -> list[dict[str, object]]:
+    """Query persisted OTel spans with named SQL parameters."""
+    from databricks.sdk.service.sql import StatementParameterListItem
+
+    statement = (
+        "SELECT trace_id, span_id, parent_span_id, name, attributes\n"
+        "FROM IDENTIFIER(:otel_spans_table)\n"
+        "WHERE trace_id = :trace_id\n"
+        "ORDER BY start_time_unix_nano"
+    )
+    response = workspace.statement_execution.execute_statement(
+        statement=statement,
+        warehouse_id=warehouse_id,
+        parameters=[
+            StatementParameterListItem(
+                name="otel_spans_table", type="STRING", value=otel_spans_table
+            ),
+            StatementParameterListItem(name="trace_id", type="STRING", value=trace_id),
+        ],
+        wait_timeout="50s",
+    )
+    for _ in range(120):
+        status = getattr(response, "status", None)
+        state = getattr(getattr(status, "state", None), "value", None)
+        if state == "SUCCEEDED":
+            values = (
+                getattr(getattr(response, "result", None), "data_array", None) or []
+            )
+            return [
+                dict(
+                    zip(
+                        ("trace_id", "span_id", "parent_span_id", "name", "attributes"),
+                        row,
+                    )
+                )
+                for row in values
+            ]
+        if state in {"FAILED", "CANCELED", "CLOSED"}:
+            error = getattr(status, "error", None)
+            raise RuntimeError(
+                f"UC trace row query {state.lower()}: "
+                f"{getattr(error, 'message', None) or 'unknown error'}"
+            )
+        statement_id = getattr(response, "statement_id", None)
+        if not statement_id:
+            raise RuntimeError(
+                f"UC trace row query is {state!r} without a statement ID"
+            )
+        response = workspace.statement_execution.get_statement(statement_id)
+        time.sleep(1)
+    raise TimeoutError("UC trace row query did not finish after 120 polls")
+
+
+def poll_trace_rows(
+    workspace,
+    warehouse_id: str,
+    otel_spans_table: str,
+    trace_id: str,
+    *,
+    max_attempts: int = 36,
+    interval_seconds: float = 5.0,
+    sleep=time.sleep,
+) -> list[dict[str, object]]:
+    """Wait for the exact current-run trace to become visible in UC."""
+    for attempt in range(max_attempts):
+        rows = execute_trace_row_query(
+            workspace, warehouse_id, otel_spans_table, trace_id
+        )
+        if rows:
+            foreign = [
+                row.get("trace_id") for row in rows if row.get("trace_id") != trace_id
+            ]
+            assert not foreign, (
+                f"UC query for current trace {trace_id!r} returned foreign trace rows "
+                f"{foreign!r}"
+            )
+            return rows
+        if attempt + 1 < max_attempts:
+            sleep(interval_seconds)
+    raise AssertionError(
+        f"UC trace {trace_id!r} was not ingested into {otel_spans_table!r} "
+        f"after {max_attempts} attempts"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Bundle commands (deploy / run / destroy)
 # ---------------------------------------------------------------------------
@@ -729,6 +1125,7 @@ def bundle_deploy(
 
     Handles transient errors with automatic recovery:
     - Terraform init failures (e.g. GitHub 502): wait and retry
+    - Fresh UC experiment access propagation: retry the exact app-resource 403
     - "already exists" (app): unbind stale state + bind existing app, retry
     - "does not exist or is deleted": unbind stale reference, retry
     - "lineage mismatch in state files": a prior run left stale terraform
@@ -742,6 +1139,22 @@ def bundle_deploy(
             _log(
                 f"bundle deploy attempt {attempt}/{max_attempts} failed in "
                 f"{template_dir.name} (terraform init error), retrying in {POLL_INTERVAL}s..."
+            )
+            time.sleep(POLL_INTERVAL)
+            return True
+
+        experiment_access_pending = (
+            "Invalid Experiment resource experiment" in stderr_flat
+            and "does not have permission to access Experiment" in stderr_flat
+            and "403 PERMISSION_DENIED" in stderr_flat
+        )
+        if experiment_access_pending:
+            if attempt >= EXPERIMENT_ACCESS_MAX_ATTEMPTS:
+                return False
+            _log(
+                f"bundle deploy attempt {attempt}/{EXPERIMENT_ACCESS_MAX_ATTEMPTS} "
+                f"failed in {template_dir.name} while fresh experiment access "
+                f"propagates, retrying in {POLL_INTERVAL}s..."
             )
             time.sleep(POLL_INTERVAL)
             return True
@@ -855,8 +1268,15 @@ def bundle_run_nowait(
     import subprocess as _subprocess
 
     cmd = [
-        "databricks", "bundle", "run", resource_key,
-        "--no-wait", "--target", "dev", "-p", profile,
+        "databricks",
+        "bundle",
+        "run",
+        resource_key,
+        "--no-wait",
+        "--target",
+        "dev",
+        "-p",
+        profile,
     ]
     for attempt in range(1, 3):
         try:
@@ -874,9 +1294,9 @@ def bundle_run_nowait(
         stderr_flat = " ".join(result.stderr.split())
         if "Invalid source code path" in stderr_flat and app_name and attempt == 1:
             _log(
-                f"bundle run failed: source_code_path missing on workspace "
-                f"(likely stale state from prior run); re-deploying to "
-                f"re-upload source, then retrying..."
+                "bundle run failed: source_code_path missing on workspace "
+                "(likely stale state from prior run); re-deploying to "
+                "re-upload source, then retrying..."
             )
             bundle_deploy(template_dir, profile, resource_key, app_name)
             continue
@@ -983,7 +1403,9 @@ def wait_for_app_ready(app_name: str, profile: str) -> tuple[str, str]:
                 break
         time.sleep(POLL_INTERVAL)
     else:
-        raise TimeoutError(f"App {app_name} did not reach RUNNING state within {MAX_POLLS} polls")
+        raise TimeoutError(
+            f"App {app_name} did not reach RUNNING state within {MAX_POLLS} polls"
+        )
 
     # Phase 2: poll /agent/info until the app is actually serving
     _log(f"App is RUNNING at {app_url}, polling /agent/info...")
@@ -1024,7 +1446,13 @@ def capture_app_logs(app_name: str, profile: str) -> str:
 # Lakebase
 # ---------------------------------------------------------------------------
 
-_MANAGED_SCHEMAS = ["public", "drizzle", "ai_chatbot", "agent_server", "agent_langgraph_memory"]
+_MANAGED_SCHEMAS = [
+    "public",
+    "drizzle",
+    "ai_chatbot",
+    "agent_server",
+    "agent_langgraph_memory",
+]
 
 
 def _try_sql(client, sql: str):
@@ -1078,7 +1506,9 @@ def grant_lakebase_access(
                     _log(f"  Role creation warning: {exc}")
 
             # Grant CREATE on database so the SP can create schemas
-            _try_sql(client, f"GRANT CREATE ON DATABASE databricks_postgres TO {quoted_sp};")
+            _try_sql(
+                client, f"GRANT CREATE ON DATABASE databricks_postgres TO {quoted_sp};"
+            )
 
             # Find managed schemas that exist
             rows = client.execute(
@@ -1127,7 +1557,9 @@ def grant_lakebase_access(
                 # sequences owned by other users. SET ROLE to databricks_superuser
                 # (which HAS been granted on all sequences) to execute grants with
                 # that role's privileges.
-                _log("  Attempting sequence grants via SET ROLE databricks_superuser...")
+                _log(
+                    "  Attempting sequence grants via SET ROLE databricks_superuser..."
+                )
                 try:
                     client.execute("SET ROLE databricks_superuser;")
                     for schema in existing_schemas:
@@ -1147,7 +1579,9 @@ def grant_lakebase_access(
                                 f"GRANT USAGE, SELECT, UPDATE ON SEQUENCE "
                                 f"{seq['schemaname']}.{seq['sequencename']} TO {quoted_sp};",
                             )
-                        _log(f"  Granted on {len(seq_rows)} individual sequence(s) via databricks_superuser")
+                        _log(
+                            f"  Granted on {len(seq_rows)} individual sequence(s) via databricks_superuser"
+                        )
                     client.execute("RESET ROLE;")
                 except Exception as exc:
                     _log(f"  SET ROLE databricks_superuser failed: {exc}")
@@ -1168,7 +1602,9 @@ def grant_lakebase_access(
                                 f"GRANT USAGE, SELECT, UPDATE ON SEQUENCE "
                                 f"{seq['schemaname']}.{seq['sequencename']} TO {quoted_sp};",
                             )
-                        _log(f"  Granted on {len(seq_rows)} individual sequence(s) as current user (fallback)")
+                        _log(
+                            f"  Granted on {len(seq_rows)} individual sequence(s) as current user (fallback)"
+                        )
 
                 # Log sequences owned by other users for debugging
                 current_user = client.execute("SELECT current_user;")[0]["current_user"]
@@ -1200,4 +1636,6 @@ def grant_lakebase_access(
 
             _log(f"Lakebase access granted to {sp_client_id}.")
     except Exception as exc:
-        raise RuntimeError(f"grant_lakebase_access failed for {app_name}: {exc}") from exc
+        raise RuntimeError(
+            f"grant_lakebase_access failed for {app_name}: {exc}"
+        ) from exc

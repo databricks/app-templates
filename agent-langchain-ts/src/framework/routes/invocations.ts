@@ -7,12 +7,18 @@
  * - Streams/returns events produced by AgentInterface.stream() / AgentInterface.invoke()
  *
  * The agent owns the translation from its SDK's format → ResponseStreamEvent.
- * This file is purely a pass-through layer.
+ * This layer owns request validation, trace identity, and the semantic request root.
  */
 
 import { Router, type Request, type Response } from "express";
 import type { AgentInterface } from "../agent-interface.js";
+import { randomUUID } from "crypto";
 import { z } from "zod";
+import {
+  BoundedTraceAccumulator,
+  safeLogError,
+  withAgentRequestTrace,
+} from "../tracing.js";
 
 /**
  * Responses API request schema.
@@ -33,12 +39,12 @@ const responsesRequestSchema = z.object({
               z.union([
                 z.object({ type: z.string(), text: z.string() }).passthrough(),
                 z.object({ type: z.string() }).passthrough(),
-              ])
+              ]),
             ),
           ]),
         }),
         z.object({ type: z.string() }).passthrough(),
-      ])
+      ]),
     ),
   ]),
   stream: z.boolean().optional().default(true),
@@ -50,7 +56,9 @@ const responsesRequestSchema = z.object({
  * Create invocations router with the given agent.
  * Mount at both /invocations (MLflow) and /responses (OpenAI SDK compatibility).
  */
-export function createInvocationsRouter(agent: AgentInterface): ReturnType<typeof Router> {
+export function createInvocationsRouter(
+  agent: AgentInterface,
+): ReturnType<typeof Router> {
   const router = Router();
 
   router.post("/", async (req: Request, res: Response) => {
@@ -86,7 +94,9 @@ export function createInvocationsRouter(agent: AgentInterface): ReturnType<typeo
       let userInput: string;
       if (Array.isArray(lastUserMessage.content)) {
         userInput = lastUserMessage.content
-          .filter((part: any) => part.type === "input_text" || part.type === "text")
+          .filter(
+            (part: any) => part.type === "input_text" || part.type === "text",
+          )
           .map((part: any) => part.text)
           .join("\n");
       } else {
@@ -110,17 +120,19 @@ export function createInvocationsRouter(agent: AgentInterface): ReturnType<typeo
 
         if (Array.isArray(item.content)) {
           const textParts = item.content
-            .filter((part: any) =>
-              part.type === "input_text" ||
-              part.type === "output_text" ||
-              part.type === "text"
+            .filter(
+              (part: any) =>
+                part.type === "input_text" ||
+                part.type === "output_text" ||
+                part.type === "text",
             )
             .map((part: any) => part.text);
 
           const toolParts = item.content
-            .filter((part: any) =>
-              part.type === "function_call" ||
-              part.type === "function_call_output"
+            .filter(
+              (part: any) =>
+                part.type === "function_call" ||
+                part.type === "function_call_output",
             )
             .map((part: any) => {
               if (part.type === "function_call") {
@@ -131,45 +143,76 @@ export function createInvocationsRouter(agent: AgentInterface): ReturnType<typeo
               return "";
             });
 
-          const allParts = [...textParts, ...toolParts].filter((p) => p.length > 0);
+          const allParts = [...textParts, ...toolParts].filter(
+            (p) => p.length > 0,
+          );
           return { ...item, content: allParts.join("\n") };
         }
         return item;
       });
 
       const agentParams = { input: userInput, chat_history: chatHistory };
+      const requestId = req.get("x-request-id")?.trim() || randomUUID();
+      const identity = {
+        requestId,
+        sessionId: req.get("x-session-id")?.trim() || requestId,
+        userId:
+          req.get("x-user-id")?.trim() ||
+          req.get("x-forwarded-user")?.trim() ||
+          "anonymous",
+      };
 
       // Streaming response: write each ResponseStreamEvent directly as SSE
       if (stream) {
-        res.setHeader("Content-Type", "text/event-stream");
-        res.setHeader("Cache-Control", "no-cache");
-        res.setHeader("Connection", "keep-alive");
+        await withAgentRequestTrace(req.body, identity, async (trace) => {
+          res.setHeader("X-MLflow-Trace-Id", trace.traceId);
+          res.setHeader("Content-Type", "text/event-stream");
+          res.setHeader("Cache-Control", "no-cache");
+          res.setHeader("Connection", "keep-alive");
 
-        try {
-          for await (const event of agent.stream(agentParams)) {
-            res.write(`data: ${JSON.stringify(event)}\n\n`);
+          const events = new BoundedTraceAccumulator();
+          try {
+            for await (const event of agent.stream(agentParams)) {
+              events.add(event);
+              res.write(`data: ${JSON.stringify(event)}\n\n`);
+            }
+            trace.setOutputs(events.snapshot());
+            res.write("data: [DONE]\n\n");
+            res.end();
+          } catch (error: unknown) {
+            const details = safeLogError(error);
+            const message = trace.recordError(error);
+            console.error("Streaming error:", { ...details, message });
+            res.write(
+              `data: ${JSON.stringify({ type: "error", error: message })}\n\n`,
+            );
+            res.write(
+              `data: ${JSON.stringify({ type: "response.failed" })}\n\n`,
+            );
+            res.write("data: [DONE]\n\n");
+            res.end();
           }
-          res.write("data: [DONE]\n\n");
-          res.end();
-        } catch (error: unknown) {
-          const message = error instanceof Error ? error.message : String(error);
-          console.error("Streaming error:", error);
-          res.write(`data: ${JSON.stringify({ type: "error", error: message })}\n\n`);
-          res.write(`data: ${JSON.stringify({ type: "response.failed" })}\n\n`);
-          res.write("data: [DONE]\n\n");
-          res.end();
-        }
+        });
       } else {
         // Non-streaming response: return output items directly
-        const items = await agent.invoke(agentParams);
-        res.json({ output: items });
+        const traced = await withAgentRequestTrace(
+          req.body,
+          identity,
+          async (trace) => {
+            res.setHeader("X-MLflow-Trace-Id", trace.traceId);
+            const items = await agent.invoke(agentParams);
+            trace.setOutputs(items);
+            return items;
+          },
+        );
+        res.json({ output: traced.value, trace_id: traced.traceId });
       }
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error("Agent invocation error:", error);
+      const details = safeLogError(error);
+      console.error("Agent invocation error:", details);
       res.status(500).json({
         error: "Internal server error",
-        message,
+        message: details.message,
       });
     }
   });

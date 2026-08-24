@@ -73,10 +73,60 @@ const LOG_SSE_EVENTS = process.env.LOG_SSE_EVENTS === 'true';
 
 const API_PROXY = process.env.API_PROXY;
 
+const generatedTraceIds = new Map<string, string>();
+const MAX_CAPTURED_TRACE_IDS = 10_000;
+
+function storeGeneratedTraceId(requestId: string, traceId: string): void {
+  if (generatedTraceIds.size >= MAX_CAPTURED_TRACE_IDS) {
+    const oldest = generatedTraceIds.keys().next().value;
+    if (oldest) generatedTraceIds.delete(oldest);
+  }
+  generatedTraceIds.set(requestId, traceId);
+}
+
+function takeGeneratedTraceId(requestId: string | null): string | undefined {
+  if (!requestId) return undefined;
+  const traceId = generatedTraceIds.get(requestId);
+  generatedTraceIds.delete(requestId);
+  return traceId;
+}
+
+function preserveGeneratedTraceHeader(model: LanguageModelV3): LanguageModelV3 {
+  return new Proxy(model, {
+    get(target, property, receiver) {
+      if (property !== 'doGenerate') {
+        return Reflect.get(target, property, receiver);
+      }
+      return async (
+        ...args: Parameters<LanguageModelV3['doGenerate']>
+      ): ReturnType<LanguageModelV3['doGenerate']> => {
+        const generated = await target.doGenerate(...args);
+        const requestId = new Headers(args[0].headers).get('x-request-id');
+        const traceId = takeGeneratedTraceId(requestId);
+        if (!traceId) return generated;
+        const headers = new Headers(generated.response?.headers);
+        headers.set('x-mlflow-trace-id', traceId);
+        return {
+          ...generated,
+          response: {
+            ...generated.response,
+            headers,
+          },
+        };
+      };
+    },
+  });
+}
+
 // Cache for endpoint details to check task type and OBO scopes
 const endpointDetailsCache = new Map<
   string,
-  { task: string | undefined; userApiScopes: string[]; isOboEnabled: boolean; timestamp: number }
+  {
+    task: string | undefined;
+    userApiScopes: string[];
+    isOboEnabled: boolean;
+    timestamp: number;
+  }
 >();
 const ENDPOINT_DETAILS_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
@@ -268,10 +318,24 @@ async function getOrCreateDatabricksProvider(): Promise<CachedProvider> {
         headers.set('x-mlflow-return-trace-id', 'true');
       }
 
-      return databricksFetch(input, {
+      const response = await databricksFetch(input, {
         ...init,
         headers,
       });
+      const requestId = headers.get('x-request-id');
+      const traceId = response.headers.get('x-mlflow-trace-id');
+      let isStreaming = true;
+      if (typeof init?.body === 'string') {
+        try {
+          isStreaming = JSON.parse(init.body).stream !== false;
+        } catch {
+          // Unknown request bodies are not retained in the fallback trace map.
+        }
+      }
+      if (!isStreaming && requestId && traceId) {
+        storeGeneratedTraceId(requestId, traceId);
+      }
+      return response;
     },
   });
 
@@ -321,7 +385,8 @@ const getEndpointDetails = async (servingEndpoint: string) => {
   // Detect OBO: either explicit auth_policy scopes, or Supervisor Agent (always OBO).
   // TODO: Remove the isSupervisorAgent special case once the serving endpoint details API
   // returns the full set of required scopes for Supervisor Agents.
-  const isSupervisorAgent = data.tile_endpoint_metadata?.problem_type === 'MULTI_AGENT_SUPERVISOR';
+  const isSupervisorAgent =
+    data.tile_endpoint_metadata?.problem_type === 'MULTI_AGENT_SUPERVISOR';
   const userApiScopes = data.auth_policy?.user_auth_policy?.api_scopes ?? [];
   const isOboEnabled = userApiScopes.length > 0 || isSupervisorAgent;
 
@@ -333,8 +398,8 @@ const getEndpointDetails = async (servingEndpoint: string) => {
   if (isOboEnabled) {
     console.warn(
       `⚠ OBO detected on endpoint "${servingEndpoint}". Required user authorization scopes: ${JSON.stringify(userApiScopes)}\n` +
-      `  → Add scopes to your app via the Databricks UI or in databricks.yml\n` +
-      `  → See: https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app#enable-user-authorization`,
+        `  → Add scopes to your app via the Databricks UI or in databricks.yml\n` +
+        `  → See: https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app#enable-user-authorization`,
     );
   }
 
@@ -352,9 +417,13 @@ const getEndpointDetails = async (servingEndpoint: string) => {
  * Returns OBO info for the configured serving endpoint.
  * Detects OBO via auth_policy scopes or Supervisor Agent type.
  */
-export async function getEndpointOboInfo(): Promise<{ isEndpointOboEnabled: boolean; endpointRequiredScopes: string[] }> {
+export async function getEndpointOboInfo(): Promise<{
+  isEndpointOboEnabled: boolean;
+  endpointRequiredScopes: string[];
+}> {
   const servingEndpoint = process.env.DATABRICKS_SERVING_ENDPOINT;
-  if (!servingEndpoint) return { isEndpointOboEnabled: false, endpointRequiredScopes: [] };
+  if (!servingEndpoint)
+    return { isEndpointOboEnabled: false, endpointRequiredScopes: [] };
   try {
     const details = await getEndpointDetails(servingEndpoint);
     return {
@@ -412,7 +481,9 @@ export class OAuthAwareProvider implements SmartProvider {
       console.log(`Creating fresh model for ${id}`);
       switch (endpointDetails.task) {
         case 'agent/v2/chat':
-          return provider.chatAgent(servingEndpoint);
+          return preserveGeneratedTraceHeader(
+            provider.chatAgent(servingEndpoint),
+          );
         case 'agent/v1/responses':
         case 'agent/v2/responses':
           return provider.responses(servingEndpoint);

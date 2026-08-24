@@ -6,6 +6,7 @@ import {
 } from 'express';
 import { authMiddleware, requireAuth } from '../middleware/auth';
 import {
+  getChatById,
   getMessageById,
   voteMessage,
   getVotesByChatId,
@@ -19,6 +20,8 @@ import {
   getAssessmentId,
   storeAssessmentId,
 } from '../lib/message-meta-store';
+import { canSubmitFeedback } from '../lib/feedback-ownership';
+import { captureRemoteTraceManifest } from '../lib/mlflow-trace-manifest';
 
 export const feedbackRouter: RouterType = Router();
 
@@ -67,12 +70,36 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
         const response = error.toResponse();
         return res.status(response.status).json(response.json);
       }
+      if (
+        !canSubmitFeedback({
+          actorId: session.user.id,
+          ownerId: metadata.ownerId,
+          visibility: metadata.visibility,
+        })
+      ) {
+        const error = new ChatSDKError('forbidden:chat');
+        const response = error.toResponse();
+        return res.status(response.status).json(response.json);
+      }
       traceId = metadata.traceId;
       chatId = metadata.chatId;
     } else {
       const dbMessage = messages[0];
       traceId = dbMessage.traceId;
       chatId = dbMessage.chatId;
+
+      const chat = await getChatById({ id: chatId });
+      if (
+        !canSubmitFeedback({
+          actorId: session.user.id,
+          ownerId: chat?.userId,
+          visibility: chat?.visibility,
+        })
+      ) {
+        const error = new ChatSDKError('forbidden:chat');
+        const response = error.toResponse();
+        return res.status(response.status).json(response.json);
+      }
     }
 
     let mlflowAssessmentId: string | undefined;
@@ -84,9 +111,23 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
         const hostUrl = await getWorkspaceHostname();
         const userId = session.user.email ?? session.user.id;
 
+        if (process.env.TRACE_CONFORMANCE_MANIFEST) {
+          await captureRemoteTraceManifest({
+            traceId,
+            hostUrl,
+            token,
+            destination: process.env.TRACE_CONFORMANCE_MANIFEST,
+            template:
+              process.env.TRACE_CONFORMANCE_TEMPLATE ?? 'e2e-chatbot-app-next',
+          });
+        }
+
         // Check for an existing assessment to update (deduplication).
         // Memory-first: check the in-memory assessment store.
-        const existingAssessmentId = getAssessmentId(messageId, session.user.id);
+        const existingAssessmentId = getAssessmentId(
+          messageId,
+          session.user.id,
+        );
 
         let mlflowResponse: globalThis.Response;
         if (existingAssessmentId) {
@@ -159,8 +200,13 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
       }
     } else {
       console.warn(
-        'Message does not have a trace ID, skipping MLflow submission',
+        'Message does not have a trace ID; feedback cannot be traced',
       );
+      return res.status(409).json({
+        error: 'Tracing unavailable for this message',
+        code: 'missing_trace_id',
+        messageId,
+      });
     }
 
     // Also persist to DB for fast bulk reads on page load

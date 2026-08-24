@@ -8,7 +8,40 @@
       "description": "AI agents driven by markdown configs or code, with auto-tool-discovery from registered plugins",
       "package": "@databricks/appkit",
       "resources": {
-        "required": [],
+        "required": [
+          {
+            "type": "experiment",
+            "alias": "MLflow agent trace experiment",
+            "resourceKey": "mlflow-experiment",
+            "description": "MLflow experiment bound to immutable Unity Catalog trace tables",
+            "permission": "CAN_MANAGE",
+            "fields": {
+              "id": {
+                "env": "MLFLOW_EXPERIMENT_ID",
+                "description": "MLflow experiment ID",
+                "origin": "user"
+              }
+            }
+          },
+          {
+            "type": "sql_warehouse",
+            "alias": "MLflow tracing SQL warehouse",
+            "resourceKey": "mlflow-tracing-warehouse",
+            "description": "SQL warehouse used to provision and query MLflow UC trace tables",
+            "permission": "CAN_USE",
+            "fields": {
+              "id": {
+                "env": "MLFLOW_TRACING_SQL_WAREHOUSE_ID",
+                "description": "SQL warehouse ID for MLflow UC tracing",
+                "discovery": {
+                  "type": "kind",
+                  "resourceKind": "warehouse"
+                },
+                "origin": "user"
+              }
+            }
+          }
+        ],
         "optional": [
           {
             "type": "serving_endpoint",
@@ -18,7 +51,7 @@
             "permission": "CAN_QUERY",
             "fields": {
               "name": {
-                "env": "DATABRICKS_SERVING_ENDPOINT_NAME",
+                "env": "DATABRICKS_AGENT_SERVING_ENDPOINT_NAME",
                 "description": "Default LLM serving endpoint name",
                 "origin": "user"
               }
@@ -27,6 +60,41 @@
         ]
       },
       "stability": "beta"
+    },
+    "aiSearch": {
+      "name": "aiSearch",
+      "displayName": "AI Search Plugin",
+      "description": "Query Databricks Vector Search indexes with built-in hybrid search, reranking, and pagination",
+      "package": "@databricks/appkit",
+      "resources": {
+        "required": [
+          {
+            "type": "vector_search_index",
+            "alias": "Vector Search Index",
+            "resourceKey": "vector-search-index",
+            "description": "A Databricks Vector Search index to query. Index names configured via plugin config.",
+            "permission": "SELECT",
+            "fields": {
+              "id": {
+                "env": "DATABRICKS_VS_INDEX_NAME",
+                "description": "Three-level UC name of the default index (catalog.schema.index_name)",
+                "origin": "user"
+              }
+            }
+          }
+        ],
+        "optional": []
+      },
+      "stability": "beta",
+      "scaffolding": {
+        "rules": {
+          "must": [
+            "List the vector search index's source-table columns (unity-catalog tables API) so the user can pick which to return",
+            "Ask the user which of those columns the search should return",
+            "Write aiSearch({ indexes: { default: { columns: [...] } } }) in the server file; the client queries the 'default' alias"
+          ]
+        }
+      }
     },
     "analytics": {
       "name": "analytics",
@@ -359,6 +427,7 @@
     },
     "rules": {
       "must": [
+        "Treat `databricks apps init` output as starter code, not requirements; adapt or replace it to match the requested app",
         "Keep all secrets and credentials only in app.yaml, databricks.yml, and/or .env"
       ],
       "should": [

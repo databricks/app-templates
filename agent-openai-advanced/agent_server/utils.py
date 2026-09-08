@@ -15,6 +15,8 @@ from mlflow.genai.agent_server import get_request_headers
 from mlflow.types.responses import ResponsesAgentRequest, ResponsesAgentStreamEvent
 from uuid_utils import uuid7
 
+from agent_server.history import normalize_history_items
+
 logger = logging.getLogger(__name__)
 
 
@@ -144,18 +146,10 @@ async def deduplicate_input(request: ResponsesAgentRequest, session: AsyncDatabr
     If the session already covers the prior turns, only the latest message is needed
     since the session will prepend the full history automatically.
     """
-    messages = [i.model_dump() for i in request.input]
-    # Normalize assistant message content from string to structured list format.
-    # MLflow evaluation sends assistant content as a plain string, but the OpenAI
-    # Agents SDK expects it as [{"type": "output_text", "text": ..., "annotations": []}].
-    for msg in messages:
-        if (
-            isinstance(msg, dict)
-            and msg.get("type") == "message"
-            and msg.get("role") == "assistant"
-            and isinstance(msg.get("content"), str)
-        ):
-            msg["content"] = [{"type": "output_text", "text": msg["content"], "annotations": []}]
+    # Replayed assistant turns arrive id-less (chat UI sends output_text lists,
+    # MLflow evaluation sends plain strings); collapse them to the easy-input
+    # form every openai-agents version accepts. See agent_server/history.py.
+    messages = normalize_history_items([i.model_dump() for i in request.input])
     session_items = await session.get_items()
     if len(session_items) >= len(messages) - 1:
         return [messages[-1]]

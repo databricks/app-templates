@@ -3,7 +3,6 @@
 # COMMAND ----------
 
 import sys
-import importlib
 from datetime import datetime
 
 from pyspark.sql.types import (
@@ -57,17 +56,34 @@ print(f"Loaded {len(history_pd)} daily sales rows covering {history_pd['store_id
 # Add the src directory to sys.path so model modules can import each other
 sys.path.insert(0, "/Workspace" + dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get().rsplit("/", 1)[0])
 
+# Models are imported lazily so optional heavy dependencies (e.g. prophet) are
+# only loaded when that model is selected.
+def _weighted_moving_average():
+    from models.weighted_moving_average import WeightedMovingAverageModel
+    return WeightedMovingAverageModel()
+
+
+def _exponential_smoothing():
+    from models.exponential_smoothing import ExponentialSmoothingModel
+    return ExponentialSmoothingModel()
+
+
+def _prophet():
+    from models.prophet_model import ProphetModel
+    return ProphetModel()
+
+
+def _model_serving():
+    from models.model_serving import ModelServingModel
+    return ModelServingModel(model_serving_endpoint)
+
+
 MODEL_REGISTRY = {
-    "weighted_moving_average": lambda: _load("models.weighted_moving_average", "WeightedMovingAverageModel")(),
-    "exponential_smoothing":   lambda: _load("models.exponential_smoothing", "ExponentialSmoothingModel")(),
-    "prophet":                 lambda: _load("models.prophet_model", "ProphetModel")(),
-    "model_serving":           lambda: _load("models.model_serving", "ModelServingModel")(model_serving_endpoint),
+    "weighted_moving_average": _weighted_moving_average,
+    "exponential_smoothing":   _exponential_smoothing,
+    "prophet":                 _prophet,
+    "model_serving":           _model_serving,
 }
-
-
-def _load(module_path: str, class_name: str):
-    module = importlib.import_module(module_path)
-    return getattr(module, class_name)
 
 
 if forecast_model not in MODEL_REGISTRY:

@@ -26,7 +26,9 @@ if (!existsSync(envPath)) {
   process.exit(1);
 }
 const envText = readFileSync(envPath, 'utf8');
-const readEnv = (name) => new RegExp(`^${name}=(.+)$`, 'm').exec(envText)?.[1]?.trim();
+const envLines = envText.split(/\r?\n/);
+const readEnv = (name) =>
+  envLines.find((line) => line.startsWith(`${name}=`))?.slice(name.length + 1).trim() || undefined;
 
 const profile = readEnv('DATABRICKS_CONFIG_PROFILE');
 const endpoint = readEnv('LAKEBASE_ENDPOINT');

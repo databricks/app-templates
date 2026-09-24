@@ -11,6 +11,9 @@ import cors from 'cors';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { chatRouter } from './routes/chat';
 import { storeMessageMeta } from './lib/message-meta-store';
 import { historyRouter } from './routes/history';
@@ -85,14 +88,13 @@ if (agentBackendUrl) {
 
       // Stream the response body
       if (response.body) {
-        const reader = response.body.getReader();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          res.write(value);
-        }
+        await pipeline(
+          Readable.fromWeb(response.body as WebReadableStream),
+          res,
+        );
+      } else {
+        res.end();
       }
-      res.end();
     } catch (error) {
       console.error('[/invocations proxy] Error:', error);
       res.status(502).json({

@@ -117,6 +117,14 @@ app's resource bindings + an SSO storageState (`auth_setup.py`). **Use the
 `validate-templates` skill** (`.claude/skills/validate-templates/` — repo-dev only,
 not synced into templates) for prerequisites, commands, and how to read the reports.
 
+## Security Scanning (semgrep)
+
+Databricks Apps runs semgrep with the community rules against deployed app source, so every template must scan cleanly. Keep it that way when editing:
+
+- Prefer real fixes. When a finding is a false positive (e.g. `subprocess` with a script-built argument list, calls to Databricks endpoints flagged by OpenAI-platform rules), suppress it inline with `# nosemgrep: <rule-id>` plus a short justification.
+- Agent `pyproject.toml` files set `exclude-newer = "7 days"` under `[tool.uv]` (dependency cooldown; needs uv >= 0.9.17). npm `package.json` dependencies use exact versions.
+- Pin GitHub Actions to commit SHAs (with the tag in a trailing comment).
+
 ## Editing Workflow Summary
 
 1. **Changing a shared script** (`quickstart.py`, `start_app.py`, `evaluate_agent.py`) — edit in `.scripts/source/`, run `uv run python .scripts/sync-scripts.py`

@@ -7,6 +7,7 @@ Usage:
     uv run preflight
 """
 
+import http.client
 import json
 import os
 import socket
@@ -14,8 +15,6 @@ import subprocess
 import sys
 import threading
 import time
-import urllib.error
-import urllib.request
 
 _IS_WINDOWS = sys.platform == "win32"
 
@@ -70,7 +69,8 @@ def start_server(port: int) -> subprocess.Popen:
             if "Uvicorn running on" in line or "Application startup complete" in line:
                 return proc
 
-        time.sleep(0.5)
+        # Poll every 0.5s; returns early if the server's stderr closes (process exited)
+        t.join(timeout=0.5)
 
     stop_server(proc)
     print(f"  Server did not start within {SERVER_START_TIMEOUT}s")
@@ -93,40 +93,47 @@ def stop_server(proc: subprocess.Popen):
         proc.kill()
 
 
-def check_health(base_url: str) -> bool:
+def request_json(port: int, method: str, path: str, body: bytes | None = None, timeout: float = 10) -> dict:
+    """Send a request to the local server and return the parsed JSON response."""
+    conn = http.client.HTTPConnection("localhost", port, timeout=timeout)
     try:
-        req = urllib.request.Request(f"{base_url}/health")
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read())
-            return data.get("status") == "healthy"
+        headers = {"Content-Type": "application/json"} if body is not None else {}
+        conn.request(method, path, body=body, headers=headers)
+        resp = conn.getresponse()
+        data = resp.read()
+        if resp.status >= 400:
+            raise RuntimeError(f"HTTP {resp.status} {resp.reason}")
+        return json.loads(data)
+    finally:
+        conn.close()
+
+
+def check_health(port: int) -> bool:
+    try:
+        data = request_json(port, "GET", "/health")
+        return data.get("status") == "healthy"
     except Exception as e:
         print(f"  Health check failed: {e}")
         return False
 
 
-def check_invocations(base_url: str, retries: int = 2) -> bool:
+def check_invocations(port: int, retries: int = 2) -> bool:
     payload = json.dumps(
         {"input": [{"role": "user", "content": "Say hello in one word."}]}
     ).encode()
 
     for attempt in range(retries + 1):
         try:
-            req = urllib.request.Request(
-                f"{base_url}/invocations",
-                data=payload,
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
-                data = json.loads(resp.read())
-                # Check that we got a response with output
-                if "output" in data and len(data["output"]) > 0:
-                    return True
-                print(f"  Unexpected response shape: {json.dumps(data)[:200]}")
-                return False
+            data = request_json(port, "POST", "/invocations", body=payload, timeout=REQUEST_TIMEOUT)
+            # Check that we got a response with output
+            if "output" in data and len(data["output"]) > 0:
+                return True
+            print(f"  Unexpected response shape: {json.dumps(data)[:200]}")
+            return False
         except Exception as e:
             if attempt < retries:
                 print(f"   Attempt {attempt + 1} failed ({e}), retrying...")
-                time.sleep(3)
+                time.sleep(3)  # nosemgrep: arbitrary-sleep -- intentional retry backoff
             else:
                 print(f"  Invocations request failed: {e}")
                 return False
@@ -138,7 +145,6 @@ def main():
     print("=" * 40)
 
     port = find_free_port()
-    base_url = f"http://localhost:{port}"
 
     # Step 1: Start server
     print(f"1. Starting server on port {port}...")
@@ -148,14 +154,14 @@ def main():
     try:
         # Step 2: Health check
         print("2. Health check...")
-        if not check_health(base_url):
+        if not check_health(port):
             print("   FAILED")
             sys.exit(1)
         print("   OK")
 
         # Step 3: Send a test request
         print("3. Sending test request to /invocations...")
-        if not check_invocations(base_url):
+        if not check_invocations(port):
             print("   FAILED")
             sys.exit(1)
         print("   OK")

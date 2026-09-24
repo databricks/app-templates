@@ -15,6 +15,7 @@ See 'uv run start-server --help' for available options.
 """
 
 import argparse
+import contextlib
 import os
 import re
 import shutil
@@ -22,7 +23,6 @@ import socket
 import subprocess
 import sys
 import threading
-import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -52,6 +52,7 @@ class ProcessManager:
         self.failed = threading.Event()
         self.backend_log = None
         self.frontend_log = None
+        self.log_files = contextlib.ExitStack()
         self.port = port
         self.no_ui = no_ui
 
@@ -171,7 +172,8 @@ class ProcessManager:
 
     def start_process(self, cmd, name, log_file, patterns, cwd=None):
         print(f"Starting {name}...")
-        process = subprocess.Popen(
+        # cmd is always an argument list built by this script (never shell=True)
+        process = subprocess.Popen(  # nosemgrep: dangerous-subprocess-use-audit
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, cwd=cwd
         )
 
@@ -204,10 +206,7 @@ class ProcessManager:
                 except (subprocess.TimeoutExpired, Exception):
                     proc.kill()
 
-        if self.backend_log:
-            self.backend_log.close()
-        if self.frontend_log:
-            self.frontend_log.close()
+        self.log_files.close()
 
     def run(self, backend_args=None):
         load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env", override=True)
@@ -223,9 +222,11 @@ class ProcessManager:
                 os.environ["API_PROXY"] = f"http://localhost:{self.port}/invocations"
 
         # Open log files
-        self.backend_log = open("backend.log", "w", buffering=1)
+        self.backend_log = self.log_files.enter_context(open("backend.log", "w", buffering=1))
         if not self.no_ui:
-            self.frontend_log = open("frontend.log", "w", buffering=1)
+            self.frontend_log = self.log_files.enter_context(
+                open("frontend.log", "w", buffering=1)
+            )
 
         try:
             # Build backend command, passing through all arguments
@@ -243,7 +244,7 @@ class ProcessManager:
                 frontend_dir = Path("e2e-chatbot-app-next")
                 for cmd, desc in [("npm install", "install"), ("npm run build", "build")]:
                     print(f"Running npm {desc}...")
-                    result = subprocess.run(
+                    result = subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
                         cmd.split(), cwd=frontend_dir, capture_output=True, text=True
                     )
                     if result.returncode != 0:
@@ -265,8 +266,7 @@ class ProcessManager:
                 print(f"\nMonitoring backend process (PID: {self.backend_process.pid})\n")
 
             # Wait for failure
-            while not self.failed.is_set():
-                time.sleep(0.1)
+            while not self.failed.wait(timeout=0.1):
                 if self.backend_process.poll() is not None:
                     self.failed.set()
                     break

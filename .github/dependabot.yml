@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # Template deploy workflows pin actions to commit SHAs. The source of truth is
+  # .scripts/source/.github/workflows/deploy.yml, synced into each template by
+  # .scripts/sync-scripts.py; all copies are bumped together in one grouped PR.
+  - package-ecosystem: "github-actions"
+    directories:
+      - "/.scripts/source"
+      - "/agent-langgraph"
+      - "/agent-langgraph-advanced"
+      - "/agent-openai-advanced"
+      - "/agent-openai-agents-sdk"
+      - "/agent-openai-agents-sdk-multiagent"
+    schedule:
+      interval: "weekly"
+    groups:
+      template-deploy-actions:
+        patterns:
+          - "*"

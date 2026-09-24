@@ -57,6 +57,19 @@ def get_client(agent_url: str) -> OpenAI | DatabricksOpenAI:
     return DatabricksOpenAI(workspace_client=WorkspaceClient(), base_url=agent_url)
 
 
+def _create_response(client: OpenAI | DatabricksOpenAI, **kwargs):
+    # Requests go to the agent server (local or a Databricks App), not the OpenAI
+    # platform, so OpenAI-only abuse-monitoring params like safety_identifier don't apply.
+    return client.responses.create(**kwargs)  # nosemgrep: openai-missing-safety-identifier-python
+
+
+def _wait_for_completion(client: OpenAI | DatabricksOpenAI, response_id: str, resp):
+    while resp.status in ("queued", "in_progress"):
+        time.sleep(2)  # nosemgrep: arbitrary-sleep -- intentional poll interval
+        resp = client.responses.retrieve(response_id)
+    return resp
+
+
 def _get_event_attr(evt: object, key: str, default=None):
     if isinstance(evt, dict):
         return evt.get(key, default)
@@ -65,7 +78,8 @@ def _get_event_attr(evt: object, key: str, default=None):
 
 def test_sync(agent_url):
     client = get_client(agent_url)
-    resp = client.responses.create(
+    resp = _create_response(
+        client,
         input=[{"role": "user", "content": PROMPT}],
     )
     # Non-background responses may return status=None (server doesn't set it)
@@ -75,7 +89,8 @@ def test_sync(agent_url):
 
 def test_stream(agent_url):
     client = get_client(agent_url)
-    stream = client.responses.create(
+    stream = _create_response(
+        client,
         input=[{"role": "user", "content": PROMPT}],
         stream=True,
     )
@@ -90,21 +105,21 @@ def test_stream(agent_url):
 
 def test_background_poll(agent_url):
     client = get_client(agent_url)
-    resp = client.responses.create(
+    resp = _create_response(
+        client,
         input=[{"role": "user", "content": PROMPT}],
         background=True,
     )
     response_id = resp.id
-    while resp.status in ("queued", "in_progress"):
-        time.sleep(2)
-        resp = client.responses.retrieve(response_id)
+    resp = _wait_for_completion(client, response_id, resp)
     assert resp.status == "completed"
     assert resp.output_text
 
 
 def test_background_stream(agent_url):
     client = get_client(agent_url)
-    stream = client.responses.create(
+    stream = _create_response(
+        client,
         input=[{"role": "user", "content": PROMPT}],
         background=True,
         stream=True,
@@ -120,7 +135,8 @@ def test_background_stream(agent_url):
 
 def test_background_stream_retrieve_with_cursor(agent_url):
     client = get_client(agent_url)
-    stream = client.responses.create(
+    stream = _create_response(
+        client,
         input=[{"role": "user", "content": PROMPT}],
         background=True,
         stream=True,
@@ -169,7 +185,8 @@ def test_background_stream_retrieve_with_cursor(agent_url):
 
 def test_background_stream_retrieve_poll(agent_url):
     client = get_client(agent_url)
-    stream = client.responses.create(
+    stream = _create_response(
+        client,
         input=[{"role": "user", "content": PROMPT}],
         background=True,
         stream=True,
@@ -189,9 +206,7 @@ def test_background_stream_retrieve_poll(agent_url):
 
     # Poll until completed (no stream)
     resp = client.responses.retrieve(response_id)
-    while resp.status in ("queued", "in_progress"):
-        time.sleep(2)
-        resp = client.responses.retrieve(response_id)
+    resp = _wait_for_completion(client, response_id, resp)
     assert resp.status == "completed"
     assert resp.output_text
 
@@ -225,8 +240,6 @@ def test_responses_stream_background_retrieve_with_cursor(agent_url):
 
     # Poll with starting_after cursor until completed
     resp = client.responses.retrieve(response_id)
-    while resp.status in ("queued", "in_progress"):
-        time.sleep(2)
-        resp = client.responses.retrieve(response_id)
+    resp = _wait_for_completion(client, response_id, resp)
     assert resp.status == "completed"
     assert resp.output_text

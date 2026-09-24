@@ -14,18 +14,18 @@
     "@chat-template/core": "*",
     "@chat-template/db": "*",
     "@databricks/ai-sdk-provider": "0.5.1",
-    "ai": "^6.0.70",
-    "cors": "^2.8.5",
-    "dotenv": "^17.2.3",
-    "express": "^5.1.0",
-    "zod": "^4.3.5"
+    "ai": "6.0.94",
+    "cors": "2.8.6",
+    "dotenv": "17.2.3",
+    "express": "5.2.1",
+    "zod": "4.3.6"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.17",
-    "@types/express": "^5.0.4",
-    "@types/node": "^22.8.6",
-    "tsdown": "^0.16.0",
-    "tsx": "^4.19.1",
-    "typescript": "^5.6.3"
+    "@types/cors": "2.8.19",
+    "@types/express": "5.0.6",
+    "@types/node": "22.19.7",
+    "tsdown": "0.16.8",
+    "tsx": "4.21.0",
+    "typescript": "5.9.3"
   }
 }

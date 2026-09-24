@@ -18,6 +18,7 @@ if __name__ == '__main__':
     host = os.getenv('FLASK_RUN_HOST', '0.0.0.0')
     port = int(os.getenv('FLASK_RUN_PORT', 8000))
 
-    app.run(debug=True, host=host, port=port)
+    # Debug mode is off by default; set FLASK_DEBUG=1 to enable it for local development.
+    app.run(host=host, port=port)
     print(f"Flask app running on http://{host}:{port}")
 

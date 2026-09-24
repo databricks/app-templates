@@ -36,7 +36,7 @@ class DatabricksChatbot:
         ], className='d-flex flex-column chat-container p-3')
 
     def _create_callbacks(self):
-        @self.app.callback(
+        self.app.callback(
             Output('chat-history-store', 'data', allow_duplicate=True),
             Output('chat-history', 'children', allow_duplicate=True),
             Output('user-input', 'value'),
@@ -46,63 +46,66 @@ class DatabricksChatbot:
             State('user-input', 'value'),
             State('chat-history-store', 'data'),
             prevent_initial_call=True
-        )
-        def update_chat(send_clicks, user_submit, user_input, chat_history):
-            if not user_input:
-                return dash.no_update, dash.no_update, dash.no_update, dash.no_update
+        )(self._update_chat)
 
-            chat_history = chat_history or []
-            chat_history.append({'role': 'user', 'content': user_input})
-            chat_display = self._format_chat_display(chat_history)
-            chat_display.append(self._create_typing_indicator())
-
-            return chat_history, chat_display, '', {'trigger': True}
-
-        @self.app.callback(
+        self.app.callback(
             Output('chat-history-store', 'data', allow_duplicate=True),
             Output('chat-history', 'children', allow_duplicate=True),
             Input('assistant-trigger', 'data'),
             State('chat-history-store', 'data'),
             prevent_initial_call=True
-        )
-        def process_assistant_response(trigger, chat_history):
-            if not trigger or not trigger.get('trigger'):
-                return dash.no_update, dash.no_update
+        )(self._process_assistant_response)
 
-            chat_history = chat_history or []
-            if (not chat_history or not isinstance(chat_history[-1], dict)
-                    or 'role' not in chat_history[-1]
-                    or chat_history[-1]['role'] != 'user'):
-                return dash.no_update, dash.no_update
-
-            try:
-                assistant_response = self._call_model_endpoint(chat_history)
-                chat_history.append({
-                    'role': 'assistant',
-                    'content': assistant_response
-                })
-            except Exception as e:
-                error_message = f'Error: {str(e)}'
-                print(error_message)  # Log the error for debugging
-                chat_history.append({
-                    'role': 'assistant',
-                    'content': error_message
-                })
-
-            chat_display = self._format_chat_display(chat_history)
-            return chat_history, chat_display
-
-        @self.app.callback(
+        self.app.callback(
             Output('chat-history-store', 'data', allow_duplicate=True),
             Output('chat-history', 'children', allow_duplicate=True),
             Input('clear-button', 'n_clicks'),
             prevent_initial_call=True
-        )
-        def clear_chat(n_clicks):
-            print('Clearing chat')
-            if n_clicks:
-                return [], []
+        )(self._clear_chat)
+
+    def _update_chat(self, send_clicks, user_submit, user_input, chat_history):
+        if not user_input:
+            return dash.no_update, dash.no_update, dash.no_update, dash.no_update
+
+        chat_history = chat_history or []
+        chat_history.append({'role': 'user', 'content': user_input})
+        chat_display = self._format_chat_display(chat_history)
+        chat_display.append(self._create_typing_indicator())
+
+        return chat_history, chat_display, '', {'trigger': True}
+
+    def _process_assistant_response(self, trigger, chat_history):
+        if not trigger or not trigger.get('trigger'):
             return dash.no_update, dash.no_update
+
+        chat_history = chat_history or []
+        if (not chat_history or not isinstance(chat_history[-1], dict)
+                or 'role' not in chat_history[-1]
+                or chat_history[-1]['role'] != 'user'):
+            return dash.no_update, dash.no_update
+
+        try:
+            assistant_response = self._call_model_endpoint(chat_history)
+            chat_history.append({
+                'role': 'assistant',
+                'content': assistant_response
+            })
+        except Exception as e:
+            error_message = f'Error: {str(e)}'
+            print(error_message)  # Log the error for debugging
+            chat_history.append({
+                'role': 'assistant',
+                'content': error_message
+            })
+
+        chat_display = self._format_chat_display(chat_history)
+        return chat_history, chat_display
+
+    def _clear_chat(self, n_clicks):
+        print('Clearing chat')
+        if n_clicks:
+            return [], []
+        return dash.no_update, dash.no_update
 
     def _call_model_endpoint(self, messages, max_tokens=128):
         try:

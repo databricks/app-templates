@@ -100,8 +100,8 @@ echo ""
 
 # Run the OAuth token generation and capture JSON output
 token_response=$(uv run python "$SCRIPT_DIR/generate_oauth_token.py" \
-    --host "$host" \
-    --scopes "$scopes")
+    --host="$host" \
+    --scopes="$scopes")
 
 oauth_exit_code=$?
 
@@ -136,9 +136,9 @@ echo ""
 cd "$PROJECT_ROOT"
 
 uv run python "$SCRIPT_DIR/query_remote.py" \
-    --host "$host" \
-    --token "$token" \
-    --app-url "$app_url"
+    --host="$host" \
+    --token="$token" \
+    --app-url="$app_url"
 
 if [ $? -eq 0 ]; then
     echo ""

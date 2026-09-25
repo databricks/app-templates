@@ -5,6 +5,7 @@ updates:
   # .scripts/sync-scripts.py; all copies are bumped together in one grouped PR.
   - package-ecosystem: "github-actions"
     directories:
+      - "/" # repo-level workflows (.github/workflows), e.g. semgrep.yml
       - "/.scripts/source"
       - "/agent-langgraph"
       - "/agent-langgraph-advanced"

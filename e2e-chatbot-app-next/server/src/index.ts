@@ -96,6 +96,19 @@ if (agentBackendUrl) {
         res.end();
       }
     } catch (error) {
+      if (res.headersSent) {
+        // The stream was interrupted after the response started (e.g. the
+        // client disconnected, which makes `pipeline` reject with
+        // ERR_STREAM_PREMATURE_CLOSE). A 502 can no longer be sent.
+        if (
+          (error as NodeJS.ErrnoException)?.code !==
+          'ERR_STREAM_PREMATURE_CLOSE'
+        ) {
+          console.error('[/invocations proxy] Stream error:', error);
+        }
+        res.destroy();
+        return;
+      }
       console.error('[/invocations proxy] Error:', error);
       res.status(502).json({
         error: 'Proxy error',

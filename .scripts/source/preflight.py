@@ -69,8 +69,11 @@ def start_server(port: int) -> subprocess.Popen:
             if "Uvicorn running on" in line or "Application startup complete" in line:
                 return proc
 
-        # Poll every 0.5s; returns early if the server's stderr closes (process exited)
-        t.join(timeout=0.5)
+        # Poll every 0.5s; returns early if the server process exits
+        try:
+            proc.wait(timeout=0.5)
+        except subprocess.TimeoutExpired:
+            pass
 
     stop_server(proc)
     print(f"  Server did not start within {SERVER_START_TIMEOUT}s")

@@ -3,6 +3,7 @@ import type { AppStorage } from '../shared/storageConfig';
 import { APP_VIEWER_PARAM, UploadError, resolveUpload, type UploadStore } from './fileUploads';
 import { validateFileFormat } from '../shared/fileFormats';
 import { FILE_OUTPUTS_PARAM, OUTPUT_NAMESPACE_PARAM, type FileOutputConfig } from '../shared/fileOutputs';
+import { isValidMultiselectConfig, isValidMultiselectValue } from '../shared/multiselect';
 
 export function isReservedParameter(name: string): boolean {
   return name === 'target_node' || name === 'ld_display_outputs' || name === 'ld_display_outputs_for' || name.startsWith('_lb_');
@@ -52,6 +53,17 @@ export async function resolveRunParameters(
   for (const parameter of manifest.parameters) {
     if (isReservedParameter(parameter.name)) continue;
     const raw = submitted[parameter.name];
+    if (parameter.type === 'multiselect') {
+      const resolved = raw === undefined ? parameter.defaultValue : raw;
+      if (
+        !isValidMultiselectConfig(parameter.choices, parameter.defaultValue) ||
+        !isValidMultiselectValue(resolved, parameter.choices ?? [])
+      ) {
+        return { ok: false, error: `"${parameter.label}" must contain only the offered choices.` };
+      }
+      params[parameter.name] = resolved;
+      continue;
+    }
     const value = raw === undefined || raw === null ? '' : String(raw);
     const resolved = value.trim() === '' ? parameter.defaultValue : value;
     if (parameter.type === 'file') {

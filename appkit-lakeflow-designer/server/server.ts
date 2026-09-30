@@ -6,6 +6,7 @@ import { canAccessRun, viewerKey } from './fileUploads';
 import { appKitUploadStore } from './uploadStore';
 import { registerUploadRoutes } from './uploads';
 import { isReservedParameter, resolveRunParameters } from './runParameters';
+import { isValidMultiselectConfig } from '../shared/multiselect';
 import { isLegacyExportRun, manifestRevision } from './runRevision';
 import { registerOutputFileRoutes, recordedFileOutput } from './outputFiles';
 import { appKitOutputFileStore } from './outputFileStore';
@@ -47,7 +48,7 @@ const errText = (err: unknown): string => (err instanceof Error ? err.message : 
 type AppParameter = {
   name: string;
   label: string;
-  type: 'text' | 'number' | 'dropdown' | 'combobox' | 'file';
+  type: 'text' | 'number' | 'dropdown' | 'combobox' | 'multiselect' | 'file';
   defaultValue: string;
   choices?: string[];
   fileFormats?: string[];
@@ -256,6 +257,9 @@ function parseManifest(raw: unknown): AppManifest | undefined {
     (parsed.parameters.some((entry) => isRecord(entry) && entry.type === 'file') && !storage) ||
     parsed.parameters.some((entry) =>
       isRecord(entry) && entry.type === 'file' && entry.fileFormats !== undefined && !isFileFormats(entry.fileFormats)
+    ) ||
+    parsed.parameters.some((entry) =>
+      isRecord(entry) && entry.type === 'multiselect' && !isValidMultiselectConfig(entry.choices, entry.defaultValue)
     )
   )
     return undefined;
@@ -275,12 +279,14 @@ function parseManifest(raw: unknown): AppManifest | undefined {
             ? 'dropdown'
             : entry.type === 'combobox'
               ? 'combobox'
-              : 'text';
+              : entry.type === 'multiselect'
+                ? 'multiselect'
+                : 'text';
     const choices =
       Array.isArray(entry.choices) &&
       (declared === 'combobox' || entry.choices.length > 0) &&
-      entry.choices.every((choice) => typeof choice === 'string')
-        ? (entry.choices as string[])
+      entry.choices.every((choice): choice is string => typeof choice === 'string')
+        ? entry.choices
         : undefined;
     const type: AppParameter['type'] = declared === 'dropdown' && choices === undefined ? 'text' : declared;
     return [
@@ -289,7 +295,7 @@ function parseManifest(raw: unknown): AppManifest | undefined {
         label: entry.label,
         type,
         defaultValue: type === 'file' ? '' : typeof entry.defaultValue === 'string' ? entry.defaultValue : '',
-        ...((type === 'dropdown' || type === 'combobox') && choices !== undefined ? { choices } : {}),
+        ...((type === 'dropdown' || type === 'combobox' || type === 'multiselect') && choices !== undefined ? { choices } : {}),
         ...(type === 'file' && isFileFormats(entry.fileFormats) ? { fileFormats: entry.fileFormats } : {}),
         ...(typeof entry.help === 'string' && entry.help !== '' ? { help: entry.help } : {}),
       },

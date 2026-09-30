@@ -2,12 +2,13 @@ import { CONFIG_ROUTE } from './routes';
 import { parseAppStorage, type AppStorage } from '../../shared/storageConfig';
 import { isFileFormats } from '../../shared/fileFormats';
 import { hasInvalidFileOutputDeclaration, parseFileOutput, type FileOutputConfig } from '../../shared/fileOutputs';
+import { isValidMultiselectConfig, isValidMultiselectValue } from '../../shared/multiselect';
 
 export const APP_MANIFEST_VERSION = 6;
 
 export const TARGET_NODE_PARAM = 'target_node';
 
-export type AppParameterType = 'text' | 'number' | 'dropdown' | 'combobox' | 'file';
+export type AppParameterType = 'text' | 'number' | 'dropdown' | 'combobox' | 'multiselect' | 'file';
 
 export type AppParameter = {
   name: string;
@@ -79,7 +80,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const isParameterType = (value: unknown): value is AppParameterType =>
-  value === 'text' || value === 'number' || value === 'dropdown' || value === 'combobox' || value === 'file';
+  value === 'text' || value === 'number' || value === 'dropdown' || value === 'combobox' || value === 'multiselect' || value === 'file';
 
 function parseProvenance(raw: unknown): AppProvenance | undefined {
   if (
@@ -119,6 +120,9 @@ export function parseAppManifest(raw: unknown): AppManifest | undefined {
     (raw.parameters.some((entry) => isRecord(entry) && entry.type === 'file') && !storage) ||
     raw.parameters.some((entry) =>
       isRecord(entry) && entry.type === 'file' && entry.fileFormats !== undefined && !isFileFormats(entry.fileFormats)
+    ) ||
+    raw.parameters.some((entry) =>
+      isRecord(entry) && entry.type === 'multiselect' && !isValidMultiselectConfig(entry.choices, entry.defaultValue)
     )
   )
     return undefined;
@@ -207,7 +211,7 @@ function parseParameter(entry: Record<string, unknown>): AppParameter[] {
       label: entry.label,
       type,
       defaultValue: type === 'file' ? '' : typeof entry.defaultValue === 'string' ? entry.defaultValue : '',
-      ...((type === 'dropdown' || type === 'combobox') && choices !== undefined ? { choices } : {}),
+      ...((type === 'dropdown' || type === 'combobox' || type === 'multiselect') && choices !== undefined ? { choices } : {}),
       ...(type === 'file' && isFileFormats(entry.fileFormats) ? { fileFormats: entry.fileFormats } : {}),
       ...(typeof entry.help === 'string' && entry.help !== '' ? { help: entry.help } : {}),
     },
@@ -223,6 +227,12 @@ export function initialValuesFor(
     const recorded = lastRunParameters?.[parameter.name];
     if (parameter.type === 'file') {
       values[parameter.name] = '';
+      continue;
+    }
+    if (parameter.type === 'multiselect') {
+      values[parameter.name] = isValidMultiselectValue(recorded, parameter.choices ?? [])
+        ? recorded
+        : parameter.defaultValue;
       continue;
     }
     values[parameter.name] = recorded === undefined || recorded === '' ? parameter.defaultValue : recorded;

@@ -1,5 +1,6 @@
 import {
   Button,
+  Checkbox,
   Input,
   Label,
   Select,
@@ -13,6 +14,7 @@ import { useId, useState, type FormEvent, type SetStateAction } from 'react';
 import type { AppParameter } from './appConfig';
 import { FileParameterControl } from './FileParameterControl';
 import { uploadFile, validateUpload } from './fileUpload';
+import { parseMultiselectValue, toggleMultiselectValue } from '../../shared/multiselect';
 
 interface UploadedFile {
   file: File;
@@ -97,7 +99,7 @@ export function ParameterForm({
           key={parameter.name}
           className="grid gap-1.5 sm:grid-cols-[minmax(10rem,16rem)_minmax(0,1fr)] sm:items-start sm:gap-4"
         >
-          <Label htmlFor={parameter.name} className="sm:pt-2.5">
+          <Label htmlFor={parameter.type === 'multiselect' ? undefined : parameter.name} className="sm:pt-2.5">
             {parameter.label === '' ? parameter.name : parameter.label}
           </Label>
           <div className="grid gap-1.5">
@@ -143,6 +145,30 @@ function ParameterControl({
   onValueChange: (value: string) => void;
 }) {
   const suggestionListId = useId();
+  if (parameter.type === 'multiselect') {
+    const selections = new Set(parseMultiselectValue(value));
+    return (
+      <div
+        role="group"
+        aria-label={parameter.label === '' ? parameter.name : parameter.label}
+        className="grid max-h-40 gap-2 overflow-y-auto rounded-md border px-3 py-2.5"
+      >
+        {[...new Set(parameter.choices ?? [])].map((choice, index) => {
+          const choiceId = `${suggestionListId}-${index}`;
+          return (
+            <div key={choice} className="flex items-center gap-2">
+              <Checkbox
+                id={choiceId}
+                checked={selections.has(choice)}
+                onCheckedChange={(checked) => onValueChange(toggleMultiselectValue(value, choice, checked === true))}
+              />
+              <Label htmlFor={choiceId}>{choice}</Label>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
   if (parameter.type === 'combobox') {
     return (
       <>

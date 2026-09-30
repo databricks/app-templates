@@ -11,7 +11,7 @@ import { build } from 'tsdown';
 let outputDirectory;
 let viewerKey;
 let parseRunSnapshot, LastRunLabel;
-let ParameterForm, parseAppManifest;
+let ParameterForm, parseAppManifest, initialValuesFor;
 let instance = 0;
 const harnessKey = Symbol.for('designer-upload-route-tests');
 const originalJobId = process.env.DATABRICKS_JOB_ID;
@@ -70,7 +70,7 @@ before(async () => {
   ({ parseRunSnapshot } = await import(pathToFileURL(join(outputDirectory, 'payload.mjs')).href));
   ({ LastRunLabel } = await import(pathToFileURL(join(outputDirectory, 'LastRunLabel.mjs')).href));
   ({ ParameterForm } = await import(pathToFileURL(join(outputDirectory, 'ParameterForm.mjs')).href));
-  ({ parseAppManifest } = await import(pathToFileURL(join(outputDirectory, 'appConfig.mjs')).href));
+  ({ parseAppManifest, initialValuesFor } = await import(pathToFileURL(join(outputDirectory, 'appConfig.mjs')).href));
 });
 
 after(async () => {
@@ -366,6 +366,118 @@ for (const value of ['us-east', 'custom-value']) {
     const response = await request('post', '/api/designer/run', { body: { params: { region: value } } });
     assert.equal(response.status, 200);
     assert.equal(state.submissions.at(-1).notebook_params.region, value);
+  });
+}
+
+const multiselectParameter = {
+  name: 'region', label: 'Regions', type: 'multiselect', defaultValue: 'us-west, us-east ',
+  choices: ['us-west', ' us-east ', 'eu-west'],
+};
+
+for (const defaultValue of [multiselectParameter.defaultValue, '']) {
+  test(`projects and renders labelled multi-select choices with default ${JSON.stringify(defaultValue)}`, async () => {
+    const { state, request } = await serverHarness();
+    const parameter = { ...multiselectParameter, defaultValue };
+    state.manifest = { ...manifest, storage: undefined, parameters: [parameter] };
+    const response = await request('get', '/api/designer/config');
+    assert.equal(response.status, 200);
+    assert.equal(response.body.runnable, true);
+    assert.deepEqual(response.body.manifest.parameters, [parameter]);
+    const parsed = parseAppManifest(response.body.manifest);
+    assert.deepEqual(parsed.parameters, [parameter]);
+
+    const html = renderToStaticMarkup(createElement(ParameterForm, {
+      parameters: parsed.parameters, values: initialValuesFor(parsed),
+      onChange: () => {}, onRun: () => {}, running: false, runnable: true,
+    }));
+    assert.match(html, /role="group" aria-label="Regions"/);
+    const labels = new Map([...html.matchAll(/<label\b[^>]*for="([^"]+)"[^>]*>([^<]*)<\/label>/g)]
+      .map((match) => [match[1], match[2]]));
+    const checkboxes = [...html.matchAll(/<button\b[^>]*role="checkbox"[^>]*>/g)];
+    assert.equal(checkboxes.length, parameter.choices.length);
+    for (const [index, [button]] of checkboxes.entries()) {
+      const id = button.match(/\bid="([^"]+)"/)?.[1];
+      assert.ok(id);
+      const choice = parameter.choices[index];
+      assert.equal(labels.get(id), choice);
+      assert.equal(button.match(/aria-checked="([^"]+)"/)?.[1], String(defaultValue.split(',').includes(choice)));
+    }
+  });
+}
+
+for (const [description, submitted, expected] of [
+  ['offered selections in chosen order', 'eu-west,us-west', 'eu-west,us-west'],
+  ['whitespace in an offered choice', ' us-east ', ' us-east '],
+  ['an explicitly empty selection', '', ''],
+  ['the default when omitted', undefined, multiselectParameter.defaultValue],
+]) {
+  test(`submits multi-select ${description} as one notebook string`, async () => {
+    const { state, request } = await serverHarness();
+    state.manifest = { ...manifest, storage: undefined, parameters: [multiselectParameter] };
+    const params = submitted === undefined ? {} : { region: submitted };
+    const response = await request('post', '/api/designer/run', { body: { params } });
+    assert.equal(response.status, 200);
+    assert.equal(state.submissions.length, 1);
+    assert.equal(state.submissions[0].notebook_params.region, expected);
+    assert.equal(state.submissions[0].notebook_params.ld_display_outputs_for, 'source');
+    assert.equal(state.submissions[0].notebook_params._lb_collect_row_counts, 'true');
+  });
+}
+
+for (const value of ['unknown', 'us-west,unknown', 'us-west,', ',us-west', 'us-west,,eu-west', null, ['us-west'], 42]) {
+  test(`refuses malformed multi-select submission ${JSON.stringify(value)} without starting a Job`, async () => {
+    const { state, request } = await serverHarness();
+    state.manifest = { ...manifest, storage: undefined, parameters: [multiselectParameter] };
+    const response = await request('post', '/api/designer/run', { body: { params: { region: value } } });
+    assert.equal(response.status, 400);
+    assert.equal(response.body.error, '"Regions" must contain only the offered choices.');
+    assert.deepEqual(state.submissions, []);
+  });
+}
+
+for (const invalid of [
+  { choices: undefined }, { choices: [] }, { choices: ['us-west', ''] },
+  { choices: ['us-west', 'us-east,eu-west'] }, { choices: ['us-west', 42] },
+  { defaultValue: 'unknown' }, { defaultValue: 'us-west,' }, { defaultValue: null }, { defaultValue: ['us-west'] },
+]) {
+  test(`refuses invalid multi-select configuration ${JSON.stringify(invalid)} in both manifest readers`, async () => {
+    const { state, request } = await serverHarness();
+    state.manifest = { ...manifest, storage: undefined, parameters: [{ ...multiselectParameter, ...invalid }] };
+    assert.equal(parseAppManifest(state.manifest), undefined);
+    const config = await request('get', '/api/designer/config');
+    assert.deepEqual(config.body, { manifest: null, runnable: false, notRunnableReason: 'noManifest' });
+    assert.equal((await request('post', '/api/designer/run')).status, 409);
+    assert.deepEqual(state.submissions, []);
+  });
+}
+
+test('preserves empty multi-select values through status, history and last-run restoration', async () => {
+  const { state, request } = await serverHarness();
+  state.manifest = { ...manifest, storage: undefined, parameters: [multiselectParameter] };
+  state.runs = [run(10, 'alice', { region: '' })];
+  state.listed = [{ run_id: 10, job_id: 100 }];
+  const status = await request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: '10' } });
+  assert.deepEqual(parseRunSnapshot(status.body).parameters, { region: '' });
+  const history = await request('get', '/api/designer/runs');
+  assert.deepEqual(history.body.runs[0].parameters, { region: '' });
+  const last = await request('get', '/api/designer/last-run');
+  assert.equal(last.body.status, 'found');
+  const parsed = parseAppManifest(state.manifest);
+  assert.deepEqual(initialValuesFor(parsed, last.body.parameters), { region: '' });
+});
+
+for (const [recorded, expected] of [
+  [undefined, multiselectParameter.defaultValue],
+  ['eu-west,us-west', 'eu-west,us-west'],
+  [' us-east ', ' us-east '],
+  ['obsolete', multiselectParameter.defaultValue],
+  ['us-west,obsolete', multiselectParameter.defaultValue],
+  ['us-west,', multiselectParameter.defaultValue],
+]) {
+  test(`restores multi-select value ${JSON.stringify(recorded)} only when it is still offered`, () => {
+    const parsed = parseAppManifest({ ...manifest, storage: undefined, parameters: [multiselectParameter] });
+    const lastRun = recorded === undefined ? undefined : { region: recorded };
+    assert.deepEqual(initialValuesFor(parsed, lastRun), { region: expected });
   });
 }
 

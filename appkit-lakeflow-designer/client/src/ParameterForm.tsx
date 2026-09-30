@@ -12,6 +12,7 @@ import {
 import { useId, useState, type FormEvent, type SetStateAction } from 'react';
 
 import type { AppParameter } from './appConfig';
+import { ComboboxParameterControl } from './ComboboxParameterControl';
 import { FileParameterControl } from './FileParameterControl';
 import { uploadFile, validateUpload } from './fileUpload';
 import { parseMultiselectValue, toggleMultiselectValue } from '../../shared/multiselect';
@@ -171,18 +172,7 @@ function ParameterControl({
   }
   if (parameter.type === 'combobox') {
     return (
-      <>
-        <Input
-          id={parameter.name}
-          list={suggestionListId}
-          spellCheck={false}
-          value={value}
-          onChange={(event) => onValueChange(event.target.value)}
-        />
-        <datalist id={suggestionListId}>
-          {(parameter.choices ?? []).map((choice) => <option key={choice} value={choice} />)}
-        </datalist>
-      </>
+      <ComboboxParameterControl parameter={parameter} value={value} onValueChange={onValueChange} />
     );
   }
   if (parameter.type === 'dropdown' && parameter.choices !== undefined) {

@@ -6,9 +6,11 @@ optional suggestions. A combobox accepts arbitrary strings, including defaults
 and submitted values outside its suggestions.
 
 The client and server preserve combobox suggestions from `designerApp.json`.
-The form uses the AppKit input with a browser-native suggestion list. Empty or
-invalid suggestions leave the input editable. The run API forwards custom values
-without applying dropdown validation.
+The form uses an AppKit input with a themed suggestion popover. Typing filters
+suggestions; the arrow button shows all choices. Arrow keys and Enter select a
+suggestion, while values entered without selecting a suggestion stay editable.
+Empty or invalid suggestions leave the input editable. The run API forwards
+custom values without applying dropdown validation.
 
 Older template readers treat unknown types as text, so values continue to work
 without suggestions. Publish with a combobox-capable template to enable the control.

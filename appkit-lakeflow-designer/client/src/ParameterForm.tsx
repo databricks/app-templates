@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@databricks/appkit-ui/react';
-import { useState, type FormEvent, type SetStateAction } from 'react';
+import { useId, useState, type FormEvent, type SetStateAction } from 'react';
 
 import type { AppParameter } from './appConfig';
 import { FileParameterControl } from './FileParameterControl';
@@ -142,6 +142,23 @@ function ParameterControl({
   value: string;
   onValueChange: (value: string) => void;
 }) {
+  const suggestionListId = useId();
+  if (parameter.type === 'combobox') {
+    return (
+      <>
+        <Input
+          id={parameter.name}
+          list={suggestionListId}
+          spellCheck={false}
+          value={value}
+          onChange={(event) => onValueChange(event.target.value)}
+        />
+        <datalist id={suggestionListId}>
+          {(parameter.choices ?? []).map((choice) => <option key={choice} value={choice} />)}
+        </datalist>
+      </>
+    );
+  }
   if (parameter.type === 'dropdown' && parameter.choices !== undefined) {
     return (
       <Select value={value} onValueChange={onValueChange}>

@@ -7,7 +7,7 @@ export const APP_MANIFEST_VERSION = 6;
 
 export const TARGET_NODE_PARAM = 'target_node';
 
-export type AppParameterType = 'text' | 'number' | 'dropdown' | 'file';
+export type AppParameterType = 'text' | 'number' | 'dropdown' | 'combobox' | 'file';
 
 export type AppParameter = {
   name: string;
@@ -79,7 +79,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const isParameterType = (value: unknown): value is AppParameterType =>
-  value === 'text' || value === 'number' || value === 'dropdown' || value === 'file';
+  value === 'text' || value === 'number' || value === 'dropdown' || value === 'combobox' || value === 'file';
 
 function parseProvenance(raw: unknown): AppProvenance | undefined {
   if (
@@ -195,7 +195,7 @@ function parseParameter(entry: Record<string, unknown>): AppParameter[] {
   const declared = isParameterType(entry.type) ? entry.type : 'text';
   const choices =
     Array.isArray(entry.choices) &&
-    entry.choices.length > 0 &&
+    (declared === 'combobox' || entry.choices.length > 0) &&
     entry.choices.every((choice): choice is string => typeof choice === 'string')
       ? entry.choices
       : undefined;
@@ -207,7 +207,7 @@ function parseParameter(entry: Record<string, unknown>): AppParameter[] {
       label: entry.label,
       type,
       defaultValue: type === 'file' ? '' : typeof entry.defaultValue === 'string' ? entry.defaultValue : '',
-      ...(type === 'dropdown' && choices !== undefined ? { choices } : {}),
+      ...((type === 'dropdown' || type === 'combobox') && choices !== undefined ? { choices } : {}),
       ...(type === 'file' && isFileFormats(entry.fileFormats) ? { fileFormats: entry.fileFormats } : {}),
       ...(typeof entry.help === 'string' && entry.help !== '' ? { help: entry.help } : {}),
     },

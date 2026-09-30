@@ -47,7 +47,7 @@ const errText = (err: unknown): string => (err instanceof Error ? err.message : 
 type AppParameter = {
   name: string;
   label: string;
-  type: 'text' | 'number' | 'dropdown' | 'file';
+  type: 'text' | 'number' | 'dropdown' | 'combobox' | 'file';
   defaultValue: string;
   choices?: string[];
   fileFormats?: string[];
@@ -273,10 +273,12 @@ function parseManifest(raw: unknown): AppManifest | undefined {
           ? 'number'
           : entry.type === 'dropdown'
             ? 'dropdown'
-            : 'text';
+            : entry.type === 'combobox'
+              ? 'combobox'
+              : 'text';
     const choices =
       Array.isArray(entry.choices) &&
-      entry.choices.length > 0 &&
+      (declared === 'combobox' || entry.choices.length > 0) &&
       entry.choices.every((choice) => typeof choice === 'string')
         ? (entry.choices as string[])
         : undefined;
@@ -287,7 +289,7 @@ function parseManifest(raw: unknown): AppManifest | undefined {
         label: entry.label,
         type,
         defaultValue: type === 'file' ? '' : typeof entry.defaultValue === 'string' ? entry.defaultValue : '',
-        ...(type === 'dropdown' && choices !== undefined ? { choices } : {}),
+        ...((type === 'dropdown' || type === 'combobox') && choices !== undefined ? { choices } : {}),
         ...(type === 'file' && isFileFormats(entry.fileFormats) ? { fileFormats: entry.fileFormats } : {}),
         ...(typeof entry.help === 'string' && entry.help !== '' ? { help: entry.help } : {}),
       },

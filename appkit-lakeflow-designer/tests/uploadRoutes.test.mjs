@@ -11,6 +11,7 @@ import { build } from 'tsdown';
 let outputDirectory;
 let viewerKey;
 let parseRunSnapshot, LastRunLabel;
+let ParameterForm, parseAppManifest;
 let instance = 0;
 const harnessKey = Symbol.for('designer-upload-route-tests');
 const originalJobId = process.env.DATABRICKS_JOB_ID;
@@ -54,7 +55,10 @@ before(async () => {
   });
   ({ viewerKey } = await import(pathToFileURL(join(outputDirectory, 'fileUploads.mjs')).href));
   await build({
-    entry: { payload: 'client/src/payload.ts', LastRunLabel: 'client/src/LastRunLabel.tsx' },
+    entry: {
+      payload: 'client/src/payload.ts', LastRunLabel: 'client/src/LastRunLabel.tsx',
+      ParameterForm: 'client/src/ParameterForm.tsx', appConfig: 'client/src/appConfig.ts',
+    },
     config: false,
     tsconfig: 'tsconfig.client.json',
     noExternal: [/^@databricks\/appkit-ui(?:\/|$)/],
@@ -65,6 +69,8 @@ before(async () => {
   });
   ({ parseRunSnapshot } = await import(pathToFileURL(join(outputDirectory, 'payload.mjs')).href));
   ({ LastRunLabel } = await import(pathToFileURL(join(outputDirectory, 'LastRunLabel.mjs')).href));
+  ({ ParameterForm } = await import(pathToFileURL(join(outputDirectory, 'ParameterForm.mjs')).href));
+  ({ parseAppManifest } = await import(pathToFileURL(join(outputDirectory, 'appConfig.mjs')).href));
 });
 
 after(async () => {
@@ -317,6 +323,61 @@ test('rejects unsupported manifest versions and malformed optional storage', asy
     state.manifest = invalid;
     assert.equal((await request('post', '/api/designer/run')).status, 409);
   }
+  assert.deepEqual(state.submissions, []);
+});
+
+for (const choices of [['us-west', 'us-east'], [], undefined, [42]]) {
+  // @ui-test-skill-generated
+  test(`projects and renders a published combobox with suggestions ${JSON.stringify(choices)}`, async () => {
+    const { state, request } = await serverHarness();
+    const parameter = { name: 'region', label: 'Region', type: 'combobox', defaultValue: 'custom' };
+    state.manifest = { ...manifest, storage: undefined, parameters: [{ ...parameter, choices }] };
+    const response = await request('get', '/api/designer/config');
+    assert.equal(response.status, 200);
+    const validChoices = Array.isArray(choices) && choices.every((choice) => typeof choice === 'string');
+    const expected = { ...parameter, ...(validChoices ? { choices } : {}) };
+    assert.deepEqual(response.body.manifest.parameters, [expected]);
+    const parsed = parseAppManifest(response.body.manifest);
+    assert.deepEqual(parsed.parameters, [expected]);
+
+    const html = renderToStaticMarkup(createElement(ParameterForm, {
+      parameters: parsed.parameters, values: {}, onChange: () => {}, onRun: () => {}, running: false, runnable: true,
+    }));
+    assert.match(html, /for="region"[^>]*>Region<\/label>/);
+    assert.match(html, /<input[^>]*id="region"[^>]*value="custom"/);
+    const listId = html.match(/\blist="([^"]+)"/)?.[1];
+    assert.ok(listId);
+    assert.ok(html.includes(`<datalist id="${listId}">`));
+    if (validChoices) {
+      for (const choice of choices) assert.ok(html.includes(`<option value="${choice}">`));
+    }
+    assert.equal(html.includes('<option'), validChoices && choices.length > 0);
+  });
+}
+
+for (const value of ['us-east', 'custom-value']) {
+  // @ui-test-skill-generated
+  test(`submits the combobox value ${value} without enforcing its suggestions`, async () => {
+    const { state, request } = await serverHarness();
+    state.manifest = {
+      ...manifest, storage: undefined,
+      parameters: [{ name: 'region', label: 'Region', type: 'combobox', defaultValue: 'us-west', choices: ['us-west', 'us-east'] }],
+    };
+    const response = await request('post', '/api/designer/run', { body: { params: { region: value } } });
+    assert.equal(response.status, 200);
+    assert.equal(state.submissions.at(-1).notebook_params.region, value);
+  });
+}
+
+// @ui-test-skill-generated
+test('still rejects custom values for a fixed-domain dropdown', async () => {
+  const { state, request } = await serverHarness();
+  state.manifest = {
+    ...manifest, storage: undefined,
+    parameters: [{ name: 'region', label: 'Region', type: 'dropdown', defaultValue: 'us-west', choices: ['us-west', 'us-east'] }],
+  };
+  const response = await request('post', '/api/designer/run', { body: { params: { region: 'custom-value' } } });
+  assert.equal(response.status, 400);
   assert.deepEqual(state.submissions, []);
 });
 

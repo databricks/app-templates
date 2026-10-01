@@ -12,7 +12,8 @@ import {
   type WrittenFiles,
 } from '../shared/fileOutputs';
 import { canAccessRun } from './fileUploads';
-import { isLegacyExportRun, manifestRevision, runParameters, type FileOutputManifest } from './runRevision';
+import { isLegacyExportRun, manifestRevision, type FileOutputManifest } from './runRevision';
+import { runJobParameters } from './jobParameters';
 import type { OutputFileStore } from './outputFileStore';
 
 const record = (value: unknown): value is Record<string, unknown> =>
@@ -83,7 +84,7 @@ export function registerOutputFileRoutes(app: Pick<Application, 'get'>, deps: De
       ) {
         throw new DownloadError(404, 'Run not found.');
       }
-      const params = runParameters(run);
+      const params = runJobParameters(run);
       if (params[APP_REVISION_PARAM] !== manifestRevision(manifest)) {
         throw new DownloadError(
           409,

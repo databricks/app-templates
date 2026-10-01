@@ -36,11 +36,11 @@ async function harness(t) {
     run: {
       run_id: 1, job_id: 10, state: { life_cycle_state: 'TERMINATED', result_state: 'SUCCESS' },
       tasks: [{ run_id: 2, notebook_task: { notebook_path: notebookPath } }],
-      overriding_parameters: { notebook_params: {
+      job_parameters: Object.entries({
         _lb_app_viewer: viewer,
         _lb_app_revision: manifestRevision(manifest),
         _lb_file_outputs: JSON.stringify({ output_0: manifest.blocks[0].fileOutput }),
-      } },
+      }).map(([name, value]) => ({ name, value })),
     },
   };
   const files = new Map([['/Volumes/main/apps/files/report.csv', Buffer.from('price\n42\n')]]);
@@ -125,15 +125,20 @@ test('presentation-only changes preserve downloads while execution changes requi
   assert.equal((await h.call()).status, 409);
 });
 
+function setRunParameter(run, name, value) {
+  run.job_parameters = run.job_parameters.filter((parameter) => parameter.name !== name);
+  if (value !== undefined) run.job_parameters.push({ name, value });
+}
+
 for (const [label, mutate, status] of [
   ['wrong job', (h) => { h.state.run.job_id = 11; }, 404],
-  ['wrong owner', (h) => { h.state.run.overriding_parameters.notebook_params._lb_app_viewer = 'other'; }, 404],
-  ['missing owner', (h) => { delete h.state.run.overriding_parameters; }, 404],
-  ['legacy export run', (h) => { h.state.run.overriding_parameters.notebook_params._lb_export_request = '{}'; }, 404],
-  ['missing revision', (h) => { delete h.state.run.overriding_parameters.notebook_params._lb_app_revision; }, 409],
+  ['wrong owner', (h) => { setRunParameter(h.state.run, '_lb_app_viewer', 'other'); }, 404],
+  ['missing owner', (h) => { delete h.state.run.job_parameters; }, 404],
+  ['legacy export run', (h) => { setRunParameter(h.state.run, '_lb_export_request', '{}'); }, 404],
+  ['missing revision', (h) => { setRunParameter(h.state.run, '_lb_app_revision', undefined); }, 409],
   ['changed runner', (h) => { h.state.notebookPath += '-new'; }, 409],
-  ['missing run policy', (h) => { delete h.state.run.overriding_parameters.notebook_params._lb_file_outputs; }, 409],
-  ['changed run policy', (h) => { h.state.run.overriding_parameters.notebook_params._lb_file_outputs = JSON.stringify({ output_0: { volumes: ['main.apps.other'] } }); }, 409],
+  ['missing run policy', (h) => { setRunParameter(h.state.run, '_lb_file_outputs', undefined); }, 409],
+  ['changed run policy', (h) => { setRunParameter(h.state.run, '_lb_file_outputs', JSON.stringify({ output_0: { volumes: ['main.apps.other'] } })); }, 409],
   ['missing artifact', (h) => { h.files.clear(); }, 404],
   ['missing receipt', (h) => { h.state.receipts = []; }, 404],
   ['duplicate receipt', (h) => { h.state.receipts.push(h.state.receipts[0]); }, 404],

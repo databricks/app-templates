@@ -14,7 +14,9 @@ let parseRunSnapshot, LastRunLabel;
 let ParameterForm, parseAppManifest, initialValuesFor;
 let instance = 0;
 const harnessKey = Symbol.for('designer-upload-route-tests');
-const originalJobId = process.env.DATABRICKS_JOB_ID;
+const originalRuntimeEnv = Object.fromEntries(
+  ['DATABRICKS_JOB_ID', 'DATABRICKS_APP_ID', 'DATABRICKS_CLIENT_ID'].map((name) => [name, process.env[name]]),
+);
 
 before(async () => {
   outputDirectory = await mkdtemp(fileURLToPath(new URL('../.upload-route-tests-', import.meta.url)));
@@ -37,7 +39,7 @@ before(async () => {
           if (id !== '\0appkit-test-boundary') return;
           return `
           const harness = globalThis[Symbol.for('designer-upload-route-tests')];
-          export const createWorkspaceClient = () => harness.client;
+          export const createWorkspaceClient = (options) => options?.token ? harness.userClient(options) : harness.client;
           export class ApiError extends Error {}
           export const server = () => ({ name: 'server' });
           export const files = (config) => ({ name: 'files', config });
@@ -75,8 +77,10 @@ before(async () => {
 
 after(async () => {
   delete globalThis[harnessKey];
-  if (originalJobId === undefined) delete process.env.DATABRICKS_JOB_ID;
-  else process.env.DATABRICKS_JOB_ID = originalJobId;
+  for (const [name, value] of Object.entries(originalRuntimeEnv)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
   if (outputDirectory) await rm(outputDirectory, { recursive: true });
 });
 
@@ -92,12 +96,15 @@ const manifest = {
   blocks: [{ type: 'output', id: 'data', label: 'Data', nodeId: 'source', port: 'data' }],
 };
 
-async function serverHarness() {
+async function serverHarness(options = {}) {
+  const appId = 'appId' in options ? options.appId : 'test-app-id';
+  const clientId = 'clientId' in options ? options.clientId : 'test-client-id';
   const routes = new Map();
   const middleware = [];
   const state = {
     manifest, runs: [], listed: [], reads: [], cancelled: [], outputReads: [], submissions: [], apps: [],
     notebookPath: '/Users/author/app/runner', notebookSource: '', workspaceReads: [], commands: undefined,
+    userProfile: { id: '123', displayName: ' Alice Smith ' }, profileError: undefined, profileReads: 0,
   };
   const stored = new Map();
   globalThis[harnessKey] = {
@@ -136,6 +143,7 @@ async function serverHarness() {
       });
     },
     client: {
+      config: { host: 'https://workspace.example.com' },
       jobs: {
         get: async () => ({ settings: { tasks: [{ notebook_task: { notebook_path: state.notebookPath } }] } }),
         getRun: async ({ run_id }) => {
@@ -179,8 +187,20 @@ async function serverHarness() {
         },
       }),
     },
+    userClient(options) {
+      assert.equal(options.host, 'https://workspace.example.com');
+      return { currentUser: { me: async () => {
+        state.profileReads += 1;
+        if (state.profileError) throw state.profileError;
+        return state.userProfile;
+      } } };
+    },
   };
   process.env.DATABRICKS_JOB_ID = '100';
+  if (appId === undefined) delete process.env.DATABRICKS_APP_ID;
+  else process.env.DATABRICKS_APP_ID = appId;
+  if (clientId === undefined) delete process.env.DATABRICKS_CLIENT_ID;
+  else process.env.DATABRICKS_CLIENT_ID = clientId;
   await import(`${pathToFileURL(join(outputDirectory, 'server.mjs')).href}?instance=${++instance}`);
   const request = async (method, path, { viewer = 'alice', params = {}, body, headers = {}, bytes } = {}) => {
     const req = Object.assign(Readable.from(bytes ? [bytes] : []), {
@@ -222,9 +242,161 @@ function run(id, owner, params = {}) {
     end_time: id + 1,
     state: { life_cycle_state: 'TERMINATED', result_state: 'SUCCESS' },
     tasks: [{ run_id: id + 1000 }],
-    overriding_parameters: { notebook_params: { _lb_app_viewer: viewerKey(owner, '100'), ...params } },
+    job_parameters: Object.entries({ _lb_app_viewer: viewerKey(owner, '100'), ...params })
+      .map(([name, value]) => ({ name, value })),
   };
 }
+
+test('records trusted ingress identity, resolved Designer inputs and fresh submission IDs', async () => {
+  const { state, request } = await serverHarness();
+  state.manifest = {
+    ...manifest, storage: undefined,
+    parameters: [
+      { name: 'message', label: 'Message', type: 'text', defaultValue: 'Hello' },
+      { name: 'regions', label: 'Regions', type: 'multiselect', defaultValue: 'East', choices: ['East', 'West'] },
+    ],
+  };
+  const body = { params: {
+    regions: '', _lb_app_user_id: 'mallory', _lb_app_user_name: 'Mallory',
+    _lb_app_id: 'other-app', _lb_app_parameters: '{}', _lb_app_submission_id: 'reuse-this',
+  } };
+  for (let index = 0; index < 2; index += 1) {
+    const response = await request('post', '/api/designer/run', {
+      viewer: '123@456',
+      headers: { 'x-forwarded-preferred-username': ' Alice Smith ', 'x-forwarded-email': 'alice@example.com' },
+      body,
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.body, { jobRunId: '1000' });
+    const params = state.submissions[index].job_parameters;
+    assert.equal(params._lb_app_id, 'test-app-id');
+    assert.equal(params._lb_app_user_id, '123');
+    assert.equal(params._lb_app_user_name, 'Alice Smith');
+    assert.equal(params._lb_app_user_email, 'alice@example.com');
+    assert.equal(params.message, 'Hello');
+    assert.equal(params.regions, '');
+    assert.deepEqual(JSON.parse(params._lb_app_parameters), {
+      message: { label: 'Message', type: 'text', value: 'Hello' },
+      regions: { label: 'Regions', type: 'multiselect', value: '' },
+    });
+    assert.match(params._lb_app_submission_id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  }
+  assert.notEqual(state.submissions[0].job_parameters._lb_app_submission_id, state.submissions[1].job_parameters._lb_app_submission_id);
+  assert.equal(state.profileReads, 0);
+});
+
+test('refuses an unauthenticated submission even for an App without files', async () => {
+  const { state, request } = await serverHarness();
+  state.manifest = { ...manifest, storage: undefined, parameters: [] };
+  const response = await request('post', '/api/designer/run', {
+    viewer: '', body: { params: { _lb_app_user_id: '123' } },
+  });
+  assert.equal(response.status, 401);
+  assert.deepEqual(state.submissions, []);
+});
+
+test('snapshots resolved defaults and labels without rewriting earlier submissions on republish', async () => {
+  const { state, request } = await serverHarness();
+  state.manifest = {
+    ...manifest, storage: undefined,
+    parameters: [{ name: 'regions', label: 'Original label', type: 'multiselect', defaultValue: 'East', choices: ['East', 'West'] }],
+  };
+  assert.equal((await request('post', '/api/designer/run')).status, 200);
+  state.manifest = {
+    ...state.manifest,
+    parameters: [{ ...state.manifest.parameters[0], label: 'Updated label', defaultValue: 'West' }],
+  };
+  assert.equal((await request('post', '/api/designer/run')).status, 200);
+  assert.deepEqual(state.submissions.map(({ job_parameters }) => JSON.parse(job_parameters._lb_app_parameters)), [
+    { regions: { label: 'Original label', type: 'multiselect', value: 'East' } },
+    { regions: { label: 'Updated label', type: 'multiselect', value: 'West' } },
+  ]);
+});
+
+test('refuses a submission when both runtime App ID and OAuth client ID are absent', async () => {
+  const { state, request } = await serverHarness({ appId: undefined, clientId: undefined });
+  state.manifest = { ...manifest, storage: undefined, parameters: [] };
+  assert.equal((await request('post', '/api/designer/run')).status, 409);
+  assert.deepEqual(state.submissions, []);
+});
+
+test('uses the standalone App service-principal UUID when the explicit App ID is absent', async () => {
+  const { state, request } = await serverHarness({ appId: undefined, clientId: '416bdf21-1504-4c1b-b48d-b5f87e424d7c' });
+  state.manifest = { ...manifest, storage: undefined, parameters: [] };
+  assert.equal((await request('post', '/api/designer/run')).status, 200);
+  assert.equal(state.submissions[0].job_parameters._lb_app_id, '416bdf21-1504-4c1b-b48d-b5f87e424d7c');
+});
+
+test('prefers the explicit App ID over the OAuth client ID', async () => {
+  const { state, request } = await serverHarness({ appId: 'explicit-app-id', clientId: 'client-id' });
+  state.manifest = { ...manifest, storage: undefined, parameters: [] };
+  assert.equal((await request('post', '/api/designer/run')).status, 200);
+  assert.equal(state.submissions[0].job_parameters._lb_app_id, 'explicit-app-id');
+});
+
+test('resolves a display name with the forwarded user token and normalized ingress ID', async () => {
+  const { state, request } = await serverHarness();
+  state.manifest = { ...manifest, storage: undefined, parameters: [] };
+  assert.equal((await request('post', '/api/designer/run', {
+    viewer: '123@456', headers: {
+      'x-forwarded-preferred-username': 'alice@example.com', 'x-forwarded-email': 'alice@example.com',
+      'x-forwarded-access-token': 'user-oauth-token',
+    },
+  })).status, 200);
+  const params = state.submissions[0].job_parameters;
+  assert.equal(params._lb_app_user_id, '123');
+  assert.equal(params._lb_app_user_name, 'Alice Smith');
+  assert.equal(params._lb_app_user_email, 'alice@example.com');
+});
+
+for (const [label, profile, error] of [
+  ['profile belongs to another user', { id: '999', displayName: 'Other User' }, undefined],
+  ['profile has no display name', { id: '123', displayName: ' ' }, undefined],
+  ['profile lookup is unavailable', undefined, new Error('profile service unavailable')],
+]) {
+  test(`retains verified ingress attribution when ${label}`, async () => {
+    const { state, request } = await serverHarness();
+    state.manifest = { ...manifest, storage: undefined, parameters: [] };
+    state.userProfile = profile;
+    state.profileError = error;
+    assert.equal((await request('post', '/api/designer/run', {
+      viewer: '123@456', headers: {
+        'x-forwarded-email': 'alice@example.com', 'x-forwarded-access-token': 'user-oauth-token',
+      },
+    })).status, 200);
+    const params = state.submissions[0].job_parameters;
+    assert.equal(params._lb_app_user_id, '123');
+    assert.equal(params._lb_app_user_name, 'alice@example.com');
+    assert.equal(params._lb_app_user_email, 'alice@example.com');
+  });
+}
+
+test('retains an ingress display name without requiring a profile lookup', async () => {
+  const { state, request } = await serverHarness();
+  state.manifest = { ...manifest, storage: undefined, parameters: [] };
+  state.profileError = new Error('should not be needed');
+  assert.equal((await request('post', '/api/designer/run', {
+    viewer: '123@456', headers: {
+      'x-forwarded-preferred-username': 'Ingress Name', 'x-forwarded-email': 'alice@example.com',
+      'x-forwarded-access-token': 'user-oauth-token',
+    },
+  })).status, 200);
+  assert.equal(state.submissions[0].job_parameters._lb_app_user_name, 'Ingress Name');
+  assert.equal(state.profileReads, 0);
+});
+
+test('uses email or the unchanged ingress subject when no user token is forwarded', async () => {
+  const { state, request } = await serverHarness();
+  state.manifest = { ...manifest, storage: undefined, parameters: [] };
+  state.profileError = new Error('no forwarded token');
+  for (const headers of [{ 'x-forwarded-email': 'alice@example.com' }, {}]) {
+    assert.equal((await request('post', '/api/designer/run', { viewer: '123@example.com', headers })).status, 200);
+    const params = state.submissions.at(-1).job_parameters;
+    assert.equal(params._lb_app_user_id, '123@example.com');
+    assert.equal(params._lb_app_user_name, headers['x-forwarded-email'] || '123@example.com');
+  }
+  assert.equal(state.profileReads, 0);
+});
 
 for (const filename of ['sales.csv', 'sales.xlsx', 'data.json', 'data.csv.gz', 'carmax_car_prices copy (1).xlsx', 'データ.xlsx']) {
   test(`shows ${filename} on completion without refreshing and preserves it in history`, async () => {
@@ -283,7 +455,7 @@ test('live status preserves ordinary parameters and leaves missing recorded valu
   assert.deepEqual(snapshot.parameters, { year: '2016' });
   assert.equal(snapshot.parameterDisplayValues, undefined);
 
-  delete state.runs[0].overriding_parameters;
+  delete state.runs[0].job_parameters;
   response = await request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: '10' } });
   snapshot = parseRunSnapshot(response.body);
   assert.equal(snapshot.parameters, undefined);
@@ -345,13 +517,12 @@ for (const choices of [['us-west', 'us-east'], [], undefined, [42]]) {
     }));
     assert.match(html, /for="region"[^>]*>Region<\/label>/);
     assert.match(html, /<input[^>]*id="region"[^>]*value="custom"/);
-    const listId = html.match(/\blist="([^"]+)"/)?.[1];
-    assert.ok(listId);
-    assert.ok(html.includes(`<datalist id="${listId}">`));
-    if (validChoices) {
-      for (const choice of choices) assert.ok(html.includes(`<option value="${choice}">`));
-    }
-    assert.equal(html.includes('<option'), validChoices && choices.length > 0);
+    const input = html.match(/<input\b[^>]*id="region"[^>]*>/)?.[0];
+    assert.ok(input);
+    assert.match(input, /role="combobox"/);
+    assert.match(input, /aria-autocomplete="list"/);
+    assert.match(input, /aria-expanded="false"/);
+    assert.match(html, /<button[^>]*aria-label="Show suggestions for Region"/);
   });
 }
 
@@ -365,7 +536,7 @@ for (const value of ['us-east', 'custom-value']) {
     };
     const response = await request('post', '/api/designer/run', { body: { params: { region: value } } });
     assert.equal(response.status, 200);
-    assert.equal(state.submissions.at(-1).notebook_params.region, value);
+    assert.equal(state.submissions.at(-1).job_parameters.region, value);
   });
 }
 
@@ -418,9 +589,9 @@ for (const [description, submitted, expected] of [
     const response = await request('post', '/api/designer/run', { body: { params } });
     assert.equal(response.status, 200);
     assert.equal(state.submissions.length, 1);
-    assert.equal(state.submissions[0].notebook_params.region, expected);
-    assert.equal(state.submissions[0].notebook_params.ld_display_outputs_for, 'source');
-    assert.equal(state.submissions[0].notebook_params._lb_collect_row_counts, 'true');
+    assert.equal(state.submissions[0].job_parameters.region, expected);
+    assert.equal(state.submissions[0].job_parameters.ld_display_outputs_for, 'source');
+    assert.equal(state.submissions[0].job_parameters._lb_collect_row_counts, 'true');
   });
 }
 
@@ -541,18 +712,18 @@ test('file-only runs carry server-owned destination, revision, counts and owners
   };
   assert.equal((await request('post', '/api/designer/run')).status, 200);
   const submission = state.submissions[0];
-  assert.deepEqual(JSON.parse(submission.notebook_params._lb_file_outputs), { source: { volumes: ['main.default.files'] } });
-  assert.equal(submission.notebook_params._lb_collect_row_counts, 'true');
-  assert.equal(submission.notebook_params.ld_display_outputs_for, 'source');
-  assert.equal(submission.notebook_params._lb_app_viewer, viewerKey('alice', '100'));
-  assert.match(submission.notebook_params._lb_app_revision, /^file-outputs-v1:/);
-  assert.match(submission.notebook_params._lb_output_namespace, /^[0-9a-f-]{36}$/);
+  assert.deepEqual(JSON.parse(submission.job_parameters._lb_file_outputs), { source: { volumes: ['main.default.files'] } });
+  assert.equal(submission.job_parameters._lb_collect_row_counts, 'true');
+  assert.equal(submission.job_parameters.ld_display_outputs_for, 'source');
+  assert.equal(submission.job_parameters._lb_app_viewer, viewerKey('alice', '100'));
+  assert.match(submission.job_parameters._lb_app_revision, /^file-outputs-v1:/);
+  assert.match(submission.job_parameters._lb_output_namespace, /^[0-9a-f-]{36}$/);
   assert.equal((await request('post', '/api/designer/run', {
-    body: { params: { _lb_output_namespace: submission.notebook_params._lb_output_namespace } },
+    body: { params: { _lb_output_namespace: submission.job_parameters._lb_output_namespace } },
   })).status, 200);
-  assert.notEqual(state.submissions[1].notebook_params._lb_output_namespace, submission.notebook_params._lb_output_namespace);
-  assert.equal((await request('post', '/api/designer/run', { viewer: '' })).status, 400);
-  state.runs = [run(10, 'alice', submission.notebook_params)];
+  assert.notEqual(state.submissions[1].job_parameters._lb_output_namespace, submission.job_parameters._lb_output_namespace);
+  assert.equal((await request('post', '/api/designer/run', { viewer: '' })).status, 401);
+  state.runs = [run(10, 'alice', submission.job_parameters)];
   assert.equal((await request('get', '/api/designer/run/:jobRunId', { viewer: 'bob', params: { jobRunId: '10' } })).status, 404);
 });
 
@@ -563,9 +734,9 @@ test('preview-only submissions override any stale writer defaults with an explic
     body: { params: { _lb_file_outputs: '{"hidden_writer":{"volumes":["main.apps.files"]}}' } },
   });
   assert.equal(response.status, 200);
-  assert.equal(state.submissions[0].notebook_params._lb_file_outputs, '{}');
-  assert.equal(state.submissions[0].notebook_params._lb_collect_row_counts, 'true');
-  assert.equal(state.submissions[0].notebook_params._lb_app_viewer, undefined);
+  assert.equal(state.submissions[0].job_parameters._lb_file_outputs, '{}');
+  assert.equal(state.submissions[0].job_parameters._lb_collect_row_counts, 'true');
+  assert.equal(state.submissions[0].job_parameters._lb_app_viewer, undefined);
 });
 
 test('last-run and terminal status include file receipts without table preview or upload storage', async () => {
@@ -611,12 +782,15 @@ test('enables plugin storage on republish and binds a completed upload to a run'
   assert.equal(response.status, 201);
   assert.deepEqual(state.apps.map((plugins) => plugins.map(({ name }) => name)), [['server'], ['files']]);
   assert.equal((await request('post', '/api/designer/run', { body: { params: { path: response.body.upload.reference } } })).status, 200);
-  const submitted = state.submissions.at(-1).notebook_params;
+  const submitted = state.submissions.at(-1).job_parameters;
   assert.ok(submitted.path.startsWith(`${manifest.storage.path}/uploads/${viewerKey('alice', '100')}/`));
   assert.ok(submitted.path.endsWith(`/${response.body.upload.reference.slice('upload:'.length)}/data.json`));
   assert.equal(submitted.ld_display_outputs_for, 'source');
   assert.equal(submitted._lb_collect_row_counts, 'true');
   assert.equal(submitted._lb_app_viewer, viewerKey('alice', '100'));
+  assert.deepEqual(JSON.parse(submitted._lb_app_parameters), {
+    path: { label: 'CSV', type: 'file', value: 'data.json' },
+  });
   // Only the backend-only instance receives the files plugin: no generic file routes on the HTTP server.
   assert.equal(state.apps.length, 2);
 });

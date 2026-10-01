@@ -12,6 +12,36 @@ Per-app differences are injected at deploy time rather than baked into the sourc
   publish flow beside the runner notebook in its publisher-owned workspace folder. The server
   derives that folder from the bound job's notebook path; no shared manifest root is needed.
 
+## Run attribution and usage reporting
+
+Every App submission uses Jobs `job_parameters`. The server records the submitting user's
+`X-Forwarded-User` ID and `X-Forwarded-Email`, together with the runtime App ID and a unique submission
+ID. Numeric `user@workspace` ingress subjects are recorded as the user ID. When the preferred-name
+header contains only an email, the server uses the forwarded user token to read that user's profile
+and snapshot their display name. An unavailable profile falls back to ingress email, then user ID.
+Submissions without authenticated ingress identity or a runtime App ID are refused before starting
+a Job. These headers must come from the trusted Apps ingress in production.
+
+The explicit `DATABRICKS_APP_ID` takes precedence. Standalone Apps on older runtimes expose only
+`DATABRICKS_CLIENT_ID`; their App service principal uses the App UUID, so that OAuth client ID is
+the fallback. This template targets standalone Apps; App-space service principals have a different
+identity relationship.
+
+The reserved parameters are `_lb_app_id`, `_lb_app_user_id`, `_lb_app_user_name`,
+`_lb_app_user_email`, `_lb_app_submission_id` and `_lb_app_parameters`. The last contains a JSON
+map of exposed Designer inputs with their labels, types and resolved values, including defaults
+and explicit empty multi-selects. File inputs report the uploaded filename; the actual execution
+parameter remains the validated UC file path. Consumer parameters cannot override `_lb_` metadata.
+Names and input labels reflect the time of submission, so republishing does not rewrite past runs.
+
+Designer can create a workspace-scoped UC reporting view and AI/BI dashboard when publishing.
+The source is `system.lakeflow.job_run_timeline`, which retains job-level parameters; no OTel
+delivery is required for a run to be attributed. The report combines timeline slices into one
+row per Job run and derives elapsed time from timestamps. Owners can query the reporting view
+with SQL. Dashboard access is separate from App access and publishing does not embed credentials.
+System-table updates are delayed and retain 365 days of history. This is a greenfield run contract;
+there is no reader for deprecated notebook-parameter runs or historical backfill.
+
 ## Layout
 
 - `server/server.ts` — the Node/AppKit server (TypeScript). Type-checked and bundled by

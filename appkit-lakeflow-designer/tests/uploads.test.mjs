@@ -115,6 +115,7 @@ test('substitutes only completed owned uploads and stamps ownership for run para
     ld_display_outputs_for: 'source',
     _lb_collect_row_counts: 'true',
     _lb_app_viewer: owner,
+    _lb_app_parameters: JSON.stringify({ path: { label: 'Data', type: 'file', value: 'data.csv' } }),
   });
   for (const value of ['', '/Volumes/main/default/uploads/author.csv', '../../file', 'upload:bad-id']) {
     assert.equal((await parameters.resolveRunParameters(manifest, { path: value }, owner, store)).ok, false);
@@ -245,6 +246,7 @@ for (const filename of ['data.csv', 'workbook.xlsx', 'workbook.xls', 'data.json'
         ld_display_outputs_for: 'source',
         _lb_collect_row_counts: 'true',
         _lb_app_viewer: viewer,
+        _lb_app_parameters: JSON.stringify({ path: { label: 'Data', type: 'file', value: filename } }),
       },
     });
     assert.equal(store.files.size, 2);
@@ -264,7 +266,7 @@ test('refuses an upload whose completion record contains an invalid filename', a
 test('run ownership protects history, results and cancellation even after upload inputs are removed', () => {
   const alice = uploads.viewerKey('alice', '100');
   const bob = uploads.viewerKey('bob', '100');
-  const privateRun = { overriding_parameters: { notebook_params: { _lb_app_viewer: alice } } };
+  const privateRun = { job_parameters: [{ name: '_lb_app_viewer', value: alice }] };
   for (const privateApp of [true, false]) {
     assert.equal(uploads.canAccessRun(privateRun, alice, privateApp), true);
     assert.equal(uploads.canAccessRun(privateRun, bob, privateApp), false);
@@ -323,7 +325,9 @@ test('ordinary parameters retain defaults and dropdown validation without owners
   };
   assert.deepEqual(await parameters.resolveRunParameters(regular, {}, undefined, memoryStore()), {
     ok: true,
-    params: { choice: 'A', _lb_file_outputs: '{}' },
+    params: { choice: 'A', _lb_file_outputs: '{}',
+      _lb_app_parameters: JSON.stringify({ choice: { label: 'Choice', type: 'dropdown', value: 'A' } }),
+    },
   });
   assert.equal((await parameters.resolveRunParameters(regular, { choice: 'C' }, undefined, memoryStore())).ok, false);
 });

@@ -4,6 +4,7 @@ import { APP_VIEWER_PARAM, UploadError, resolveUpload, type UploadStore } from '
 import { validateFileFormat } from '../shared/fileFormats';
 import { FILE_OUTPUTS_PARAM, OUTPUT_NAMESPACE_PARAM, type FileOutputConfig } from '../shared/fileOutputs';
 import { isValidMultiselectConfig, isValidMultiselectValue } from '../shared/multiselect';
+import { APP_PARAMETERS_PARAM } from './runAttribution';
 
 export function isReservedParameter(name: string): boolean {
   return name === 'target_node' || name === 'ld_display_outputs' || name === 'ld_display_outputs_for' || name.startsWith('_lb_');
@@ -42,6 +43,7 @@ export async function resolveRunParameters(
   store: UploadStore,
 ): Promise<{ ok: true; params: Record<string, string> } | { ok: false; error: string }> {
   const params: Record<string, string> = {};
+  const filenames = new Map<string, string>();
   const fileOutputs = Object.fromEntries(
     (manifest.blocks ?? []).flatMap((block) =>
       block.type === 'output' && block.nodeId && block.fileOutput ? [[block.nodeId, block.fileOutput]] : [],
@@ -73,6 +75,7 @@ export async function resolveRunParameters(
         const formatError = validateFileFormat(upload.filename, parameter.fileFormats);
         if (formatError) return { ok: false, error: formatError };
         params[parameter.name] = path;
+        filenames.set(parameter.name, upload.filename);
       } catch (error) {
         return {
           ok: false,
@@ -89,9 +92,8 @@ export async function resolveRunParameters(
     }
     params[parameter.name] = resolved;
   }
-  // Supplying notebook_params on run-now can replace the runner job's base parameters. Always
-  // carry the server-owned display controls with the viewer's values so selected source operators
-  // (and every other published output) render for parameterized runs as well.
+  // Override all server-owned controls so a partially completed republish cannot change this
+  // manifest's output policy through newer Job defaults.
   const displayedNodes = displayOutputsFor(manifest);
   if (displayedNodes !== '') {
     params[DISPLAY_OUTPUTS_FOR_PARAM] = displayedNodes;
@@ -104,5 +106,13 @@ export async function resolveRunParameters(
   // Consumer parameters must not choose/reuse a previous run's artifact directory.
   if (Object.keys(fileOutputs).length > 0) params[OUTPUT_NAMESPACE_PARAM] = randomUUID();
   if (privateApp && viewer) params[APP_VIEWER_PARAM] = viewer;
+  // Preserve labels and resolved values at submission time, including inputs later removed or
+  // renamed on republish. File reporting exposes the filename rather than its private storage path.
+  params[APP_PARAMETERS_PARAM] = JSON.stringify(Object.fromEntries(
+    manifest.parameters.filter(({ name }) => !isReservedParameter(name)).map((parameter) => [
+      parameter.name,
+      { label: parameter.label, type: parameter.type, value: filenames.get(parameter.name) ?? params[parameter.name] },
+    ]),
+  ));
   return { ok: true, params };
 }

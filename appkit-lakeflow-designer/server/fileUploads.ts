@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { MAX_UPLOAD_SIZE_LABEL, UPLOAD_REFERENCE, uploadStoragePath, type AppStorage } from '../shared/storageConfig';
+import { runJobParameters } from './jobParameters';
 
 export const APP_VIEWER_PARAM = '_lb_app_viewer';
 
@@ -22,11 +23,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export function canAccessRun(run: unknown, viewer: string | undefined, privateApp: boolean): boolean {
-  if (!isRecord(run) || !isRecord(run.overriding_parameters) || !isRecord(run.overriding_parameters.notebook_params)) {
-    // Callers must hydrate list entries with getRun first; a missing parameter map cannot prove ownership.
-    return !privateApp;
-  }
-  const owner = run.overriding_parameters.notebook_params[APP_VIEWER_PARAM];
+  const owner = runJobParameters(run)[APP_VIEWER_PARAM];
   if (owner === undefined) return !privateApp;
   return viewer !== undefined && owner === viewer;
 }

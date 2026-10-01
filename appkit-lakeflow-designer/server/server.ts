@@ -18,6 +18,8 @@ import {
   type FileOutputConfig,
 } from '../shared/fileOutputs';
 import { isFileFormats } from '../shared/fileFormats';
+import { runJobParameters } from './jobParameters';
+import { runAttribution } from './runAttribution';
 
 // Each published app's manifest is written by the publish flow beside the runner notebook, in the
 // app's own publisher-owned folder (not a shared, world-writable root), and read at startup via the
@@ -100,6 +102,9 @@ const JOB_ID = (() => {
   }
   return raw.trim();
 })();
+// Standalone Apps provision their service principal with the App UUID. Older runtimes expose
+// only that OAuth client ID; newer runtimes also provide the explicit App ID.
+const APP_ID = process.env.DATABRICKS_APP_ID?.trim() || process.env.DATABRICKS_CLIENT_ID?.trim();
 
 let workspaceClient: ReturnType<typeof createWorkspaceClient> | undefined;
 const wsClient = () => {
@@ -368,7 +373,7 @@ async function accessibleRun(
   if (
     hydrate &&
     isRecord(run) &&
-    (!isRecord(run.overriding_parameters) || !isRecord(run.overriding_parameters.notebook_params))
+    !Array.isArray(run.job_parameters)
   ) {
     const id = idFrom(run.run_id);
     if (!id) return undefined;
@@ -652,13 +657,12 @@ function summarizeLastRun(run: Record<string, unknown>): RunSummary | undefined 
 function runParameterData(
   run: Record<string, unknown>,
 ): Pick<RunSummary, 'parameters' | 'parameterDisplayValues'> | undefined {
-  const overriding = run.overriding_parameters;
-  if (!isRecord(overriding) || !isRecord(overriding.notebook_params)) {
+  if (!Array.isArray(run.job_parameters)) {
     return undefined;
   }
   const params: Record<string, string> = {};
   const displayValues: Record<string, string> = {};
-  for (const [name, value] of Object.entries(overriding.notebook_params)) {
+  for (const [name, value] of Object.entries(runJobParameters(run))) {
     if (
       isReservedParameter(name) ||
       typeof value !== 'string'
@@ -920,6 +924,17 @@ await createApp({
             res.status(409).json({ error: 'This app is not connected to a job yet, so it cannot run.' });
             return;
           }
+          if (!APP_ID) {
+            res.status(409).json({ error: 'This app has no runtime App ID, so it cannot attribute Job runs.' });
+            return;
+          }
+          const attribution = await runAttribution(req, APP_ID, (token) =>
+            createWorkspaceClient({ host: wsClient().config.host, token }).currentUser.me(),
+          );
+          if (!attribution) {
+            res.status(401).json({ error: 'Sign in through Databricks Apps to run this app.' });
+            return;
+          }
           const submitted = isRecord(req.body) && isRecord(req.body.params) ? req.body.params : {};
           const resolved = await resolveRunParameters(
             manifest,
@@ -934,7 +949,10 @@ await createApp({
 
           // Writes MUST NEVER BE retried; replaying runNow can start duplicate compute.
           resolved.params[APP_REVISION_PARAM] = manifestRevision(manifest);
-          const run = await wsClient().jobs.runNow({ job_id: Number(JOB_ID), notebook_params: resolved.params });
+          const run = await wsClient().jobs.runNow({
+            job_id: Number(JOB_ID),
+            job_parameters: { ...resolved.params, ...attribution },
+          });
           const jobRunId = idFrom(run?.run_id);
           if (jobRunId === undefined) {
             res.status(502).json({ error: 'The platform accepted the request but returned no run id.' });

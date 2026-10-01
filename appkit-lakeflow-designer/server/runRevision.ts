@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { FileOutputConfig } from '../shared/fileOutputs';
 import type { AppStorage } from '../shared/storageConfig';
+import { runJobParameters } from './jobParameters';
 
 export interface FileOutputManifest {
   storage?: AppStorage;
@@ -30,14 +31,5 @@ export function manifestRevision(manifest: FileOutputManifest): string {
   return `file-outputs-v1:${revision}`;
 }
 
-export const runParameters = (run: unknown): Record<string, unknown> => {
-  if (typeof run !== 'object' || run === null || !('overriding_parameters' in run)) return {};
-  const overrides = run.overriding_parameters;
-  if (typeof overrides !== 'object' || overrides === null || !('notebook_params' in overrides)) return {};
-  return typeof overrides.notebook_params === 'object' && overrides.notebook_params !== null
-    ? overrides.notebook_params as Record<string, unknown>
-    : {};
-};
-
 // Old converter runs can still be present in this Job's history after republishing.
-export const isLegacyExportRun = (run: unknown) => typeof runParameters(run)._lb_export_request === 'string';
+export const isLegacyExportRun = (run: unknown) => typeof runJobParameters(run)._lb_export_request === 'string';

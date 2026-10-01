@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
 import { Readable } from 'node:stream';
 import { after, before, test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -9,6 +11,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { build } from 'tsdown';
 
 let outputDirectory;
+let permissionsServer;
+let workspaceHost;
 let viewerKey;
 let parseRunSnapshot, LastRunLabel;
 let ParameterForm, parseAppManifest, initialValuesFor;
@@ -19,6 +23,34 @@ const originalRuntimeEnv = Object.fromEntries(
 );
 
 before(async () => {
+  // Exercise the permission write over HTTP so SDK request serialization cannot be hidden by a stub.
+  permissionsServer = createServer(async (req, res) => {
+    const { state } = globalThis[harnessKey];
+    assert.equal(req.method, 'PATCH');
+    assert.equal(req.url, '/api/2.0/permissions/jobs/100');
+    assert.equal(req.headers.authorization, 'Bearer route-test-only');
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    const update = JSON.parse(body);
+    state.jobCalls.push('updatePermissions');
+    state.permissionUpdates.push({ job_id: '100', ...update });
+    res.setHeader('Content-Type', 'application/json');
+    if (state.permissionUpdateError) {
+      res.writeHead(403);
+      res.end(JSON.stringify({ message: state.permissionUpdateError.message }));
+      return;
+    }
+    if (!state.ignorePermissionUpdate) {
+      state.permissions.access_control_list ??= [];
+      state.permissions.access_control_list.push(...update.access_control_list.map(
+        ({ permission_level, ...principal }) => ({ ...principal, all_permissions: [{ permission_level }] }),
+      ));
+    }
+    res.end(JSON.stringify(state.permissions));
+  });
+  permissionsServer.listen(0, '127.0.0.1');
+  await once(permissionsServer, 'listening');
+  workspaceHost = `http://127.0.0.1:${permissionsServer.address().port}`;
   outputDirectory = await mkdtemp(fileURLToPath(new URL('../.upload-route-tests-', import.meta.url)));
   await build({
     entry: { server: 'server/server.ts', fileUploads: 'server/fileUploads.ts' },
@@ -76,6 +108,8 @@ before(async () => {
 });
 
 after(async () => {
+  permissionsServer?.closeAllConnections();
+  if (permissionsServer) await new Promise((resolve) => permissionsServer.close(resolve));
   delete globalThis[harnessKey];
   for (const [name, value] of Object.entries(originalRuntimeEnv)) {
     if (value === undefined) delete process.env[name];
@@ -110,6 +144,7 @@ async function serverHarness(options = {}) {
   };
   const stored = new Map();
   globalThis[harnessKey] = {
+    state,
     apps: state.apps,
     volume: {
       createDirectory: async () => {},
@@ -145,7 +180,12 @@ async function serverHarness(options = {}) {
       });
     },
     client: {
-      config: { host: 'https://workspace.example.com' },
+      config: {
+        host: workspaceHost,
+        getHost: async () => new URL(workspaceHost),
+        authenticate: async (headers) => headers.set('Authorization', 'Bearer route-test-only'),
+        hostType: () => 'workspaceHost',
+      },
       jobs: {
         get: async () => ({ settings: { tasks: [{ notebook_task: { notebook_path: state.notebookPath } }] } }),
         getRun: async ({ run_id }) => {
@@ -180,16 +220,6 @@ async function serverHarness(options = {}) {
           if (state.permissionReadError) throw state.permissionReadError;
           return state.permissions;
         },
-        updatePermissions: async (request) => {
-          state.jobCalls.push('updatePermissions');
-          state.permissionUpdates.push(request);
-          if (state.permissionUpdateError) throw state.permissionUpdateError;
-          state.permissions.access_control_list ??= [];
-          state.permissions.access_control_list.push(...request.access_control_list.map(
-            ({ permission_level, ...principal }) => ({ ...principal, all_permissions: [{ permission_level }] }),
-          ));
-          return state.permissions;
-        },
         runNow: async (request) => {
           state.jobCalls.push('runNow');
           state.submissions.push(request);
@@ -207,7 +237,7 @@ async function serverHarness(options = {}) {
       }),
     },
     userClient(options) {
-      assert.equal(options.host, 'https://workspace.example.com');
+      assert.equal(options.host, workspaceHost);
       return { currentUser: { me: async () => {
         state.profileReads += 1;
         if (state.profileError) throw state.profileError;
@@ -286,11 +316,11 @@ test('grants the ingress user Job visibility before running and preserves other 
     },
   };
   assert.equal((await request('post', '/api/designer/run', submission)).status, 200);
-  assert.deepEqual(state.permissionReads, [{ job_id: '100' }]);
+  assert.deepEqual(state.permissionReads, [{ job_id: '100' }, { job_id: '100' }]);
   assert.deepEqual(state.permissionUpdates, [{
     job_id: '100', access_control_list: [{ user_name: 'Alice@Example.com', permission_level: 'CAN_VIEW' }],
   }]);
-  assert.deepEqual(state.jobCalls, ['getPermissions', 'updatePermissions', 'runNow']);
+  assert.deepEqual(state.jobCalls, ['getPermissions', 'updatePermissions', 'getPermissions', 'runNow']);
   assert.deepEqual(state.permissions.access_control_list, [
     ...existingAcl,
     { user_name: 'Alice@Example.com', all_permissions: [{ permission_level: 'CAN_VIEW' }] },
@@ -302,7 +332,7 @@ test('grants the ingress user Job visibility before running and preserves other 
   assert.equal((await request('post', '/api/designer/run', submission)).status, 200);
   assert.equal(state.permissionUpdates.length, 1);
   assert.equal(state.submissions.length, 2);
-  assert.deepEqual(state.jobCalls.slice(3), ['getPermissions', 'runNow']);
+  assert.deepEqual(state.jobCalls.slice(4), ['getPermissions', 'runNow']);
 });
 
 for (const [permissionLevel, inherited] of [
@@ -361,6 +391,18 @@ for (const operation of ['read', 'grant']) {
     assert.deepEqual(state.submissions, []);
   });
 }
+
+test('does not start a Job when an accepted permission update leaves its ACL unchanged', async () => {
+  const { state, request } = await serverHarness();
+  state.manifest = { ...manifest, storage: undefined, parameters: [] };
+  state.ignorePermissionUpdate = true;
+  const response = await request('post', '/api/designer/run');
+  assert.equal(response.status, 502);
+  assert.match(response.body.error, /did not confirm your permission/);
+  assert.equal(state.permissionUpdates.length, 1);
+  assert.equal(state.permissionReads.length, 2);
+  assert.deepEqual(state.submissions, []);
+});
 
 test('records trusted ingress identity, resolved Designer inputs and fresh submission IDs', async () => {
   const { state, request } = await serverHarness();

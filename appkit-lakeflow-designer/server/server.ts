@@ -20,6 +20,7 @@ import {
 import { isFileFormats } from '../shared/fileFormats';
 import { runJobParameters } from './jobParameters';
 import { runAttribution } from './runAttribution';
+import { ensureJobViewPermission } from './jobPermissions';
 
 // Each published app's manifest is written by the publish flow beside the runner notebook, in the
 // app's own publisher-owned folder (not a shared, world-writable root), and read at startup via the
@@ -948,19 +949,7 @@ await createApp({
             return;
           }
 
-          // Every Jobs permission level includes viewing; preserve existing owner/manager grants.
-          const permissions = await wsClient().jobs.getPermissions({ job_id: JOB_ID });
-          const canView = permissions.access_control_list?.some(
-            (entry) =>
-              entry.user_name?.toLowerCase() === userName.toLowerCase() &&
-              entry.all_permissions?.some((permission) => permission.permission_level !== undefined),
-          );
-          if (!canView) {
-            await wsClient().jobs.updatePermissions({
-              job_id: JOB_ID,
-              access_control_list: [{ user_name: userName, permission_level: 'CAN_VIEW' }],
-            });
-          }
+          await ensureJobViewPermission(wsClient(), JOB_ID, userName);
 
           // Writes MUST NEVER BE retried; replaying runNow can start duplicate compute.
           resolved.params[APP_REVISION_PARAM] = manifestRevision(manifest);

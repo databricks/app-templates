@@ -26,8 +26,10 @@ before starting a Job. These headers must come from the trusted Apps ingress in 
 The server starts the saved runner Job with `runNow`. Before starting it, the server uses the
 verified ingress email as `user_name` to grant the submitter `CAN_VIEW` on that Job. Existing user
 permissions, including owner and manager grants, are retained; other principals' ACL entries are
-preserved by an incremental permissions update. A failed permissions read or grant prevents the run
-from starting. Both the local bundle and the Designer publish flow must bind the `job` resource with
+preserved by an incremental permissions update. The server reads the ACL again to confirm the grant;
+a failed read, grant or confirmation prevents the run from starting. The update uses SDK authentication
+with a native HTTP PATCH because `sdk-experimental` 0.17.0 omits PATCH request bodies. Both the local
+bundle and the Designer publish flow must bind the `job` resource with
 `CAN_MANAGE`; existing published Apps need their Job resource grant upgraded before adopting this
 template version.
 

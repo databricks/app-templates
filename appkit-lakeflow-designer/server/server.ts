@@ -24,7 +24,7 @@ import { runAttribution } from './runAttribution';
 // Each published app's manifest is written by the publish flow beside the runner notebook, in the
 // app's own publisher-owned folder (not a shared, world-writable root), and read at startup via the
 // app's own workspace client. The app locates that folder by reading its bound runner job's notebook
-// path (the `job` resource is guaranteed present, and the app can read it via its CAN_MANAGE_RUN
+// path (the `job` resource is guaranteed present, and the app can read it via its CAN_MANAGE
 // grant), then looks for the manifest file there. It lives outside the git-backed source and outside
 // client/dist, so it is never served publicly.
 const MANIFEST_FILENAME = 'designerApp.json';
@@ -931,7 +931,8 @@ await createApp({
           const attribution = await runAttribution(req, APP_ID, (token) =>
             createWorkspaceClient({ host: wsClient().config.host, token }).currentUser.me(),
           );
-          if (!attribution) {
+          const userName = attribution?._lb_app_user_email;
+          if (!attribution || !userName) {
             res.status(401).json({ error: 'Sign in through Databricks Apps to run this app.' });
             return;
           }
@@ -945,6 +946,20 @@ await createApp({
           if (!resolved.ok) {
             res.status(400).json({ error: resolved.error });
             return;
+          }
+
+          // Every Jobs permission level includes viewing; preserve existing owner/manager grants.
+          const permissions = await wsClient().jobs.getPermissions({ job_id: JOB_ID });
+          const canView = permissions.access_control_list?.some(
+            (entry) =>
+              entry.user_name?.toLowerCase() === userName.toLowerCase() &&
+              entry.all_permissions?.some((permission) => permission.permission_level !== undefined),
+          );
+          if (!canView) {
+            await wsClient().jobs.updatePermissions({
+              job_id: JOB_ID,
+              access_control_list: [{ user_name: userName, permission_level: 'CAN_VIEW' }],
+            });
           }
 
           // Writes MUST NEVER BE retried; replaying runNow can start duplicate compute.

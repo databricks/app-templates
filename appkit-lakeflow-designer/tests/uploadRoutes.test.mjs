@@ -105,6 +105,8 @@ async function serverHarness(options = {}) {
     manifest, runs: [], listed: [], reads: [], cancelled: [], outputReads: [], submissions: [], apps: [],
     notebookPath: '/Users/author/app/runner', notebookSource: '', workspaceReads: [], commands: undefined,
     userProfile: { id: '123', displayName: ' Alice Smith ' }, profileError: undefined, profileReads: 0,
+    permissions: { access_control_list: [] }, permissionReads: [], permissionUpdates: [], jobCalls: [],
+    permissionReadError: undefined, permissionUpdateError: undefined,
   };
   const stored = new Map();
   globalThis[harnessKey] = {
@@ -172,7 +174,24 @@ async function serverHarness(options = {}) {
         cancelRun: async ({ run_id }) => {
           state.cancelled.push(run_id);
         },
+        getPermissions: async (request) => {
+          state.jobCalls.push('getPermissions');
+          state.permissionReads.push(request);
+          if (state.permissionReadError) throw state.permissionReadError;
+          return state.permissions;
+        },
+        updatePermissions: async (request) => {
+          state.jobCalls.push('updatePermissions');
+          state.permissionUpdates.push(request);
+          if (state.permissionUpdateError) throw state.permissionUpdateError;
+          state.permissions.access_control_list ??= [];
+          state.permissions.access_control_list.push(...request.access_control_list.map(
+            ({ permission_level, ...principal }) => ({ ...principal, all_permissions: [{ permission_level }] }),
+          ));
+          return state.permissions;
+        },
         runNow: async (request) => {
+          state.jobCalls.push('runNow');
           state.submissions.push(request);
           return { run_id: 1000 };
         },
@@ -203,12 +222,13 @@ async function serverHarness(options = {}) {
   else process.env.DATABRICKS_CLIENT_ID = clientId;
   await import(`${pathToFileURL(join(outputDirectory, 'server.mjs')).href}?instance=${++instance}`);
   const request = async (method, path, { viewer = 'alice', params = {}, body, headers = {}, bytes } = {}) => {
+    const ingressHeaders = { 'x-forwarded-email': `${viewer}@example.com`, ...headers };
     const req = Object.assign(Readable.from(bytes ? [bytes] : []), {
       method: method.toUpperCase(),
       params,
       body,
       query: {},
-      get: (name) => (name === 'x-forwarded-user' ? viewer : headers[name]),
+      get: (name) => (name === 'x-forwarded-user' ? viewer : ingressHeaders[name]),
     });
     const response = { status: 200, body: undefined, headers: {} };
     const res = {
@@ -245,6 +265,101 @@ function run(id, owner, params = {}) {
     job_parameters: Object.entries({ _lb_app_viewer: viewerKey(owner, '100'), ...params })
       .map(([name, value]) => ({ name, value })),
   };
+}
+
+test('grants the ingress user Job visibility before running and preserves other principals', async () => {
+  const { state, request } = await serverHarness();
+  state.manifest = { ...manifest, storage: undefined, parameters: [] };
+  const existingAcl = [
+    { user_name: 'author@example.com', all_permissions: [{ permission_level: 'IS_OWNER' }] },
+    { service_principal_name: 'test-client-id', all_permissions: [{ permission_level: 'CAN_MANAGE' }] },
+    { group_name: 'existing-viewers', all_permissions: [{ permission_level: 'CAN_VIEW' }] },
+  ];
+  state.permissions = { access_control_list: structuredClone(existingAcl) };
+  const submission = {
+    viewer: '123@456',
+    headers: { 'x-forwarded-email': ' Alice@Example.com ', 'x-forwarded-preferred-username': 'Alice Smith' },
+    body: {
+      user_name: 'mallory@example.com',
+      access_control_list: [{ user_name: 'mallory@example.com', permission_level: 'CAN_MANAGE' }],
+      params: { _lb_app_user_email: 'mallory@example.com', _lb_app_user_name: 'Mallory' },
+    },
+  };
+  assert.equal((await request('post', '/api/designer/run', submission)).status, 200);
+  assert.deepEqual(state.permissionReads, [{ job_id: '100' }]);
+  assert.deepEqual(state.permissionUpdates, [{
+    job_id: '100', access_control_list: [{ user_name: 'Alice@Example.com', permission_level: 'CAN_VIEW' }],
+  }]);
+  assert.deepEqual(state.jobCalls, ['getPermissions', 'updatePermissions', 'runNow']);
+  assert.deepEqual(state.permissions.access_control_list, [
+    ...existingAcl,
+    { user_name: 'Alice@Example.com', all_permissions: [{ permission_level: 'CAN_VIEW' }] },
+  ]);
+  assert.equal(state.submissions[0].job_id, 100);
+  assert.equal(state.submissions[0].job_parameters._lb_app_user_email, 'Alice@Example.com');
+  assert.equal(state.submissions[0].job_parameters._lb_app_user_name, 'Alice Smith');
+
+  assert.equal((await request('post', '/api/designer/run', submission)).status, 200);
+  assert.equal(state.permissionUpdates.length, 1);
+  assert.equal(state.submissions.length, 2);
+  assert.deepEqual(state.jobCalls.slice(3), ['getPermissions', 'runNow']);
+});
+
+for (const [permissionLevel, inherited] of [
+  ['CAN_VIEW', false], ['CAN_MANAGE_RUN', false], ['CAN_MANAGE', false], ['IS_OWNER', false], ['CAN_VIEW', true],
+]) {
+  test(`retains ${inherited ? 'inherited ' : ''}${permissionLevel} without rewriting the user's grant`, async () => {
+    const { state, request } = await serverHarness();
+    state.manifest = { ...manifest, storage: undefined, parameters: [] };
+    state.permissions = { access_control_list: [{
+      user_name: 'ALICE@EXAMPLE.COM', all_permissions: [{ permission_level: permissionLevel, inherited }],
+    }] };
+    const before = structuredClone(state.permissions);
+    assert.equal((await request('post', '/api/designer/run')).status, 200);
+    assert.deepEqual(state.permissions, before);
+    assert.deepEqual(state.permissionUpdates, []);
+    assert.deepEqual(state.jobCalls, ['getPermissions', 'runNow']);
+    assert.equal(state.submissions.length, 1);
+  });
+}
+
+test('grants Job visibility when the permissions response has no ACL', async () => {
+  const { state, request } = await serverHarness();
+  state.manifest = { ...manifest, storage: undefined, parameters: [] };
+  state.permissions = {};
+  assert.equal((await request('post', '/api/designer/run')).status, 200);
+  assert.deepEqual(state.permissionUpdates, [{
+    job_id: '100', access_control_list: [{ user_name: 'alice@example.com', permission_level: 'CAN_VIEW' }],
+  }]);
+});
+
+test('requires an ingress email before granting permissions or starting a Job', async () => {
+  const { state, request } = await serverHarness();
+  state.manifest = { ...manifest, storage: undefined, parameters: [] };
+  for (const email of [undefined, '', '   ']) {
+    const response = await request('post', '/api/designer/run', {
+      viewer: '123@456',
+      headers: { 'x-forwarded-email': email, 'x-forwarded-preferred-username': 'Alice Smith' },
+      body: { user_name: 'alice@example.com', params: { _lb_app_user_email: 'alice@example.com' } },
+    });
+    assert.equal(response.status, 401);
+  }
+  assert.deepEqual(state.jobCalls, []);
+  assert.deepEqual(state.submissions, []);
+});
+
+for (const operation of ['read', 'grant']) {
+  test(`does not start a Job when its permission ${operation} fails`, async () => {
+    const { state, request } = await serverHarness();
+    state.manifest = { ...manifest, storage: undefined, parameters: [] };
+    state[operation === 'read' ? 'permissionReadError' : 'permissionUpdateError'] = new Error('Permission denied');
+    const response = await request('post', '/api/designer/run');
+    assert.equal(response.status, 502);
+    assert.match(response.body.error, /Permission denied/);
+    assert.equal(state.permissionReads.length, 1);
+    assert.equal(state.permissionUpdates.length, operation === 'read' ? 0 : 1);
+    assert.deepEqual(state.submissions, []);
+  });
 }
 
 test('records trusted ingress identity, resolved Designer inputs and fresh submission IDs', async () => {
@@ -292,6 +407,7 @@ test('refuses an unauthenticated submission even for an App without files', asyn
     viewer: '', body: { params: { _lb_app_user_id: '123' } },
   });
   assert.equal(response.status, 401);
+  assert.deepEqual(state.jobCalls, []);
   assert.deepEqual(state.submissions, []);
 });
 
@@ -385,16 +501,16 @@ test('retains an ingress display name without requiring a profile lookup', async
   assert.equal(state.profileReads, 0);
 });
 
-test('uses email or the unchanged ingress subject when no user token is forwarded', async () => {
+test('uses the ingress email as the display name when no user token is forwarded', async () => {
   const { state, request } = await serverHarness();
   state.manifest = { ...manifest, storage: undefined, parameters: [] };
   state.profileError = new Error('no forwarded token');
-  for (const headers of [{ 'x-forwarded-email': 'alice@example.com' }, {}]) {
-    assert.equal((await request('post', '/api/designer/run', { viewer: '123@example.com', headers })).status, 200);
-    const params = state.submissions.at(-1).job_parameters;
-    assert.equal(params._lb_app_user_id, '123@example.com');
-    assert.equal(params._lb_app_user_name, headers['x-forwarded-email'] || '123@example.com');
-  }
+  assert.equal((await request('post', '/api/designer/run', {
+    viewer: '123@example.com', headers: { 'x-forwarded-email': 'alice@example.com' },
+  })).status, 200);
+  const params = state.submissions[0].job_parameters;
+  assert.equal(params._lb_app_user_id, '123@example.com');
+  assert.equal(params._lb_app_user_name, 'alice@example.com');
   assert.equal(state.profileReads, 0);
 });
 
@@ -602,6 +718,7 @@ for (const value of ['unknown', 'us-west,unknown', 'us-west,', ',us-west', 'us-w
     const response = await request('post', '/api/designer/run', { body: { params: { region: value } } });
     assert.equal(response.status, 400);
     assert.equal(response.body.error, '"Regions" must contain only the offered choices.');
+    assert.deepEqual(state.jobCalls, []);
     assert.deepEqual(state.submissions, []);
   });
 }

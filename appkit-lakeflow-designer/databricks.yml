@@ -21,7 +21,7 @@ resources:
         - name: job
           job:
             id: ${var.runner_job_id}
-            permission: CAN_MANAGE_RUN
+            permission: CAN_MANAGE
 
 targets:
   dev:

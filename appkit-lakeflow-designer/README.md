@@ -7,7 +7,8 @@ git-backed (the app points at this repo; Databricks pulls, builds, and runs it).
 Per-app differences are injected at deploy time rather than baked into the source:
 
 - **Runner job** — bound as an app resource named `job`, surfaced to the server as the
-  `DATABRICKS_JOB_ID` env var via `app.yaml`'s `valueFrom`.
+  `DATABRICKS_JOB_ID` env var via `app.yaml`'s `valueFrom`. The App service principal needs
+  `CAN_MANAGE` on this Job to grant submitters permission to view runs.
 - **Manifest** (`designerApp.json`, which operators/parameters/markdown to render) — written by the
   publish flow beside the runner notebook in its publisher-owned workspace folder. The server
   derives that folder from the bound job's notebook path; no shared manifest root is needed.
@@ -18,9 +19,22 @@ Every App submission uses Jobs `job_parameters`. The server records the submitti
 `X-Forwarded-User` ID and `X-Forwarded-Email`, together with the runtime App ID and a unique submission
 ID. Numeric `user@workspace` ingress subjects are recorded as the user ID. When the preferred-name
 header contains only an email, the server uses the forwarded user token to read that user's profile
-and snapshot their display name. An unavailable profile falls back to ingress email, then user ID.
-Submissions without authenticated ingress identity or a runtime App ID are refused before starting
-a Job. These headers must come from the trusted Apps ingress in production.
+and snapshot their display name. An unavailable profile falls back to the ingress email.
+Submissions without authenticated ingress identity, an ingress email or a runtime App ID are refused
+before starting a Job. These headers must come from the trusted Apps ingress in production.
+
+The server starts the saved runner Job with `runNow`. Before starting it, the server uses the
+verified ingress email as `user_name` to grant the submitter `CAN_VIEW` on that Job. Existing user
+permissions, including owner and manager grants, are retained; other principals' ACL entries are
+preserved by an incremental permissions update. A failed permissions read or grant prevents the run
+from starting. Both the local bundle and the Designer publish flow must bind the `job` resource with
+`CAN_MANAGE`; existing published Apps need their Job resource grant upgraded before adopting this
+template version.
+
+This permission allows the user to view every run of this App's runner Job in Databricks Jobs,
+including other users' runs and results. It persists independently of App access, so removing a
+user's App access does not revoke their Job permission. History, results, cancellation and downloads
+inside the App continue to enforce per-viewer ownership.
 
 The explicit `DATABRICKS_APP_ID` takes precedence. Standalone Apps on older runtimes expose only
 `DATABRICKS_CLIENT_ID`; their App service principal uses the App UUID, so that OAuth client ID is

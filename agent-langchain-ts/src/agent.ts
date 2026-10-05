@@ -30,7 +30,7 @@ import { getAllTools } from "./tools.js";
 export interface AgentConfig {
   /**
    * Databricks model serving endpoint name or model ID
-   * Examples: "databricks-claude-sonnet-4-5", "databricks-gpt-5-6-sol"
+   * Examples: "databricks-claude-sonnet-4-5", "databricks-claude-sonnet-5-5"
    */
   model?: string;
 

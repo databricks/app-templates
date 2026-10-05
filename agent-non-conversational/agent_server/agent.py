@@ -68,7 +68,7 @@ async def invoke_handler(data: dict) -> dict:
 
         # Call LLM with structured output
         llm_response = openai_client.chat.completions.create(
-            model=os.getenv("LLM_MODEL", "databricks-gpt-5-6-sol"),
+            model=os.getenv("LLM_MODEL", "databricks-claude-sonnet-5-5"),
             messages=[{"role": "user", "content": prompt}],
         )
 

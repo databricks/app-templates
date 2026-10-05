@@ -210,3 +210,71 @@ def test_render_report_table_and_summary():
     first_row = [l for l in md.splitlines() if l.startswith("| dash-chatbot-app")][0]
     assert "❌ FAIL" in first_row
     assert "| rag-chat | build | build | ✅ pass |" in md
+
+
+# Task 2: Functional registry tests
+def test_four_exemplars_registered():
+    from functional_config import (
+        FUNCTIONAL_TEMPLATES, FunctionalTemplate, VALID_FAMILIES,
+    )
+    assert set(FUNCTIONAL_TEMPLATES) == {
+        "streamlit-database-app", "e2e-chatbot-app-next",
+        "mcp-server-hello-world", "agent-langgraph",
+    }
+    for ft in FUNCTIONAL_TEMPLATES.values():
+        assert ft.family in VALID_FAMILIES
+        assert ft.test["kind"] in {"node-playwright", "py-playwright", "mcp", "agent-api"}
+
+
+def test_missing_required_resource_is_reported():
+    from functional_config import FunctionalTemplate, missing_resources
+    ft = FunctionalTemplate(
+        name="x", family="streamlit", launch={}, test={"kind": "py-playwright"},
+        required_resources=("DATABRICKS_WAREHOUSE_ID",),
+    )
+    assert missing_resources(ft, {}) == ["DATABRICKS_WAREHOUSE_ID"]
+    assert missing_resources(ft, {"DATABRICKS_WAREHOUSE_ID": "w1"}) == []
+
+
+# Task 3: Local launch tests
+def test_build_launch_command_per_family():
+    from functional_config import FunctionalTemplate
+    from local_launch import build_launch_command
+
+    def _ft(family):
+        return FunctionalTemplate(name="t", family=family, launch={"dev_script": "dev"},
+                                  test={"kind": "x"}, required_resources=())
+
+    assert build_launch_command(_ft("streamlit"), 8501)[:2] == ["streamlit", "run"]
+    assert "--server.port" in build_launch_command(_ft("streamlit"), 8501)
+    assert build_launch_command(_ft("dash"), 8050)[0] in {"python", "uv"}
+    assert build_launch_command(_ft("node"), 3000)[:2] == ["npm", "run"]
+    assert build_launch_command(_ft("agent"), 8000)[:2] == ["uv", "run"]
+    assert build_launch_command(_ft("mcp"), 8000)[:2] == ["uv", "run"]
+
+
+def test_wait_ready_times_out():
+    import time
+    import pytest
+    from local_launch import wait_ready
+
+    t0 = time.time()
+    with pytest.raises(TimeoutError):
+        wait_ready("http://127.0.0.1:1", "/", deadline_s=2)
+    assert time.time() - t0 < 10
+
+
+# Task 4: Functional report tests
+def test_report_handles_absent_deployed():
+    from functional_report import render_functional_report
+
+    rows = [
+        {"template": "agent-langgraph", "family": "agent", "local": "pass", "deployed": "skip", "notes": ""},
+        {"template": "streamlit-database-app", "family": "streamlit", "local": "fail", "deployed": "skip", "notes": "widget missing"},
+    ]
+    md = render_functional_report(rows)
+    assert "| Template | Family | Local | Deployed | Notes |" in md
+    assert "streamlit-database-app" in md and "widget missing" in md
+    # failures sort first
+    assert md.index("streamlit-database-app") < md.index("agent-langgraph")
+    assert "1/2 local passed" in md

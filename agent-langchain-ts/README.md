@@ -322,7 +322,7 @@ npm run format
 
 Available Databricks foundation models:
 - `databricks-claude-sonnet-4-5`
-- `databricks-gpt-5-2`
+- `databricks-gpt-5-6-sol`
 - `databricks-meta-llama-3-3-70b-instruct`
 
 Or use your own custom model serving endpoint.

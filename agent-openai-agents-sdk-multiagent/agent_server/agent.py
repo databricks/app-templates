@@ -213,7 +213,7 @@ def create_orchestrator_agent(
     return Agent(
         name="Orchestrator",
         instructions=instructions,
-        model="databricks-gpt-5-2",  # TODO: change model if desired
+        model="databricks-gpt-5-6-sol",  # TODO: change model if desired
         mcp_servers=mcp_servers,
         tools=subagent_tools,
     )

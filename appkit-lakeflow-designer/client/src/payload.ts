@@ -1,5 +1,5 @@
 import { DISPLAY_ROW_LIMIT, summarizeResultPreview, type ResultPreview } from '../../shared/resultPreview';
-import type { AppChartSpec } from './appConfig';
+import type { AppChartSpec } from '../../shared/appManifest';
 import { MAX_OUTPUT_FILES, parseFileOutputBehavior, type FileOutputBehavior, type WrittenFile } from '../../shared/fileOutputs';
 
 export type SchemaField = {

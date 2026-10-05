@@ -11,7 +11,7 @@ import {
 } from '@databricks/appkit-ui/react';
 import { useId, useState, type FormEvent, type SetStateAction } from 'react';
 
-import type { AppParameter } from './appConfig';
+import type { AppParameter } from '../../shared/appManifest';
 import { ComboboxParameterControl } from './ComboboxParameterControl';
 import { FileParameterControl } from './FileParameterControl';
 import { uploadFile, validateUpload } from './fileUpload';

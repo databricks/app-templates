@@ -1,23 +1,16 @@
 import { createApp, createWorkspaceClient, server } from '@databricks/appkit';
 import { exportedModelToRunPayload, findNotebookModelValue } from './exportedRunOutput';
 import type { Request } from 'express';
-import { parseAppStorage, UPLOAD_REFERENCE, type AppStorage } from '../shared/storageConfig';
+import { UPLOAD_REFERENCE } from '../shared/storageConfig';
+import { appManifestSchema, type AppManifest, type AppOutputBlock } from '../shared/appManifest';
 import { canAccessRun, viewerKey } from './fileUploads';
 import { appKitUploadStore } from './uploadStore';
 import { registerUploadRoutes } from './uploads';
 import { isReservedParameter, resolveRunParameters } from './runParameters';
-import { isValidMultiselectConfig } from '../shared/multiselect';
 import { isLegacyExportRun, manifestRevision } from './runRevision';
 import { registerOutputFileRoutes, recordedFileOutput } from './outputFiles';
 import { appKitOutputFileStore } from './outputFileStore';
-import {
-  APP_REVISION_PARAM,
-  hasInvalidFileOutputDeclaration,
-  parseFileOutput,
-  type FileOutputBehavior,
-  type FileOutputConfig,
-} from '../shared/fileOutputs';
-import { isFileFormats } from '../shared/fileFormats';
+import { APP_REVISION_PARAM, type FileOutputBehavior } from '../shared/fileOutputs';
 import { runJobParameters } from './jobParameters';
 import { runAttribution } from './runAttribution';
 import { ensureJobViewPermission } from './jobPermissions';
@@ -29,7 +22,6 @@ import { ensureJobViewPermission } from './jobPermissions';
 // grant), then looks for the manifest file there. It lives outside the git-backed source and outside
 // client/dist, so it is never served publicly.
 const MANIFEST_FILENAME = 'designerApp.json';
-const MANIFEST_VERSION = 6;
 const NO_OUTPUT_REASON = 'The run finished but returned no output. The notebook did not call dbutils.notebook.exit().';
 const NO_OUTPUTS_REASON =
   'The run finished but returned a payload with no outputs. The notebook was published with nothing to return.';
@@ -48,37 +40,6 @@ const isSchemaField = (value: unknown): value is { name: string; type: string } 
 
 const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-type AppParameter = {
-  name: string;
-  label: string;
-  type: 'text' | 'number' | 'dropdown' | 'combobox' | 'multiselect' | 'file';
-  defaultValue: string;
-  choices?: string[];
-  fileFormats?: string[];
-  help?: string;
-};
-type AppBlock =
-  | { type: 'markdown'; id?: string; text: string }
-  | {
-      type: 'output';
-      id: string;
-      label: string;
-      nodeId: string;
-      port: string;
-      chartSpec?: Record<string, unknown>;
-      fileOutput?: FileOutputConfig;
-    };
-type AppManifest = {
-  storage?: AppStorage;
-  version: number;
-  appName: string;
-  subtitle?: string;
-  provenance?: Record<string, unknown>;
-  target?: { nodeId: string; label: string };
-  blocks: AppBlock[];
-  parameters: AppParameter[];
-};
-type OutputBlock = Extract<AppBlock, { type: 'output' }>;
 type ClassifiedEntry =
   | { outcome: 'malformed'; index: number; id: string | undefined; reason: string }
   | { outcome: 'computeError' | 'result'; index: number; id: string | undefined; payload: Record<string, unknown> };
@@ -216,148 +177,12 @@ async function readManifest() {
   }
 }
 
-function toProvenance(raw: unknown): Record<string, unknown> | undefined {
-  if (
-    !isRecord(raw) ||
-    typeof raw.publishedAt !== 'number' ||
-    !Number.isFinite(raw.publishedAt) ||
-    raw.publishedAt <= 0
-  ) {
-    return undefined;
-  }
-  return { ...raw, publishedAt: raw.publishedAt };
-}
-
-function parseManifest(raw: unknown): AppManifest | undefined {
-  if (typeof raw !== 'string' || raw.trim() === '') {
-    return undefined;
-  }
-  let parsed: unknown;
+function parseManifest(raw: string): AppManifest | undefined {
   try {
-    parsed = JSON.parse(raw);
+    return appManifestSchema.safeParse(JSON.parse(raw)).data;
   } catch {
     return undefined;
   }
-  if (!isRecord(parsed) || parsed.version !== MANIFEST_VERSION) {
-    return undefined;
-  }
-  if (typeof parsed.appName !== 'string' || parsed.appName === '') {
-    return undefined;
-  }
-  const target =
-    isRecord(parsed.target) && typeof parsed.target.nodeId === 'string' && parsed.target.nodeId !== ''
-      ? { nodeId: parsed.target.nodeId, label: typeof parsed.target.label === 'string' ? parsed.target.label : '' }
-      : undefined;
-  const provenance = toProvenance(parsed.provenance);
-  const blocks = parseBlocks(parsed.blocks);
-  if (!blocks.some((block) => block.type === 'output')) {
-    return undefined;
-  }
-  if (!Array.isArray(parsed.parameters)) {
-    return undefined;
-  }
-  const storage = parseAppStorage(parsed.storage);
-  if (
-    hasInvalidFileOutputDeclaration(parsed.blocks) ||
-    (parsed.storage !== undefined && !storage) ||
-    (parsed.parameters.some((entry) => isRecord(entry) && entry.type === 'file') && !storage) ||
-    parsed.parameters.some((entry) =>
-      isRecord(entry) && entry.type === 'file' && entry.fileFormats !== undefined && !isFileFormats(entry.fileFormats)
-    ) ||
-    parsed.parameters.some((entry) =>
-      isRecord(entry) && entry.type === 'multiselect' && !isValidMultiselectConfig(entry.choices, entry.defaultValue)
-    )
-  )
-    return undefined;
-  const parameters: AppParameter[] = parsed.parameters.filter(isRecord).flatMap((entry): AppParameter[] => {
-    if (typeof entry.name !== 'string' || entry.name === '' || isReservedParameter(entry.name)) {
-      return [];
-    }
-    if (typeof entry.label !== 'string') {
-      return [];
-    }
-    const declared: AppParameter['type'] =
-      entry.type === 'file'
-        ? 'file'
-        : entry.type === 'number'
-          ? 'number'
-          : entry.type === 'dropdown'
-            ? 'dropdown'
-            : entry.type === 'combobox'
-              ? 'combobox'
-              : entry.type === 'multiselect'
-                ? 'multiselect'
-                : 'text';
-    const choices =
-      Array.isArray(entry.choices) &&
-      (declared === 'combobox' || entry.choices.length > 0) &&
-      entry.choices.every((choice): choice is string => typeof choice === 'string')
-        ? entry.choices
-        : undefined;
-    const type: AppParameter['type'] = declared === 'dropdown' && choices === undefined ? 'text' : declared;
-    return [
-      {
-        name: entry.name,
-        label: entry.label,
-        type,
-        defaultValue: type === 'file' ? '' : typeof entry.defaultValue === 'string' ? entry.defaultValue : '',
-        ...((type === 'dropdown' || type === 'combobox' || type === 'multiselect') && choices !== undefined ? { choices } : {}),
-        ...(type === 'file' && isFileFormats(entry.fileFormats) ? { fileFormats: entry.fileFormats } : {}),
-        ...(typeof entry.help === 'string' && entry.help !== '' ? { help: entry.help } : {}),
-      },
-    ];
-  });
-  return {
-    version: parsed.version,
-    ...(storage === undefined ? {} : { storage }),
-    appName: parsed.appName,
-    ...(typeof parsed.subtitle === 'string' && parsed.subtitle !== '' ? { subtitle: parsed.subtitle } : {}),
-    // Carry provenance as one opaque object across the server projection.
-    ...(provenance === undefined ? {} : { provenance }),
-    ...(target === undefined ? {} : { target }),
-    blocks,
-    parameters,
-  };
-}
-
-function parseBlocks(raw: unknown): AppBlock[] {
-  const seen = new Set();
-  const blocks: AppBlock[] = [];
-  for (const entry of Array.isArray(raw) ? raw : []) {
-    if (isRecord(entry) && entry.type === 'markdown' && typeof entry.text === 'string') {
-      blocks.push({
-        type: 'markdown',
-        ...(typeof entry.id === 'string' && entry.id !== '' ? { id: entry.id } : {}),
-        text: entry.text,
-      });
-      continue;
-    }
-    if (
-      !isRecord(entry) ||
-      entry.type !== 'output' ||
-      typeof entry.id !== 'string' ||
-      entry.id === '' ||
-      seen.has(entry.id)
-    ) {
-      continue;
-    }
-    seen.add(entry.id);
-
-    const chartSpec =
-      isRecord(entry.chartSpec) && typeof entry.chartSpec.widgetType === 'string' && entry.chartSpec.widgetType !== ''
-        ? { ...entry.chartSpec }
-        : undefined;
-    blocks.push({
-      type: 'output',
-      id: entry.id,
-      label: typeof entry.label === 'string' ? entry.label : '',
-      nodeId: typeof entry.nodeId === 'string' ? entry.nodeId : '',
-      port: typeof entry.port === 'string' ? entry.port : '',
-      ...(parseFileOutput(entry.fileOutput) ? { fileOutput: parseFileOutput(entry.fileOutput) } : {}),
-      ...(chartSpec === undefined ? {} : { chartSpec }),
-    });
-  }
-  return blocks;
 }
 
 const requestViewer = (req: Request) => viewerKey(req.get('x-forwarded-user'), JOB_ID);
@@ -501,7 +326,7 @@ function matchedOutcome(entry: ClassifiedEntry): MatchOutcome {
     : { outcome: entry.outcome, payload: entry.payload };
 }
 
-function matchRunOutputs(declared: OutputBlock[], raw: string | undefined) {
+function matchRunOutputs(declared: AppOutputBlock[], raw: string | undefined) {
   const multi = classifyMultiRunOutput(raw);
   if (multi.outcome !== 'outputs' && !declared.some((block) => block.fileOutput)) {
     return { outcome: 'noPayload', reason: multi.reason };
@@ -557,7 +382,7 @@ function matchRunOutputs(declared: OutputBlock[], raw: string | undefined) {
 }
 
 async function declaredOutputs() {
-  return (await loadManifest())?.blocks.filter((block): block is OutputBlock => block.type === 'output') ?? [];
+  return (await loadManifest())?.blocks.filter((block): block is AppOutputBlock => block.type === 'output') ?? [];
 }
 
 // runs/export returns the run's rendered notebook views; the CODE view carries the displayed

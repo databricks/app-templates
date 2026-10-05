@@ -1,6 +1,6 @@
 import { Badge } from '@databricks/appkit-ui/react';
 
-import type { AppParameter } from './appConfig';
+import type { AppParameter } from '../../shared/appManifest';
 import type { LastRunSummary } from './lastRun';
 import { labelFor } from './parameterLabels';
 

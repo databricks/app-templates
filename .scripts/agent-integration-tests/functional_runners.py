@@ -1,6 +1,6 @@
 """Per-kind functional test runners."""
 from __future__ import annotations
-import os, shutil, subprocess
+import os, shutil, subprocess, sys
 from pathlib import Path
 import requests
 from helpers import _run_cmd, _log
@@ -29,11 +29,17 @@ def run_node_playwright(template_dir: Path, base_url: str, storage_state: str | 
 
 
 def run_py_playwright(template_dir: Path, spec: str, base_url: str, storage_state: str | None) -> None:
+    # The spec drives a browser at PLAYWRIGHT_BASE_URL and imports no app code,
+    # so it must run under the orchestrator's own interpreter (this venv has
+    # playwright+pytest) rather than the template's venv (which has the app's
+    # deps, e.g. streamlit, but not playwright/pytest).
     assert_browser_installed()
     env = {**os.environ, "PLAYWRIGHT_BASE_URL": base_url}
     if storage_state:
         env["PLAYWRIGHT_STORAGE_STATE"] = storage_state
-    r = _run_cmd(["uv", "run", "--no-sync", "pytest", spec, "-q"], cwd=template_dir, env=env, timeout=600)
+    spec_path = str(Path(template_dir) / spec)
+    r = _run_cmd([sys.executable, "-m", "pytest", spec_path, "-q"],
+                 cwd=Path(__file__).parent, env=env, timeout=600)
     if r.returncode != 0:
         raise RuntimeError(f"py playwright failed:\n{r.stdout[-2000:]}\n{r.stderr[-2000:]}")
 

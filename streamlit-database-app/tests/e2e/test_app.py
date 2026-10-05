@@ -12,7 +12,7 @@ as set by the functional-e2e orchestrator's `run_py_playwright` runner.
 """
 import os
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, expect
 
 
 def test_app_renders_core_ui():
@@ -31,6 +31,6 @@ def test_app_renders_core_ui():
         # ...and the app's actual primary heading ("Todo List App", from
         # st.title() in app.py) is visible -- not a guessed selector.
         heading = page.get_by_role("heading", name="Todo List App")
-        assert heading.is_visible()
+        expect(heading).to_be_visible(timeout=30000)
 
         browser.close()

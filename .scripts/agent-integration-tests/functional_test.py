@@ -77,7 +77,9 @@ def test_functional(ft, request):
             from validate_templates import wait_for_app_ready_generic
             from validation_config import load_validation_config, DEFAULT_CONFIG_PATH
             cfg = load_validation_config(DEFAULT_CONFIG_PATH)
-            app_url, token = wait_for_app_ready_generic(cfg.shared_app_name, cfg.profile)
+            app_url, token = wait_for_app_ready_generic(
+                cfg.shared_app_name, cfg.profile, ft.launch.get("ready_path", "/")
+            )
             state = AUTH_DIR / "dogfood.json"
             storage = str(state) if state.exists() else None
             if ft.test["kind"] in ("node-playwright", "py-playwright"):

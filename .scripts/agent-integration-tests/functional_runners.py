@@ -9,8 +9,15 @@ AGENT_PAYLOAD = {"input": [{"role": "user", "content": "What time is it? Use the
 
 
 def _chromium_present() -> bool:
-    cache = Path.home() / ".cache" / "ms-playwright"
-    return cache.exists() and any(cache.glob("chromium-*"))
+    cache_dirs = []
+    if sys.platform == "darwin":
+        cache_dirs.append(Path.home() / "Library" / "Caches" / "ms-playwright")
+    cache_dirs.append(Path.home() / ".cache" / "ms-playwright")  # linux
+    patterns = ("chromium-*", "chromium_headless_shell-*")
+    for d in cache_dirs:
+        if d.exists() and any(any(d.glob(p)) for p in patterns):
+            return True
+    return False
 
 
 def assert_browser_installed() -> None:

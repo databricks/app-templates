@@ -21,7 +21,7 @@ def build_launch_command(ft: FunctionalTemplate, port: int) -> list[str]:
     if f == "agent":
         return ["uv", "run", "start-server", "--port", str(port)]
     if f == "mcp":
-        return ["uv", "run", ft.launch.get("server_cmd", "custom-mcp-server")]
+        return ["uv", "run", ft.launch.get("server_cmd", "custom-mcp-server"), "--port", str(port)]
     raise ValueError(f"unknown family {f!r}")
 
 

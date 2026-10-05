@@ -251,6 +251,8 @@ def test_build_launch_command_per_family():
     assert build_launch_command(_ft("node"), 3000)[:2] == ["npm", "run"]
     assert build_launch_command(_ft("agent"), 8000)[:2] == ["uv", "run"]
     assert build_launch_command(_ft("mcp"), 8000)[:2] == ["uv", "run"]
+    assert "--port" in build_launch_command(_ft("mcp"), 8000)
+    assert "8000" in build_launch_command(_ft("mcp"), 8000)
 
 
 def test_wait_ready_times_out():

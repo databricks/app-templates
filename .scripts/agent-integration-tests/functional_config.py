@@ -39,7 +39,7 @@ FUNCTIONAL_TEMPLATES: dict[str, FunctionalTemplate] = {
     ),
     "agent-langgraph": FunctionalTemplate(
         name="agent-langgraph", family="agent",
-        launch={"ready_path": "/"},
+        launch={"ready_path": "/agent/info"},
         test={"kind": "agent-api"},
         required_resources=(),
     ),

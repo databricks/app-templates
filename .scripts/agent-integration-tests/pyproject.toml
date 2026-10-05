@@ -12,5 +12,6 @@ dependencies = [
     "databricks-sdk>=0.40",
     "databricks-ai-bridge[agent-server]>=0.18.0",
     "ruamel.yaml>=0.18.0",
+    "playwright>=1.40",
 ]
 

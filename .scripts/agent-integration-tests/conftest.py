@@ -69,6 +69,8 @@ def pytest_addoption(parser):
                      help="Limit validation to these template names (repeatable)")
     parser.addoption("--val-setup-only", action="store_true", default=False,
                      help="Only ensure the shared app exists; skip deploy/verify")
+    parser.addoption("--target", action="store", default="local",
+                     choices=["local", "deployed"], help="functional_test.py target")
 
 
 @pytest.fixture
@@ -102,27 +104,37 @@ def pytest_runtest_logreport(report):
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
     store = getattr(pytest, "_val_results", None)
-    if not store:
-        return
-    from pathlib import Path
+    if store:
+        from pathlib import Path
 
-    from validate_templates import render_report
-    from validation_config import DEFAULT_CONFIG_PATH, load_validation_config
+        from validate_templates import render_report
+        from validation_config import DEFAULT_CONFIG_PATH, load_validation_config
 
-    cfg_path = Path(config.getoption("--config") or DEFAULT_CONFIG_PATH)
-    cfg = load_validation_config(cfg_path, resolve_workspace_root=False)
-    verify_by_name = {t.name: t.verify for t in cfg.templates}
+        cfg_path = Path(config.getoption("--config") or DEFAULT_CONFIG_PATH)
+        cfg = load_validation_config(cfg_path, resolve_workspace_root=False)
+        verify_by_name = {t.name: t.verify for t in cfg.templates}
 
-    rows = []
-    for name, res in store.items():
-        verify = verify_by_name.get(name, "?")
-        mode = "build" if verify == "build" else "deploy"
-        rows.append({
-            "template": name, "mode": mode, "verify": verify,
-            "outcome": res["outcome"], "duration": res["duration"],
-        })
-    report_md = render_report(rows)
-    out = Path(__file__).parent / "logs" / "validation-report.md"
-    out.parent.mkdir(exist_ok=True)
-    out.write_text(report_md)
-    terminalreporter.write_line(f"\nValidation report written to {out}")
+        rows = []
+        for name, res in store.items():
+            verify = verify_by_name.get(name, "?")
+            mode = "build" if verify == "build" else "deploy"
+            rows.append({
+                "template": name, "mode": mode, "verify": verify,
+                "outcome": res["outcome"], "duration": res["duration"],
+            })
+        report_md = render_report(rows)
+        out = Path(__file__).parent / "logs" / "validation-report.md"
+        out.parent.mkdir(exist_ok=True)
+        out.write_text(report_md)
+        terminalreporter.write_line(f"\nValidation report written to {out}")
+
+    functional_results = getattr(pytest, "_functional_results", None)
+    if functional_results:
+        from pathlib import Path
+
+        from functional_report import render_functional_report
+
+        out = Path(__file__).parent / "logs" / "functional-report.md"
+        out.parent.mkdir(exist_ok=True)
+        out.write_text(render_functional_report(functional_results))
+        terminalreporter.write_line(f"\nFunctional report written to {out}")

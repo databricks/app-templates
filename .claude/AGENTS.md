@@ -65,6 +65,7 @@ All memory templates return the ID in `custom_outputs` so clients can reuse it.
 - Lakebase resources use `permission: 'CAN_CONNECT_AND_CREATE'`
 - Lakebase templates use `<your-lakebase-instance-name>` as placeholder — quickstart replaces it
 - Templates do not define a DAB-managed experiment resource (`resources.experiments`); instead, the app resource references an experiment by ID (initially empty), and quickstart fills in the literal experiment ID
+- Agent templates declare a `serving_endpoint` app resource named `llm-endpoint` (permission `CAN_QUERY`) whose `name` matches the model hardcoded in `agent_server/agent.py`. This grants the app's service principal query access to the model on deploy (and, via the matching `manifest.yaml` `serving_endpoint_spec`, on UI-based creation) without a manual grant. Change the model in both `agent.py` and this resource together.
 
 ### `app.yaml` files
 

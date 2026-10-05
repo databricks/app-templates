@@ -1,0 +1,207 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.6, pytest-9.1.1, pluggy-1.6.0 -- /Users/mike.helmick/src/app-templates/.scripts/agent-integration-tests/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/mike.helmick/src/app-templates/.scripts/agent-integration-tests
+configfile: pyproject.toml
+plugins: xdist-3.8.0, anyio-4.15.1
+collecting ... collected 1 item
+
+validate_templates.py::test_validate_template[nodejs-fastapi-hello-world-app] [16:57:20] [nodejs-fastapi-hello-world-app] $ npm ci
+[16:57:20] ✗ npm ci  (exit 1, 0.4s)
+  stderr:
+npm error code EUSAGE
+npm error
+npm error The `npm ci` command can only install with an existing package-lock.json or
+npm error npm-shrinkwrap.json with lockfileVersion >= 1. Run an install with npm@5 or
+npm error later to generate a package-lock.json file, then try again.
+npm error
+npm error Clean install a project
+npm error
+npm error Usage:
+npm error npm ci
+npm error
+npm error Options:
+npm error [--install-strategy <hoisted|nested|shallow|linked>] [--legacy-bundling]
+npm error [--global-style] [--omit <dev|optional|peer> [--omit <dev|optional|peer> ...]]
+npm error [--include <prod|dev|optional|peer> [--include <prod|dev|optional|peer> ...]]
+npm error [--strict-peer-deps] [--foreground-scripts] [--ignore-scripts]
+npm error [--allow-directory <all|none|root>] [--allow-file <all|none|root>]
+npm error [--allow-git <all|none|root>] [--allow-remote <all|none|root>]
+npm error [--allow-scripts <package-list> [--allow-scripts <package-list> ...]]
+npm error [--strict-allow-scripts] [--dangerously-allow-all-scripts] [--no-audit]
+npm error [--no-bin-links] [--no-fund] [--dry-run]
+npm error [-w|--workspace <workspace-name> [-w|--workspace <workspace-name> ...]]
+npm error [--workspaces] [--include-workspace-root] [--install-links]
+npm error
+npm error   --install-strategy
+npm error     Sets the strategy for installing packages in node_modules.
+npm error
+npm error   --legacy-bundling
+npm error     Instead of hoisting package installs in `node_modules`, install packages
+npm error
+npm error   --global-style
+npm error     Only install direct dependencies in the top level `node_modules`,
+npm error
+npm error   --omit
+npm error     Dependency types to omit from the installation tree on disk.
+npm error
+npm error   --include
+npm error     Option that allows for defining which types of dependencies to install.
+npm error
+npm error   --strict-peer-deps
+npm error     If set to `true`, and `--legacy-peer-deps` is not set, then _any_
+npm error
+npm error   --foreground-scripts
+npm error     Run all build scripts (ie, `preinstall`, `install`, and
+npm error
+npm error   --ignore-scripts
+npm error     If true, npm does not run scripts specified in package.json files.
+npm error
+npm error   --allow-directory
+npm error     Limits the ability for npm to install dependencies from directories.
+npm error
+npm error   --allow-file
+npm error     Limits the ability for npm to install dependencies from tarball files.
+npm error
+npm error   --allow-git
+npm error     Limits the ability for npm to fetch dependencies from git references.
+npm error
+npm error   --allow-remote
+npm error     Limits the ability for npm to fetch dependencies from urls.
+npm error
+npm error   --allow-scripts
+npm error     Comma-separated list of packages whose install-time lifecycle scripts
+npm error
+npm error   --strict-allow-scripts
+npm error     If `true`, turn the install-script policy from a warning into a hard
+npm error
+npm error   --dangerously-allow-all-scripts
+npm error     If `true`, bypass the `allowScripts` policy entirely and run every
+npm error
+npm error   --audit
+npm error     When "true" submit audit reports alongside the current npm command to the
+npm error
+npm error   --bin-links
+npm error     Tells npm to create symlinks (or `.cmd` shims on Windows) for package
+npm error
+npm error   --fund
+npm error     When "true" displays the message at the end of each `npm install`
+npm error
+npm error   --dry-run
+npm error     Indicates that you don't want npm to make any changes and that it should
+npm error
+npm error   -w|--workspace
+npm error     Enable running a command in the context of the configured workspaces of the
+npm error
+npm error   --workspaces
+npm error     Set to true to run the command in the context of **all** configured
+npm error
+npm error   --include-workspace-root
+npm error     Include the workspace root when workspaces are enabled for a command.
+npm error
+npm error   --install-links
+npm error     When set file: protocol dependencies will be packed and installed as
+npm error
+npm error
+npm error aliases: clean-install, ic, install-clean, isntall-clean
+npm error
+npm error Run "npm help ci" for more info
+npm error A complete log of this run can be found in: /Users/mike.helmick/.npm/_logs/2026-09-25T23_57_20_556Z-debug-0.log
+FAILED
+
+=================================== FAILURES ===================================
+____________ test_validate_template[nodejs-fastapi-hello-world-app] ____________
+
+val_template = ValidationTemplate(name='nodejs-fastapi-hello-world-app', verify='build')
+val_cfg = ValidationConfig(profile='dogfood', shared_app_name='template-e2e-test', workspace_source_root='/Workspace/Users/mike....ValidationTemplate(name='appkit-lakebase', verify='build'), ValidationTemplate(name='appkit-serving', verify='build')])
+request = <FixtureRequest for <Function test_validate_template[nodejs-fastapi-hello-world-app]>>
+
+    def test_validate_template(val_template, val_cfg, request):
+        log_dir = Path(__file__).parent / "logs"
+        log_dir.mkdir(exist_ok=True)
+        set_log_file(log_dir / f"validate-{val_template.name}.log")
+    
+        # Build-only path: no shared app, no deploy.
+        if val_template.verify == "build":
+            if request.config.getoption("--val-setup-only"):
+                pytest.skip("--val-setup-only: nothing to set up for build-only template")
+            with tempfile.TemporaryDirectory(prefix=f"val-{val_template.name}-") as tmp:
+>               build_template(val_template.name, Path(tmp))
+
+validate_templates.py:204: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+template_name = 'nodejs-fastapi-hello-world-app'
+dest = PosixPath('/var/folders/vh/38ld40g15lbb2409b41wv1p40000gp/T/val-nodejs-fastapi-hello-world-app-ifwezwkd')
+
+    def build_template(template_name: str, dest: Path) -> None:
+        """Build-only validation for SPA/Node templates.
+    
+        Copies the template to a throwaway dir (never mutates the real template),
+        then runs `npm ci` and `npm run build`, raising on failure. No deploy.
+        """
+        src = git_copy_template(template_name, dest)
+        for cmd in (["npm", "ci"], ["npm", "run", "build"]):
+            _log(f"[{template_name}] $ {' '.join(cmd)}")
+            result = _run_cmd(cmd, cwd=src, timeout=BUILD_TIMEOUT)
+            if result.returncode != 0:
+>               raise RuntimeError(
+                    f"{' '.join(cmd)} failed for {template_name}:\n"
+                    f"stdout: {result.stdout[-2000:]}\nstderr: {result.stderr[-2000:]}"
+                )
+E               RuntimeError: npm ci failed for nodejs-fastapi-hello-world-app:
+E               stdout: 
+E               stderr: pm to install dependencies from directories.
+E               npm error
+E               npm error   --allow-file
+E               npm error     Limits the ability for npm to install dependencies from tarball files.
+E               npm error
+E               npm error   --allow-git
+E               npm error     Limits the ability for npm to fetch dependencies from git references.
+E               npm error
+E               npm error   --allow-remote
+E               npm error     Limits the ability for npm to fetch dependencies from urls.
+E               npm error
+E               npm error   --allow-scripts
+E               npm error     Comma-separated list of packages whose install-time lifecycle scripts
+E               npm error
+E               npm error   --strict-allow-scripts
+E               npm error     If `true`, turn the install-script policy from a warning into a hard
+E               npm error
+E               npm error   --dangerously-allow-all-scripts
+E               npm error     If `true`, bypass the `allowScripts` policy entirely and run every
+E               npm error
+E               npm error   --audit
+E               npm error     When "true" submit audit reports alongside the current npm command to the
+E               npm error
+E               npm error   --bin-links
+E               npm error     Tells npm to create symlinks (or `.cmd` shims on Windows) for package
+E               npm error
+E               npm error   --fund
+E               npm error     When "true" displays the message at the end of each `npm install`
+E               npm error
+E               npm error   --dry-run
+E               npm error     Indicates that you don't want npm to make any changes and that it should
+E               npm error
+E               npm error   -w|--workspace
+E               npm error     Enable running a command in the context of the configured workspaces of the
+E               npm error
+E               npm error   --workspaces
+E               npm error     Set to true to run the command in the context of **all** configured
+E               npm error
+E               npm error   --include-workspace-root
+E               npm error     Include the workspace root when workspaces are enabled for a command.
+E               npm error
+E               npm error   --install-links
+E               npm error     When set file: protocol dependencies will be packed and installed as
+E               npm error
+E               npm error
+E               npm error aliases: clean-install, ic, install-clean, isntall-clean
+E               npm error
+E               npm error Run "npm help ci" for more info
+E               npm error A complete log of this run can be found in: /Users/mike.helmick/.npm/_logs/2026-09-25T23_57_20_556Z-debug-0.log
+
+validate_templates.py:55: RuntimeError
+=========================== short test summary info ============================
+FAILED validate_templates.py::test_validate_template[nodejs-fastapi-hello-world-app]
+============================== 1 failed in 2.68s ===============================

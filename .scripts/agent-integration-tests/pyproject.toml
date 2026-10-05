@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "pytest>=8.0",
     "pytest-xdist>=3.5",
+    "pyyaml>=6.0",
     "requests>=2.31",
     "openai>=1.75",
     "databricks-sdk>=0.40",

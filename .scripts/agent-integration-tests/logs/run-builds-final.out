@@ -1,0 +1,609 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.6, pytest-9.1.1, pluggy-1.6.0 -- /Users/mike.helmick/src/app-templates/.scripts/agent-integration-tests/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/mike.helmick/src/app-templates/.scripts/agent-integration-tests
+configfile: pyproject.toml
+plugins: xdist-3.8.0, anyio-4.15.1
+collecting ... collected 15 items
+
+validate_templates.py::test_validate_template[nodejs-fastapi-hello-world-app] PASSED [  6%]
+validate_templates.py::test_validate_template[rag-chat] PASSED           [ 13%]
+validate_templates.py::test_validate_template[agent-langchain-ts] PASSED [ 20%]
+validate_templates.py::test_validate_template[agentic-support-console] FAILED [ 26%]
+validate_templates.py::test_validate_template[e2e-chatbot-app-next] PASSED [ 33%]
+validate_templates.py::test_validate_template[inventory-intelligence] PASSED [ 40%]
+validate_templates.py::test_validate_template[content-moderator] FAILED  [ 46%]
+validate_templates.py::test_validate_template[saas-tracker] FAILED       [ 53%]
+validate_templates.py::test_validate_template[vacation-rentals] PASSED   [ 60%]
+validate_templates.py::test_validate_template[appkit-all-in-one] FAILED  [ 66%]
+validate_templates.py::test_validate_template[appkit-analytics] FAILED   [ 73%]
+validate_templates.py::test_validate_template[appkit-files] PASSED       [ 80%]
+validate_templates.py::test_validate_template[appkit-genie] PASSED       [ 86%]
+validate_templates.py::test_validate_template[appkit-lakebase] PASSED    [ 93%]
+validate_templates.py::test_validate_template[appkit-serving] PASSED     [100%]
+
+=================================== FAILURES ===================================
+_______________ test_validate_template[agentic-support-console] ________________
+
+val_template = ValidationTemplate(name='agentic-support-console', verify='build')
+val_cfg = ValidationConfig(profile='dogfood', shared_app_name='template-e2e-test', workspace_source_root='/Workspace/Users/mike....ValidationTemplate(name='appkit-lakebase', verify='build'), ValidationTemplate(name='appkit-serving', verify='build')])
+request = <FixtureRequest for <Function test_validate_template[agentic-support-console]>>
+
+    def test_validate_template(val_template, val_cfg, request):
+        log_dir = Path(__file__).parent / "logs"
+        log_dir.mkdir(exist_ok=True)
+        set_log_file(log_dir / f"validate-{val_template.name}.log")
+    
+        # Build-only path: no shared app, no deploy.
+        if val_template.verify == "build":
+            if request.config.getoption("--val-setup-only"):
+                pytest.skip("--val-setup-only: nothing to set up for build-only template")
+            with tempfile.TemporaryDirectory(prefix=f"val-{val_template.name}-") as tmp:
+>               build_template(val_template.name, Path(tmp))
+
+validate_templates.py:230: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+template_name = 'agentic-support-console'
+dest = PosixPath('/var/folders/vh/38ld40g15lbb2409b41wv1p40000gp/T/val-agentic-support-console-14xc9rwt')
+
+    def build_template(template_name: str, dest: Path) -> None:
+        """Build-only validation for SPA/Node templates.
+    
+        Copies the template to a throwaway dir (never mutates the real template),
+        then runs `npm ci` and `npm run build`, raising on failure. No deploy.
+        """
+        src = git_copy_template(template_name, dest)
+        has_lock = (src / "package-lock.json").exists() or (src / "npm-shrinkwrap.json").exists()
+        install_cmd = ["npm", "ci"] if has_lock else ["npm", "install"]
+        for cmd in (install_cmd, ["npm", "run", "build"]):
+            _log(f"[{template_name}] $ {' '.join(cmd)}")
+            result = _run_cmd(cmd, cwd=src, timeout=BUILD_TIMEOUT)
+            if result.returncode != 0:
+>               raise RuntimeError(
+                    f"{' '.join(cmd)} failed for {template_name}:\n"
+                    f"stdout: {result.stdout[-2000:]}\nstderr: {result.stderr[-2000:]}"
+                )
+E               RuntimeError: npm run build failed for agentic-support-console:
+E               stdout: 
+E               > support-console@1.0.0 prebuild
+E               > npm run sync && npm run typegen -- --wait
+E               
+E               
+E               > support-console@1.0.0 sync
+E               > appkit plugin sync --write --silent
+E               
+E               
+E               > support-console@1.0.0 typegen
+E               > appkit generate-types --wait
+E               
+E               Generated serving types: /private/var/folders/vh/38ld40g15lbb2409b41wv1p40000gp/T/val-agentic-support-console-14xc9rwt/agentic-support-console/shared/appkit-types/serving.d.ts
+E               
+E               > support-console@1.0.0 build
+E               > npm run build:server && npm run build:client
+E               
+E               
+E               > support-console@1.0.0 build:server
+E               > tsdown -c tsdown.server.config.ts
+E               
+E               [34mℹ[39m tsdown [2mv0.20.3[22m powered by rolldown [2mv1.0.0-rc.3[22m
+E               [34mℹ[39m config file: [4m/private/var/folders/vh/38ld40g15lbb2409b41wv1p40000gp/T/val-agentic-support-console-14xc9rwt/agentic-support-console/tsdown.server.config.ts[24m (unrun)
+E               [34mℹ[39m entry: [34mserver/server.ts[39m
+E               [34mℹ[39m tsconfig: [34mtsconfig.server.json[39m
+E               [34mℹ[39m Build start
+E               [34mℹ[39m [2mdist/[22m[1mserver.js[22m                 [2m 0.38 kB[22m [2m│ gzip: 0.25 kB[22m
+E               [34mℹ[39m [2mdist/[22mroutes/support-routes.js  [2m12.93 kB[22m [2m│ gzip: 2.95 kB[22m
+E               [34mℹ[39m 2 files, total: 13.30 kB
+E               [32m✔[39m Build complete in [32m25ms[39m
+E               
+E               > support-console@1.0.0 build:client
+E               > tsc -b tsconfig.client.json && vite build --config client/vite.config.ts
+E               
+E               client/src/pages/AnalyticsPage.tsx(36,37): error TS2339: Property 'length' does not exist on type '{}'.
+E               client/src/pages/AnalyticsPage.tsx(36,50): error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type '{}'.
+E                 Property '0' does not exist on type '{}'.
+E               
+E               stderr: Skipping query type generation: no warehouse ID. Set DATABRICKS_WAREHOUSE_ID or pass as argument.
+
+validate_templates.py:81: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+[12:48:33] [agentic-support-console] $ npm ci
+[12:49:25] ✓ npm ci  (52.4s)
+[12:49:25] [agentic-support-console] $ npm run build
+[12:49:29] ✗ npm run build  (exit 1, 3.6s)
+  stdout:
+
+> support-console@1.0.0 prebuild
+> npm run sync && npm run typegen -- --wait
+
+
+> support-console@1.0.0 sync
+> appkit plugin sync --write --silent
+
+
+> support-console@1.0.0 typegen
+> appkit generate-types --wait
+
+Generated serving types: /private/var/folders/vh/38ld40g15lbb2409b41wv1p40000gp/T/val-agentic-support-console-14xc9rwt/agentic-support-console/shared/appkit-types/serving.d.ts
+
+> support-console@1.0.0 build
+> npm run build:server && npm run build:client
+
+
+> support-console@1.0.0 build:server
+> tsdown -c tsdown.server.config.ts
+
+[34mℹ[39m tsdown [2mv0.20.3[22m powered by rolldown [2mv1.0.0-rc.3[22m
+[34mℹ[39m config file: [4m/private/var/folders/vh/38ld40g15lbb2409b41wv1p40000gp/T/val-agentic-support-console-14xc9rwt/agentic-support-console/tsdown.server.config.ts[24m (unrun)
+[34mℹ[39m entry: [34mserver/server.ts[39m
+[34mℹ[39m tsconfig: [34mtsconfig.server.json[39m
+[34mℹ[39m Build start
+[34mℹ[39m [2mdist/[22m[1mserver.js[22m                 [2m 0.38 kB[22m [2m│ gzip: 0.25 kB[22m
+[34mℹ[39m [2mdist/[22mroutes/support-routes.js  [2m12.93 kB[22m [2m│ gzip: 2.95 kB[22m
+[34mℹ[39m 2 files, total: 13.30 kB
+[32m✔[39m Build complete in [32m25ms[39m
+
+> support-console@1.0.0 build:client
+> tsc -b tsconfig.client.json && vite build --config client/vite.config.ts
+
+client/src/pages/AnalyticsPage.tsx(36,37): error TS2339: Property 'length' does not exist on type '{}'.
+client/src/pages/AnalyticsPage.tsx(36,50): error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type '{}'.
+  Property '0' does not exist on type '{}'.
+  stderr:
+Skipping query type generation: no warehouse ID. Set DATABRICKS_WAREHOUSE_ID or pass as argument.
+__________________ test_validate_template[content-moderator] ___________________
+
+val_template = ValidationTemplate(name='content-moderator', verify='build')
+val_cfg = ValidationConfig(profile='dogfood', shared_app_name='template-e2e-test', workspace_source_root='/Workspace/Users/mike....ValidationTemplate(name='appkit-lakebase', verify='build'), ValidationTemplate(name='appkit-serving', verify='build')])
+request = <FixtureRequest for <Function test_validate_template[content-moderator]>>
+
+    def test_validate_template(val_template, val_cfg, request):
+        log_dir = Path(__file__).parent / "logs"
+        log_dir.mkdir(exist_ok=True)
+        set_log_file(log_dir / f"validate-{val_template.name}.log")
+    
+        # Build-only path: no shared app, no deploy.
+        if val_template.verify == "build":
+            if request.config.getoption("--val-setup-only"):
+                pytest.skip("--val-setup-only: nothing to set up for build-only template")
+            with tempfile.TemporaryDirectory(prefix=f"val-{val_template.name}-") as tmp:
+>               build_template(val_template.name, Path(tmp))
+
+validate_templates.py:230: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+template_name = 'content-moderator'
+dest = PosixPath('/var/folders/vh/38ld40g15lbb2409b41wv1p40000gp/T/val-content-moderator-1h4h6zxo')
+
+    def build_template(template_name: str, dest: Path) -> None:
+        """Build-only validation for SPA/Node templates.
+    
+        Copies the template to a throwaway dir (never mutates the real template),
+        then runs `npm ci` and `npm run build`, raising on failure. No deploy.
+        """
+        src = git_copy_template(template_name, dest)
+        has_lock = (src / "package-lock.json").exists() or (src / "npm-shrinkwrap.json").exists()
+        install_cmd = ["npm", "ci"] if has_lock else ["npm", "install"]
+        for cmd in (install_cmd, ["npm", "run", "build"]):
+            _log(f"[{template_name}] $ {' '.join(cmd)}")
+            result = _run_cmd(cmd, cwd=src, timeout=BUILD_TIMEOUT)
+            if result.returncode != 0:
+>               raise RuntimeError(
+                    f"{' '.join(cmd)} failed for {template_name}:\n"
+                    f"stdout: {result.stdout[-2000:]}\nstderr: {result.stderr[-2000:]}"
+                )
+E               RuntimeError: npm install failed for content-moderator:
+E               stdout: 
+E               stderr: npm error code ERESOLVE
+E               npm error ERESOLVE unable to resolve dependency tree
+E               npm error
+E               npm error While resolving: content-moderator@1.0.0
+E               npm error Found: vite@undefined
+E               npm error node_modules/vite
+E               npm error   dev vite@"8.3.1" from the root project
+E               npm error
+E               npm error Could not resolve dependency:
+E               npm error peer vite@"^5.2.0 || ^6 || ^7 || ^8" from @tailwindcss/vite@4.2.2
+E               npm error node_modules/@tailwindcss/vite
+E               npm error   dev @tailwindcss/vite@"4.2.2" from the root project
+E               npm error
+E               npm error Fix the upstream dependency conflict, or retry
+E               npm error this command with --force or --legacy-peer-deps
+E               npm error to accept an incorrect (and potentially broken) dependency resolution.
+E               npm error
+E               npm error
+E               npm error For a full report see:
+E               npm error /Users/mike.helmick/.npm/_logs/2026-09-28T19_51_35_502Z-eresolve-report.txt
+E               npm error A complete log of this run can be found in: /Users/mike.helmick/.npm/_logs/2026-09-28T19_51_35_502Z-debug-0.log
+
+validate_templates.py:81: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+[12:51:35] [content-moderator] $ npm install
+[12:52:48] ✗ npm install  (exit 1, 1m 12s)
+  stderr:
+npm error code ERESOLVE
+npm error ERESOLVE unable to resolve dependency tree
+npm error
+npm error While resolving: content-moderator@1.0.0
+npm error Found: vite@undefined
+npm error node_modules/vite
+npm error   dev vite@"8.3.1" from the root project
+npm error
+npm error Could not resolve dependency:
+npm error peer vite@"^5.2.0 || ^6 || ^7 || ^8" from @tailwindcss/vite@4.2.2
+npm error node_modules/@tailwindcss/vite
+npm error   dev @tailwindcss/vite@"4.2.2" from the root project
+npm error
+npm error Fix the upstream dependency conflict, or retry
+npm error this command with --force or --legacy-peer-deps
+npm error to accept an incorrect (and potentially broken) dependency resolution.
+npm error
+npm error
+npm error For a full report see:
+npm error /Users/mike.helmick/.npm/_logs/2026-09-28T19_51_35_502Z-eresolve-report.txt
+npm error A complete log of this run can be found in: /Users/mike.helmick/.npm/_logs/2026-09-28T19_51_35_502Z-debug-0.log
+_____________________ test_validate_template[saas-tracker] _____________________
+
+val_template = ValidationTemplate(name='saas-tracker', verify='build')
+val_cfg = ValidationConfig(profile='dogfood', shared_app_name='template-e2e-test', workspace_source_root='/Workspace/Users/mike....ValidationTemplate(name='appkit-lakebase', verify='build'), ValidationTemplate(name='appkit-serving', verify='build')])
+request = <FixtureRequest for <Function test_validate_template[saas-tracker]>>
+
+    def test_validate_template(val_template, val_cfg, request):
+        log_dir = Path(__file__).parent / "logs"
+        log_dir.mkdir(exist_ok=True)
+        set_log_file(log_dir / f"validate-{val_template.name}.log")
+    
+        # Build-only path: no shared app, no deploy.
+        if val_template.verify == "build":
+            if request.config.getoption("--val-setup-only"):
+                pytest.skip("--val-setup-only: nothing to set up for build-only template")
+            with tempfile.TemporaryDirectory(prefix=f"val-{val_template.name}-") as tmp:
+>               build_template(val_template.name, Path(tmp))
+
+validate_templates.py:230: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+template_name = 'saas-tracker'
+dest = PosixPath('/var/folders/vh/38ld40g15lbb2409b41wv1p40000gp/T/val-saas-tracker-6dthzrpw')
+
+    def build_template(template_name: str, dest: Path) -> None:
+        """Build-only validation for SPA/Node templates.
+    
+        Copies the template to a throwaway dir (never mutates the real template),
+        then runs `npm ci` and `npm run build`, raising on failure. No deploy.
+        """
+        src = git_copy_template(template_name, dest)
+        has_lock = (src / "package-lock.json").exists() or (src / "npm-shrinkwrap.json").exists()
+        install_cmd = ["npm", "ci"] if has_lock else ["npm", "install"]
+        for cmd in (install_cmd, ["npm", "run", "build"]):
+            _log(f"[{template_name}] $ {' '.join(cmd)}")
+            result = _run_cmd(cmd, cwd=src, timeout=BUILD_TIMEOUT)
+            if result.returncode != 0:
+>               raise RuntimeError(
+                    f"{' '.join(cmd)} failed for {template_name}:\n"
+                    f"stdout: {result.stdout[-2000:]}\nstderr: {result.stderr[-2000:]}"
+                )
+E               RuntimeError: npm install failed for saas-tracker:
+E               stdout: 
+E               stderr: npm error code ERESOLVE
+E               npm error ERESOLVE unable to resolve dependency tree
+E               npm error
+E               npm error While resolving: saas-tracker@1.0.0
+E               npm error Found: vite@undefined
+E               npm error node_modules/vite
+E               npm error   dev vite@"8.3.1" from the root project
+E               npm error
+E               npm error Could not resolve dependency:
+E               npm error peer vite@"^5.2.0 || ^6 || ^7 || ^8" from @tailwindcss/vite@4.2.2
+E               npm error node_modules/@tailwindcss/vite
+E               npm error   dev @tailwindcss/vite@"4.2.2" from the root project
+E               npm error
+E               npm error Fix the upstream dependency conflict, or retry
+E               npm error this command with --force or --legacy-peer-deps
+E               npm error to accept an incorrect (and potentially broken) dependency resolution.
+E               npm error
+E               npm error
+E               npm error For a full report see:
+E               npm error /Users/mike.helmick/.npm/_logs/2026-09-28T19_52_48_202Z-eresolve-report.txt
+E               npm error A complete log of this run can be found in: /Users/mike.helmick/.npm/_logs/2026-09-28T19_52_48_202Z-debug-0.log
+
+validate_templates.py:81: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+[12:52:48] [saas-tracker] $ npm install
+[12:54:04] ✗ npm install  (exit 1, 1m 15s)
+  stderr:
+npm error code ERESOLVE
+npm error ERESOLVE unable to resolve dependency tree
+npm error
+npm error While resolving: saas-tracker@1.0.0
+npm error Found: vite@undefined
+npm error node_modules/vite
+npm error   dev vite@"8.3.1" from the root project
+npm error
+npm error Could not resolve dependency:
+npm error peer vite@"^5.2.0 || ^6 || ^7 || ^8" from @tailwindcss/vite@4.2.2
+npm error node_modules/@tailwindcss/vite
+npm error   dev @tailwindcss/vite@"4.2.2" from the root project
+npm error
+npm error Fix the upstream dependency conflict, or retry
+npm error this command with --force or --legacy-peer-deps
+npm error to accept an incorrect (and potentially broken) dependency resolution.
+npm error
+npm error
+npm error For a full report see:
+npm error /Users/mike.helmick/.npm/_logs/2026-09-28T19_52_48_202Z-eresolve-report.txt
+npm error A complete log of this run can be found in: /Users/mike.helmick/.npm/_logs/2026-09-28T19_52_48_202Z-debug-0.log
+__________________ test_validate_template[appkit-all-in-one] ___________________
+
+val_template = ValidationTemplate(name='appkit-all-in-one', verify='build')
+val_cfg = ValidationConfig(profile='dogfood', shared_app_name='template-e2e-test', workspace_source_root='/Workspace/Users/mike....ValidationTemplate(name='appkit-lakebase', verify='build'), ValidationTemplate(name='appkit-serving', verify='build')])
+request = <FixtureRequest for <Function test_validate_template[appkit-all-in-one]>>
+
+    def test_validate_template(val_template, val_cfg, request):
+        log_dir = Path(__file__).parent / "logs"
+        log_dir.mkdir(exist_ok=True)
+        set_log_file(log_dir / f"validate-{val_template.name}.log")
+    
+        # Build-only path: no shared app, no deploy.
+        if val_template.verify == "build":
+            if request.config.getoption("--val-setup-only"):
+                pytest.skip("--val-setup-only: nothing to set up for build-only template")
+            with tempfile.TemporaryDirectory(prefix=f"val-{val_template.name}-") as tmp:
+>               build_template(val_template.name, Path(tmp))
+
+validate_templates.py:230: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+template_name = 'appkit-all-in-one'
+dest = PosixPath('/var/folders/vh/38ld40g15lbb2409b41wv1p40000gp/T/val-appkit-all-in-one-sahrwrcc')
+
+    def build_template(template_name: str, dest: Path) -> None:
+        """Build-only validation for SPA/Node templates.
+    
+        Copies the template to a throwaway dir (never mutates the real template),
+        then runs `npm ci` and `npm run build`, raising on failure. No deploy.
+        """
+        src = git_copy_template(template_name, dest)
+        has_lock = (src / "package-lock.json").exists() or (src / "npm-shrinkwrap.json").exists()
+        install_cmd = ["npm", "ci"] if has_lock else ["npm", "install"]
+        for cmd in (install_cmd, ["npm", "run", "build"]):
+            _log(f"[{template_name}] $ {' '.join(cmd)}")
+            result = _run_cmd(cmd, cwd=src, timeout=BUILD_TIMEOUT)
+            if result.returncode != 0:
+>               raise RuntimeError(
+                    f"{' '.join(cmd)} failed for {template_name}:\n"
+                    f"stdout: {result.stdout[-2000:]}\nstderr: {result.stderr[-2000:]}"
+                )
+E               RuntimeError: npm run build failed for appkit-all-in-one:
+E               stdout:  prebuild
+E               > npm run sync && npm run typegen -- --wait
+E               
+E               
+E               > appkit-all-in-one@1.0.0 sync
+E               > appkit plugin sync --write --silent
+E               
+E               
+E               > appkit-all-in-one@1.0.0 typegen
+E               > appkit generate-types --wait
+E               
+E               Generated serving types: /private/var/folders/vh/38ld40g15lbb2409b41wv1p40000gp/T/val-appkit-all-in-one-sahrwrcc/appkit-all-in-one/shared/appkit-types/serving.d.ts
+E               
+E               > appkit-all-in-one@1.0.0 build
+E               > npm run build:server && npm run build:client
+E               
+E               
+E               > appkit-all-in-one@1.0.0 build:server
+E               > tsc -b tsconfig.server.json && tsdown -c tsdown.server.config.ts
+E               
+E               [34mℹ[39m tsdown [2mv0.20.3[22m powered by rolldown [2mv1.0.0-rc.3[22m
+E               [34mℹ[39m config file: [4m/private/var/folders/vh/38ld40g15lbb2409b41wv1p40000gp/T/val-appkit-all-in-one-sahrwrcc/appkit-all-in-one/tsdown.server.config.ts[24m (unrun)
+E               [34mℹ[39m entry: [34mserver/server.ts[39m
+E               [34mℹ[39m tsconfig: [34mtsconfig.json[39m
+E               [34mℹ[39m Build start
+E               [34mℹ[39m [2mdist/[22m[1mserver.js[22m                       [2m0.44 kB[22m [2m│ gzip: 0.27 kB[22m
+E               [34mℹ[39m [2mdist/[22mroutes/lakebase/todo-routes.js  [2m3.50 kB[22m [2m│ gzip: 1.18 kB[22m
+E               [34mℹ[39m 2 files, total: 3.93 kB
+E               [32m✔[39m Build complete in [32m19ms[39m
+E               
+E               > appkit-all-in-one@1.0.0 build:client
+E               > tsc -b tsconfig.client.json && vite build --config client/vite.config.ts
+E               
+E               client/src/pages/analytics/AnalyticsPage.tsx(44,13): error TS2322: Type 'unknown' is not assignable to type 'ReactNode'.
+E               client/src/pages/analytics/AnalyticsPage.tsx(44,27): error TS2339: Property 'length' does not exist on type '{}'.
+E               client/src/pages/analytics/AnalyticsPage.tsx(47,67): error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type '{}'.
+E                 Property '0' does not exist on type '{}'.
+E               client/src/pages/analytics/AnalyticsPage.tsx(50,13): error TS2322: Type 'unknown' is not assignable to type 'ReactNode'.
+E               client/src/pages/analytics/AnalyticsPage.tsx(50,27): error TS2339: Property 'length' does not exist on type '{}'.
+E               
+E               stderr: Skipping query type generation: no warehouse ID. Set DATABRICKS_WAREHOUSE_ID or pass as argument.
+
+validate_templates.py:81: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+[12:55:17] [appkit-all-in-one] $ npm ci
+[12:56:01] ✓ npm ci  (44.1s)
+[12:56:01] [appkit-all-in-one] $ npm run build
+[12:56:06] ✗ npm run build  (exit 1, 5.3s)
+  stdout:
+
+> appkit-all-in-one@1.0.0 prebuild
+> npm run sync && npm run typegen -- --wait
+
+
+> appkit-all-in-one@1.0.0 sync
+> appkit plugin sync --write --silent
+
+
+> appkit-all-in-one@1.0.0 typegen
+> appkit generate-types --wait
+
+Generated serving types: /private/var/folders/vh/38ld40g15lbb2409b41wv1p40000gp/T/val-appkit-all-in-one-sahrwrcc/appkit-all-in-one/shared/appkit-types/serving.d.ts
+
+> appkit-all-in-one@1.0.0 build
+> npm run build:server && npm run build:client
+
+
+> appkit-all-in-one@1.0.0 build:server
+> tsc -b tsconfig.server.json && tsdown -c tsdown.server.config.ts
+
+[34mℹ[39m tsdown [2mv0.20.3[22m powered by rolldown [2mv1.0.0-rc.3[22m
+[34mℹ[39m config file: [4m/private/var/folders/vh/38ld40g15lbb2409b41wv1p40000gp/T/val-appkit-all-in-one-sahrwrcc/appkit-all-in-one/tsdown.server.config.ts[24m (unrun)
+[34mℹ[39m entry: [34mserver/server.ts[39m
+[34mℹ[39m tsconfig: [34mtsconfig.json[39m
+[34mℹ[39m Build start
+[34mℹ[39m [2mdist/[22m[1mserver.js[22m                       [2m0.44 kB[22m [2m│ gzip: 0.27 kB[22m
+[34mℹ[39m [2mdist/[22mroutes/lakebase/todo-routes.js  [2m3.50 kB[22m [2m│ gzip: 1.18 kB[22m
+[34mℹ[39m 2 files, total: 3.93 kB
+[32m✔[39m Build complete in [32m19ms[39m
+
+> appkit-all-in-one@1.0.0 build:client
+> tsc -b tsconfig.client.json && vite build --config client/vite.config.ts
+
+client/src/pages/analytics/AnalyticsPage.tsx(44,13): error TS2322: Type 'unknown' is not assignable to type 'ReactNode'.
+client/src/pages/analytics/AnalyticsPage.tsx(44,27): error TS2339: Property 'length' does not exist on type '{}'.
+client/src/pages/analytics/AnalyticsPage.tsx(47,67): error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type '{}'.
+  Property '0' does not exist on type '{}'.
+client/src/pages/analytics/AnalyticsPage.tsx(50,13): error TS2322: Type 'unknown' is not assignable to type 'ReactNode'.
+client/src/pages/analytics/AnalyticsPage.tsx(50,27): error TS2339: Property 'length' does not exist on type '{}'.
+  stderr:
+Skipping query type generation: no warehouse ID. Set DATABRICKS_WAREHOUSE_ID or pass as argument.
+___________________ test_validate_template[appkit-analytics] ___________________
+
+val_template = ValidationTemplate(name='appkit-analytics', verify='build')
+val_cfg = ValidationConfig(profile='dogfood', shared_app_name='template-e2e-test', workspace_source_root='/Workspace/Users/mike....ValidationTemplate(name='appkit-lakebase', verify='build'), ValidationTemplate(name='appkit-serving', verify='build')])
+request = <FixtureRequest for <Function test_validate_template[appkit-analytics]>>
+
+    def test_validate_template(val_template, val_cfg, request):
+        log_dir = Path(__file__).parent / "logs"
+        log_dir.mkdir(exist_ok=True)
+        set_log_file(log_dir / f"validate-{val_template.name}.log")
+    
+        # Build-only path: no shared app, no deploy.
+        if val_template.verify == "build":
+            if request.config.getoption("--val-setup-only"):
+                pytest.skip("--val-setup-only: nothing to set up for build-only template")
+            with tempfile.TemporaryDirectory(prefix=f"val-{val_template.name}-") as tmp:
+>               build_template(val_template.name, Path(tmp))
+
+validate_templates.py:230: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+template_name = 'appkit-analytics'
+dest = PosixPath('/var/folders/vh/38ld40g15lbb2409b41wv1p40000gp/T/val-appkit-analytics-26z7trr4')
+
+    def build_template(template_name: str, dest: Path) -> None:
+        """Build-only validation for SPA/Node templates.
+    
+        Copies the template to a throwaway dir (never mutates the real template),
+        then runs `npm ci` and `npm run build`, raising on failure. No deploy.
+        """
+        src = git_copy_template(template_name, dest)
+        has_lock = (src / "package-lock.json").exists() or (src / "npm-shrinkwrap.json").exists()
+        install_cmd = ["npm", "ci"] if has_lock else ["npm", "install"]
+        for cmd in (install_cmd, ["npm", "run", "build"]):
+            _log(f"[{template_name}] $ {' '.join(cmd)}")
+            result = _run_cmd(cmd, cwd=src, timeout=BUILD_TIMEOUT)
+            if result.returncode != 0:
+>               raise RuntimeError(
+                    f"{' '.join(cmd)} failed for {template_name}:\n"
+                    f"stdout: {result.stdout[-2000:]}\nstderr: {result.stderr[-2000:]}"
+                )
+E               RuntimeError: npm run build failed for appkit-analytics:
+E               stdout: 
+E               > appkit-analytics@1.0.0 prebuild
+E               > npm run sync && npm run typegen -- --wait
+E               
+E               
+E               > appkit-analytics@1.0.0 sync
+E               > appkit plugin sync --write --silent
+E               
+E               
+E               > appkit-analytics@1.0.0 typegen
+E               > appkit generate-types --wait
+E               
+E               Generated serving types: /private/var/folders/vh/38ld40g15lbb2409b41wv1p40000gp/T/val-appkit-analytics-26z7trr4/appkit-analytics/shared/appkit-types/serving.d.ts
+E               
+E               > appkit-analytics@1.0.0 build
+E               > npm run build:server && npm run build:client
+E               
+E               
+E               > appkit-analytics@1.0.0 build:server
+E               > tsc -b tsconfig.server.json && tsdown -c tsdown.server.config.ts
+E               
+E               [34mℹ[39m tsdown [2mv0.20.3[22m powered by rolldown [2mv1.0.0-rc.3[22m
+E               [34mℹ[39m config file: [4m/private/var/folders/vh/38ld40g15lbb2409b41wv1p40000gp/T/val-appkit-analytics-26z7trr4/appkit-analytics/tsdown.server.config.ts[24m (unrun)
+E               [34mℹ[39m entry: [34mserver/server.ts[39m
+E               [34mℹ[39m tsconfig: [34mtsconfig.json[39m
+E               [34mℹ[39m Build start
+E               [34mℹ[39m [2mdist/[22m[1mserver.js[22m  [2m0.19 kB[22m [2m│ gzip: 0.16 kB[22m
+E               [34mℹ[39m 1 files, total: 0.19 kB
+E               [32m✔[39m Build complete in [32m16ms[39m
+E               
+E               > appkit-analytics@1.0.0 build:client
+E               > tsc -b tsconfig.client.json && vite build --config client/vite.config.ts
+E               
+E               client/src/pages/analytics/AnalyticsPage.tsx(44,13): error TS2322: Type 'unknown' is not assignable to type 'ReactNode'.
+E               client/src/pages/analytics/AnalyticsPage.tsx(44,27): error TS2339: Property 'length' does not exist on type '{}'.
+E               client/src/pages/analytics/AnalyticsPage.tsx(47,67): error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type '{}'.
+E                 Property '0' does not exist on type '{}'.
+E               client/src/pages/analytics/AnalyticsPage.tsx(50,13): error TS2322: Type 'unknown' is not assignable to type 'ReactNode'.
+E               client/src/pages/analytics/AnalyticsPage.tsx(50,27): error TS2339: Property 'length' does not exist on type '{}'.
+E               
+E               stderr: Skipping query type generation: no warehouse ID. Set DATABRICKS_WAREHOUSE_ID or pass as argument.
+
+validate_templates.py:81: RuntimeError
+----------------------------- Captured stdout call -----------------------------
+[12:56:12] [appkit-analytics] $ npm ci
+[12:57:00] ✓ npm ci  (48.0s)
+[12:57:00] [appkit-analytics] $ npm run build
+[12:57:05] ✗ npm run build  (exit 1, 5.2s)
+  stdout:
+
+> appkit-analytics@1.0.0 prebuild
+> npm run sync && npm run typegen -- --wait
+
+
+> appkit-analytics@1.0.0 sync
+> appkit plugin sync --write --silent
+
+
+> appkit-analytics@1.0.0 typegen
+> appkit generate-types --wait
+
+Generated serving types: /private/var/folders/vh/38ld40g15lbb2409b41wv1p40000gp/T/val-appkit-analytics-26z7trr4/appkit-analytics/shared/appkit-types/serving.d.ts
+
+> appkit-analytics@1.0.0 build
+> npm run build:server && npm run build:client
+
+
+> appkit-analytics@1.0.0 build:server
+> tsc -b tsconfig.server.json && tsdown -c tsdown.server.config.ts
+
+[34mℹ[39m tsdown [2mv0.20.3[22m powered by rolldown [2mv1.0.0-rc.3[22m
+[34mℹ[39m config file: [4m/private/var/folders/vh/38ld40g15lbb2409b41wv1p40000gp/T/val-appkit-analytics-26z7trr4/appkit-analytics/tsdown.server.config.ts[24m (unrun)
+[34mℹ[39m entry: [34mserver/server.ts[39m
+[34mℹ[39m tsconfig: [34mtsconfig.json[39m
+[34mℹ[39m Build start
+[34mℹ[39m [2mdist/[22m[1mserver.js[22m  [2m0.19 kB[22m [2m│ gzip: 0.16 kB[22m
+[34mℹ[39m 1 files, total: 0.19 kB
+[32m✔[39m Build complete in [32m16ms[39m
+
+> appkit-analytics@1.0.0 build:client
+> tsc -b tsconfig.client.json && vite build --config client/vite.config.ts
+
+client/src/pages/analytics/AnalyticsPage.tsx(44,13): error TS2322: Type 'unknown' is not assignable to type 'ReactNode'.
+client/src/pages/analytics/AnalyticsPage.tsx(44,27): error TS2339: Property 'length' does not exist on type '{}'.
+client/src/pages/analytics/AnalyticsPage.tsx(47,67): error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type '{}'.
+  Property '0' does not exist on type '{}'.
+client/src/pages/analytics/AnalyticsPage.tsx(50,13): error TS2322: Type 'unknown' is not assignable to type 'ReactNode'.
+client/src/pages/analytics/AnalyticsPage.tsx(50,27): error TS2339: Property 'length' does not exist on type '{}'.
+  stderr:
+Skipping query type generation: no warehouse ID. Set DATABRICKS_WAREHOUSE_ID or pass as argument.
+
+Validation report written to /Users/mike.helmick/src/app-templates/.scripts/agent-integration-tests/logs/validation-report.md
+=========================== short test summary info ============================
+FAILED validate_templates.py::test_validate_template[agentic-support-console]
+FAILED validate_templates.py::test_validate_template[content-moderator] - Run...
+FAILED validate_templates.py::test_validate_template[saas-tracker] - RuntimeE...
+FAILED validate_templates.py::test_validate_template[appkit-all-in-one] - Run...
+FAILED validate_templates.py::test_validate_template[appkit-analytics] - Runt...
+================== 5 failed, 10 passed in 1122.81s (0:18:42) ===================

@@ -1,0 +1,104 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.6, pytest-9.1.1, pluggy-1.6.0 -- /Users/mike.helmick/src/app-templates/.scripts/agent-integration-tests/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/mike.helmick/src/app-templates/.scripts/agent-integration-tests
+configfile: pyproject.toml
+plugins: xdist-3.8.0, anyio-4.15.1
+collecting ... collected 11 items
+
+validate_templates.py::test_validate_template[streamlit-database-app] PASSED [  9%]
+validate_templates.py::test_validate_template[streamlit-postgres-app] PASSED [ 18%]
+validate_templates.py::test_validate_template[flask-hello-world-app] PASSED [ 27%]
+validate_templates.py::test_validate_template[flask-database-app] PASSED [ 36%]
+validate_templates.py::test_validate_template[flask-postgres-app] PASSED [ 45%]
+validate_templates.py::test_validate_template[dash-chatbot-app] PASSED   [ 54%]
+validate_templates.py::test_validate_template[dash-data-app-obo-user] PASSED [ 63%]
+validate_templates.py::test_validate_template[dash-database-app] PASSED  [ 72%]
+validate_templates.py::test_validate_template[dash-postgres-app] PASSED  [ 81%]
+validate_templates.py::test_validate_template[mcp-server-hello-world] PASSED [ 90%]
+validate_templates.py::test_validate_template[mcp-server-open-api-spec] FAILED [100%]
+
+=================================== FAILURES ===================================
+_______________ test_validate_template[mcp-server-open-api-spec] _______________
+
+val_template = ValidationTemplate(name='mcp-server-open-api-spec', verify='mcp')
+val_cfg = ValidationConfig(profile='dogfood', shared_app_name='template-e2e-test', workspace_source_root='/Workspace/Users/mike....ValidationTemplate(name='appkit-lakebase', verify='build'), ValidationTemplate(name='appkit-serving', verify='build')])
+request = <FixtureRequest for <Function test_validate_template[mcp-server-open-api-spec]>>
+
+    
+    
+    @pytest.fixture(scope="session")
+    def val_cfg(request):
+        path = Path(request.config.getoption("--config") or DEFAULT_CONFIG_PATH)
+        return load_validation_config(path)
+    
+    
+    @pytest.fixture(scope="session")
+    def shared_app(val_cfg):
+        """Ensure the shared persistent app exists (idempotent)."""
+        result = _run_cmd(
+            ["databricks", "apps", "get", val_cfg.shared_app_name,
+             "-p", val_cfg.profile, "--output", "json"],
+            timeout=60,
+        )
+        if result.returncode != 0:
+            _log(f"Creating shared app {val_cfg.shared_app_name}")
+            databricks_create_app(val_cfg.shared_app_name, val_cfg.profile)
+        else:
+            _log(f"Shared app {val_cfg.shared_app_name} already exists")
+        return val_cfg.shared_app_name
+    
+    
+>   def test_validate_template(val_template, val_cfg, request):
+
+validate_templates.py:220: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+validate_templates.py:95: in wait_for_app_ready_generic
+    )
+helpers.py:136: in _run_cmd
+    result = subprocess.run(cmd, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:557: in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1221: in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:2154: in _communicate
+    self._check_timeout(endtime, orig_timeout, stdout, stderr)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <Popen: returncode: -9 args: ['databricks', 'apps', 'get', 'template-e2e-tes...>
+endtime = 454181.700292666, orig_timeout = 60, stdout_seq = [], stderr_seq = []
+skip_check_and_raise = False
+
+    def _check_timeout(self, endtime, orig_timeout, stdout_seq, stderr_seq,
+                       skip_check_and_raise=False):
+        """Convenience for checking if a timeout has expired."""
+        if endtime is None:
+            return
+        if skip_check_and_raise or _time() > endtime:
+>           raise TimeoutExpired(
+                    self.args, orig_timeout,
+                    output=b''.join(stdout_seq) if stdout_seq else None,
+                    stderr=b''.join(stderr_seq) if stderr_seq else None)
+E           subprocess.TimeoutExpired: Command '['databricks', 'apps', 'get', 'template-e2e-test', '-p', 'dogfood', '--output', 'json']' timed out after 60 seconds
+
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: TimeoutExpired
+----------------------------- Captured stdout call -----------------------------
+[17:05:34] Syncing mcp-server-open-api-spec -> /Workspace/Users/mike.helmick@databricks.com/template-validation/mcp-server-open-api-spec
+[17:05:37] ✓ databricks sync /var/folders/vh/38ld40g15lbb2409b41wv1p40000gp/T/val-mcp-server-open-api-spec-h_n5zbvv/mcp-server-open-api-spec...  (3.2s)
+[17:05:37] Deploying source at /Workspace/Users/mike.helmick@databricks.com/template-validation/mcp-server-open-api-spec into app template-e2e-test
+[17:05:55] ✓ databricks apps deploy...  (17.7s)
+[17:05:55] Waiting for app template-e2e-test to reach RUNNING...
+[17:05:55] ✓ databricks apps get...  (0.3s)
+[17:05:55]   app state: CRASHED
+[17:06:25] ✓ databricks apps get...  (0.4s)
+[17:06:25]   app state: CRASHED
+[17:07:58] ✗ timeout: databricks apps get template-e2e-test -p dogfood --output json  (after 1m 0s)
+[17:08:12] ✗ databricks apps logs template-e2e-test -p dogfood  (exit 1, 6.5s)
+  stderr:
+Error: Get "https://dogfood.staging.databricks.com/api/2.0/apps/template-e2e-test?": dial tcp: lookup dogfood.staging.databricks.com: no such host
+=========================== short test summary info ============================
+FAILED validate_templates.py::test_validate_template[mcp-server-open-api-spec]
+=================== 1 failed, 10 passed in 320.56s (0:05:20) ===================

@@ -1,0 +1,140 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.6, pytest-9.1.1, pluggy-1.6.0 -- /Users/mike.helmick/src/app-templates/.scripts/agent-integration-tests/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/mike.helmick/src/app-templates/.scripts/agent-integration-tests
+configfile: pyproject.toml
+plugins: xdist-3.8.0, anyio-4.15.1
+collecting ... collected 2 items
+
+validate_templates.py::test_validate_template[streamlit-database-app] [16:23:59] ✓ databricks apps get...  (0.4s)
+[16:23:59] Shared app template-e2e-test already exists
+[16:23:59] Syncing streamlit-database-app -> /Workspace/Users/mike.helmick@databricks.com/template-validation/streamlit-database-app
+[16:24:00] ✓ databricks sync /var/folders/vh/38ld40g15lbb2409b41wv1p40000gp/T/val-streamlit-database-app-zfb5sxl4/streamlit-database-app...  (0.8s)
+[16:24:00] Deploying source at /Workspace/Users/mike.helmick@databricks.com/template-validation/streamlit-database-app into app template-e2e-test
+[16:24:24] ✗ databricks apps deploy template-e2e-test --source-code-path /Workspace/Users/mike.helmick@databricks.com/template-validation/streamlit-database-app -p dogfood  (exit 1, 24.4s)
+  stderr:
+Error: failed to reach SUCCEEDED, got FAILED: Databricks couldn't authenticate the app while loading workspace package repository settings. Please try deploying again, or contact Databricks support if the issue continues.
+
+To view app logs, run:
+  databricks apps logs template-e2e-test --tail-lines 100 --profile dogfood
+[16:25:06] ✓ databricks apps deploy...  (12.0s)
+[16:25:06] Waiting for app template-e2e-test to reach RUNNING...
+[16:25:06] ✓ databricks apps get...  (0.3s)
+[16:25:06]   app state: RUNNING
+[16:25:08]   / status=200
+PASSED
+validate_templates.py::test_validate_template[rag-chat] [16:25:08] Syncing rag-chat -> /Workspace/Users/mike.helmick@databricks.com/template-validation/rag-chat
+[16:25:12] ✓ databricks sync /var/folders/vh/38ld40g15lbb2409b41wv1p40000gp/T/val-rag-chat-gwwte_ig/rag-chat...  (3.7s)
+[16:25:12] Deploying source at /Workspace/Users/mike.helmick@databricks.com/template-validation/rag-chat into app template-e2e-test
+[16:26:22] ✗ databricks apps deploy template-e2e-test --source-code-path /Workspace/Users/mike.helmick@databricks.com/template-validation/rag-chat -p dogfood  (exit 1, 1m 9s)
+  stderr:
+Error: failed to reach SUCCEEDED, got FAILED: Error: app exited unexpectedly. Please check /logz for more details
+
+To view app logs, run:
+  databricks apps logs template-e2e-test --tail-lines 100 --profile dogfood
+[16:27:25] ✓ databricks apps deploy...  (33.2s)
+[16:27:25] Waiting for app template-e2e-test to reach RUNNING...
+[16:27:25] ✓ databricks apps get...  (0.3s)
+[16:27:25]   app state: CRASHED
+[16:27:56] ✓ databricks apps get...  (0.4s)
+[16:27:56]   app state: CRASHED
+[16:28:26] ✓ databricks apps get...  (0.6s)
+[16:28:26]   app state: CRASHED
+[16:28:57] ✓ databricks apps get...  (0.8s)
+[16:28:57]   app state: CRASHED
+[16:29:28] ✓ databricks apps get...  (0.4s)
+[16:29:28]   app state: CRASHED
+[16:29:58] ✓ databricks apps get...  (0.5s)
+[16:29:58]   app state: CRASHED
+[16:30:29] ✓ databricks apps get...  (0.5s)
+[16:30:29]   app state: CRASHED
+[16:30:59] ✓ databricks apps get...  (0.4s)
+[16:30:59]   app state: CRASHED
+[16:31:30] ✓ databricks apps get...  (0.6s)
+[16:31:30]   app state: CRASHED
+[16:32:00] ✓ databricks apps get...  (0.4s)
+[16:32:00]   app state: CRASHED
+[16:32:30] ✓ databricks apps get...  (0.5s)
+[16:32:30]   app state: CRASHED
+[16:33:01] ✓ databricks apps get...  (0.7s)
+[16:33:01]   app state: CRASHED
+[16:33:31] ✓ databricks apps get...  (0.4s)
+[16:33:31]   app state: CRASHED
+[16:34:02] ✓ databricks apps get...  (0.4s)
+[16:34:02]   app state: CRASHED
+[16:34:32] ✓ databricks apps get...  (0.6s)
+[16:34:32]   app state: CRASHED
+[16:35:03] ✓ databricks apps get...  (0.4s)
+[16:35:03]   app state: CRASHED
+[16:35:33] ✓ databricks apps get...  (0.4s)
+[16:35:33]   app state: CRASHED
+[16:36:04] ✓ databricks apps get...  (0.5s)
+[16:36:04]   app state: CRASHED
+[16:36:35] ✓ databricks apps get...  (0.9s)
+[16:36:35]   app state: CRASHED
+[16:37:05] ✓ databricks apps get...  (0.5s)
+[16:37:05]   app state: CRASHED
+[16:37:36] ✗ databricks apps logs template-e2e-test -p dogfood  (exit 1, 0.8s)
+  stderr:
+Error: websocket: bad handshake (HTTP 302 Found)
+FAILED
+
+=================================== FAILURES ===================================
+_______________________ test_validate_template[rag-chat] _______________________
+
+val_template = ValidationTemplate(name='rag-chat', verify='spa')
+val_cfg = ValidationConfig(profile='dogfood', shared_app_name='template-e2e-test', workspace_source_root='/Workspace/Users/mike....'), ValidationTemplate(name='appkit-lakebase', verify='spa'), ValidationTemplate(name='appkit-serving', verify='spa')])
+shared_app = 'template-e2e-test'
+request = <FixtureRequest for <Function test_validate_template[rag-chat]>>
+
+    def test_validate_template(val_template, val_cfg, shared_app, request):
+        log_dir = Path(__file__).parent / "logs"
+        log_dir.mkdir(exist_ok=True)
+        set_log_file(log_dir / f"validate-{val_template.name}.log")
+    
+        if request.config.getoption("--val-setup-only"):
+            pytest.skip("--val-setup-only: shared app ensured, skipping deploy")
+    
+        ws_path = f"{val_cfg.workspace_source_root}/{val_template.name}"
+        with tempfile.TemporaryDirectory(prefix=f"val-{val_template.name}-") as tmp:
+            src = prepare_source(val_template.name, Path(tmp))
+            sync_source(src, ws_path, val_cfg.profile)
+            apps_deploy_source(shared_app, ws_path, val_cfg.profile)
+            try:
+>               app_url, token = wait_for_app_ready_generic(
+                    shared_app, val_cfg.profile, health_path_for(val_template.verify)
+                )
+
+validate_templates.py:190: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+app_name = 'template-e2e-test', profile = 'dogfood', health_path = '/'
+
+    def wait_for_app_ready_generic(
+        app_name: str, profile: str, health_path: str = "/"
+    ) -> tuple[str, str]:
+        _log(f"Waiting for app {app_name} to reach RUNNING...")
+        app_url = ""
+        for _ in range(MAX_POLLS):
+            result = _run_cmd(
+                ["databricks", "apps", "get", app_name, "-p", profile, "--output", "json"],
+                timeout=60,
+            )
+            if result.returncode == 0:
+                data = json.loads(result.stdout)
+                state = data.get("app_status", {}).get("state", "")
+                _log(f"  app state: {state}")
+                if state == "RUNNING":
+                    app_url = data.get("url", "").rstrip("/")
+                    if not app_url:
+                        raise RuntimeError(f"No URL for app {app_name}")
+                    break
+            time.sleep(POLL_INTERVAL)
+        else:
+>           raise TimeoutError(f"App {app_name} not RUNNING within {MAX_POLLS} polls")
+E           TimeoutError: App template-e2e-test not RUNNING within 20 polls
+
+validate_templates.py:90: TimeoutError
+=========================== short test summary info ============================
+FAILED validate_templates.py::test_validate_template[rag-chat] - TimeoutError...
+=================== 1 failed, 1 passed in 819.51s (0:13:39) ====================

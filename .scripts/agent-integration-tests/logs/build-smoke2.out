@@ -1,0 +1,15 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.6, pytest-9.1.1, pluggy-1.6.0 -- /Users/mike.helmick/src/app-templates/.scripts/agent-integration-tests/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/mike.helmick/src/app-templates/.scripts/agent-integration-tests
+configfile: pyproject.toml
+plugins: xdist-3.8.0, anyio-4.15.1
+collecting ... collected 1 item
+
+validate_templates.py::test_validate_template[nodejs-fastapi-hello-world-app] [17:00:18] [nodejs-fastapi-hello-world-app] $ npm install
+[17:00:46] ✓ npm install  (27.3s)
+[17:00:46] [nodejs-fastapi-hello-world-app] $ npm run build
+[17:00:47] ✓ npm run build  (1.2s)
+PASSED
+
+============================== 1 passed in 30.55s ==============================

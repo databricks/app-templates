@@ -1,0 +1,38 @@
+# Deploy-validation config for non-agent templates.
+# Serial single-app model — see docs/superpowers/specs/2026-09-25-template-deploy-validation-design.md
+profile: dogfood
+shared_app_name: template-e2e-test
+# Leave workspace_source_root empty to derive /Workspace/Users/<current-user>/template-validation at runtime.
+workspace_source_root: ""
+templates:
+  # streamlit
+  streamlit-database-app: { verify: html }
+  streamlit-postgres-app: { verify: html }
+  # flask
+  flask-hello-world-app: { verify: html }
+  flask-database-app: { verify: html }
+  flask-postgres-app: { verify: html }
+  # dash
+  dash-chatbot-app: { verify: html }
+  dash-data-app-obo-user: { verify: html }
+  dash-database-app: { verify: html }
+  dash-postgres-app: { verify: html }
+  # mcp servers
+  mcp-server-hello-world: { verify: mcp }
+  mcp-server-open-api-spec: { verify: mcp }
+  # node / spa
+  nodejs-fastapi-hello-world-app: { verify: build }
+  rag-chat: { verify: build }
+  agent-langchain-ts: { verify: build }
+  agentic-support-console: { verify: build }
+  e2e-chatbot-app-next: { verify: build }
+  inventory-intelligence: { verify: build }
+  content-moderator: { verify: build }
+  saas-tracker: { verify: build }
+  vacation-rentals: { verify: build }
+  appkit-all-in-one: { verify: build }
+  appkit-analytics: { verify: build }
+  appkit-files: { verify: build }
+  appkit-genie: { verify: build }
+  appkit-lakebase: { verify: build }
+  appkit-serving: { verify: build }

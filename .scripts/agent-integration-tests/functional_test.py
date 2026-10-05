@@ -12,7 +12,7 @@ from functional_config import FUNCTIONAL_TEMPLATES, missing_resources
 from local_launch import launch_local, teardown
 from functional_runners import (
     run_node_playwright, run_py_playwright, run_mcp, run_agent_api,
-    deployed_auth_ok, looks_like_login_page,
+    deployed_auth_ok, looks_like_login_page, openai_serving_sso_walled,
 )
 from template_config import REPO_ROOT
 
@@ -62,6 +62,12 @@ def test_functional(ft, request):
 
     try:
         if target == "local":
+            if ft.model_dependent and openai_serving_sso_walled():
+                row["local"] = "skip"
+                row["notes"] = ("serving path SSO-walled on this workspace — run "
+                                "--target deployed or use a non-SSO workspace")
+                _record(row)
+                pytest.skip(row["notes"])
             proc, base_url = launch_local(ft, REPO_ROOT / ft.name)
             try:
                 _run_test(ft, base_url, None, None)

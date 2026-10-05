@@ -12,6 +12,11 @@ class FunctionalTemplate:
     launch: dict          # family-specific launch hints (command/port/ready path)
     test: dict            # {"kind": "...", ...}
     required_resources: tuple[str, ...]
+    # True when the happy path calls a model serving endpoint. On SSO-walled
+    # workspaces (e.g. dogfood staging) the OpenAI-compat serving path redirects
+    # local clients to a login page, so these rows are skipped (not failed) for
+    # --target local there; they pass on a normal workspace and run deployed.
+    model_dependent: bool = False
 
 
 def missing_resources(ft: "FunctionalTemplate", env: dict) -> list[str]:
@@ -31,6 +36,7 @@ FUNCTIONAL_TEMPLATES: dict[str, FunctionalTemplate] = {
         test={"kind": "node-playwright", "project": "e2e",
               "grep": "Send a user message and receive response"},
         required_resources=("DATABRICKS_SERVING_ENDPOINT",),
+        model_dependent=True,
     ),
     "mcp-server-hello-world": FunctionalTemplate(
         name="mcp-server-hello-world", family="mcp",
@@ -43,5 +49,6 @@ FUNCTIONAL_TEMPLATES: dict[str, FunctionalTemplate] = {
         launch={"ready_path": "/agent/info"},
         test={"kind": "agent-api"},
         required_resources=(),
+        model_dependent=True,
     ),
 }

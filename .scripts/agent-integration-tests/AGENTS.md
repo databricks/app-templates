@@ -285,8 +285,14 @@ uv run --no-sync pytest functional_test.py -p no:xdist -v --target deployed
 
 ### Local vs. deployed target
 
-- **`--target local` (default)**: `local_launch.py` starts the template's own dev process per family (`streamlit run app.py`, `npm run dev`, `uv run start-server`, the MCP server command) on a free port and polls `launch.ready_path` until it responds. The runner then points Playwright/requests at `http://127.0.0.1:<port>`.
+- **`--target local` (default)**: `local_launch.py` first runs `ensure_deps` (`uv sync` / `uv venv --python 3.11` + `uv pip install -r requirements.txt` for python families, `npm install` for node, all via the Databricks pypi/npm proxies), then starts the template's own dev process per family (`streamlit run app.py`, `npm run dev`, `uv run start-server`, the MCP server command) on a free port and polls `launch.ready_path`. Python-family apps run from the template's own `.venv` (via `VIRTUAL_ENV`/`PATH`), not `uv run`. The runner then points Playwright/requests at `http://127.0.0.1:<port>`.
 - **`--target deployed`**: skips `local_launch` entirely and resolves a shared, already-deployed app's URL + OAuth token via `validate_templates.wait_for_app_ready_generic` and `validation_config`. Browser-driven exemplars (`py-playwright`, `node-playwright`) additionally require a saved Playwright `storageState` — if `.auth/dogfood.json` doesn't exist yet, the row is skipped with `no storageState -- run auth_setup first` rather than failing.
+
+### Model-dependent exemplars on SSO-walled workspaces
+
+Exemplars with `model_dependent=True` (`agent-langgraph`, `e2e-chatbot-app-next`) call a model serving endpoint on their happy path. On an **SSO-walled workspace (dogfood staging)**, a local client hitting the **OpenAI-compat serving path** (`/serving-endpoints/<name>/invocations`, what `ChatDatabricks` and OpenAI-style clients use) is **303-redirected to the login page** and receives sign-in HTML — surfacing as `'str' object has no attribute 'choices'` / "No generations found in stream". The **SDK-native** `w.serving_endpoints.query()` and the **deployed SP** path are unaffected; this is purely a staging-SSO quirk, not a template bug (the same `ChatDatabricks` call passes against a normal workspace).
+
+So for `--target local`, `functional_test.py` prechecks the serving path via `openai_serving_sso_walled()` and, when it detects the login wall, **skips** the model-dependent row with `serving path SSO-walled on this workspace — run --target deployed or use a non-SSO workspace` rather than failing. To actually exercise these exemplars locally, run against a non-SSO workspace profile (`DATABRICKS_CONFIG_PROFILE=<non-staging>`); otherwise validate them with `--target deployed`.
 
 ### SSO auth for deployed browser tests
 

@@ -278,3 +278,14 @@ def test_report_handles_absent_deployed():
     # failures sort first
     assert md.index("streamlit-database-app") < md.index("agent-langgraph")
     assert "1/2 local passed" in md
+
+
+# Task 5: Functional runners tests
+def test_missing_browser_message(monkeypatch):
+    import pytest
+
+    import functional_runners as fr
+
+    monkeypatch.setattr(fr, "_chromium_present", lambda: False)
+    with pytest.raises(RuntimeError, match="playwright install chromium"):
+        fr.assert_browser_installed()

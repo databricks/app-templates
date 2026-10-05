@@ -51,3 +51,10 @@ def run_agent_api(base_url: str, token: str | None) -> None:
     resp.raise_for_status()
     if "output" not in resp.json():
         raise RuntimeError("agent /invocations missing 'output'")
+
+
+def looks_like_login_page(html: str, final_url: str) -> bool:
+    u = (final_url or "").lower()
+    if any(s in u for s in ("/login", "/oidc", "accounts.cloud.databricks", "login.databricks")):
+        return True
+    return "sign in to databricks" in (html or "").lower()

@@ -289,3 +289,12 @@ def test_missing_browser_message(monkeypatch):
     monkeypatch.setattr(fr, "_chromium_present", lambda: False)
     with pytest.raises(RuntimeError, match="playwright install chromium"):
         fr.assert_browser_installed()
+
+
+# Task 6: Login-page detection tests
+def test_detects_login_page_not_app():
+    from functional_runners import looks_like_login_page
+
+    assert looks_like_login_page("<html>Sign in to Databricks</html>", "https://login.databricks.com/oidc")
+    assert looks_like_login_page("", "https://accounts.cloud.databricks.com/login")
+    assert not looks_like_login_page("<html>My App</html>", "https://myapp.databricksapps.com/")

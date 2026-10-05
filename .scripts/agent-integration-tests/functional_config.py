@@ -28,7 +28,8 @@ FUNCTIONAL_TEMPLATES: dict[str, FunctionalTemplate] = {
     "e2e-chatbot-app-next": FunctionalTemplate(
         name="e2e-chatbot-app-next", family="node",
         launch={"dev_script": "dev", "ready_path": "/"},
-        test={"kind": "node-playwright"},
+        test={"kind": "node-playwright", "project": "e2e",
+              "grep": "Send a user message and receive response"},
         required_resources=("DATABRICKS_SERVING_ENDPOINT",),
     ),
     "mcp-server-hello-world": FunctionalTemplate(

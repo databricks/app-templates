@@ -312,7 +312,7 @@ Missing required env vars produce a skip (`missing creds: VAR_NAME`) for that ro
 
 ### Runners (`functional_runners.py`)
 
-- `run_py_playwright(template_dir, spec, base_url, storage_state)` — runs `uv run --no-sync pytest <spec> -q` inside the template dir with `PLAYWRIGHT_BASE_URL` (and `PLAYWRIGHT_STORAGE_STATE` if set) in the environment. Asserts Chromium is installed first (`assert_browser_installed`) and raises an actionable error naming `playwright install chromium` if not.
+- `run_py_playwright(template_dir, spec, base_url, storage_state)` — runs `[sys.executable, -m, pytest, <spec_path>]` from the orchestrator's own directory (the test venv, which has playwright+pytest) with `PLAYWRIGHT_BASE_URL` (and `PLAYWRIGHT_STORAGE_STATE` if set) in the environment. Asserts Chromium is installed first (`assert_browser_installed`) and raises an actionable error naming `playwright install chromium` if not.
 - `run_node_playwright(template_dir, base_url, storage_state)` — same, but `npx playwright test` inside the node template; relies on `playwright.config.ts`'s `use.baseURL` reading `PLAYWRIGHT_BASE_URL` (falling back to `http://localhost:<PORT>` when unset).
 - `run_mcp(base_url)` — plain `requests.get(base_url + "/")`, fails only on 5xx.
 - `run_agent_api(base_url, token)` — POSTs the standard agent payload to `/invocations`, fails on non-2xx or a missing `"output"` key.

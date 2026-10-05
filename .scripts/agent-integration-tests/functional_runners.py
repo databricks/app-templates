@@ -1,9 +1,9 @@
 """Per-kind functional test runners."""
 from __future__ import annotations
-import os, shutil, subprocess, sys
+import os, sys
 from pathlib import Path
 import requests
-from helpers import _run_cmd, _log
+from helpers import _run_cmd
 
 AGENT_PAYLOAD = {"input": [{"role": "user", "content": "What time is it? Use the get_current_time tool."}]}
 
@@ -25,12 +25,18 @@ def assert_browser_installed() -> None:
         raise RuntimeError("Chromium not installed for Playwright. Run: playwright install chromium")
 
 
-def run_node_playwright(template_dir: Path, base_url: str, storage_state: str | None) -> None:
+def run_node_playwright(template_dir: Path, base_url: str, storage_state: str | None,
+                         project: str | None = None, grep: str | None = None) -> None:
     assert_browser_installed()
     env = {**os.environ, "PLAYWRIGHT_BASE_URL": base_url}
     if storage_state:
         env["PLAYWRIGHT_STORAGE_STATE"] = storage_state
-    r = _run_cmd(["npx", "playwright", "test"], cwd=template_dir, env=env, timeout=600)
+    cmd = ["npx", "playwright", "test"]
+    if project:
+        cmd += ["--project", project]
+    if grep:
+        cmd += ["-g", grep]
+    r = _run_cmd(cmd, cwd=template_dir, env=env, timeout=600)
     if r.returncode != 0:
         raise RuntimeError(f"node playwright failed:\n{r.stdout[-2000:]}\n{r.stderr[-2000:]}")
 
@@ -71,3 +77,17 @@ def looks_like_login_page(html: str, final_url: str) -> bool:
     if any(s in u for s in ("/login", "/oidc", "accounts.cloud.databricks", "login.databricks")):
         return True
     return "sign in to databricks" in (html or "").lower()
+
+
+def deployed_auth_ok(app_url: str, storage_state: str) -> bool:
+    """Load the deployed app with the saved session; False if it bounced to SSO login."""
+    assert_browser_installed()
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        ctx = b.new_context(storage_state=storage_state)
+        page = ctx.new_page()
+        page.goto(app_url, wait_until="domcontentloaded")
+        bad = looks_like_login_page(page.content(), page.url)
+        b.close()
+    return not bad

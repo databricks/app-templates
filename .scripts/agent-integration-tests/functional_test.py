@@ -10,7 +10,10 @@ from pathlib import Path
 import pytest
 from functional_config import FUNCTIONAL_TEMPLATES, missing_resources
 from local_launch import launch_local, teardown
-from functional_runners import run_node_playwright, run_py_playwright, run_mcp, run_agent_api
+from functional_runners import (
+    run_node_playwright, run_py_playwright, run_mcp, run_agent_api,
+    deployed_auth_ok, looks_like_login_page,
+)
 from template_config import REPO_ROOT
 
 AUTH_DIR = Path(__file__).parent / ".auth"
@@ -36,7 +39,8 @@ def _run_test(ft, base_url, storage_state, token):
     kind = ft.test["kind"]
     tdir = REPO_ROOT / ft.name
     if kind == "node-playwright":
-        run_node_playwright(tdir, base_url, storage_state)
+        run_node_playwright(tdir, base_url, storage_state,
+                             project=ft.test.get("project"), grep=ft.test.get("grep"))
     elif kind == "py-playwright":
         run_py_playwright(tdir, ft.test["spec"], base_url, storage_state)
     elif kind == "mcp":
@@ -65,16 +69,26 @@ def test_functional(ft, request):
             finally:
                 teardown(proc)
         else:  # deployed
+            only = request.config.getoption("--val-template")
+            if len(only) != 1:
+                row["notes"] = "deployed runs one template at a time (shared app); pass a single --val-template"
+                _record(row)
+                pytest.skip(row["notes"])
             from validate_templates import wait_for_app_ready_generic
             from validation_config import load_validation_config, DEFAULT_CONFIG_PATH
             cfg = load_validation_config(DEFAULT_CONFIG_PATH)
             app_url, token = wait_for_app_ready_generic(cfg.shared_app_name, cfg.profile)
             state = AUTH_DIR / "dogfood.json"
             storage = str(state) if state.exists() else None
-            if ft.test["kind"] in ("node-playwright", "py-playwright") and not storage:
-                row["notes"] = "no storageState -- run auth_setup first"
-                _record(row)
-                pytest.skip(row["notes"])
+            if ft.test["kind"] in ("node-playwright", "py-playwright"):
+                if not storage:
+                    row["notes"] = "no storageState -- run auth_setup first"
+                    _record(row)
+                    pytest.skip(row["notes"])
+                if not deployed_auth_ok(app_url, storage):
+                    row["notes"] = "storageState expired — re-run auth_setup"
+                    _record(row)
+                    pytest.skip(row["notes"])
             _run_test(ft, app_url, storage, token)
             row["deployed"] = "pass"
     except Exception as exc:

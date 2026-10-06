@@ -37,6 +37,49 @@ WORKFLOWS_TO_SYNC = [
     ("deploy.yml", ".github/workflows"),
 ]
 
+# Non-agent (non-OBO) templates: the diagnostics module is copied next to the app
+# entrypoint so `import app_diagnostics` resolves. Value is the dir (relative to the
+# template root) that holds the entrypoint. The one-line install_diagnostics() call
+# in each entrypoint is a one-time manual edit; only the module is synced here, so
+# the module can be fixed centrally in .scripts/source/app_diagnostics.py.
+DIAGNOSTICS_PY_TARGETS = {
+    "streamlit-hello-world-app": ".",
+    "streamlit-chatbot-app": ".",
+    "streamlit-data-app": ".",
+    "streamlit-database-app": ".",
+    "streamlit-postgres-app": ".",
+    "e2e-chatbot-app": ".",
+    "dash-hello-world-app": ".",
+    "dash-chatbot-app": ".",
+    "dash-data-app": ".",
+    "dash-database-app": ".",
+    "dash-postgres-app": ".",
+    "flask-hello-world-app": ".",
+    "flask-database-app": ".",
+    "flask-postgres-app": ".",
+    "gradio-hello-world-app": ".",
+    "gradio-chatbot-app": ".",
+    "gradio-data-app": ".",
+    "shiny-hello-world-app": ".",
+    "shiny-chatbot-app": ".",
+    "shiny-data-app": ".",
+    "mcp-server-hello-world": "server",
+    "nodejs-fastapi-hello-world-app": "backend",
+}
+
+
+def sync_diagnostics() -> list[str]:
+    """Copy app_diagnostics.py next to each non-agent template's entrypoint."""
+    synced: list[str] = []
+    for template, dest_subdir in DIAGNOSTICS_PY_TARGETS.items():
+        dest_dir = REPO_ROOT / template / dest_subdir
+        if not dest_dir.exists():
+            print(f"  Warning: {dest_dir} does not exist, skipping diagnostics for {template}")
+            continue
+        shutil.copy2(SOURCE_DIR / "app_diagnostics.py", dest_dir / "app_diagnostics.py")
+        synced.append(f"{template}/{dest_subdir}/app_diagnostics.py")
+    return synced
+
 
 def sync_scripts(template: str, config: dict) -> list[str]:
     """Copy shared Python scripts into the template. Returns list of synced names."""
@@ -100,6 +143,10 @@ def main():
             print(f"Syncing {template}... ({', '.join(all_synced)})")
         else:
             print(f"Skipping {template} (nothing to sync)")
+
+    diag_synced = sync_diagnostics()
+    if diag_synced:
+        print(f"Synced diagnostics module to {len(diag_synced)} non-agent templates")
 
     print("Done!")
 

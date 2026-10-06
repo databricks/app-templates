@@ -44,9 +44,6 @@ templates:
   dash-database-app: { verify: html }
   flask-database-app: { verify: html }
 
-  # ---- Tier 5: UC volume / connection ----
-  mcp-server-open-api-spec: { verify: mcp }
-
   # ---- Agents (deploy + browser verify of the chat UI) ----
   agent-langgraph: { verify: html }
   agent-langgraph-advanced: { verify: html }
@@ -63,6 +60,7 @@ templates:
   agent-langchain-ts: { verify: build }
 
   # ---- OBO (on-behalf-of-user) — NOT testable in this environment ----
+  mcp-server-open-api-spec: { verify: obo }   # user_api_scopes: catalog.connections
   appkit-all-in-one: { verify: obo }
   appkit-analytics: { verify: obo }
   appkit-files: { verify: obo }

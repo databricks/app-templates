@@ -106,6 +106,17 @@ uv run pytest test_e2e.py -v -n0 -s --template agent-langgraph
 
 Template test configs are in `.scripts/agent-integration-tests/template_config.py`.
 
+### Deploy validation & functional e2e (all templates)
+
+Beyond the agent `test_e2e.py` suite, `.scripts/agent-integration-tests/` also has
+two broader, serial (`-p no:xdist`) suites that run against ONE shared Databricks
+App (`template-e2e-test`): `validate_templates.py` (deploys each template's source
+and browser-verifies it serves — config in `validation-config.yaml`) and
+`functional_test.py` (drives each exemplar's real UI/protocol). Both need the shared
+app's resource bindings + an SSO storageState (`auth_setup.py`). **Use the
+`validate-templates` skill** (`.claude/skills/validate-templates/` — repo-dev only,
+not synced into templates) for prerequisites, commands, and how to read the reports.
+
 ## Editing Workflow Summary
 
 1. **Changing a shared script** (`quickstart.py`, `start_app.py`, `evaluate_agent.py`) — edit in `.scripts/source/`, run `uv run python .scripts/sync-scripts.py`

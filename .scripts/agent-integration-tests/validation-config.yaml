@@ -1,38 +1,80 @@
-# Deploy-validation config for non-agent templates.
+# Deploy-validation config — all templates.
 # Serial single-app model — see docs/superpowers/specs/2026-09-25-template-deploy-validation-design.md
+#
+# verify modes:
+#   html  = deploy into shared app + browser(storageState) confirms the app's own content renders
+#   mcp   = deploy + browser-authenticated GET of / is non-5xx and not the login page
+#   build = local `npm ci && npm run build` only (no deploy) — for node/SPA templates
+#   obo   = on-behalf-of-user; NOT testable in this environment -> reported skipped
+#
+# The shared app must have these resource KEYS bound (see AGENTS.md):
+#   serving-endpoint, sql-warehouse, postgres, genie-space, uc-volume, experiment
 profile: dogfood
 shared_app_name: template-e2e-test
-# Leave workspace_source_root empty to derive /Workspace/Users/<current-user>/template-validation at runtime.
 workspace_source_root: ""
 templates:
-  # streamlit
-  streamlit-database-app: { verify: html }
-  streamlit-postgres-app: { verify: html }
-  # flask
+  # ---- Tier 0: no resources (deploy + browser verify) ----
+  streamlit-hello-world-app: { verify: html }
+  dash-hello-world-app: { verify: html }
   flask-hello-world-app: { verify: html }
-  flask-database-app: { verify: html }
-  flask-postgres-app: { verify: html }
-  # dash
-  dash-chatbot-app: { verify: html }
-  dash-data-app-obo-user: { verify: html }
-  dash-database-app: { verify: html }
-  dash-postgres-app: { verify: html }
-  # mcp servers
+  gradio-hello-world-app: { verify: html }
+  shiny-hello-world-app: { verify: html }
   mcp-server-hello-world: { verify: mcp }
+
+  # ---- Tier 1: serving-endpoint ----
+  streamlit-chatbot-app: { verify: html }
+  dash-chatbot-app: { verify: html }
+  gradio-chatbot-app: { verify: html }
+  shiny-chatbot-app: { verify: html }
+
+  # ---- Tier 2: sql-warehouse ----
+  streamlit-data-app: { verify: html }
+  dash-data-app: { verify: html }
+  gradio-data-app: { verify: html }
+  shiny-data-app: { verify: html }
+
+  # ---- Tier 3: postgres (Lakebase Autoscaling) ----
+  streamlit-postgres-app: { verify: html }
+  dash-postgres-app: { verify: html }
+  flask-postgres-app: { verify: html }
+
+  # ---- Tier 3b: database (Lakebase Provisioned) — may need a `database`-type binding ----
+  streamlit-database-app: { verify: html }
+  dash-database-app: { verify: html }
+  flask-database-app: { verify: html }
+
+  # ---- Tier 5: UC volume / connection ----
   mcp-server-open-api-spec: { verify: mcp }
-  # node / spa
+
+  # ---- Agents (deploy + browser verify of the chat UI) ----
+  agent-langgraph: { verify: html }
+  agent-langgraph-advanced: { verify: html }
+  agent-non-conversational: { verify: html }
+  agent-openai-advanced: { verify: html }
+  agent-openai-agents-sdk: { verify: html }
+  agent-openai-agents-sdk-multiagent: { verify: html }
+  agent-migration-from-model-serving: { verify: html }
+
+  # ---- Build-only (node / SPA; no deploy) ----
   nodejs-fastapi-hello-world-app: { verify: build }
+  e2e-chatbot-app: { verify: build }
+  e2e-chatbot-app-next: { verify: build }
   rag-chat: { verify: build }
   agent-langchain-ts: { verify: build }
-  agentic-support-console: { verify: build }
-  e2e-chatbot-app-next: { verify: build }
-  inventory-intelligence: { verify: build }
-  content-moderator: { verify: build }
-  saas-tracker: { verify: build }
-  vacation-rentals: { verify: build }
-  appkit-all-in-one: { verify: build }
-  appkit-analytics: { verify: build }
-  appkit-files: { verify: build }
-  appkit-genie: { verify: build }
-  appkit-lakebase: { verify: build }
-  appkit-serving: { verify: build }
+
+  # ---- OBO (on-behalf-of-user) — NOT testable in this environment ----
+  appkit-all-in-one: { verify: obo }
+  appkit-analytics: { verify: obo }
+  appkit-files: { verify: obo }
+  appkit-genie: { verify: obo }
+  appkit-lakebase: { verify: obo }
+  appkit-serving: { verify: obo }
+  agentic-support-console: { verify: obo }
+  content-moderator: { verify: obo }
+  inventory-intelligence: { verify: obo }
+  saas-tracker: { verify: obo }
+  vacation-rentals: { verify: obo }
+  streamlit-data-app-obo-user: { verify: obo }
+  dash-data-app-obo-user: { verify: obo }
+  gradio-data-app-obo-user: { verify: obo }
+  shiny-data-app-obo-user: { verify: obo }

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-_VALID_VERIFY = {"html", "spa", "mcp", "api", "build"}
+_VALID_VERIFY = {"html", "spa", "mcp", "api", "build", "obo"}
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "validation-config.yaml"
 
 

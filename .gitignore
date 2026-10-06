@@ -199,3 +199,6 @@ mlflow.db
 !.claude/skills/validate-templates/
 !.claude/AGENTS.md
 !.claude/CLAUDE.md
+
+# agent-integration-tests scratch logs/reports (generated)
+.scripts/agent-integration-tests/logs/

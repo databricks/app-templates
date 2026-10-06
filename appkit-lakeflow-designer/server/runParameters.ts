@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { AppStorage } from '../shared/storageConfig';
+import { UPLOAD_UNAVAILABLE, UPLOAD_UNAVAILABLE_MESSAGE } from '../shared/storageConfig';
 import { APP_VIEWER_PARAM, UploadError, resolveUpload, type UploadStore } from './fileUploads';
 import { validateFileFormat } from '../shared/fileFormats';
 import { FILE_OUTPUTS_PARAM, OUTPUT_NAMESPACE_PARAM, type FileOutputConfig } from '../shared/fileOutputs';
@@ -41,7 +42,7 @@ export async function resolveRunParameters(
   submitted: Record<string, unknown>,
   viewer: string | undefined,
   store: UploadStore,
-): Promise<{ ok: true; params: Record<string, string> } | { ok: false; error: string }> {
+): Promise<{ ok: true; params: Record<string, string> } | { ok: false; error: string; code?: typeof UPLOAD_UNAVAILABLE }> {
   const params: Record<string, string> = {};
   const filenames = new Map<string, string>();
   const fileOutputs = Object.fromEntries(
@@ -69,7 +70,7 @@ export async function resolveRunParameters(
     const value = raw === undefined || raw === null ? '' : String(raw);
     const resolved = value.trim() === '' ? parameter.defaultValue : value;
     if (parameter.type === 'file') {
-      if (!manifest.storage || !viewer) return { ok: false, error: 'File uploads are not configured.' };
+      if (!manifest.storage || !viewer) return { ok: false, error: UPLOAD_UNAVAILABLE_MESSAGE, code: UPLOAD_UNAVAILABLE };
       try {
         const { path, upload } = await resolveUpload(store, manifest.storage, viewer, parameter.name, resolved);
         const formatError = validateFileFormat(upload.filename, parameter.fileFormats);
@@ -77,12 +78,23 @@ export async function resolveRunParameters(
         params[parameter.name] = path;
         filenames.set(parameter.name, upload.filename);
       } catch (error) {
+        if (
+          error instanceof UploadError &&
+          (error.code === UPLOAD_UNAVAILABLE || [400, 404, 409].includes(error.status))
+        ) {
+          return {
+            ok: false,
+            error: error.code === UPLOAD_UNAVAILABLE
+              ? error.message
+              : `${error.message} Upload the file again.`,
+            code: UPLOAD_UNAVAILABLE,
+          };
+        }
         return {
           ok: false,
-          error:
-            error instanceof UploadError
-              ? error.message
-              : 'Could not verify the uploaded file. Try uploading it again.',
+          error: error instanceof UploadError
+            ? error.message
+            : 'Could not verify the uploaded file. Try Run again after storage is available.',
         };
       }
       continue;

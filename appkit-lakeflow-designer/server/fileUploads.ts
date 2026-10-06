@@ -1,14 +1,22 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { MAX_UPLOAD_SIZE_LABEL, UPLOAD_REFERENCE, uploadStoragePath, type AppStorage } from '../shared/storageConfig';
+import {
+  MAX_UPLOAD_SIZE_LABEL,
+  UPLOAD_REFERENCE,
+  UPLOAD_UNAVAILABLE,
+  uploadStoragePath,
+  type AppStorage,
+} from '../shared/storageConfig';
 import { runJobParameters } from './jobParameters';
 
 export const APP_VIEWER_PARAM = '_lb_app_viewer';
 
 export class UploadError extends Error {
   status: number;
-  constructor(status: number, message: string, options?: ErrorOptions) {
+  code?: typeof UPLOAD_UNAVAILABLE;
+  constructor(status: number, message: string, options?: ErrorOptions & { code?: typeof UPLOAD_UNAVAILABLE }) {
     super(message, options);
     this.status = status;
+    this.code = options?.code;
   }
 }
 
@@ -78,7 +86,9 @@ function parseStoredUpload(raw: unknown, reference: string, maxBytes: number): S
     typeof raw.createdAt !== 'number' ||
     !Number.isFinite(raw.createdAt)
   ) {
-    throw new UploadError(409, 'This upload is incomplete or unreadable. Upload the file again.');
+    throw new UploadError(409, 'This upload is incomplete or unreadable. Upload the file again.', {
+      code: UPLOAD_UNAVAILABLE,
+    });
   }
   return { reference, filename: raw.filename, size: raw.size, createdAt: raw.createdAt };
 }
@@ -95,7 +105,9 @@ export async function resolveUpload(
   const upload = parseStoredUpload(await store.read(`${folder}/${id}.json`), reference, config.maxUploadFileSizeBytes);
   const path = `${folder}/${id}/${upload.filename}`;
   if ((await store.size(path)) !== upload.size)
-    throw new UploadError(409, 'The uploaded file is missing or has changed. Upload it again.');
+    throw new UploadError(409, 'The uploaded file is missing or has changed. Upload the file again.', {
+      code: UPLOAD_UNAVAILABLE,
+    });
   return { path, upload };
 }
 

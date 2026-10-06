@@ -1,5 +1,5 @@
 import type { SetStateAction } from 'react';
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card } from '@databricks/appkit-ui/react';
 
 import { ActiveRunBanner } from './ActiveRunBanner';
@@ -11,7 +11,15 @@ import type {
   AppOutputBlock,
   AppParameter,
 } from '../../shared/appManifest';
-import { fetchAppConfig, initialValuesFor, type AppConfigState, type NotRunnableReason } from './appConfig';
+import {
+  fetchAppConfig,
+  initialValuesFor,
+  refreshedValuesFor,
+  uploadConfigurationKey,
+  type AppConfigState,
+  type NotRunnableReason,
+} from './appConfig';
+import { UPLOAD_REFERENCE } from '../../shared/storageConfig';
 import { MarkdownBlock } from './MarkdownBlock';
 import type { PublishedChartRefusal } from './chartTranslation';
 import { describePublishedChartRefusal, translatePublishedChart } from './chartTranslation';
@@ -81,9 +89,58 @@ export function App() {
   const [config, setConfig] = useState<AppConfigState>({ status: 'loading' });
   const [lastRun, setLastRun] = useState<LastRunState>({ status: 'loading' });
   const [values, setValues] = useState<Record<string, string>>({});
+  const [configurationMessage, setConfigurationMessage] = useState<string>();
+  const [uploadReset, setUploadReset] = useState(0);
+  const currentUploadReset = useRef(0);
+  const currentConfig = useRef<AppConfigState>(config);
+  const configRequest = useRef(0);
+  const submissionPending = useRef(false);
 
   const formUntouched = useRef(true);
-  const { state, start, cancel, reset } = useDesignerRun();
+  const invalidateUploads = useCallback(() => {
+    currentUploadReset.current += 1;
+    setUploadReset(currentUploadReset.current);
+  }, []);
+  const refreshConfiguration = useCallback(async () => {
+    const request = ++configRequest.current;
+    const next = await fetchAppConfig();
+    if (request !== configRequest.current) return false;
+    const previous = currentConfig.current;
+    if (next.status !== 'ready') {
+      if (previous.status !== 'ready') setConfig(next);
+      setConfigurationMessage('Could not refresh the app configuration. Try Run again after the app is available.');
+      return false;
+    }
+    const changed =
+      previous.status === 'ready' &&
+      uploadConfigurationKey(previous.manifest) !== uploadConfigurationKey(next.manifest);
+    currentConfig.current = next;
+    setConfig(next);
+    if (previous.status === 'ready') {
+      setValues((current) => refreshedValuesFor(previous.manifest, next.manifest, current));
+    }
+    if (changed) {
+      // Keep an observed round trip invalid even if React batches both configuration updates.
+      invalidateUploads();
+      setConfigurationMessage(next.manifest.parameters.some(({ type }) => type === 'file')
+        ? 'The app’s storage or file inputs changed. Select your files again, then click Run.'
+        : 'The app configuration changed. Review your inputs, then click Run.');
+    }
+    return next.runnable && !changed;
+  }, [invalidateUploads]);
+  const uploadUnavailable = useCallback(() => {
+    invalidateUploads();
+    const current = currentConfig.current;
+    if (current.status === 'ready') {
+      const files = new Set(current.manifest.parameters.filter(({ type }) => type === 'file').map(({ name }) => name));
+      setValues((previous) =>
+        Object.fromEntries(Object.entries(previous).map(([name, value]) => [name, files.has(name) ? '' : value])),
+      );
+    }
+    setConfigurationMessage('An upload is no longer available. Select your files again, then click Run.');
+    void refreshConfiguration();
+  }, [invalidateUploads, refreshConfiguration]);
+  const { state, start, cancel, reset } = useDesignerRun(uploadUnavailable);
   const [history, setHistory] = useState<RunHistoryState>({ status: 'loading' });
 
   const [selectedEntry, setSelectedEntry] = useState<RunHistoryEntry | undefined>(undefined);
@@ -94,18 +151,16 @@ export function App() {
   const followedFinishedRunId = followed.settled ? followed.active?.run.jobRunId : undefined;
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const next = await fetchAppConfig();
-      if (cancelled) {
-        return;
-      }
-      setConfig(next);
-    })();
-    return () => {
-      cancelled = true;
+    void refreshConfiguration();
+    const onFocus = () => {
+      void refreshConfiguration();
     };
-  }, []);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      configRequest.current += 1;
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [refreshConfiguration]);
 
   useEffect(() => {
     if (config.status === 'ready') {
@@ -195,6 +250,12 @@ export function App() {
   const { manifest, runnable, notRunnableReason } = config;
   const outputsLabel = describeOutputs(manifest.blocks);
   const changeValues = (next: SetStateAction<Record<string, string>>) => {
+    const current = currentConfig.current;
+    if (
+      uploadReset !== currentUploadReset.current ||
+      current.status !== 'ready' ||
+      uploadConfigurationKey(current.manifest) !== uploadConfigurationKey(manifest)
+    ) return;
     formUntouched.current = false;
     setValues(next);
   };
@@ -202,17 +263,39 @@ export function App() {
     setSelectedEntry(undefined);
     setSelectedRun(undefined);
   };
-  const runWithValues = (runValues: Record<string, string>) => {
-    formUntouched.current = false;
-
-    clearSelection();
-
-    if (manifest.blocks.some((block) => block.type === 'output' && block.chartSpec !== undefined)) {
-      preloadOutputChart();
+  const runWithValues = async (runValues: Record<string, string>, signal?: AbortSignal) => {
+    if (submissionPending.current) return;
+    submissionPending.current = true;
+    try {
+      // Refresh again after upload: publishing can overlap a long-running file transfer.
+      if (!(await refreshConfiguration()) || signal?.aborted || uploadReset !== currentUploadReset.current) return;
+      const current = currentConfig.current;
+      if (
+        current.status !== 'ready' ||
+        uploadConfigurationKey(current.manifest) !== uploadConfigurationKey(manifest)
+      ) return;
+      const currentValues = refreshedValuesFor(manifest, current.manifest, runValues);
+      if (current.manifest.parameters.some(
+        ({ name, type }) => type === 'file' && !UPLOAD_REFERENCE.test(currentValues[name] ?? ''),
+      )) {
+        setConfigurationMessage('Select your files again, then click Run.');
+        return;
+      }
+      formUntouched.current = false;
+      setValues(currentValues);
+      clearSelection();
+      setConfigurationMessage(undefined);
+      if (manifest.blocks.some((block) => block.type === 'output' && block.chartSpec !== undefined)) {
+        preloadOutputChart();
+      }
+      await start(currentValues);
+    } finally {
+      submissionPending.current = false;
     }
-    void start(runValues);
   };
-  const run = () => runWithValues(values);
+  const run = () => {
+    void runWithValues(values);
+  };
   const selectRun = (entry: RunHistoryEntry) => {
 
     if (state.phase === 'settled') {
@@ -275,11 +358,22 @@ export function App() {
 
       <div className="grid gap-6">
         <Card className="overflow-hidden p-0">
+          {configurationMessage && (
+            <div className="px-6 pt-6" role="status">
+              <Alert>
+                <AlertTitle>Check your app inputs</AlertTitle>
+                <AlertDescription>{configurationMessage}</AlertDescription>
+              </Alert>
+            </div>
+          )}
           <ParameterForm
+            key={`${uploadConfigurationKey(manifest)}:${uploadReset}`}
             parameters={manifest.parameters}
             values={values}
             onChange={changeValues}
             onRun={runWithValues}
+            onPrepareRun={async () => (await refreshConfiguration()) && uploadReset === currentUploadReset.current}
+            onUploadUnavailable={uploadUnavailable}
             running={state.phase === 'running'}
             runnable={runnable}
           />

@@ -770,7 +770,7 @@ await createApp({
             appKitUploadStore(manifest.storage),
           );
           if (!resolved.ok) {
-            res.status(400).json({ error: resolved.error });
+            res.status(400).json({ error: resolved.error, ...(resolved.code ? { code: resolved.code } : {}) });
             return;
           }
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { after, before, test } from 'node:test';
+import { after, before, mock, test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'tsdown';
 
@@ -72,6 +72,107 @@ function memoryStore() {
     },
   };
 }
+
+test('a volume switch requires a fresh upload while leaving previous files unchanged', async () => {
+  const store = memoryStore();
+  const viewer = uploads.viewerKey('alice', '100');
+  const previous = await uploads.saveUpload(store, storage, viewer, 'path', 'old.csv', Buffer.from('original'));
+  const before = new Map(store.files);
+  const next = { ...storage, volume: 'main.default.other', path: '/Volumes/main/default/other/designer_apps/app1' };
+  const refused = await parameters.resolveRunParameters({ ...manifest, storage: next }, { path: previous.reference }, viewer, store);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.code, 'UPLOAD_UNAVAILABLE');
+  assert.match(refused.error, /Upload the file again/);
+  assert.deepEqual(store.files, before);
+  const fresh = await uploads.saveUpload(store, next, viewer, 'path', 'fresh.csv', Buffer.from('fresh'));
+  const accepted = await parameters.resolveRunParameters({ ...manifest, storage: next }, { path: fresh.reference }, viewer, store);
+  assert.equal(accepted.ok, true);
+  assert.ok(accepted.params.path.startsWith(next.path));
+  for (const [path, bytes] of before) assert.deepEqual(store.files.get(path), bytes);
+  // The simple switch does not introduce permanent expiry across a missed A-to-B-to-A cycle.
+  assert.equal((await parameters.resolveRunParameters(manifest, { path: previous.reference }, viewer, store)).ok, true);
+});
+
+test('temporary storage failures keep the completed upload available for an explicit retry', async () => {
+  const store = memoryStore();
+  const viewer = uploads.viewerKey('alice', '100');
+  const upload = await uploads.saveUpload(store, storage, viewer, 'path', 'data.csv', Buffer.from('value\n1'));
+  const unavailable = {
+    ...store,
+    read: async () => { throw new uploads.UploadError(502, 'Could not access upload storage.'); },
+  };
+  const refused = await parameters.resolveRunParameters(manifest, { path: upload.reference }, viewer, unavailable);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.code, undefined);
+  assert.equal(refused.error, 'Could not access upload storage.');
+  const retried = await parameters.resolveRunParameters(manifest, { path: upload.reference }, viewer, store);
+  assert.equal(retried.ok, true);
+  assert.ok(retried.params.path.endsWith('/data.csv'));
+});
+
+test('configuration refresh clears file references across switches and preserves only valid non-file values', () => {
+  const previous = {
+    ...manifest,
+    parameters: [
+      fileParameter,
+      { name: 'text', type: 'text', label: 'Text', defaultValue: 'default' },
+      { name: 'choice', type: 'dropdown', label: 'Choice', defaultValue: 'east', choices: ['east', 'west'] },
+      { name: 'regions', type: 'multiselect', label: 'Regions', defaultValue: 'east', choices: ['east', 'west'] },
+    ],
+  };
+  const values = { path: 'upload:cached', text: '', choice: 'west', regions: 'east,west', removed: 'discard' };
+  const next = {
+    ...previous,
+    storage: { ...storage, volume: 'main.default.other', path: '/Volumes/main/default/other/designer_apps/app1' },
+    parameters: previous.parameters.map((parameter) => parameter.name === 'choice' ? { ...parameter, choices: ['east'] } : parameter),
+  };
+  assert.notEqual(appConfig.uploadConfigurationKey(previous), appConfig.uploadConfigurationKey(next));
+  assert.equal(appConfig.uploadConfigurationKey(previous), appConfig.uploadConfigurationKey({ ...previous, appName: 'Renamed' }));
+  assert.deepEqual(appConfig.refreshedValuesFor(previous, next, values), { path: '', text: '', choice: 'east', regions: 'east,west' });
+  assert.equal(appConfig.refreshedValuesFor(previous, { ...previous, appName: 'Renamed' }, values).path, 'upload:cached');
+  assert.equal(appConfig.refreshedValuesFor(next, previous, { ...values, path: '' }).path, '');
+});
+
+test('upload caches reuse unchanged files and discard late completions after invalidation', async () => {
+  const reference = 'upload:829dcaa7-e505-49c1-b6d0-73d1841e990a';
+  const response = () => new Response(JSON.stringify({ upload: { reference, filename: 'data.csv' } }));
+  const pending = Promise.withResolvers();
+  const request = mock.method(globalThis, 'fetch', async () => response());
+  try {
+    const file = new File(['data'], 'data.csv');
+    const cache = fileUpload.createFileUploadCache();
+    assert.equal(await cache.upload('path', file), reference);
+    assert.equal(await cache.upload('path', file), reference);
+    assert.equal(request.mock.callCount(), 1);
+    request.mock.mockImplementation(() => pending.promise);
+    const late = cache.upload('other', file);
+    const refused = assert.rejects(late, { name: 'AbortError' });
+    cache.dispose();
+    assert.equal(request.mock.calls.at(-1).arguments[1].signal.aborted, true);
+    pending.resolve(response());
+    await refused;
+    await assert.rejects(cache.upload('path', file), { name: 'AbortError' });
+    request.mock.mockImplementation(async () => response());
+    const fresh = fileUpload.createFileUploadCache();
+    assert.equal(await fresh.upload('path', file), reference);
+    assert.equal(request.mock.callCount(), 3);
+    fresh.dispose();
+  } finally {
+    request.mock.restore();
+  }
+});
+
+test('upload failures expose a recognizable re-upload error to the form', async () => {
+  const request = mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({
+    error: 'Upload the file again.', code: 'UPLOAD_UNAVAILABLE',
+  }), { status: 409 }));
+  try {
+    await assert.rejects(fileUpload.uploadFile('path', new File(['a'], 'data.csv')), fileUpload.UploadUnavailableError);
+    assert.equal(request.mock.callCount(), 1);
+  } finally {
+    request.mock.restore();
+  }
+});
 
 test('saves immutable bytes, resolves an upload after service restart, and isolates viewer/parameter/app', async () => {
   const store = memoryStore();

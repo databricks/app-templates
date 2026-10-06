@@ -9,38 +9,43 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@databricks/appkit-ui/react';
-import { useId, useState, type FormEvent, type SetStateAction } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent, type SetStateAction } from 'react';
 
 import type { AppParameter } from '../../shared/appManifest';
 import { ComboboxParameterControl } from './ComboboxParameterControl';
 import { FileParameterControl } from './FileParameterControl';
-import { uploadFile, validateUpload } from './fileUpload';
+import { createFileUploadCache, UploadUnavailableError, validateUpload } from './fileUpload';
 import { parseMultiselectValue, toggleMultiselectValue } from '../../shared/multiselect';
-
-interface UploadedFile {
-  file: File;
-  reference: string;
-}
 
 export function ParameterForm({
   parameters,
   values,
   onChange,
   onRun,
+  onPrepareRun,
+  onUploadUnavailable,
   running,
   runnable,
 }: {
   parameters: AppParameter[];
   values: Record<string, string>;
   onChange: (next: SetStateAction<Record<string, string>>) => void;
-  onRun: (values: Record<string, string>) => void;
+  onRun: (values: Record<string, string>, signal: AbortSignal) => Promise<void>;
+  onPrepareRun: () => Promise<boolean>;
+  onUploadUnavailable: () => void;
   running: boolean;
   runnable: boolean;
 }) {
   const [stagedFiles, setStagedFiles] = useState<Record<string, File | undefined>>({});
-  const [uploadedFiles, setUploadedFiles] = useState<Record<string, UploadedFile | undefined>>({});
+  const uploadCache = useRef<ReturnType<typeof createFileUploadCache> | undefined>(undefined);
+  const submitting = useRef(false);
   const [uploadErrors, setUploadErrors] = useState<Record<string, string | undefined>>({});
   const [uploading, setUploading] = useState(false);
+  useEffect(() => {
+    const cache = createFileUploadCache();
+    uploadCache.current = cache;
+    return () => cache.dispose();
+  }, []);
   const set = (name: string, value: string) => onChange((current) => ({ ...current, [name]: value }));
   const fileParameters = parameters.filter(({ type }) => type === 'file');
   const disabled =
@@ -51,7 +56,6 @@ export function ParameterForm({
 
   const stageFile = ({ name, fileFormats }: AppParameter, file: File) => {
     setStagedFiles((current) => ({ ...current, [name]: file }));
-    setUploadedFiles((current) => ({ ...current, [name]: undefined }));
     setUploadErrors((current) => ({
       ...current,
       [name]: validateUpload(file, fileFormats),
@@ -61,36 +65,40 @@ export function ParameterForm({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (disabled) return;
+    const cache = uploadCache.current;
+    if (disabled || submitting.current || cache === undefined) return;
 
+    submitting.current = true;
     setUploading(true);
     setUploadErrors({});
-    const nextValues = { ...values };
-    const completed: Record<string, UploadedFile> = {};
-    const errors: Record<string, string> = {};
-
-    await Promise.all(
-      fileParameters.map(async ({ name, fileFormats }) => {
+    try {
+      if (!(await onPrepareRun()) || cache.signal.aborted) return;
+      const nextValues = { ...values };
+      const errors: Record<string, string> = {};
+      let unavailable = false;
+      await Promise.all(fileParameters.map(async ({ name, fileFormats }) => {
         const file = stagedFiles[name];
         if (file === undefined) return;
-        const previous = uploadedFiles[name];
         try {
-          const reference = previous?.file === file ? previous.reference : await uploadFile(name, file, fileFormats);
-          nextValues[name] = reference;
-          completed[name] = { file, reference };
+          nextValues[name] = await cache.upload(name, file, fileFormats);
         } catch (error) {
+          unavailable ||= error instanceof UploadUnavailableError;
           errors[name] = error instanceof Error ? error.message : 'The upload failed.';
         }
-      })
-    );
-
-    setUploadedFiles((current) => ({ ...current, ...completed }));
-    setUploadErrors(errors);
-    setUploading(false);
-    if (Object.keys(errors).length > 0) return;
-
-    onChange(nextValues);
-    onRun(nextValues);
+      }));
+      if (cache.signal.aborted) return;
+      if (unavailable) {
+        onUploadUnavailable();
+        return;
+      }
+      setUploadErrors(errors);
+      if (Object.keys(errors).length > 0) return;
+      onChange(nextValues);
+      await onRun(nextValues, cache.signal);
+    } finally {
+      submitting.current = false;
+      if (!cache.signal.aborted) setUploading(false);
+    }
   };
 
   return (

@@ -6,6 +6,8 @@ export interface AppStorage {
 
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024;
 export const MAX_UPLOAD_SIZE_LABEL = '5 GB';
+export const UPLOAD_UNAVAILABLE = 'UPLOAD_UNAVAILABLE';
+export const UPLOAD_UNAVAILABLE_MESSAGE = 'This upload is no longer available. Upload the file again.';
 export const UPLOAD_REFERENCE = /^upload:([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/;
 
 export const uploadStoragePath = (storage: AppStorage): string => `${storage.path}/uploads`;

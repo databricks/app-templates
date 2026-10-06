@@ -8,6 +8,7 @@ import { after, before, test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { ApiError } from '@databricks/appkit';
 import { build } from 'tsdown';
 
 let outputDirectory;
@@ -72,7 +73,7 @@ before(async () => {
           return `
           const harness = globalThis[Symbol.for('designer-upload-route-tests')];
           export const createWorkspaceClient = (options) => options?.token ? harness.userClient(options) : harness.client;
-          export class ApiError extends Error {}
+          export const ApiError = harness.ApiError;
           export const server = () => ({ name: 'server' });
           export const files = (config) => ({ name: 'files', config });
           export const createApp = async (options) => {
@@ -144,6 +145,7 @@ async function serverHarness(options = {}) {
   };
   const stored = new Map();
   globalThis[harnessKey] = {
+    ApiError,
     state,
     apps: state.apps,
     volume: {
@@ -160,6 +162,7 @@ async function serverHarness(options = {}) {
       },
       read: async (path, options) => {
         assert.equal(options.maxSize, 16 * 1024);
+        if (!stored.has(path)) throw new ApiError('File missing', 'NOT_FOUND', 404);
         return stored.get(path).toString();
       },
       metadata: async (path) => ({ contentLength: stored.get(path)?.length }),
@@ -952,6 +955,32 @@ test('enables plugin storage on republish and binds a completed upload to a run'
   });
   // Only the backend-only instance receives the files plugin: no generic file routes on the HTTP server.
   assert.equal(state.apps.length, 2);
+});
+
+test('a stale upload after a volume switch is rejected before Job submission and fresh uploads use the new root', async () => {
+  const { state, request } = await serverHarness();
+  const upload = () => request('post', '/api/designer/uploads/:parameterName', {
+    params: { parameterName: 'path' },
+    headers: { 'content-type': 'application/octet-stream', 'x-file-name': 'data.csv' },
+    bytes: Buffer.from('value\n42'),
+  });
+  const old = await upload();
+  assert.equal(old.status, 201);
+  state.manifest = {
+    ...manifest,
+    storage: { ...manifest.storage, volume: 'main.default.next', path: '/Volumes/main/default/next/designer_apps/app1' },
+  };
+  const stale = await request('post', '/api/designer/run', { body: { params: { path: old.body.upload.reference } } });
+  assert.equal(stale.status, 400);
+  assert.equal(stale.body.code, 'UPLOAD_UNAVAILABLE');
+  assert.match(stale.body.error, /Upload the file again/);
+  assert.deepEqual(state.submissions, []);
+  const fresh = await upload();
+  assert.equal(fresh.status, 201);
+  assert.equal((await request('post', '/api/designer/run', { body: { params: { path: fresh.body.upload.reference } } })).status, 200);
+  assert.equal(state.submissions.length, 1);
+  assert.ok(state.submissions[0].job_parameters.path.startsWith(state.manifest.storage.path));
+  assert.equal(state.submissions[0].job_id, 100);
 });
 
 test('enforces published file formats at upload and run boundaries', async () => {

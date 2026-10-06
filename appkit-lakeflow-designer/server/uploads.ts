@@ -1,6 +1,6 @@
 import { Readable } from 'node:stream';
 import type { Application, Request } from 'express';
-import { MAX_UPLOAD_SIZE_LABEL, type AppStorage } from '../shared/storageConfig';
+import { MAX_UPLOAD_SIZE_LABEL, UPLOAD_UNAVAILABLE, type AppStorage } from '../shared/storageConfig';
 import { UploadError, saveUploadStream, type UploadStore } from './fileUploads';
 import { validateFileFormat } from '../shared/fileFormats';
 
@@ -24,7 +24,10 @@ export function registerUploadRoutes(app: Pick<Application, 'post'>, deps: Uploa
         ({ name, type }) => name === req.params.parameterName && type === 'file',
       );
       if (!parameter || !manifest?.storage) {
-        res.status(404).json({ error: 'This app has no such file parameter.' });
+        res.status(404).json({
+          error: 'This file parameter is no longer available. Review the app inputs.',
+          code: UPLOAD_UNAVAILABLE,
+        });
         return;
       }
       const viewer = deps.viewer(req);
@@ -66,6 +69,7 @@ export function registerUploadRoutes(app: Pick<Application, 'post'>, deps: Uploa
     } catch (error) {
       req.resume();
       res.status(error instanceof UploadError ? error.status : 502).json({
+        ...(error instanceof UploadError && error.code ? { code: error.code } : {}),
         error:
           error instanceof UploadError
             ? error.message

@@ -204,10 +204,29 @@ test('limits plugin access to the uploads subtree of the configured app storage'
     assert.deepEqual(contents.get(path), bytes);
   }
   await assert.rejects(appKitUploadStore(undefined).read(`${config.path}/file`), { status: 409 });
-  await assert.rejects(
-    appKitUploadStore({ ...config, volume: `${config.volume}2`, path: `${config.path}2` }).read(`${config.path}2/file`),
-    { status: 409 },
-  );
+});
+
+test('switches volumes in one process while overlapping requests keep their own storage policies', async () => {
+  const next = {
+    ...config,
+    volume: 'main.default.designer_app2',
+    path: '/Volumes/main/default/designer_app2/designer_apps/app1',
+  };
+  const before = appKitUploadStore(config);
+  const after = appKitUploadStore(next);
+  const beforePath = `${config.path}/uploads/viewer/parameter/old.csv`;
+  const afterPath = `${next.path}/uploads/viewer/parameter/new.csv`;
+  await Promise.all([
+    before.put(beforePath, Buffer.from('old file')),
+    after.put(afterPath, Buffer.from('new file')),
+  ]);
+  assert.equal(await before.size(beforePath), 8);
+  assert.equal(await after.size(afterPath), 8);
+  await assert.rejects(after.read(beforePath), { status: 502 });
+  await assert.rejects(before.read(afterPath), { status: 502 });
+  await appKitUploadStore(config).put(`${config.path}/uploads/viewer/parameter/back.csv`, Buffer.from('fresh'));
+  assert.equal(contents.get(beforePath).toString(), 'old file');
+  assert.equal(contents.get(afterPath).toString(), 'new file');
 });
 
 test('allows republishing a different app root without changing the volume or sharing plugin policies', async () => {

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { RunSnapshot, TriggerResponse } from './payload';
 import { RUN_ROUTE, runStatusRoute } from './routes';
+import { UploadUnavailableError } from './fileUpload';
+import { UPLOAD_UNAVAILABLE } from '../../shared/storageConfig';
 
 export const POLL_INTERVAL_MS = 2000;
 const TICK_INTERVAL_MS = 250;
@@ -22,7 +24,7 @@ export type RunState = {
   cancelling: boolean;
 };
 
-export function useDesignerRun() {
+export function useDesignerRun(onUploadUnavailable?: () => void) {
   const [state, setState] = useState<RunState>({ phase: 'idle', elapsedMs: 0, cancelling: false });
   const pollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const tickTimer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
@@ -59,8 +61,7 @@ export function useDesignerRun() {
         });
         if (!response.ok) {
 
-          const detail = await readErrorDetail(response);
-          throw new Error(detail ?? `Trigger failed with HTTP ${response.status}`);
+          throw await readRunError(response);
         }
         jobRunId = ((await response.json()) as TriggerResponse).jobRunId;
       } catch (err) {
@@ -74,6 +75,7 @@ export function useDesignerRun() {
           cancelling: false,
           params,
         });
+        if (err instanceof UploadUnavailableError) onUploadUnavailable?.();
         return;
       }
 
@@ -117,7 +119,7 @@ export function useDesignerRun() {
       setState((prev) => ({ ...prev, snapshot: { jobRunId, terminal: false, lifeCycleState: 'PENDING' } }));
       pollTimer.current = setTimeout(poll, POLL_INTERVAL_MS);
     },
-    [clearTimers],
+    [clearTimers, onUploadUnavailable],
   );
 
   const cancel = useCallback(async () => {
@@ -138,15 +140,19 @@ export function useDesignerRun() {
   return { state, start, cancel, reset };
 }
 
-async function readErrorDetail(response: Response): Promise<string | undefined> {
+async function readRunError(response: Response): Promise<Error> {
   try {
     const body: unknown = await response.json();
     if (typeof body === 'object' && body !== null && 'error' in body) {
       const detail = (body as { error?: unknown }).error;
-      if (typeof detail === 'string' && detail !== '') return detail;
+      if (typeof detail === 'string' && detail !== '') {
+        return 'code' in body && body.code === UPLOAD_UNAVAILABLE
+          ? new UploadUnavailableError(detail)
+          : new Error(detail);
+      }
     }
   } catch {
 
   }
-  return undefined;
+  return new Error(`Trigger failed with HTTP ${response.status}`);
 }

@@ -1,23 +1,20 @@
 import { ApiError } from '@databricks/appkit';
 import type { AppStorage } from '../shared/storageConfig';
+import { UPLOAD_UNAVAILABLE, UPLOAD_UNAVAILABLE_MESSAGE } from '../shared/storageConfig';
 import { UploadError, type UploadStore } from './fileUploads';
 import { createUploadVolume, encodeStoragePath, parseStorageFileSize } from './storageVolume';
 
-let storageVolume: string | undefined;
-let cachedVolume: { path: string; promise: ReturnType<typeof createUploadVolume> } | undefined;
+let cachedVolume: { volume: string; path: string; promise: ReturnType<typeof createUploadVolume> } | undefined;
 
 async function uploadVolume(config: AppStorage | undefined) {
   if (!config) throw new UploadError(409, 'File uploads are not configured.');
-  if (storageVolume !== undefined && storageVolume !== config.volume)
-    throw new UploadError(409, 'Published upload storage cannot be changed.');
-  if (!cachedVolume || cachedVolume.path !== config.path) {
-    storageVolume = config.volume;
+  if (!cachedVolume || cachedVolume.volume !== config.volume || cachedVolume.path !== config.path) {
     // Keep each policy bound to its request's manifest while republishing changes the prefix.
     const promise = createUploadVolume(config).catch((error) => {
       if (cachedVolume?.promise === promise) cachedVolume = undefined;
       throw error;
     });
-    cachedVolume = { path: config.path, promise };
+    cachedVolume = { volume: config.volume, path: config.path, promise };
   }
   return cachedVolume.promise;
 }
@@ -32,9 +29,9 @@ export function appKitUploadStore(config: AppStorage | undefined): UploadStore {
       throw new UploadError(
         missing ? 404 : 502,
         missing
-          ? 'This upload is no longer available.'
+          ? UPLOAD_UNAVAILABLE_MESSAGE
           : 'Could not access upload storage. Check the app volume resource and permissions.',
-        { cause: error },
+        { cause: error, ...(missing ? { code: UPLOAD_UNAVAILABLE } : {}) },
       );
     }
   };

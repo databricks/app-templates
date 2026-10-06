@@ -165,9 +165,8 @@ Manifest v6 uses an optional storage declaration for uploads:
 The server/client accept v6 only. Apps without file parameters may omit upload storage; a file
 parameter without valid storage is rejected. File inputs are never downgraded
 to text or the author's original source path.
-Update the template and republish existing apps together; there is no legacy-manifest fallback.
-The app is unavailable between the template update and the v6 manifest write.
-Deploy this template before enabling Designer's `enableDesignerApps` flag; uploads share that gate.
+The template and publisher use this single current manifest contract. Uploads and volume switching
+share Designer's existing `enableDesignerApps` gate.
 
 The author selects a UC volume in Designer; publishing binds it without creating another volume.
 The existing `designer_uploads` App resource with `WRITE_VOLUME` gives the app service
@@ -205,13 +204,31 @@ Uploads use `<storage.path>/uploads/<viewer-hash>/<parameter-hash>/<upload-id>/<
 File Outputs write directly to their author-configured destinations. Separate backend-only Files
 plugin policies restrict uploads to their subtree and native downloads to approved output volumes.
 Existing files are not moved or deleted; viewers upload a new file after the app adopts the new root.
-The Files plugin refreshes its path policy when the manifest root changes within the same volume; no restart is needed.
-Replacing the bound volume remains unsupported.
+The Files plugin refreshes its handle and path policy when either the volume or root changes;
+no restart is needed. Overlapping requests retain their own manifest's policy. Requests already
+using the old volume may finish or fail if publishing removes its access.
+
+Authors can change the upload volume in Designer and apply it on Publish.
+The publisher prepares access to both volumes,
+confirms the new manifest, and then reconciles `designer_uploads`. Old volume access needed
+for file Outputs is retained. Unconfirmed publication retains both grants; confirmed publication
+with incomplete cleanup shows a warning and the next Publish repairs it. No files are copied
+or deleted, and the App identity, runner Job, and Jobs run records remain.
+
+The browser refreshes configuration on focus, before uploading, and before Run. An observed
+volume, root, or file-input change clears file selections and cached upload references while
+preserving valid non-file inputs. Late upload completions are ignored. The server rejects a
+reference missing from the current root with `UPLOAD_UNAVAILABLE`; the browser refreshes
+configuration and asks for fresh files. It never retries a Job submission automatically. An entirely unobserved
+A-to-B-to-A cycle can retain an A reference; no persistent upload generation is introduced.
 
 `npm test` covers storage completion/partial failures, limits, parameter resolution and ownership
-policy with an in-memory storage boundary, plus server-route access checks and history hydration.
+policy with an in-memory storage boundary, plus server-route access checks, volume switches,
+stale-reference refusal before Job submission, upload cache invalidation, and history hydration.
 Actual Apps ingress, UC provisioning/grants and Jobs
-execution still require a deployed smoke test; a local build alone does not validate those services.
+execution still require a deployed smoke test, including resource read-back versus effective
+grant propagation and Jobs running as the App principal. Complete these checks before deploying
+the authoring and template changes.
 
 ## Native Output-file downloads
 

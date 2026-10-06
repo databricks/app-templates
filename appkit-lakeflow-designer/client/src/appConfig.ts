@@ -38,6 +38,34 @@ export function initialValuesFor(
   return values;
 }
 
+export function uploadConfigurationKey(manifest: AppManifest): string {
+  return JSON.stringify([
+    manifest.storage?.volume,
+    manifest.storage?.path,
+    manifest.parameters.filter(({ type }) => type === 'file').map(({ name, fileFormats }) => [name, fileFormats]),
+  ]);
+}
+
+export function refreshedValuesFor(
+  previous: AppManifest,
+  next: AppManifest,
+  values: Record<string, string>,
+): Record<string, string> {
+  const sameUploads = uploadConfigurationKey(previous) === uploadConfigurationKey(next);
+  return Object.fromEntries(
+    next.parameters.map((parameter) => {
+      const value = values[parameter.name];
+      const sameType = previous.parameters.some(({ name, type }) => name === parameter.name && type === parameter.type);
+      const valid =
+        value !== undefined && sameType &&
+        (parameter.type !== 'file' || sameUploads) &&
+        (parameter.type !== 'dropdown' || (parameter.choices ?? []).includes(value)) &&
+        (parameter.type !== 'multiselect' || isValidMultiselectValue(value, parameter.choices ?? []));
+      return [parameter.name, valid ? value : parameter.type === 'file' ? '' : parameter.defaultValue];
+    }),
+  );
+}
+
 export async function fetchAppConfig(): Promise<AppConfigState> {
   try {
     const response = await fetch(CONFIG_ROUTE);

@@ -25,6 +25,7 @@ SOURCE_DIR = SCRIPT_DIR / "source"
 # (source_filename, destination_subdir)
 SCRIPTS_TO_SYNC = [
     ("quickstart.py", "scripts"),
+    ("app_diagnostics.py", "scripts"),
     ("start_app.py", "scripts"),
     ("evaluate_agent.py", "agent_server"),
     ("grant_lakebase_permissions.py", "scripts"),

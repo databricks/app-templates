@@ -25,6 +25,14 @@ import sys
 import threading
 from pathlib import Path
 
+# Install crash/hang/exception diagnostics as early as possible so failures in
+# this orchestrator (and surfaced from the backend) land in the Apps log stream.
+try:
+    from scripts.app_diagnostics import install_diagnostics
+except ImportError:  # when run outside the scripts package
+    from app_diagnostics import install_diagnostics
+install_diagnostics()
+
 from dotenv import load_dotenv
 
 # Readiness patterns

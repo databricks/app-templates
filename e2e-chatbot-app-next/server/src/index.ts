@@ -1,3 +1,5 @@
+// diagnostics bootstrap: install crash/exception logging before any other import
+import './diagnostics';
 // Load environment variables FIRST before any other imports
 import './env';
 

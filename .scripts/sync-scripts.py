@@ -68,8 +68,17 @@ DIAGNOSTICS_PY_TARGETS = {
 }
 
 
+# Node templates: diagnostics.ts copied next to the entrypoint (the one-line
+# `import './diagnostics'` in each entrypoint is a one-time manual edit).
+DIAGNOSTICS_TS_TARGETS = {
+    "e2e-chatbot-app-next": "server/src",
+    "rag-chat": "server",
+    "agent-langchain-ts": "src",
+}
+
+
 def sync_diagnostics() -> list[str]:
-    """Copy app_diagnostics.py next to each non-agent template's entrypoint."""
+    """Copy the diagnostics module next to each non-agent template's entrypoint."""
     synced: list[str] = []
     for template, dest_subdir in DIAGNOSTICS_PY_TARGETS.items():
         dest_dir = REPO_ROOT / template / dest_subdir
@@ -78,6 +87,13 @@ def sync_diagnostics() -> list[str]:
             continue
         shutil.copy2(SOURCE_DIR / "app_diagnostics.py", dest_dir / "app_diagnostics.py")
         synced.append(f"{template}/{dest_subdir}/app_diagnostics.py")
+    for template, dest_subdir in DIAGNOSTICS_TS_TARGETS.items():
+        dest_dir = REPO_ROOT / template / dest_subdir
+        if not dest_dir.exists():
+            print(f"  Warning: {dest_dir} does not exist, skipping diagnostics for {template}")
+            continue
+        shutil.copy2(SOURCE_DIR / "diagnostics.ts", dest_dir / "diagnostics.ts")
+        synced.append(f"{template}/{dest_subdir}/diagnostics.ts")
     return synced
 
 

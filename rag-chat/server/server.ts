@@ -1,3 +1,5 @@
+// diagnostics bootstrap: install crash/exception logging before any other import
+import './diagnostics';
 import { createApp, server, lakebase } from '@databricks/appkit';
 import { setupRagTables, insertDocument } from './lib/rag-store';
 import { setupChatRoutes } from './routes/chat-routes';

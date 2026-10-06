@@ -26,6 +26,7 @@ templates:
   dash-chatbot-app: { verify: html }
   gradio-chatbot-app: { verify: html }
   shiny-chatbot-app: { verify: html }
+  e2e-chatbot-app: { verify: html }   # Streamlit (not node) — serving-endpoint
 
   # ---- Tier 2: sql-warehouse ----
   streamlit-data-app: { verify: html }
@@ -49,7 +50,7 @@ templates:
   # ---- Agents (deploy + browser verify of the chat UI) ----
   agent-langgraph: { verify: html }
   agent-langgraph-advanced: { verify: html }
-  agent-non-conversational: { verify: html }
+  agent-non-conversational: { verify: api }   # API-only (/invocations), no chat UI at /
   agent-openai-advanced: { verify: html }
   agent-openai-agents-sdk: { verify: html }
   agent-openai-agents-sdk-multiagent: { verify: html }
@@ -57,7 +58,6 @@ templates:
 
   # ---- Build-only (node / SPA; no deploy) ----
   nodejs-fastapi-hello-world-app: { verify: build }
-  e2e-chatbot-app: { verify: build }
   e2e-chatbot-app-next: { verify: build }
   rag-chat: { verify: build }
   agent-langchain-ts: { verify: build }

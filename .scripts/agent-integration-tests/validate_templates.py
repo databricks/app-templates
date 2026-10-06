@@ -7,6 +7,7 @@ curl-verified. Run serially — never with pytest -n >0 (shared app).
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import time
 from pathlib import Path
@@ -78,11 +79,14 @@ def build_template(template_name: str, dest: Path) -> None:
     then runs `npm ci` and `npm run build`, raising on failure. No deploy.
     """
     src = git_copy_template(template_name, dest)
+    # Route npm through the Databricks proxy — registry.npmjs.org is frequently
+    # 503/unreachable from this environment.
+    env = {**os.environ, "npm_config_registry": "https://npm-proxy.cloud.databricks.com"}
     has_lock = (src / "package-lock.json").exists() or (src / "npm-shrinkwrap.json").exists()
     install_cmd = ["npm", "ci"] if has_lock else ["npm", "install"]
     for cmd in (install_cmd, ["npm", "run", "build"]):
         _log(f"[{template_name}] $ {' '.join(cmd)}")
-        result = _run_cmd(cmd, cwd=src, timeout=BUILD_TIMEOUT)
+        result = _run_cmd(cmd, cwd=src, env=env, timeout=BUILD_TIMEOUT)
         if result.returncode != 0:
             raise RuntimeError(
                 f"{' '.join(cmd)} failed for {template_name}:\n"
@@ -271,7 +275,14 @@ def test_validate_template(val_template, val_cfg, request):
             build_template(val_template.name, Path(tmp))
         return
 
-    # Deploy + curl-serve path (html / mcp / api).
+    # Deploy path requires an app.yaml (command + env). Templates without one are
+    # DAB-only (databricks.yml) and can't be exercised via the shared-app source
+    # deploy — a source-level deploy would leave the previous template's command.
+    from template_config import REPO_ROOT
+    if not (REPO_ROOT / val_template.name / "app.yaml").exists():
+        pytest.skip("no app.yaml — DAB-only, not deployable via the shared app")
+
+    # Deploy + browser-serve path (html / mcp / api).
     shared_app = request.getfixturevalue("shared_app")
     if request.config.getoption("--val-setup-only"):
         pytest.skip("--val-setup-only: shared app ensured, skipping deploy")

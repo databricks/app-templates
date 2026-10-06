@@ -78,3 +78,22 @@ End-to-end example apps that bundle a full Databricks App with seed data, SQL qu
 | `rag-chat` | Streaming Retrieval-Augmented Generation chat app with pgvector retrieval from Lakebase, Wikipedia seed corpus, Model Serving generation, and Lakebase-backed chat history. Consumed via `databricks apps init`. | Database, Serving endpoint |
 | `saas-tracker` | Internal tool for tracking team SaaS subscriptions, owners, costs, and renewals with Lakebase persistence and Genie spend analytics. | SQL warehouse, Database, Genie Space |
 | `vacation-rentals` | Vacation rental ops dashboard with revenue analytics from a SQL Warehouse, a booking queue with Lakebase-backed flags and agent notes, and an embedded Genie chat panel. | SQL warehouse, Database, Genie Space |
+
+## Diagnosing a crashed or hung app
+
+Every template installs a zero-dependency diagnostics bootstrap at startup
+(`app_diagnostics.py` for Python, `diagnostics.ts` for Node) that routes crashes,
+unhandled exceptions, worker-thread failures, and shutdown (SIGTERM) all-thread
+stack dumps to **stderr** — the app's log stream — so a failed deploy or runtime
+crash leaves a usable stack trace.
+
+- **Read the logs:** on SSO workspaces the `databricks apps logs` CLI is blocked,
+  so open the app's own viewer in the browser at **`https://<app-url>/logz`**. On
+  non-SSO workspaces, `databricks apps logs <app-name> --follow` works.
+- **Hangs (Python):** a hung app that the platform kills shows its stacks in the
+  SIGTERM dump. To capture stacks before termination, set
+  `DATABRICKS_APP_DIAGNOSTICS_HANG_TIMEOUT` (seconds) in `app.yaml` and redeploy.
+- **Toggles:** `DATABRICKS_APP_DIAGNOSTICS=0` disables it;
+  `DATABRICKS_APP_DIAGNOSTICS_LOG_LEVEL` sets the level.
+
+See the `diagnostics` skill (`.claude/skills/diagnostics/`) for the full runbook.

@@ -1,0 +1,228 @@
+import { expect, test } from '../fixtures';
+import { generateUUID } from '@chat-template/core';
+import { TEST_PROMPTS } from '../prompts/routes';
+import {
+  sendChatAndGetMessageId,
+  skipInEphemeralMode,
+  skipInWithDatabaseMode,
+} from '../helpers';
+
+test.describe('/api/feedback', () => {
+  test('POST /api/feedback validates request body', async ({ adaContext }) => {
+    const response = await adaContext.request.post('/api/feedback', {
+      data: {
+        messageId: 'invalid-uuid',
+        feedbackType: 'invalid-type',
+      },
+    });
+
+    expect(response.status()).toBe(400);
+  });
+
+  test('POST /api/feedback returns success with mlflowAssessmentId', async ({
+    adaContext,
+  }) => {
+    const chatId = generateUUID();
+    const assistantMessageId = await sendChatAndGetMessageId(
+      adaContext.request,
+      chatId,
+      TEST_PROMPTS.SKY.MESSAGE,
+    );
+
+    const feedbackResponse = await adaContext.request.post('/api/feedback', {
+      data: {
+        messageId: assistantMessageId,
+        feedbackType: 'thumbs_up',
+      },
+    });
+
+    expect(feedbackResponse.status()).toBe(200);
+    const feedback = await feedbackResponse.json();
+    expect(feedback.success).toBe(true);
+    // mlflowAssessmentId will only be set if the trace ID was captured
+    // (depends on endpoint type; present when using the Responses API mock)
+  });
+
+  test('POST /api/feedback succeeds without mlflowAssessmentId when message has no trace ID', async ({
+    adaContext,
+  }) => {
+    // Simulates a foundation model endpoint (e.g. databricks-claude-sonnet-4-5) that
+    // uses the FMAPI chat completions format, which does not embed trace IDs in the
+    // response stream. The server should skip MLflow and return success: true.
+    const chatId = generateUUID();
+    const messageId = generateUUID();
+    await adaContext.request.post('/api/test/store-message-meta', {
+      data: { messageId, chatId, traceId: null },
+    });
+
+    const feedbackResponse = await adaContext.request.post('/api/feedback', {
+      data: { messageId, feedbackType: 'thumbs_up' },
+    });
+    expect(feedbackResponse.status()).toBe(200);
+    const body = await feedbackResponse.json();
+    expect(body.success).toBe(true);
+    // No MLflow submission when there's no trace ID
+    expect(body.mlflowAssessmentId).toBeUndefined();
+    // Note: DB vote persistence for the no-trace-ID path is verified separately in
+    // "GET /api/feedback/chat/:chatId returns DB-backed feedback map", which uses a
+    // real chat (message exists in DB). Here, the message is only in the in-memory
+    // store (via store-message-meta), so the Vote FK constraint would reject it.
+  });
+
+  test.describe('deduplication', () => {
+    test.beforeEach(async ({ adaContext }) => {
+      // The mock trace ID is fixed ('mock-trace-id-from-databricks'), so reset
+      // the MLflow store before each test to prevent stale assessments from a
+      // previous test causing the server to PATCH rather than POST on the first
+      // submission.
+      await adaContext.request.post('/api/test/reset-mlflow-store');
+    });
+
+    test('second submission PATCHes the existing assessment instead of creating a duplicate', async ({
+      adaContext,
+    }) => {
+      const chatId = generateUUID();
+      const assistantMessageId = await sendChatAndGetMessageId(
+        adaContext.request,
+        chatId,
+        TEST_PROMPTS.SKY.MESSAGE,
+      );
+
+      // First submission — creates a new MLflow assessment via POST
+      const firstResponse = await adaContext.request.post('/api/feedback', {
+        data: { messageId: assistantMessageId, feedbackType: 'thumbs_up' },
+      });
+      expect(firstResponse.status()).toBe(200);
+      const firstResult = await firstResponse.json();
+      expect(firstResult.success).toBe(true);
+      // mlflowAssessmentId is set when a trace ID was captured (present with Responses API mock)
+      const firstAssessmentId = firstResult.mlflowAssessmentId;
+      expect(firstAssessmentId).toBeTruthy();
+
+      // Second submission (different feedback type) — should PATCH the existing assessment
+      const secondResponse = await adaContext.request.post('/api/feedback', {
+        data: { messageId: assistantMessageId, feedbackType: 'thumbs_down' },
+      });
+      expect(secondResponse.status()).toBe(200);
+      const secondResult = await secondResponse.json();
+      expect(secondResult.success).toBe(true);
+      // Same assessment ID confirms PATCH was used, not a second POST
+      expect(secondResult.mlflowAssessmentId).toBe(firstAssessmentId);
+    });
+  });
+
+  test('GET /api/feedback/chat/:chatId returns DB-backed feedback map', async ({
+    adaContext,
+  }) => {
+    skipInEphemeralMode(test);
+
+    const chatId = generateUUID();
+    const assistantMessageId = await sendChatAndGetMessageId(
+      adaContext.request,
+      chatId,
+      TEST_PROMPTS.SKY.MESSAGE,
+    );
+
+    // Submit feedback — writes to MLflow and persists vote to DB
+    const feedbackResponse = await adaContext.request.post('/api/feedback', {
+      data: {
+        messageId: assistantMessageId,
+        feedbackType: 'thumbs_up',
+      },
+    });
+    expect(feedbackResponse.status()).toBe(200);
+
+    // GET feedback for the chat — server reads from DB (single query, no MLflow)
+    const getChatFeedbackResponse = await adaContext.request.get(
+      `/api/feedback/chat/${chatId}`,
+    );
+    expect(getChatFeedbackResponse.status()).toBe(200);
+
+    const chatFeedback = await getChatFeedbackResponse.json();
+    expect(chatFeedback).toHaveProperty(assistantMessageId);
+    expect(chatFeedback[assistantMessageId].feedbackType).toBe('thumbs_up');
+    expect(chatFeedback[assistantMessageId].messageId).toBe(assistantMessageId);
+  });
+
+  test('GET /api/feedback/chat/:chatId returns empty map in ephemeral mode (votes not persisted)', async ({
+    adaContext,
+  }) => {
+    skipInWithDatabaseMode(test);
+
+    const chatId = generateUUID();
+    const assistantMessageId = await sendChatAndGetMessageId(
+      adaContext.request,
+      chatId,
+      TEST_PROMPTS.SKY.MESSAGE,
+    );
+
+    // Submit feedback — in ephemeral mode this writes to MLflow but not to DB
+    await adaContext.request.post('/api/feedback', {
+      data: { messageId: assistantMessageId, feedbackType: 'thumbs_up' },
+    });
+
+    // GET should return an empty map since there's no DB to read from
+    const getResponse = await adaContext.request.get(
+      `/api/feedback/chat/${chatId}`,
+    );
+    expect(getResponse.status()).toBe(200);
+    expect(await getResponse.json()).toEqual({});
+  });
+
+  test('DELETE /api/messages/:id/trailing succeeds when message has a vote (no FK violation)', async ({
+    adaContext,
+  }) => {
+    skipInEphemeralMode(test);
+
+    const chatId = generateUUID();
+    const assistantMessageId = await sendChatAndGetMessageId(
+      adaContext.request,
+      chatId,
+      TEST_PROMPTS.SKY.MESSAGE,
+    );
+
+    // Submit feedback — writes a Vote row referencing this message
+    await adaContext.request.post('/api/feedback', {
+      data: { messageId: assistantMessageId, feedbackType: 'thumbs_up' },
+    });
+
+    // Edit the message (deletes trailing messages including the voted-on one).
+    // Before the fix this would 500 due to Vote.messageId → Message.id FK violation.
+    const deleteResponse = await adaContext.request.delete(
+      `/api/messages/${assistantMessageId}/trailing`,
+    );
+    expect(deleteResponse.status()).toBe(200);
+  });
+
+  test('GET /api/feedback/chat/:chatId reflects updated vote after toggling', async ({
+    adaContext,
+  }) => {
+    skipInEphemeralMode(test);
+
+    const chatId = generateUUID();
+    const assistantMessageId = await sendChatAndGetMessageId(
+      adaContext.request,
+      chatId,
+      TEST_PROMPTS.SKY.MESSAGE,
+    );
+
+    // First vote: thumbs_up
+    await adaContext.request.post('/api/feedback', {
+      data: { messageId: assistantMessageId, feedbackType: 'thumbs_up' },
+    });
+
+    // Toggle to thumbs_down
+    const secondResponse = await adaContext.request.post('/api/feedback', {
+      data: { messageId: assistantMessageId, feedbackType: 'thumbs_down' },
+    });
+    expect(secondResponse.status()).toBe(200);
+
+    // GET should reflect the updated vote
+    const getChatFeedbackResponse = await adaContext.request.get(
+      `/api/feedback/chat/${chatId}`,
+    );
+    expect(getChatFeedbackResponse.status()).toBe(200);
+    const chatFeedback = await getChatFeedbackResponse.json();
+    expect(chatFeedback[assistantMessageId].feedbackType).toBe('thumbs_down');
+  });
+});

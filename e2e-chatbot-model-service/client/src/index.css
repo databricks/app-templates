@@ -1,0 +1,586 @@
+/* set base path to root directory to include utility classes from app, components, pages, etc. */
+@import "tailwindcss";
+
+/* include plugins */
+@plugin "tailwindcss-animate";
+@plugin "@tailwindcss/typography";
+
+/* custom variant for setting dark mode programmatically */
+@custom-variant dark (&:is(.dark, .dark *));
+
+/* define design tokens (light mode) */
+:root {
+  --color-blue-300: #bae1fc;
+  --color-blue-400: #4ba3d6;
+  --color-blue-500: #2e86c1;
+  --color-blue-600: #2272b4;
+  --color-blue-700: #0e538b;
+  --color-blue-800: #04355d;
+
+  --color-grey-050: #f6f7f9;
+  --color-grey-100: #e8ecf0;
+  --color-grey-200: #d1dce5;
+  --color-grey-300: #bdcdd9;
+  --color-grey-400: #8d9fad;
+  --color-grey-500: #5f7281;
+  --color-grey-600: #44535f;
+  --color-grey-700: #1f272d;
+  --color-grey-800: #11171c;
+
+  --color-neutral-050: #f7f7f7;
+  --color-neutral-100: #ebebeb;
+  --color-neutral-200: #d8d8d8;
+  --color-neutral-300: #cbcbcb;
+  --color-neutral-350: #a2a2a2;
+  --color-neutral-400: #939393;
+  --color-neutral-500: #6f6f6f;
+  --color-neutral-600: #525252;
+  --color-neutral-650: #424242;
+  --color-neutral-700: #262626;
+  --color-neutral-800: #161616;
+
+  /* DuBois Red */
+  --color-red-300: #fbd0d8;
+  --color-red-400: #f06e87;
+  --color-red-500: #e83a5f;
+  --color-red-600: #c82d4c;
+  --color-red-700: #9e1d38;
+  --color-red-800: #630316;
+
+  /* DuBois Green */
+  --color-green-400: #59c47a;
+  --color-green-500: #3ca45e;
+  --color-green-600: #277c43;
+  --color-green-700: #1a5c30;
+
+  /* DuBois Yellow/Amber */
+  --color-yellow-500: #dc6222;
+  --color-yellow-600: #be501e;
+  --color-yellow-700: #8f3c14;
+
+  /* DuBois Secondary Palette (for tags/badges/categorical) */
+  --color-coral-100: #fdece9;
+  --color-coral-500: #e86247;
+  --color-coral-700: #c0411e;
+
+  --color-brown-100: #f3ece6;
+  --color-brown-500: #a0694a;
+  --color-brown-700: #7a4930;
+
+  --color-indigo-100: #ebf0fd;
+  --color-indigo-500: #5b7be8;
+  --color-indigo-700: #3557c7;
+
+  --color-lemon-100: #fdf9e6;
+  --color-lemon-500: #d4a800;
+  --color-lemon-700: #9c7c00;
+
+  --color-lime-100: #eef9e6;
+  --color-lime-500: #6cbf3c;
+  --color-lime-700: #4a8c22;
+
+  --color-pink-100: #fde8f8;
+  --color-pink-500: #d966c5;
+  --color-pink-700: #b03ea0;
+
+  --color-purple-100: #f0eafd;
+  --color-purple-500: #9b6ae8;
+  --color-purple-700: #7040c8;
+
+  --color-teal-100: #e5f7f5;
+  --color-teal-500: #2db0a0;
+  --color-teal-700: #1a8578;
+
+  --color-turquoise-100: #e5f8fb;
+  --color-turquoise-500: #22b8cf;
+  --color-turquoise-700: #138b9e;
+
+  /* DuBois Shadow Scale */
+  --dubois-shadow-db-xs: 0px 1px 0px 0px rgba(0, 0, 0, 0.05);
+  --dubois-shadow-db-sm: 0px 2px 3px -1px rgba(0, 0, 0, 0.05),
+    dubois-0px 1px 0px 0px rgba(0, 0, 0, 0.02);
+  --dubois-shadow-db-md: 0px 3px 6px 0px rgba(0, 0, 0, 0.05);
+  --dubois-shadow-db-lg: 0px 2px 16px 0px rgba(0, 0, 0, 0.08);
+  --dubois-shadow-db-xl: 0px 8px 40px 0px rgba(0, 0, 0, 0.13);
+
+  --action-default-background-hover: rgba(34, 114, 180, 0.08);
+  --action-default-background-press: rgba(34, 114, 180, 0.16);
+  --action-primary-background-hover: var(--color-blue-700);
+  --action-primary-background-press: var(--color-blue-800);
+  --action-tertiary-background-hover: rgba(34, 114, 180, 0.08);
+  --action-tertiary-background-press: rgba(34, 114, 180, 0.16);
+  --action-danger-primary-background-hover: var(--color-red-700);
+  --action-danger-primary-background-press: var(--color-red-800);
+
+  /* DuBois fonts size */
+  --text-xs: 0.6875rem; /* 11px */
+  --text-sm: 0.75rem; /* 12px */
+  --text-base: 0.8125rem; /* 13px — DuBois base */
+  --text-base--line-height: 20px;
+  --text-lg: 1.125rem; /* 18px */
+  --text-xl: 1.375rem; /* 22px */
+  --text-2xl: 2rem; /* 32px */
+
+  --dubois-breakpoint-toast-mobile: 600px;
+
+  --font-standard: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto,
+    Helvetica Neue, Arial, Noto Sans, sans-serif, Apple Color Emoji,
+    Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji, sans-serif;
+  --font-standard-mono: Menlo, Monaco, Consolas, "Ubuntu Mono",
+    "Source Code Pro", monospace, Menlo, Monaco, "Courier New", monospace;
+
+  /* Core surfaces */
+  --background: #ffffff;
+  --foreground: var(--color-grey-800);
+  --card: #ffffff;
+  --card-foreground: var(--color-grey-800);
+  --popover: #ffffff;
+  --popover-foreground: var(--color-grey-800);
+  --tooltip: var(--color-neutral-800);
+  --tooltip-foreground: var(--background);
+
+  /* Primary action */
+  --primary: var(--color-blue-600);
+  --primary-foreground: #ffffff;
+
+  /* Secondary surface */
+  --secondary: var(--color-grey-050);
+  --secondary-foreground: var(--color-grey-800);
+
+  /* Muted */
+  --muted: var(--color-grey-050);
+  --muted-foreground: var(--color-neutral-600);
+
+  /* Accent */
+  --accent: var(--color-grey-050);
+  --accent-foreground: var(--color-grey-800);
+
+  /* Destructive / danger */
+  --destructive: var(--color-red-600);
+
+  /* Borders & inputs */
+  --border: var(--color-grey-100);
+  --input: var(--color-grey-100);
+  --ring: #2272b4;
+
+  /* Semantic additions */
+  --warning: var(--color-yellow-600);
+  --success: var(--color-green-600);
+
+  /* Alert / validation tinted borders and backgrounds */
+  --border-danger: #fbd0d8;
+  --border-warning: #f8d4a5;
+  --border-success: #a3d9b6;
+  --background-danger: #fff5f7;
+  --background-warning: #fff9eb;
+  --background-success: #f0faf4;
+
+  /* Chart colors */
+  --chart-1: #2272b4;
+  --chart-2: #277c43;
+  --chart-3: #be501e;
+  --chart-4: #c82d4c;
+  --chart-5: #9b6ae8;
+
+  /* Sidebar */
+  --sidebar-background: var(--color-neutral-050);
+  --sidebar-foreground: var(--color-grey-800);
+  --sidebar-primary: var(--color-blue-600);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--color-grey-100);
+  --sidebar-accent-foreground: var(--color-grey-800);
+  --sidebar-border: var(--color-grey-100);
+  --sidebar-ring: var(--color-blue-600);
+
+  --radius: 0.25rem;
+
+  --shimmer-text-duration: 1s;
+  --shimmer-text-ease: linear;
+  --shimmer-text-gradient-low: var(--color-neutral-600);
+  --shimmer-text-gradient-high: var(--color-neutral-300);
+}
+
+/* define design tokens (dark mode) */
+.dark {
+  --background: var(--color-grey-800);
+  --foreground: var(--color-grey-100);
+  --card: #1a2530;
+  --card-foreground: var(--color-grey-100);
+  --popover: #1a2530;
+  --popover-foreground: var(--color-grey-100);
+  --tooltip: var(--color-grey-100);
+  --tooltip-foreground: var(--background);
+
+  --primary: var(--color-blue-500);
+  --primary-foreground: #ffffff;
+
+  --secondary: #283035;
+  --secondary-foreground: #e8ecf0;
+
+  --muted: #2a3a45;
+  --muted-foreground: #bdcdd9;
+
+  --accent: #2a3a45;
+  --accent-foreground: #e8ecf0;
+
+  --destructive: #e65677;
+
+  --border: #2a3a45;
+  --input: #2a3a45;
+  --ring: #4ba3d6;
+
+  --warning: #dc6222;
+  --success: #3ca45e;
+
+  /* Alert / validation tinted borders and backgrounds */
+  --border-danger: rgba(232, 58, 95, 0.3);
+  --border-warning: rgba(220, 98, 34, 0.3);
+  --border-success: rgba(60, 164, 94, 0.3);
+  --background-danger: rgba(232, 58, 95, 0.08);
+  --background-warning: rgba(220, 98, 34, 0.08);
+  --background-success: rgba(60, 164, 94, 0.08);
+
+  --chart-1: #2e86c1;
+  --chart-2: #3ca45e;
+  --chart-3: #dc6222;
+  --chart-4: #e83a5f;
+  --chart-5: #9b6ae8;
+
+  --sidebar-background: var(--color-grey-700);
+  --sidebar-foreground: #e8ecf0;
+  --sidebar-primary: #2e86c1;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #2a3a45;
+  --sidebar-accent-foreground: #e8ecf0;
+  --sidebar-border: #2a3a45;
+  --sidebar-ring: #4ba3d6;
+
+  --action-default-background-hover: rgba(138, 202, 255, 0.08);
+  --action-default-background-press: rgba(138, 202, 255, 0.16);
+  --action-primary-background-hover: #4ba3d6;
+  --action-primary-background-press: #bae1fc;
+  --action-tertiary-background-hover: rgba(143, 205, 255, 0.08);
+  --action-tertiary-background-press: rgba(143, 205, 255, 0.16);
+
+  --action-danger-primary-background-hover: #f06e87;
+  --action-danger-primary-background-press: #fbd0d8;
+}
+
+/* define theme */
+@theme {
+  --font-sans: var(--font-standard);
+  --font-mono: var(--font-standard-mono);
+
+  --breakpoint-toast-mobile: 600px;
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-tooltip: var(--tooltip);
+  --color-tooltip-foreground: var(--tooltip-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-neutral-050: var(--color-neutral-050);
+  --color-neutral-100: var(--color-neutral-100);
+  --color-neutral-200: var(--color-neutral-200);
+  --color-neutral-300: var(--color-neutral-300);
+  --color-neutral-350: var(--color-neutral-350);
+  --color-neutral-400: var(--color-neutral-400);
+  --color-neutral-500: var(--color-neutral-500);
+  --color-neutral-600: var(--color-neutral-600);
+  --color-neutral-650: var(--color-neutral-650);
+  --color-neutral-700: var(--color-neutral-700);
+  --color-neutral-800: var(--color-neutral-800);
+
+  --color-sidebar: var(--sidebar-background);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-action-default-background-hover: var(
+    --action-default-background-hover
+  );
+  --color-action-default-background-press: var(
+    --action-default-background-press
+  );
+
+  --color-action-primary-background-hover: var(
+    --action-primary-background-hover
+  );
+  --color-action-primary-background-press: var(
+    --action-primary-background-press
+  );
+
+  --color-action-tertiary-background-hover: var(
+    --action-tertiary-background-hover
+  );
+  --color-action-tertiary-background-press: var(
+    --action-tertiary-background-press
+  );
+
+  /* action-danger-primary-background-hover */
+  --color-action-danger-primary-background-hover: var(
+    --action-danger-primary-background-hover
+  );
+  --color-action-danger-primary-background-press: var(
+    --action-danger-primary-background-press
+  );
+
+  --animate-shimmer-text: shimmer-text 1.5s linear infinite;
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+@utility text-balance {
+  text-wrap: balance;
+}
+
+@utility -webkit-overflow-scrolling-touch {
+  -webkit-overflow-scrolling: touch;
+}
+
+@utility touch-pan-y {
+  touch-action: pan-y;
+}
+
+@utility overscroll-behavior-contain {
+  overscroll-behavior: contain;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-standard), sans-serif;
+    font-size: 13px;
+    line-height: 20px;
+    overflow-x: hidden;
+    position: relative;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1 {
+    font-size: 32px;
+    line-height: 40px;
+    font-weight: 600;
+  }
+  h2 {
+    font-size: 22px;
+    line-height: 28px;
+    font-weight: 600;
+  }
+  h3 {
+    font-size: 18px;
+    line-height: 24px;
+    font-weight: 600;
+  }
+  h4 {
+    font-size: 15px;
+    line-height: 20px;
+    font-weight: 600;
+  }
+  h5 {
+    font-size: 13px;
+    line-height: 20px;
+    font-weight: 600;
+  }
+  h6 {
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 600;
+  }
+
+  html {
+    overflow-x: hidden;
+  }
+}
+
+@layer utilities {
+  /* AI Gradient */
+  .bg-ai-gradient {
+    background: linear-gradient(
+      135deg,
+      #4299e0 20.5%,
+      #ca42e0 46.91%,
+      #ff5f46 79.5%
+    );
+  }
+
+  .text-ai-gradient {
+    background: linear-gradient(
+      135deg,
+      #4299e0 20.5%,
+      #ca42e0 46.91%,
+      #ff5f46 79.5%
+    );
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .border-ai {
+    border-image: linear-gradient(
+        135deg,
+        #4299e0 20.5%,
+        #ca42e0 46.91%,
+        #ff5f46 79.5%
+      )
+      1;
+  }
+}
+
+.skeleton {
+  * {
+    pointer-events: none !important;
+  }
+
+  *[class^="text-"] {
+    color: transparent;
+    @apply rounded-md bg-foreground/20 select-none animate-pulse;
+  }
+
+  .skeleton-bg {
+    @apply bg-foreground/10;
+  }
+
+  .skeleton-div {
+    @apply bg-foreground/20 animate-pulse;
+  }
+}
+
+.ProseMirror {
+  outline: none;
+}
+
+.cm-editor,
+.cm-gutters {
+  @apply bg-background! dark:bg-zinc-800! outline-hidden! selection:bg-zinc-900!;
+}
+
+.ͼo.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground,
+.ͼo.cm-selectionBackground,
+.ͼo.cm-content::selection {
+  @apply bg-zinc-200! dark:bg-zinc-900!;
+}
+
+.cm-activeLine,
+.cm-activeLineGutter {
+  @apply bg-transparent!;
+}
+
+.cm-activeLine {
+  @apply rounded-r-sm!;
+}
+
+.cm-lineNumbers {
+  @apply min-w-7;
+}
+
+.cm-foldGutter {
+  @apply min-w-3;
+}
+
+.cm-lineNumbers .cm-activeLineGutter {
+  @apply rounded-l-sm!;
+}
+
+.suggestion-highlight {
+  @apply bg-blue-200 hover:bg-blue-300 dark:hover:bg-blue-400/50 dark:text-blue-50 dark:bg-blue-500/40;
+}
+
+/* minimal scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+  transition: background 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: --alpha(var(--muted-foreground) / 0.5);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* firefox scrollbar styling */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+@keyframes shimmer-text {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: -100% 50%;
+  }
+}

@@ -1,0 +1,19 @@
+command: ["npm", "run", "start"]
+runtime: nodejs20
+
+env:
+  # Unity Catalog model service (Unity Gateway) to query, as a 3-part UC name,
+  # e.g. "system.ai.claude-sonnet-4-5". Set as a plain literal value: model
+  # services aren't a first-class Databricks Apps/DAB resource type yet, so
+  # there's no `valueFrom` resource binding to use here (see databricks.yml).
+  # TODO: set this to your model-service name.
+  #
+  # The app's service principal (and, under OBO, the end user) must be
+  # granted EXECUTE on the model service, plus USE CATALOG / USE SCHEMA on
+  # its containing catalog/schema, via Unity Catalog grants -- out-of-band,
+  # outside of this bundle.
+  - name: DATABRICKS_MODEL_SERVICE
+    value: system.ai.claude-sonnet-4-5
+  # FEEDBACK RESOURCE: Uncomment to enable the feedback UI (requires experiment resource in databricks.yml)
+  # - name: MLFLOW_EXPERIMENT_ID
+  #   valueFrom: experiment

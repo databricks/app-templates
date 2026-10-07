@@ -1,0 +1,195 @@
+import { useCopyToClipboard } from 'usehooks-ts';
+
+import { Actions, Action } from './elements/actions';
+import { memo, useState, useCallback, useRef, useEffect } from 'react';
+import { toast } from 'sonner';
+import type { ChatMessage, Feedback } from '@chat-template/core';
+import { useAppConfig } from '@/contexts/AppConfigContext';
+import {
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react';
+import { DbIcon } from './ui/db-icon';
+import { PencilIcon, CopyIcon, ThumbsUpIcon, ThumbsDownIcon } from './icons';
+
+function PureMessageActions({
+  message,
+  isLoading,
+  setMode,
+  errorCount = 0,
+  showErrors = false,
+  onToggleErrors,
+  initialFeedback,
+}: {
+  message: ChatMessage;
+  isLoading: boolean;
+  setMode?: (mode: 'view' | 'edit') => void;
+  errorCount?: number;
+  showErrors?: boolean;
+  onToggleErrors?: () => void;
+  initialFeedback?: Feedback;
+}) {
+  // All hooks MUST be called before any early returns
+  const { feedbackEnabled } = useAppConfig();
+  const [_, copyToClipboard] = useCopyToClipboard();
+  const [feedback, setFeedback] = useState<'thumbs_up' | 'thumbs_down' | null>(
+    initialFeedback?.feedbackType || null,
+  );
+  const isSubmittingRef = useRef(false);
+
+  // Sync server-restored feedback into local state when it arrives after mount
+  // (e.g. NewChatPage's useChatData resolves after the first stream completes).
+  // Only applies when the user hasn't clicked anything yet (feedback === null).
+  useEffect(() => {
+    if (initialFeedback?.feedbackType && feedback === null) {
+      setFeedback(initialFeedback.feedbackType);
+    }
+  }, [initialFeedback?.feedbackType]);
+
+  const textFromParts = message.parts
+    ?.filter((part) => part.type === 'text')
+    .map((part) => part.text)
+    .join('\n')
+    .trim();
+
+  // A data-traceId part with data: null means the endpoint doesn't emit traces,
+  // so MLflow feedback submission isn't possible. When the part is absent (e.g.
+  // for messages streamed before this feature), assume feedback is supported.
+  const traceIdPart = message.parts?.find((p) => p.type === 'data-traceId') as
+    | { type: 'data-traceId'; data: string | null }
+    | undefined;
+  const feedbackSupported = traceIdPart === undefined || traceIdPart.data !== null;
+
+  const handleFeedback = useCallback(
+    async (feedbackType: 'thumbs_up' | 'thumbs_down') => {
+      if (isSubmittingRef.current) return;
+      isSubmittingRef.current = true;
+
+      try {
+        const response = await fetch('/api/feedback', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messageId: message.id,
+            feedbackType,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to submit feedback');
+        }
+
+        setFeedback(feedbackType);
+      } catch (error) {
+        console.error('Error submitting feedback:', error);
+        toast.error('Failed to submit feedback. Please try again, or contact the app developer if the error persists.');
+      } finally {
+        isSubmittingRef.current = false;
+      }
+    },
+    [message.id],
+  );
+
+  const handleCopy = useCallback(async () => {
+    if (!textFromParts) {
+      toast.error("There's no text to copy!");
+      return;
+    }
+
+    await copyToClipboard(textFromParts);
+    toast.success('Copied to clipboard!');
+  }, [textFromParts, copyToClipboard]);
+
+  // Early return AFTER all hooks have been called
+  if (isLoading) return null;
+
+  // User messages get edit (on hover) and copy actions
+  if (message.role === 'user') {
+    return (
+      <Actions className="-mr-0.5 justify-end">
+        <div className="relative flex items-center gap-1">
+          {setMode && (
+            <Action
+              tooltip="Edit"
+              onClick={() => setMode('edit')}
+              className="opacity-0 transition-opacity group-hover/message:opacity-100"
+              data-testid="message-edit-button"
+            >
+              <DbIcon icon={PencilIcon} />
+            </Action>
+          )}
+          <Action tooltip="Copy" onClick={handleCopy}>
+            <DbIcon icon={CopyIcon} />
+          </Action>
+        </div>
+      </Actions>
+    );
+  }
+
+  const feedbackButtons = (
+    <>
+      <Action
+        tooltip="Thumbs up"
+        onClick={() => handleFeedback('thumbs_up')}
+        className={feedback === 'thumbs_up' ? 'text-green-600' : ''}
+        data-testid="thumbs-up-button"
+      >
+        <DbIcon icon={ThumbsUpIcon} />
+      </Action>
+      <Action
+        tooltip="Thumbs down"
+        onClick={() => handleFeedback('thumbs_down')}
+        className={feedback === 'thumbs_down' ? 'text-red-600' : ''}
+        data-testid="thumbs-down-button"
+      >
+        <DbIcon icon={ThumbsDownIcon} />
+      </Action>
+    </>
+  );
+
+  return (
+    <Actions className="-ml-0.5">
+      {textFromParts && (
+        <Action tooltip="Copy" onClick={handleCopy}>
+          <CopyIcon />
+        </Action>
+      )}
+      {feedbackEnabled && feedbackSupported && feedbackButtons}
+      {errorCount > 0 && onToggleErrors && (
+        <Action
+          tooltip={showErrors ? 'Hide errors' : 'Show errors'}
+          onClick={onToggleErrors}
+          iconOnly={false}
+        >
+          <div className="flex items-center gap-1.5">
+            {showErrors ? <ChevronUp /> : <ChevronDown />}
+            <span className="text-xs">
+              {errorCount} {errorCount === 1 ? 'error' : 'errors'}
+            </span>
+          </div>
+        </Action>
+      )}
+    </Actions>
+  );
+}
+
+export const MessageActions = memo(
+  PureMessageActions,
+  (prevProps, nextProps) => {
+    if (prevProps.isLoading !== nextProps.isLoading) return false;
+    if (prevProps.errorCount !== nextProps.errorCount) return false;
+    if (prevProps.showErrors !== nextProps.showErrors) return false;
+    if (prevProps.initialFeedback?.feedbackType !== nextProps.initialFeedback?.feedbackType) return false;
+    const prevTraceId = prevProps.message.parts?.find(
+      (p) => p.type === 'data-traceId',
+    );
+    const nextTraceId = nextProps.message.parts?.find(
+      (p) => p.type === 'data-traceId',
+    );
+    if (prevTraceId !== nextTraceId) return false;
+
+    return true;
+  },
+);

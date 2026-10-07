@@ -72,6 +72,7 @@ DIAGNOSTICS_PY_TARGETS = {
 # `import './diagnostics'` in each entrypoint is a one-time manual edit).
 DIAGNOSTICS_TS_TARGETS = {
     "e2e-chatbot-app-next": "server/src",
+    "e2e-chatbot-model-service": "server/src",
     "rag-chat": "server",
     "agent-langchain-ts": "src",
 }

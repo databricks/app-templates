@@ -87,9 +87,12 @@ to the client. Tables and charts use this same bounded preview. The notebook's `
 preserved; it can indicate a row or byte limit, so the app does not label it as sampling or guess
 which limit was reached. Missing overflow metadata means completeness is unknown, not complete.
 
-The footer shows `1,000 / 1,500 rows` when a complete export supplies an exact total, or `1,000 rows shown`
-with a **Truncated** badge when the notebook overflowed without a known total. Other tables show
-their row count only in the pagination summary, such as `1–25 of 268 returned rows`.
+The table footer combines the page range and result counts on one line. Complete results show
+`1–25 of 268 rows`. Truncated results with an exact total show
+`1–25 of 1,000 preview rows · 93,997 total`; without a known total they show
+`1–25 of 1,000 preview rows · Truncated`. Missing completeness metadata uses `returned rows`
+without claiming truncation or completeness. Filtering changes the paging count to matching rows
+within the returned result; a truncated preview retains its full-result total when available.
 Charts warn when they use a truncated result.
 
 A complete export capped only by the app can use its original length as the exact total.

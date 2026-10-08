@@ -989,7 +989,6 @@ function ResultSection({ payload, chartSpec }: { payload: OkPayload; chartSpec?:
     <>
       {chart === undefined ? null : <ChartRefusedNote refusal={chart.refusal} />}
       <ResultGrid payload={payload} />
-      {chartSpec === undefined && <ResultFooter payload={payload} />}
     </>
   );
 }

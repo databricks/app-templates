@@ -176,15 +176,17 @@ test('published blocks never render outputs outside the manifest', () => {
   assert.doesNotMatch(html, /Unpublished result|Returned by the run/);
 });
 
-test('tabular previews retain full row counts without generic export controls', () => {
+test('tabular previews combine page ranges and full row counts without generic export controls', () => {
   const payload = parsePayload(outputFromTable(displayTable(2, false)));
   const html = outputSection(payload);
   assert.match(html, /<table/);
-  assert.match(html, /1–2 of 2 returned rows/);
+  assert.match(html, /1–2 of 2 rows/);
   assert.doesNotMatch(html, />2 rows</);
   assert.doesNotMatch(html, /Generate CSV|Generate Excel|Download|Reuses generated files/);
   const fullCount = { ...payload, total_row_count: 5000, truncated: true };
-  assert.match(outputSection(fullCount), /5,000/);
+  const truncatedHtml = outputSection(fullCount);
+  assert.match(truncatedHtml, /1–2 of 2 preview rows · 5,000 total/);
+  assert.equal((truncatedHtml.match(/aria-live="polite"/g) ?? []).length, 1);
 });
 
 test('the initial last-run response retains native file downloads without preview results', async () => {
@@ -307,7 +309,7 @@ test('historical file labels use the recorded behavior and preserve full row cou
     assert.equal(output.outcome.payload.total_row_count, 5000);
     const html = outputSection(output.outcome.payload, undefined, output.files, output.fileBehavior);
     assert.ok(html.includes(label));
-    assert.match(html, /2 \/ 5,000 rows/);
+    assert.match(html, /1–2 of 2 preview rows · 5,000 total/);
     assert.match(html, /Download report.csv/);
     if (fileBehavior === 'run_artifact') {
       assert.match(html, /Later App runs use separate destinations/);
@@ -381,7 +383,7 @@ test('preserves notebook overflow without inventing a full count or a row-limit 
     assert.equal(payload.truncated, true);
     assert.equal(payload.total_row_count, undefined);
     const html = footer(payload);
-    assert.match(html, /rows shown/);
+    assert.match(html, /preview rows · /);
     assert.match(html, /Truncated/);
     assert.doesNotMatch(html, /Complete result|sample|byte budget| \/ /i);
   }
@@ -399,10 +401,10 @@ for (const rowCount of [0, 999, 1000, 1001, 1500]) {
     assert.equal(payload.truncated, rowCount > 1000);
     const html = footer(payload);
     if (rowCount > 1000) {
-      assert.ok(html.includes(`1,000 / ${rowCount.toLocaleString()} rows`));
-      assert.match(html, /Truncated/);
+      assert.ok(html.includes(`1,000 preview rows · ${rowCount.toLocaleString()} total`));
+      assert.doesNotMatch(html, /Truncated/);
     } else {
-      assert.equal(html, '');
+      assert.ok(html.includes(`${rowCount.toLocaleString()} rows`));
       assert.doesNotMatch(html, /Truncated|rows shown/);
     }
     assert.doesNotMatch(html, /Complete result/);
@@ -416,7 +418,7 @@ test('missing or malformed overflow stays unknown even for an empty or exactly 1
       assert.equal(payload.truncated, null);
       assert.equal(payload.total_row_count, undefined);
       const html = footer(payload);
-      assert.equal(html, '');
+      assert.ok(html.includes(`${rowCount.toLocaleString()} returned rows`));
       assert.doesNotMatch(html, /Truncated|Complete result| \/ /);
     }
   }
@@ -469,7 +471,7 @@ test('client also caps oversized payloads before rendering a table or feeding a 
   assert.deepEqual(payload.rows.at(-1), { value: 999 });
   const grid = renderToStaticMarkup(createElement(ResultGrid, { payload }));
   assert.equal((grid.match(/<tr[ >]/g) ?? []).length, 26, 'one header and the first page of 25 preview rows');
-  assert.match(grid, /1–25 of 1,000<!-- --> returned rows|1–25 of 1,000 returned rows/);
+  assert.match(grid, /1–25 of 1,000 preview rows · 1,500 total/);
   assert.match(grid, /This preview is truncated/);
 });
 
@@ -477,7 +479,7 @@ test('renders a separately supplied exact total without downloading those rows',
   const payload = parsePayload({ ...outputFromTable(displayTable(1000, true)), total_row_count: 558837 });
   assert.equal(payload.rows.length, 1000);
   assert.equal(payload.total_row_count, 558837);
-  assert.match(footer(payload), /1,000 \/ 558,837 rows/);
+  assert.match(footer(payload), /1,000 preview rows · 558,837 total/);
 });
 
 test('reads exact per-port totals from the runner count metadata without shifting table results', () => {
@@ -506,7 +508,7 @@ test('reads exact per-port totals from the runner count metadata without shiftin
       { target_port: 'excluded_data', rows: 12, total_row_count: 12 },
     ],
   );
-  assert.match(footer(parsePayload(outputs[0])), /1,000 \/ 558,837 rows/);
+  assert.match(footer(parsePayload(outputs[0])), /1,000 preview rows · 558,837 total/);
 });
 
 test('ignores malformed count metadata and preserves the preview completeness signal', () => {
@@ -534,7 +536,8 @@ test('rejects impossible or unsafe totals instead of labeling a truncated previe
     const payload = parsePayload({ ...outputFromTable(displayTable(1000, true)), total_row_count: total });
     assert.equal(payload.total_row_count, undefined);
     assert.equal(payload.truncated, true);
-    assert.match(footer(payload), /1,000 rows shown/);
+    assert.match(footer(payload), /1,000 preview rows · /);
+    assert.match(footer(payload), /Truncated/);
   }
 });
 
@@ -542,7 +545,7 @@ test('an exact total larger than the returned rows proves truncation despite an 
   const payload = parsePayload({ ...outputFromTable(displayTable(10, false)), total_row_count: 20 });
   assert.equal(payload.truncated, true);
   assert.equal(payload.total_row_count, 20);
-  assert.match(footer(payload), /10 \/ 20 rows/);
+  assert.match(footer(payload), /10 preview rows · 20 total/);
 });
 
 test('missing client metadata does not imply completeness or break rendering', () => {
@@ -552,5 +555,5 @@ test('missing client metadata does not imply completeness or break rendering', (
   const payload = parsePayload(raw);
   assert.equal(payload.truncated, null);
   assert.equal(payload.total_row_count, undefined);
-  assert.equal(footer(payload), '');
+  assert.match(footer(payload), /10 returned rows/);
 });

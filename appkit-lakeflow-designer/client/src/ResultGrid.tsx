@@ -31,6 +31,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { categorize, formatCell, isNumericCategory, TypeGlyph } from './dataTypes';
 import type { OkPayload, SchemaField } from './payload';
+import { ResultFooter } from './ResultFooter';
 import { createResultColumns, createResultFilter } from './resultTable';
 
 const MIN_COLUMN_WIDTH = 110;
@@ -247,11 +248,7 @@ function InteractiveResultGrid({ payload }: { payload: OkPayload }) {
           </TableBody>
         </Table>
       </div>
-      <div className="border-border flex flex-wrap items-center gap-2 border-t px-3 py-2 text-xs">
-        <span aria-live="polite" className="text-muted-foreground tabular-nums">
-          {from.toLocaleString()}–{to.toLocaleString()} of {matchingRows.toLocaleString()}
-          {globalFilter.trim() === '' ? ' returned rows' : ' matching rows'}
-        </span>
+      <ResultFooter payload={payload} page={{ from, to, matchingRows, filtered: globalFilter.trim() !== '' }}>
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <Select value={String(pagination.pageSize)} onValueChange={(value) => table.setPageSize(Number(value))}>
             <SelectTrigger aria-label="Rows per page" className="h-8 w-auto text-xs">
@@ -273,7 +270,7 @@ function InteractiveResultGrid({ payload }: { payload: OkPayload }) {
             Next
           </Button>
         </div>
-      </div>
+      </ResultFooter>
     </div>
   );
 }

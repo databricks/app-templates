@@ -120,9 +120,10 @@ def run_command(
 ) -> subprocess.CompletedProcess:
     """Run a command and return the result."""
     merged_env = {**os.environ, **(env or {})}
+    # cmd is always an argument list built by this script (never shell=True)
     if show_output:
-        return subprocess.run(cmd, check=check, env=merged_env)
-    return subprocess.run(
+        return subprocess.run(cmd, check=check, env=merged_env)  # nosemgrep: dangerous-subprocess-use-audit
+    return subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
         cmd, capture_output=capture_output, text=True, check=check, env=merged_env
     )
 
@@ -376,7 +377,7 @@ def authenticate_profile(profile_name: str, host: str = None) -> bool:
 
     try:
         # Run interactively so user can see browser prompt
-        result = subprocess.run(cmd)
+        result = subprocess.run(cmd)  # nosemgrep: dangerous-subprocess-use-audit
         return result.returncode == 0
     except Exception as e:
         print_error(f"Authentication failed: {e}")

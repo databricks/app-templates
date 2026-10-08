@@ -25,7 +25,8 @@ DEFAULT_MAX_SCHEMAS = 25
 def run_databricks_cli(args: List[str]) -> str:
     """Run databricks CLI command and return output."""
     try:
-        result = subprocess.run(
+        # Argument list (no shell); args are built by this script
+        result = subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
             ["databricks"] + args,
             capture_output=True,
             text=True,

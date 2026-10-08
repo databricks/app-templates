@@ -34,6 +34,8 @@ setup = [
 ]
 
 [tool.uv]
+# Dependency cooldown: skip package versions published in the last 7 days (uv >= 0.9.17)
+exclude-newer = "7 days"
 default-groups = ["dev", "setup"]
 
 

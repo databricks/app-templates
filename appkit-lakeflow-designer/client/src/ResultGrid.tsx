@@ -185,9 +185,24 @@ function InteractiveResultGrid({ payload }: { payload: OkPayload }) {
                         <TypeGlyph category={category} />
                       </span>
                       <span className="truncate">{field.name}</span>
-                      <span aria-hidden="true" className="text-muted-foreground ml-auto shrink-0">
-                        {sorted === 'asc' ? '↑' : sorted === 'desc' ? '↓' : '↕'}
-                      </span>
+                      <svg
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                        className="text-muted-foreground ml-auto size-3.5 shrink-0"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path
+                          d={sorted === 'asc'
+                            ? 'M12 19V5m-5 5 5-5 5 5'
+                            : sorted === 'desc'
+                              ? 'M12 5v14m-5-5 5 5 5-5'
+                              : 'M8 20V4m-4 4 4-4 4 4M16 4v16m-4-4 4 4 4-4'}
+                        />
+                      </svg>
                     </Button>
                   </TableHead>
                 );

@@ -88,8 +88,9 @@ preserved; it can indicate a row or byte limit, so the app does not label it as 
 which limit was reached. Missing overflow metadata means completeness is unknown, not complete.
 
 The footer shows `1,000 / 1,500 rows` when a complete export supplies an exact total, or `1,000 rows shown`
-with a **Truncated** badge when the notebook overflowed without a known total. Complete small
-results simply show their row count. Charts warn when they use a truncated result.
+with a **Truncated** badge when the notebook overflowed without a known total. Other tables show
+their row count only in the pagination summary, such as `1–25 of 268 returned rows`.
+Charts warn when they use a truncated result.
 
 A complete export capped only by the app can use its original length as the exact total.
 When the notebook export itself overflowed, an exact total comes from the runner's structured

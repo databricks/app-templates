@@ -180,7 +180,8 @@ test('tabular previews retain full row counts without generic export controls', 
   const payload = parsePayload(outputFromTable(displayTable(2, false)));
   const html = outputSection(payload);
   assert.match(html, /<table/);
-  assert.match(html, />2 rows</);
+  assert.match(html, /1–2 of 2 returned rows/);
+  assert.doesNotMatch(html, />2 rows</);
   assert.doesNotMatch(html, /Generate CSV|Generate Excel|Download|Reuses generated files/);
   const fullCount = { ...payload, total_row_count: 5000, truncated: true };
   assert.match(outputSection(fullCount), /5,000/);
@@ -401,7 +402,7 @@ for (const rowCount of [0, 999, 1000, 1001, 1500]) {
       assert.ok(html.includes(`1,000 / ${rowCount.toLocaleString()} rows`));
       assert.match(html, /Truncated/);
     } else {
-      assert.ok(html.includes(`${rowCount.toLocaleString()} rows`));
+      assert.equal(html, '');
       assert.doesNotMatch(html, /Truncated|rows shown/);
     }
     assert.doesNotMatch(html, /Complete result/);
@@ -415,7 +416,7 @@ test('missing or malformed overflow stays unknown even for an empty or exactly 1
       assert.equal(payload.truncated, null);
       assert.equal(payload.total_row_count, undefined);
       const html = footer(payload);
-      assert.match(html, /rows shown/);
+      assert.equal(html, '');
       assert.doesNotMatch(html, /Truncated|Complete result| \/ /);
     }
   }
@@ -551,5 +552,5 @@ test('missing client metadata does not imply completeness or break rendering', (
   const payload = parsePayload(raw);
   assert.equal(payload.truncated, null);
   assert.equal(payload.total_row_count, undefined);
-  assert.match(footer(payload), /10 rows shown/);
+  assert.equal(footer(payload), '');
 });

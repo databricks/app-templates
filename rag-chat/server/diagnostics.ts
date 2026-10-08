@@ -27,10 +27,14 @@ export function installDiagnostics(): void {
     process.on("unhandledRejection", (reason: unknown) => {
       const r = reason as { stack?: string };
       console.error("[app.diagnostics] unhandledRejection:", r?.stack ?? reason);
+      // Preserve Node's default crash-on-rejection (the default since Node 15):
+      // registering this listener suppresses it, so exit non-zero ourselves —
+      // otherwise the app silently keeps running in a broken state and the
+      // platform never restarts it.
+      process.exit(1);
     });
-    process.on("warning", (w: Error) => {
-      console.error("[app.diagnostics] warning:", w?.stack ?? w);
-    });
+    // NB: no `process.on("warning", ...)` — Node already prints warnings to stderr
+    // by default; a second listener would double-print them.
     for (const sig of ["SIGTERM", "SIGINT"] as const) {
       process.on(sig, () => {
         console.error(`[app.diagnostics] received ${sig} — shutting down`);

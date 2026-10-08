@@ -23,8 +23,12 @@ What it installs (all to stderr):
 
 Environment toggles (read at install time):
   DATABRICKS_APP_DIAGNOSTICS        "0"/"false" disables everything (kill switch).
-  DATABRICKS_APP_DIAGNOSTICS_LOG_LEVEL   root log level (default INFO).
+  DATABRICKS_APP_DIAGNOSTICS_LOG_LEVEL   diagnostics log level (default INFO).
   DATABRICKS_APP_DIAGNOSTICS_HANG_TIMEOUT  seconds; enables the periodic hang dump.
+
+Logging note: diagnostics records go to a dedicated ``app.diagnostics`` logger with
+its own stderr handler (propagation off); this module does NOT install a root
+handler, so a later ``logging.basicConfig()`` in the app behaves normally.
 """
 from __future__ import annotations
 
@@ -35,7 +39,11 @@ import signal
 import sys
 import threading
 
-_INSTALLED = False
+# Process-level install guard. Set on `sys` (a per-interpreter singleton) rather
+# than a module global, so importing this file under two names in one process
+# (e.g. `scripts.app_diagnostics` and `app_diagnostics`) can't double-install the
+# hooks/handlers. Not an env var — that would be inherited by child processes.
+_SENTINEL_ATTR = "_app_diagnostics_installed"
 _LOGGER_NAME = "app.diagnostics"
 _LOG_FORMAT = "%(asctime)s %(levelname)s [%(process)d:%(threadName)s] %(name)s: %(message)s"
 # Keep a reference to the stream faulthandler writes to so it is not GC'd.
@@ -51,23 +59,25 @@ def _on_main_thread() -> bool:
 
 
 def _setup_logging() -> logging.Logger:
-    """Ensure diagnostics logs reach stderr without clobbering app logging config."""
+    """Route diagnostics records to stderr via a dedicated logger.
+
+    We attach our stderr handler to the ``app.diagnostics`` logger (NOT the root
+    logger) with propagation off, so crash/exception records always reach the Apps
+    log stream without taking over root logging. install_diagnostics() runs before
+    the app configures logging; adding a root handler here would make a later
+    ``logging.basicConfig()`` in the app a silent no-op (basicConfig does nothing
+    once the root logger has a handler), overriding the app's level/format.
+    """
     level_name = os.environ.get("DATABRICKS_APP_DIAGNOSTICS_LOG_LEVEL", "INFO").upper()
     level = getattr(logging, level_name, logging.INFO)
-    root = logging.getLogger()
-    already = any(getattr(h, "_app_diagnostics", False) for h in root.handlers)
-    if not already and not root.handlers:
-        # No logging configured yet — install a stderr handler so our (and the
-        # app's) log records are visible in the Apps log stream.
+    logger = logging.getLogger(_LOGGER_NAME)
+    if not any(getattr(h, "_app_diagnostics", False) for h in logger.handlers):
         handler = logging.StreamHandler(sys.stderr)
         handler.setFormatter(logging.Formatter(_LOG_FORMAT))
         handler._app_diagnostics = True  # type: ignore[attr-defined]
-        root.addHandler(handler)
-        root.setLevel(level)
-    # If the app already configured logging, leave its handlers alone; our logger
-    # propagates to them. Either way make sure our records are not filtered out.
-    logger = logging.getLogger(_LOGGER_NAME)
-    logger.setLevel(min(logger.getEffectiveLevel(), level))
+        logger.addHandler(handler)
+    logger.setLevel(level)
+    logger.propagate = False  # our records go to our own handler, not through root
     return logger
 
 
@@ -141,10 +151,9 @@ def _install_hang_watchdog(logger: logging.Logger) -> None:
 
 def install_diagnostics() -> None:
     """Install crash/hang/exception diagnostics. Idempotent, safe, never raises."""
-    global _INSTALLED
-    if _INSTALLED or _is_disabled():
+    if getattr(sys, _SENTINEL_ATTR, False) or _is_disabled():
         return
-    _INSTALLED = True
+    setattr(sys, _SENTINEL_ATTR, True)
     try:
         logger = _setup_logging()
         faulthandler.enable(file=_fault_stream, all_threads=True)

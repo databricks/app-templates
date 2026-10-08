@@ -7,7 +7,6 @@ import {
   createTable,
   getCoreRowModel,
   getFilteredRowModel,
-  getPaginationRowModel,
   getSortedRowModel,
 } from '@tanstack/react-table';
 import { build } from 'tsdown';
@@ -43,7 +42,6 @@ function tableFor(schema, rows, state = {}) {
       globalFilter: '',
       columnVisibility: {},
       columnPinning: { left: [], right: [] },
-      pagination: { pageIndex: 0, pageSize: 25 },
       ...state,
     },
     onStateChange() {},
@@ -53,7 +51,6 @@ function tableFor(schema, rows, state = {}) {
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
   });
 }
 
@@ -95,20 +92,17 @@ test('searches formatted strings, numbers, nulls and nested values across every 
   assert.equal(tableFor(schema, rows, { globalFilter: 'not present' }).getRowModel().rows.length, 0);
 });
 
-test('filters and sorts before paginating and preserves original row numbers', () => {
+test('filters and sorts all matching rows and preserves original row numbers', () => {
   const schema = [field('value', 'int'), field('group', 'string')];
   const rows = Array.from({ length: 70 }, (_, value) => ({ value, group: value % 2 === 0 ? 'even' : 'odd' }));
   const table = tableFor(schema, rows, {
     globalFilter: 'even',
     sorting: [{ id: '0', desc: true }],
-    pagination: { pageIndex: 1, pageSize: 25 },
   });
   assert.equal(table.getFilteredRowModel().rows.length, 35);
-  assert.equal(table.getPageCount(), 2);
-  assert.equal(table.getCanPreviousPage(), true);
-  assert.equal(table.getCanNextPage(), false);
-  assert.deepEqual(table.getRowModel().rows.map((row) => row.original.value), [18, 16, 14, 12, 10, 8, 6, 4, 2, 0]);
-  assert.deepEqual(table.getRowModel().rows.map((row) => row.index + 1), [19, 17, 15, 13, 11, 9, 7, 5, 3, 1]);
+  const expectedValues = Array.from({ length: 35 }, (_, index) => 68 - index * 2);
+  assert.deepEqual(table.getRowModel().rows.map((row) => row.original.value), expectedValues);
+  assert.deepEqual(table.getRowModel().rows.map((row) => row.index + 1), expectedValues.map((value) => value + 1));
 });
 
 test('column visibility and SQL aliases do not change or reinterpret the result data', () => {
@@ -121,10 +115,8 @@ test('column visibility and SQL aliases do not change or reinterpret the result 
   assert.deepEqual(Object.keys(rows[0]), ['sales.total', '__proto__', 'constructor']);
 });
 
-test('empty results have no rows or next page and retain the supplied schema', () => {
+test('empty results have no rows and retain the supplied schema', () => {
   const table = tableFor([field('value', 'string')], []);
   assert.deepEqual(table.getRowModel().rows, []);
-  assert.equal(table.getCanPreviousPage(), false);
-  assert.equal(table.getCanNextPage(), false);
   assert.equal(table.getVisibleLeafColumns()[0].columnDef.header, 'value');
 });

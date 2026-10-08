@@ -176,16 +176,16 @@ test('published blocks never render outputs outside the manifest', () => {
   assert.doesNotMatch(html, /Unpublished result|Returned by the run/);
 });
 
-test('tabular previews combine page ranges and full row counts without generic export controls', () => {
+test('tabular previews show result counts on one line without generic export controls', () => {
   const payload = parsePayload(outputFromTable(displayTable(2, false)));
   const html = outputSection(payload);
   assert.match(html, /<table/);
-  assert.match(html, /1–2 of 2 rows/);
-  assert.doesNotMatch(html, />2 rows</);
+  assert.match(html, />2 rows</);
+  assert.equal((html.match(/aria-live="polite"/g) ?? []).length, 1);
   assert.doesNotMatch(html, /Generate CSV|Generate Excel|Download|Reuses generated files/);
   const fullCount = { ...payload, total_row_count: 5000, truncated: true };
   const truncatedHtml = outputSection(fullCount);
-  assert.match(truncatedHtml, /1–2 of 2 preview rows · 5,000 total/);
+  assert.match(truncatedHtml, /Showing 2 of 5,000 rows/);
   assert.equal((truncatedHtml.match(/aria-live="polite"/g) ?? []).length, 1);
 });
 
@@ -309,7 +309,7 @@ test('historical file labels use the recorded behavior and preserve full row cou
     assert.equal(output.outcome.payload.total_row_count, 5000);
     const html = outputSection(output.outcome.payload, undefined, output.files, output.fileBehavior);
     assert.ok(html.includes(label));
-    assert.match(html, /1–2 of 2 preview rows · 5,000 total/);
+    assert.match(html, /Showing 2 of 5,000 rows/);
     assert.match(html, /Download report.csv/);
     if (fileBehavior === 'run_artifact') {
       assert.match(html, /Later App runs use separate destinations/);
@@ -337,7 +337,7 @@ test('legacy or unknown file behavior stays conservative even for a namespaced-l
 });
 
 for (const widgetType of ['line', 'pie', 'unsupported']) {
-  test(`${widgetType} visualization hides row counts and download controls, including empty results`, () => {
+  test(`${widgetType} visualization shows counts only for fallback tables and hides download controls`, () => {
     const chartSpec = {
       widgetType,
       encodings: {
@@ -351,7 +351,11 @@ for (const widgetType of ['line', 'pie', 'unsupported']) {
       const payload = parsePayload(outputFromTable(displayTable(rowCount, false)));
       const html = outputSection(payload, chartSpec);
       assert.match(html, /Published output/);
-      assert.doesNotMatch(html, />[\d,]+ rows(?: shown)?</);
+      if (widgetType === 'unsupported' && rowCount > 0) {
+        assert.match(html, />2 rows</);
+      } else {
+        assert.doesNotMatch(html, />[\d,]+ rows(?: shown)?</);
+      }
       assert.doesNotMatch(html, /Generate CSV|Generate Excel|Reuses generated files/);
       if (rowCount === 0) assert.match(html, /No rows returned/);
       else if (widgetType === 'unsupported') assert.match(html, /<table/);
@@ -401,7 +405,7 @@ for (const rowCount of [0, 999, 1000, 1001, 1500]) {
     assert.equal(payload.truncated, rowCount > 1000);
     const html = footer(payload);
     if (rowCount > 1000) {
-      assert.ok(html.includes(`1,000 preview rows · ${rowCount.toLocaleString()} total`));
+      assert.ok(html.includes(`Showing 1,000 of ${rowCount.toLocaleString()} rows`));
       assert.doesNotMatch(html, /Truncated/);
     } else {
       assert.ok(html.includes(`${rowCount.toLocaleString()} rows`));
@@ -470,8 +474,8 @@ test('client also caps oversized payloads before rendering a table or feeding a 
   assert.equal(payload.total_row_count, 1500);
   assert.deepEqual(payload.rows.at(-1), { value: 999 });
   const grid = renderToStaticMarkup(createElement(ResultGrid, { payload }));
-  assert.equal((grid.match(/<tr[ >]/g) ?? []).length, 26, 'one header and the first page of 25 preview rows');
-  assert.match(grid, /1–25 of 1,000 preview rows · 1,500 total/);
+  assert.equal((grid.match(/<tr[ >]/g) ?? []).length, 1001, 'one header and every returned preview row');
+  assert.match(grid, /Showing 1,000 of 1,500 rows/);
   assert.match(grid, /This preview is truncated/);
 });
 
@@ -479,7 +483,7 @@ test('renders a separately supplied exact total without downloading those rows',
   const payload = parsePayload({ ...outputFromTable(displayTable(1000, true)), total_row_count: 558837 });
   assert.equal(payload.rows.length, 1000);
   assert.equal(payload.total_row_count, 558837);
-  assert.match(footer(payload), /1,000 preview rows · 558,837 total/);
+  assert.match(footer(payload), /Showing 1,000 of 558,837 rows/);
 });
 
 test('reads exact per-port totals from the runner count metadata without shifting table results', () => {
@@ -508,7 +512,7 @@ test('reads exact per-port totals from the runner count metadata without shiftin
       { target_port: 'excluded_data', rows: 12, total_row_count: 12 },
     ],
   );
-  assert.match(footer(parsePayload(outputs[0])), /1,000 preview rows · 558,837 total/);
+  assert.match(footer(parsePayload(outputs[0])), /Showing 1,000 of 558,837 rows/);
 });
 
 test('ignores malformed count metadata and preserves the preview completeness signal', () => {
@@ -545,7 +549,7 @@ test('an exact total larger than the returned rows proves truncation despite an 
   const payload = parsePayload({ ...outputFromTable(displayTable(10, false)), total_row_count: 20 });
   assert.equal(payload.truncated, true);
   assert.equal(payload.total_row_count, 20);
-  assert.match(footer(payload), /10 preview rows · 20 total/);
+  assert.match(footer(payload), /Showing 10 of 20 rows/);
 });
 
 test('missing client metadata does not imply completeness or break rendering', () => {

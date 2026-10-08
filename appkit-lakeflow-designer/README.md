@@ -87,11 +87,10 @@ to the client. Tables and charts use this same bounded preview. The notebook's `
 preserved; it can indicate a row or byte limit, so the app does not label it as sampling or guess
 which limit was reached. Missing overflow metadata means completeness is unknown, not complete.
 
-The table footer combines the page range and result counts on one line. Complete results show
-`1–25 of 268 rows`. Truncated results with an exact total show
-`1–25 of 1,000 preview rows · 93,997 total`; without a known total they show
-`1–25 of 1,000 preview rows · Truncated`. Missing completeness metadata uses `returned rows`
-without claiming truncation or completeness. Filtering changes the paging count to matching rows
+The table footer shows result counts on one line. Complete results show `268 rows`.
+Truncated results with an exact total show `Showing 1,000 of 93,997 rows`; without a known
+total they show `1,000 preview rows · Truncated`. Missing completeness metadata uses `returned rows`
+without claiming truncation or completeness. Filtering changes the count to matching rows
 within the returned result; a truncated preview retains its full-result total when available.
 Charts warn when they use a truncated result.
 
@@ -104,7 +103,8 @@ The app does not trigger a new count query or rerun the job when loading results
 downloads are not implemented by the preview path.
 
 Result tables support ascending/descending header sorting, case-insensitive search across all
-columns (including hidden columns), a column visibility menu, and pages of 25, 50, or 100 rows.
+columns (including hidden columns), and a column visibility menu. All returned rows appear in a
+scrollable table with sticky headers.
 These controls apply to the returned preview only; they do not fetch omitted rows or rerun the job.
 The truncation notice and original result counts remain visible. Row numbers identify the original
 returned row even after sorting or filtering. At least one data column remains visible.
@@ -114,7 +114,7 @@ AppKit UI dependency) supplies table state over the job-result rows; it is pinne
 dependency with its integrity hash in the lockfile. AppKit's packaged `DataTable` currently requires
 an analytics query rather than accepting supplied data. Sorting uses schema types and preserves
 the precision of string-encoded integers and decimals. Run `npm test` to validate sorting,
-filtering, pagination, visibility, unusual SQL column aliases, and bounded-preview rendering.
+filtering, visibility, unusual SQL column aliases, and bounded-preview rendering.
 
 ## Chart rendering
 

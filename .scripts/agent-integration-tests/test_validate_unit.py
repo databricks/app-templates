@@ -10,20 +10,24 @@ from validation_config import (
 from validate_transforms import neutralize_app_yaml, parse_spa_assets
 
 
-def test_load_config_parses_all_26_templates():
+def test_load_config_parses_all_templates():
     cfg = load_validation_config(DEFAULT_CONFIG_PATH, resolve_workspace_root=False)
     assert cfg.profile == "dogfood"
     assert cfg.shared_app_name == "template-e2e-test"
-    assert len(cfg.templates) == 26
+    # Drift-proof: parsed count matches the raw yaml (no silent drop/dupe), rather
+    # than a hardcoded number that goes stale every time a template is added.
+    raw = _yaml.safe_load(DEFAULT_CONFIG_PATH.read_text())["templates"]
+    assert len(cfg.templates) == len(raw)
     names = {t.name for t in cfg.templates}
-    assert "streamlit-database-app" in names
-    assert "rag-chat" in names
+    assert {"streamlit-database-app", "rag-chat", "e2e-chatbot-model-service"} <= names
     # verify kinds are constrained to the known set
-    assert {t.verify for t in cfg.templates} <= {"html", "spa", "mcp", "api", "build"}
-    assert ValidationTemplate(name="x", verify="html").verify == "html"
-    verify_kinds = {t.verify for t in cfg.templates}
-    assert "build" in verify_kinds
-    assert sum(1 for t in cfg.templates if t.verify == "build") == 15
+    assert {t.verify for t in cfg.templates} <= {"html", "spa", "mcp", "api", "build", "obo"}
+    assert ValidationTemplate(name="x", verify="spa").verify == "spa"
+    # the newest template is build-verified
+    model_svc = next(t for t in cfg.templates if t.name == "e2e-chatbot-model-service")
+    assert model_svc.verify == "build"
+    # every html template must carry an expect signal (loader enforces this)
+    assert all(t.expect for t in cfg.templates if t.verify == "html")
 
 
 def test_empty_workspace_root_left_unresolved_when_flag_false():
@@ -101,47 +105,43 @@ def test_prepare_source_neutralizes_app_yaml(tmp_path):
     assert "command" in y.safe_load(app_yaml.read_text())
 
 
-import http.server
-import threading
+def test_assert_html_rendered_passes_with_expected_content():
+    from validate_templates import assert_html_rendered
+
+    html = (
+        "<!doctype html><html><body><h1>Todo List App</h1>"
+        + "x" * 600
+        + "</body></html>"
+    )
+    assert_html_rendered(html, ["Todo List App"])  # no raise
+    assert_html_rendered(html, ["todo list app"])  # case-insensitive
 
 
-class _Handler(http.server.BaseHTTPRequestHandler):
-    HTML = b'<!doctype html><html><head><script src="/assets/a.js"></script></head></html>'
+def test_assert_html_rendered_fails_on_generic_shell():
+    import pytest as _pytest
 
-    def log_message(self, *a):
-        pass
+    from validate_templates import assert_html_rendered
 
-    def do_GET(self):
-        if self.path == "/assets/a.js":
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b"console.log(1)")
-        elif self.path == "/":
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html")
-            self.end_headers()
-            self.wfile.write(self.HTML)
-        else:
-            self.send_response(404)
-            self.end_headers()
+    # A framework shell / error page: valid HTML, long enough, but the app's own
+    # content never rendered. This is the exact false-pass the expect signal guards.
+    shell = (
+        "<!doctype html><html><head><title>Streamlit</title></head><body>"
+        + "x" * 600
+        + "</body></html>"
+    )
+    with _pytest.raises(AssertionError):
+        assert_html_rendered(shell, ["Todo List App"])
 
 
-def _serve():
-    srv = http.server.HTTPServer(("127.0.0.1", 0), _Handler)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
-    return srv, f"http://127.0.0.1:{srv.server_address[1]}"
+def test_assert_html_rendered_fails_on_too_short_or_non_html():
+    import pytest as _pytest
 
+    from validate_templates import assert_html_rendered
 
-def test_verify_html_and_spa_pass_against_stub():
-    from validate_templates import verify_serving
-
-    srv, url = _serve()
-    try:
-        verify_serving("html", url, token="ignored")  # no raise
-        verify_serving("spa", url, token="ignored")   # asset /assets/a.js returns 200
-        verify_serving("mcp", url, token="ignored")   # 200 on / is non-5xx
-    finally:
-        srv.shutdown()
+    with _pytest.raises(AssertionError):
+        assert_html_rendered("<html>hi</html>", ["hi"])  # too short (login-shell size)
+    with _pytest.raises(AssertionError):
+        assert_html_rendered("{\"error\": \"not found\"}" + "x" * 600, ["app"])  # not HTML
 
 
 def test_build_template_uses_npm_ci_when_lockfile_present(tmp_path, monkeypatch):
@@ -279,7 +279,8 @@ def test_report_handles_absent_deployed():
     assert "streamlit-database-app" in md and "widget missing" in md
     # failures sort first
     assert md.index("streamlit-database-app") < md.index("agent-langgraph")
-    assert "1/2 local passed" in md
+    assert "**Local:** 1 passed · 0 skipped · 1 failed" in md
+    assert "**Deployed:** not run" in md
 
 
 # Task 5: Functional runners tests

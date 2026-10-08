@@ -128,8 +128,13 @@ def launch_local(ft: FunctionalTemplate, template_dir: Path) -> tuple[subprocess
     try:
         wait_ready(base_url, ft.launch.get("ready_path", "/"))
     except TimeoutError:
-        err = proc.stderr.read() if proc.stderr else ""
+        # Terminate the (still-running) child FIRST. Reading a live child's
+        # stderr pipe blocks until the child closes it or the buffer fills — if
+        # the app stays up but never serves the ready path, that read hangs
+        # forever and the test never tears down. Once stop_server has killed the
+        # process group, the pipe reaches EOF and the read returns promptly.
         stop_server(proc)
+        err = proc.stderr.read() if proc.stderr else ""
         raise TimeoutError(f"[{ft.name}] did not become ready. stderr:\n{err[:2000]}")
     return proc, base_url
 

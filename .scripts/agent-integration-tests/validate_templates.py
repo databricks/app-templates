@@ -164,8 +164,33 @@ def health_path_for(verify: str) -> str:
     return "/"
 
 
-def _browser_load(storage_state: str, url: str) -> tuple[int, str, str]:
-    """Load url in a storageState'd browser; return (status, html, final_url)."""
+def assert_html_rendered(html: str, expect) -> None:
+    """Assert the served page is real app content, not a shell/error/404 page.
+
+    Pure (no browser) so it is unit-testable. Beyond the baseline ``<html>`` +
+    length check, every string in ``expect`` must appear in the (hydrated) DOM —
+    an app-specific signal that a generic framework shell or error page lacks.
+    """
+    body = html.lower()
+    assert ("<html" in body or "<!doctype" in body) and len(html) > 500, (
+        f"/ did not render HTML (len={len(html)}): {html[:300]}"
+    )
+    missing = [s for s in expect if s.lower() not in body]
+    assert not missing, (
+        f"/ served HTML but expected app content {missing} not found "
+        f"(generic shell / error page / wrong app?); got: {html[:300]}"
+    )
+
+
+def _browser_load(storage_state: str, url: str, expect=()) -> tuple[int, str, str]:
+    """Load url in a storageState'd browser; return (status, html, final_url).
+
+    When ``expect`` is given, wait (best effort) for that text to render instead
+    of a fixed sleep, so slow SPA/streamlit hydration doesn't cause a false fail;
+    the authoritative check is ``assert_html_rendered`` on the returned html.
+    """
+    import contextlib
+
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         browser = p.chromium.launch()
@@ -174,13 +199,20 @@ def _browser_load(storage_state: str, url: str) -> tuple[int, str, str]:
         try:
             resp = page.goto(url, wait_until="domcontentloaded", timeout=QUERY_TIMEOUT * 1000)
             status = resp.status if resp else 0
-            page.wait_for_timeout(3000)  # let SPA/streamlit frameworks hydrate
+            if status < 500 and expect:
+                for text in expect:
+                    with contextlib.suppress(Exception):
+                        page.get_by_text(text, exact=False).first.wait_for(
+                            timeout=QUERY_TIMEOUT * 1000
+                        )
+            else:
+                page.wait_for_timeout(3000)  # let SPA/streamlit frameworks hydrate
             return status, page.content(), page.url
         finally:
             browser.close()
 
 
-def verify_serving(verify: str, app_url: str, storage_state: str) -> None:
+def verify_serving(verify: str, app_url: str, storage_state: str, expect=()) -> None:
     """Browser-authenticated serve check.
 
     Deployed apps sit behind SSO: a bearer token GET follows the redirect to a
@@ -190,13 +222,14 @@ def verify_serving(verify: str, app_url: str, storage_state: str) -> None:
     200 (readiness thinks it's up) while an authenticated request reaches the
     still-starting container and 502s. So we drive a real browser carrying the
     saved storageState and retry on 5xx until the container actually serves,
-    then assert the app's OWN content rendered (not the login page).
+    then assert the app's OWN content rendered (not the login page), using the
+    per-template ``expect`` strings so a generic shell/error page can't pass.
     """
     assert_browser_installed()
     deadline = time.time() + 240  # app container can lag the front door, esp. agents
     status, html, final_url = 0, "", ""
     while True:
-        status, html, final_url = _browser_load(storage_state, f"{app_url}/")
+        status, html, final_url = _browser_load(storage_state, f"{app_url}/", expect)
         if looks_like_login_page(html, final_url):
             raise RuntimeError(
                 "app redirected to SSO login — storageState invalid/expired "
@@ -210,10 +243,7 @@ def verify_serving(verify: str, app_url: str, storage_state: str) -> None:
         time.sleep(POLL_INTERVAL)
 
     if verify == "html":
-        body = html.lower()
-        assert ("<html" in body or "<!doctype" in body) and len(html) > 500, (
-            f"/ did not render app content (len={len(html)}): {html[:300]}"
-        )
+        assert_html_rendered(html, expect)
     elif verify == "spa":
         assets = parse_spa_assets(html, app_url)
         assert assets, f"No JS/CSS assets referenced by / (broken build?): {html[:300]}"
@@ -299,7 +329,7 @@ def test_validate_template(val_template, val_cfg, request):
             app_url, _token = wait_for_app_ready_generic(
                 shared_app, val_cfg.profile, health_path_for(val_template.verify)
             )
-            verify_serving(val_template.verify, app_url, str(STORAGE_STATE))
+            verify_serving(val_template.verify, app_url, str(STORAGE_STATE), val_template.expect)
         except Exception:
             logs = capture_app_logs(shared_app, val_cfg.profile)
             if logs:

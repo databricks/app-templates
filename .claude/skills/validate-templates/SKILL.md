@@ -10,9 +10,12 @@ Two complementary suites in `.scripts/agent-integration-tests/`, both **serial**
 
 - **Deploy validation** (`validate_templates.py`): deploys each template's source
   into ONE shared app and confirms it serves. `verify: html` loads the app in a
-  real browser (SSO storageState) and asserts the app's *own* content renders
-  (not the login page); `mcp`/`api` assert non-5xx and not-login; `build` runs
-  `npm ci && npm run build` locally (no deploy). Writes `logs/validation-report.md`.
+  real browser (SSO storageState) and asserts the per-template `expect` string(s)
+  render in the hydrated DOM (so a generic 404 / error page / framework shell
+  can't false-pass — `html` templates MUST declare `expect`); `spa` asserts the
+  page references built JS/CSS assets (for framework-provided SPAs with no fixed
+  text, e.g. the agent chat UI); `mcp`/`api` assert non-5xx and not-login; `build`
+  runs `npm ci && npm run build` locally (no deploy). Writes `logs/validation-report.md`.
 - **Functional e2e** (`functional_test.py`): drives each exemplar's real UI/protocol
   (Playwright etc.) `--target local` or `--target deployed`. Writes
   `logs/functional-report.md`.
@@ -84,7 +87,9 @@ the Databricks Apps UI (CLI `apps logs` is SSO-blocked). A browser render failur
 
 ## Adding / fixing coverage
 
-- Deploy validation: edit `validation-config.yaml` (`<name>: { verify: html|mcp|api|build|obo }`).
+- Deploy validation: edit `validation-config.yaml` (`<name>: { verify: html|spa|mcp|api|build|obo }`).
+  `html` entries also need `expect:` — a substring (or list) the app renders, e.g.
+  `{ verify: html, expect: "Todo List App" }`.
 - Functional e2e: add a `FunctionalTemplate` to `functional_config.py`.
 - Picking a verify mode: web UI → `html`; API-only (no UI at `/`) → `api`;
   MCP server → `mcp`; node/SPA you only want compiled → `build`; OBO → `obo`.

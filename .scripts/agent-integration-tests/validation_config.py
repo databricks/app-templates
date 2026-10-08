@@ -1,7 +1,7 @@
 """Config + registry for non-agent template deploy validation."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -14,6 +14,10 @@ DEFAULT_CONFIG_PATH = Path(__file__).parent / "validation-config.yaml"
 class ValidationTemplate:
     name: str
     verify: str
+    # For verify == "html": substrings that MUST appear in the rendered (hydrated)
+    # DOM, so a generic 404 / error page / framework shell can't false-pass. The
+    # loader requires this to be non-empty for html templates.
+    expect: tuple[str, ...] = field(default=())
 
 
 @dataclass(frozen=True)
@@ -31,6 +35,27 @@ def derive_workspace_source_root(profile: str) -> str:
     return f"/Workspace/Users/{user}/template-validation"
 
 
+def _coerce_expect(name: str, verify: str, raw) -> tuple[str, ...]:
+    """Normalize the optional `expect` entry to a tuple of non-empty strings."""
+    if raw is None:
+        expect: tuple[str, ...] = ()
+    elif isinstance(raw, str):
+        expect = (raw,)
+    elif isinstance(raw, (list, tuple)):
+        expect = tuple(str(s) for s in raw)
+    else:
+        raise AssertionError(f"{name}: `expect` must be a string or list, got {type(raw).__name__}")
+    assert all(s.strip() for s in expect), f"{name}: `expect` contains an empty string"
+    # An html template with no expected content would fall back to the weak
+    # "<html> + length" check — exactly the false-pass this guards against.
+    if verify == "html":
+        assert expect, (
+            f"{name}: verify: html requires a non-empty `expect` (a substring the app "
+            "renders) so a generic shell/error page can't false-pass"
+        )
+    return expect
+
+
 def load_validation_config(
     path: Path = DEFAULT_CONFIG_PATH,
     *,
@@ -42,7 +67,8 @@ def load_validation_config(
     for name, entry in data["templates"].items():
         verify = entry["verify"]
         assert verify in _VALID_VERIFY, f"{name}: bad verify kind {verify!r}"
-        templates.append(ValidationTemplate(name=name, verify=verify))
+        expect = _coerce_expect(name, verify, entry.get("expect"))
+        templates.append(ValidationTemplate(name=name, verify=verify, expect=expect))
 
     root = data.get("workspace_source_root") or ""
     if not root and resolve_workspace_root:

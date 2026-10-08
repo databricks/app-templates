@@ -2,8 +2,15 @@
 # Serial single-app model — see docs/superpowers/specs/2026-09-25-template-deploy-validation-design.md
 #
 # verify modes:
-#   html  = deploy into shared app + browser(storageState) confirms the app's own content renders
+#   html  = deploy into shared app + browser(storageState) confirms the app's own
+#           content renders. REQUIRES `expect`: substring(s) the app renders in its
+#           (hydrated) DOM, so a generic 404 / error page / framework shell can't
+#           false-pass. Pick stable visible text (a title/header) from the app source.
+#   spa   = deploy + browser confirms / references built JS/CSS assets (a real Vite
+#           build served, not an error page). Used for apps whose UI is a framework-
+#           provided SPA with no per-template text to assert (the agent chat UI).
 #   mcp   = deploy + browser-authenticated GET of / is non-5xx and not the login page
+#   api   = deploy + API-only surface (/invocations), no chat UI at /
 #   build = local `npm ci && npm run build` only (no deploy) — for node/SPA templates
 #   obo   = on-behalf-of-user; NOT testable in this environment -> reported skipped
 #
@@ -14,44 +21,47 @@ shared_app_name: template-e2e-test
 workspace_source_root: ""
 templates:
   # ---- Tier 0: no resources (deploy + browser verify) ----
-  streamlit-hello-world-app: { verify: html }
-  dash-hello-world-app: { verify: html }
-  flask-hello-world-app: { verify: html }
-  gradio-hello-world-app: { verify: html }
-  shiny-hello-world-app: { verify: html }
+  streamlit-hello-world-app: { verify: html, expect: "Hello world" }
+  dash-hello-world-app: { verify: html, expect: "Hello world" }
+  flask-hello-world-app: { verify: html, expect: "Hello, World" }
+  gradio-hello-world-app: { verify: html, expect: "Hello world" }
+  shiny-hello-world-app: { verify: html, expect: "Hello World" }
   mcp-server-hello-world: { verify: mcp }
 
   # ---- Tier 1: serving-endpoint ----
-  streamlit-chatbot-app: { verify: html }
-  dash-chatbot-app: { verify: html }
-  gradio-chatbot-app: { verify: html }
-  shiny-chatbot-app: { verify: html }
-  e2e-chatbot-app: { verify: html }   # Streamlit (not node) — serving-endpoint
+  streamlit-chatbot-app: { verify: html, expect: "Chatbot App" }
+  dash-chatbot-app: { verify: html, expect: "Chat with Databricks AI" }
+  gradio-chatbot-app: { verify: html, expect: "Databricks LLM Chatbot" }
+  shiny-chatbot-app: { verify: html, expect: "Databricks LLM Chat" }
+  e2e-chatbot-app: { verify: html, expect: "Chatbot App" }   # Streamlit (not node) — serving-endpoint
 
   # ---- Tier 2: sql-warehouse ----
-  streamlit-data-app: { verify: html }
-  dash-data-app: { verify: html }
-  gradio-data-app: { verify: html }
-  shiny-data-app: { verify: html }
+  streamlit-data-app: { verify: html, expect: "Taxi fare distribution" }
+  dash-data-app: { verify: html, expect: "Taxi Fare Distribution" }
+  gradio-data-app: { verify: html, expect: "Taxi fare distribution" }
+  shiny-data-app: { verify: html, expect: "Data Playground" }
 
   # ---- Tier 3: postgres (Lakebase Autoscaling) ----
-  streamlit-postgres-app: { verify: html }
-  dash-postgres-app: { verify: html }
-  flask-postgres-app: { verify: html }
+  streamlit-postgres-app: { verify: html, expect: "Todo List App" }
+  dash-postgres-app: { verify: html, expect: "Todo List App" }
+  flask-postgres-app: { verify: html, expect: "Todo List App" }
 
   # ---- Tier 3b: database (Lakebase Provisioned) — may need a `database`-type binding ----
-  streamlit-database-app: { verify: html }
-  dash-database-app: { verify: html }
-  flask-database-app: { verify: html }
+  streamlit-database-app: { verify: html, expect: "Todo List App" }
+  dash-database-app: { verify: html, expect: "Todo List App" }
+  flask-database-app: { verify: html, expect: "Todo List App" }
 
-  # ---- Agents (deploy + browser verify of the chat UI) ----
-  agent-langgraph: { verify: html }
-  agent-langgraph-advanced: { verify: html }
+  # ---- Agents (deploy + browser verify) ----
+  # The conversational chat UI is a platform-provided Vite SPA proxied at / (served
+  # by a separate CHAT_APP_PORT process, not template source), so there is no
+  # per-template text to assert — verify the real built app via its JS/CSS assets.
+  agent-langgraph: { verify: spa }
+  agent-langgraph-advanced: { verify: spa }
   agent-non-conversational: { verify: api }   # API-only (/invocations), no chat UI at /
-  agent-openai-advanced: { verify: html }
-  agent-openai-agents-sdk: { verify: html }
-  agent-openai-agents-sdk-multiagent: { verify: html }
-  agent-migration-from-model-serving: { verify: html }
+  agent-openai-advanced: { verify: spa }
+  agent-openai-agents-sdk: { verify: spa }
+  agent-openai-agents-sdk-multiagent: { verify: spa }
+  agent-migration-from-model-serving: { verify: spa }
 
   # ---- Build-only (node / SPA; no deploy) ----
   nodejs-fastapi-hello-world-app: { verify: build }

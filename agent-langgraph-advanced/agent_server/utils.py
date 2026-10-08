@@ -40,6 +40,27 @@ def _is_databricks_app_env() -> bool:
     return bool(os.getenv("DATABRICKS_APP_NAME"))
 
 
+async def deduplicate_input(
+    agent: Any, config: dict[str, Any], messages: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Drop UI-echoed history when the checkpointer already holds the thread.
+
+    The chatbot UI replays the full conversation on each turn, but LangGraph's
+    checkpointer already has the prior messages keyed by ``thread_id``. Sending
+    them again duplicates everything in the agent's view. When we detect an
+    existing checkpoint for this thread, keep only the latest user message.
+    """
+    if not messages:
+        return messages
+    try:
+        state = await agent.aget_state(config)
+    except Exception:
+        return messages
+    if state and state.values.get("messages"):
+        return messages[-1:]
+    return messages
+
+
 def init_mcp_client(workspace_client: WorkspaceClient) -> DatabricksMultiServerMCPClient:
     host_name = get_databricks_host_from_env()
     return DatabricksMultiServerMCPClient(

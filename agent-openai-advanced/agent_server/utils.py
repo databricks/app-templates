@@ -151,7 +151,7 @@ async def deduplicate_input(request: ResponsesAgentRequest, session: AsyncDatabr
     # form every openai-agents version accepts. See agent_server/history.py.
     messages = normalize_history_items([i.model_dump() for i in request.input])
     session_items = await session.get_items()
-    if len(session_items) >= len(messages) - 1:
+    if session_items and len(messages) > 1:
         return [messages[-1]]
     return messages
 

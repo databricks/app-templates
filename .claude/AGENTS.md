@@ -65,6 +65,7 @@ All memory templates return the ID in `custom_outputs` so clients can reuse it.
 - Lakebase resources use `permission: 'CAN_CONNECT_AND_CREATE'`
 - Lakebase templates use `<your-lakebase-instance-name>` as placeholder — quickstart replaces it
 - Templates do not define a DAB-managed experiment resource (`resources.experiments`); instead, the app resource references an experiment by ID (initially empty), and quickstart fills in the literal experiment ID
+- Agent templates declare a `serving_endpoint` app resource named `llm-endpoint` (permission `CAN_QUERY`) whose `name` matches the model hardcoded in `agent_server/agent.py`. This grants the app's service principal query access to the model on deploy (and, via the matching `manifest.yaml` `serving_endpoint_spec`, on UI-based creation) without a manual grant. Change the model in both `agent.py` and this resource together.
 
 ### `app.yaml` files
 
@@ -104,6 +105,17 @@ uv run pytest test_e2e.py -v -n0 -s --template agent-langgraph
 ```
 
 Template test configs are in `.scripts/agent-integration-tests/template_config.py`.
+
+### Deploy validation & functional e2e (all templates)
+
+Beyond the agent `test_e2e.py` suite, `.scripts/agent-integration-tests/` also has
+two broader, serial (`-p no:xdist`) suites that run against ONE shared Databricks
+App (`template-e2e-test`): `validate_templates.py` (deploys each template's source
+and browser-verifies it serves — config in `validation-config.yaml`) and
+`functional_test.py` (drives each exemplar's real UI/protocol). Both need the shared
+app's resource bindings + an SSO storageState (`auth_setup.py`). **Use the
+`validate-templates` skill** (`.claude/skills/validate-templates/` — repo-dev only,
+not synced into templates) for prerequisites, commands, and how to read the reports.
 
 ## Editing Workflow Summary
 

@@ -38,19 +38,19 @@ description: "Modify TypeScript LangChain agent configuration and behavior. Use 
 
 **In `.env` (local):**
 ```bash
-DATABRICKS_MODEL=databricks-gpt-5-2
+DATABRICKS_MODEL=databricks-claude-sonnet-5-5
 ```
 
 **In `app.yaml` (deployed):**
 ```yaml
 env:
   - name: DATABRICKS_MODEL
-    value: "databricks-gpt-5-2"
+    value: "databricks-claude-sonnet-5-5"
 ```
 
 Available models:
 - `databricks-claude-sonnet-4-5`
-- `databricks-gpt-5-2`
+- `databricks-claude-sonnet-5-5`
 - `databricks-meta-llama-3-3-70b-instruct`
 - Your custom endpoint name
 

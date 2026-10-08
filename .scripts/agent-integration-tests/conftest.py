@@ -63,6 +63,14 @@ def pytest_addoption(parser):
         default=None,
         help="Run only specific quickstart e2e scenarios (repeatable): fresh-and-idempotent, existing-app, lakebase-idempotent",
     )
+    parser.addoption("--config", action="store", default=None,
+                     help="Path to validation-config.yaml (validate_templates.py)")
+    parser.addoption("--val-template", action="append", default=[],
+                     help="Limit validation to these template names (repeatable)")
+    parser.addoption("--val-setup-only", action="store_true", default=False,
+                     help="Only ensure the shared app exists; skip deploy/verify")
+    parser.addoption("--target", action="store", default="local",
+                     choices=["local", "deployed"], help="functional_test.py target")
 
 
 @pytest.fixture
@@ -78,3 +86,55 @@ def lakebase_autoscaling_endpoint(request):
 @pytest.fixture
 def repo_root():
     return REPO_ROOT
+
+
+def pytest_runtest_logreport(report):
+    # Record the outcome of the "call" phase (and setup-only skips) for
+    # validation-runner tests. Ignore everything else (e.g. agent e2e).
+    if "validate_templates.py::test_validate_template" not in report.nodeid:
+        return
+    if report.when == "call" or (report.when == "setup" and report.outcome == "skipped"):
+        store = getattr(pytest, "_val_results", None)
+        if store is None:
+            store = pytest._val_results = {}
+        # nodeid ends with [<template>]
+        name = report.nodeid.split("[", 1)[1].rstrip("]")
+        store[name] = {"outcome": report.outcome, "duration": getattr(report, "duration", 0.0)}
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    store = getattr(pytest, "_val_results", None)
+    if store:
+        from pathlib import Path
+
+        from validate_templates import render_report
+        from validation_config import DEFAULT_CONFIG_PATH, load_validation_config
+
+        cfg_path = Path(config.getoption("--config") or DEFAULT_CONFIG_PATH)
+        cfg = load_validation_config(cfg_path, resolve_workspace_root=False)
+        verify_by_name = {t.name: t.verify for t in cfg.templates}
+
+        rows = []
+        for name, res in store.items():
+            verify = verify_by_name.get(name, "?")
+            mode = "build" if verify == "build" else "deploy"
+            rows.append({
+                "template": name, "mode": mode, "verify": verify,
+                "outcome": res["outcome"], "duration": res["duration"],
+            })
+        report_md = render_report(rows)
+        out = Path(__file__).parent / "logs" / "validation-report.md"
+        out.parent.mkdir(exist_ok=True)
+        out.write_text(report_md)
+        terminalreporter.write_line(f"\nValidation report written to {out}")
+
+    functional_results = getattr(pytest, "_functional_results", None)
+    if functional_results:
+        from pathlib import Path
+
+        from functional_report import render_functional_report
+
+        out = Path(__file__).parent / "logs" / "functional-report.md"
+        out.parent.mkdir(exist_ok=True)
+        out.write_text(render_functional_report(functional_results))
+        terminalreporter.write_line(f"\nFunctional report written to {out}")

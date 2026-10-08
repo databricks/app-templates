@@ -60,51 +60,49 @@ def get_schema_name():
     pguser = os.getenv("PGUSER", "").replace('-', '')
     return f"{pgappname}_schema_{pguser}"
 
+def schema_sql(query):
+    """Compose a query, filling {schema} with the app's schema name quoted as a SQL identifier."""
+    return sql.SQL(query).format(schema=sql.Identifier(get_schema_name()))
+
 def init_database():
     """Initialize database schema and table."""
     with get_connection() as conn:
         with conn.cursor() as cur:
-            schema_name = get_schema_name()
-            
-            cur.execute(sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(sql.Identifier(schema_name)))
-            cur.execute(sql.SQL("""
-                CREATE TABLE IF NOT EXISTS {}.todos (
+            cur.execute(schema_sql("CREATE SCHEMA IF NOT EXISTS {schema}"))
+            cur.execute(schema_sql("""
+                CREATE TABLE IF NOT EXISTS {schema}.todos (
                     id SERIAL PRIMARY KEY,
                     task TEXT NOT NULL,
                     completed BOOLEAN DEFAULT FALSE,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """).format(sql.Identifier(schema_name)))
+            """))
             conn.commit()
             return True
 
 def add_todo(task):
     with get_connection() as conn:
         with conn.cursor() as cur:
-            schema = get_schema_name()
-            cur.execute(sql.SQL("INSERT INTO {}.todos (task) VALUES (%s)").format(sql.Identifier(schema)), (task.strip(),))
+            cur.execute(schema_sql("INSERT INTO {schema}.todos (task) VALUES (%s)"), (task.strip(),))
             conn.commit()
 
 def get_todos():
     with get_connection() as conn:
         with conn.cursor() as cur:
-            schema = get_schema_name()
-            cur.execute(sql.SQL("SELECT id, task, completed, created_at FROM {}.todos ORDER BY created_at DESC").format(sql.Identifier(schema)))
+            cur.execute(schema_sql("SELECT id, task, completed, created_at FROM {schema}.todos ORDER BY created_at DESC"))
             return cur.fetchall()
 
 def toggle_todo(todo_id):
     with get_connection() as conn:
         with conn.cursor() as cur:
-            schema = get_schema_name()
-            cur.execute(sql.SQL("UPDATE {}.todos SET completed = NOT completed WHERE id = %s").format(sql.Identifier(schema)), (todo_id,))
+            cur.execute(schema_sql("UPDATE {schema}.todos SET completed = NOT completed WHERE id = %s"), (todo_id,))
             conn.commit()
 
 
 def delete_todo(todo_id):
     with get_connection() as conn:
         with conn.cursor() as cur:
-            schema = get_schema_name()
-            cur.execute(sql.SQL("DELETE FROM {}.todos WHERE id = %s").format(sql.Identifier(schema)), (todo_id,))
+            cur.execute(schema_sql("DELETE FROM {schema}.todos WHERE id = %s"), (todo_id,))
             conn.commit()
 
 @st.fragment

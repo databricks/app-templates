@@ -99,6 +99,19 @@ published output nodes. The shared Python runtime emits those counts after the t
 The app does not trigger a new count query or rerun the job when loading results. Full-data
 downloads are not implemented by the preview path.
 
+Result tables support ascending/descending header sorting, case-insensitive search across all
+columns (including hidden columns), a column visibility menu, and pages of 25, 50, or 100 rows.
+These controls apply to the returned preview only; they do not fetch omitted rows or rerun the job.
+The truncation notice and original result counts remain visible. Row numbers identify the original
+returned row even after sorting or filtering. At least one data column remains visible.
+
+AppKit UI supplies the table and controls. TanStack React Table 8.21.3 (MIT, already a transitive
+AppKit UI dependency) supplies table state over the job-result rows; it is pinned as a direct
+dependency with its integrity hash in the lockfile. AppKit's packaged `DataTable` currently requires
+an analytics query rather than accepting supplied data. Sorting uses schema types and preserves
+the precision of string-encoded integers and decimals. Run `npm test` to validate sorting,
+filtering, pagination, visibility, unusual SQL column aliases, and bounded-preview rendering.
+
 ## Chart rendering
 
 Published bar, line, area, and pie charts use Vega-Lite/Vega, the same chart engine family as

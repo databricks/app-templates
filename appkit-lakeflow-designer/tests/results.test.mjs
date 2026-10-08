@@ -467,7 +467,9 @@ test('client also caps oversized payloads before rendering a table or feeding a 
   assert.equal(payload.total_row_count, 1500);
   assert.deepEqual(payload.rows.at(-1), { value: 999 });
   const grid = renderToStaticMarkup(createElement(ResultGrid, { payload }));
-  assert.equal((grid.match(/<tr[ >]/g) ?? []).length, 1001, 'one header and at most 1,000 data rows');
+  assert.equal((grid.match(/<tr[ >]/g) ?? []).length, 26, 'one header and the first page of 25 preview rows');
+  assert.match(grid, /1–25 of 1,000<!-- --> returned rows|1–25 of 1,000 returned rows/);
+  assert.match(grid, /This preview is truncated/);
 });
 
 test('renders a separately supplied exact total without downloading those rows', () => {

@@ -128,7 +128,8 @@ function InteractiveResultGrid({ payload }: { payload: OkPayload }) {
           This preview is truncated. Sorting and filtering apply to the returned rows.
         </p>
       )}
-      <div className="border-border max-h-[60vh] overflow-auto border-t">
+      {/* AppKit's inner wrapper must own scrolling so sticky headers track the visible viewport. */}
+      <div className="border-border border-t [&>[data-slot=table-container]]:max-h-[60vh] [&>[data-slot=table-container]]:overflow-auto">
         <Table className="w-full min-w-max table-fixed border-separate border-spacing-0 text-xs">
           <colgroup>
             <col style={{ width: rowNumberWidth }} />

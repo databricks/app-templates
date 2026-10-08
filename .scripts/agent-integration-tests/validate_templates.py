@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import tempfile
 import time
 from pathlib import Path
@@ -335,3 +336,101 @@ def test_validate_template(val_template, val_cfg, request):
             if logs:
                 _log(f"\n--- App logs ({shared_app}) ---\n{logs}\n--- End logs ---")
             raise
+
+
+# ---------------------------------------------------------------------------
+# Crash-handling validation (special case) — part of the standard run.
+#
+# The checks above prove templates SERVE. These prove the inverse the diagnostics
+# bootstrap exists for: a deployed app that CRASHES on startup still routes a
+# usable traceback to its log stream (read at <app-url>/logz; the apps-logs CLI is
+# 302-blocked on dogfood). Fixtures live in crash-examples/ and crash by default.
+# ---------------------------------------------------------------------------
+
+CRASH_CANARY = "DIAGNOSTICS_E2E_CANARY"
+CRASH_RESTORE_TEMPLATE = "streamlit-hello-world-app"
+# (id/lang, fixture dir relative to this file, stack marker expected in /logz)
+CRASH_FIXTURES = [
+    ("python", "crash-examples/python_crash_app", "Traceback (most recent call last)"),
+    ("node", "crash-examples/node_crash_app", "uncaughtException"),
+]
+
+
+def _apps_status(app_name: str, profile: str) -> tuple[str, str, str]:
+    """Return (state, url, message) for the app, or ('','','') if unreadable."""
+    r = _run_cmd(
+        ["databricks", "apps", "get", app_name, "-p", profile, "--output", "json"],
+        timeout=60,
+    )
+    if r.returncode != 0 or not r.stdout.strip():
+        return "", "", ""
+    data = json.loads(r.stdout)
+    status = data.get("app_status", {}) or {}
+    return status.get("state", ""), (data.get("url", "") or "").rstrip("/"), status.get("message", "")
+
+
+def _wait_for_crash(app_name: str, profile: str) -> tuple[str, str, str]:
+    """Poll until the app settles into a non-RUNNING (crashed) state."""
+    for _ in range(MAX_POLLS):
+        state, url, msg = _apps_status(app_name, profile)
+        if state and state != "RUNNING":
+            return state, url, msg
+        time.sleep(POLL_INTERVAL)
+    return _apps_status(app_name, profile)
+
+
+@pytest.fixture(scope="module")
+def crash_restore(val_cfg):
+    """After the crash cases, redeploy a known-good template so the shared app is
+    not left crashed/UNAVAILABLE for the next user or run."""
+    yield
+    try:
+        with tempfile.TemporaryDirectory(prefix="crash-restore-") as tmp:
+            src = prepare_source(CRASH_RESTORE_TEMPLATE, Path(tmp))
+            ws_path = f"{val_cfg.workspace_source_root}/{CRASH_RESTORE_TEMPLATE}"
+            sync_source(src, ws_path, val_cfg.profile)
+            apps_deploy_source(val_cfg.shared_app_name, ws_path, val_cfg.profile)
+        _log(f"crash tests: restored {val_cfg.shared_app_name} -> {CRASH_RESTORE_TEMPLATE}")
+    except Exception as exc:  # noqa: BLE001
+        _log(f"crash tests: WARNING restore failed: {exc!r} (redeploy a template manually)")
+
+
+@pytest.mark.parametrize(
+    "lang,rel,stack_marker", CRASH_FIXTURES, ids=[c[0] for c in CRASH_FIXTURES]
+)
+def test_crash_diagnostics_deployed(lang, rel, stack_marker, val_cfg, shared_app, crash_restore, request):
+    """Deploy a crash fixture, confirm it CRASHES, and confirm its diagnostic
+    traceback reaches /logz (marker + app.diagnostics logger + a stack)."""
+    if request.config.getoption("--val-setup-only"):
+        pytest.skip("--val-setup-only: shared app ensured, skipping deploy")
+    if not STORAGE_STATE.exists():
+        pytest.skip(f"no storageState at {STORAGE_STATE} — run auth_setup.py first")
+    assert_browser_installed()
+
+    fixture_dir = Path(__file__).parent / rel
+    ws_path = f"{val_cfg.workspace_source_root}/crash-{lang}"
+    sync_source(fixture_dir, ws_path, val_cfg.profile)
+    # Single deploy attempt — a crash fixture is EXPECTED to fail, so do NOT use the
+    # retrying apps_deploy_source (which would re-attempt the doomed deploy N times).
+    dep = subprocess.run(
+        ["databricks", "apps", "deploy", shared_app, "--source-code-path", ws_path, "-p", val_cfg.profile],
+        capture_output=True, text=True, timeout=BUNDLE_TIMEOUT,
+    )
+    _log(f"[crash-{lang}] deploy rc={dep.returncode} (non-zero expected for a crash)")
+
+    state, url, msg = _wait_for_crash(shared_app, val_cfg.profile)
+    assert state and state != "RUNNING", (
+        f"expected the app to CRASH (non-RUNNING state); got state={state!r} msg={msg!r}"
+    )
+    assert url, "no app url to read /logz from"
+
+    _, logz, _ = _browser_load(str(STORAGE_STATE), f"{url}/logz", expect=[CRASH_CANARY])
+    # Log a short evidence snippet around the marker (proof the traceback reached
+    # the log stream; useful for the run log / PR description).
+    _idx = logz.find(CRASH_CANARY)
+    if _idx != -1:
+        _start = max(0, logz.rfind("\n", 0, max(0, _idx - 300)))
+        _log(f"[crash-{lang}] /logz evidence:\n{logz[_start:_idx + 300].strip()}")
+    assert CRASH_CANARY in logz, f"induced-crash marker not in /logz; got: {logz[:400]}"
+    assert "app.diagnostics" in logz, f"no app.diagnostics evidence in /logz; got: {logz[:400]}"
+    assert stack_marker in logz, f"stack marker {stack_marker!r} not in /logz; got: {logz[:400]}"

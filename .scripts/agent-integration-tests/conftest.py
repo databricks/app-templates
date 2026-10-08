@@ -89,17 +89,25 @@ def repo_root():
 
 
 def pytest_runtest_logreport(report):
-    # Record the outcome of the "call" phase (and setup-only skips) for
-    # validation-runner tests. Ignore everything else (e.g. agent e2e).
-    if "validate_templates.py::test_validate_template" not in report.nodeid:
+    # Record the outcome of the "call" phase (and setup-only skips) for the
+    # validation-runner tests — the per-template serve checks AND the deployed
+    # crash-handling cases. Ignore everything else (e.g. agent e2e).
+    is_val = "validate_templates.py::test_validate_template" in report.nodeid
+    is_crash = "validate_templates.py::test_crash_diagnostics_deployed" in report.nodeid
+    if not (is_val or is_crash):
         return
     if report.when == "call" or (report.when == "setup" and report.outcome == "skipped"):
         store = getattr(pytest, "_val_results", None)
         if store is None:
             store = pytest._val_results = {}
-        # nodeid ends with [<template>]
-        name = report.nodeid.split("[", 1)[1].rstrip("]")
-        store[name] = {"outcome": report.outcome, "duration": getattr(report, "duration", 0.0)}
+        # nodeid ends with [<param>]
+        name = report.nodeid.split("[", 1)[1].rstrip("]") if "[" in report.nodeid else report.nodeid
+        key = f"crash-{name}" if is_crash else name
+        store[key] = {
+            "outcome": report.outcome,
+            "duration": getattr(report, "duration", 0.0),
+            "crash": is_crash,
+        }
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
@@ -116,6 +124,13 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
 
         rows = []
         for name, res in store.items():
+            if res.get("crash"):
+                rows.append({
+                    "template": f"crash-example-{name.replace('crash-', '')}",
+                    "mode": "deploy", "verify": "crash",
+                    "outcome": res["outcome"], "duration": res["duration"],
+                })
+                continue
             verify = verify_by_name.get(name, "?")
             mode = "build" if verify == "build" else "deploy"
             rows.append({

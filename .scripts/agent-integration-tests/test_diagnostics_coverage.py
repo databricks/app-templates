@@ -20,11 +20,24 @@ The OBO exclusion set is derived from `validation-config.yaml` (the authoritativ
 from __future__ import annotations
 
 import importlib.util
+import os
 import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / ".scripts"
+SOURCE_DIR = SCRIPTS_DIR / "source"
+_PRUNE_DIRS = {".git", "node_modules", ".venv", "__pycache__", ".pytest_cache", "dist", "build", ".next"}
+
+
+def _find_copies(filename: str) -> list[Path]:
+    """Every file named `filename` in the repo (pruning vendored/build dirs)."""
+    hits: list[Path] = []
+    for root, dirs, files in os.walk(REPO_ROOT):
+        dirs[:] = [d for d in dirs if d not in _PRUNE_DIRS]
+        if filename in files:
+            hits.append(Path(root) / filename)
+    return hits
 
 
 def _obo_templates() -> set[str]:
@@ -100,4 +113,37 @@ def test_obo_exclusions_are_real_dirs():
     assert not stale, (
         f"validation-config.yaml marks non-existent dirs as obo: {stale}. "
         "A template was renamed/removed — update validation-config.yaml."
+    )
+
+
+def test_diagnostics_copies_match_source():
+    """Enforce no drift: every synced diagnostics copy is byte-identical to source.
+
+    The module is deliberately copied into each template (Databricks Apps deploys
+    each template as a self-contained directory, so it can't import from a shared
+    location, and symlinks don't survive `workspace export-dir`). The source of
+    truth is `.scripts/source/`; this guard fails if any copy diverges, so a manual
+    edit to a copy (instead of editing the source + re-running sync-scripts.py) is
+    caught instead of silently drifting across ~30 templates.
+    """
+    checks = [
+        ("app_diagnostics.py", SOURCE_DIR / "app_diagnostics.py"),
+        ("diagnostics.ts", SOURCE_DIR / "diagnostics.ts"),
+    ]
+    mismatches: list[str] = []
+    counts: dict[str, int] = {}
+    for filename, src_path in checks:
+        source = src_path.read_text()
+        copies = [p for p in _find_copies(filename) if p.resolve() != src_path.resolve()]
+        counts[filename] = len(copies)
+        for copy in copies:
+            if copy.read_text() != source:
+                mismatches.append(str(copy.relative_to(REPO_ROOT)))
+    # Sanity: detection actually found the copies (so a passing test means something).
+    assert counts["app_diagnostics.py"] > 0, "found no app_diagnostics.py copies — detection broken"
+    assert counts["diagnostics.ts"] > 0, "found no diagnostics.ts copies — detection broken"
+    assert not mismatches, (
+        "synced diagnostics copies have DRIFTED from .scripts/source/ (edit the "
+        "source, not the copy, then run `uv run python .scripts/sync-scripts.py`): "
+        f"{sorted(mismatches)}"
     )

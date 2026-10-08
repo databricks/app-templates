@@ -40,14 +40,14 @@
     "clean": "rm -rf dist"
   },
   "devDependencies": {
-    "ai": "^6.0.70",
-    "typescript": "^5.9.3"
+    "ai": "6.0.94",
+    "typescript": "5.9.3"
   },
   "dependencies": {
     "@chat-template/ai-sdk-providers": "*",
     "@chat-template/db": "*",
     "@chat-template/utils": "*",
-    "date-fns": "^4.1.0",
-    "zod": "^4.3.5"
+    "date-fns": "4.1.0",
+    "zod": "4.3.6"
   }
 }

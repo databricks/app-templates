@@ -29,8 +29,8 @@
     "clean": "rm -rf dist"
   },
   "devDependencies": {
-    "typescript": "^5.9.3",
-    "@types/node": "^22.8.6"
+    "typescript": "5.9.3",
+    "@types/node": "22.19.7"
   },
   "dependencies": {
     "@chat-template/utils": "*"

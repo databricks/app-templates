@@ -17,10 +17,8 @@ import {
   getFilteredRowModel,
   getSortedRowModel,
   useReactTable,
-  type SortingState,
-  type VisibilityState,
 } from '@tanstack/react-table';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 
 import { categorize, formatCell, isNumericCategory, TypeGlyph } from './dataTypes';
 import type { OkPayload, SchemaField } from './payload';
@@ -29,6 +27,9 @@ import { createResultColumns, createResultFilter } from './resultTable';
 
 const MIN_COLUMN_WIDTH = 110;
 const MAX_INITIAL_COLUMN_WIDTH = 300;
+const MIN_RESIZED_COLUMN_WIDTH = 80;
+const MAX_RESIZED_COLUMN_WIDTH = 1000;
+const COLUMN_RESIZE_STEP = 10;
 
 const BODY_CHAR_WIDTH = 6.6;
 
@@ -66,19 +67,16 @@ export function ResultGrid({ payload }: { payload: OkPayload }) {
 
 function InteractiveResultGrid({ payload }: { payload: OkPayload }) {
   const { schema, rows } = payload;
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const [globalFilter, setGlobalFilter] = useState('');
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
-  const columns = useMemo(() => createResultColumns(schema), [schema]);
   const filter = useMemo(() => createResultFilter(schema), [schema]);
-  const widths = useMemo(() => schema.map((field) => measureColumnWidth(field, rows)), [schema, rows]);
+  const columns = useMemo(() => createResultColumns(schema).map((column, index) => ({
+    ...column,
+    size: measureColumnWidth(schema[index], rows),
+  })), [schema, rows]);
   const table = useReactTable({
     data: rows,
     columns,
-    state: { sorting, globalFilter, columnVisibility },
-    onSortingChange: setSorting,
-    onGlobalFilterChange: setGlobalFilter,
-    onColumnVisibilityChange: setColumnVisibility,
+    columnResizeMode: 'onChange',
+    defaultColumn: { minSize: MIN_RESIZED_COLUMN_WIDTH, maxSize: MAX_RESIZED_COLUMN_WIDTH },
     globalFilterFn: filter,
     getColumnCanGlobalFilter: () => true,
     enableMultiSort: false,
@@ -87,6 +85,7 @@ function InteractiveResultGrid({ payload }: { payload: OkPayload }) {
     getSortedRowModel: getSortedRowModel(),
   });
 
+  const globalFilter = table.getState().globalFilter ?? '';
   const visibleColumns = table.getVisibleLeafColumns();
   const tableRows = table.getRowModel().rows;
   const rowNumberWidth = Math.max(44, String(rows.length).length * BODY_CHAR_WIDTH + 24);
@@ -100,7 +99,7 @@ function InteractiveResultGrid({ payload }: { payload: OkPayload }) {
           placeholder="Search returned rows…"
           className="h-8 min-w-0 max-w-sm flex-1 text-xs"
           value={globalFilter}
-          onChange={(event) => setGlobalFilter(event.target.value)}
+          onChange={(event) => table.setGlobalFilter(event.target.value)}
         />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -130,11 +129,14 @@ function InteractiveResultGrid({ payload }: { payload: OkPayload }) {
       )}
       {/* AppKit's inner wrapper must own scrolling so sticky headers track the visible viewport. */}
       <div className="border-border border-t [&>[data-slot=table-container]]:max-h-[60vh] [&>[data-slot=table-container]]:overflow-auto">
-        <Table className="w-full min-w-max table-fixed border-separate border-spacing-0 text-xs">
+        <Table
+          className="table-fixed border-separate border-spacing-0 text-xs"
+          style={{ width: rowNumberWidth + table.getTotalSize(), minWidth: '100%' }}
+        >
           <colgroup>
             <col style={{ width: rowNumberWidth }} />
             {visibleColumns.map((column) => (
-              <col key={column.id} style={{ width: widths[Number(column.id)] }} />
+              <col key={column.id} style={{ width: column.getSize() }} />
             ))}
             <col />
           </colgroup>
@@ -144,7 +146,8 @@ function InteractiveResultGrid({ payload }: { payload: OkPayload }) {
                 className="bg-card text-muted-foreground border-border sticky top-0 z-20 h-[30px] border-r border-b p-0 px-2 text-right align-middle font-normal"
                 aria-label="Row number"
               />
-              {visibleColumns.map((column) => {
+              {table.getFlatHeaders().map((header) => {
+                const column = header.column;
                 const field = schema[Number(column.id)];
                 const category = categorize(field.type);
                 const sorted = column.getIsSorted();
@@ -184,6 +187,39 @@ function InteractiveResultGrid({ payload }: { payload: OkPayload }) {
                         />
                       </svg>
                     </Button>
+                    <div
+                      role="separator"
+                      aria-label={`Resize ${field.name} column`}
+                      aria-orientation="vertical"
+                      aria-valuemin={MIN_RESIZED_COLUMN_WIDTH}
+                      aria-valuemax={MAX_RESIZED_COLUMN_WIDTH}
+                      aria-valuenow={column.getSize()}
+                      aria-valuetext={`${column.getSize()} pixels wide`}
+                      tabIndex={0}
+                      title="Drag or use Left/Right arrows to resize. Double-click or press Enter to reset."
+                      className={[
+                        'absolute inset-y-0 right-0 z-30 w-2 cursor-col-resize touch-none select-none',
+                        'hover:bg-accent focus-visible:bg-accent focus-visible:outline-2 focus-visible:outline-ring',
+                        column.getIsResizing() ? 'bg-accent' : '',
+                      ].join(' ')}
+                      onMouseDown={header.getResizeHandler()}
+                      onTouchStart={header.getResizeHandler()}
+                      onDoubleClick={() => column.resetSize()}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          column.resetSize();
+                          return;
+                        }
+                        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+                        event.preventDefault();
+                        const size = column.getSize() + (event.key === 'ArrowLeft' ? -COLUMN_RESIZE_STEP : COLUMN_RESIZE_STEP);
+                        table.setColumnSizing((current) => ({
+                          ...current,
+                          [column.id]: size,
+                        }));
+                      }}
+                    />
                   </TableHead>
                 );
               })}

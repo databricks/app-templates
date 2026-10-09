@@ -1,0 +1,42 @@
+name: sync-check
+
+# Enforce that per-template duplicated files stay identical to their source of
+# truth. Templates must be self-contained (Databricks Apps deploys each template
+# as its own directory, so a template can't import from a shared location and
+# symlinks don't survive `workspace export-dir`), so shared files — quickstart.py,
+# start_app.py, app_diagnostics.py, diagnostics.ts, skills, workflows — are COPIED
+# into every template by the sync scripts (source of truth in .scripts/source/ and
+# .claude/skills/). This job re-runs the sync and fails if any copy is out of date,
+# i.e. someone edited a copy instead of the source, or forgot to re-run the sync.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Re-run the sync scripts
+        run: |
+          python3 .scripts/sync-scripts.py
+          python3 .scripts/sync-skills.py
+
+      - name: Fail if any synced copy drifted from source
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::Synced copies are out of date. Edit the source (.scripts/source/ or .claude/skills/), then run:"
+            echo "    python .scripts/sync-scripts.py && python .scripts/sync-skills.py"
+            echo "and commit the result. Drifted paths:"
+            git status --porcelain
+            echo "----- diff -----"
+            git --no-pager diff
+            exit 1
+          fi
+          echo "All synced copies are identical to their source of truth."

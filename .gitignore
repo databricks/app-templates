@@ -197,6 +197,7 @@ mlflow.db
 !.claude/skills/managed-memory/
 !.claude/skills/load-testing/
 !.claude/skills/validate-templates/
+!.claude/skills/diagnostics/
 !.claude/AGENTS.md
 !.claude/CLAUDE.md
 

@@ -15,7 +15,11 @@ Two complementary suites in `.scripts/agent-integration-tests/`, both **serial**
   can't false-pass — `html` templates MUST declare `expect`); `spa` asserts the
   page references built JS/CSS assets (for framework-provided SPAs with no fixed
   text, e.g. the agent chat UI); `mcp`/`api` assert non-5xx and not-login; `build`
-  runs `npm ci && npm run build` locally (no deploy). Writes `logs/validation-report.md`.
+  runs `npm ci && npm run build` locally (no deploy). The same run also includes
+  **deployed crash-handling cases** (`test_crash_diagnostics_deployed`, verify `crash`):
+  it deploys the `crash-examples/` fixtures, confirms each CRASHES on startup, and
+  confirms the diagnostic traceback reaches `<app-url>/logz` — then restores the
+  shared app. Writes `logs/validation-report.md`.
 - **Functional e2e** (`functional_test.py`): drives each exemplar's real UI/protocol
   (Playwright etc.) `--target local` or `--target deployed`. Writes
   `logs/functional-report.md`.

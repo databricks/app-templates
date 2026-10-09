@@ -1,0 +1,7 @@
+command: ['npm', 'run', 'start']
+
+env:
+  - name: DATABRICKS_JOB_ID
+    valueFrom: job
+  - name: DISABLE_REMOTE_SERVING
+    value: 'true'

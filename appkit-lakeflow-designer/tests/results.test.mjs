@@ -210,10 +210,10 @@ test('the initial last-run response retains native file downloads without previe
         output: lastRun.result.outputs[0], onRetry: () => {},
         downloadRequest: { runId: displayedRun.jobRunId, outputId: 'output' },
       }));
-      assert.match(html, /Download data.xlsx/);
+      assert.match(html, /aria-label="Download data.xlsx"/);
       assert.match(html, /\/api\/designer\/run\/42\/files\/output\/0\/download/);
       assert.match(html, /including changes made after this run/);
-      assert.doesNotMatch(html, /File generated for this run/);
+      assert.doesNotMatch(html, /Generated file/);
       assert.doesNotMatch(html, /No preview/);
     }
   } finally {
@@ -296,7 +296,7 @@ test('historical file labels use the recorded behavior and preserve full row cou
   const payload = { ...parsePayload(outputFromTable(displayTable(2, true))), total_row_count: 5000 };
   const files = [{ path: '/Volumes/main/apps/files/report.csv' }];
   for (const [fileBehavior, label] of [
-    ['run_artifact', 'File generated for this run'],
+    ['run_artifact', 'Generated file'],
     ['shared_append', 'Shared file · append mode'],
     ['shared_workbook_update', 'Shared workbook · updated'],
   ]) {
@@ -310,7 +310,7 @@ test('historical file labels use the recorded behavior and preserve full row cou
     const html = outputSection(output.outcome.payload, undefined, output.files, output.fileBehavior);
     assert.ok(html.includes(label));
     assert.match(html, /Showing 2 of 5,000 rows/);
-    assert.match(html, /Download report.csv/);
+    assert.match(html, /aria-label="Download report.csv"/);
     if (fileBehavior === 'run_artifact') {
       assert.match(html, /Later App runs use separate destinations/);
       assert.doesNotMatch(html, /including changes made after this run|may differ from the file downloaded now/);
@@ -332,7 +332,7 @@ test('legacy or unknown file behavior stays conservative even for a namespaced-l
     assert.equal(parsed.outputs[0].fileBehavior, undefined);
     const html = outputSection(payload, undefined, files, parsed.outputs[0].fileBehavior);
     assert.match(html, /including changes made after this run/);
-    assert.doesNotMatch(html, /File generated for this run|Shared file · append mode|Shared workbook · updated/);
+    assert.doesNotMatch(html, /Generated file|Shared file · append mode|Shared workbook · updated/);
   }
 });
 

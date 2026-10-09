@@ -3,7 +3,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card } from '@databricks/appkit-ui/react';
 
 import { ActiveRunBanner } from './ActiveRunBanner';
-import { fileDownloadRoute, type FileOutputBehavior } from '../../shared/fileOutputs';
+import type { FileOutputBehavior } from '../../shared/fileOutputs';
 import type {
   AppChartSpec,
   AppManifestBlock,
@@ -21,6 +21,7 @@ import {
 } from './appConfig';
 import { UPLOAD_REFERENCE } from '../../shared/storageConfig';
 import { MarkdownBlock } from './MarkdownBlock';
+import { OutputFileDownloads } from './OutputFileDownloads';
 import type { PublishedChartRefusal } from './chartTranslation';
 import { describePublishedChartRefusal, translatePublishedChart } from './chartTranslation';
 import type { LandingSection } from './landingPlan';
@@ -896,7 +897,7 @@ function OutputHeading({ title }: { title: string }) {
 }
 
 const FILE_OUTPUT_LABELS: Record<FileOutputBehavior, string> = {
-  run_artifact: 'File generated for this run',
+  run_artifact: 'Generated file',
   shared_append: 'Shared file · append mode',
   shared_workbook_update: 'Shared workbook · updated',
 };
@@ -922,20 +923,21 @@ export function OutputSection({
         <div className="px-6 py-4 text-sm">
           {output.files.length > 0 ? (
             <>
-              {fileBehavior && <p className="mb-2 font-medium">{FILE_OUTPUT_LABELS[fileBehavior]}</p>}
-              <ul className="space-y-2">
-                {output.files.map((file, index) => (
-                  <li key={file.path}>
-                    <a
-                      className="text-primary underline"
-                      href={fileDownloadRoute(downloadRequest.runId, downloadRequest.outputId, index)}
-                    >
-                      Download {file.path.slice(file.path.lastIndexOf('/') + 1)}
-                    </a>
-                    <div className="text-muted-foreground break-all text-xs">{file.path}</div>
-                  </li>
-                ))}
-              </ul>
+              <p className="mb-2 font-medium">
+                {fileBehavior === 'run_artifact' && output.files.length > 1
+                  ? 'Generated files'
+                  : fileBehavior
+                    ? FILE_OUTPUT_LABELS[fileBehavior]
+                    : output.files.length === 1 ? 'File' : 'Files'}
+                {output.files.length > 1 ? ` · ${output.files.length}` : ''}
+              </p>
+              <OutputFileDownloads
+                key={`${downloadRequest.runId}:${downloadRequest.outputId}`}
+                files={output.files}
+                runId={downloadRequest.runId}
+                outputId={downloadRequest.outputId}
+                outputTitle={output.title}
+              />
               <p className="text-muted-foreground mt-3 text-xs">
                 {fileBehavior === 'run_artifact'
                   ? 'Later App runs use separate destinations. '

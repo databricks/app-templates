@@ -306,9 +306,11 @@ After a successful write, the Python runtime emits a structured MIME receipt
 (`application/vnd.databricks.lakeflow-designer.files+json`) naming the exact written files and recording
 the effective behavior: `run_artifact`, `shared_append`, or `shared_workbook_update`.
 These receipts are read separately from previews/counts so files remain available if a later preview
-or sibling branch fails. Split outputs offer individual links, up to 50 files; there is no ZIP or
-second format conversion. An empty split result has no downloadable files. Excel downloads contain
-the entire workbook, and append downloads include the entire saved destination, not only new rows.
+or sibling branch fails. A single file appears as a filename download link. Multiple files use a
+searchable AppKit UI selector and a Download button, with up to 50 files. Storage paths are hidden.
+There is no ZIP or second format conversion. An empty split result has no downloadable files.
+Excel downloads contain the entire workbook, and append downloads include the entire saved
+destination, not only new rows.
 
 The authenticated endpoint accepts only run/output/index IDs. It verifies viewer ownership, Job,
 completed run, selected Output, matching recorded policy/revision, and the current content-addressed

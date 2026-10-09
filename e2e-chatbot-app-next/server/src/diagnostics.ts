@@ -24,15 +24,13 @@ export function installDiagnostics(): void {
       console.error(`[app.diagnostics] uncaughtException (${String(origin)}):`, err?.stack ?? err);
       process.exit(1); // process is in an undefined state; do not continue
     });
-    process.on("unhandledRejection", (reason: unknown) => {
-      const r = reason as { stack?: string };
-      console.error("[app.diagnostics] unhandledRejection:", r?.stack ?? reason);
-      // Preserve Node's default crash-on-rejection (the default since Node 15):
-      // registering this listener suppresses it, so exit non-zero ourselves —
-      // otherwise the app silently keeps running in a broken state and the
-      // platform never restarts it.
-      process.exit(1);
-    });
+    // NB: no `process.on("unhandledRejection", ...)`. Registering a listener
+    // SUPPRESSES Node's `--unhandled-rejections` policy, and the listener's return
+    // value is ignored (so you cannot "rethrow" from it). We deliberately leave it
+    // unset: the default policy (`throw`, since Node 15) escalates an unhandled
+    // rejection to `uncaughtException` — logged with its stack and exited non-zero
+    // by the handler above (origin `unhandledRejection`) — while operators keep the
+    // ability to change that behavior via `--unhandled-rejections=<mode>`.
     // NB: no `process.on("warning", ...)` — Node already prints warnings to stderr
     // by default; a second listener would double-print them.
     for (const sig of ["SIGTERM", "SIGINT"] as const) {

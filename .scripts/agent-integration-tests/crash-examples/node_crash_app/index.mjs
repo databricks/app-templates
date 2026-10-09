@@ -10,10 +10,10 @@ const CANARY = "DIAGNOSTICS_E2E_CANARY";
 const mode = process.env.CRASH_MODE || "startup";
 
 if (mode === "rejection") {
-  // Unhandled promise rejection -> the diagnostics unhandledRejection handler logs
-  // the stack AND exits non-zero (preserving Node's default crash-on-rejection).
-  // No explicit exit here: the crash must come from the handler, so the test
-  // genuinely proves rejections surface as crashes.
+  // Unhandled promise rejection -> with no unhandledRejection listener, Node's
+  // default policy (throw) escalates it to uncaughtException, which the diagnostics
+  // handler logs (stack) and exits non-zero. No explicit exit here: the crash must
+  // come from diagnostics, so the test genuinely proves rejections surface as crashes.
   Promise.reject(new Error(`${CANARY}: induced unhandled rejection`));
 } else {
   // "startup": thrown error -> uncaughtException handler logs the stack, exits 1.

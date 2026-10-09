@@ -37,8 +37,9 @@ databricks apps get <app-name> --output json | jq '.app_status'   # state + mess
   — the platform terminated the app (OOM, health-check failure, scale-down); the
   dump shows what every thread was doing at that moment (how you locate a **hang**
   that got killed).
-- Node: `[app.diagnostics] uncaughtException: …` / `unhandledRejection: …` with the
-  JS stack.
+- Node: `[app.diagnostics] uncaughtException (<origin>): …` with the JS stack. An
+  unhandled promise rejection surfaces here too, with origin `unhandledRejection`
+  (Node's default `--unhandled-rejections=throw` escalates it to `uncaughtException`).
 
 ## Diagnosing a hang (Python)
 

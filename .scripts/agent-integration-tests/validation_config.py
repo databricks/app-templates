@@ -17,7 +17,14 @@ class ValidationTemplate:
     # For verify == "html": substrings that MUST appear in the rendered (hydrated)
     # DOM, so a generic 404 / error page / framework shell can't false-pass. The
     # loader requires this to be non-empty for html templates.
+    # For verify == "obo": a SUCCESS SIGNAL — text that renders only if the
+    # forwarded user token's downstream call succeeded (not the always-rendered
+    # header). An obo template with no `expect` is skipped (not yet wired).
     expect: tuple[str, ...] = field(default=())
+    # For verify == "obo" only: the accessible name of a control to click after the
+    # page loads (e.g. a "Run Query" button) before waiting for `expect` — for apps
+    # that run the OBO call on interaction rather than on page load. None = on-load.
+    obo_click: str | None = None
 
 
 @dataclass(frozen=True)
@@ -68,7 +75,13 @@ def load_validation_config(
         verify = entry["verify"]
         assert verify in _VALID_VERIFY, f"{name}: bad verify kind {verify!r}"
         expect = _coerce_expect(name, verify, entry.get("expect"))
-        templates.append(ValidationTemplate(name=name, verify=verify, expect=expect))
+        obo_click = entry.get("obo_click")
+        assert obo_click is None or verify == "obo", (
+            f"{name}: obo_click is only valid for verify: obo"
+        )
+        templates.append(
+            ValidationTemplate(name=name, verify=verify, expect=expect, obo_click=obo_click)
+        )
 
     root = data.get("workspace_source_root") or ""
     if not root and resolve_workspace_root:

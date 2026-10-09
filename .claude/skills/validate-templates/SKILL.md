@@ -15,7 +15,10 @@ Two complementary suites in `.scripts/agent-integration-tests/`, both **serial**
   can't false-pass — `html` templates MUST declare `expect`); `spa` asserts the
   page references built JS/CSS assets (for framework-provided SPAs with no fixed
   text, e.g. the agent chat UI); `mcp`/`api` assert non-5xx and not-login; `build`
-  runs `npm ci && npm run build` locally (no deploy). The same run also includes
+  runs `npm ci && npm run build` locally (no deploy); `obo` deploys like `html` but
+  its `expect` must be a **success signal** that renders only if the forwarded
+  user token's downstream call succeeded (requires the shared app CREATED with the
+  OBO scopes — see Prerequisites; obo entries without `expect` are skipped). The same run also includes
   **deployed crash-handling cases** (`test_crash_diagnostics_deployed`, verify `crash`):
   it deploys the `crash-examples/` fixtures, confirms each CRASHES on startup, and
   confirms the diagnostic traceback reaches `<app-url>/logz` — then restores the
@@ -45,6 +48,17 @@ See `.scripts/agent-integration-tests/AGENTS.md` for module-level detail.
    ```
    A row failing with **"app redirected to SSO login — storageState invalid/expired"**
    means re-run `auth_setup.py`.
+4. **OBO (`verify: obo`) — the shared app must be CREATED with the on-behalf-of-user
+   scopes**, not patched later. Databricks binds the forwarded-token scopes at app
+   creation: adding `user_api_scopes` to an existing app (via `apps update`) populates
+   `effective_user_api_scopes` but **never** reaches `X-Forwarded-Access-Token` — not
+   after redeploy, stop/start, or a fresh consent (verified on dogfood). Create the
+   app with `--forward-user-access-token` and the OBO scope union:
+   `sql`, `dashboards.genie`, `files.files`, `serving.serving-endpoints`,
+   `catalog.connections` (plus the resource bindings above; `catalog.connections`
+   also needs a UC connection resource, which `mcp-server-open-api-spec` requires).
+   After (re)creating the app, refresh the storageState (step 3) so its session
+   carries the new consent.
 
 ## Running
 

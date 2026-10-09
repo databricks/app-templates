@@ -30,6 +30,37 @@ def test_load_config_parses_all_templates():
     assert all(t.expect for t in cfg.templates if t.verify == "html")
 
 
+def test_obo_wiring_expect_and_click():
+    cfg = load_validation_config(DEFAULT_CONFIG_PATH, resolve_workspace_root=False)
+    obo = {t.name: t for t in cfg.templates if t.verify == "obo"}
+    # The 4 data-app-obo-user templates are wired (declare a success-signal expect);
+    # obo entries without expect are intentionally skipped at runtime (not yet wired).
+    wired = {n for n, t in obo.items() if t.expect}
+    assert wired == {
+        "streamlit-data-app-obo-user",
+        "dash-data-app-obo-user",
+        "gradio-data-app-obo-user",
+        "shiny-data-app-obo-user",
+    }
+    # Interaction-gated apps carry an obo_click control; on-load apps don't.
+    assert obo["gradio-data-app-obo-user"].obo_click == "Run Query"
+    assert obo["shiny-data-app-obo-user"].obo_click == "Run Query"
+    assert obo["streamlit-data-app-obo-user"].obo_click is None
+    assert obo["dash-data-app-obo-user"].obo_click is None
+
+
+def test_obo_click_only_valid_for_obo(tmp_path):
+    import pytest as _pytest
+
+    bad = tmp_path / "c.yaml"
+    bad.write_text(
+        "profile: p\nshared_app_name: a\nworkspace_source_root: ''\n"
+        "templates:\n  x: { verify: html, expect: 'Hi', obo_click: 'Go' }\n"
+    )
+    with _pytest.raises(AssertionError, match="obo_click is only valid"):
+        load_validation_config(bad, resolve_workspace_root=False)
+
+
 def test_empty_workspace_root_left_unresolved_when_flag_false():
     cfg = load_validation_config(DEFAULT_CONFIG_PATH, resolve_workspace_root=False)
     assert cfg.workspace_source_root == ""

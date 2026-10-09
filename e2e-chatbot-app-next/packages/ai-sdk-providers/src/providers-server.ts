@@ -194,12 +194,12 @@ export const databricksFetch: typeof fetch = async (input, init) => {
               const data = line.slice(5).trim();
               try {
                 const parsed = JSON.parse(data);
-                console.log(`[SSE #${eventCounter}]`, JSON.stringify(parsed));
+                console.log('[SSE #%d]', eventCounter, JSON.stringify(parsed));
               } catch {
-                console.log(`[SSE #${eventCounter}] (raw)`, data);
+                console.log('[SSE #%d] (raw)', eventCounter, data);
               }
             } else if (line.trim()) {
-              console.log(`[SSE #${eventCounter}] (line)`, line);
+              console.log('[SSE #%d] (line)', eventCounter, line);
             }
           }
 

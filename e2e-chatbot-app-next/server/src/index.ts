@@ -11,6 +11,9 @@ import cors from 'cors';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { chatRouter } from './routes/chat';
 import { storeMessageMeta } from './lib/message-meta-store';
 import { historyRouter } from './routes/history';
@@ -85,15 +88,27 @@ if (agentBackendUrl) {
 
       // Stream the response body
       if (response.body) {
-        const reader = response.body.getReader();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          res.write(value);
-        }
+        await pipeline(
+          Readable.fromWeb(response.body as WebReadableStream),
+          res,
+        );
+      } else {
+        res.end();
       }
-      res.end();
     } catch (error) {
+      if (res.headersSent) {
+        // The stream was interrupted after the response started (e.g. the
+        // client disconnected, which makes `pipeline` reject with
+        // ERR_STREAM_PREMATURE_CLOSE). A 502 can no longer be sent.
+        if (
+          (error as NodeJS.ErrnoException)?.code !==
+          'ERR_STREAM_PREMATURE_CLOSE'
+        ) {
+          console.error('[/invocations proxy] Stream error:', error);
+        }
+        res.destroy();
+        return;
+      }
       console.error('[/invocations proxy] Error:', error);
       res.status(502).json({
         error: 'Proxy error',

@@ -16,6 +16,9 @@ import { config } from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import { existsSync } from "fs";
+import { Readable } from "stream";
+import { pipeline } from "stream/promises";
+import type { ReadableStream as WebReadableStream } from "stream/web";
 import {
   initializeMLflowTracing,
   type MLflowTracing,
@@ -128,14 +131,10 @@ export async function createServer(
 
         // Stream response body
         if (response.body) {
-          const reader = response.body.getReader();
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            res.write(value);
-          }
+          await pipeline(Readable.fromWeb(response.body as WebReadableStream), res);
+        } else {
+          res.end();
         }
-        res.end();
       } catch (error) {
         console.error("Error proxying to UI backend:", error);
         res.status(502).json({ error: "Bad Gateway" });

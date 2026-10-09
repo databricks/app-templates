@@ -20,7 +20,7 @@ export const DatabricksMessageCitationStreamdownIntegration: ComponentType<
     return (
       <DatabricksMessageCitationRenderer
         {...props}
-        href={decodeDatabricksMessageCitationLink(props.href)}
+        href={sanitizeHref(decodeDatabricksMessageCitationLink(props.href))}
       />
     );
   }
@@ -49,17 +49,32 @@ const isDatabricksMessageCitationLink = (
 ): link is `${string}::databricks_citation` =>
   link?.endsWith('::databricks_citation') ?? false;
 
+// Link schemes that are safe to render; blocks script-capable schemes such as
+// `javascript:`, `data:` and `vbscript:` coming from model output.
+const SAFE_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
+
+// Returns the href if it is relative or uses a safe scheme, otherwise undefined.
+const sanitizeHref = (href?: string): string | undefined => {
+  if (!href || href === 'streamdown:incomplete-link') return href;
+  try {
+    const { protocol } = new URL(href, window.location.href);
+    return SAFE_LINK_PROTOCOLS.has(protocol) ? href : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 // Renders the Databricks message citation.
 const DatabricksMessageCitationRenderer = (
   props: PropsWithChildren<{
-    href: string;
+    href?: string;
   }>,
 ) => {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <DefaultAnchor
-          href={props.href}
+          href={sanitizeHref(props.href)}
           target="_blank"
           rel="noopener noreferrer"
           className="rounded-md bg-muted-foreground px-2 py-0 text-zinc-200"
@@ -92,8 +107,8 @@ const DefaultAnchor: ComponentType<AnchorHTMLAttributes<HTMLAnchorElement>> = (
       )}
       data-incomplete={isIncomplete}
       data-streamdown="link"
-      href={props.href}
       {...props}
+      href={sanitizeHref(props.href)}
       {...(isFootnoteLink
         ? {
             target: '_self',

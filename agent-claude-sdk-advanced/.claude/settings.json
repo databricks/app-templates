@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/ben.doan/.ai-dev-kit/repo/.claude-plugin/check_update.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

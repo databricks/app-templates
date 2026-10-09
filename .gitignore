@@ -198,6 +198,7 @@ mlflow.db
 !.claude/skills/load-testing/
 !.claude/skills/validate-templates/
 !.claude/skills/diagnostics/
+!.claude/skills/review-templates/
 !.claude/AGENTS.md
 !.claude/CLAUDE.md
 

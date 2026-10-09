@@ -16,6 +16,12 @@ scripts, with the single source of truth in `.scripts/source/` and `.claude/skil
   `.github/workflows/deploy.yml` (with `{{BUNDLE_NAME}}` substitution). See the
   script itself for the authoritative, current list of what it copies.
 - `.scripts/sync-skills.py` → each template's `.claude/skills/`.
+- `.scripts/sync-scripts.py` also **generates** the node crash-test fixture's
+  plain-JS diagnostics
+  (`.scripts/agent-integration-tests/crash-examples/node_crash_app/diagnostics.mjs`)
+  from `.scripts/source/diagnostics.ts` by stripping TS types. That fixture runs as
+  raw `node index.mjs` (no TS build) and must be self-contained for deploy, so it
+  can't import the shared `.ts` — generating it keeps its plain-JS twin from drifting.
 
 The risk this guards is **drift**: someone edits a copy directly, or edits the
 source but forgets to re-run the sync, so the per-template copies silently diverge.
@@ -32,9 +38,12 @@ python .scripts/sync-scripts.py && python .scripts/sync-skills.py && git diff --
 - **Non-zero exit / a diff is printed** → drift; the diff names exactly which
   copies are stale.
 
-The sync scripts are stdlib-only (no venv needed) and are safe to re-run — they
-only rewrite the copies from source. They create `.scripts/__pycache__/`, which is
-gitignored and does not affect the check.
+The sync scripts are Python-stdlib-only (no venv needed) and safe to re-run — they
+only rewrite the copies from source. `sync-scripts.py` additionally shells out to
+`node` (present throughout this Node-heavy repo) to regenerate the crash fixture's
+diagnostics twin; it fails loudly if `node` is missing rather than skipping the
+check. They create `.scripts/__pycache__/`, which is gitignored and does not affect
+the check.
 
 ## Fix drift
 

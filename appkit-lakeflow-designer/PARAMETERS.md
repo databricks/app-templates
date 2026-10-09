@@ -33,9 +33,7 @@ Designer Apps or publishing these parameters. Existing apps acquire the control
 on republish. Do not downgrade their template to a reader that treats the type as
 text and cannot validate individual selections.
 
-File parameters stage a local file and upload it when Run is clicked. A completed upload shows
-**Download** beside the file picker, including while the Job is running. Replacing the file hides
-that link until the replacement finishes uploading. Uploaded filenames in run summaries also
-download the original file, so the input remains accessible after refreshing the App. These
-downloads enforce the current viewer, file parameter and upload storage; another user's uploads
-and files from a previous upload root are unavailable through the App.
+File parameters stage a local file and upload it when Run is clicked. Uploaded filenames in
+run summaries download the original file, so the input remains accessible after refreshing the
+App. These downloads enforce the current viewer, file parameter and upload storage; another
+user's uploads and files from a previous upload root are unavailable through the App.

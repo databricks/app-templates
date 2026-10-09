@@ -199,18 +199,14 @@ test('cancels UC reading on a disconnected download and retains the upload', asy
   assert.deepEqual(h.files, original);
 });
 
-test('shows a Download action only for completed uploads and keeps it enabled while running', async (t) => {
-  const h = await harness(t);
+test('keeps file selection controls without a Download action', () => {
   const file = new File(['price\n42\n'], 'sales.csv');
-  const props = { name: 'path', file, error: undefined, onFileChange: () => {}, disabled: true };
-  for (const uploadReference of [undefined, '', 'upload:bad', '/Volumes/private/file.csv']) {
-    const html = renderToStaticMarkup(createElement(FileParameterControl, { ...props, uploadReference }));
-    assert.doesNotMatch(html, /aria-label="Download/);
+  const props = { name: 'path', error: undefined, onFileChange: () => {}, disabled: false };
+  for (const selected of [undefined, file]) {
+    const html = renderToStaticMarkup(createElement(FileParameterControl, { ...props, file: selected }));
+    assert.doesNotMatch(html, /Download|href=/);
+    assert.match(html, selected === undefined ? /Choose file/ : /sales.csv.*Replace/);
   }
-  const html = renderToStaticMarkup(createElement(FileParameterControl, { ...props, uploadReference: h.upload.reference }));
-  assert.match(html, /aria-label="Download sales.csv"/);
-  const href = /href="([^"]+\/download)"/.exec(html)[1];
-  assert.equal(await (await fetch(`${h.origin}${href}`, { headers: { 'x-forwarded-user': 'alice' } })).text(), 'price\n42\n');
 });
 
 test('links uploaded filenames in run summaries without making ordinary parameters downloadable', async (t) => {

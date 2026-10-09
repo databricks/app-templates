@@ -118,7 +118,6 @@ export function ParameterForm({
                 name={parameter.name}
                 fileFormats={parameter.fileFormats}
                 file={stagedFiles[parameter.name]}
-                uploadReference={values[parameter.name]}
                 error={uploadErrors[parameter.name]}
                 onFileChange={(file) => stageFile(parameter, file)}
                 disabled={running || uploading || !runnable}

@@ -12,10 +12,18 @@
 #   mcp   = deploy + browser-authenticated GET of / is non-5xx and not the login page
 #   api   = deploy + API-only surface (/invocations), no chat UI at /
 #   build = local `npm ci && npm run build` only (no deploy) — for node/SPA templates
-#   obo   = on-behalf-of-user; NOT testable in this environment -> reported skipped
+#   obo   = on-behalf-of-user; deploy + browser(storageState), like `html`, but
+#           `expect` must be a SUCCESS SIGNAL: text that renders ONLY if the
+#           forwarded user token's downstream call succeeded (not the always-rendered
+#           header), so a token-less/403 render can't false-pass. REQUIRES the shared
+#           app to be CREATED with the OBO scope union (sql, dashboards.genie,
+#           files.files, serving.serving-endpoints, catalog.connections) + bindings —
+#           scopes added to an existing app do NOT reach the forwarded token. An obo
+#           entry with no `expect` is skipped (not yet wired / missing a binding).
 #
 # The shared app must have these resource KEYS bound (see AGENTS.md):
 #   serving-endpoint, sql-warehouse, postgres, genie-space, uc-volume, experiment
+# and be CREATED with --forward-user-access-token + the OBO user_api_scopes above.
 profile: dogfood
 shared_app_name: template-e2e-test
 workspace_source_root: ""
@@ -83,7 +91,16 @@ templates:
   inventory-intelligence: { verify: obo }
   saas-tracker: { verify: obo }
   vacation-rentals: { verify: obo }
-  streamlit-data-app-obo-user: { verify: obo }
-  dash-data-app-obo-user: { verify: obo }
-  gradio-data-app-obo-user: { verify: obo }
-  shiny-data-app-obo-user: { verify: obo }
+  # "Predict fare" renders only AFTER the on-load SQL query succeeds via the
+  # forwarded user token (the header above it renders even on a 403), so it's a
+  # true OBO success signal.
+  streamlit-data-app-obo-user: { verify: obo, expect: ["Taxi fare distribution", "Predict fare"] }
+  # dash queries on load; the result column headers render in the ag-grid only if
+  # the forwarded-token query returned rows (empty/403 -> no columns).
+  dash-data-app-obo-user: { verify: obo, expect: ["fare_amount", "trip_distance"] }
+  # gradio/shiny gate the query behind a "Run Query" button, so click it first.
+  # gradio: the "Taxi fare distribution" heading renders only on a successful query.
+  gradio-data-app-obo-user: { verify: obo, obo_click: "Run Query", expect: ["Taxi fare distribution"] }
+  # shiny: the result DataGrid's column headers render only on success (failure
+  # shows an "Error executing query" notification instead).
+  shiny-data-app-obo-user: { verify: obo, obo_click: "Run Query", expect: ["fare_amount", "trip_distance"] }

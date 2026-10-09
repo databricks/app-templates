@@ -49,6 +49,7 @@ export interface UploadStore {
   put(path: string, bytes: Uint8Array): Promise<void>;
   putStream(path: string, stream: ReadableStream<Uint8Array>): Promise<void>;
   read(path: string): Promise<unknown>;
+  download(path: string): Promise<ReadableStream<Uint8Array>>;
   size(path: string): Promise<number | undefined>;
   delete(path: string): Promise<void>;
 }

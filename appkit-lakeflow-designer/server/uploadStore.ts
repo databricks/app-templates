@@ -48,6 +48,12 @@ export function appKitUploadStore(config: AppStorage | undefined): UploadStore {
           throw new UploadError(409, 'The upload record is unreadable.');
         }
       }),
+    download: (path) =>
+      access(async (volume) => {
+        const result = await volume.download(encodeStoragePath(path));
+        if (!result.contents) throw new UploadError(502, 'The uploaded file has no readable contents.');
+        return result.contents;
+      }),
     size: (path) =>
       access(async (volume) => {
         const metadata = await volume.metadata(encodeStoragePath(path));

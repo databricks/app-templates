@@ -3,6 +3,8 @@ import { Badge } from '@databricks/appkit-ui/react';
 import type { AppParameter } from '../../shared/appManifest';
 import type { LastRunSummary } from './lastRun';
 import { labelFor } from './parameterLabels';
+import { UPLOAD_REFERENCE } from '../../shared/storageConfig';
+import { uploadDownloadRoute } from './routes';
 
 export type LastRunVariant = 'last' | 'superseded' | 'justFinished' | 'historical';
 
@@ -102,14 +104,30 @@ export function LastRunLabel({
       ) : (
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
           <span className="text-muted-foreground">Computed with</span>
-          {entries.map(([name, value]) => (
-            <span key={name} className="text-muted-foreground">
-              <span>{labelFor(name, declared)}</span>
-              <span className="text-foreground ml-1 font-mono">
-                {(parameterDisplayValues?.[name] ?? value) === '' ? '(blank)' : (parameterDisplayValues?.[name] ?? value)}
+          {entries.map(([name, value]) => {
+            const displayValue = parameterDisplayValues?.[name] ?? value;
+            const downloadable = parameterDisplayValues?.[name] !== undefined && UPLOAD_REFERENCE.test(value) &&
+              declared.some((parameter) => parameter.name === name && parameter.type === 'file');
+            return (
+              <span key={name} className="text-muted-foreground">
+                <span>{labelFor(name, declared)}</span>
+                <span className="text-foreground ml-1 font-mono">
+                  {downloadable ? (
+                    <a
+                      href={uploadDownloadRoute(name, value)}
+                      aria-label={`Download ${displayValue}`}
+                      title="Download uploaded file"
+                      className="underline underline-offset-2"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {displayValue}
+                    </a>
+                  ) : displayValue === '' ? '(blank)' : displayValue}
+                </span>
               </span>
-            </span>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

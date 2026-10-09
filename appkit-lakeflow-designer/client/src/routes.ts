@@ -10,6 +10,9 @@ export const RUN_HISTORY_ROUTE = '/api/designer/runs';
 export const uploadsRoute = (parameterName: string): string =>
   `/api/designer/uploads/${encodeURIComponent(parameterName)}`;
 
+export const uploadDownloadRoute = (parameterName: string, reference: string): string =>
+  `${uploadsRoute(parameterName)}/${encodeURIComponent(reference)}/download`;
+
 export const runStatusRoute = (jobRunId: string): string => `${RUN_ROUTE}/${jobRunId}`;
 
 export const runHistoryRoute = (windowSize: number): string => `${RUN_HISTORY_ROUTE}?window=${windowSize}`;

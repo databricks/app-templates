@@ -129,7 +129,7 @@ after(async () => {
   if (outputDirectory) await rm(outputDirectory, { recursive: true });
 });
 
-test('uses the Files plugin for immutable storage, bounded records, metadata and deletion', async () => {
+test('uses the Files plugin for immutable storage, downloads, bounded records, metadata and deletion', async () => {
   const store = appKitUploadStore(config);
   const folder = `${config.path}/uploads/viewer/parameter`;
   await store.mkdir(folder);
@@ -147,6 +147,7 @@ test('uses the Files plugin for immutable storage, bounded records, metadata and
     assert.deepEqual(contents.get(path), bytes);
     assert.equal(await store.size(path), bytes.length);
     assert.deepEqual(await store.read(path), { filename });
+    assert.deepEqual(Buffer.from(await new Response(await store.download(path)).arrayBuffer()), bytes);
     await assert.rejects(store.put(path, Buffer.from('replacement')), { status: 502 });
     assert.deepEqual(contents.get(path), bytes);
   }
@@ -163,6 +164,7 @@ test('uses the Files plugin for immutable storage, bounded records, metadata and
   assert.equal(contents.get(streamedPath).toString(), 'streamed');
   await store.delete(`${folder}/data.csv`);
   await assert.rejects(store.read(`${folder}/data.csv`), { status: 404 });
+  await assert.rejects(store.download(`${folder}/data.csv`), { status: 404 });
 });
 
 test('uploads and native output reads can share one physical volume without sharing handle policies', async () => {
@@ -177,6 +179,7 @@ test('uploads and native output reads can share one physical volume without shar
   ]);
   assert.equal(await new Response(await outputStore.download(outputPath)).text(), 'original workbook');
   await assert.rejects(uploadStore.read(outputPath), { status: 502 });
+  await assert.rejects(uploadStore.download(outputPath), { status: 502 });
   assert.equal(await uploadStore.size(uploadPath), 10);
 });
 
@@ -199,6 +202,7 @@ test('limits plugin access to the uploads subtree of the configured app storage'
     const bytes = Buffer.from('reserved');
     contents.set(path, bytes);
     await assert.rejects(store.read(path), { status: 502 });
+    await assert.rejects(store.download(path), { status: 502 });
     await assert.rejects(store.put(path, Buffer.from('replacement')), { status: 502 });
     await assert.rejects(store.delete(path), { status: 502 });
     assert.deepEqual(contents.get(path), bytes);

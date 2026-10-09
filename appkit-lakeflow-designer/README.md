@@ -62,7 +62,8 @@ there is no reader for deprecated notebook-parameter runs or historical backfill
 
 - `server/server.ts` — the Node/AppKit server (TypeScript). Type-checked and bundled by
   `build:server` (`tsc -b` + `tsdown`) to `dist/server.js`, which `start` runs.
-- `server/uploads.ts` / `server/outputFiles.ts` — upload and native Output-file download routes.
+- `server/uploads.ts` / `server/outputFiles.ts` — upload, uploaded-input download, and native
+  Output-file download routes. Both download paths share `server/fileDownloads.ts` for streaming.
   Backend-only AppKit Files adapters enforce separate upload and read-only output policies.
 - `client/` — the React client, built by Vite to `client/dist`.
 - `app.yaml` — start command and env bindings (`command: ['npm', 'run', 'start']`).
@@ -221,6 +222,15 @@ Uploaded files are retained until the volume owner deletes them. There is no aut
 delete action, or deletion of storage when an App is deleted. The app does not expose retained files
 for selection; viewers select a local file for each browser session. Manual cleanup must account for queued, running, retrying jobs.
 Uploads use `<storage.path>/uploads/<viewer-hash>/<parameter-hash>/<upload-id>/<filename>`.
+
+Completed uploads offer a **Download** action beside the file input, including while a Job is
+running. Uploaded filenames in last-run and selected-run summaries are also download links.
+Downloads stream the original bytes through AppKit Files after checking the authenticated viewer,
+current file parameter, completion record and recorded size. They do not start a Job, copy files
+or delete the upload. Replacing a staged file clears its previous download link until the new
+upload completes. Changing the upload root or removing the file parameter makes old links
+unavailable; retained files still require volume-owner cleanup. Interrupted downloads can be retried.
+
 File Outputs write directly to their author-configured destinations. Separate backend-only Files
 plugin policies restrict uploads to their subtree and native downloads to approved output volumes.
 Existing files are not moved or deleted; viewers upload a new file after the app adopts the new root.
@@ -245,6 +255,8 @@ A-to-B-to-A cycle can retain an A reference; no persistent upload generation is 
 `npm test` covers storage completion/partial failures, limits, parameter resolution and ownership
 policy with an in-memory storage boundary, plus server-route access checks, volume switches,
 stale-reference refusal before Job submission, upload cache invalidation, and history hydration.
+Download tests use real HTTP responses and cover original bytes/names, ownership isolation,
+missing or changed files, completed and interrupted transfers, and file-input/history links.
 Actual Apps ingress, UC provisioning/grants and Jobs
 execution still require a deployed smoke test, including resource read-back versus effective
 grant propagation and Jobs running as the App principal. Complete these checks before deploying

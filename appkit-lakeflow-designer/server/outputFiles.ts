@@ -1,5 +1,3 @@
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 import type { Application, Request } from 'express';
 import {
   APP_REVISION_PARAM,
@@ -15,6 +13,7 @@ import { canAccessRun } from './fileUploads';
 import { isLegacyExportRun, manifestRevision, type FileOutputManifest } from './runRevision';
 import { runJobParameters } from './jobParameters';
 import type { OutputFileStore } from './outputFileStore';
+import { streamFileDownload } from './fileDownloads';
 
 const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -123,42 +122,9 @@ export function registerOutputFileRoutes(app: Pick<Application, 'get'>, deps: De
       if (size === undefined) {
         throw new DownloadError(404, 'This output file no longer exists at its recorded destination.');
       }
-      const expectedSize = size;
       const stream = await store.download(file.path);
       const filename = file.path.slice(file.path.lastIndexOf('/') + 1);
-      const fallback = filename.replace(/[^A-Za-z0-9._ -]/g, '_');
-      const encoded = encodeURIComponent(filename).replace(
-        /['()*]/g,
-        (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
-      );
-      res.setHeader('Cache-Control', 'no-store');
-      res.setHeader('Content-Type', 'application/octet-stream');
-      res.setHeader('Content-Disposition', `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`);
-      res.setHeader('Content-Length', String(size));
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      const reader = stream.getReader();
-      const cancelRead = () => {
-        void reader.cancel().catch(deps.report);
-      };
-      res.once('close', cancelRead);
-      async function* bytes() {
-        let transferred = 0;
-        try {
-          for (;;) {
-            const next = await reader.read();
-            if (next.done) break;
-            transferred += next.value.byteLength;
-            if (transferred > expectedSize) throw new Error('Output file changed during transfer.');
-            yield next.value;
-          }
-          if (transferred !== expectedSize) throw new Error('Output file transfer was incomplete.');
-        } finally {
-          res.off('close', cancelRead);
-          await reader.cancel().catch(deps.report);
-          reader.releaseLock();
-        }
-      }
-      await pipeline(Readable.from(bytes()), res);
+      await streamFileDownload(res, stream, filename, size, deps.report);
     } catch (error) {
       if (!(error instanceof DownloadError)) deps.report(error);
       if (res.headersSent) {

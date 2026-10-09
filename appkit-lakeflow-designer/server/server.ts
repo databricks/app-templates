@@ -609,6 +609,7 @@ await createApp({
         manifest: () => loadManifest(true),
         viewer: requestViewer,
         store: appKitUploadStore,
+        report: (error) => console.error('Uploaded file download failed', error),
       });
 
       app.get('/api/designer/config', async (_req, res) => {

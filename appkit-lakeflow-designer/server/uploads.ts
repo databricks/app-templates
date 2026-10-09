@@ -1,8 +1,9 @@
 import { Readable } from 'node:stream';
 import type { Application, Request } from 'express';
-import { MAX_UPLOAD_SIZE_LABEL, UPLOAD_UNAVAILABLE, type AppStorage } from '../shared/storageConfig';
-import { UploadError, saveUploadStream, type UploadStore } from './fileUploads';
+import { MAX_UPLOAD_SIZE_LABEL, UPLOAD_REFERENCE, UPLOAD_UNAVAILABLE, type AppStorage } from '../shared/storageConfig';
+import { UploadError, resolveUpload, saveUploadStream, type UploadStore } from './fileUploads';
 import { validateFileFormat } from '../shared/fileFormats';
+import { streamFileDownload } from './fileDownloads';
 
 export interface UploadDependencies {
   manifest(): Promise<{
@@ -11,10 +12,47 @@ export interface UploadDependencies {
   } | undefined>;
   viewer(req: Request): string | undefined;
   store(storage: AppStorage): UploadStore;
+  report(error: unknown): void;
 }
 
-export function registerUploadRoutes(app: Pick<Application, 'post'>, deps: UploadDependencies) {
+export function registerUploadRoutes(app: Pick<Application, 'get' | 'post'>, deps: UploadDependencies) {
   let activeUploads = 0;
+
+  app.get('/api/designer/uploads/:parameterName/:reference/download', async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      if (req.method !== 'GET') throw new UploadError(405, 'Use GET to download the file.');
+      if (req.get('range')) throw new UploadError(416, 'Partial downloads are not supported. Retry the full download.');
+      const viewer = deps.viewer(req);
+      if (!viewer) throw new UploadError(401, 'Sign in through Databricks Apps to download files.');
+      const manifest = await deps.manifest();
+      const parameter = manifest?.parameters.find(
+        ({ name, type }) => name === req.params.parameterName && type === 'file',
+      );
+      if (!parameter || !manifest?.storage) {
+        throw new UploadError(404, 'This file parameter is no longer available. Review the app inputs.', {
+          code: UPLOAD_UNAVAILABLE,
+        });
+      }
+      const reference = String(req.params.reference);
+      if (!UPLOAD_REFERENCE.test(reference)) throw new UploadError(400, 'The upload reference is invalid.');
+      const store = deps.store(manifest.storage);
+      const { path, upload } = await resolveUpload(store, manifest.storage, viewer, parameter.name, reference);
+      await streamFileDownload(res, await store.download(path), upload.filename, upload.size, deps.report);
+    } catch (error) {
+      if (!(error instanceof UploadError)) deps.report(error);
+      if (res.headersSent) {
+        res.destroy(error instanceof Error ? error : undefined);
+      } else {
+        res.status(error instanceof UploadError ? error.status : 502).json({
+          ...(error instanceof UploadError && error.code ? { code: error.code } : {}),
+          error: error instanceof UploadError
+            ? error.message
+            : 'Could not download the uploaded file. Check the app volume resource and permissions.',
+        });
+      }
+    }
+  });
 
   app.post('/api/designer/uploads/:parameterName', async (req, res) => {
     let admitted = false;

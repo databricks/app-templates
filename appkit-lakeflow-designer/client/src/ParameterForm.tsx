@@ -81,6 +81,7 @@ export function ParameterForm({
         if (file === undefined) return;
         try {
           nextValues[name] = await cache.upload(name, file, fileFormats);
+          if (!cache.signal.aborted) set(name, nextValues[name]);
         } catch (error) {
           unavailable ||= error instanceof UploadUnavailableError;
           errors[name] = error instanceof Error ? error.message : 'The upload failed.';
@@ -117,6 +118,7 @@ export function ParameterForm({
                 name={parameter.name}
                 fileFormats={parameter.fileFormats}
                 file={stagedFiles[parameter.name]}
+                uploadReference={values[parameter.name]}
                 error={uploadErrors[parameter.name]}
                 onFileChange={(file) => stageFile(parameter, file)}
                 disabled={running || uploading || !runnable}

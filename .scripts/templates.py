@@ -12,6 +12,11 @@ TEMPLATES = {
         "has_memory": True,
         "has_actions": True,
     },
+    "agent-adk": {
+        "sdk": "adk",
+        "bundle_name": "agent_adk",
+        "has_actions": True,
+    },
     "agent-openai-agents-sdk": {
         "sdk": "openai",
         "bundle_name": "agent_openai_agents_sdk",

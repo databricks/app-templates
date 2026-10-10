@@ -1,0 +1,19 @@
+command: ["uv", "run", "start-server"]
+# databricks apps listen by default on port 8000
+#
+# No env vars are required by default. To enable tracing / a session or memory store, add the
+# matching entries below (literal values):
+#
+# env:
+#   # Tracing (set a destination + an experiment). Destination: MLFLOW_TRACKING_URI or
+#   # MLFLOW_TRACING_DESTINATION. Experiment: MLFLOW_EXPERIMENT_ID or MLFLOW_EXPERIMENT_NAME.
+#   - name: MLFLOW_TRACKING_URI
+#     value: "databricks"
+#   - name: MLFLOW_EXPERIMENT_ID
+#     value: "<experiment-id>"
+#   # Durable conversation history: a managed session store name (else local SQLite).
+#   - name: AGENT_SESSION_STORE
+#     value: "<session-store-name>"
+#   # Long-term memory tools: a managed memory store name (registers remember/recall).
+#   - name: AGENT_MEMORY_STORE
+#     value: "<memory-store-name>"

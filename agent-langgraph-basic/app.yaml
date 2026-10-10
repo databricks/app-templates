@@ -1,0 +1,23 @@
+command: ["uv", "run", "start-server"]
+# databricks apps listen by default on port 8000
+#
+# No env vars are required by default. To enable tracing / a session or memory store / Lakebase
+# durability, add the matching entries below (literal values):
+#
+# env:
+#   # Tracing (set both): the destination + the experiment to log to.
+#   - name: MLFLOW_TRACKING_URI
+#     value: "databricks"
+#   - name: MLFLOW_EXPERIMENT_ID
+#     value: "<experiment-id>"
+#   # Durable conversation history: a managed session store name (else local SQLite).
+#   - name: AGENT_SESSION_STORE
+#     value: "<session-store-name>"
+#   # Long-term memory tools: a managed memory store name (registers remember/recall).
+#   - name: AGENT_MEMORY_STORE
+#     value: "<memory-store-name>"
+#   # Long-running background mode + crash recovery: the Lakebase autoscaling endpoint. Also attach
+#   # a Lakebase resource to the app (CAN_CONNECT_AND_CREATE) so the app SP can connect — the env
+#   # var is the address, the resource is the authorization.
+#   - name: LAKEBASE_AUTOSCALING_ENDPOINT
+#     value: "<lakebase-endpoint>"

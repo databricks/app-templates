@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Databricks Apps Load Testing Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d2e;
+    --border: #2a2d3e;
+    --text: #e1e4ed;
+    --muted: #8b8fa3;
+    --accent: #6366f1;
+    --green: #22c55e;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --blue: #3b82f6;
+    --purple: #a855f7;
+    --cyan: #06b6d4;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+    line-height: 1.5;
+  }
+  h1 { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 8px; line-height: 1.7; }
+  .subtitle code { background: #111322; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+  .meta { color: var(--muted); font-size: 12px; margin-bottom: 32px; }
+  .grid { display: grid; gap: 20px; }
+  .grid-2 { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .card h2 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 16px;
+  }
+
+  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  @media (max-width: 900px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+  .kpi {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+  }
+  .kpi-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .kpi-value { font-size: 32px; font-weight: 700; margin: 4px 0; }
+  .kpi-detail { font-size: 12px; color: var(--muted); }
+  .kpi-green .kpi-value { color: var(--green); }
+  .kpi-blue .kpi-value { color: var(--blue); }
+  .kpi-amber .kpi-value { color: var(--amber); }
+  .kpi-purple .kpi-value { color: var(--purple); }
+
+  .chart-container { position: relative; height: 340px; }
+  .chart-container-tall { position: relative; height: 400px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 2px solid var(--border);
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  tr.best { background: rgba(99, 102, 241, 0.1); }
+  tr.best td { font-weight: 600; }
+  .section-title {
+    font-size: 20px;
+    font-weight: 700;
+    margin: 36px 0 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+
+  .tab-bar {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+    background: var(--bg);
+    border-radius: 8px;
+    padding: 4px;
+    border: 1px solid var(--border);
+  }
+  .tab-btn {
+    padding: 8px 16px;
+    border: none;
+    background: none;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .tab-btn:hover { color: var(--text); background: var(--border); }
+  .tab-btn.active { background: var(--accent); color: white; }
+
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+  .slider-row input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 160px;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+  }
+  .slider-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<h1>Databricks Apps Load Testing Dashboard</h1>
+<p style="color:var(--muted);font-size:18px;font-weight:500;margin-bottom:8px">agent_app_1000_10s_medium_w3_r5</p>
+<p class="subtitle">Apps tested: <span style="color:var(--accent)">medium_agent-load-test-medium-w3-5763476629593792</span>: <code>https://agent-load-test-medium-w3-5763476629593792.aws.databricksapps.com</code></p>
+<p class='meta'>Ramp: 20 users/step, 10s/step, max 1000 users</p>
+
+<!-- KPIs -->
+<div class="kpi-grid">
+  <div class="kpi kpi-green">
+    <div class="kpi-label">Best Config (Peak QPS)</div>
+    <div class="kpi-value">medium_agent-load-test-medium-w3-5763476629593792</div>
+    <div class="kpi-detail">118.4 QPS @ 140 users</div>
+  </div>
+  <div class="kpi kpi-purple">
+    <div class="kpi-label">Peak QPS</div>
+    <div class="kpi-value">118.4</div>
+    <div class="kpi-detail">queries/sec &mdash; medium_agent-load-test-medium-w3-5763476629593792 @ 140 users</div>
+  </div>
+  <div class="kpi kpi-blue">
+    <div class="kpi-label">Lowest Latency (p50)</div>
+    <div class="kpi-value">1100ms</div>
+    <div class="kpi-detail">medium_agent-load-test-medium-w3-5763476629593792</div>
+  </div>
+  <div class="kpi kpi-amber">
+    <div class="kpi-label">Total Requests</div>
+    <div class="kpi-value">23,924</div>
+    <div class="kpi-detail">across 1 configs</div>
+  </div>
+</div>
+
+<!-- Charts Row 1: QPS + Latency -->
+<div class="grid grid-2" style="margin-bottom: 20px;">
+  <div class="card">
+    <h2>QPS by Config (Median &amp; Peak)</h2>
+    <div class="chart-container">
+      <canvas id="chartQPS"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Latency by Config (Median &amp; p95)</h2>
+    <div class="chart-container">
+      <canvas id="chartLatency"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Charts Row 2: TTFT + Total Requests -->
+<div class="grid grid-2" style="margin-bottom: 20px;">
+  <div class="card">
+    <h2>TTFT (Time to First Token) by Config</h2>
+    <div class="chart-container">
+      <canvas id="chartTTFT"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Total Requests Served</h2>
+    <div class="chart-container">
+      <canvas id="chartReqs"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Ramp Charts -->
+<div class="section-title">QPS Ramp Progression</div>
+
+<div class="card" style="margin-bottom: 20px;">
+  <h2>QPS Ramp Progression</h2>
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+    <div class="tab-bar" style="margin-bottom:0">
+      <button class="tab-btn active" onclick="toggleRamp('all', 'qps', this)">QPS</button>
+      <button class="tab-btn" onclick="toggleRamp('all', 'latency', this)">Latency</button>
+      <button class="tab-btn" onclick="toggleRamp('all', 'failures', this)">Failures</button>
+    </div>
+    <div class="slider-row"><label for="slider_all" style="color:var(--muted);font-size:12px;white-space:nowrap">Max users:</label><input type="range" id="slider_all" min="20" max="1000" value="1000" step="20" oninput="onSlider('all', this.value)"><span id="sliderVal_all" style="color:var(--text);font-size:13px;min-width:48px;text-align:right">1000</span></div>
+  </div>
+  <div class="chart-container-tall">
+    <canvas id="chartRamp_all"></canvas>
+  </div>
+</div>
+
+<!-- Summary Table -->
+<div class="section-title">Full Results Table</div>
+<div class="card" style="margin-bottom: 24px;">
+  <table>
+    <thead>
+      <tr>
+        <th>Config</th>
+        <th>Peak QPS</th>
+        <th>Users at Peak</th>
+        <th>Total Reqs</th>
+        <th>TTFT p50</th>
+        <th>TTFT p95</th>
+        <th>Latency p50</th>
+        <th>Latency p95</th>
+        <th>Latency p99</th>
+        <th>Fail Rate</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="best">
+        <td><strong>medium_agent-load-test-medium-w3-5763476629593792</strong></td>
+        <td><strong>118.4</strong></td>
+        <td><strong>140</strong></td>
+        <td><strong>23,924</strong></td>
+        <td><strong>1600</strong></td>
+        <td><strong>3200</strong></td>
+        <td><strong>1100</strong></td>
+        <td><strong>2000</strong></td>
+        <td><strong>2400</strong></td>
+        <td><strong>0.0%</strong></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Load Test Parameters -->
+<div class="section-title">Load Test Parameters <span style="font-size:14px;font-weight:400;color:var(--muted)">(test_config.json)</span></div>
+<div class="card" style="margin-bottom: 24px;">
+  <table>
+    <tr><td style="color:var(--muted);width:220px">Max Concurrent Users</td><td>1000</td></tr>
+    <tr><td style="color:var(--muted)">Step Size (users/step)</td><td>20</td></tr>
+    <tr><td style="color:var(--muted)">Step Duration (sec/step)</td><td>10</td></tr>
+    <tr><td style="color:var(--muted)">Number of Steps</td><td>50</td></tr>
+    <tr><td style="color:var(--muted)">Ramp Shape</td><td>20 &rarr; 1000 users</td></tr>
+    <tr><td style="color:var(--muted)">Configs Tested</td><td>1</td></tr>
+    <tr><td style="color:var(--muted)">Total Requests (all configs)</td><td>23,924</td></tr>
+  </table>
+</div>
+
+<script>
+const COLORS = {
+  muted:  '#8b8fa3',
+  grid:   'rgba(255,255,255,0.06)',
+};
+
+const chartDefaults = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: { legend: { labels: { color: '#e1e4ed', padding: 16, usePointStyle: true, pointStyle: 'circle' } } },
+  scales: {
+    x: { ticks: { color: COLORS.muted }, grid: { color: COLORS.grid } },
+    y: { ticks: { color: COLORS.muted }, grid: { color: COLORS.grid } },
+  },
+};
+
+const labels = ["medium_agent-load-test-medium-w3-5763476629593792"];
+const barColors = ["#6366f1"];
+const barColorsAlpha = ["#6366f199"];
+
+// --- QPS Bar Chart (Median + Peak side by side) ---
+new Chart(document.getElementById('chartQPS'), {
+  type: 'bar',
+  data: {
+    labels: labels,
+    datasets: [
+      {
+        label: 'Median QPS',
+        data: [118.4],
+        backgroundColor: barColorsAlpha,
+        borderColor: barColors,
+        borderWidth: 2,
+        borderRadius: 6,
+      },
+      {
+        label: 'Peak QPS',
+        data: [118.4],
+        backgroundColor: 'rgba(168,85,247,0.25)',
+        borderColor: '#a855f7',
+        borderWidth: 1.5,
+        borderRadius: 6,
+      }
+    ]
+  },
+  options: {
+    ...chartDefaults,
+    plugins: {
+      ...chartDefaults.plugins,
+      tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y + ' QPS' } },
+    },
+    scales: {
+      ...chartDefaults.scales,
+      x: { ...chartDefaults.scales.x, title: { display: true, text: 'Config', color: COLORS.muted } },
+      y: { ...chartDefaults.scales.y, title: { display: true, text: 'QPS (queries/sec)', color: COLORS.muted }, beginAtZero: true },
+    }
+  }
+});
+
+// --- Latency Bar Chart (p50 + p95 side by side) ---
+new Chart(document.getElementById('chartLatency'), {
+  type: 'bar',
+  data: {
+    labels: labels,
+    datasets: [
+      {
+        label: 'Median (p50)',
+        data: [1100],
+        backgroundColor: barColorsAlpha,
+        borderColor: barColors,
+        borderWidth: 2,
+        borderRadius: 6,
+      },
+      {
+        label: 'p95',
+        data: [2000],
+        backgroundColor: 'rgba(168,85,247,0.25)',
+        borderColor: '#a855f7',
+        borderWidth: 1.5,
+        borderRadius: 6,
+      }
+    ]
+  },
+  options: {
+    ...chartDefaults,
+    scales: {
+      ...chartDefaults.scales,
+      x: { ...chartDefaults.scales.x, title: { display: true, text: 'Config', color: COLORS.muted } },
+      y: { ...chartDefaults.scales.y, title: { display: true, text: 'Latency (ms)', color: COLORS.muted }, beginAtZero: true },
+    }
+  }
+});
+
+// --- TTFT Bar Chart (p50 + p95 side by side) ---
+new Chart(document.getElementById('chartTTFT'), {
+  type: 'bar',
+  data: {
+    labels: labels,
+    datasets: [
+      {
+        label: 'TTFT p50',
+        data: [1600],
+        backgroundColor: barColorsAlpha,
+        borderColor: barColors,
+        borderWidth: 2,
+        borderRadius: 6,
+      },
+      {
+        label: 'TTFT p95',
+        data: [3200],
+        backgroundColor: 'rgba(168,85,247,0.25)',
+        borderColor: '#a855f7',
+        borderWidth: 1.5,
+        borderRadius: 6,
+      }
+    ]
+  },
+  options: {
+    ...chartDefaults,
+    scales: {
+      ...chartDefaults.scales,
+      x: { ...chartDefaults.scales.x, title: { display: true, text: 'Config', color: COLORS.muted } },
+      y: { ...chartDefaults.scales.y, title: { display: true, text: 'TTFT (ms)', color: COLORS.muted }, beginAtZero: true },
+    }
+  }
+});
+
+// --- Total Requests Bar Chart ---
+new Chart(document.getElementById('chartReqs'), {
+  type: 'bar',
+  data: {
+    labels: labels,
+    datasets: [{
+      label: 'Total Requests',
+      data: [23924],
+      backgroundColor: barColorsAlpha,
+      borderColor: barColors,
+      borderWidth: 2,
+      borderRadius: 6,
+    }]
+  },
+  options: {
+    ...chartDefaults,
+    plugins: {
+      ...chartDefaults.plugins,
+      tooltip: { callbacks: { label: ctx => ctx.parsed.y.toLocaleString() + ' requests' } },
+    },
+    scales: {
+      ...chartDefaults.scales,
+      x: { ...chartDefaults.scales.x, title: { display: true, text: 'Config', color: COLORS.muted } },
+      y: { ...chartDefaults.scales.y, title: { display: true, text: 'Total Requests', color: COLORS.muted }, beginAtZero: true },
+    }
+  }
+});
+
+// --- Ramp Charts ---
+const rampGroups = {"all": {"medium_agent-load-test-medium-w3-5763476629593792": {"qps": [20.0, 41.2, 67.4, 90.0, 110.8, 117.8, 118.4, 103.4, 91.4, 113.7, 117.2, 105.6, 108.0, 109.2, 110.0, 110.0, 102.4, 104.2, 105.0, 101.2, 101.2, 101.0, 95.7, 101.8, 98.6, 94.2, 98.3, 93.4, 100.4, 99.6, 99.6, 89.4, 91.6, 95.0, 98.6, 88.0, 95.4, 94.4, 85.2, 100.4, 84.2, 97.0, 86.4, 90.0, 92.2, 85.4, 92.0, 88.8, 92.2, 86.6], "p50": [700, 700, 700, 700, 700, 700, 700, 710, 710, 720, 730, 740, 750, 760, 780, 790, 800, 810, 830, 840, 860, 880, 890, 910, 920, 930, 950, 960, 980, 990, 1000, 1000, 1000, 1000, 1000, 1000, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1200, 1200, 1200, 1200, 1200, 1200, 1200], "p95": [750, 770, 770, 770, 770, 780, 790, 830, 940, 1000, 1000, 1100, 1100, 1200, 1300, 1300, 1400, 1400, 1500, 1500, 1500, 1600, 1600, 1700, 1700, 1800, 1800, 1900, 1900, 2000, 2000, 2100, 2100, 2100, 2200, 2200, 2300, 2400, 2400, 2500, 2500, 2600, 2600, 2700, 2700, 2800, 2800, 2900, 2900, 2900], "fail_pct": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}}};
+const rampUsers = [20, 40, 60, 80, 100, 120, 140, 160, 180, 200, 220, 240, 260, 280, 300, 320, 340, 360, 380, 400, 420, 440, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, 720, 740, 760, 780, 800, 820, 840, 860, 880, 900, 920, 940, 960, 980, 1000];
+const rampPalette = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#a855f7', '#ec4899', '#14b8a6'];
+
+// Per-group state: current mode and max users
+const rampState = {};
+Object.keys(rampGroups).forEach(group => {
+  rampState[group] = { mode: 'qps', maxUsers: rampUsers[rampUsers.length - 1] || 100 };
+});
+
+function makeRampChart(canvasId, data, mode, maxUsers) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  if (canvas._chart) canvas._chart.destroy();
+
+  // Slice data up to maxUsers
+  const cutoff = rampUsers.findIndex(u => u > maxUsers);
+  const visibleCount = cutoff === -1 ? rampUsers.length : cutoff;
+  const visibleUsers = rampUsers.slice(0, visibleCount);
+
+  const dataKey = mode === 'qps' ? 'qps' : mode === 'failures' ? 'fail_pct' : 'p50';
+  const datasets = Object.entries(data).map(([label, d], i) => ({
+    label: label,
+    data: (d[dataKey] || d.qps).slice(0, visibleCount),
+    borderColor: rampPalette[i % rampPalette.length],
+    backgroundColor: rampPalette[i % rampPalette.length] + '22',
+    borderWidth: 2.5,
+    pointRadius: 3,
+    pointHoverRadius: 6,
+    tension: 0.3,
+    fill: false,
+  }));
+
+  const yLabels = { qps: 'QPS (queries/sec)', latency: 'p50 Latency (ms)', failures: 'Per-Step Failure Rate (failures/sec as % of requests/sec)' };
+  const tooltipSuffix = { qps: ' QPS', latency: 'ms', failures: '% failures' };
+
+  canvas._chart = new Chart(canvas, {
+    type: 'line',
+    data: { labels: visibleUsers, datasets },
+    options: {
+      ...chartDefaults,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        ...chartDefaults.scales,
+        x: { ...chartDefaults.scales.x, title: { display: true, text: 'Concurrent Users', color: COLORS.muted } },
+        y: {
+          ...chartDefaults.scales.y,
+          title: { display: true, text: yLabels[mode] || yLabels.qps, color: COLORS.muted },
+          beginAtZero: true,
+        },
+      },
+      plugins: {
+        ...chartDefaults.plugins,
+        tooltip: {
+          callbacks: {
+            label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y + (tooltipSuffix[mode] || '')
+          }
+        }
+      }
+    }
+  });
+}
+
+function refreshRamp(group) {
+  const s = rampState[group];
+  makeRampChart('chartRamp_' + group, rampGroups[group], s.mode, s.maxUsers);
+}
+
+function toggleRamp(group, mode, btn) {
+  btn.parentElement.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  rampState[group].mode = mode;
+  refreshRamp(group);
+}
+
+function onSlider(group, value) {
+  const maxU = parseInt(value);
+  rampState[group].maxUsers = maxU;
+  document.getElementById('sliderVal_' + group).textContent = maxU;
+  refreshRamp(group);
+}
+
+// Initialize all ramp charts
+Object.keys(rampGroups).forEach(group => {
+  refreshRamp(group);
+});
+</script>
+</body>
+</html>

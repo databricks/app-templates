@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Databricks Apps Load Testing Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d2e;
+    --border: #2a2d3e;
+    --text: #e1e4ed;
+    --muted: #8b8fa3;
+    --accent: #6366f1;
+    --green: #22c55e;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --blue: #3b82f6;
+    --purple: #a855f7;
+    --cyan: #06b6d4;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+    line-height: 1.5;
+  }
+  h1 { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 8px; line-height: 1.7; }
+  .subtitle code { background: #111322; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+  .meta { color: var(--muted); font-size: 12px; margin-bottom: 32px; }
+  .grid { display: grid; gap: 20px; }
+  .grid-2 { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .card h2 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 16px;
+  }
+
+  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  @media (max-width: 900px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+  .kpi {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+  }
+  .kpi-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .kpi-value { font-size: 32px; font-weight: 700; margin: 4px 0; }
+  .kpi-detail { font-size: 12px; color: var(--muted); }
+  .kpi-green .kpi-value { color: var(--green); }
+  .kpi-blue .kpi-value { color: var(--blue); }
+  .kpi-amber .kpi-value { color: var(--amber); }
+  .kpi-purple .kpi-value { color: var(--purple); }
+
+  .chart-container { position: relative; height: 340px; }
+  .chart-container-tall { position: relative; height: 400px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 2px solid var(--border);
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  tr.best { background: rgba(99, 102, 241, 0.1); }
+  tr.best td { font-weight: 600; }
+  .section-title {
+    font-size: 20px;
+    font-weight: 700;
+    margin: 36px 0 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+
+  .tab-bar {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+    background: var(--bg);
+    border-radius: 8px;
+    padding: 4px;
+    border: 1px solid var(--border);
+  }
+  .tab-btn {
+    padding: 8px 16px;
+    border: none;
+    background: none;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .tab-btn:hover { color: var(--text); background: var(--border); }
+  .tab-btn.active { background: var(--accent); color: white; }
+
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+  .slider-row input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 160px;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+  }
+  .slider-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<h1>Databricks Apps Load Testing Dashboard</h1>
+<p style="color:var(--muted);font-size:18px;font-weight:500;margin-bottom:8px">agent_app_1000_10s_load_test_r4</p>
+<p class="subtitle">Apps tested: <span style="color:var(--accent)">medium_agent-load-test-medium-w2-5763476629593792</span>: <code>https://agent-load-test-medium-w2-5763476629593792.aws.databricksapps.com</code> &nbsp;|&nbsp; <span style="color:var(--accent)">medium_agent-load-test-medium-w4-5763476629593792</span>: <code>https://agent-load-test-medium-w4-5763476629593792.aws.databricksapps.com</code> &nbsp;|&nbsp; <span style="color:var(--accent)">medium_agent-load-test-medium-w6-5763476629593792</span>: <code>https://agent-load-test-medium-w6-5763476629593792.aws.databricksapps.com</code> &nbsp;|&nbsp; <span style="color:var(--accent)">medium_agent-load-test-medium-w8-5763476629593792</span>: <code>https://agent-load-test-medium-w8-5763476629593792.aws.databricksapps.com</code> &nbsp;|&nbsp; <span style="color:var(--accent)">large_agent-load-test-large-w6-5763476629593792</span>: <code>https://agent-load-test-large-w6-5763476629593792.aws.databricksapps.com</code> &nbsp;|&nbsp; <span style="color:var(--accent)">large_agent-load-test-large-w8-5763476629593792</span>: <code>https://agent-load-test-large-w8-5763476629593792.aws.databricksapps.com</code> &nbsp;|&nbsp; <span style="color:var(--accent)">large_agent-load-test-large-w10-5763476629593792</span>: <code>https://agent-load-test-large-w10-5763476629593792.aws.databricksapps.com</code> &nbsp;|&nbsp; <span style="color:var(--accent)">large_agent-load-test-large-w12-5763476629593792</span>: <code>https://agent-load-test-large-w12-5763476629593792.aws.databricksapps.com</code></p>
+<p class='meta'>Ramp: 20 users/step, 10s/step, max 1000 users</p>
+
+<!-- KPIs -->
+<div class="kpi-grid">
+  <div class="kpi kpi-green">
+    <div class="kpi-label">Best Config (Peak QPS)</div>
+    <div class="kpi-value">large_agent-load-test-large-w10-5763476629593792</div>
+    <div class="kpi-detail">273.2 QPS @ 360 users</div>
+  </div>
+  <div class="kpi kpi-purple">
+    <div class="kpi-label">Peak QPS</div>
+    <div class="kpi-value">273.2</div>
+    <div class="kpi-detail">queries/sec &mdash; large_agent-load-test-large-w10-5763476629593792 @ 360 users</div>
+  </div>
+  <div class="kpi kpi-blue">
+    <div class="kpi-label">Lowest Latency (p50)</div>
+    <div class="kpi-value">910ms</div>
+    <div class="kpi-detail">large_agent-load-test-large-w6-5763476629593792</div>
+  </div>
+  <div class="kpi kpi-amber">
+    <div class="kpi-label">Total Requests</div>
+    <div class="kpi-value">290,350</div>
+    <div class="kpi-detail">across 8 configs</div>
+  </div>
+</div>
+
+<!-- Charts Row 1: QPS + Latency -->
+<div class="grid grid-2" style="margin-bottom: 20px;">
+  <div class="card">
+    <h2>QPS by Config (Median &amp; Peak)</h2>
+    <div class="chart-container">
+      <canvas id="chartQPS"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Latency by Config (Median &amp; p95)</h2>
+    <div class="chart-container">
+      <canvas id="chartLatency"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Charts Row 2: TTFT + Total Requests -->
+<div class="grid grid-2" style="margin-bottom: 20px;">
+  <div class="card">
+    <h2>TTFT (Time to First Token) by Config</h2>
+    <div class="chart-container">
+      <canvas id="chartTTFT"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Total Requests Served</h2>
+    <div class="chart-container">
+      <canvas id="chartReqs"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Ramp Charts -->
+<div class="section-title">QPS Ramp Progression</div>
+<div class="grid grid-2" style="margin-bottom: 20px;">
+  <div class="card">
+    <h2>Large_agent Compute &mdash; QPS vs Users</h2>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+      <div class="tab-bar" style="margin-bottom:0">
+        <button class="tab-btn active" onclick="toggleRamp('large_agent', 'qps', this)">QPS</button>
+        <button class="tab-btn" onclick="toggleRamp('large_agent', 'latency', this)">Latency</button>
+        <button class="tab-btn" onclick="toggleRamp('large_agent', 'failures', this)">Failures</button>
+      </div>
+      <div class="slider-row"><label for="slider_large_agent" style="color:var(--muted);font-size:12px;white-space:nowrap">Max users:</label><input type="range" id="slider_large_agent" min="20" max="1000" value="1000" step="20" oninput="onSlider('large_agent', this.value)"><span id="sliderVal_large_agent" style="color:var(--text);font-size:13px;min-width:48px;text-align:right">1000</span></div>
+    </div>
+    <div class="chart-container-tall">
+      <canvas id="chartRamp_large_agent"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Medium_agent Compute &mdash; QPS vs Users</h2>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+      <div class="tab-bar" style="margin-bottom:0">
+        <button class="tab-btn active" onclick="toggleRamp('medium_agent', 'qps', this)">QPS</button>
+        <button class="tab-btn" onclick="toggleRamp('medium_agent', 'latency', this)">Latency</button>
+        <button class="tab-btn" onclick="toggleRamp('medium_agent', 'failures', this)">Failures</button>
+      </div>
+      <div class="slider-row"><label for="slider_medium_agent" style="color:var(--muted);font-size:12px;white-space:nowrap">Max users:</label><input type="range" id="slider_medium_agent" min="20" max="1000" value="1000" step="20" oninput="onSlider('medium_agent', this.value)"><span id="sliderVal_medium_agent" style="color:var(--text);font-size:13px;min-width:48px;text-align:right">1000</span></div>
+    </div>
+    <div class="chart-container-tall">
+      <canvas id="chartRamp_medium_agent"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Summary Table -->
+<div class="section-title">Full Results Table</div>
+<div class="card" style="margin-bottom: 24px;">
+  <table>
+    <thead>
+      <tr>
+        <th>Config</th>
+        <th>Peak QPS</th>
+        <th>Users at Peak</th>
+        <th>Total Reqs</th>
+        <th>TTFT p50</th>
+        <th>TTFT p95</th>
+        <th>Latency p50</th>
+        <th>Latency p95</th>
+        <th>Latency p99</th>
+        <th>Fail Rate</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>large_agent-load-test-large-w6-5763476629593792</td>
+        <td>265.4</td>
+        <td>280</td>
+        <td>50,641</td>
+        <td>1100</td>
+        <td>2400</td>
+        <td>910</td>
+        <td>1600</td>
+        <td>2200</td>
+        <td>0.0%</td>
+      </tr>
+      <tr>
+        <td>large_agent-load-test-large-w8-5763476629593792</td>
+        <td>257.1</td>
+        <td>380</td>
+        <td>49,679</td>
+        <td>1100</td>
+        <td>2300</td>
+        <td>920</td>
+        <td>1400</td>
+        <td>2300</td>
+        <td>0.0%</td>
+      </tr>
+      <tr class="best">
+        <td><strong>large_agent-load-test-large-w10-5763476629593792</strong></td>
+        <td><strong>273.2</strong></td>
+        <td><strong>360</strong></td>
+        <td><strong>50,255</strong></td>
+        <td><strong>1100</strong></td>
+        <td><strong>2100</strong></td>
+        <td><strong>910</strong></td>
+        <td><strong>1300</strong></td>
+        <td><strong>2400</strong></td>
+        <td><strong>0.0%</strong></td>
+      </tr>
+      <tr>
+        <td>large_agent-load-test-large-w12-5763476629593792</td>
+        <td>269.8</td>
+        <td>280</td>
+        <td>48,325</td>
+        <td>1100</td>
+        <td>2100</td>
+        <td>920</td>
+        <td>1400</td>
+        <td>2400</td>
+        <td>0.0%</td>
+      </tr>
+      <tr>
+        <td>medium_agent-load-test-medium-w2-5763476629593792</td>
+        <td>151.4</td>
+        <td>240</td>
+        <td>24,669</td>
+        <td>1800</td>
+        <td>3900</td>
+        <td>1200</td>
+        <td>3000</td>
+        <td>5700</td>
+        <td>0.0%</td>
+      </tr>
+      <tr>
+        <td>medium_agent-load-test-medium-w4-5763476629593792</td>
+        <td>113.8</td>
+        <td>140</td>
+        <td>22,396</td>
+        <td>1700</td>
+        <td>3500</td>
+        <td>1100</td>
+        <td>2200</td>
+        <td>2700</td>
+        <td>0.1%</td>
+      </tr>
+      <tr>
+        <td>medium_agent-load-test-medium-w6-5763476629593792</td>
+        <td>108.2</td>
+        <td>160</td>
+        <td>22,115</td>
+        <td>1800</td>
+        <td>3700</td>
+        <td>1200</td>
+        <td>1900</td>
+        <td>3000</td>
+        <td>0.0%</td>
+      </tr>
+      <tr>
+        <td>medium_agent-load-test-medium-w8-5763476629593792</td>
+        <td>108.9</td>
+        <td>200</td>
+        <td>22,270</td>
+        <td>1700</td>
+        <td>3500</td>
+        <td>1200</td>
+        <td>1700</td>
+        <td>3300</td>
+        <td>0.0%</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Load Test Parameters -->
+<div class="section-title">Load Test Parameters <span style="font-size:14px;font-weight:400;color:var(--muted)">(test_config.json)</span></div>
+<div class="card" style="margin-bottom: 24px;">
+  <table>
+    <tr><td style="color:var(--muted);width:220px">Max Concurrent Users</td><td>1000</td></tr>
+    <tr><td style="color:var(--muted)">Step Size (users/step)</td><td>20</td></tr>
+    <tr><td style="color:var(--muted)">Step Duration (sec/step)</td><td>10</td></tr>
+    <tr><td style="color:var(--muted)">Number of Steps</td><td>50</td></tr>
+    <tr><td style="color:var(--muted)">Ramp Shape</td><td>20 &rarr; 1000 users</td></tr>
+    <tr><td style="color:var(--muted)">Configs Tested</td><td>8</td></tr>
+    <tr><td style="color:var(--muted)">Total Requests (all configs)</td><td>290,350</td></tr>
+  </table>
+</div>
+
+<script>
+const COLORS = {
+  muted:  '#8b8fa3',
+  grid:   'rgba(255,255,255,0.06)',
+};
+
+const chartDefaults = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: { legend: { labels: { color: '#e1e4ed', padding: 16, usePointStyle: true, pointStyle: 'circle' } } },
+  scales: {
+    x: { ticks: { color: COLORS.muted }, grid: { color: COLORS.grid } },
+    y: { ticks: { color: COLORS.muted }, grid: { color: COLORS.grid } },
+  },
+};
+
+const labels = ["large_agent-load-test-large-w6-5763476629593792", "large_agent-load-test-large-w8-5763476629593792", "large_agent-load-test-large-w10-5763476629593792", "large_agent-load-test-large-w12-5763476629593792", "medium_agent-load-test-medium-w2-5763476629593792", "medium_agent-load-test-medium-w4-5763476629593792", "medium_agent-load-test-medium-w6-5763476629593792", "medium_agent-load-test-medium-w8-5763476629593792"];
+const barColors = ["#6366f1", "#06b6d4", "#22c55e", "#f59e0b", "#ef4444", "#a855f7", "#ec4899", "#14b8a6"];
+const barColorsAlpha = ["#6366f199", "#06b6d499", "#22c55e99", "#f59e0b99", "#ef444499", "#a855f799", "#ec489999", "#14b8a699"];
+
+// --- QPS Bar Chart (Median + Peak side by side) ---
+new Chart(document.getElementById('chartQPS'), {
+  type: 'bar',
+  data: {
+    labels: labels,
+    datasets: [
+      {
+        label: 'Median QPS',
+        data: [265.4, 257.1, 273.2, 269.8, 151.4, 113.8, 108.2, 108.9],
+        backgroundColor: barColorsAlpha,
+        borderColor: barColors,
+        borderWidth: 2,
+        borderRadius: 6,
+      },
+      {
+        label: 'Peak QPS',
+        data: [265.4, 257.1, 273.2, 269.8, 151.4, 113.8, 108.2, 108.9],
+        backgroundColor: 'rgba(168,85,247,0.25)',
+        borderColor: '#a855f7',
+        borderWidth: 1.5,
+        borderRadius: 6,
+      }
+    ]
+  },
+  options: {
+    ...chartDefaults,
+    plugins: {
+      ...chartDefaults.plugins,
+      tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y + ' QPS' } },
+    },
+    scales: {
+      ...chartDefaults.scales,
+      x: { ...chartDefaults.scales.x, title: { display: true, text: 'Config', color: COLORS.muted } },
+      y: { ...chartDefaults.scales.y, title: { display: true, text: 'QPS (queries/sec)', color: COLORS.muted }, beginAtZero: true },
+    }
+  }
+});
+
+// --- Latency Bar Chart (p50 + p95 side by side) ---
+new Chart(document.getElementById('chartLatency'), {
+  type: 'bar',
+  data: {
+    labels: labels,
+    datasets: [
+      {
+        label: 'Median (p50)',
+        data: [910, 920, 910, 920, 1200, 1100, 1200, 1200],
+        backgroundColor: barColorsAlpha,
+        borderColor: barColors,
+        borderWidth: 2,
+        borderRadius: 6,
+      },
+      {
+        label: 'p95',
+        data: [1600, 1400, 1300, 1400, 3000, 2200, 1900, 1700],
+        backgroundColor: 'rgba(168,85,247,0.25)',
+        borderColor: '#a855f7',
+        borderWidth: 1.5,
+        borderRadius: 6,
+      }
+    ]
+  },
+  options: {
+    ...chartDefaults,
+    scales: {
+      ...chartDefaults.scales,
+      x: { ...chartDefaults.scales.x, title: { display: true, text: 'Config', color: COLORS.muted } },
+      y: { ...chartDefaults.scales.y, title: { display: true, text: 'Latency (ms)', color: COLORS.muted }, beginAtZero: true },
+    }
+  }
+});
+
+// --- TTFT Bar Chart (p50 + p95 side by side) ---
+new Chart(document.getElementById('chartTTFT'), {
+  type: 'bar',
+  data: {
+    labels: labels,
+    datasets: [
+      {
+        label: 'TTFT p50',
+        data: [1100, 1100, 1100, 1100, 1800, 1700, 1800, 1700],
+        backgroundColor: barColorsAlpha,
+        borderColor: barColors,
+        borderWidth: 2,
+        borderRadius: 6,
+      },
+      {
+        label: 'TTFT p95',
+        data: [2400, 2300, 2100, 2100, 3900, 3500, 3700, 3500],
+        backgroundColor: 'rgba(168,85,247,0.25)',
+        borderColor: '#a855f7',
+        borderWidth: 1.5,
+        borderRadius: 6,
+      }
+    ]
+  },
+  options: {
+    ...chartDefaults,
+    scales: {
+      ...chartDefaults.scales,
+      x: { ...chartDefaults.scales.x, title: { display: true, text: 'Config', color: COLORS.muted } },
+      y: { ...chartDefaults.scales.y, title: { display: true, text: 'TTFT (ms)', color: COLORS.muted }, beginAtZero: true },
+    }
+  }
+});
+
+// --- Total Requests Bar Chart ---
+new Chart(document.getElementById('chartReqs'), {
+  type: 'bar',
+  data: {
+    labels: labels,
+    datasets: [{
+      label: 'Total Requests',
+      data: [50641, 49679, 50255, 48325, 24669, 22396, 22115, 22270],
+      backgroundColor: barColorsAlpha,
+      borderColor: barColors,
+      borderWidth: 2,
+      borderRadius: 6,
+    }]
+  },
+  options: {
+    ...chartDefaults,
+    plugins: {
+      ...chartDefaults.plugins,
+      tooltip: { callbacks: { label: ctx => ctx.parsed.y.toLocaleString() + ' requests' } },
+    },
+    scales: {
+      ...chartDefaults.scales,
+      x: { ...chartDefaults.scales.x, title: { display: true, text: 'Config', color: COLORS.muted } },
+      y: { ...chartDefaults.scales.y, title: { display: true, text: 'Total Requests', color: COLORS.muted }, beginAtZero: true },
+    }
+  }
+});
+
+// --- Ramp Charts ---
+const rampGroups = {"medium_agent": {"medium_agent-load-test-medium-w2-5763476629593792": {"qps": [17.1, 40.0, 64.0, 83.2, 98.8, 120.8, 131.1, 139.6, 149.0, 147.8, 145.4, 151.4, 144.6, 143.6, 138.2, 131.4, 131.5, 78.4, 111.6, 88.0, 95.6, 88.0, 90.0, 105.2, 81.4, 95.2, 82.7, 80.6, 81.8, 86.2, 91.8, 94.0, 90.9, 88.6, 90.0, 89.0, 88.0, 90.4, 82.6, 92.6, 80.4, 90.5, 82.8, 91.0, 87.8, 88.0, 84.8, 82.6, 83.6, 82.8], "p50": [760, 750, 760, 760, 760, 770, 770, 780, 790, 790, 800, 810, 810, 820, 830, 840, 850, 860, 860, 870, 880, 890, 900, 910, 920, 920, 930, 940, 950, 960, 970, 990, 1000, 1000, 1000, 1100, 1100, 1100, 1100, 1100, 1100, 1200, 1200, 1200, 1200, 1200, 1200, 1200, 1300, 1300], "p95": [890, 840, 930, 890, 1000, 920, 930, 1000, 1200, 1200, 1300, 1400, 1400, 1400, 1400, 1400, 1500, 1600, 1700, 1800, 2100, 2200, 2300, 2400, 2500, 2600, 2600, 2700, 2700, 2700, 2700, 2700, 2700, 2700, 2800, 2800, 2800, 2800, 2900, 2900, 2900, 3000, 3000, 3000, 3100, 3100, 3200, 3300, 3400, 3500], "fail_pct": [0.0, 0.0, 0.0, 0.2, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, "medium_agent-load-test-medium-w4-5763476629593792": {"qps": [15.0, 39.8, 66.0, 86.0, 96.1, 110.9, 113.8, 109.4, 104.2, 107.8, 107.4, 104.8, 99.4, 101.2, 104.7, 98.2, 98.0, 89.8, 104.0, 87.4, 96.4, 94.8, 94.0, 88.6, 93.8, 87.8, 93.2, 92.8, 89.8, 86.4, 93.1, 84.4, 91.0, 85.0, 90.6, 83.0, 90.0, 86.3, 83.0, 86.6, 81.4, 85.8, 79.4, 84.2, 82.6, 82.2, 81.8, 84.8, 78.7, 81.3], "p50": [770, 770, 770, 770, 780, 790, 790, 800, 810, 820, 830, 840, 850, 860, 870, 890, 900, 910, 920, 930, 950, 970, 980, 990, 1000, 1000, 1000, 1000, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1200, 1200, 1200, 1200, 1200, 1200, 1200, 1200, 1300, 1300, 1300, 1300, 1300, 1300], "p95": [1700, 900, 890, 880, 880, 890, 910, 940, 980, 1000, 1100, 1100, 1200, 1200, 1300, 1300, 1400, 1500, 1500, 1500, 1600, 1700, 1800, 1800, 1900, 1900, 2000, 2000, 2100, 2100, 2200, 2200, 2300, 2300, 2400, 2400, 2500, 2500, 2600, 2600, 2700, 2700, 2700, 2800, 2800, 2900, 2900, 3000, 3000, 3000], "fail_pct": [0.0, 0.0, 0.0, 0.0, 0.1, 0.1, 0.2, 0.0, 0.0, 0.0, 0.0, 0.2, 0.0, 0.2, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.1]}, "medium_agent-load-test-medium-w6-5763476629593792": {"qps": [15.0, 41.4, 64.8, 84.2, 100.8, 105.0, 101.2, 108.2, 104.0, 97.2, 98.3, 96.7, 100.8, 96.6, 92.4, 91.2, 91.8, 95.8, 91.4, 94.6, 93.0, 90.8, 91.0, 88.0, 87.4, 91.6, 92.8, 91.6, 87.6, 83.8, 90.2, 88.8, 85.8, 87.8, 88.2, 87.4, 86.7, 93.3, 82.4, 90.0, 80.6, 86.8, 83.2, 85.4, 83.8, 86.8, 84.7, 89.6, 83.8, 79.8], "p50": [740, 750, 750, 750, 750, 760, 760, 770, 780, 790, 800, 810, 820, 840, 860, 880, 890, 900, 910, 920, 940, 960, 980, 990, 1000, 1000, 1000, 1000, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1200, 1200, 1200, 1200, 1200, 1200, 1200, 1200, 1300, 1300, 1300, 1300, 1300, 1300, 1300], "p95": [1200, 820, 810, 820, 820, 850, 900, 930, 980, 1000, 1100, 1100, 1200, 1200, 1300, 1400, 1400, 1400, 1500, 1600, 1600, 1700, 1700, 1800, 1800, 1800, 1900, 2000, 2000, 2100, 2100, 2200, 2200, 2200, 2300, 2300, 2400, 2400, 2400, 2500, 2500, 2600, 2600, 2700, 2800, 2800, 2900, 3000, 3000, 3100], "fail_pct": [0.0, 0.0, 0.0, 0.0, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0]}, "medium_agent-load-test-medium-w8-5763476629593792": {"qps": [15.0, 40.8, 64.4, 87.6, 106.8, 96.8, 103.9, 100.2, 94.6, 108.9, 91.2, 94.2, 103.4, 93.2, 97.8, 97.8, 89.4, 96.0, 97.6, 87.2, 94.2, 92.3, 89.1, 96.6, 88.2, 90.4, 96.0, 87.3, 92.4, 86.9, 90.6, 94.6, 85.2, 90.5, 89.0, 86.8, 88.6, 89.2, 81.6, 97.0, 77.8, 91.6, 85.0, 88.6, 82.8, 91.3, 79.8, 88.2, 88.4, 83.0], "p50": [740, 740, 750, 760, 760, 770, 770, 780, 790, 790, 800, 810, 810, 820, 830, 850, 870, 880, 900, 910, 920, 930, 950, 970, 990, 1000, 1000, 1000, 1000, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1200, 1200, 1200, 1200, 1200, 1200, 1200, 1300, 1300, 1300, 1300, 1300, 1300], "p95": [870, 810, 810, 820, 820, 850, 870, 910, 940, 980, 1000, 1100, 1100, 1200, 1200, 1300, 1400, 1400, 1500, 1500, 1600, 1600, 1700, 1700, 1800, 1800, 1900, 1900, 2000, 2000, 2100, 2100, 2100, 2200, 2200, 2300, 2400, 2400, 2400, 2500, 2500, 2600, 2600, 2600, 2700, 2800, 2800, 2900, 2900, 3000], "fail_pct": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.1, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.1, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0]}}, "large_agent": {"large_agent-load-test-large-w6-5763476629593792": {"qps": [17.1, 44.0, 66.4, 90.8, 115.4, 142.2, 160.9, 178.9, 208.4, 205.6, 224.4, 238.0, 219.6, 265.4, 230.2, 246.9, 235.8, 245.9, 247.6, 229.4, 248.6, 232.0, 233.3, 227.2, 221.8, 246.1, 205.0, 243.7, 205.6, 213.2, 230.2, 197.0, 239.6, 218.2, 217.0, 201.6, 219.2, 206.8, 210.4, 199.0, 244.2, 211.2, 185.2, 213.8, 199.8, 212.6, 192.4, 225.0, 203.4, 194.2], "p50": [740, 740, 740, 750, 750, 750, 750, 760, 760, 760, 760, 760, 760, 770, 770, 770, 770, 780, 780, 790, 790, 790, 800, 800, 810, 810, 820, 820, 830, 830, 840, 850, 850, 860, 870, 880, 880, 890, 890, 900, 910, 910, 920, 920, 930, 940, 950, 950, 960, 970], "p95": [780, 780, 800, 800, 800, 800, 800, 810, 830, 840, 840, 860, 860, 900, 970, 970, 1000, 1000, 1000, 1100, 1100, 1100, 1200, 1200, 1300, 1300, 1300, 1300, 1300, 1400, 1400, 1400, 1500, 1500, 1600, 1600, 1600, 1700, 1700, 1800, 1800, 1900, 1900, 1900, 2000, 2000, 2000, 2000, 2000, 2100], "fail_pct": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0]}, "large_agent-load-test-large-w8-5763476629593792": {"qps": [17.1, 40.0, 64.4, 90.3, 113.9, 136.6, 161.4, 188.3, 194.8, 224.2, 225.0, 241.6, 253.8, 222.8, 240.1, 240.9, 252.5, 227.6, 257.1, 214.6, 245.5, 204.2, 246.2, 216.1, 226.8, 215.1, 230.1, 191.2, 228.6, 212.8, 227.1, 197.6, 206.6, 223.4, 203.4, 200.4, 222.4, 178.4, 192.8, 230.6, 199.4, 189.2, 207.6, 189.6, 211.6, 193.0, 174.4, 202.2, 196.0, 194.5], "p50": [750, 750, 750, 750, 760, 760, 760, 760, 770, 770, 770, 770, 770, 770, 780, 780, 780, 780, 790, 790, 800, 800, 800, 810, 810, 820, 820, 830, 830, 840, 850, 850, 860, 870, 880, 880, 890, 900, 900, 910, 910, 920, 930, 930, 940, 950, 960, 970, 980, 980], "p95": [820, 810, 800, 810, 830, 830, 830, 830, 840, 840, 840, 850, 860, 890, 910, 960, 990, 1000, 1100, 1100, 1100, 1100, 1200, 1200, 1200, 1200, 1200, 1300, 1300, 1300, 1400, 1400, 1400, 1400, 1500, 1500, 1500, 1500, 1600, 1600, 1600, 1600, 1700, 1700, 1800, 1800, 1800, 1900, 1900, 1900], "fail_pct": [0.0, 0.0, 0.0, 0.1, 0.1, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1]}, "large_agent-load-test-large-w10-5763476629593792": {"qps": [17.1, 40.0, 64.4, 91.3, 115.7, 141.4, 162.0, 164.8, 203.0, 196.9, 220.7, 242.1, 252.0, 255.3, 252.2, 257.0, 266.6, 273.2, 224.4, 212.4, 248.4, 205.0, 233.2, 225.0, 217.2, 239.3, 204.4, 225.4, 204.4, 213.5, 204.4, 220.2, 225.0, 215.2, 202.7, 212.6, 217.7, 215.1, 202.7, 202.0, 190.6, 206.6, 210.6, 193.0, 196.8, 200.7, 203.0, 198.4, 189.6, 188.9], "p50": [760, 760, 750, 750, 760, 760, 760, 760, 760, 760, 760, 760, 770, 770, 770, 770, 780, 780, 780, 790, 790, 790, 800, 800, 800, 810, 810, 820, 820, 830, 840, 840, 850, 860, 870, 870, 880, 880, 890, 900, 900, 910, 910, 920, 920, 930, 940, 950, 960, 970], "p95": [830, 820, 810, 830, 820, 820, 820, 830, 830, 840, 840, 850, 880, 900, 910, 950, 1000, 1000, 1100, 1100, 1100, 1100, 1200, 1200, 1200, 1200, 1300, 1300, 1300, 1300, 1400, 1400, 1400, 1400, 1500, 1500, 1500, 1500, 1500, 1600, 1600, 1600, 1700, 1700, 1700, 1800, 1800, 1800, 1800, 1900], "fail_pct": [0.0, 0.0, 0.0, 0.1, 0.1, 0.0, 0.1, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1]}, "large_agent-load-test-large-w12-5763476629593792": {"qps": [17.1, 40.0, 66.4, 92.2, 117.0, 140.8, 164.0, 167.6, 201.2, 193.4, 219.0, 229.2, 223.4, 269.8, 244.6, 259.2, 220.7, 238.9, 245.6, 239.4, 211.8, 229.0, 207.3, 202.3, 214.4, 209.1, 215.6, 201.0, 211.0, 193.4, 207.5, 204.6, 203.1, 200.0, 197.4, 190.8, 186.9, 191.0, 191.7, 203.8, 190.0, 186.6, 180.9, 199.5, 205.8, 189.4, 189.6, 179.6, 200.6, 196.4], "p50": [730, 750, 750, 750, 750, 750, 760, 760, 760, 770, 770, 770, 770, 770, 780, 780, 780, 790, 790, 790, 800, 800, 810, 810, 810, 820, 820, 830, 840, 840, 850, 860, 870, 870, 880, 880, 890, 890, 900, 900, 910, 910, 920, 920, 930, 940, 950, 960, 970, 970], "p95": [770, 820, 800, 800, 800, 800, 820, 830, 830, 1100, 990, 960, 990, 970, 1000, 990, 1000, 1000, 1000, 1000, 1100, 1100, 1100, 1200, 1200, 1200, 1300, 1300, 1300, 1400, 1400, 1400, 1400, 1500, 1500, 1500, 1600, 1600, 1600, 1600, 1700, 1700, 1700, 1800, 1800, 1800, 1800, 1800, 1900, 1900], "fail_pct": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.1, 0.0, 0.0, 0.0, 0.1, 0.1, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0]}}};
+const rampUsers = [20, 40, 60, 80, 100, 120, 140, 160, 180, 200, 220, 240, 260, 280, 300, 320, 340, 360, 380, 400, 420, 440, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, 720, 740, 760, 780, 800, 820, 840, 860, 880, 900, 920, 940, 960, 980, 1000];
+const rampPalette = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#a855f7', '#ec4899', '#14b8a6'];
+
+// Per-group state: current mode and max users
+const rampState = {};
+Object.keys(rampGroups).forEach(group => {
+  rampState[group] = { mode: 'qps', maxUsers: rampUsers[rampUsers.length - 1] || 100 };
+});
+
+function makeRampChart(canvasId, data, mode, maxUsers) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  if (canvas._chart) canvas._chart.destroy();
+
+  // Slice data up to maxUsers
+  const cutoff = rampUsers.findIndex(u => u > maxUsers);
+  const visibleCount = cutoff === -1 ? rampUsers.length : cutoff;
+  const visibleUsers = rampUsers.slice(0, visibleCount);
+
+  const dataKey = mode === 'qps' ? 'qps' : mode === 'failures' ? 'fail_pct' : 'p50';
+  const datasets = Object.entries(data).map(([label, d], i) => ({
+    label: label,
+    data: (d[dataKey] || d.qps).slice(0, visibleCount),
+    borderColor: rampPalette[i % rampPalette.length],
+    backgroundColor: rampPalette[i % rampPalette.length] + '22',
+    borderWidth: 2.5,
+    pointRadius: 3,
+    pointHoverRadius: 6,
+    tension: 0.3,
+    fill: false,
+  }));
+
+  const yLabels = { qps: 'QPS (queries/sec)', latency: 'p50 Latency (ms)', failures: 'Per-Step Failure Rate (failures/sec as % of requests/sec)' };
+  const tooltipSuffix = { qps: ' QPS', latency: 'ms', failures: '% failures' };
+
+  canvas._chart = new Chart(canvas, {
+    type: 'line',
+    data: { labels: visibleUsers, datasets },
+    options: {
+      ...chartDefaults,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        ...chartDefaults.scales,
+        x: { ...chartDefaults.scales.x, title: { display: true, text: 'Concurrent Users', color: COLORS.muted } },
+        y: {
+          ...chartDefaults.scales.y,
+          title: { display: true, text: yLabels[mode] || yLabels.qps, color: COLORS.muted },
+          beginAtZero: true,
+        },
+      },
+      plugins: {
+        ...chartDefaults.plugins,
+        tooltip: {
+          callbacks: {
+            label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y + (tooltipSuffix[mode] || '')
+          }
+        }
+      }
+    }
+  });
+}
+
+function refreshRamp(group) {
+  const s = rampState[group];
+  makeRampChart('chartRamp_' + group, rampGroups[group], s.mode, s.maxUsers);
+}
+
+function toggleRamp(group, mode, btn) {
+  btn.parentElement.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  rampState[group].mode = mode;
+  refreshRamp(group);
+}
+
+function onSlider(group, value) {
+  const maxU = parseInt(value);
+  rampState[group].maxUsers = maxU;
+  document.getElementById('sliderVal_' + group).textContent = maxU;
+  refreshRamp(group);
+}
+
+// Initialize all ramp charts
+Object.keys(rampGroups).forEach(group => {
+  refreshRamp(group);
+});
+</script>
+</body>
+</html>

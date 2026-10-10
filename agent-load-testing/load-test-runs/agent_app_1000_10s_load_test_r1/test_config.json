@@ -1,0 +1,37 @@
+{
+  "run_name": "agent_app_1000_10s_load_test_r1",
+  "max_users": 1000,
+  "step_size": 20,
+  "step_duration": 10,
+  "spawn_rate": 20,
+  "app_urls": [
+    "https://agent-load-test-medium-w2-5763476629593792.aws.databricksapps.com",
+    "https://agent-load-test-medium-w4-5763476629593792.aws.databricksapps.com",
+    "https://agent-load-test-medium-w6-5763476629593792.aws.databricksapps.com",
+    "https://agent-load-test-medium-w8-5763476629593792.aws.databricksapps.com",
+    "https://agent-load-test-large-w6-5763476629593792.aws.databricksapps.com",
+    "https://agent-load-test-large-w8-5763476629593792.aws.databricksapps.com",
+    "https://agent-load-test-large-w10-5763476629593792.aws.databricksapps.com",
+    "https://agent-load-test-large-w12-5763476629593792.aws.databricksapps.com"
+  ],
+  "labels": [
+    "medium_agent-load-test-medium-w2-5763476629593792",
+    "medium_agent-load-test-medium-w4-5763476629593792",
+    "medium_agent-load-test-medium-w6-5763476629593792",
+    "medium_agent-load-test-medium-w8-5763476629593792",
+    "large_agent-load-test-large-w6-5763476629593792",
+    "large_agent-load-test-large-w8-5763476629593792",
+    "large_agent-load-test-large-w10-5763476629593792",
+    "large_agent-load-test-large-w12-5763476629593792"
+  ],
+  "compute_sizes": [
+    "medium",
+    "medium",
+    "medium",
+    "medium",
+    "large",
+    "large",
+    "large",
+    "large"
+  ]
+}

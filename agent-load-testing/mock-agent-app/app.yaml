@@ -1,0 +1,10 @@
+command: ["/bin/bash", "./scripts/start-app.sh"]
+env:
+  - name: MLFLOW_TRACKING_URI
+    value: "databricks"
+  - name: UVICORN_WORKERS
+    value: "4"
+  - name: MOCK_CHUNK_DELAY_MS
+    value: "10"
+  - name: MOCK_CHUNK_COUNT
+    value: "80"

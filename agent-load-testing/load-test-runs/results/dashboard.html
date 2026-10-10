@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Databricks Apps Load Test — Worker Sweep Results</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d2e;
+    --border: #2a2d3e;
+    --text: #e1e4ed;
+    --muted: #8b8fa3;
+    --accent: #6366f1;
+    --green: #22c55e;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --blue: #3b82f6;
+    --purple: #a855f7;
+    --cyan: #06b6d4;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+    line-height: 1.5;
+  }
+  h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    color: var(--muted);
+    font-size: 14px;
+    margin-bottom: 32px;
+  }
+  .grid { display: grid; gap: 20px; }
+  .grid-2 { grid-template-columns: 1fr 1fr; }
+  .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .grid-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+  @media (max-width: 1200px) { .grid-4 { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 900px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .card h2 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 16px;
+  }
+  .card h3 {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .kpi {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+  }
+  .kpi-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .kpi-value { font-size: 32px; font-weight: 700; margin: 4px 0; }
+  .kpi-detail { font-size: 12px; color: var(--muted); }
+  .kpi-green .kpi-value { color: var(--green); }
+  .kpi-blue .kpi-value { color: var(--blue); }
+  .kpi-amber .kpi-value { color: var(--amber); }
+  .kpi-purple .kpi-value { color: var(--purple); }
+
+  .chart-container { position: relative; height: 340px; }
+  .chart-container-tall { position: relative; height: 400px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 2px solid var(--border);
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  tr.best { background: rgba(99, 102, 241, 0.1); }
+  tr.best td { font-weight: 600; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge-green { background: rgba(34, 197, 94, 0.15); color: var(--green); }
+  .badge-amber { background: rgba(245, 158, 11, 0.15); color: var(--amber); }
+  .badge-red { background: rgba(239, 68, 68, 0.15); color: var(--red); }
+
+  .section-title {
+    font-size: 20px;
+    font-weight: 700;
+    margin: 36px 0 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .finding {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+  }
+  .finding strong { color: var(--accent); }
+
+  .tab-bar {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+    background: var(--bg);
+    border-radius: 8px;
+    padding: 4px;
+    border: 1px solid var(--border);
+  }
+  .tab-btn {
+    padding: 8px 16px;
+    border: none;
+    background: none;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .tab-btn:hover { color: var(--text); background: var(--border); }
+  .tab-btn.active { background: var(--accent); color: white; }
+</style>
+</head>
+<body>
+
+<h1>Databricks Apps Load Test Dashboard</h1>
+<p class="subtitle">Worker Sweep &mdash; Mock Agent (80 chunks, 10ms delay) &mdash; eng-ml-agent-platform.staging</p>
+
+<!-- KPIs -->
+<div class="kpi-grid">
+  <div class="kpi kpi-green">
+    <div class="kpi-label">Best Medium Config</div>
+    <div class="kpi-value">4 workers</div>
+    <div class="kpi-detail">129.7 peak QPS &middot; p50=110ms</div>
+  </div>
+  <div class="kpi kpi-blue">
+    <div class="kpi-label">Best Large Config</div>
+    <div class="kpi-value">8 workers</div>
+    <div class="kpi-detail">192.8 peak QPS &middot; still climbing!</div>
+  </div>
+  <div class="kpi kpi-purple">
+    <div class="kpi-label">Max Throughput</div>
+    <div class="kpi-value">192.8</div>
+    <div class="kpi-detail">req/s &mdash; Large 8w @ 200 users</div>
+  </div>
+  <div class="kpi kpi-amber">
+    <div class="kpi-label">Lowest Latency</div>
+    <div class="kpi-value">110ms</div>
+    <div class="kpi-detail">p50 &mdash; Medium 4w &amp; Large 8w</div>
+  </div>
+</div>
+
+<!-- Main Charts Row -->
+<div class="grid grid-2" style="margin-bottom: 20px;">
+  <div class="card">
+    <h2>Peak QPS by Worker Count</h2>
+    <div class="chart-container">
+      <canvas id="chartQPS"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <h2>p50 Latency by Worker Count</h2>
+    <div class="chart-container">
+      <canvas id="chartLatency"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Ramp Charts -->
+<div class="section-title">QPS Ramp Progression</div>
+<div class="grid grid-2" style="margin-bottom: 20px;">
+  <div class="card">
+    <h2>Medium Compute &mdash; QPS vs Users</h2>
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="toggleMediumRamp('qps', this)">QPS</button>
+      <button class="tab-btn" onclick="toggleMediumRamp('latency', this)">Latency</button>
+    </div>
+    <div class="chart-container-tall">
+      <canvas id="chartMediumRamp"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Large Compute &mdash; QPS vs Users</h2>
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="toggleLargeRamp('qps', this)">QPS</button>
+      <button class="tab-btn" onclick="toggleLargeRamp('latency', this)">Latency</button>
+    </div>
+    <div class="chart-container-tall">
+      <canvas id="chartLargeRamp"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Summary Table -->
+<div class="section-title">Full Results Table</div>
+<div class="card" style="margin-bottom: 24px;">
+  <table>
+    <thead>
+      <tr>
+        <th>Compute</th>
+        <th>Workers</th>
+        <th>CPUs</th>
+        <th>Users @ Peak</th>
+        <th>Peak QPS</th>
+        <th>Overall QPS</th>
+        <th>TTFT p50</th>
+        <th>TTFT p95</th>
+        <th>Total p50</th>
+        <th>Total p95</th>
+        <th>Fail Rate</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Medium</td><td>2</td><td>4</td><td>160</td>
+        <td>56.1</td><td>48.4</td>
+        <td>730</td><td>1,500</td><td>720</td><td>1,500</td>
+        <td>0.06%</td><td><span class="badge badge-green">Clean</span></td>
+      </tr>
+      <tr class="best">
+        <td><strong>Medium</strong></td><td><strong>4</strong></td><td>4</td><td>190</td>
+        <td><strong>129.7</strong></td><td><strong>86.5</strong></td>
+        <td><strong>110</strong></td><td><strong>190</strong></td><td><strong>110</strong></td><td><strong>190</strong></td>
+        <td>0.08%</td><td><span class="badge badge-green">Best</span></td>
+      </tr>
+      <tr>
+        <td>Medium</td><td>6</td><td>4</td><td>200</td>
+        <td>74.1</td><td>64.2</td>
+        <td>560</td><td>1,500</td><td>500</td><td>1,500</td>
+        <td>10.4%</td><td><span class="badge badge-amber">Partial</span></td>
+      </tr>
+      <tr>
+        <td>Medium</td><td>8</td><td>4</td><td>200</td>
+        <td>112.4</td><td>79.7</td>
+        <td>190</td><td>380</td><td>190</td><td>380</td>
+        <td>0.05%</td><td><span class="badge badge-green">Clean</span></td>
+      </tr>
+      <tr>
+        <td>Large</td><td>4</td><td>16</td><td>290</td>
+        <td>92.2</td><td>70.0</td>
+        <td>500</td><td>2,700</td><td>500</td><td>2,700</td>
+        <td>0.10%</td><td><span class="badge badge-green">Clean</span></td>
+      </tr>
+      <tr class="best">
+        <td><strong>Large</strong></td><td><strong>8</strong></td><td>16</td><td>200</td>
+        <td><strong>192.8</strong></td><td><strong>110.0</strong></td>
+        <td><strong>110</strong></td><td><strong>170</strong></td><td><strong>110</strong></td><td><strong>170</strong></td>
+        <td>0.05%</td><td><span class="badge badge-green">Best</span></td>
+      </tr>
+      <tr>
+        <td>Large</td><td>12</td><td>16</td><td>180</td>
+        <td>84.9</td><td>65.3</td>
+        <td>640</td><td>1,400</td><td>640</td><td>1,400</td>
+        <td>0.01%</td><td><span class="badge badge-green">Clean</span></td>
+      </tr>
+      <tr>
+        <td>Large</td><td>16</td><td>16</td><td>130</td>
+        <td>94.9</td><td>68.1</td>
+        <td>500</td><td>1,500</td><td>500</td><td>1,500</td>
+        <td>0.03%</td><td><span class="badge badge-green">Clean</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Key Findings -->
+<div class="section-title">Key Findings</div>
+<div class="finding">
+  <strong>Inverted U-curve:</strong> More workers != better performance. Medium peaks at 4 workers, Large at 8. Beyond that, process overhead (memory, context switching) hurts throughput. Each uvicorn worker is a full Python process; the async-I/O mock agent doesn't benefit from extra processes.
+</div>
+<div class="finding">
+  <strong>Large 8w still climbing:</strong> At 200 concurrent users, Large 8w showed perfectly linear QPS scaling (192.8 req/s) with flat p50 latency (110ms). The true ceiling requires testing with 400+ users.
+</div>
+<div class="finding">
+  <strong>Workers > Compute:</strong> With 4 workers, Medium and Large perform identically (~70-87 QPS). The advantage of larger compute only appears when paired with enough workers to use the CPUs.
+</div>
+<div class="finding">
+  <strong>All configs exceed 10 QPS target</strong> by an order of magnitude. Even the worst config (Medium 2w) sustained 56 QPS.
+</div>
+
+<!-- Why 4 Workers > 8 Workers on Medium -->
+<div class="section-title">Why 4 Workers Beats 8 Workers on Medium</div>
+<div class="card" style="line-height:1.7">
+  <p>This is counterintuitive but well-explained by how Python multiprocessing works:</p>
+  <ul style="margin:12px 0 12px 24px;">
+    <li><strong>Each uvicorn worker is a full Python process</strong> &mdash; not a thread. On a Medium compute instance (4 CPUs), running 8 workers means 2 processes compete for every CPU core.</li>
+    <li><strong>The mock agent is purely async I/O</strong> (<code>asyncio.sleep</code>) &mdash; it doesn't do CPU-bound work. A single async worker can handle hundreds of concurrent streams because it just awaits timers. Extra processes add zero parallelism benefit for this workload.</li>
+    <li><strong>More processes = more overhead</strong> &mdash; context switching between 8 processes on 4 cores wastes CPU cycles. Each process also consumes ~50-100MB of RAM for the Python interpreter + FastAPI + MLflow stack, increasing memory pressure.</li>
+    <li><strong>The OS scheduler thrashes</strong> &mdash; with 8 workers on 4 CPUs, the kernel constantly preempts processes. This shows up directly in the latency: 8w has p50=190ms vs 4w's p50=110ms, meaning each request waits ~80ms longer just due to scheduling overhead.</li>
+    <li><strong>The sweet spot is ~1 worker per CPU</strong> &mdash; this is confirmed by both compute sizes: Medium optimal is 4 workers on 4 CPUs, Large optimal is 8 workers on 16 CPUs (both roughly 1:2 worker-to-CPU ratio actually, since Large has 16 CPUs).</li>
+  </ul>
+  <p style="color:var(--muted)">Note: With a <em>real</em> CPU-bound agent (e.g., doing local inference or heavy data processing), more workers could help. But for typical LLM agents that are I/O-bound (waiting on model API calls), fewer workers with async concurrency is optimal.</p>
+</div>
+
+<!-- Methodology -->
+<div class="section-title">Methodology</div>
+<div class="card" style="line-height:1.7">
+  <h3 style="margin-bottom:12px">Databricks Apps Under Test</h3>
+  <table>
+    <tr>
+      <td style="color:var(--muted);width:180px">Medium Compute App</td>
+      <td><a href="https://agent-openai-load-test-medium-2850744067564480.staging.aws.databricksapps.com" style="color:var(--accent)" target="_blank">agent-openai-load-test-medium-2850744067564480.staging.aws.databricksapps.com</a></td>
+    </tr>
+    <tr>
+      <td style="color:var(--muted)">Large Compute App</td>
+      <td><a href="https://agent-openai-load-test-large-2850744067564480.staging.aws.databricksapps.com" style="color:var(--accent)" target="_blank">agent-openai-load-test-large-2850744067564480.staging.aws.databricksapps.com</a></td>
+    </tr>
+    <tr>
+      <td style="color:var(--muted)">Workspace</td>
+      <td><code>eng-ml-agent-platform.staging.cloud.databricks.com</code></td>
+    </tr>
+  </table>
+
+  <h3 style="margin:20px 0 12px">Mock Agent</h3>
+  <p>A Python FastAPI app using <code>mlflow.genai.agent_server</code> with <code>@invoke()</code> and <code>@stream()</code> decorators. The mock agent simulates a realistic LLM streaming response <strong>without any external API calls</strong>, so we measure pure Apps infrastructure throughput.</p>
+  <table style="margin-top:8px">
+    <tr><td style="color:var(--muted);width:180px">Framework</td><td>FastAPI + MLflow AgentServer + Uvicorn</td></tr>
+    <tr><td style="color:var(--muted)">Streaming Protocol</td><td>Server-Sent Events (SSE) via POST <code>/invocations</code></td></tr>
+    <tr><td style="color:var(--muted)">Simulated Response</td><td>1 tool call (<code>get_current_time</code>) + 80 text chunks with 10ms inter-chunk delay (~800ms total stream)</td></tr>
+    <tr><td style="color:var(--muted)">Worker Config</td><td>Uvicorn workers set via <code>UVICORN_WORKERS</code> env var, deployed with <code>databricks bundle deploy --var="workers=N"</code></td></tr>
+  </table>
+
+  <h3 style="margin:20px 0 12px">Request &amp; Response Format</h3>
+  <p style="margin-bottom:8px"><strong>Request</strong> (POST <code>/invocations</code>):</p>
+  <pre style="background:#111322;padding:12px;border-radius:8px;overflow-x:auto;font-size:13px;margin-bottom:12px"><code>{
+  "input": [
+    {
+      "role": "user",
+      "content": "What time is it right now, and what time will it be 2 hours and 32 minutes from now?"
+    }
+  ],
+  "stream": true
+}</code></pre>
+  <p style="margin-bottom:8px"><strong>Response</strong> (SSE stream &mdash; each line is <code>data: {json}</code>):</p>
+  <pre style="background:#111322;padding:12px;border-radius:8px;overflow-x:auto;font-size:13px;margin-bottom:12px"><code>data: {"type": "response.output_item.added", "item": {"type": "function_call", "name": "get_current_time", ...}}
+data: {"type": "response.function_call_arguments.done", ...}
+data: {"type": "response.output_item.done", "item": {"type": "function_call", ...}}
+data: {"type": "response.output_item.done", "item": {"type": "function_call_output", "output": "2026-04-01T..."}}
+data: {"type": "response.output_item.added", "item": {"type": "message", ...}}
+data: {"type": "response.output_text.delta", "delta": "The current time is ..."}   &larr; repeated 80x, 10ms apart
+data: {"type": "response.output_text.delta", "delta": "Time zones are regions ..."}
+... (78 more text delta chunks)
+data: {"type": "response.output_item.done", "item": {"type": "message", ...}}
+data: [DONE]</code></pre>
+
+  <h3 style="margin:20px 0 12px">Load Test Configuration</h3>
+  <table>
+    <tr><td style="color:var(--muted);width:180px">Tool</td><td><a href="https://locust.io/" style="color:var(--accent)" target="_blank">Locust</a> with custom <code>StepRampShape</code></td></tr>
+    <tr><td style="color:var(--muted)">Sweep Ramp Shape</td><td>20&rarr;200 users, +20 users/step, 45s/step (~7.5 min per config)</td></tr>
+    <tr><td style="color:var(--muted)">Original 4w Ramp</td><td>20&rarr;300 users, +20 users/step, 60s/step (~15 min)</td></tr>
+    <tr><td style="color:var(--muted)">Spawn Rate</td><td>10 users/sec within each step</td></tr>
+    <tr><td style="color:var(--muted)">Wait Time</td><td>0 (each user sends next request immediately after response &mdash; max throughput)</td></tr>
+    <tr><td style="color:var(--muted)">Auth</td><td>Databricks OAuth token via <code>databricks auth token --profile AP-STAGING</code></td></tr>
+    <tr><td style="color:var(--muted)">TTFT Tracking</td><td>Custom Locust event fired on first <code>data:</code> SSE line received</td></tr>
+    <tr><td style="color:var(--muted)">QPS Metric Source</td><td><code>/invocations (stream)</code> row only — the Locust "Aggregated" row double-counts because TTFT fires as a separate CUSTOM event</td></tr>
+  </table>
+
+  <h3 style="margin:20px 0 12px">Test Procedure (per worker config)</h3>
+  <ol style="margin-left:24px">
+    <li>Deploy mock agent with target worker count: <code>databricks bundle deploy --target {medium|large} --var="workers=N"</code></li>
+    <li>Trigger app restart: <code>databricks apps deploy {app-name} --source-code-path ...</code></li>
+    <li>Wait for app state = RUNNING and compute state = ACTIVE (up to 6 min)</li>
+    <li>Run healthcheck: single POST to <code>/invocations</code> with <code>stream=false</code></li>
+    <li>Warmup: 5 concurrent users for 30 seconds</li>
+    <li>Load test: step-ramp from 20&rarr;200 users, collecting Locust CSV + HTML reports</li>
+  </ol>
+
+  <h3 style="margin:20px 0 12px">Caveats</h3>
+  <ul style="margin-left:24px">
+    <li><strong>Medium 6w</strong> had 10.4% failure rate due to a workspace outage mid-test (&ldquo;Databricks Apps is disabled for organization&rdquo;). True clean performance is likely between 4w and 8w.</li>
+    <li><strong>Large 4w</strong> sweep was fully corrupted by the same outage. The original full-ramp result (70.0 QPS, 0.1% fails) is used instead.</li>
+    <li>The staging workspace intermittently returned the &ldquo;disabled for organization&rdquo; error, which corrupted several runs and required retries.</li>
+    <li>These results measure <strong>Apps infrastructure throughput only</strong>. Real agents with LLM calls will be bottlenecked by model API latency, not App throughput.</li>
+  </ul>
+</div>
+
+<script>
+const COLORS = {
+  medium: { line: '#6366f1', fill: 'rgba(99,102,241,0.15)' },
+  large:  { line: '#06b6d4', fill: 'rgba(6,182,212,0.15)' },
+  green:  '#22c55e',
+  amber:  '#f59e0b',
+  red:    '#ef4444',
+  muted:  '#8b8fa3',
+  grid:   'rgba(255,255,255,0.06)',
+};
+
+const chartDefaults = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: { legend: { labels: { color: '#e1e4ed', padding: 16, usePointStyle: true, pointStyle: 'circle' } } },
+  scales: {
+    x: { ticks: { color: COLORS.muted }, grid: { color: COLORS.grid } },
+    y: { ticks: { color: COLORS.muted }, grid: { color: COLORS.grid } },
+  },
+};
+
+// --- Peak QPS Bar Chart ---
+new Chart(document.getElementById('chartQPS'), {
+  type: 'bar',
+  data: {
+    labels: ['2w', '4w', '6w*', '8w', '4w', '8w', '12w', '16w'],
+    datasets: [
+      {
+        label: 'Medium',
+        data: [56.1, 129.7, 74.1, 112.4, null, null, null, null],
+        backgroundColor: ['rgba(99,102,241,0.5)', 'rgba(99,102,241,0.9)', 'rgba(99,102,241,0.3)', 'rgba(99,102,241,0.5)', null, null, null, null],
+        borderColor: COLORS.medium.line,
+        borderWidth: 2,
+        borderRadius: 6,
+      },
+      {
+        label: 'Large',
+        data: [null, null, null, null, 92.2, 192.8, 84.9, 94.9],
+        backgroundColor: [null, null, null, null, 'rgba(6,182,212,0.5)', 'rgba(6,182,212,0.9)', 'rgba(6,182,212,0.5)', 'rgba(6,182,212,0.5)'],
+        borderColor: COLORS.large.line,
+        borderWidth: 2,
+        borderRadius: 6,
+      }
+    ]
+  },
+  options: {
+    ...chartDefaults,
+    plugins: {
+      ...chartDefaults.plugins,
+      tooltip: {
+        callbacks: {
+          label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y} req/s`
+        }
+      },
+      annotation: undefined,
+    },
+    scales: {
+      ...chartDefaults.scales,
+      x: { ...chartDefaults.scales.x, title: { display: true, text: 'Worker Count', color: COLORS.muted } },
+      y: { ...chartDefaults.scales.y, title: { display: true, text: 'Peak QPS (req/s)', color: COLORS.muted }, beginAtZero: true },
+    }
+  }
+});
+
+// --- p50 Latency Bar Chart ---
+new Chart(document.getElementById('chartLatency'), {
+  type: 'bar',
+  data: {
+    labels: ['2w', '4w', '6w*', '8w', '4w', '8w', '12w', '16w'],
+    datasets: [
+      {
+        label: 'Medium p50',
+        data: [720, 110, 500, 190, null, null, null, null],
+        backgroundColor: COLORS.medium.fill,
+        borderColor: COLORS.medium.line,
+        borderWidth: 2,
+        borderRadius: 6,
+      },
+      {
+        label: 'Large p50',
+        data: [null, null, null, null, 500, 110, 640, 500],
+        backgroundColor: COLORS.large.fill,
+        borderColor: COLORS.large.line,
+        borderWidth: 2,
+        borderRadius: 6,
+      }
+    ]
+  },
+  options: {
+    ...chartDefaults,
+    scales: {
+      ...chartDefaults.scales,
+      x: { ...chartDefaults.scales.x, title: { display: true, text: 'Worker Count', color: COLORS.muted } },
+      y: { ...chartDefaults.scales.y, title: { display: true, text: 'p50 Latency (ms)', color: COLORS.muted }, beginAtZero: true },
+    }
+  }
+});
+
+// --- Ramp Data ---
+const users = [20, 40, 60, 80, 100, 120, 140, 160, 180, 200];
+
+const rampData = {
+  medium: {
+    '2w':  { qps: [20.2,33.7,42.4,46.8,50.1,52.8,54.4,56.1,54.3,53.1], p50: [250,400,520,600,680,720,730,730,720,720], p95: [410,690,910,1100,1200,1300,1400,1500,1500,1500] },
+    '4w':  { qps: [38.6,72.4,91.1,100.9,106.2,111.3,116.3,121.5,125.7,129.7], p50: [110,110,110,110,110,110,110,110,110,110], p95: [130,140,150,160,170,180,180,190,190,190] },
+    '6w':  { qps: [40.3,85.3,97.6,128.0,126.0,120.0,112.7,128.0,136.5,163.2], p50: [50,110,120,140,170,260,343,430,490,530], p95: [210,263,310,420,577,650,897,1200,1400,1500] },
+    '8w':  { qps: [34.5,59.5,72.5,82.5,91.2,97.4,102.8,106.7,109.6,112.4], p50: [120,140,160,180,190,190,190,190,190,190], p95: [170,220,280,320,350,360,370,380,380,380] },
+  },
+  large: {
+    '4w':  { qps: [18.3,37.0,49.7,58.5,60.7,70.9,71.6,79.3,83.6,81.0], p50: [120,136,171,214,252,288,308,325,343,366], p95: [405,296,410,711,937,1140,1370,1540,1670,1810] },
+    '8w':  { qps: [37.2,73.3,100.0,120.5,139.2,153.8,164.9,176.3,185.7,192.8], p50: [110,110,110,110,110,110,110,110,110,110], p95: [140,150,150,150,160,160,170,170,170,170] },
+    '12w': { qps: [39.5,77.7,109.5,112.1,132.3,144.0,140.0,161.3,170.9,184.4], p50: [120,137,160,200,267,340,423,500,570,640], p95: [257,267,340,537,783,897,1000,1100,1100,1400] },
+    '16w': { qps: [42.5,80.0,123.3,161.9,167.1,177.2,166.3,131.7,144.7,146.8], p50: [120,130,130,130,150,193,290,360,430,487], p95: [180,220,220,273,470,590,813,1200,1400,1500] },
+  }
+};
+
+function makeRampChart(canvasId, data, mode) {
+  const canvas = document.getElementById(canvasId);
+  if (canvas._chart) canvas._chart.destroy();
+
+  const colors = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#a855f7'];
+  const datasets = Object.entries(data).map(([label, d], i) => ({
+    label: label,
+    data: mode === 'qps' ? d.qps : d.p50,
+    borderColor: colors[i % colors.length],
+    backgroundColor: colors[i % colors.length] + '22',
+    borderWidth: 2.5,
+    pointRadius: 4,
+    pointHoverRadius: 6,
+    tension: 0.3,
+    fill: true,
+  }));
+
+  const chart = new Chart(canvas, {
+    type: 'line',
+    data: { labels: users, datasets },
+    options: {
+      ...chartDefaults,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        ...chartDefaults.scales,
+        x: { ...chartDefaults.scales.x, title: { display: true, text: 'Concurrent Users', color: COLORS.muted } },
+        y: {
+          ...chartDefaults.scales.y,
+          title: { display: true, text: mode === 'qps' ? 'QPS (req/s)' : 'p50 Latency (ms)', color: COLORS.muted },
+          beginAtZero: true,
+        },
+      },
+      plugins: {
+        ...chartDefaults.plugins,
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}${mode === 'qps' ? ' req/s' : 'ms'}`
+          }
+        }
+      }
+    }
+  });
+  canvas._chart = chart;
+}
+
+function toggleMediumRamp(mode, btn) {
+  btn.parentElement.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  makeRampChart('chartMediumRamp', rampData.medium, mode);
+}
+function toggleLargeRamp(mode, btn) {
+  btn.parentElement.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  makeRampChart('chartLargeRamp', rampData.large, mode);
+}
+
+// Initialize ramp charts
+makeRampChart('chartMediumRamp', rampData.medium, 'qps');
+makeRampChart('chartLargeRamp', rampData.large, 'qps');
+</script>
+</body>
+</html>

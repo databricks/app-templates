@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, shrink-to-fit=no"
+    />
+    <title>Upload files to a Databricks volume</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 600px;
+        margin: 20px auto;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Upload files to a Databricks volume</h1>
+    <p>
+      This code sample demonstrates how you upload files to a Databricks
+      <a href="https://docs.databricks.com/en/volumes/index.html"
+        >Unity Catalog volume</a
+      >.
+    </p>
+    <p>
+      The uploaded files will be stored under <b>{{ path }}</b>. Change the
+      source code to upload to a different volume.
+    </p>
+
+    {% if error_message %}
+    <div>{{ error_message }}</div>
+    {% endif %} {% if success_message %}
+    <div>{{ success_message }}</div>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data">
+      <div>
+        <label for="file">Choose a file to upload:</label>
+        <input type="file" name="file" id="file" />
+      </div>
+      <br />
+      <div>
+        <button type="submit">Upload</button>
+      </div>
+    </form>
+
+    {% if folder_contents %}
+    <h2>Contents of the volume folder:</h2>
+    <ul>
+      {% for item in folder_contents %}
+      <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    <p>
+      Take a look at the
+      <a
+        href="https://flask.palletsprojects.com/en/stable/patterns/fileuploads/"
+        >Flask Uploading Files documentation</a
+      >
+      to adjust file type and size limits.
+    </p>
+  </body>
+</html>

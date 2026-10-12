@@ -300,6 +300,37 @@ function run(id, owner, params = {}) {
   };
 }
 
+test('live status and last-run responses carry each published output’s recorded disablement', async () => {
+  const { state, request } = await serverHarness();
+  state.manifest = {
+    ...manifest, storage: undefined,
+    parameters: [{ name: 'environment', label: 'Environment', type: 'dropdown', defaultValue: 'prod', choices: ['prod', 'dev'] }],
+    blocks: [
+      { type: 'output', id: 'prod', label: 'Prod Output', nodeId: 'prod', port: 'data' },
+      { type: 'output', id: 'dev', label: 'Dev Output', nodeId: 'dev', port: 'data' },
+    ],
+  };
+  const mimeType = 'application/vnd.databricks.lakebuilder.runtime-node-state+json';
+  state.commands = [
+    { command: 'display(ctx["prod.data"])', results: { data: [
+      { type: 'mimeBundle', data: { [mimeType]: { nodeId: 'prod', disabled: false } } },
+      { type: 'table', schema: [{ name: 'value', type: 'long' }], data: [[1]], overflow: false },
+    ] } },
+    { command: 'run()', results: { type: 'mimeBundle', data: { [mimeType]: { nodeId: 'dev', disabled: true } } } },
+  ];
+  state.runs = [run(10, 'alice', { environment: 'prod' })];
+  state.listed = [{ run_id: 10, job_id: 100 }];
+  const status = await request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: '10' } });
+  assert.equal(status.status, 200);
+  const snapshot = parseRunSnapshot(status.body);
+  assert.deepEqual(snapshot.result.outputs.map(({ id, disabled, outcome }) => ({ id, disabled, outcome: outcome.outcome })), [
+    { id: 'prod', disabled: false, outcome: 'result' }, { id: 'dev', disabled: true, outcome: 'missing' },
+  ]);
+  const last = await request('get', '/api/designer/last-run');
+  assert.equal(last.body.status, 'found');
+  assert.deepEqual(last.body.result, status.body.result);
+});
+
 test('grants the ingress user Job visibility before running and preserves other principals', async () => {
   const { state, request } = await serverHarness();
   state.manifest = { ...manifest, storage: undefined, parameters: [] };

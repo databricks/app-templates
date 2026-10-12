@@ -911,6 +911,7 @@ export function OutputSection({
   onRetry: () => void;
   downloadRequest?: { runId: string; outputId: string };
 }) {
+  if (output.disabled === true) return null;
   const { outcome, fileBehavior } = output;
   const isSharedFile = fileBehavior === 'shared_append' || fileBehavior === 'shared_workbook_update';
   return (

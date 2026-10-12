@@ -55,6 +55,7 @@ export type MatchedOutput = {
   chartSpec?: AppChartSpec;
   files?: WrittenFile[];
   fileBehavior?: FileOutputBehavior;
+  disabled?: boolean;
 
   outcome: OutputOutcome;
 };
@@ -208,6 +209,7 @@ function parseMatchedOutput(raw: unknown, index: number): MatchedOutput | undefi
       ? { files: raw.files.map((file) => ({ path: file.path as string })) }
       : {}),
     ...(fileBehavior ? { fileBehavior } : {}),
+    ...(typeof raw.disabled === 'boolean' ? { disabled: raw.disabled } : {}),
     outcome,
   };
 }

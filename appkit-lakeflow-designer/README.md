@@ -83,6 +83,17 @@ there is no reader for deprecated notebook-parameter runs or historical backfill
 
 ## Result previews
 
+Output blocks are hidden when the displayed run records their operator's effective disabled
+state as `true`, including disablement inherited from a group. Configure branch conditions
+on the published operator or its group, for example `:environment <> 'prod'` for the Prod
+branch and `:environment <> 'dev'` for Dev. Disabling an upstream operator alone does not
+disable downstream outputs. Enabled empty results and errors remain visible.
+
+Visibility follows the selected run, including history; changing a parameter takes effect
+after the next run. Older runs without runtime state metadata keep all output blocks visible.
+Existing apps need their runner notebook regenerated and republished to emit effective
+disablement metadata. The app does not evaluate Designer SQL expressions in the browser.
+
 The app reads each run's exported notebook display results and sends at most 1,000 rows per output
 to the client. Tables and charts use this same bounded preview. The notebook's `overflow` flag is
 preserved; it can indicate a row or byte limit, so the app does not label it as sampling or guess

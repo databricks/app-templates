@@ -4,6 +4,7 @@ import { FILE_OUTPUTS_MIME_TYPE, MAX_OUTPUT_FILES, parseFileOutputBehavior, type
 const RUNNER_PAYLOAD_VERSION = 2;
 const NOTEBOOK_MODEL_ASSIGNMENT = /__DATABRICKS_NOTEBOOK_MODEL = '([^']*)'/;
 const ROW_COUNTS_MIME_TYPE = 'application/vnd.databricks.lakeflow-designer.row-counts+json';
+const RUNTIME_NODE_STATE_MIME_TYPE = 'application/vnd.databricks.lakebuilder.runtime-node-state+json';
 // Each cell's display(ctx["<node>.<port>"]) lines name the ports it renders, in source order.
 const DISPLAY_CTX_KEY = /display\(ctx\["([^"]+)"\]\)/g;
 
@@ -129,8 +130,29 @@ function exactRowCounts(results: unknown): Map<string, number> {
   return counts;
 }
 
-// Pair only table entries with display(ctx["<node>.<port>"]) calls. The count MIME result is emitted
-// by the same cell but is metadata, so it must not consume a table ordinal.
+function runtimeNodeStates(results: unknown): Map<string, { disabled: boolean }> {
+  const states = new Map<string, { disabled: boolean }>();
+  for (const entry of resultEntries(results)) {
+    if (!isRecord(entry) || entry.type !== 'mimeBundle' || !isRecord(entry.data)) continue;
+    let payload = entry.data[RUNTIME_NODE_STATE_MIME_TYPE];
+    if (typeof payload === 'string') {
+      try {
+        payload = JSON.parse(payload);
+      } catch {
+        continue;
+      }
+    }
+    if (
+      isRecord(payload) && typeof payload.nodeId === 'string' && payload.nodeId !== '' &&
+      typeof payload.disabled === 'boolean'
+    ) {
+      states.set(payload.nodeId, { disabled: payload.disabled });
+    }
+  }
+  return states;
+}
+
+// MIME metadata must not consume a table ordinal when pairing results with display calls.
 export function exportedModelToRunPayload(exportedHtml: unknown): string | undefined {
   const model = decodeNotebookModel(exportedHtml);
   if (model === undefined || !Array.isArray(model.commands)) {
@@ -138,11 +160,15 @@ export function exportedModelToRunPayload(exportedHtml: unknown): string | undef
   }
   const outputs: Record<string, unknown>[] = [];
   const files: WrittenFiles[] = [];
+  const states = new Map<string, { disabled: boolean }>();
   for (const command of model.commands) {
     if (!isRecord(command)) {
       continue;
     }
     const keys = displayedCtxKeys(command.command);
+    for (const [nodeId, state] of runtimeNodeStates(command.results)) {
+      states.set(nodeId, state);
+    }
     // Receipts are independent of display results. A successful write must stay downloadable
     // even if the preview/count fails or this cell deliberately has no tabular preview.
     for (const entry of resultEntries(command.results)) {
@@ -189,5 +215,8 @@ export function exportedModelToRunPayload(exportedHtml: unknown): string | undef
       });
     });
   }
-  return JSON.stringify({ version: RUNNER_PAYLOAD_VERSION, outputs, files });
+  return JSON.stringify({
+    version: RUNNER_PAYLOAD_VERSION, outputs, files,
+    ...(states.size > 0 ? { runtimeNodeStates: Object.fromEntries(states) } : {}),
+  });
 }

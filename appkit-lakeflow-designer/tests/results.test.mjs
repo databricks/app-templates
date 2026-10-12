@@ -8,6 +8,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { build } from 'tsdown';
 
 let exportedModelToRunPayload;
+let matchRunOutputs;
 let parseRunOutcome;
 let fetchLastRun;
 let lastSuccessfulRunEntry;
@@ -21,6 +22,7 @@ let PublishedBlocks;
 let outputDirectory;
 const ROW_COUNTS_MIME_TYPE = 'application/vnd.databricks.lakeflow-designer.row-counts+json';
 const FILES_MIME_TYPE = 'application/vnd.databricks.lakeflow-designer.files+json';
+const NODE_STATE_MIME_TYPE = 'application/vnd.databricks.lakebuilder.runtime-node-state+json';
 
 before(async () => {
   // Keep React and AppKit resolvable from the generated modules without copying dependencies.
@@ -28,6 +30,7 @@ before(async () => {
   await build({
     entry: {
       exportedRunOutput: 'server/exportedRunOutput.ts',
+      runOutputs: 'server/runOutputs.ts',
       payload: 'client/src/payload.ts',
       ResultFooter: 'client/src/ResultFooter.tsx',
       ResultGrid: 'client/src/ResultGrid.tsx',
@@ -44,6 +47,7 @@ before(async () => {
     logLevel: 'silent',
   });
   ({ exportedModelToRunPayload } = await import(pathToFileURL(join(outputDirectory, 'exportedRunOutput.mjs')).href));
+  ({ matchRunOutputs } = await import(pathToFileURL(join(outputDirectory, 'runOutputs.mjs')).href));
   ({ parseRunOutcome } = await import(pathToFileURL(join(outputDirectory, 'payload.mjs')).href));
   ({ ResultFooter } = await import(pathToFileURL(join(outputDirectory, 'ResultFooter.mjs')).href));
   ({ ResultGrid } = await import(pathToFileURL(join(outputDirectory, 'ResultGrid.mjs')).href));
@@ -73,6 +77,180 @@ function notebookHtml(commands) {
   const model = Buffer.from(encodeURIComponent(JSON.stringify({ commands }))).toString('base64');
   return `<script>__DATABRICKS_NOTEBOOK_MODEL = '${model}'</script>`;
 }
+
+function nodeState(nodeId, disabled) {
+  return { type: 'mimeBundle', data: { [NODE_STATE_MIME_TYPE]: { nodeId, disabled } } };
+}
+
+function matchedRunOutputs(blocks, commands) {
+  return parseRunOutcome(matchRunOutputs(blocks.filter((block) => block.type === 'output'),
+    exportedModelToRunPayload(notebookHtml(commands))));
+}
+
+function publishedBlocksHtml(blocks, outputs, unmatchedState = 'omitted') {
+  return renderToStaticMarkup(createElement(PublishedBlocks, {
+    blocks, outputs, unmatchedState, downloadRunId: '42', onRetry: () => {},
+  }));
+}
+
+test('runtime states do not shift table ports, row counts, or file receipts', () => {
+  const files = { node: 'writer', files: [{ path: '/Volumes/main/apps/files/report.csv' }] };
+  const html = notebookHtml([{
+    command: 'display(ctx["source.data"])\ndisplay(ctx["source.summary"])',
+    results: { data: [
+      nodeState('source', false), displayTable(2, true),
+      { type: 'mimeBundle', data: { [NODE_STATE_MIME_TYPE]: JSON.stringify({ nodeId: 'writer', disabled: true }) } },
+      { type: 'mimeBundle', data: { [FILES_MIME_TYPE]: files } },
+      displayTable(1, false), rowCounts('source', { data: 4000, summary: 1 }),
+    ] },
+  }]);
+  const parsed = JSON.parse(exportedModelToRunPayload(html));
+  assert.deepEqual(parsed.runtimeNodeStates, { source: { disabled: false }, writer: { disabled: true } });
+  assert.deepEqual(parsed.outputs.map(({ target_node, target_port, total_row_count }) => ({
+    target_node, target_port, total_row_count,
+  })), [
+    { target_node: 'source', target_port: 'data', total_row_count: 4000 },
+    { target_node: 'source', target_port: 'summary', total_row_count: 1 },
+  ]);
+  assert.deepEqual(parsed.files, [files]);
+});
+
+test('singleton runtime states survive missing tables and later states replace earlier ones', () => {
+  const parsed = JSON.parse(exportedModelToRunPayload(notebookHtml([
+    { command: 'run()', results: nodeState('writer', true) },
+    { command: 'run()', results: nodeState('writer', false) },
+    { command: 'group_gate()', results: nodeState('group', true) },
+  ])));
+  assert.deepEqual(parsed.runtimeNodeStates, { writer: { disabled: false }, group: { disabled: true } });
+  assert.deepEqual(parsed.outputs, []);
+});
+
+test('malformed runtime metadata preserves valid sibling state and results', () => {
+  const invalid = [null, 'not JSON', [], {}, { nodeId: '', disabled: true },
+    { nodeId: 'source', disabled: 'true' }, { nodeId: 'source', disabled: 1 }];
+  const parsed = JSON.parse(exportedModelToRunPayload(notebookHtml([{
+    command: 'display(ctx["source.data"])', results: { data: [
+      nodeState('source', false),
+      ...invalid.map((payload) => ({ type: 'mimeBundle', data: { [NODE_STATE_MIME_TYPE]: payload } })),
+      displayTable(1, false),
+    ] },
+  }])));
+  assert.deepEqual(parsed.runtimeNodeStates, { source: { disabled: false } });
+  assert.equal(parsed.outputs[0].target_port, 'data');
+});
+
+test('runtime node names cannot modify the state map prototype', () => {
+  const blocks = [{ type: 'output', id: 'data', label: 'Hidden data', nodeId: '__proto__', port: 'data' }];
+  const raw = exportedModelToRunPayload(notebookHtml([{
+    command: 'display(ctx["__proto__.data"])', results: { data: [nodeState('__proto__', true), displayTable(1, false)] },
+  }]));
+  const parsed = JSON.parse(raw);
+  assert.equal(Object.hasOwn(parsed.runtimeNodeStates, '__proto__'), true);
+  assert.equal(parsed.runtimeNodeStates.__proto__.disabled, true);
+  const result = parseRunOutcome(matchRunOutputs(blocks, raw));
+  assert.equal(result.outputs[0].disabled, true);
+  assert.equal(publishedBlocksHtml(blocks, result.outputs), '');
+});
+
+const ENVIRONMENT_BLOCKS = [
+  { type: 'output', id: 'prod', label: 'Prod Output', nodeId: 'prod', port: 'data' },
+  { type: 'output', id: 'dev', label: 'Dev Output', nodeId: 'dev', port: 'data' },
+];
+
+function environmentResult(environment) {
+  return matchedRunOutputs(ENVIRONMENT_BLOCKS, ['prod', 'dev'].map((nodeId) => ({
+    command: `display(ctx["${nodeId}.data"])`,
+    results: { data: [nodeState(nodeId, nodeId !== environment), displayTable(1, false)] },
+  })));
+}
+
+for (const environment of ['prod', 'dev']) {
+  test(`only renders the ${environment} branch recorded by the run`, () => {
+    const result = environmentResult(environment);
+    assert.deepEqual(result.outputs.map(({ id, disabled }) => ({ id, disabled })), [
+      { id: 'prod', disabled: environment !== 'prod' }, { id: 'dev', disabled: environment !== 'dev' },
+    ]);
+    const html = publishedBlocksHtml(ENVIRONMENT_BLOCKS, result.outputs);
+    assert.match(html, environment === 'prod' ? /Prod Output/ : /Dev Output/);
+    assert.doesNotMatch(html, environment === 'prod' ? /Dev Output/ : /Prod Output/);
+    assert.match(html, /<table/);
+  });
+}
+
+test('disabled outputs without a preview or file receipt hide their entire block', () => {
+  const blocks = [
+    { type: 'markdown', id: 'intro', text: 'Download your output' },
+    ...ENVIRONMENT_BLOCKS.map((block) => ({ ...block, fileOutput: { volumes: ['main.apps.files'] } })),
+  ];
+  const result = matchedRunOutputs(blocks, ['prod', 'dev'].map((nodeId) => ({
+    command: 'run()', results: nodeState(nodeId, true),
+  })));
+  assert.equal(result.outcome, 'outputs');
+  assert.deepEqual(result.outputs.map(({ disabled, files }) => ({ disabled, files })), [
+    { disabled: true, files: [] }, { disabled: true, files: [] },
+  ]);
+  const html = publishedBlocksHtml(blocks, result.outputs);
+  assert.match(html, /Download your output/);
+  assert.equal(html, publishedBlocksHtml([blocks[0]], []));
+});
+
+test('enabled empty results, errors, malformed results, and missing outputs remain visible', () => {
+  const blocks = [{ type: 'output', id: 'data', label: 'Visible Output', nodeId: 'source', port: 'data' }];
+  const cases = [
+    { outcome: 'result', payload: { ...outputFromTable(displayTable(0, false)), target_node: 'source', target_port: 'data' }, message: /No rows returned/ },
+    { outcome: 'computeError', payload: { status: 'error', target_node: 'source', target_port: 'data', error: { type: 'BranchError', message: 'Read failed' } }, message: /Read failed/ },
+    { outcome: 'malformed', payload: { id: 'data', status: 'ok' }, message: /This output could not be read/ },
+    { outcome: 'missing', payload: undefined, message: /This output was not returned/ },
+  ];
+  for (const { outcome, payload, message } of cases) {
+    const result = parseRunOutcome(matchRunOutputs(blocks, JSON.stringify({
+      version: 2, outputs: payload ? [payload] : [], runtimeNodeStates: { source: { disabled: false } },
+    })));
+    assert.equal(result.outputs[0].disabled, false);
+    assert.equal(result.outputs[0].outcome.outcome, outcome);
+    const html = publishedBlocksHtml(blocks, result.outputs);
+    assert.match(html, /Visible Output/);
+    assert.match(html, message);
+  }
+});
+
+test('absent or non-boolean state preserves output visibility on the server and client', () => {
+  const blocks = [{ type: 'output', id: 'data', label: 'Legacy Output', nodeId: 'source', port: 'data' }];
+  for (const disabled of [undefined, null, 'true', 'false', 0, 1, {}, []]) {
+    const result = parseRunOutcome(matchRunOutputs(blocks, JSON.stringify({
+      version: 2,
+      outputs: [{ ...outputFromTable(displayTable(0, false)), target_node: 'source', target_port: 'data' }],
+      runtimeNodeStates: { source: { disabled } },
+    })));
+    assert.equal(result.outputs[0].disabled, undefined);
+    const client = parseRunOutcome({ ...result, outputs: [{ ...result.outputs[0], disabled }] });
+    assert.equal(client.outputs[0].disabled, undefined);
+    assert.match(publishedBlocksHtml(blocks, client.outputs), /Legacy Output/);
+    assert.match(publishedBlocksHtml(blocks, client.outputs), /No rows returned/);
+  }
+});
+
+test('initial placeholders remain visible without recorded runtime state', () => {
+  const html = publishedBlocksHtml(ENVIRONMENT_BLOCKS, [], 'beforeRun');
+  assert.match(html, /Prod Output/);
+  assert.match(html, /Dev Output/);
+  assert.equal((html.match(/Run the app to populate this output/g) ?? []).length, 2);
+});
+
+test('explicit history selection uses that run’s disablement instead of the most recent result', () => {
+  const latest = { status: 'found', run: { jobRunId: '42' }, parameters: { environment: 'prod' }, result: environmentResult('prod') };
+  const historical = { status: 'found', outcome: environmentResult('dev') };
+  const selected = { jobRunId: '41', parameters: { environment: 'dev' } };
+  const idle = { phase: 'idle' };
+  const followed = { following: false, settled: false };
+  const display = planRunDisplay(idle, followed, latest, selected, historical);
+  assert.equal(display.displayedRun.jobRunId, '41');
+  assert.match(publishedBlocksHtml(ENVIRONMENT_BLOCKS, display.outputs), /Dev Output/);
+  assert.doesNotMatch(publishedBlocksHtml(ENVIRONMENT_BLOCKS, display.outputs), /Prod Output/);
+  const restored = planRunDisplay(idle, followed, latest);
+  assert.match(publishedBlocksHtml(ENVIRONMENT_BLOCKS, restored.outputs), /Prod Output/);
+  assert.doesNotMatch(publishedBlocksHtml(ENVIRONMENT_BLOCKS, restored.outputs), /Dev Output/);
+});
 
 function outputFromTable(table) {
   const html = notebookHtml([

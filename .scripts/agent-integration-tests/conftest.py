@@ -69,6 +69,9 @@ def pytest_addoption(parser):
                      help="Limit validation to these template names (repeatable)")
     parser.addoption("--val-setup-only", action="store_true", default=False,
                      help="Only ensure the shared app exists; skip deploy/verify")
+    parser.addoption("--val-force-build", action="store_true", default=False,
+                     help="Build-only (npm ci + npm run build) every template with a "
+                          "package.json, regardless of verify mode; skip the rest")
     parser.addoption("--target", action="store", default="local",
                      choices=["local", "deployed"], help="functional_test.py target")
 

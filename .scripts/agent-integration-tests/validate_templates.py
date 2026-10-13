@@ -308,6 +308,17 @@ def test_validate_template(val_template, val_cfg, request):
     log_dir.mkdir(exist_ok=True)
     set_log_file(log_dir / f"validate-{val_template.name}.log")
 
+    # --val-force-build: dependency-only changes (e.g. lockfile bumps) need every
+    # npm template to still install + build, including OBO templates that the
+    # deploy path would otherwise skip. Build-only, no shared app.
+    if request.config.getoption("--val-force-build"):
+        from template_config import REPO_ROOT
+        if not (REPO_ROOT / val_template.name / "package.json").exists():
+            pytest.skip("--val-force-build: no package.json")
+        with tempfile.TemporaryDirectory(prefix=f"val-{val_template.name}-") as tmp:
+            build_template(val_template.name, Path(tmp))
+        return
+
     # OBO (on-behalf-of-user): exercised like `html`, but the shared app must be
     # CREATED with the OBO scope union + resource bindings (see the validate-templates
     # skill) — Databricks binds the forwarded-token scopes at app creation, so scopes

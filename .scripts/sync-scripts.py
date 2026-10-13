@@ -13,7 +13,9 @@ Usage:
     python .scripts/sync-scripts.py
 """
 
+import os
 import shutil
+import subprocess
 from pathlib import Path
 
 from templates import TEMPLATES
@@ -21,6 +23,38 @@ from templates import TEMPLATES
 SCRIPT_DIR = Path(__file__).parent.resolve()
 REPO_ROOT = SCRIPT_DIR.parent
 SOURCE_DIR = SCRIPT_DIR / "source"
+
+# The node crash-test fixture runs as raw `node index.mjs` (no TS build step) and
+# must be self-contained for deploy, so it can't import the shared TS source. We
+# therefore GENERATE its plain-JS diagnostics twin from diagnostics.ts (stripping
+# TS types) rather than hand-maintaining a second copy that could silently drift.
+# The sync-check (`sync-scripts.py && git diff --exit-code`) enforces it stays in
+# lockstep with the source.
+NODE_CRASH_FIXTURE = (
+    REPO_ROOT
+    / ".scripts/agent-integration-tests/crash-examples/node_crash_app/diagnostics.mjs"
+)
+GENERATED_HEADER = (
+    "// GENERATED from .scripts/source/diagnostics.ts by .scripts/sync-scripts.py —\n"
+    "// DO NOT EDIT. Run `python .scripts/sync-scripts.py` to regenerate. Plain-JS\n"
+    "// twin of the TS diagnostics module for the node_crash_app e2e crash fixture\n"
+    "// (runs as raw `node index.mjs`, no TS build). Kept in lockstep by sync-check.\n\n"
+)
+# CJS one-liner: strip TS types, then reflow the whitespace the stripper leaves
+# where `: Type` annotations were (rstrip each line; collapse 2+ spaces after the
+# leading indent to one — safe because no string/comment in the source has 2+
+# consecutive spaces, so only the stripper's gaps are touched).
+_STRIP_TS_JS = r"""
+const { stripTypeScriptTypes } = require('node:module');
+const fs = require('fs');
+let js = stripTypeScriptTypes(fs.readFileSync(process.argv[1], 'utf8'), { mode: 'strip' });
+js = js.split('\n').map((l) => {
+  const o = l.replace(/\s+$/, '');
+  const m = o.match(/^(\s*)(.*)$/);
+  return m[1] + m[2].replace(/ {2,}/g, ' ');
+}).join('\n');
+process.stdout.write(js);
+"""
 
 # (source_filename, destination_subdir)
 SCRIPTS_TO_SYNC = [
@@ -98,6 +132,32 @@ def sync_diagnostics() -> list[str]:
     return synced
 
 
+def generate_node_crash_fixture() -> str:
+    """Regenerate the node crash fixture's plain-JS diagnostics from diagnostics.ts.
+
+    Fails loudly (never silently skips) if node is unavailable or the strip fails —
+    a silent skip would let the fixture drift, which is exactly what we're guarding.
+    """
+    node = shutil.which("node")
+    if node is None:
+        raise SystemExit(
+            "node not found on PATH — required to regenerate "
+            f"{NODE_CRASH_FIXTURE.relative_to(REPO_ROOT)} from diagnostics.ts"
+        )
+    result = subprocess.run(
+        [node, "-e", _STRIP_TS_JS, str(SOURCE_DIR / "diagnostics.ts")],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "NODE_NO_WARNINGS": "1"},
+    )
+    if result.returncode != 0:
+        raise SystemExit(
+            f"failed to strip TS types for {NODE_CRASH_FIXTURE.name}:\n{result.stderr}"
+        )
+    NODE_CRASH_FIXTURE.write_text(GENERATED_HEADER + result.stdout)
+    return str(NODE_CRASH_FIXTURE.relative_to(REPO_ROOT))
+
+
 def sync_scripts(template: str, config: dict) -> list[str]:
     """Copy shared Python scripts into the template. Returns list of synced names."""
     exclude = config.get("exclude_scripts", [])
@@ -164,6 +224,9 @@ def main():
     diag_synced = sync_diagnostics()
     if diag_synced:
         print(f"Synced diagnostics module to {len(diag_synced)} non-agent templates")
+
+    crash_fixture = generate_node_crash_fixture()
+    print(f"Generated node crash fixture: {crash_fixture}")
 
     print("Done!")
 

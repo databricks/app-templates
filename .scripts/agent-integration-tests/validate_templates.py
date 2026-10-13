@@ -183,12 +183,17 @@ def assert_html_rendered(html: str, expect) -> None:
     )
 
 
-def _browser_load(storage_state: str, url: str, expect=()) -> tuple[int, str, str]:
+def _browser_load(storage_state: str, url: str, expect=(), click=None) -> tuple[int, str, str]:
     """Load url in a storageState'd browser; return (status, html, final_url).
 
     When ``expect`` is given, wait (best effort) for that text to render instead
     of a fixed sleep, so slow SPA/streamlit hydration doesn't cause a false fail;
     the authoritative check is ``assert_html_rendered`` on the returned html.
+
+    When ``click`` is given (an obo app that runs its downstream call on
+    interaction, not on load), click the control with that accessible name/text
+    after the page settles, then wait for ``expect`` — so the success signal is
+    the result of the user-triggered, forwarded-token call.
     """
     import contextlib
 
@@ -200,6 +205,13 @@ def _browser_load(storage_state: str, url: str, expect=()) -> tuple[int, str, st
         try:
             resp = page.goto(url, wait_until="domcontentloaded", timeout=QUERY_TIMEOUT * 1000)
             status = resp.status if resp else 0
+            if status < 500 and click:
+                page.wait_for_timeout(3000)  # let the control mount
+                with contextlib.suppress(Exception):
+                    btn = page.get_by_role("button", name=click)
+                    (btn.first if btn.count() else page.get_by_text(click, exact=False).first).click(
+                        timeout=QUERY_TIMEOUT * 1000
+                    )
             if status < 500 and expect:
                 for text in expect:
                     with contextlib.suppress(Exception):
@@ -213,7 +225,7 @@ def _browser_load(storage_state: str, url: str, expect=()) -> tuple[int, str, st
             browser.close()
 
 
-def verify_serving(verify: str, app_url: str, storage_state: str, expect=()) -> None:
+def verify_serving(verify: str, app_url: str, storage_state: str, expect=(), click=None) -> None:
     """Browser-authenticated serve check.
 
     Deployed apps sit behind SSO: a bearer token GET follows the redirect to a
@@ -230,7 +242,7 @@ def verify_serving(verify: str, app_url: str, storage_state: str, expect=()) -> 
     deadline = time.time() + 240  # app container can lag the front door, esp. agents
     status, html, final_url = 0, "", ""
     while True:
-        status, html, final_url = _browser_load(storage_state, f"{app_url}/", expect)
+        status, html, final_url = _browser_load(storage_state, f"{app_url}/", expect, click)
         if looks_like_login_page(html, final_url):
             raise RuntimeError(
                 "app redirected to SSO login — storageState invalid/expired "
@@ -243,7 +255,10 @@ def verify_serving(verify: str, app_url: str, storage_state: str, expect=()) -> 
         _log(f"  / returned {status}; app container still starting, retrying…")
         time.sleep(POLL_INTERVAL)
 
-    if verify == "html":
+    if verify in ("html", "obo"):
+        # html: `expect` is the app's own content. obo: `expect` is a success signal
+        # that renders ONLY if the forwarded user token's downstream call succeeded
+        # — so a token-less/403 render (header only, then an exception) can't pass.
         assert_html_rendered(html, expect)
     elif verify == "spa":
         assets = parse_spa_assets(html, app_url)
@@ -293,10 +308,16 @@ def test_validate_template(val_template, val_cfg, request):
     log_dir.mkdir(exist_ok=True)
     set_log_file(log_dir / f"validate-{val_template.name}.log")
 
-    # OBO (on-behalf-of-user) templates can't be exercised in this environment
-    # (no user-token forwarding / consent), so they're reported as skipped.
-    if val_template.verify == "obo":
-        pytest.skip("OBO (on-behalf-of-user) — not testable in this environment")
+    # OBO (on-behalf-of-user): exercised like `html`, but the shared app must be
+    # CREATED with the OBO scope union + resource bindings (see the validate-templates
+    # skill) — Databricks binds the forwarded-token scopes at app creation, so scopes
+    # added to an existing app do NOT reach `X-Forwarded-Access-Token`. A template is
+    # validated only when it declares `expect`: a string that renders ONLY if the
+    # forwarded user token's downstream call SUCCEEDED (not the always-rendered page
+    # header). Templates without a wired success-signal (or needing a binding the
+    # shared app lacks, e.g. a UC connection) skip until one is added.
+    if val_template.verify == "obo" and not val_template.expect:
+        pytest.skip("OBO template not yet wired for e2e (no success-signal expect)")
 
     # Build-only path: no shared app, no deploy.
     if val_template.verify == "build":
@@ -313,7 +334,7 @@ def test_validate_template(val_template, val_cfg, request):
     if not (REPO_ROOT / val_template.name / "app.yaml").exists():
         pytest.skip("no app.yaml — DAB-only, not deployable via the shared app")
 
-    # Deploy + browser-serve path (html / mcp / api).
+    # Deploy + browser-serve path (html / spa / mcp / api / obo).
     shared_app = request.getfixturevalue("shared_app")
     if request.config.getoption("--val-setup-only"):
         pytest.skip("--val-setup-only: shared app ensured, skipping deploy")
@@ -330,7 +351,10 @@ def test_validate_template(val_template, val_cfg, request):
             app_url, _token = wait_for_app_ready_generic(
                 shared_app, val_cfg.profile, health_path_for(val_template.verify)
             )
-            verify_serving(val_template.verify, app_url, str(STORAGE_STATE), val_template.expect)
+            verify_serving(
+                val_template.verify, app_url, str(STORAGE_STATE),
+                val_template.expect, val_template.obo_click,
+            )
         except Exception:
             logs = capture_app_logs(shared_app, val_cfg.profile)
             if logs:

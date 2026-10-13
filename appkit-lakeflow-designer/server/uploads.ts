@@ -1,18 +1,31 @@
 import { Readable } from 'node:stream';
-import type { Application, Request } from 'express';
+import type { Application, Request, Response } from 'express';
 import { MAX_UPLOAD_SIZE_LABEL, UPLOAD_REFERENCE, UPLOAD_UNAVAILABLE, type AppStorage } from '../shared/storageConfig';
 import { UploadError, resolveUpload, saveUploadStream, type UploadStore } from './fileUploads';
 import { validateFileFormat } from '../shared/fileFormats';
 import { streamFileDownload } from './fileDownloads';
 
+interface UploadManifest {
+  storage?: AppStorage;
+  parameters: { name: string; type: string; fileFormats?: string[] }[];
+}
+
 export interface UploadDependencies {
-  manifest(): Promise<{
-    storage?: AppStorage;
-    parameters: { name: string; type: string; fileFormats?: string[] }[];
-  } | undefined>;
+  manifest(): Promise<UploadManifest | undefined>;
   viewer(req: Request): string | undefined;
   store(storage: AppStorage): UploadStore;
   report(error: unknown): void;
+}
+
+const fileParameter = (manifest: UploadManifest | undefined, name: string) =>
+  manifest?.parameters.find((parameter) => parameter.name === name && parameter.type === 'file');
+
+function sendUploadError(res: Response, error: unknown, fallback: string) {
+  res.status(error instanceof UploadError ? error.status : 502).json(
+    error instanceof UploadError
+      ? { ...(error.code ? { code: error.code } : {}), error: error.message }
+      : { error: fallback },
+  );
 }
 
 export function registerUploadRoutes(app: Pick<Application, 'get' | 'post'>, deps: UploadDependencies) {
@@ -26,9 +39,7 @@ export function registerUploadRoutes(app: Pick<Application, 'get' | 'post'>, dep
       const viewer = deps.viewer(req);
       if (!viewer) throw new UploadError(401, 'Sign in through Databricks Apps to download files.');
       const manifest = await deps.manifest();
-      const parameter = manifest?.parameters.find(
-        ({ name, type }) => name === req.params.parameterName && type === 'file',
-      );
+      const parameter = fileParameter(manifest, req.params.parameterName);
       if (!parameter || !manifest?.storage) {
         throw new UploadError(404, 'This file parameter is no longer available. Review the app inputs.', {
           code: UPLOAD_UNAVAILABLE,
@@ -44,12 +55,11 @@ export function registerUploadRoutes(app: Pick<Application, 'get' | 'post'>, dep
       if (res.headersSent) {
         res.destroy(error instanceof Error ? error : undefined);
       } else {
-        res.status(error instanceof UploadError ? error.status : 502).json({
-          ...(error instanceof UploadError && error.code ? { code: error.code } : {}),
-          error: error instanceof UploadError
-            ? error.message
-            : 'Could not download the uploaded file. Check the app volume resource and permissions.',
-        });
+        sendUploadError(
+          res,
+          error,
+          'Could not download the uploaded file. Check the app volume resource and permissions.',
+        );
       }
     }
   });
@@ -58,9 +68,7 @@ export function registerUploadRoutes(app: Pick<Application, 'get' | 'post'>, dep
     let admitted = false;
     try {
       const manifest = await deps.manifest();
-      const parameter = manifest?.parameters.find(
-        ({ name, type }) => name === req.params.parameterName && type === 'file',
-      );
+      const parameter = fileParameter(manifest, req.params.parameterName);
       if (!parameter || !manifest?.storage) {
         res.status(404).json({
           error: 'This file parameter is no longer available. Review the app inputs.',
@@ -106,13 +114,7 @@ export function registerUploadRoutes(app: Pick<Application, 'get' | 'post'>, dep
       });
     } catch (error) {
       req.resume();
-      res.status(error instanceof UploadError ? error.status : 502).json({
-        ...(error instanceof UploadError && error.code ? { code: error.code } : {}),
-        error:
-          error instanceof UploadError
-            ? error.message
-            : 'Could not store the upload. Check the app volume resource and permissions.',
-      });
+      sendUploadError(res, error, 'Could not store the upload. Check the app volume resource and permissions.');
     } finally {
       if (admitted) activeUploads -= 1;
     }

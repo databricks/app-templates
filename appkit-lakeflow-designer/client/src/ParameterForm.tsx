@@ -15,6 +15,7 @@ import type { AppParameter } from '../../shared/appManifest';
 import { ComboboxParameterControl } from './ComboboxParameterControl';
 import { FileParameterControl } from './FileParameterControl';
 import { createFileUploadCache, UploadUnavailableError, validateUpload } from './fileUpload';
+import { parameterLabel } from './parameterLabels';
 import { parseMultiselectValue, toggleMultiselectValue } from '../../shared/multiselect';
 
 export function ParameterForm({
@@ -110,7 +111,7 @@ export function ParameterForm({
           className="grid gap-1.5 sm:grid-cols-[minmax(10rem,16rem)_minmax(0,1fr)] sm:items-start sm:gap-4"
         >
           <Label htmlFor={parameter.type === 'multiselect' ? undefined : parameter.name} className="sm:pt-2.5">
-            {parameter.label === '' ? parameter.name : parameter.label}
+            {parameterLabel(parameter)}
           </Label>
           <div className="grid gap-1.5">
             {parameter.type === 'file' ? (
@@ -160,7 +161,7 @@ function ParameterControl({
     return (
       <div
         role="group"
-        aria-label={parameter.label === '' ? parameter.name : parameter.label}
+        aria-label={parameterLabel(parameter)}
         className="grid max-h-40 gap-2 overflow-y-auto rounded-md border px-3 py-2.5"
       >
         {[...new Set(parameter.choices ?? [])].map((choice, index) => {

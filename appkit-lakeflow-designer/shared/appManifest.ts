@@ -8,15 +8,19 @@ const nonEmptyString = z.string().check(z.minLength(1));
 const stringOrEmpty = z.catch(z.string(), '');
 const record = z.record(z.string(), z.unknown());
 
+const RESERVED_PARAMETERS = new Set(['target_node', 'ld_display_outputs', 'ld_display_outputs_for']);
+
+export function isReservedParameter(name: string): boolean {
+  return RESERVED_PARAMETERS.has(name) || name.startsWith('_lb_');
+}
+
 const chartSpecSchema = z.looseObject({ widgetType: nonEmptyString });
 const provenanceSchema = z.looseObject({ publishedAt: z.number().check(z.positive()) });
 const targetSchema = z.object({ nodeId: nonEmptyString, label: stringOrEmpty });
 
 const parameterSchema = z.pipe(
   z.object({
-    name: nonEmptyString.check(z.refine((name) =>
-      name !== 'target_node' && name !== 'ld_display_outputs' && name !== 'ld_display_outputs_for' && !name.startsWith('_lb_'),
-    )),
+    name: nonEmptyString.check(z.refine((name) => !isReservedParameter(name))),
     label: z.string(),
     type: z.catch(z.enum(['text', 'number', 'dropdown', 'combobox', 'multiselect', 'file']), 'text'),
     defaultValue: stringOrEmpty,
@@ -136,3 +140,6 @@ export type AppMarkdownBlock = z.output<typeof markdownBlockSchema>;
 export type AppOutputBlock = z.output<typeof outputBlockSchema>;
 export type AppManifestBlock = z.output<typeof blockSchema>;
 export type AppManifest = z.output<typeof appManifestSchema>;
+
+export const outputBlockTitle = ({ label, nodeId, id }: Pick<AppOutputBlock, 'label' | 'nodeId' | 'id'>): string =>
+  label !== '' ? label : nodeId !== '' ? nodeId : id;

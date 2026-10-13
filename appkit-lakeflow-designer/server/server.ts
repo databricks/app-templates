@@ -1,13 +1,14 @@
-import { createApp, createWorkspaceClient, server } from '@databricks/appkit';
+import { createApp, createWorkspaceClient, server, type WorkspaceClient } from '@databricks/appkit';
 import { exportedModelToRunPayload, findNotebookModelValue } from './exportedRunOutput';
 import { matchRunOutputs } from './runOutputs';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { UPLOAD_REFERENCE } from '../shared/storageConfig';
-import { appManifestSchema, type AppManifest, type AppOutputBlock } from '../shared/appManifest';
+import { appManifestSchema, isReservedParameter, type AppManifest, type AppOutputBlock } from '../shared/appManifest';
+import { errorMessage, idString, isRecord, nonEmptyString, positiveInt } from '../shared/values';
 import { canAccessRun, viewerKey } from './fileUploads';
 import { appKitUploadStore } from './uploadStore';
 import { registerUploadRoutes } from './uploads';
-import { isReservedParameter, resolveRunParameters } from './runParameters';
+import { resolveRunParameters } from './runParameters';
 import { isLegacyExportRun, manifestRevision } from './runRevision';
 import { registerOutputFileRoutes } from './outputFiles';
 import { appKitOutputFileStore } from './outputFileStore';
@@ -16,19 +17,11 @@ import { runJobParameters } from './jobParameters';
 import { runAttribution } from './runAttribution';
 import { ensureJobViewPermission } from './jobPermissions';
 
-// Each published app's manifest is written by the publish flow beside the runner notebook, in the
-// app's own publisher-owned folder (not a shared, world-writable root), and read at startup via the
-// app's own workspace client. The app locates that folder by reading its bound runner job's notebook
-// path (the `job` resource is guaranteed present, and the app can read it via its CAN_MANAGE
-// grant), then looks for the manifest file there. It lives outside the git-backed source and outside
-// client/dist, so it is never served publicly.
+// Publishing writes the manifest beside the runner notebook in the app's publisher-owned folder, outside
+// the git-backed source and client/dist, so it is never served publicly.
 const MANIFEST_FILENAME = 'designerApp.json';
 // SKIPPED and INTERNAL_ERROR are terminal even when no task ran.
 const TERMINAL_LIFE_CYCLE_STATES = new Set(['TERMINATED', 'SKIPPED', 'INTERNAL_ERROR']);
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 type RunSummary = {
   jobRunId: string;
@@ -44,13 +37,7 @@ type RunSummary = {
   parameterDisplayValues?: Record<string, string>;
 };
 
-const JOB_ID = (() => {
-  const raw = process.env.DATABRICKS_JOB_ID;
-  if (typeof raw !== 'string' || raw.trim() === '') {
-    return undefined;
-  }
-  return raw.trim();
-})();
+const JOB_ID = process.env.DATABRICKS_JOB_ID?.trim() || undefined;
 // Standalone Apps provision their service principal with the App UUID. Older runtimes expose
 // only that OAuth client ID; newer runtimes also provide the explicit App ID.
 const APP_ID = process.env.DATABRICKS_APP_ID?.trim() || process.env.DATABRICKS_CLIENT_ID?.trim();
@@ -74,7 +61,6 @@ async function retryRead<T>(read: () => Promise<T>): Promise<T> {
       return await read();
     } catch (err) {
       lastError = err;
-
       if (attempt < READ_RETRY_ATTEMPTS) {
         await sleep(READ_RETRY_BACKOFF_MS);
       }
@@ -83,25 +69,17 @@ async function retryRead<T>(read: () => Promise<T>): Promise<T> {
   throw lastError;
 }
 
-// The manifest changes only on republish (rare), so the frequently-polled run-status endpoints
-// reuse a cached read (declaredOutputs, forceFresh omitted). The page-load (/config) and run-submit
-// (POST /run) paths pass forceFresh, so a republish is reflected on the next load without a redeploy
-// and refreshes the cache the status endpoints read.
+// Polled run-status reads reuse the cached manifest; other routes pass forceFresh, so a republish
+// takes effect without a redeploy.
 let cachedManifest: AppManifest | undefined;
-let hasCachedManifest = false;
 const loadManifest = async (forceFresh = false): Promise<AppManifest | undefined> => {
-  if (!forceFresh && hasCachedManifest) {
+  if (!forceFresh && cachedManifest !== undefined) {
     return cachedManifest;
   }
   const manifest = await readManifest();
-  if (manifest !== undefined) {
-    cachedManifest = manifest;
-    hasCachedManifest = true;
-  }
   // A stale pre-upload manifest must not re-enable public execution after a private republish.
-  if (forceFresh && manifest === undefined) {
-    cachedManifest = undefined;
-    hasCachedManifest = false;
+  if (manifest !== undefined || forceFresh) {
+    cachedManifest = manifest;
   }
   return manifest;
 };
@@ -111,14 +89,11 @@ function manifestFolderFromNotebookPath(notebookPath: string): string {
   return lastSlash <= 0 ? notebookPath : notebookPath.slice(0, lastSlash);
 }
 
-// The manifest folder is the directory holding the runner notebook. The runner job's notebook path is
-// stable for the app's lifetime, so resolve it once from the bound job and cache it, rather than
-// reading the job on every manifest read.
+// The runner notebook path is stable for the app's lifetime, so resolve its folder from the bound job once.
 let cachedManifestFolder: string | undefined;
-let hasResolvedManifestFolder = false;
 
 async function resolveManifestFolder(): Promise<string | undefined> {
-  if (hasResolvedManifestFolder) {
+  if (cachedManifestFolder !== undefined) {
     return cachedManifestFolder;
   }
   if (JOB_ID === undefined) {
@@ -134,7 +109,6 @@ async function resolveManifestFolder(): Promise<string | undefined> {
       return undefined;
     }
     cachedManifestFolder = manifestFolderFromNotebookPath(notebookPath);
-    hasResolvedManifestFolder = true;
     return cachedManifestFolder;
   } catch (err) {
     console.error('Could not read the runner job to locate the app manifest', err);
@@ -183,12 +157,8 @@ async function accessibleRun(
   const manifest = await loadManifest();
   if (!manifest) return undefined;
   let detail = run;
-  if (
-    hydrate &&
-    isRecord(run) &&
-    !Array.isArray(run.job_parameters)
-  ) {
-    const id = idFrom(run.run_id);
+  if (hydrate && isRecord(run) && !Array.isArray(run.job_parameters)) {
+    const id = idString(run.run_id);
     if (!id) return undefined;
     detail = await wsClient().jobs.getRun({ run_id: Number(id) });
   }
@@ -204,100 +174,127 @@ async function accessibleRun(
     : undefined;
 }
 
+// Guard every client-supplied run ID before reading output or cancelling it.
+async function readViewerRun(req: Request, res: Response) {
+  const jobRunId = idString(req.params.jobRunId);
+  if (jobRunId === undefined) {
+    res.status(400).json({ error: 'jobRunId must be a positive integer.' });
+    return undefined;
+  }
+  let run;
+  try {
+    run = await retryRead(() => wsClient().jobs.getRun({ run_id: Number(jobRunId) }));
+  } catch (err) {
+    res.status(502).json({ error: `Could not read run ${jobRunId}: ${errorMessage(err)}` });
+    return undefined;
+  }
+  const visibleRun = await accessibleRun(run, req);
+  if (visibleRun === undefined) {
+    res.status(404).json({ error: `Run ${jobRunId} is not a run of this app.` });
+    return undefined;
+  }
+  return { jobRunId, run, visibleRun };
+}
+
 async function declaredOutputs() {
   return (await loadManifest())?.blocks.filter((block): block is AppOutputBlock => block.type === 'output') ?? [];
 }
 
-// runs/export returns the run's rendered notebook views; the CODE view carries the displayed
-// command results. exportRun mirrors the SDK jobs surface the other jobs.* reads use.
+// The runs/export CODE view carries the displayed command results.
 async function readRunOutputPayload(taskRunId: string): Promise<string | undefined> {
   const exported = await retryRead(() =>
     wsClient().jobs.exportRun({ run_id: Number(taskRunId), views_to_export: 'CODE' }),
   );
   const views = isRecord(exported) && Array.isArray(exported.views) ? exported.views : [];
-  // Select by the decoder's own probe, not a raw substring: the CODE view's content can be
-  // base64-wrapped, and base64 never contains the literal marker, so a substring test would skip
-  // an encoded view and drop a real result.
+  // Probe with the decoder rather than a substring: a base64-wrapped view never contains the literal marker.
   const view = views.find(
     (candidate) => isRecord(candidate) && findNotebookModelValue(candidate.content) !== undefined,
   );
   return isRecord(view) ? exportedModelToRunPayload(view.content) : undefined;
 }
 
-const positiveIntFrom = (value: unknown) => {
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
-};
-
-// Run and job IDs are int64: keep them as positive decimal strings so a value past 2^53-1 is
-// not corrupted by Number. The appkit Jobs API still takes run_id as a number, so ids are cast
-// at that call boundary only; everything the client sees stays full precision.
-const idFrom = (value: unknown) => {
-  if (value === null || value === undefined || typeof value === 'boolean') {
-    return undefined;
+async function readRunResult(taskRunId: string | undefined) {
+  if (taskRunId === undefined) {
+    return { outcome: 'noPayload', reason: 'The run reported no task, so it has no output to read.' };
   }
-  const text = String(value);
-  return /^[1-9][0-9]*$/.test(text) ? text : undefined;
-};
+  try {
+    // Jobs requires the task run ID here, not the job run ID.
+    const payload = await readRunOutputPayload(taskRunId);
+    return matchRunOutputs(await declaredOutputs(), payload);
+  } catch (err) {
+    return { outcome: 'noPayload', reason: `Could not read the run output: ${errorMessage(err)}` };
+  }
+}
 
-// Page completed runs until the newest success is in hand: a streak of recent failures must not
-// hide an older successful run. Bound the scan so an all-failed history can't page forever.
 const LAST_RUN_PAGE_SIZE = 25;
-const LAST_RUN_SCAN_CAP = 200;
 const ACTIVE_RUN_SCAN_LIMIT = 5;
+// Bounds every run-list scan so a history with few visible runs cannot page forever.
+const RUN_SCAN_CAP = 200;
 const SUCCESSFUL_RESULT_STATES = new Set(['SUCCESS', 'SUCCESS_WITH_FAILURES']);
+
+type ListRunsRequest = Parameters<WorkspaceClient['jobs']['listRuns']>[0];
+
+async function collectVisibleRuns(
+  req: Request,
+  options: Omit<ListRunsRequest, 'job_id'>,
+  isComplete: (visible: Record<string, unknown>[]) => boolean,
+): Promise<Record<string, unknown>[]> {
+  const visible: Record<string, unknown>[] = [];
+  let scanned = 0;
+  for await (const run of wsClient().jobs.listRuns({ job_id: Number(JOB_ID), ...options })) {
+    const accessible = await accessibleRun(run, req, true);
+    if (accessible) {
+      visible.push(accessible);
+      if (isComplete(visible)) break;
+    }
+    if (++scanned >= RUN_SCAN_CAP) break;
+  }
+  return visible;
+}
 
 function isSuccessfulRun(run: unknown): run is Record<string, unknown> {
   return (
     isRecord(run) &&
-    idFrom(run.run_id) !== undefined &&
+    idString(run.run_id) !== undefined &&
     isRecord(run.state) &&
     typeof run.state.result_state === 'string' &&
     SUCCESSFUL_RESULT_STATES.has(run.state.result_state)
   );
 }
 
-function selectLastSuccessfulRun(runs: unknown) {
-  if (!Array.isArray(runs)) {
-    return undefined;
-  }
-  const successes = runs.filter(isSuccessfulRun);
-  successes.sort((a, b) => (positiveIntFrom(b.start_time) ?? 0) - (positiveIntFrom(a.start_time) ?? 0));
-  return successes[0];
+const startedAt = (run: Record<string, unknown>) => positiveInt(run.start_time) ?? 0;
+const newestFirst = (a: Record<string, unknown>, b: Record<string, unknown>) => startedAt(b) - startedAt(a);
+
+function selectLastSuccessfulRun(runs: Record<string, unknown>[]): Record<string, unknown> | undefined {
+  return runs.filter(isSuccessfulRun).sort(newestFirst)[0];
 }
 
-function selectActiveRun(runs: unknown) {
-  if (!Array.isArray(runs)) {
-    return undefined;
-  }
-  const active = runs.filter((run) => isRecord(run) && idFrom(run.run_id) !== undefined);
-  active.sort((a, b) => (positiveIntFrom(b.start_time) ?? 0) - (positiveIntFrom(a.start_time) ?? 0));
-  return active[0];
+function selectActiveRun(runs: Record<string, unknown>[]): Record<string, unknown> | undefined {
+  return runs.filter((run) => idString(run.run_id) !== undefined).sort(newestFirst)[0];
 }
 
-function lifeCycleStateOf(run: Record<string, unknown>) {
-  const state = run.state;
-  return isRecord(state) && typeof state.life_cycle_state === 'string' && state.life_cycle_state !== ''
-    ? state.life_cycle_state
-    : undefined;
-}
+const lifeCycleStateOf = (run: Record<string, unknown>) =>
+  isRecord(run.state) ? nonEmptyString(run.state.life_cycle_state) : undefined;
+
+const resultStateOf = (run: Record<string, unknown>) =>
+  isRecord(run.state) ? nonEmptyString(run.state.result_state) : undefined;
 
 function summarizeLastRun(run: Record<string, unknown>): RunSummary | undefined {
-  const jobRunId = idFrom(run.run_id);
+  const jobRunId = idString(run.run_id);
   if (jobRunId === undefined) {
     return undefined;
   }
   const firstTask = (Array.isArray(run.tasks) ? run.tasks : []).find(isRecord);
   const summary: RunSummary = { jobRunId };
-  const taskRunId = firstTask === undefined ? undefined : idFrom(firstTask.run_id);
+  const taskRunId = idString(firstTask?.run_id);
   if (taskRunId !== undefined) summary.taskRunId = taskRunId;
-  const endTime = positiveIntFrom(run.end_time);
+  const endTime = positiveInt(run.end_time);
   if (endTime !== undefined) summary.endTime = endTime;
-  const startTime = positiveIntFrom(run.start_time);
+  const startTime = positiveInt(run.start_time);
   if (startTime !== undefined) summary.startTime = startTime;
-  const setupDurationMs = positiveIntFrom(run.setup_duration);
+  const setupDurationMs = positiveInt(run.setup_duration);
   if (setupDurationMs !== undefined) summary.setupDurationMs = setupDurationMs;
-  const executionDurationMs = positiveIntFrom(run.execution_duration);
+  const executionDurationMs = positiveInt(run.execution_duration);
   if (executionDurationMs !== undefined) summary.executionDurationMs = executionDurationMs;
   if (typeof run.run_page_url === 'string' && run.run_page_url !== '') summary.runPageUrl = run.run_page_url;
   return summary;
@@ -312,10 +309,7 @@ function runParameterData(
   const params: Record<string, string> = {};
   const displayValues: Record<string, string> = {};
   for (const [name, value] of Object.entries(runJobParameters(run))) {
-    if (
-      isReservedParameter(name) ||
-      typeof value !== 'string'
-    ) {
+    if (isReservedParameter(name)) {
       continue;
     }
     const isFile = cachedManifest?.parameters.some((parameter) => parameter.name === name && parameter.type === 'file');
@@ -339,7 +333,6 @@ function runParameterData(
   };
 }
 
-// Guard every client- or list-supplied run ID before reading output or cancelling it.
 function runBelongsToJob(run: unknown, jobId: string | undefined) {
   if (jobId === undefined || !isRecord(run)) {
     return false;
@@ -349,14 +342,8 @@ function runBelongsToJob(run: unknown, jobId: string | undefined) {
 
 const RUN_HISTORY_DEFAULT_WINDOW = 100;
 const RUN_HISTORY_MAX_WINDOW = 200;
+// listRuns caps page size at 26.
 const RUN_HISTORY_PAGE_SIZE = 25;
-
-function resultStateOf(run: Record<string, unknown>) {
-  const state = run.state;
-  return isRecord(state) && typeof state.result_state === 'string' && state.result_state !== ''
-    ? state.result_state
-    : undefined;
-}
 
 function summarizeHistoryRun(run: Record<string, unknown>) {
   const summary = summarizeLastRun(run);
@@ -373,30 +360,15 @@ function summarizeHistoryRun(run: Record<string, unknown>) {
   return summary;
 }
 
-const historyStartedAt = (run: Record<string, unknown>) => positiveIntFrom(run.start_time) ?? 0;
-
-function summarizeRunHistory(runs: unknown, windowSize: number) {
-  if (!Array.isArray(runs)) {
-    return { entries: [], hasMore: false };
-  }
-  const records = runs.filter(isRecord);
-  const hasMore = records.length > windowSize;
-  records.sort((a, b) => historyStartedAt(b) - historyStartedAt(a));
-  const entries: RunSummary[] = [];
-  for (const record of records) {
-    if (entries.length >= windowSize) {
-      break;
-    }
-    const entry = summarizeHistoryRun(record);
-    if (entry !== undefined) {
-      entries.push(entry);
-    }
-  }
-  return { entries, hasMore };
+function summarizeRunHistory(runs: Record<string, unknown>[], windowSize: number) {
+  return {
+    entries: [...runs].sort(newestFirst).flatMap((run) => summarizeHistoryRun(run) ?? []).slice(0, windowSize),
+    hasMore: runs.length > windowSize,
+  };
 }
 
 function resolveHistoryWindow(raw: unknown) {
-  const parsed = typeof raw === 'number' ? raw : Number(raw);
+  const parsed = Number(raw);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     return RUN_HISTORY_DEFAULT_WINDOW;
   }
@@ -459,67 +431,41 @@ await createApp({
           return;
         }
 
-        let listed = [];
+        let listed: Record<string, unknown>[];
         try {
-          listed = await retryRead(async () => {
-            const collected = [];
-            let scanned = 0;
-
-            // completed_only includes failures. Keep paging until the newest success is in hand so
-            // a run of recent failures doesn't hide an older success, bounded by LAST_RUN_SCAN_CAP.
-            for await (const run of wsClient().jobs.listRuns({
-              job_id: Number(JOB_ID),
-              completed_only: true,
-              expand_tasks: true,
-              limit: LAST_RUN_PAGE_SIZE,
-            })) {
-              const visible = await accessibleRun(run, req, true);
-              if (visible) {
-                collected.push(visible);
-                if (isSuccessfulRun(visible)) break;
-              }
-
-              if (++scanned >= LAST_RUN_SCAN_CAP) {
-                break;
-              }
-            }
-            return collected;
-          });
+          // completed_only includes failures, so page until the newest success is in hand: a streak
+          // of recent failures must not hide an older successful run.
+          listed = await retryRead(() =>
+            collectVisibleRuns(
+              req,
+              { completed_only: true, expand_tasks: true, limit: LAST_RUN_PAGE_SIZE },
+              (visible) => isSuccessfulRun(visible.at(-1)),
+            ),
+          );
         } catch (err) {
           console.error(err);
-          res.json({ status: 'unavailable', reason: `Could not read this app's run history: ${errText(err)}` });
+          res.json({ status: 'unavailable', reason: `Could not read this app's run history: ${errorMessage(err)}` });
           return;
         }
 
         let active;
         try {
-          // Trust active_only instead of duplicating Jobs lifecycle-state logic.
-          const activeRuns = [];
-          let scannedActive = 0;
-          // DELIBERATELY NOT WRAPPED in retryRead; this best-effort signal must not delay primary content.
-          for await (const candidate of wsClient().jobs.listRuns({
-            job_id: Number(JOB_ID),
-            active_only: true,
-            expand_tasks: true,
-            limit: ACTIVE_RUN_SCAN_LIMIT,
-          })) {
-            const visible = await accessibleRun(candidate, req, true);
-            if (visible) {
-              activeRuns.push(visible);
-            }
-            if (++scannedActive >= LAST_RUN_SCAN_CAP || activeRuns.length >= ACTIVE_RUN_SCAN_LIMIT) {
-              break;
-            }
-          }
-          const activeRun = selectActiveRun(activeRuns);
+          // Trust active_only instead of duplicating Jobs lifecycle-state logic. Not retried: this
+          // best-effort signal must not delay primary content.
+          const activeRun = selectActiveRun(
+            await collectVisibleRuns(
+              req,
+              { active_only: true, expand_tasks: true, limit: ACTIVE_RUN_SCAN_LIMIT },
+              (visible) => visible.length >= ACTIVE_RUN_SCAN_LIMIT,
+            ),
+          );
           const activeSummary = activeRun === undefined ? undefined : summarizeLastRun(activeRun);
           if (activeRun !== undefined && activeSummary !== undefined) {
-            const activeParameterData = runParameterData(activeRun);
+            const lifeCycleState = lifeCycleStateOf(activeRun);
             active = {
               run: activeSummary,
-              ...activeParameterData,
-
-              ...(lifeCycleStateOf(activeRun) === undefined ? {} : { lifeCycleState: lifeCycleStateOf(activeRun) }),
+              ...runParameterData(activeRun),
+              ...(lifeCycleState === undefined ? {} : { lifeCycleState }),
             };
           }
         } catch (err) {
@@ -533,34 +479,13 @@ await createApp({
           return;
         }
         summary.resultState = resultStateOf(run);
-
-        const parameterData = runParameterData(run);
-
-        const found = {
+        res.json({
           status: 'found',
           run: summary,
-          ...parameterData,
+          ...runParameterData(run),
           ...(active === undefined ? {} : { active }),
-        };
-
-        if (summary.taskRunId === undefined) {
-          res.json({
-            ...found,
-            result: { outcome: 'noPayload', reason: 'The run reported no task, so it has no output to read.' },
-          });
-          return;
-        }
-
-        try {
-          // Jobs requires the task run ID here, not the job run ID.
-          const payload = await readRunOutputPayload(summary.taskRunId);
-          res.json({ ...found, result: matchRunOutputs(await declaredOutputs(), payload) });
-        } catch (err) {
-          res.json({
-            ...found,
-            result: { outcome: 'noPayload', reason: `Could not read the run output: ${errText(err)}` },
-          });
-        }
+          result: await readRunResult(summary.taskRunId),
+        });
       });
 
       app.post('/api/designer/run', async (req, res) => {
@@ -606,7 +531,7 @@ await createApp({
             job_id: Number(JOB_ID),
             job_parameters: { ...resolved.params, ...attribution },
           });
-          const jobRunId = idFrom(run?.run_id);
+          const jobRunId = idString(run?.run_id);
           if (jobRunId === undefined) {
             res.status(502).json({ error: 'The platform accepted the request but returned no run id.' });
             return;
@@ -614,30 +539,14 @@ await createApp({
           res.json({ jobRunId });
         } catch (err) {
           console.error(err);
-          res.status(502).json({ error: `Could not start the run: ${errText(err)}` });
+          res.status(502).json({ error: `Could not start the run: ${errorMessage(err)}` });
         }
       });
 
       app.get('/api/designer/run/:jobRunId', async (req, res) => {
-        const jobRunId = idFrom(req.params.jobRunId);
-        if (jobRunId === undefined) {
-          res.status(400).json({ error: 'jobRunId must be a positive integer.' });
-          return;
-        }
-
-        let run;
-        try {
-          run = await retryRead(() => wsClient().jobs.getRun({ run_id: Number(jobRunId) }));
-        } catch (err) {
-          res.status(502).json({ error: `Could not read run ${jobRunId}: ${errText(err)}` });
-          return;
-        }
-
-        const visibleRun = await accessibleRun(run, req);
-        if (visibleRun === undefined) {
-          res.status(404).json({ error: `Run ${jobRunId} is not a run of this app.` });
-          return;
-        }
+        const found = await readViewerRun(req, res);
+        if (found === undefined) return;
+        const { jobRunId, run, visibleRun } = found;
 
         const lifeCycleState = run.state?.life_cycle_state;
         const resultState = run.state?.result_state;
@@ -647,7 +556,7 @@ await createApp({
           (lifeCycleState != null && TERMINAL_LIFE_CYCLE_STATES.has(lifeCycleState)) || resultState != null;
         const snapshot = {
           jobRunId,
-          taskRunId: idFrom(run.tasks?.[0]?.run_id),
+          taskRunId: idString(run.tasks?.[0]?.run_id),
           lifeCycleState,
           resultState,
           stateMessage: run.state?.state_message,
@@ -679,52 +588,19 @@ await createApp({
           return;
         }
 
-        if (snapshot.taskRunId === undefined) {
-          res.json({
-            ...snapshot,
-            result: { outcome: 'noPayload', reason: 'The run reported no task, so it has no output to read.' },
-          });
-          return;
-        }
-
-        try {
-          // Jobs requires the task run ID here, not the job run ID.
-          const payload = await readRunOutputPayload(snapshot.taskRunId);
-          res.json({ ...snapshot, result: matchRunOutputs(await declaredOutputs(), payload) });
-        } catch (err) {
-          res.json({
-            ...snapshot,
-            result: { outcome: 'noPayload', reason: `Could not read the run output: ${errText(err)}` },
-          });
-        }
+        res.json({ ...snapshot, result: await readRunResult(snapshot.taskRunId) });
       });
 
       app.delete('/api/designer/run/:jobRunId', async (req, res) => {
-        const jobRunId = idFrom(req.params.jobRunId);
-        if (jobRunId === undefined) {
-          res.status(400).json({ error: 'jobRunId must be a positive integer.' });
-          return;
-        }
-
-        let run;
-        try {
-          run = await retryRead(() => wsClient().jobs.getRun({ run_id: Number(jobRunId) }));
-        } catch (err) {
-          res.status(502).json({ error: `Could not read run ${jobRunId}: ${errText(err)}` });
-          return;
-        }
-        if (!(await accessibleRun(run, req))) {
-          res.status(404).json({ error: `Run ${jobRunId} is not a run of this app.` });
-          return;
-        }
-
+        const found = await readViewerRun(req, res);
+        if (found === undefined) return;
         try {
           // Never retry writes; polling settles cancellation from the run's own state.
-          await wsClient().jobs.cancelRun({ run_id: Number(jobRunId) });
+          await wsClient().jobs.cancelRun({ run_id: Number(found.jobRunId) });
           res.json({ cancelled: true });
         } catch (err) {
           console.error(err);
-          res.status(502).json({ error: `Could not cancel run ${jobRunId}: ${errText(err)}` });
+          res.status(502).json({ error: `Could not cancel run ${found.jobRunId}: ${errorMessage(err)}` });
         }
       });
 
@@ -735,36 +611,23 @@ await createApp({
         }
         const windowSize = resolveHistoryWindow(req.query?.window);
 
-        let history = [];
+        let history: Record<string, unknown>[];
         try {
-          history = await retryRead(async () => {
-            const collected = [];
-            let scanned = 0;
-            // listRuns caps page size at 26; stop the generator once the requested window is full.
-            for await (const run of wsClient().jobs.listRuns({
-              job_id: Number(JOB_ID),
-              completed_only: true,
-              limit: RUN_HISTORY_PAGE_SIZE,
-            })) {
-              const visible = await accessibleRun(run, req, true);
-              if (visible) {
-                collected.push(visible);
-              }
-
-              if (collected.length > windowSize || ++scanned >= LAST_RUN_SCAN_CAP) {
-                break;
-              }
-            }
-            return collected;
-          });
+          // One visible run past the window shows that older history exists.
+          history = await retryRead(() =>
+            collectVisibleRuns(
+              req,
+              { completed_only: true, limit: RUN_HISTORY_PAGE_SIZE },
+              (visible) => visible.length > windowSize,
+            ),
+          );
         } catch (err) {
           console.error(err);
-          res.json({ status: 'unavailable', reason: `Could not read this app's run history: ${errText(err)}` });
+          res.json({ status: 'unavailable', reason: `Could not read this app's run history: ${errorMessage(err)}` });
           return;
         }
 
         const page = summarizeRunHistory(history, windowSize);
-
         res.json({ status: 'found', runs: page.entries, hasMore: page.hasMore, window: windowSize });
       });
     });

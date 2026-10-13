@@ -36,7 +36,6 @@ export function RunStatus({
   cancelling,
 }: {
   snapshot: RunSnapshot | undefined;
-
   computingLabel: string;
   startedAt: number;
   elapsedMs: number;

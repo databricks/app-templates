@@ -1,4 +1,3 @@
-
 export type TypeCategory =
   | 'string'
   | 'integer'
@@ -79,9 +78,7 @@ export function TypeGlyph({ category }: { category: TypeCategory }) {
 }
 
 export type FormattedCell = {
-
   text: string | null;
-
   title?: string;
 };
 

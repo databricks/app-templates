@@ -32,12 +32,9 @@ const MAX_RESIZED_COLUMN_WIDTH = 1000;
 const COLUMN_RESIZE_STEP = 10;
 
 const BODY_CHAR_WIDTH = 6.6;
-
 const HEADER_CHAR_WIDTH = 7.3;
 const CELL_PADDING = 16;
-
 const HEADER_GLYPH = 40;
-
 const WIDTH_SAMPLE_ROWS = 100;
 
 function measureColumnWidth(field: SchemaField, rows: OkPayload['rows']): number {

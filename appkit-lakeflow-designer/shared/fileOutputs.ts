@@ -1,3 +1,6 @@
+import { isVolumeName } from './storageConfig';
+import { isRecord } from './values';
+
 export const FILE_OUTPUTS_PARAM = '_lb_file_outputs';
 export const OUTPUT_NAMESPACE_PARAM = '_lb_output_namespace';
 export const APP_REVISION_PARAM = '_lb_app_revision';
@@ -32,10 +35,7 @@ export function parseFileOutput(value: unknown): FileOutputConfig | undefined {
   ) {
     return undefined;
   }
-  if (!value.volumes.every((volume): volume is string =>
-    typeof volume === 'string' && volume.split('.').length === 3 &&
-    volume.split('.').every((name) => /^[A-Za-z0-9_-]+$/.test(name)),
-  )) {
+  if (!value.volumes.every((volume): volume is string => typeof volume === 'string' && isVolumeName(volume))) {
     return undefined;
   }
   return { volumes: [...new Set(value.volumes)].sort() };
@@ -43,9 +43,7 @@ export function parseFileOutput(value: unknown): FileOutputConfig | undefined {
 
 export function hasInvalidFileOutputDeclaration(blocks: unknown): boolean {
   if (!Array.isArray(blocks)) return false;
-  const records = blocks.filter((block): block is Record<string, unknown> =>
-    typeof block === 'object' && block !== null && !Array.isArray(block),
-  );
+  const records = blocks.filter(isRecord);
   const outputIds = records.filter((block) => block.type === 'output').map((block) => block.id);
   // Preview blocks may be omitted when malformed. File blocks must fail closed instead:
   // dropping one could remove the ownership/policy controls while the runner still writes it.

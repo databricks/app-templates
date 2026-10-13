@@ -4,12 +4,13 @@ import { Alert, AlertDescription, AlertTitle, Badge, Button, Card } from '@datab
 
 import { ActiveRunBanner } from './ActiveRunBanner';
 import type { FileOutputBehavior } from '../../shared/fileOutputs';
-import type {
-  AppChartSpec,
-  AppManifestBlock,
-  AppMarkdownBlock,
-  AppOutputBlock,
-  AppParameter,
+import {
+  outputBlockTitle,
+  type AppChartSpec,
+  type AppManifestBlock,
+  type AppMarkdownBlock,
+  type AppOutputBlock,
+  type AppParameter,
 } from '../../shared/appManifest';
 import {
   fetchAppConfig,
@@ -58,7 +59,6 @@ const EMPTY_LANDING_MESSAGES = {
 } as const;
 
 const NOT_RUNNABLE_MESSAGES: Record<NotRunnableReason, string> = {
-
   noManifest: 'This app has no published outputs, so there is nothing to run. It may need republishing.',
   noJob: 'This app is not connected to a job yet, so it cannot run. Its publisher needs to finish setting it up.',
 };
@@ -169,18 +169,7 @@ export function App() {
     }
   }, [config]);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const next = await fetchLastRun();
-      if (!cancelled) {
-        setLastRun(next);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [ownFinishedRunId, followedFinishedRunId]);
+  useEffect(() => applyUnlessCancelled(fetchLastRun(), setLastRun), [ownFinishedRunId, followedFinishedRunId]);
 
   const historyEnabled = config.status === 'ready' && config.runnable;
 
@@ -188,18 +177,8 @@ export function App() {
     if (!historyEnabled) {
       return undefined;
     }
-    let cancelled = false;
-
     setHistory((prev) => (prev.status === 'found' ? prev : { status: 'loading' }));
-    void (async () => {
-      const next = await fetchRunHistory(RUN_HISTORY_FIRST_WINDOW);
-      if (!cancelled) {
-        setHistory(next);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    return applyUnlessCancelled(fetchRunHistory(RUN_HISTORY_FIRST_WINDOW), setHistory);
   }, [historyEnabled, ownFinishedRunId, followedFinishedRunId]);
 
   useEffect(() => {
@@ -207,17 +186,8 @@ export function App() {
     if (jobRunId === undefined) {
       return undefined;
     }
-    let cancelled = false;
     setSelectedRun({ status: 'loading' });
-    void (async () => {
-      const next = await fetchRunResult(jobRunId);
-      if (!cancelled) {
-        setSelectedRun(next);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    return applyUnlessCancelled(fetchRunResult(jobRunId), setSelectedRun);
   }, [selectedEntry?.jobRunId]);
 
   useEffect(() => {
@@ -298,7 +268,6 @@ export function App() {
     void runWithValues(values);
   };
   const selectRun = (entry: RunHistoryEntry) => {
-
     if (state.phase === 'settled') {
       reset();
     }
@@ -306,7 +275,6 @@ export function App() {
     setSelectedEntry(entry);
   };
 
-  const viewFollowedResult = () => clearSelection();
   const result = state.snapshot?.result;
   const ownRunSucceeded = state.phase === 'settled' && isSuccessfulResultState(state.snapshot?.resultState);
   const ownFinishedAt = state.startedAt === undefined ? undefined : state.startedAt + state.elapsedMs;
@@ -333,7 +301,6 @@ export function App() {
           {manifest.subtitle === undefined ? null : (
             <p className="text-muted-foreground mt-1 text-sm">{manifest.subtitle}</p>
           )}
-          {}
           {manifest.provenance === undefined ? null : (
             <p
               className="text-muted-foreground mt-1 text-xs"
@@ -379,8 +346,6 @@ export function App() {
             runnable={runnable}
           />
 
-          {
-}
           {!runnable && notRunnableReason !== undefined ? (
             <div className="border-border border-t px-6 py-4">
               <Alert>
@@ -390,9 +355,6 @@ export function App() {
             </div>
           ) : null}
 
-          {
-
-}
           {state.phase === 'idle' || (state.phase === 'settled' && state.snapshot === undefined)
             ? planLandingArea({
                 lastRun: lastRun.status,
@@ -410,7 +372,7 @@ export function App() {
                   followedFinishedAt={followed.finishedAt}
                   selectedEntry={selectedEntry}
                   selectedRun={selectedRun}
-                  onViewFollowedResult={viewFollowedResult}
+                  onViewFollowedResult={clearSelection}
                   declared={manifest.parameters}
                   runnable={runnable}
                   newerRunDidNotSucceed={newerRunDidNotSucceed}
@@ -444,9 +406,6 @@ export function App() {
             />
           ) : null}
 
-          {
-
-}
           {state.phase === 'running' ? (
             <SelectedRunSection
               selectedEntry={selectedEntry}
@@ -489,6 +448,17 @@ function Shell({ children }: { children: React.ReactNode }) {
       <div className="mx-auto max-w-6xl p-6">{children}</div>
     </div>
   );
+}
+
+// Applies a loaded value unless the effect was cleaned up first; returns that cleanup.
+function applyUnlessCancelled<T>(load: Promise<T>, apply: (value: T) => void): () => void {
+  let cancelled = false;
+  void load.then((value) => {
+    if (!cancelled) apply(value);
+  });
+  return () => {
+    cancelled = true;
+  };
 }
 
 function activeRunOf(lastRun: LastRunState): ActiveRun | undefined {
@@ -644,7 +614,6 @@ function LandingBlock({
   }
 
   if (section.kind === 'followedResult') {
-
     return followedActive === undefined || followedOutcome === undefined ? null : (
       <RunResult
         run={followedActive.run}
@@ -670,7 +639,6 @@ function LandingBlock({
   }
 
   if (section.kind === 'followedResultAvailable') {
-
     return followedActive === undefined || followedOutcome === undefined ? null : (
       <div className="border-border bg-muted/40 border-t px-6 py-3">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -731,7 +699,6 @@ function SelectedRunSection({
     );
   }
   if (selectedRun.status === 'unavailable') {
-
     return (
       <div className="border-border border-t p-6">
         <Alert variant="destructive">
@@ -851,7 +818,7 @@ function PublishedOutputBlock({
   if (output === undefined) {
     return (
       <section className="border-border border-t [&>*]:border-t-0">
-        <OutputHeading title={outputTitle(block)} />
+        <OutputHeading title={outputBlockTitle(block)} />
         <UnmatchedOutput state={unmatchedState} />
       </section>
     );
@@ -859,11 +826,7 @@ function PublishedOutputBlock({
   return (
     <OutputSection
       downloadRequest={downloadRunId && block.fileOutput ? { runId: downloadRunId, outputId: block.id } : undefined}
-      output={{
-        ...output,
-        title: outputTitle(block),
-        ...(block.chartSpec === undefined ? { chartSpec: undefined } : { chartSpec: block.chartSpec }),
-      }}
+      output={{ ...output, title: outputBlockTitle(block), chartSpec: block.chartSpec }}
       onRetry={onRetry}
     />
   );
@@ -882,10 +845,6 @@ function UnmatchedOutput({ state }: { state: UnmatchedOutputState }) {
           : 'Run the app to populate this output.'}
     </div>
   );
-}
-
-function outputTitle(block: AppOutputBlock): string {
-  return block.label !== '' ? block.label : block.nodeId !== '' ? block.nodeId : block.id;
 }
 
 function OutputHeading({ title }: { title: string }) {
@@ -972,11 +931,8 @@ function ResultSection({ payload, chartSpec }: { payload: OkPayload; chartSpec?:
       </>
     );
   }
-  const chart =
-    chartSpec === undefined
-      ? undefined
-      : translatePublishedChart({ chartSpec, schema: payload.schema });
-  if (chart !== undefined && chart.ok) {
+  const chart = chartSpec === undefined ? undefined : translatePublishedChart({ chartSpec, schema: payload.schema });
+  if (chart?.ok) {
     return (
       <>
         <TruncatedChartWarning payload={payload} />
@@ -1022,9 +978,5 @@ function ChartRefusedNote({ refusal }: { refusal: PublishedChartRefusal }) {
 
 function describeOutputs(blocks: AppManifestBlock[]): string {
   const outputs = blocks.filter((block): block is AppOutputBlock => block.type === 'output');
-  if (outputs.length === 1) {
-    const only = outputs[0];
-    return only.label !== '' ? only.label : only.nodeId !== '' ? only.nodeId : only.id;
-  }
-  return `${outputs.length} outputs`;
+  return outputs.length === 1 ? outputBlockTitle(outputs[0]) : `${outputs.length} outputs`;
 }

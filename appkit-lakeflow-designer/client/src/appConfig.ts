@@ -1,6 +1,7 @@
 import { CONFIG_ROUTE } from './routes';
 import { appManifestSchema, type AppManifest } from '../../shared/appManifest';
 import { isValidMultiselectValue } from '../../shared/multiselect';
+import { errorMessage, isRecord } from '../../shared/values';
 
 export type NotRunnableReason = 'noManifest' | 'noJob';
 
@@ -8,9 +9,6 @@ export type AppConfigState =
   | { status: 'loading' }
   | { status: 'ready'; manifest: AppManifest; runnable: boolean; notRunnableReason?: NotRunnableReason }
   | { status: 'unavailable'; detail: string };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export function parseAppManifest(raw: unknown): AppManifest | undefined {
   return appManifestSchema.safeParse(raw).data;
@@ -88,6 +86,6 @@ export async function fetchAppConfig(): Promise<AppConfigState> {
       ...(reason === 'noManifest' || reason === 'noJob' ? { notRunnableReason: reason } : {}),
     };
   } catch (error) {
-    return { status: 'unavailable', detail: error instanceof Error ? error.message : String(error) };
+    return { status: 'unavailable', detail: errorMessage(error) };
   }
 }

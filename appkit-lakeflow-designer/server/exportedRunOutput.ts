@@ -1,5 +1,6 @@
 import { DISPLAY_ROW_LIMIT, summarizeResultPreview } from '../shared/resultPreview';
 import { FILE_OUTPUTS_MIME_TYPE, MAX_OUTPUT_FILES, parseFileOutputBehavior, type WrittenFiles } from '../shared/fileOutputs';
+import { isRecord } from '../shared/values';
 
 const RUNNER_PAYLOAD_VERSION = 2;
 const NOTEBOOK_MODEL_ASSIGNMENT = /__DATABRICKS_NOTEBOOK_MODEL = '([^']*)'/;
@@ -7,9 +8,6 @@ const ROW_COUNTS_MIME_TYPE = 'application/vnd.databricks.lakeflow-designer.row-c
 const RUNTIME_NODE_STATE_MIME_TYPE = 'application/vnd.databricks.lakebuilder.runtime-node-state+json';
 // Each cell's display(ctx["<node>.<port>"]) lines name the ports it renders, in source order.
 const DISPLAY_CTX_KEY = /display\(ctx\["([^"]+)"\]\)/g;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export function findNotebookModelValue(exportedHtml: unknown): string | undefined {
   if (typeof exportedHtml !== 'string') {
@@ -20,8 +18,7 @@ export function findNotebookModelValue(exportedHtml: unknown): string | undefine
     return direct[1];
   }
   try {
-    const nested = Buffer.from(exportedHtml, 'base64').toString().match(NOTEBOOK_MODEL_ASSIGNMENT);
-    return nested !== null ? nested[1] : undefined;
+    return Buffer.from(exportedHtml, 'base64').toString().match(NOTEBOOK_MODEL_ASSIGNMENT)?.[1];
   } catch {
     return undefined;
   }
@@ -89,41 +86,35 @@ function resultEntries(results: unknown): unknown[] {
   return isRecord(results) && Array.isArray(results.data) ? results.data : [];
 }
 
+// A MIME bundle may carry its payload as an object or a JSON string; unparseable strings are skipped.
+function mimePayloads(results: unknown, mimeType: string): unknown[] {
+  return resultEntries(results).flatMap((entry) => {
+    if (!isRecord(entry) || entry.type !== 'mimeBundle' || !isRecord(entry.data)) return [];
+    const payload = entry.data[mimeType];
+    if (typeof payload !== 'string') return [payload];
+    try {
+      return [JSON.parse(payload)];
+    } catch {
+      return [];
+    }
+  });
+}
+
+const isPortCount = (entry: [string, unknown]): entry is [string, number] =>
+  entry[0] !== '' && typeof entry[1] === 'number' && Number.isSafeInteger(entry[1]) && entry[1] >= 0;
+
 function exactRowCounts(results: unknown): Map<string, number> {
   const counts = new Map<string, number>();
-  for (const entry of resultEntries(results)) {
-    if (
-      !isRecord(entry) ||
-      entry.type !== 'mimeBundle' ||
-      !isRecord(entry.data) ||
-      !Object.prototype.hasOwnProperty.call(entry.data, ROW_COUNTS_MIME_TYPE)
-    ) {
-      continue;
-    }
-    const rawPayload = entry.data[ROW_COUNTS_MIME_TYPE];
-    let payload = rawPayload;
-    if (typeof rawPayload === 'string') {
-      try {
-        payload = JSON.parse(rawPayload);
-      } catch {
-        continue;
-      }
-    }
+  for (const payload of mimePayloads(results, ROW_COUNTS_MIME_TYPE)) {
     if (!isRecord(payload) || typeof payload.node !== 'string' || payload.node === '' || !isRecord(payload.counts)) {
       continue;
     }
-    const validEntries: [string, number][] = [];
-    for (const [port, count] of Object.entries(payload.counts)) {
-      if (port === '' || typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0) {
-        validEntries.length = 0;
-        break;
-      }
-      validEntries.push([port, count]);
-    }
-    if (validEntries.length === 0) {
+    // One invalid count discards the node's whole payload.
+    const portCounts = Object.entries(payload.counts);
+    if (portCounts.length === 0 || !portCounts.every(isPortCount)) {
       continue;
     }
-    for (const [port, count] of validEntries) {
+    for (const [port, count] of portCounts) {
       counts.set(`${payload.node}\0${port}`, count);
     }
   }
@@ -132,16 +123,7 @@ function exactRowCounts(results: unknown): Map<string, number> {
 
 function runtimeNodeStates(results: unknown): Map<string, { disabled: boolean }> {
   const states = new Map<string, { disabled: boolean }>();
-  for (const entry of resultEntries(results)) {
-    if (!isRecord(entry) || entry.type !== 'mimeBundle' || !isRecord(entry.data)) continue;
-    let payload = entry.data[RUNTIME_NODE_STATE_MIME_TYPE];
-    if (typeof payload === 'string') {
-      try {
-        payload = JSON.parse(payload);
-      } catch {
-        continue;
-      }
-    }
+  for (const payload of mimePayloads(results, RUNTIME_NODE_STATE_MIME_TYPE)) {
     if (
       isRecord(payload) && typeof payload.nodeId === 'string' && payload.nodeId !== '' &&
       typeof payload.disabled === 'boolean'
@@ -150,6 +132,24 @@ function runtimeNodeStates(results: unknown): Map<string, { disabled: boolean }>
     }
   }
   return states;
+}
+
+function writtenFiles(results: unknown): WrittenFiles[] {
+  return mimePayloads(results, FILE_OUTPUTS_MIME_TYPE).flatMap((receipt) => {
+    if (
+      !isRecord(receipt) || typeof receipt.node !== 'string' || receipt.node === '' ||
+      !Array.isArray(receipt.files) || receipt.files.length > MAX_OUTPUT_FILES ||
+      !receipt.files.every((file) => isRecord(file) && typeof file.path === 'string')
+    ) {
+      return [];
+    }
+    const behavior = parseFileOutputBehavior(receipt.behavior);
+    return [{
+      node: receipt.node,
+      files: receipt.files.map((file) => ({ path: file.path as string })),
+      ...(behavior ? { behavior } : {}),
+    }];
+  });
 }
 
 // MIME metadata must not consume a table ordinal when pairing results with display calls.
@@ -171,34 +171,9 @@ export function exportedModelToRunPayload(exportedHtml: unknown): string | undef
     }
     // Receipts are independent of display results. A successful write must stay downloadable
     // even if the preview/count fails or this cell deliberately has no tabular preview.
-    for (const entry of resultEntries(command.results)) {
-      if (!isRecord(entry) || entry.type !== 'mimeBundle' || !isRecord(entry.data)) continue;
-      let receipt = entry.data[FILE_OUTPUTS_MIME_TYPE];
-      if (typeof receipt === 'string') {
-        try {
-          receipt = JSON.parse(receipt);
-        } catch {
-          continue;
-        }
-      }
-      if (
-        isRecord(receipt) && typeof receipt.node === 'string' && receipt.node !== '' &&
-        Array.isArray(receipt.files) && receipt.files.length <= MAX_OUTPUT_FILES &&
-        receipt.files.every((file) => isRecord(file) && typeof file.path === 'string')
-      ) {
-        const behavior = parseFileOutputBehavior(receipt.behavior);
-        files.push({
-          node: receipt.node,
-          files: receipt.files.map((file) => ({ path: file.path as string })),
-          ...(behavior ? { behavior } : {}),
-        });
-      }
-    }
+    files.push(...writtenFiles(command.results));
     const rowCounts = exactRowCounts(command.results);
-    const tables = resultEntries(command.results).flatMap((entry) => {
-      const table = toDisplayTable(entry);
-      return table === undefined ? [] : [table];
-    });
+    const tables = resultEntries(command.results).flatMap((entry) => toDisplayTable(entry) ?? []);
     tables.forEach((table, index) => {
       const key = keys[index];
       if (key === undefined) {

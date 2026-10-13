@@ -5,11 +5,10 @@ import { APP_VIEWER_PARAM, UploadError, resolveUpload, type UploadStore } from '
 import { validateFileFormat } from '../shared/fileFormats';
 import { FILE_OUTPUTS_PARAM, OUTPUT_NAMESPACE_PARAM, type FileOutputConfig } from '../shared/fileOutputs';
 import { isValidMultiselectConfig, isValidMultiselectValue } from '../shared/multiselect';
+import { isReservedParameter } from '../shared/appManifest';
 import { APP_PARAMETERS_PARAM } from './runAttribution';
 
-export function isReservedParameter(name: string): boolean {
-  return name === 'target_node' || name === 'ld_display_outputs' || name === 'ld_display_outputs_for' || name.startsWith('_lb_');
-}
+export { isReservedParameter };
 
 interface ParameterManifest {
   storage?: AppStorage;
@@ -78,24 +77,14 @@ export async function resolveRunParameters(
         params[parameter.name] = path;
         filenames.set(parameter.name, upload.filename);
       } catch (error) {
-        if (
-          error instanceof UploadError &&
-          (error.code === UPLOAD_UNAVAILABLE || [400, 404, 409].includes(error.status))
-        ) {
-          return {
-            ok: false,
-            error: error.code === UPLOAD_UNAVAILABLE
-              ? error.message
-              : `${error.message} Upload the file again.`,
-            code: UPLOAD_UNAVAILABLE,
-          };
+        if (!(error instanceof UploadError)) {
+          return { ok: false, error: 'Could not verify the uploaded file. Try Run again after storage is available.' };
         }
-        return {
-          ok: false,
-          error: error instanceof UploadError
-            ? error.message
-            : 'Could not verify the uploaded file. Try Run again after storage is available.',
-        };
+        if (error.code === UPLOAD_UNAVAILABLE) return { ok: false, error: error.message, code: UPLOAD_UNAVAILABLE };
+        if ([400, 404, 409].includes(error.status)) {
+          return { ok: false, error: `${error.message} Upload the file again.`, code: UPLOAD_UNAVAILABLE };
+        }
+        return { ok: false, error: error.message };
       }
       continue;
     }

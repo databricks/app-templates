@@ -1,10 +1,10 @@
 import { DISPLAY_ROW_LIMIT, summarizeResultPreview, type ResultPreview } from '../../shared/resultPreview';
 import type { AppChartSpec } from '../../shared/appManifest';
 import { MAX_OUTPUT_FILES, parseFileOutputBehavior, type FileOutputBehavior, type WrittenFile } from '../../shared/fileOutputs';
+import { idString, isRecord, nonEmptyString, positiveInt, stringValues } from '../../shared/values';
 
 export type SchemaField = {
   name: string;
-
   type: string;
   nullable: boolean;
 };
@@ -37,39 +37,28 @@ export type ErrorPayload = {
 export type OutputOutcome =
   | { outcome: 'result'; payload: OkPayload }
   | { outcome: 'computeError'; payload: ErrorPayload }
-
   | { outcome: 'malformed'; reason: string }
-
   | { outcome: 'missing'; reason: string };
 
 export type MatchedOutput = {
-
   key: string;
-
   id?: string;
-
   title: string;
-
   source?: string;
-
   chartSpec?: AppChartSpec;
   files?: WrittenFile[];
   fileBehavior?: FileOutputBehavior;
   disabled?: boolean;
-
   outcome: OutputOutcome;
 };
 
 export type RunOutcome =
-
   | { outcome: 'outputs'; outputs: MatchedOutput[] }
-
   | { outcome: 'noPayload'; reason: string };
 
 export type RunSnapshot = {
   jobRunId: string;
   taskRunId?: string;
-
   lifeCycleState?: string;
   resultState?: string;
   stateMessage?: string;
@@ -79,31 +68,10 @@ export type RunSnapshot = {
   terminal: boolean;
   parameters?: Record<string, string>;
   parameterDisplayValues?: Record<string, string>;
-
   result?: RunOutcome;
 };
 
 export type TriggerResponse = { jobRunId: string };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const nonEmptyString = (value: unknown): string | undefined =>
-  typeof value === 'string' && value !== '' ? value : undefined;
-
-const positiveInt = (value: unknown): number | undefined => {
-  const parsed = typeof value === 'number' ? value : Number(value);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
-};
-
-// Run and job IDs are int64 carried as decimal strings; keep them as strings, never through Number.
-const idString = (value: unknown): string | undefined => {
-  if (value === null || value === undefined || typeof value === 'boolean') {
-    return undefined;
-  }
-  const text = String(value);
-  return /^[1-9][0-9]*$/.test(text) ? text : undefined;
-};
 
 function parseSchemaField(raw: unknown): SchemaField | undefined {
   if (!isRecord(raw) || typeof raw.name !== 'string' || typeof raw.type !== 'string') {
@@ -197,12 +165,13 @@ function parseMatchedOutput(raw: unknown, index: number): MatchedOutput | undefi
     return undefined;
   }
   const id = nonEmptyString(raw.id);
+  const source = nonEmptyString(raw.source);
   const fileBehavior = parseFileOutputBehavior(raw.fileBehavior);
   return {
     key: nonEmptyString(raw.key) ?? `output:${index}`,
     ...(id === undefined ? {} : { id }),
     title: nonEmptyString(raw.title) ?? id ?? `Output ${index + 1}`,
-    ...(nonEmptyString(raw.source) === undefined ? {} : { source: nonEmptyString(raw.source) }),
+    ...(source === undefined ? {} : { source }),
     ...(isRecord(raw.chartSpec) ? { chartSpec: raw.chartSpec as AppChartSpec } : {}),
     ...(Array.isArray(raw.files) && raw.files.length <= MAX_OUTPUT_FILES &&
       raw.files.every((file) => isRecord(file) && typeof file.path === 'string' && file.path.startsWith('/Volumes/'))
@@ -257,14 +226,10 @@ export function parseRunSnapshot(raw: unknown): RunSnapshot | undefined {
   const runPageUrl = nonEmptyString(raw.runPageUrl);
   if (runPageUrl !== undefined) snapshot.runPageUrl = runPageUrl;
   for (const field of ['parameters', 'parameterDisplayValues'] as const) {
-    const values = raw[field];
-    if (isRecord(values)) {
-      snapshot[field] = Object.fromEntries(
-        Object.entries(values).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-      );
-    }
+    const values = stringValues(raw[field]);
+    if (values !== undefined) snapshot[field] = values;
   }
-  const result = raw.result === undefined ? undefined : parseRunOutcome(raw.result);
+  const result = parseRunOutcome(raw.result);
   if (result !== undefined) snapshot.result = result;
   return snapshot;
 }

@@ -9,14 +9,12 @@ import {
   type FileOutputConfig,
   type WrittenFiles,
 } from '../shared/fileOutputs';
+import { isRecord } from '../shared/values';
 import { canAccessRun } from './fileUploads';
 import { isLegacyExportRun, manifestRevision, type FileOutputManifest } from './runRevision';
 import { runJobParameters } from './jobParameters';
 import type { OutputFileStore } from './outputFileStore';
 import { streamFileDownload } from './fileDownloads';
-
-const record = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export function recordedFileOutput(
   payload: string | undefined,
@@ -29,14 +27,16 @@ export function recordedFileOutput(
   } catch {
     return undefined;
   }
-  if (!record(parsed) || !Array.isArray(parsed.files)) return undefined;
-  const matches = parsed.files.filter((entry) => record(entry) && entry.node === node);
+  if (!isRecord(parsed) || !Array.isArray(parsed.files)) return undefined;
+  const matches = parsed.files.filter(
+    (entry): entry is Record<string, unknown> => isRecord(entry) && entry.node === node,
+  );
   if (matches.length !== 1) return undefined;
-  const receipt = matches[0];
-  if (!record(receipt) || !Array.isArray(receipt.files) || receipt.files.length > MAX_OUTPUT_FILES) {
+  const [receipt] = matches;
+  if (!Array.isArray(receipt.files) || receipt.files.length > MAX_OUTPUT_FILES) {
     return undefined;
   }
-  const paths = receipt.files.map((file) => (record(file) ? file.path : undefined));
+  const paths = receipt.files.map((file) => (isRecord(file) ? file.path : undefined));
   if (!paths.every((path): path is string => isOutputFilePath(path, config)) || new Set(paths).size !== paths.length) {
     return undefined;
   }
@@ -78,7 +78,7 @@ export function registerOutputFileRoutes(app: Pick<Application, 'get'>, deps: De
       if (!block?.fileOutput || !block.nodeId) throw new DownloadError(404, 'File output not found.');
       const run = await deps.getRun(Number(runId));
       if (
-        !record(run) || String(run.job_id) !== deps.jobId ||
+        !isRecord(run) || String(run.job_id) !== deps.jobId ||
         !canAccessRun(run, viewer, true) || isLegacyExportRun(run)
       ) {
         throw new DownloadError(404, 'Run not found.');
@@ -96,19 +96,19 @@ export function registerOutputFileRoutes(app: Pick<Application, 'get'>, deps: De
       } catch {
         throw new DownloadError(409, 'This run did not declare file outputs. Run the app again.');
       }
-      const declaredOutput = parseFileOutput(record(declared) ? declared[block.nodeId] : undefined);
+      const declaredOutput = parseFileOutput(isRecord(declared) ? declared[block.nodeId] : undefined);
       if (!declaredOutput || JSON.stringify(declaredOutput) !== JSON.stringify(parseFileOutput(block.fileOutput))) {
         throw new DownloadError(409, 'This run did not declare this file output. Run the app again.');
       }
       const task = Array.isArray(run.tasks) && run.tasks.length === 1 ? run.tasks[0] : undefined;
       if (
-        !record(task) || !record(task.notebook_task) || !task.run_id ||
+        !isRecord(task) || !isRecord(task.notebook_task) || !task.run_id ||
         typeof task.notebook_task.notebook_path !== 'string' ||
         task.notebook_task.notebook_path !== await deps.notebookPath()
       ) {
         throw new DownloadError(409, 'The runner changed since this run. Run the app again to download files.');
       }
-      const state = record(run.state) ? run.state : {};
+      const state = isRecord(run.state) ? run.state : {};
       if (!state.result_state && !['TERMINATED', 'SKIPPED', 'INTERNAL_ERROR'].includes(String(state.life_cycle_state))) {
         throw new DownloadError(409, 'Wait for the run to finish before downloading files.');
       }

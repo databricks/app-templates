@@ -98,6 +98,7 @@ export function buildPublishedVegaLiteSpec(
   ];
 
   if (plan.component === 'pie') {
+    const hasMeasures = data.data.some((row) => row.y !== null);
     return {
       ...common,
       mark: {
@@ -109,8 +110,8 @@ export function buildPublishedVegaLiteSpec(
         theta: {
           field: 'y',
           type: 'quantitative',
-          stack: data.data.some((row) => row.y !== null) ? true : null,
-          ...(!data.data.some((row) => row.y !== null) ? { scale: { domain: [0, 1] } } : {}),
+          stack: hasMeasures ? true : null,
+          ...(hasMeasures ? {} : { scale: { domain: [0, 1] } }),
         },
         color,
         order: { field: 'order', type: 'quantitative', sort: 'ascending' },

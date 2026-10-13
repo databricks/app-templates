@@ -3,12 +3,11 @@ import { Badge } from '@databricks/appkit-ui/react';
 import type { AppParameter } from '../../shared/appManifest';
 import type { ActiveRun } from './lastRun';
 import { ACTIVE_RUN_ATTRIBUTION, activeRunStageLabel } from './landingPlan';
-import { labelFor } from './parameterLabels';
+import { RunParameterList } from './LastRunLabel';
 
 // A landing run may belong to another consumer, so never imply ownership or offer cancellation.
 export function ActiveRunBanner({ active, declared }: { active: ActiveRun; declared: AppParameter[] }) {
   const { run, parameters, parameterDisplayValues, lifeCycleState } = active;
-  const entries = parameters === undefined ? [] : Object.entries(parameters);
   const startedAt = run.startTime;
 
   return (
@@ -47,24 +46,12 @@ export function ActiveRunBanner({ active, declared }: { active: ActiveRun; decla
 
       <p className="text-muted-foreground mt-2 text-xs">{ACTIVE_RUN_ATTRIBUTION}</p>
 
-      {parameters === undefined ? (
-
-        <p className="text-muted-foreground mt-2 text-xs">The parameters for this run were not recorded.</p>
-      ) : entries.length === 0 ? (
-        <p className="text-muted-foreground mt-2 text-xs">This run took no parameters.</p>
-      ) : (
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-          <span className="text-muted-foreground">Running with</span>
-          {entries.map(([name, value]) => (
-            <span key={name} className="text-muted-foreground">
-              <span>{labelFor(name, declared)}</span>
-              <span className="text-foreground ml-1 font-mono">
-                {(parameterDisplayValues?.[name] ?? value) === '' ? '(blank)' : (parameterDisplayValues?.[name] ?? value)}
-              </span>
-            </span>
-          ))}
-        </div>
-      )}
+      <RunParameterList
+        intro="Running with"
+        parameters={parameters}
+        parameterDisplayValues={parameterDisplayValues}
+        declared={declared}
+      />
     </div>
   );
 }

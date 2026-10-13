@@ -10,6 +10,7 @@ import {
 import { useEffect, useId, useRef, useState } from 'react';
 
 import type { AppParameter } from '../../shared/appManifest';
+import { parameterLabel } from './parameterLabels';
 
 export function ComboboxParameterControl({
   parameter,
@@ -26,7 +27,7 @@ export function ComboboxParameterControl({
   const [open, setOpen] = useState(false);
   const [filtering, setFiltering] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
-  const label = parameter.label === '' ? parameter.name : parameter.label;
+  const label = parameterLabel(parameter);
   const choices = [...new Set(parameter.choices ?? [])];
   const suggestions = filtering
     ? choices.filter((choice) => choice.toLowerCase().includes(value.toLowerCase()))

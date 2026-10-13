@@ -1,10 +1,7 @@
-import type { AppOutputBlock } from '../shared/appManifest';
+import { outputBlockTitle, type AppOutputBlock } from '../shared/appManifest';
 import type { FileOutputBehavior } from '../shared/fileOutputs';
+import { errorMessage, isRecord, nonEmptyString } from '../shared/values';
 import { recordedFileOutput } from './outputFiles';
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 const NO_OUTPUT_REASON = 'The run finished but returned no output. The notebook did not call dbutils.notebook.exit().';
 const NO_OUTPUTS_REASON =
@@ -25,52 +22,27 @@ function classifyOutputEntry(entry: unknown, index: number): ClassifiedEntry {
   if (!isRecord(entry)) {
     return { outcome: 'malformed', index, id: undefined, reason: 'This output is not an object.' };
   }
-  const id = typeof entry.id === 'string' && entry.id !== '' ? entry.id : undefined;
+  const id = nonEmptyString(entry.id);
+  const malformed = (reason: string): ClassifiedEntry => ({ outcome: 'malformed', index, id, reason });
   if (entry.status === 'error') {
-    if (!isReadableError(entry.error)) {
-      return {
-        outcome: 'malformed',
-        index,
-        id,
-        reason: 'This output reported an error, but the error was not readable.',
-      };
-    }
-    return { outcome: 'computeError', index, id, payload: entry };
+    return isReadableError(entry.error)
+      ? { outcome: 'computeError', index, id, payload: entry }
+      : malformed('This output reported an error, but the error was not readable.');
   }
   if (entry.status !== 'ok') {
-    return {
-      outcome: 'malformed',
-      index,
-      id,
-      reason: `This output has an unrecognised status: ${JSON.stringify(entry.status)}`,
-    };
+    return malformed(`This output has an unrecognised status: ${JSON.stringify(entry.status)}`);
   }
   if (!Array.isArray(entry.schema) || !Array.isArray(entry.rows)) {
-    return {
-      outcome: 'malformed',
-      index,
-      id,
-      reason: 'This output reported success but is missing the schema or rows.',
-    };
+    return malformed('This output reported success but is missing the schema or rows.');
   }
   if (!entry.schema.every(isSchemaField) || !entry.rows.every(isRecord)) {
-    return {
-      outcome: 'malformed',
-      index,
-      id,
-      reason: 'This output reported success but its schema or rows are malformed.',
-    };
+    return malformed('This output reported success but its schema or rows are malformed.');
   }
   const fieldNames = entry.schema.map((field) => field.name);
   // Rows are keyed by column name downstream, so blank or duplicate names silently collapse
   // columns; reject the output rather than render data that has lost or merged a column.
   if (fieldNames.some((name) => name === '') || new Set(fieldNames).size !== fieldNames.length) {
-    return {
-      outcome: 'malformed',
-      index,
-      id,
-      reason: 'This output reported success but its columns have blank or duplicate names.',
-    };
+    return malformed('This output reported success but its columns have blank or duplicate names.');
   }
   return { outcome: 'result', index, id, payload: entry };
 }
@@ -87,7 +59,7 @@ function classifyMultiRunOutput(
   try {
     parsed = JSON.parse(raw);
   } catch (err) {
-    return { outcome: 'noPayload', reason: `The run returned output that is not valid JSON: ${errText(err)}` };
+    return { outcome: 'noPayload', reason: `The run returned output that is not valid JSON: ${errorMessage(err)}` };
   }
   if (!isRecord(parsed) || Object.keys(parsed).length === 0) {
     return { outcome: 'noPayload', reason: 'The run returned an empty output object.' };
@@ -116,9 +88,6 @@ function classifyMultiRunOutput(
     runtimeNodeStates,
   };
 }
-
-const outputStringField = (payload: Record<string, unknown>, field: string): string | undefined =>
-  typeof payload[field] === 'string' && payload[field] !== '' ? (payload[field] as string) : undefined;
 
 const joinSource = (node: string | undefined, port: string | undefined): string | undefined =>
   node === undefined ? undefined : port === undefined ? node : `${node}.${port}`;
@@ -155,22 +124,17 @@ export function matchRunOutputs(declared: AppOutputBlock[], raw: string | undefi
 
   // The run may include other nodes and ports, but only published output blocks are exposed.
   const outputs: OutputSection[] = declared.map((output) => {
-    // Each payload entry is keyed by the (node, port) from the cell's display(ctx[...]) line rather
-    // than an output id, so bind the manifest output by that.
+    // Entries are keyed by the (node, port) of the cell's display(ctx[...]) line, not an output id.
+    // Payload empties read as undefined, so normalize declared empties the same way.
     const declaredNode = output.nodeId === '' ? undefined : output.nodeId;
     const declaredPort = output.port === '' ? undefined : output.port;
-    // Well-formed entries bind by (node, port); outputStringField normalizes '' to undefined, so
-    // coerce declared empties the same way (else an empty port compares undefined === '' and never
-    // binds). A malformed entry carries no (node, port), so bind it to its declared block by id: the
-    // block then surfaces the malformed outcome instead of reporting missing.
+    // A malformed entry has no (node, port), so it binds to its block by id and surfaces as malformed.
     const matches = (entry: ClassifiedEntry) =>
       entry.outcome === 'malformed'
         ? entry.id !== undefined && entry.id === output.id
-        : outputStringField(entry.payload, 'target_node') === declaredNode &&
-          outputStringField(entry.payload, 'target_port') === declaredPort;
-    // Prefer an unconsumed entry so distinct blocks each take their own; fall back to any match so
-    // two blocks published at the same (node, port) both render it rather than the second being
-    // reported missing.
+        : nonEmptyString(entry.payload.target_node) === declaredNode &&
+          nonEmptyString(entry.payload.target_port) === declaredPort;
+    // Prefer an unconsumed entry; blocks published at the same (node, port) may share one.
     const found = classified.find((entry) => !consumed.has(entry.index) && matches(entry)) ?? classified.find(matches);
     const source = joinSource(declaredNode, declaredPort);
     const fileReceipt = output.fileOutput ? recordedFileOutput(raw, output.nodeId, output.fileOutput) : undefined;
@@ -178,22 +142,15 @@ export function matchRunOutputs(declared: AppOutputBlock[], raw: string | undefi
     const section = {
       key: `declared:${output.id}`,
       id: output.id,
-      title: output.label !== '' ? output.label : output.nodeId !== '' ? output.nodeId : output.id,
+      title: outputBlockTitle(output),
       ...(source === undefined ? {} : { source }),
-
       ...(output.chartSpec === undefined ? {} : { chartSpec: output.chartSpec }),
       ...(output.fileOutput ? { files: fileReceipt?.files ?? [] } : {}),
       ...(fileReceipt?.behavior ? { fileBehavior: fileReceipt.behavior } : {}),
       ...(disabled === undefined ? {} : { disabled }),
     };
     if (found === undefined) {
-      return {
-        ...section,
-        outcome: {
-          outcome: 'missing',
-          reason: MISSING_OUTPUT_REASON,
-        },
-      };
+      return { ...section, outcome: { outcome: 'missing', reason: MISSING_OUTPUT_REASON } };
     }
     consumed.add(found.index);
     return { ...section, outcome: matchedOutcome(found) };

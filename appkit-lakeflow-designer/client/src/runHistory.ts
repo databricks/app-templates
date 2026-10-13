@@ -1,39 +1,26 @@
-
 import type { RunOutcome, RunSnapshot } from './payload';
 import { parseRunOutcome, parseRunSnapshot } from './payload';
 import { runHistoryRoute, runStatusRoute } from './routes';
+import { errorMessage, idString, isRecord, nonEmptyString, positiveInt, stringValues } from '../../shared/values';
 
 export type RunHistoryEntry = {
   jobRunId: string;
-
   endTime?: number;
   startTime?: number;
   setupDurationMs?: number;
   executionDurationMs?: number;
   runPageUrl?: string;
-
   resultState?: string;
   lifeCycleState?: string;
-
   parameters?: Record<string, string>;
   parameterDisplayValues?: Record<string, string>;
 };
 
 export type RunHistoryState =
   | { status: 'loading' }
-
   | { status: 'noJob' }
-
   | { status: 'unavailable'; reason: string }
-  | {
-      status: 'found';
-
-      runs: RunHistoryEntry[];
-
-      hasMore: boolean;
-
-      window: number;
-    };
+  | { status: 'found'; runs: RunHistoryEntry[]; hasMore: boolean; window: number };
 
 export const RUN_HISTORY_FIRST_WINDOW = 100;
 
@@ -91,40 +78,6 @@ export function historyEntriesWithDisplayedRun(
   return [...runs.slice(0, insertionIndex), displayedRun, ...runs.slice(insertionIndex)];
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const positiveInt = (value: unknown): number | undefined => {
-  const parsed = typeof value === 'number' ? value : Number(value);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
-};
-
-// Run and job IDs are int64: the server sends them as decimal strings, so keep them as strings
-// rather than routing through Number, which corrupts anything past 2^53-1.
-const idString = (value: unknown): string | undefined => {
-  if (value === null || value === undefined || typeof value === 'boolean') {
-    return undefined;
-  }
-  const text = String(value);
-  return /^[1-9][0-9]*$/.test(text) ? text : undefined;
-};
-
-const nonEmptyString = (value: unknown): string | undefined =>
-  typeof value === 'string' && value !== '' ? value : undefined;
-
-function parseParameters(raw: unknown): Record<string, string> | undefined {
-  if (!isRecord(raw)) {
-    return undefined;
-  }
-  const params: Record<string, string> = {};
-  for (const [name, value] of Object.entries(raw)) {
-    if (typeof value === 'string') {
-      params[name] = value;
-    }
-  }
-  return params;
-}
-
 function parseEntry(raw: unknown): RunHistoryEntry | undefined {
   if (!isRecord(raw)) {
     return undefined;
@@ -133,8 +86,8 @@ function parseEntry(raw: unknown): RunHistoryEntry | undefined {
   if (jobRunId === undefined) {
     return undefined;
   }
-  const parameters = parseParameters(raw.parameters);
-  const parameterDisplayValues = parseParameters(raw.parameterDisplayValues);
+  const parameters = stringValues(raw.parameters);
+  const parameterDisplayValues = stringValues(raw.parameterDisplayValues);
   return {
     jobRunId,
     ...(positiveInt(raw.endTime) === undefined ? {} : { endTime: positiveInt(raw.endTime) }),
@@ -168,7 +121,6 @@ export async function fetchRunHistory(windowSize: number): Promise<RunHistorySta
       return { status: 'unavailable', reason: nonEmptyString(body.reason) ?? 'unknown reason' };
     }
     if (body.status !== 'found' || !Array.isArray(body.runs)) {
-
       return { status: 'unavailable', reason: 'the server returned an unreadable run history' };
     }
     const runs = body.runs.map(parseEntry).filter((entry): entry is RunHistoryEntry => entry !== undefined);
@@ -176,11 +128,10 @@ export async function fetchRunHistory(windowSize: number): Promise<RunHistorySta
       status: 'found',
       runs,
       hasMore: body.hasMore === true,
-
       window: positiveInt(body.window) ?? windowSize,
     };
   } catch (error) {
-    return { status: 'unavailable', reason: error instanceof Error ? error.message : String(error) };
+    return { status: 'unavailable', reason: errorMessage(error) };
   }
 }
 
@@ -207,12 +158,8 @@ export async function fetchRunResult(jobRunId: string): Promise<SelectedRunState
     if (outcome === undefined || snapshot === undefined) {
       return { status: 'unavailable', reason: 'the run reported no readable result' };
     }
-    return {
-      status: 'found',
-      outcome,
-      snapshot,
-    };
+    return { status: 'found', outcome, snapshot };
   } catch (error) {
-    return { status: 'unavailable', reason: error instanceof Error ? error.message : String(error) };
+    return { status: 'unavailable', reason: errorMessage(error) };
   }
 }

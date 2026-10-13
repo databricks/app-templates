@@ -12,6 +12,13 @@ export const UPLOAD_REFERENCE = /^upload:([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[
 
 export const uploadStoragePath = (storage: AppStorage): string => `${storage.path}/uploads`;
 
+const SAFE_NAME = /^[A-Za-z0-9_-]+$/;
+
+export function isVolumeName(volume: string): boolean {
+  const names = volume.split('.');
+  return names.length === 3 && names.every((name) => SAFE_NAME.test(name));
+}
+
 export function parseAppStorage(value: unknown): AppStorage | undefined {
   if (
     typeof value !== 'object' ||
@@ -21,13 +28,10 @@ export function parseAppStorage(value: unknown): AppStorage | undefined {
     !('maxUploadFileSizeBytes' in value)
   )
     return undefined;
-  if (typeof value.volume !== 'string' || typeof value.path !== 'string') return undefined;
-  const names = value.volume.split('.');
-  if (names.length !== 3 || !names.every((name) => /^[A-Za-z0-9_-]+$/.test(name))) return undefined;
-  const root = `/Volumes/${names.join('/')}`;
-  const prefix = `${root}/designer_apps/`;
-  if (!value.path.startsWith(prefix) || !/^[A-Za-z0-9_-]+$/.test(value.path.slice(prefix.length)))
+  if (typeof value.volume !== 'string' || typeof value.path !== 'string' || !isVolumeName(value.volume))
     return undefined;
+  const prefix = `/Volumes/${value.volume.replaceAll('.', '/')}/designer_apps/`;
+  if (!value.path.startsWith(prefix) || !SAFE_NAME.test(value.path.slice(prefix.length))) return undefined;
   if (
     typeof value.maxUploadFileSizeBytes !== 'number' ||
     !Number.isSafeInteger(value.maxUploadFileSizeBytes) ||

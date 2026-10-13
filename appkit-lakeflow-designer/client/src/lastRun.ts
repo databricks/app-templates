@@ -1,12 +1,11 @@
-
 import type { RunOutcome } from './payload';
 import { parseRunOutcome } from './payload';
 import { LAST_RUN_ROUTE } from './routes';
+import { errorMessage, idString, isRecord, positiveInt, stringValues } from '../../shared/values';
 
 export type LastRunSummary = {
   jobRunId: string;
   taskRunId?: string;
-
   endTime?: number;
   startTime?: number;
   setupDurationMs?: number;
@@ -24,39 +23,17 @@ export type ActiveRun = {
 
 export type LastRunState =
   | { status: 'loading' }
-
   | { status: 'noJob' }
-
   | { status: 'none'; active?: ActiveRun }
-
   | { status: 'unavailable'; reason: string }
   | {
       status: 'found';
       run: LastRunSummary;
-
       parameters?: Record<string, string>;
       parameterDisplayValues?: Record<string, string>;
       result: RunOutcome;
       active?: ActiveRun;
     };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const positiveInt = (value: unknown): number | undefined => {
-  const parsed = typeof value === 'number' ? value : Number(value);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
-};
-
-// Run and job IDs are int64: the server sends them as decimal strings, so keep them as strings
-// rather than routing through Number, which corrupts anything past 2^53-1.
-const idString = (value: unknown): string | undefined => {
-  if (value === null || value === undefined || typeof value === 'boolean') {
-    return undefined;
-  }
-  const text = String(value);
-  return /^[1-9][0-9]*$/.test(text) ? text : undefined;
-};
 
 function parseSummary(raw: unknown): LastRunSummary | undefined {
   if (!isRecord(raw)) {
@@ -80,19 +57,6 @@ function parseSummary(raw: unknown): LastRunSummary | undefined {
   };
 }
 
-function parseParameters(raw: unknown): Record<string, string> | undefined {
-  if (!isRecord(raw)) {
-    return undefined;
-  }
-  const params: Record<string, string> = {};
-  for (const [name, value] of Object.entries(raw)) {
-    if (typeof value === 'string') {
-      params[name] = value;
-    }
-  }
-  return params;
-}
-
 function parseActive(raw: unknown): ActiveRun | undefined {
   if (!isRecord(raw)) {
     return undefined;
@@ -101,8 +65,8 @@ function parseActive(raw: unknown): ActiveRun | undefined {
   if (run === undefined) {
     return undefined;
   }
-  const parameters = parseParameters(raw.parameters);
-  const parameterDisplayValues = parseParameters(raw.parameterDisplayValues);
+  const parameters = stringValues(raw.parameters);
+  const parameterDisplayValues = stringValues(raw.parameterDisplayValues);
   return {
     run,
     ...(parameters === undefined ? {} : { parameters }),
@@ -128,7 +92,6 @@ export async function fetchLastRun(): Promise<LastRunState> {
     }
     const active = parseActive(body.active);
     if (body.status === 'none') {
-
       return { status: 'none', ...(active === undefined ? {} : { active }) };
     }
     if (body.status === 'unavailable') {
@@ -139,17 +102,17 @@ export async function fetchLastRun(): Promise<LastRunState> {
     if (body.status !== 'found' || run === undefined || result === undefined) {
       return { status: 'unavailable', reason: 'the server returned an unreadable last run' };
     }
+    const parameters = stringValues(body.parameters);
+    const parameterDisplayValues = stringValues(body.parameterDisplayValues);
     return {
       status: 'found',
       run,
-      ...(parseParameters(body.parameters) === undefined ? {} : { parameters: parseParameters(body.parameters) }),
-      ...(parseParameters(body.parameterDisplayValues) === undefined
-        ? {}
-        : { parameterDisplayValues: parseParameters(body.parameterDisplayValues) }),
+      ...(parameters === undefined ? {} : { parameters }),
+      ...(parameterDisplayValues === undefined ? {} : { parameterDisplayValues }),
       result,
       ...(active === undefined ? {} : { active }),
     };
   } catch (error) {
-    return { status: 'unavailable', reason: error instanceof Error ? error.message : String(error) };
+    return { status: 'unavailable', reason: errorMessage(error) };
   }
 }

@@ -6,6 +6,7 @@ import {
   uploadStoragePath,
   type AppStorage,
 } from '../shared/storageConfig';
+import { isRecord } from '../shared/values';
 import { runJobParameters } from './jobParameters';
 
 export const APP_VIEWER_PARAM = '_lb_app_viewer';
@@ -26,9 +27,6 @@ const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 export function viewerKey(forwardedUser: string | undefined, jobId: string | undefined): string | undefined {
   return forwardedUser?.trim() && jobId ? hash(JSON.stringify([jobId, forwardedUser.trim()])) : undefined;
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export function canAccessRun(run: unknown, viewer: string | undefined, privateApp: boolean): boolean {
   const owner = runJobParameters(run)[APP_VIEWER_PARAM];

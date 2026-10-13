@@ -79,6 +79,10 @@ DATABRICKS_CONFIG_PROFILE=dogfood uv run --no-sync pytest validate_templates.py 
 # template with a package.json, whatever its verify mode (incl. OBO). No deploy.
 ... --val-force-build
 
+# ...then prove they install + serve on the Apps runtime: deploy every selected
+# template through the shared app with one verify mode (e.g. spa for build/OBO)
+... --val-verify-as spa -k test_validate_template
+
 # Functional e2e (local apps on this machine)
 DATABRICKS_CONFIG_PROFILE=dogfood uv run --no-sync pytest functional_test.py -p no:xdist -v --target local
 # ...against the deployed shared app

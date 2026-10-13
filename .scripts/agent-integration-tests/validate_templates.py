@@ -319,6 +319,11 @@ def test_validate_template(val_template, val_cfg, request):
             build_template(val_template.name, Path(tmp))
         return
 
+    # --val-verify-as: force the deploy path with the given verify mode, e.g.
+    # `spa` to prove build/OBO templates install + serve on the Apps runtime after
+    # a dependency-only change (no OBO success-signal needed).
+    verify = request.config.getoption("--val-verify-as") or val_template.verify
+
     # OBO (on-behalf-of-user): exercised like `html`, but the shared app must be
     # CREATED with the OBO scope union + resource bindings (see the validate-templates
     # skill) — Databricks binds the forwarded-token scopes at app creation, so scopes
@@ -327,11 +332,11 @@ def test_validate_template(val_template, val_cfg, request):
     # forwarded user token's downstream call SUCCEEDED (not the always-rendered page
     # header). Templates without a wired success-signal (or needing a binding the
     # shared app lacks, e.g. a UC connection) skip until one is added.
-    if val_template.verify == "obo" and not val_template.expect:
+    if verify == "obo" and not val_template.expect:
         pytest.skip("OBO template not yet wired for e2e (no success-signal expect)")
 
     # Build-only path: no shared app, no deploy.
-    if val_template.verify == "build":
+    if verify == "build":
         if request.config.getoption("--val-setup-only"):
             pytest.skip("--val-setup-only: nothing to set up for build-only template")
         with tempfile.TemporaryDirectory(prefix=f"val-{val_template.name}-") as tmp:
@@ -360,10 +365,10 @@ def test_validate_template(val_template, val_cfg, request):
         apps_deploy_source(shared_app, ws_path, val_cfg.profile)
         try:
             app_url, _token = wait_for_app_ready_generic(
-                shared_app, val_cfg.profile, health_path_for(val_template.verify)
+                shared_app, val_cfg.profile, health_path_for(verify)
             )
             verify_serving(
-                val_template.verify, app_url, str(STORAGE_STATE),
+                verify, app_url, str(STORAGE_STATE),
                 val_template.expect, val_template.obo_click,
             )
         except Exception:

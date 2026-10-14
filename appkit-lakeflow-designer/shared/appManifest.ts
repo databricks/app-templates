@@ -7,6 +7,7 @@ import { isValidMultiselectConfig } from './multiselect';
 const nonEmptyString = z.string().check(z.minLength(1));
 const stringOrEmpty = z.catch(z.string(), '');
 const record = z.record(z.string(), z.unknown());
+const optionalBoolean = z.catch(z.optional(z.boolean()), undefined);
 
 const RESERVED_PARAMETERS = new Set(['target_node', 'ld_display_outputs', 'ld_display_outputs_for']);
 
@@ -60,12 +61,14 @@ const outputBlockSchema = z.pipe(
     nodeId: stringOrEmpty,
     port: stringOrEmpty,
     chartSpec: z.catch(z.optional(chartSpecSchema), undefined),
+    hideUntilResults: optionalBoolean,
     fileOutput: z.transform(parseFileOutput),
   }),
-  z.transform(({ chartSpec, fileOutput, ...block }) => ({
+  z.transform(({ chartSpec, fileOutput, hideUntilResults, ...block }) => ({
     ...block,
     ...(chartSpec === undefined ? {} : { chartSpec }),
     ...(fileOutput === undefined ? {} : { fileOutput }),
+    ...(hideUntilResults === undefined ? {} : { hideUntilResults }),
   })),
 );
 
@@ -90,6 +93,7 @@ export const appManifestSchema = z.pipe(
   z.object({
     version: z.literal(6),
     appName: nonEmptyString,
+    hideOutputsUntilResults: optionalBoolean,
     subtitle: z.unknown(),
     provenance: z.unknown(),
     target: z.unknown(),
@@ -122,6 +126,7 @@ export const appManifestSchema = z.pipe(
       ...(storage === undefined ? {} : { storage }),
       version: raw.version,
       appName: raw.appName,
+      ...(raw.hideOutputsUntilResults === undefined ? {} : { hideOutputsUntilResults: raw.hideOutputsUntilResults }),
       ...(typeof raw.subtitle === 'string' && raw.subtitle !== '' ? { subtitle: raw.subtitle } : {}),
       ...(provenance === undefined ? {} : { provenance }),
       ...(target === undefined ? {} : { target }),

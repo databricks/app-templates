@@ -65,6 +65,13 @@ const NOT_RUNNABLE_MESSAGES: Record<NotRunnableReason, string> = {
 
 type UnmatchedOutputState = 'beforeRun' | 'running' | 'omitted' | 'loading';
 
+export interface RunDisplayPlan {
+  displayedRun?: RunHistoryEntry;
+  outputs: MatchedOutput[];
+  unmatchedState: UnmatchedOutputState;
+  showPreviousRunLabel?: boolean;
+}
+
 type PublishedBlockMatch =
   | { key: string; kind: 'markdown'; block: AppMarkdownBlock }
   | { key: string; kind: 'output'; block: AppOutputBlock; output?: MatchedOutput };
@@ -96,6 +103,7 @@ export function App() {
   const currentConfig = useRef<AppConfigState>(config);
   const configRequest = useRef(0);
   const submissionPending = useRef(false);
+  const retainedRunDisplay = useRef<RunDisplayPlan | undefined>(undefined);
 
   const formUntouched = useRef(true);
   const invalidateUploads = useCallback(() => {
@@ -235,7 +243,7 @@ export function App() {
     setSelectedRun(undefined);
   };
   const runWithValues = async (runValues: Record<string, string>, signal?: AbortSignal) => {
-    if (submissionPending.current) return;
+    if (submissionPending.current || state.phase === 'running') return;
     submissionPending.current = true;
     try {
       // Refresh again after upload: publishing can overlap a long-running file transfer.
@@ -254,6 +262,8 @@ export function App() {
       }
       formUntouched.current = false;
       setValues(currentValues);
+      const previousDisplay = planRunDisplay(state, followed, lastRun, selectedEntry, selectedRun, retainedRunDisplay.current);
+      retainedRunDisplay.current = previousDisplay.unmatchedState === 'omitted' ? previousDisplay : undefined;
       clearSelection();
       setConfigurationMessage(undefined);
       if (manifest.blocks.some((block) => block.type === 'output' && block.chartSpec !== undefined)) {
@@ -278,12 +288,13 @@ export function App() {
   const result = state.snapshot?.result;
   const ownRunSucceeded = state.phase === 'settled' && isSuccessfulResultState(state.snapshot?.resultState);
   const ownFinishedAt = state.startedAt === undefined ? undefined : state.startedAt + state.elapsedMs;
-  const { displayedRun, outputs: displayedOutputs, unmatchedState: unmatchedOutputState } = planRunDisplay(
+  const { displayedRun, outputs: displayedOutputs, unmatchedState: unmatchedOutputState, showPreviousRunLabel } = planRunDisplay(
     state,
     followed,
     lastRun,
     selectedEntry,
     selectedRun,
+    retainedRunDisplay.current,
   );
   const newerRunDidNotSucceed =
     selectedEntry === undefined &&
@@ -355,7 +366,7 @@ export function App() {
             </div>
           ) : null}
 
-          {state.phase === 'idle' || (state.phase === 'settled' && state.snapshot === undefined)
+          {!showPreviousRunLabel && (state.phase === 'idle' || (state.phase === 'settled' && state.snapshot === undefined))
             ? planLandingArea({
                 lastRun: lastRun.status,
                 following: followed.following,
@@ -382,7 +393,7 @@ export function App() {
 
           {state.phase === 'settled' && state.snapshot !== undefined ? (
             <LastRunLabel
-              run={runHistoryEntryFromSnapshot(state.snapshot, state.startedAt)}
+              run={runHistoryEntryFromSnapshot(state.snapshot, state.startedAt, state.params)}
               parameters={state.snapshot.parameters ?? state.params}
               parameterDisplayValues={state.snapshot.parameterDisplayValues}
               declared={manifest.parameters}
@@ -414,6 +425,16 @@ export function App() {
             />
           ) : null}
 
+          {showPreviousRunLabel && displayedRun !== undefined ? (
+            <LastRunLabel
+              run={displayedRun}
+              parameters={displayedRun.parameters}
+              parameterDisplayValues={displayedRun.parameterDisplayValues}
+              declared={manifest.parameters}
+              variant="superseded"
+            />
+          ) : null}
+
           {state.phase === 'settled' && state.requestError != null ? (
             <div className="border-border border-t p-6">
               <Alert variant="destructive">
@@ -428,15 +449,14 @@ export function App() {
           ) : null}
         </Card>
 
-        <Card className="overflow-hidden p-0 [&>*:first-child]:border-t-0">
-          <PublishedBlocks
-            blocks={manifest.blocks}
-            downloadRunId={displayedRun?.jobRunId}
-            outputs={displayedOutputs}
-            unmatchedState={unmatchedOutputState}
-            onRetry={run}
-          />
-        </Card>
+        <PublishedBlocks
+          blocks={manifest.blocks}
+          hideOutputsUntilResults={manifest.hideOutputsUntilResults}
+          downloadRunId={displayedRun?.jobRunId}
+          outputs={displayedOutputs}
+          unmatchedState={unmatchedOutputState}
+          onRetry={run}
+        />
       </div>
     </Shell>
   );
@@ -501,7 +521,8 @@ export function planRunDisplay(
   lastRun: LastRunState,
   selectedEntry?: RunHistoryEntry,
   selectedRun?: SelectedRunState,
-): { displayedRun?: RunHistoryEntry; outputs: MatchedOutput[]; unmatchedState: UnmatchedOutputState } {
+  retainedDisplay?: RunDisplayPlan,
+): RunDisplayPlan {
   if (selectedEntry !== undefined) {
     // Explicit history selection always wins, including while its result is loading or unavailable.
     return {
@@ -511,12 +532,21 @@ export function planRunDisplay(
     };
   }
   const lastSuccessful = lastSuccessfulRunEntry(lastRun);
+  if (
+    retainedDisplay?.unmatchedState === 'omitted' &&
+    (state.phase === 'running' || (state.phase === 'settled' && state.snapshot === undefined && state.requestError !== undefined))
+  ) {
+    return { ...retainedDisplay, showPreviousRunLabel: true };
+  }
   if (state.phase === 'running') {
+    if (lastRun.status === 'found') {
+      return { displayedRun: lastSuccessful, outputs: outputsFrom(lastRun.result), unmatchedState: 'omitted', showPreviousRunLabel: true };
+    }
     return { displayedRun: lastSuccessful, outputs: [], unmatchedState: 'running' };
   }
   if (state.phase === 'settled' && state.snapshot !== undefined) {
     return {
-      displayedRun: runHistoryEntryFromSnapshot(state.snapshot, state.startedAt),
+      displayedRun: runHistoryEntryFromSnapshot(state.snapshot, state.startedAt, state.params),
       outputs: outputsFrom(state.snapshot.result),
       unmatchedState: 'omitted',
     };
@@ -559,7 +589,12 @@ export function RunFailureAlert({ snapshot, outcome }: { snapshot: RunSnapshot; 
   );
 }
 
-function runHistoryEntryFromSnapshot(snapshot: RunSnapshot, startedAt: number | undefined): RunHistoryEntry {
+function runHistoryEntryFromSnapshot(
+  snapshot: RunSnapshot,
+  startedAt: number | undefined,
+  submittedParameters?: Record<string, string>,
+): RunHistoryEntry {
+  const parameters = snapshot.parameters ?? submittedParameters;
   return {
     jobRunId: snapshot.jobRunId,
     ...(startedAt === undefined ? {} : { startTime: startedAt }),
@@ -568,7 +603,7 @@ function runHistoryEntryFromSnapshot(snapshot: RunSnapshot, startedAt: number | 
     ...(snapshot.runPageUrl === undefined ? {} : { runPageUrl: snapshot.runPageUrl }),
     ...(snapshot.resultState === undefined ? {} : { resultState: snapshot.resultState }),
     ...(snapshot.lifeCycleState === undefined ? {} : { lifeCycleState: snapshot.lifeCycleState }),
-    ...(snapshot.parameters === undefined ? {} : { parameters: snapshot.parameters }),
+    ...(parameters === undefined ? {} : { parameters }),
     ...(snapshot.parameterDisplayValues === undefined ? {} : { parameterDisplayValues: snapshot.parameterDisplayValues }),
   };
 }
@@ -770,20 +805,28 @@ function RunResult({
 
 export function PublishedBlocks({
   blocks,
+  hideOutputsUntilResults = false,
   downloadRunId,
   outputs,
   unmatchedState,
   onRetry,
 }: {
   blocks: AppManifestBlock[];
+  hideOutputsUntilResults?: boolean;
   downloadRunId?: string;
   outputs: MatchedOutput[];
   unmatchedState: UnmatchedOutputState;
   onRetry: () => void;
 }) {
-  const matchedBlocks = matchPublishedBlocks(blocks, outputs);
+  const matchedBlocks = matchPublishedBlocks(blocks, outputs).filter((match) => {
+    if (match.kind === 'markdown') return true;
+    if (match.output?.disabled === true) return false;
+    return match.output !== undefined || unmatchedState === 'omitted' ||
+      !(match.block.hideUntilResults ?? hideOutputsUntilResults);
+  });
+  if (matchedBlocks.length === 0) return null;
   return (
-    <>
+    <Card className="overflow-hidden p-0 [&>*:first-child]:border-t-0">
       {matchedBlocks.map((match) =>
         match.kind === 'markdown' ? (
           <MarkdownBlock key={match.key} block={match.block} />
@@ -798,7 +841,7 @@ export function PublishedBlocks({
           />
         ),
       )}
-    </>
+    </Card>
   );
 }
 

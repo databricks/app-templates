@@ -89,6 +89,26 @@ on the published operator or its group, for example `:environment <> 'prod'` for
 branch and `:environment <> 'dev'` for Dev. Disabling an upstream operator alone does not
 disable downstream outputs. Enabled empty results and errors remain visible.
 
+Manifest v6 optionally sets `hideOutputsUntilResults` for the app and
+`hideUntilResults` on individual output blocks. An absent output preference
+inherits the app setting; `false` shows the placeholder and `true` hides it.
+Without an app preference, placeholders stay visible. Only boolean settings
+apply; other values fall back to inheritance or the app's existing default.
+
+Hidden outputs omit their heading and placeholder until a displayed run has an
+outcome. Parameters, markdown, and run-status messages remain visible. A completed
+run still shows zero-row results, generated files without previews, errors, and
+missing-output diagnostics. Recorded `disabled: true` hides the block regardless
+of its placeholder setting. An all-hidden output area has no empty card.
+
+Starting another run retains the previously displayed outcome, labelled Previous
+run, until the new run settles. Its parameters and download links continue to
+refer to that previous run. Runs started in this tab use their submitted values
+if the job omits its parameter record. A terminal failure replaces it with the new run's
+diagnostics; a failed submission keeps it alongside the submission error. Latest
+and selected historical results appear as soon as their outcomes load. Placeholder
+visibility does not evaluate branch conditions or change notebook code generation.
+
 Visibility follows the selected run, including history; changing a parameter takes effect
 after the next run. Older runs without runtime state metadata keep all output blocks visible.
 Existing apps need their runner notebook regenerated and republished to emit effective

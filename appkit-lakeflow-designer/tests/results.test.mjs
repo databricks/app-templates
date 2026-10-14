@@ -10,6 +10,7 @@ import { build } from 'tsdown';
 let exportedModelToRunPayload;
 let matchRunOutputs;
 let parseRunOutcome;
+let parseAppManifest;
 let fetchLastRun;
 let lastSuccessfulRunEntry;
 let planRunDisplay;
@@ -32,6 +33,7 @@ before(async () => {
       exportedRunOutput: 'server/exportedRunOutput.ts',
       runOutputs: 'server/runOutputs.ts',
       payload: 'client/src/payload.ts',
+      appConfig: 'client/src/appConfig.ts',
       ResultFooter: 'client/src/ResultFooter.tsx',
       ResultGrid: 'client/src/ResultGrid.tsx',
       App: 'client/src/App.tsx',
@@ -49,6 +51,7 @@ before(async () => {
   ({ exportedModelToRunPayload } = await import(pathToFileURL(join(outputDirectory, 'exportedRunOutput.mjs')).href));
   ({ matchRunOutputs } = await import(pathToFileURL(join(outputDirectory, 'runOutputs.mjs')).href));
   ({ parseRunOutcome } = await import(pathToFileURL(join(outputDirectory, 'payload.mjs')).href));
+  ({ parseAppManifest } = await import(pathToFileURL(join(outputDirectory, 'appConfig.mjs')).href));
   ({ ResultFooter } = await import(pathToFileURL(join(outputDirectory, 'ResultFooter.mjs')).href));
   ({ ResultGrid } = await import(pathToFileURL(join(outputDirectory, 'ResultGrid.mjs')).href));
   ({ OutputSection, PublishedBlocks, lastSuccessfulRunEntry, planRunDisplay, RunFailureAlert } = await import(pathToFileURL(join(outputDirectory, 'App.mjs')).href));
@@ -87,9 +90,9 @@ function matchedRunOutputs(blocks, commands) {
     exportedModelToRunPayload(notebookHtml(commands))));
 }
 
-function publishedBlocksHtml(blocks, outputs, unmatchedState = 'omitted') {
+function publishedBlocksHtml(blocks, outputs, unmatchedState = 'omitted', hideOutputsUntilResults = false) {
   return renderToStaticMarkup(createElement(PublishedBlocks, {
-    blocks, outputs, unmatchedState, downloadRunId: '42', onRetry: () => {},
+    blocks, outputs, unmatchedState, hideOutputsUntilResults, downloadRunId: '42', onRetry: () => {},
   }));
 }
 
@@ -235,6 +238,91 @@ test('initial placeholders remain visible without recorded runtime state', () =>
   assert.match(html, /Prod Output/);
   assert.match(html, /Dev Output/);
   assert.equal((html.match(/Run the app to populate this output/g) ?? []).length, 2);
+});
+
+test('optional visibility preferences preserve booleans and safely ignore other values', () => {
+  const base = { version: 6, appName: 'Branch outputs', blocks: ENVIRONMENT_BLOCKS, parameters: [] };
+  for (const value of [true, false]) {
+    const parsed = parseAppManifest({
+      ...base, hideOutputsUntilResults: value,
+      blocks: base.blocks.map((block) => block.type === 'output' ? { ...block, hideUntilResults: value } : block),
+    });
+    assert.equal(parsed.hideOutputsUntilResults, value);
+    assert.equal(parsed.blocks[1].hideUntilResults, value);
+  }
+  for (const value of [undefined, null, 'true', 'false', 0, 1, {}, []]) {
+    const parsed = parseAppManifest({
+      ...base, hideOutputsUntilResults: value,
+      blocks: base.blocks.map((block) => block.type === 'output' ? { ...block, hideUntilResults: value } : block),
+    });
+    assert.equal(parsed.hideOutputsUntilResults, undefined);
+    assert.equal(parsed.blocks[1].hideUntilResults, undefined);
+    assert.match(publishedBlocksHtml(parsed.blocks, [], 'beforeRun', parsed.hideOutputsUntilResults), /Prod Output/);
+  }
+});
+
+test('output preferences inherit or override the app default for all pending states', () => {
+  const blocks = [
+    { type: 'markdown', id: 'intro', text: 'Choose an environment.' },
+    { type: 'output', id: 'inherit', label: 'Inherited output', nodeId: 'inherited', port: 'data' },
+    { type: 'output', id: 'show', label: 'Visible placeholder', nodeId: 'shown', port: 'data', hideUntilResults: false },
+    { type: 'output', id: 'hide', label: 'Hidden placeholder', nodeId: 'hidden', port: 'data', hideUntilResults: true },
+  ];
+  for (const state of ['beforeRun', 'running', 'loading']) {
+    const hidden = publishedBlocksHtml(blocks, [], state, true);
+    assert.match(hidden, /Choose an environment\./);
+    assert.match(hidden, /Visible placeholder/);
+    assert.doesNotMatch(hidden, /Inherited output|Hidden placeholder/);
+    const shown = publishedBlocksHtml(blocks, [], state, false);
+    assert.match(shown, /Inherited output/);
+    assert.match(shown, /Visible placeholder/);
+    assert.doesNotMatch(shown, /Hidden placeholder/);
+  }
+});
+
+test('hiding every pending output removes its headings, placeholders, and surrounding card', () => {
+  const blocks = ENVIRONMENT_BLOCKS.filter((block) => block.type === 'output');
+  for (const state of ['beforeRun', 'running', 'loading']) {
+    assert.equal(publishedBlocksHtml(blocks, [], state, true), '');
+  }
+  const finished = publishedBlocksHtml(blocks, [], 'omitted', true);
+  assert.match(finished, /Prod Output/);
+  assert.match(finished, /Dev Output/);
+  assert.match(finished, /The run finished without returning a result/);
+});
+
+test('available empty results and errors stay visible with hiding enabled, while disabled outputs do not', () => {
+  const block = { type: 'output', id: 'data', label: 'Returned output', nodeId: 'source', port: 'data', hideUntilResults: true };
+  const outcomes = [
+    { outcome: 'result', payload: outputFromTable(displayTable(0, false)) },
+    { outcome: 'computeError', payload: { status: 'error', error: { type: 'ReadError', message: 'Read failed' } } },
+    { outcome: 'missing', reason: 'The output was not returned.' },
+    { outcome: 'malformed', reason: 'The output was unreadable.' },
+  ];
+  for (const outcome of outcomes) {
+    const output = { key: 'declared:data', id: 'data', title: 'Returned output', outcome };
+    const html = publishedBlocksHtml([block], [output], 'omitted', true);
+    assert.match(html, /Returned output/);
+    assert.match(html, /No rows returned|Read failed|The output was not returned|The output was unreadable/);
+    for (const hideUntilResults of [undefined, false, true]) {
+      assert.equal(publishedBlocksHtml([{ ...block, hideUntilResults }], [{ ...output, disabled: true }], 'omitted', true), '');
+    }
+  }
+});
+
+test('file-only outcomes remain downloadable when output placeholders are hidden', () => {
+  const block = {
+    type: 'output', id: 'file', label: 'Generated report', nodeId: 'writer', port: 'data',
+    hideUntilResults: true, fileOutput: { volumes: ['main.apps.files'] },
+  };
+  const output = {
+    key: 'declared:file', id: 'file', title: 'Generated report', files: [{ path: '/Volumes/main/apps/files/report.csv' }],
+    outcome: { outcome: 'missing', reason: 'No table preview' },
+  };
+  const html = publishedBlocksHtml([block], [output], 'omitted', true);
+  assert.match(html, /Generated report/);
+  assert.match(html, /\/api\/designer\/run\/42\/files\/file\/0\/download/);
+  assert.doesNotMatch(html, /No table preview/);
 });
 
 test('explicit history selection uses that run’s disablement instead of the most recent result', () => {
@@ -411,8 +499,10 @@ test('a newly failed run stays selected and never shows the previous successful 
   assert.deepEqual(idle.outputs, [priorOutput]);
 
   const running = planRunDisplay({ phase: 'running', elapsedMs: 1000, cancelling: false }, noFollowedRun, lastRun);
-  assert.equal(running.unmatchedState, 'running');
-  assert.deepEqual(running.outputs, []);
+  assert.equal(running.displayedRun.jobRunId, '41');
+  assert.equal(running.unmatchedState, 'omitted');
+  assert.equal(running.showPreviousRunLabel, true);
+  assert.deepEqual(running.outputs, [priorOutput]);
 
   const snapshot = {
     jobRunId: '42', terminal: true, resultState: 'FAILED', stateMessage: 'The Output writer failed.',
@@ -431,6 +521,101 @@ test('a newly failed run stays selected and never shows the previous successful 
   const alert = renderToStaticMarkup(createElement(RunFailureAlert, { snapshot, outcome: snapshot.result }));
   assert.match(alert, /The run did not finish successfully/);
   assert.match(alert, /The Output writer failed\./);
+});
+
+test('a rerun retains the displayed historical outcome and download run until a new outcome settles', () => {
+  const block = {
+    type: 'output', id: 'report', label: 'Previous report', nodeId: 'writer', port: 'data',
+    fileOutput: { volumes: ['main.apps.files'] }, hideUntilResults: true,
+  };
+  const output = {
+    key: 'declared:report', id: 'report', title: 'Previous report', files: [{ path: '/Volumes/main/apps/files/report.csv' }],
+    outcome: { outcome: 'missing', reason: 'No preview' },
+  };
+  const entry = { jobRunId: '17', resultState: 'SUCCESS', parameters: { environment: 'dev' } };
+  const lastRun = { status: 'found', run: { jobRunId: '41', resultState: 'SUCCESS' }, result: { outcome: 'outputs', outputs: [] } };
+  const followed = { following: false, settled: false };
+  const retained = planRunDisplay(
+    { phase: 'idle', elapsedMs: 0, cancelling: false }, followed, lastRun, entry,
+    { status: 'found', outcome: { outcome: 'outputs', outputs: [output] } },
+  );
+  const running = planRunDisplay(
+    { phase: 'running', elapsedMs: 1000, cancelling: false, snapshot: { jobRunId: '42', terminal: false } },
+    followed, lastRun, undefined, undefined, retained,
+  );
+  assert.equal(running.displayedRun.jobRunId, '17');
+  assert.equal(running.showPreviousRunLabel, true);
+  assert.deepEqual(running.displayedRun.parameters, { environment: 'dev' });
+  const html = renderToStaticMarkup(createElement(PublishedBlocks, {
+    blocks: [block], outputs: running.outputs, unmatchedState: running.unmatchedState,
+    hideOutputsUntilResults: true, downloadRunId: running.displayedRun.jobRunId, onRetry: () => {},
+  }));
+  assert.match(html, /\/api\/designer\/run\/17\/files\/report\/0\/download/);
+  assert.doesNotMatch(html, /\/run\/42\//);
+  const failed = planRunDisplay(
+    { phase: 'settled', elapsedMs: 1000, cancelling: false, snapshot: { jobRunId: '42', terminal: true, resultState: 'FAILED' } },
+    followed, lastRun, undefined, undefined, retained,
+  );
+  assert.equal(failed.displayedRun.jobRunId, '42');
+  assert.equal(failed.showPreviousRunLabel, undefined);
+  assert.deepEqual(failed.outputs, []);
+});
+
+test('a rerun retains its submitted parameters when the previous snapshot does not record them', () => {
+  const followed = { following: false, settled: false };
+  const lastRun = { status: 'none' };
+  const previous = {
+    phase: 'settled', elapsedMs: 1000, cancelling: false, params: { environment: 'dev' },
+    snapshot: { jobRunId: '17', terminal: true, resultState: 'SUCCESS' },
+  };
+  const retained = planRunDisplay(previous, followed, lastRun);
+  assert.deepEqual(retained.displayedRun.parameters, { environment: 'dev' });
+  const running = planRunDisplay(
+    { phase: 'running', elapsedMs: 0, cancelling: false, params: { environment: 'prod' } },
+    followed, lastRun, undefined, undefined, retained,
+  );
+  assert.equal(running.displayedRun.jobRunId, '17');
+  assert.deepEqual(running.displayedRun.parameters, { environment: 'dev' });
+  const recorded = planRunDisplay({
+    ...previous, snapshot: { ...previous.snapshot, parameters: { environment: 'recorded' } },
+  }, followed, lastRun);
+  assert.deepEqual(recorded.displayedRun.parameters, { environment: 'recorded' });
+});
+
+test('a failed submission keeps the previous display and a first run has no retained result', () => {
+  const followed = { following: false, settled: false };
+  const lastRun = { status: 'none' };
+  const pending = planRunDisplay({ phase: 'running', elapsedMs: 1000, cancelling: false }, followed, lastRun);
+  assert.equal(pending.displayedRun, undefined);
+  assert.equal(pending.unmatchedState, 'running');
+  const retained = { displayedRun: { jobRunId: '17' }, outputs: [], unmatchedState: 'omitted' };
+  const refused = planRunDisplay(
+    { phase: 'settled', elapsedMs: 1000, cancelling: false, requestError: 'Could not start the job' },
+    followed, lastRun, undefined, undefined, retained,
+  );
+  assert.deepEqual(refused, { ...retained, showPreviousRunLabel: true });
+});
+
+test('a failed submission labels the retained historical run even after a newer last run loads', () => {
+  const followed = { following: false, settled: false };
+  const selected = { jobRunId: '17', parameters: { environment: 'dev' }, resultState: 'SUCCESS' };
+  const historicalOutput = { key: 'declared:data', id: 'data', title: 'Historical output', outcome: { outcome: 'missing', reason: 'No preview' } };
+  const initialLastRun = { status: 'none' };
+  const retained = planRunDisplay(
+    { phase: 'idle', elapsedMs: 0, cancelling: false }, followed, initialLastRun,
+    selected, { status: 'found', outcome: { outcome: 'outputs', outputs: [historicalOutput] } },
+  );
+  const newerLastRun = {
+    status: 'found', run: { jobRunId: '41', resultState: 'SUCCESS' }, parameters: { environment: 'prod' },
+    result: { outcome: 'outputs', outputs: [] },
+  };
+  const display = planRunDisplay(
+    { phase: 'settled', elapsedMs: 1000, cancelling: false, requestError: 'Could not start the job' },
+    followed, newerLastRun, undefined, undefined, retained,
+  );
+  assert.deepEqual(display.displayedRun, selected);
+  assert.deepEqual(display.outputs, [historicalOutput]);
+  assert.equal(display.showPreviousRunLabel, true);
 });
 
 test('a followed run that fails also displaces the previous successful result', () => {

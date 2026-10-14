@@ -6,8 +6,10 @@ curl-verified. Run serially — never with pytest -n >0 (shared app).
 """
 from __future__ import annotations
 
+import html
 import json
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -106,19 +108,64 @@ def sync_source(src_dir: Path, ws_path: str, profile: str) -> None:
     )
 
 
+# A failed platform build (npm/pip install, `npm run build`) is deterministic:
+# retry once for a transient registry blip, not the full retry budget.
+BUILD_FAILED_MARKER = "Error building app"
+BUILD_FAILED_MAX_ATTEMPTS = 2
+
+
+def _deploy_recover(stderr: str, attempt: int, max_attempts: int) -> bool:
+    if BUILD_FAILED_MARKER in stderr and attempt >= BUILD_FAILED_MAX_ATTEMPTS:
+        return False
+    if attempt >= max_attempts:
+        return False
+    time.sleep(POLL_INTERVAL)
+    return True
+
+
+def build_log_entries(logz_html: str, limit: int = 60) -> list[str]:
+    """Extract the BUILD-source rows from the Apps /logz page, oldest first."""
+    rows = re.findall(r'<tr class="log-entry" data-source="BUILD">(.*?)</tr>', logz_html, re.S)
+    entries = []
+    for row in rows:
+        cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
+        text = html.unescape(re.sub(r"<[^>]+>", "", cells[-1] if cells else row)).strip()
+        if text:
+            entries.append(text)
+    return list(reversed(entries[:limit]))  # page lists newest first
+
+
+def _log_build_failure(app_name: str, profile: str) -> None:
+    """Log the platform build output — `databricks apps logs` is SSO-walled here."""
+    _, url, _ = _apps_status(app_name, profile)
+    if not url or not STORAGE_STATE.exists():
+        return
+    try:
+        _, logz, _ = _browser_load(str(STORAGE_STATE), f"{url}/logz")
+    except Exception as e:  # diagnostics only; never mask the deploy failure
+        _log(f"(could not read {url}/logz: {e})")
+        return
+    entries = build_log_entries(logz)
+    _log("\n--- App BUILD logs (/logz) ---\n" + "\n".join(entries) + "\n--- End BUILD logs ---")
+
+
 def apps_deploy_source(app_name: str, ws_path: str, profile: str) -> None:
     _log(f"Deploying source at {ws_path} into app {app_name}")
-    _run_with_retries(
-        [
-            "databricks", "apps", "deploy", app_name,
-            "--source-code-path", ws_path,
-            "-p", profile,
-        ],
-        cwd=Path.cwd(),
-        label="apps deploy",
-        timeout=BUNDLE_TIMEOUT,
-        recover=lambda stderr, a, m: (time.sleep(POLL_INTERVAL), True)[1] if a < m else False,
-    )
+    try:
+        _run_with_retries(
+            [
+                "databricks", "apps", "deploy", app_name,
+                "--source-code-path", ws_path,
+                "-p", profile,
+            ],
+            cwd=Path.cwd(),
+            label="apps deploy",
+            timeout=BUNDLE_TIMEOUT,
+            recover=_deploy_recover,
+        )
+    except Exception:
+        _log_build_failure(app_name, profile)
+        raise
 
 
 def wait_for_app_ready_generic(

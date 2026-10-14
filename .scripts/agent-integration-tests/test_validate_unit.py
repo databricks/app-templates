@@ -332,3 +332,29 @@ def test_detects_login_page_not_app():
     assert looks_like_login_page("<html>Sign in to Databricks</html>", "https://login.databricks.com/oidc")
     assert looks_like_login_page("", "https://accounts.cloud.databricks.com/login")
     assert not looks_like_login_page("<html>My App</html>", "https://myapp.databricksapps.com/")
+
+
+def test_deploy_recover_caps_build_failures(monkeypatch):
+    import validate_templates as vt
+
+    monkeypatch.setattr(vt.time, "sleep", lambda _s: None)
+    build_err = "Error: failed to reach SUCCEEDED, got FAILED: Error building app."
+    assert vt._deploy_recover(build_err, 1, 10) is True   # one retry for a blip
+    assert vt._deploy_recover(build_err, 2, 10) is False  # then give up
+    assert vt._deploy_recover("transient 503", 2, 10) is True
+    assert vt._deploy_recover("transient 503", 10, 10) is False
+
+
+def test_build_log_entries_extracts_build_rows_oldest_first():
+    from validate_templates import build_log_entries
+
+    page = (
+        '<tbody id="logTBody">'
+        '<tr class="log-entry" data-source="BUILD"><td>t2</td><td>BUILD</td>'
+        '<td><div>permission denied for schema &quot;drizzle&quot;</div></td></tr>'
+        '<tr class="log-entry" data-source="APP"><td>t1</td><td>APP</td><td>app line</td></tr>'
+        '<tr class="log-entry" data-source="BUILD"><td>t0</td><td>BUILD</td>'
+        '<td>&gt; npm run build</td></tr>'
+        '</tbody>'
+    )
+    assert build_log_entries(page) == ["> npm run build", 'permission denied for schema "drizzle"']

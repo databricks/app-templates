@@ -381,3 +381,24 @@ def test_resource_aware_app_yaml_aliases_files_to_shared_uc_volume():
     ))
     assert "resources" not in out
     assert [e["valueFrom"] for e in out["env"]] == ["uc-volume", "sql-warehouse"]
+
+
+def test_force_build_env_unified_host(monkeypatch):
+    import validate_templates as vt
+
+    monkeypatch.setattr(vt, "_shared_app_warehouse_id", lambda _a, _p: "wh1")
+    monkeypatch.setattr(vt, "_profile_workspace_id", lambda _p: "123")
+    assert vt.force_build_env("app", "dogfood") == {
+        "DATABRICKS_CONFIG_PROFILE": "dogfood",
+        "DATABRICKS_WAREHOUSE_ID": "wh1",
+        "DATABRICKS_WORKSPACE_ID": "123",
+        "DATABRICKS_EXPERIMENTAL_IS_UNIFIED_HOST": "true",
+    }
+
+
+def test_force_build_env_plain_host_without_warehouse(monkeypatch):
+    import validate_templates as vt
+
+    monkeypatch.setattr(vt, "_shared_app_warehouse_id", lambda _a, _p: "")
+    monkeypatch.setattr(vt, "_profile_workspace_id", lambda _p: "")
+    assert vt.force_build_env("app", "dev") == {"DATABRICKS_CONFIG_PROFILE": "dev"}

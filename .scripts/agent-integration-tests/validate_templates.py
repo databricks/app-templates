@@ -369,14 +369,7 @@ def test_validate_template(val_template, val_cfg, request):
         from template_config import REPO_ROOT
         if not (REPO_ROOT / val_template.name / "package.json").exists():
             pytest.skip("--val-force-build: no package.json")
-        extra_env = {"DATABRICKS_CONFIG_PROFILE": val_cfg.profile}
-        warehouse_id = _shared_app_warehouse_id(val_cfg.shared_app_name, val_cfg.profile)
-        if warehouse_id:
-            extra_env["DATABRICKS_WAREHOUSE_ID"] = warehouse_id
-        workspace_id = _profile_workspace_id(val_cfg.profile)
-        if workspace_id:
-            extra_env["DATABRICKS_WORKSPACE_ID"] = workspace_id
-            extra_env["DATABRICKS_EXPERIMENTAL_IS_UNIFIED_HOST"] = "true"
+        extra_env = force_build_env(val_cfg.shared_app_name, val_cfg.profile)
         with tempfile.TemporaryDirectory(prefix=f"val-{val_template.name}-") as tmp:
             build_template(val_template.name, Path(tmp), extra_env)
         return
@@ -454,6 +447,21 @@ CRASH_FIXTURES = [
     ("python", "crash-examples/python_crash_app", "Traceback (most recent call last)"),
     ("node", "crash-examples/node_crash_app", "uncaughtException"),
 ]
+
+
+def force_build_env(app_name: str, profile: str) -> dict[str, str]:
+    """Env for a --val-force-build `npm run build`: the profile, the shared app's
+    warehouse (for AppKit typegen) and, on unified hosts, the workspace ID plus
+    the JS SDK's unified-host flag so it sends X-Databricks-Org-Id."""
+    env = {"DATABRICKS_CONFIG_PROFILE": profile}
+    warehouse_id = _shared_app_warehouse_id(app_name, profile)
+    if warehouse_id:
+        env["DATABRICKS_WAREHOUSE_ID"] = warehouse_id
+    workspace_id = _profile_workspace_id(profile)
+    if workspace_id:
+        env["DATABRICKS_WORKSPACE_ID"] = workspace_id
+        env["DATABRICKS_EXPERIMENTAL_IS_UNIFIED_HOST"] = "true"
+    return env
 
 
 def _profile_workspace_id(profile: str) -> str:

@@ -16,7 +16,7 @@ import {
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { LangChainInstrumentation } from "@arizeai/openinference-instrumentation-langchain";
 import * as CallbackManagerModule from "@langchain/core/callbacks/manager";
-import { Resource } from "@opentelemetry/resources";
+import { resourceFromAttributes } from "@opentelemetry/resources";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import { WorkspaceClient } from "@databricks/sdk-experimental";
 
@@ -45,7 +45,7 @@ export interface TracingConfig {
 }
 
 export class MLflowTracing {
-  private provider: NodeTracerProvider;
+  private provider?: NodeTracerProvider;  // Created in initialize(), once the exporter exists
   private exporter!: OTLPTraceExporter;  // Will be initialized in initialize()
   private isInitialized = false;
   private databricksClient?: WorkspaceClient;
@@ -63,12 +63,7 @@ export class MLflowTracing {
       "langchain-agent-ts";
     this.config.useBatchProcessor = config.useBatchProcessor ?? (process.env.OTEL_USE_BATCH_PROCESSOR !== "false");
 
-    // Note: Exporter will be created in initialize() after fetching auth token
-    this.provider = new NodeTracerProvider({
-      resource: new Resource({
-        [ATTR_SERVICE_NAME]: this.config.serviceName,
-      }),
-    });
+    // Note: Exporter and provider are created in initialize() after fetching auth token
   }
 
   /**
@@ -329,7 +324,13 @@ export class MLflowTracing {
       ? new BatchSpanProcessor(this.exporter)
       : new SimpleSpanProcessor(this.exporter);
 
-    this.provider.addSpanProcessor(processor);
+    // OTel 2.x takes span processors at construction (addSpanProcessor was removed)
+    this.provider = new NodeTracerProvider({
+      resource: resourceFromAttributes({
+        [ATTR_SERVICE_NAME]: this.config.serviceName,
+      }),
+      spanProcessors: [processor],
+    });
 
     // Register the tracer provider globally
     this.provider.register();
@@ -356,7 +357,7 @@ export class MLflowTracing {
     }
 
     try {
-      await this.provider.shutdown();
+      await this.provider?.shutdown();
       console.log("✅ MLflow tracing shutdown complete");
     } catch (error) {
       console.error("Error shutting down tracing:", error);
@@ -373,7 +374,7 @@ export class MLflowTracing {
     }
 
     try {
-      await this.provider.forceFlush();
+      await this.provider?.forceFlush();
     } catch (error) {
       console.error("Error flushing traces:", error);
       throw error;

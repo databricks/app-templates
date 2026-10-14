@@ -23,7 +23,6 @@ from helpers import (
     _log,
     _run_cmd,
     _run_with_retries,
-    capture_app_logs,
     databricks_create_app,
     get_oauth_token,
     git_copy_template,
@@ -109,14 +108,14 @@ def sync_source(src_dir: Path, ws_path: str, profile: str) -> None:
     )
 
 
-# A failed platform build (npm/pip install, `npm run build`) is deterministic:
-# retry once for a transient registry blip, not the full retry budget.
-BUILD_FAILED_MARKER = "Error building app"
+# A failed platform build (npm/pip install, `npm run build`) or a crash on start
+# is deterministic: retry once for a transient blip, not the full retry budget.
+DETERMINISTIC_FAILURE_MARKERS = ("Error building app", "app exited unexpectedly")
 BUILD_FAILED_MAX_ATTEMPTS = 2
 
 
 def _deploy_recover(stderr: str, attempt: int, max_attempts: int) -> bool:
-    if BUILD_FAILED_MARKER in stderr and attempt >= BUILD_FAILED_MAX_ATTEMPTS:
+    if any(m in stderr for m in DETERMINISTIC_FAILURE_MARKERS) and attempt >= BUILD_FAILED_MAX_ATTEMPTS:
         return False
     if attempt >= max_attempts:
         return False
@@ -124,9 +123,10 @@ def _deploy_recover(stderr: str, attempt: int, max_attempts: int) -> bool:
     return True
 
 
-def build_log_entries(logz_html: str, limit: int = 60) -> list[str]:
-    """Extract the BUILD-source rows from the Apps /logz page, oldest first."""
-    rows = re.findall(r'<tr class="log-entry" data-source="BUILD">(.*?)</tr>', logz_html, re.S)
+def build_log_entries(logz_html: str, limit: int = 60, sources: tuple = ("BUILD",)) -> list[str]:
+    """Extract the given-source rows (BUILD/APP/SYSTEM) from /logz, oldest first."""
+    pattern = r'<tr class="log-entry" data-source="(?:%s)">(.*?)</tr>' % "|".join(sources)
+    rows = re.findall(pattern, logz_html, re.S)
     entries = []
     for row in rows:
         cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
@@ -136,8 +136,8 @@ def build_log_entries(logz_html: str, limit: int = 60) -> list[str]:
     return list(reversed(entries[:limit]))  # page lists newest first
 
 
-def _log_build_failure(app_name: str, profile: str) -> None:
-    """Log the platform build output — `databricks apps logs` is SSO-walled here."""
+def _log_build_failure(app_name: str, profile: str, sources: tuple = ("BUILD", "APP", "SYSTEM")) -> None:
+    """Log the app's build/runtime output — `databricks apps logs` is SSO-walled here."""
     _, url, _ = _apps_status(app_name, profile)
     if not url or not STORAGE_STATE.exists():
         return
@@ -146,8 +146,8 @@ def _log_build_failure(app_name: str, profile: str) -> None:
     except Exception as e:  # diagnostics only; never mask the deploy failure
         _log(f"(could not read {url}/logz: {e})")
         return
-    entries = build_log_entries(logz)
-    _log("\n--- App BUILD logs (/logz) ---\n" + "\n".join(entries) + "\n--- End BUILD logs ---")
+    entries = build_log_entries(logz, sources=sources)
+    _log("\n--- App logs (/logz) ---\n" + "\n".join(entries) + "\n--- End logs ---")
 
 
 def apps_deploy_source(app_name: str, ws_path: str, profile: str) -> None:
@@ -434,9 +434,7 @@ def test_validate_template(val_template, val_cfg, request):
                 val_template.expect, val_template.obo_click,
             )
         except Exception:
-            logs = capture_app_logs(shared_app, val_cfg.profile)
-            if logs:
-                _log(f"\n--- App logs ({shared_app}) ---\n{logs}\n--- End logs ---")
+            _log_build_failure(shared_app, val_cfg.profile)
             raise
 
 

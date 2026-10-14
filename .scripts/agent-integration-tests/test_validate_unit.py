@@ -358,3 +358,26 @@ def test_build_log_entries_extracts_build_rows_oldest_first():
         '</tbody>'
     )
     assert build_log_entries(page) == ["> npm run build", 'permission denied for schema "drizzle"']
+
+
+def test_deploy_recover_caps_crash_on_start(monkeypatch):
+    import validate_templates as vt
+
+    monkeypatch.setattr(vt.time, "sleep", lambda _s: None)
+    crash = "got FAILED: Error: app exited unexpectedly. Please check /logz"
+    assert vt._deploy_recover(crash, 1, 10) is True
+    assert vt._deploy_recover(crash, 2, 10) is False
+
+
+def test_resource_aware_app_yaml_aliases_files_to_shared_uc_volume():
+    from validate_transforms import resource_aware_app_yaml
+
+    out = _yaml.safe_load(resource_aware_app_yaml(
+        "command: [npm, start]\n"
+        "env:\n"
+        "  - name: DATABRICKS_VOLUME_FILES\n    valueFrom: files\n"
+        "  - name: DATABRICKS_WAREHOUSE_ID\n    valueFrom: sql-warehouse\n"
+        "resources:\n  - name: files\n"
+    ))
+    assert "resources" not in out
+    assert [e["valueFrom"] for e in out["env"]] == ["uc-volume", "sql-warehouse"]

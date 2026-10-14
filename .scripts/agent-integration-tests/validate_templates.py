@@ -75,7 +75,7 @@ def prepare_source(template_name: str, dest: Path) -> Path:
     return src
 
 
-def build_template(template_name: str, dest: Path) -> None:
+def build_template(template_name: str, dest: Path, extra_env: dict | None = None) -> None:
     """Build-only validation for SPA/Node templates.
 
     Copies the template to a throwaway dir (never mutates the real template),
@@ -84,7 +84,8 @@ def build_template(template_name: str, dest: Path) -> None:
     src = git_copy_template(template_name, dest)
     # Route npm through the Databricks proxy — registry.npmjs.org is frequently
     # 503/unreachable from this environment.
-    env = {**os.environ, "npm_config_registry": "https://npm-proxy.cloud.databricks.com"}
+    env = {**os.environ, "npm_config_registry": "https://npm-proxy.cloud.databricks.com",
+           **(extra_env or {})}
     has_lock = (src / "package-lock.json").exists() or (src / "npm-shrinkwrap.json").exists()
     install_cmd = ["npm", "ci"] if has_lock else ["npm", "install"]
     for cmd in (install_cmd, ["npm", "run", "build"]):
@@ -357,13 +358,27 @@ def test_validate_template(val_template, val_cfg, request):
 
     # --val-force-build: dependency-only changes (e.g. lockfile bumps) need every
     # npm template to still install + build, including OBO templates that the
-    # deploy path would otherwise skip. Build-only, no shared app.
+    # deploy path would otherwise skip. Build-only, no deploy. AppKit templates'
+    # prebuild runs `appkit generate-types`, which needs a warehouse to type the
+    # SQL queries (Apps injects it from the bound resource); borrow the shared
+    # app's, or tsc fails on untyped query results. On unified hosts (profile has
+    # a workspace_id, e.g. dogfood staging) AppKit's JS SDK only sends the
+    # X-Databricks-Org-Id routing header in experimental unified-host mode;
+    # without it every query 403s ("account admin") and typegen degrades.
     if request.config.getoption("--val-force-build"):
         from template_config import REPO_ROOT
         if not (REPO_ROOT / val_template.name / "package.json").exists():
             pytest.skip("--val-force-build: no package.json")
+        extra_env = {"DATABRICKS_CONFIG_PROFILE": val_cfg.profile}
+        warehouse_id = _shared_app_warehouse_id(val_cfg.shared_app_name, val_cfg.profile)
+        if warehouse_id:
+            extra_env["DATABRICKS_WAREHOUSE_ID"] = warehouse_id
+        workspace_id = _profile_workspace_id(val_cfg.profile)
+        if workspace_id:
+            extra_env["DATABRICKS_WORKSPACE_ID"] = workspace_id
+            extra_env["DATABRICKS_EXPERIMENTAL_IS_UNIFIED_HOST"] = "true"
         with tempfile.TemporaryDirectory(prefix=f"val-{val_template.name}-") as tmp:
-            build_template(val_template.name, Path(tmp))
+            build_template(val_template.name, Path(tmp), extra_env)
         return
 
     # --val-verify-as: force the deploy path with the given verify mode, e.g.
@@ -441,6 +456,27 @@ CRASH_FIXTURES = [
     ("python", "crash-examples/python_crash_app", "Traceback (most recent call last)"),
     ("node", "crash-examples/node_crash_app", "uncaughtException"),
 ]
+
+
+def _profile_workspace_id(profile: str) -> str:
+    """Return the profile's workspace_id (set on unified hosts), or ''."""
+    from databricks.sdk.core import Config
+
+    return str(Config(profile=profile).workspace_id or "")
+
+
+def _shared_app_warehouse_id(app_name: str, profile: str) -> str:
+    """Return the id of the app's bound sql-warehouse resource, or '' if none."""
+    r = _run_cmd(
+        ["databricks", "apps", "get", app_name, "-p", profile, "--output", "json"],
+        timeout=60,
+    )
+    if r.returncode != 0 or not r.stdout.strip():
+        return ""
+    for res in json.loads(r.stdout).get("resources", []) or []:
+        if "sql_warehouse" in res:
+            return res["sql_warehouse"].get("id", "")
+    return ""
 
 
 def _apps_status(app_name: str, profile: str) -> tuple[str, str, str]:

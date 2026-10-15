@@ -76,6 +76,10 @@ def pytest_addoption(parser):
                      choices=["html", "spa", "mcp", "api", "obo"],
                      help="Override every selected template's verify mode and run the "
                           "deploy path with it (e.g. spa for build/OBO templates)")
+    parser.addoption("--val-bundle-chatbot-ui", action="store_true", default=False,
+                     help="Vendor this checkout's e2e-chatbot-app-next into templates that "
+                          "otherwise clone it from GitHub main at startup (Python agents, "
+                          "agent-langchain-ts), to test chatbot changes in its consumers")
     parser.addoption("--target", action="store", default="local",
                      choices=["local", "deployed"], help="functional_test.py target")
 

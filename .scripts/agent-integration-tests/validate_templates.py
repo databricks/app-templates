@@ -64,13 +64,37 @@ def render_report(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def prepare_source(template_name: str, dest: Path) -> Path:
+CHATBOT_UI_TEMPLATE = "e2e-chatbot-app-next"
+
+
+def chatbot_ui_dir(template_name: str, src: Path) -> str | None:
+    """Where a template looks for the chatbot UI before cloning it from GitHub
+    main at startup, or None if it doesn't consume the chatbot UI. Python agents'
+    scripts/start_app.py reuses ./e2e-chatbot-app-next; agent-langchain-ts's
+    scripts/setup-ui.sh reuses ./ui."""
+    if (src / "scripts" / "start_app.py").exists():
+        return CHATBOT_UI_TEMPLATE
+    if template_name == "agent-langchain-ts":
+        return "ui"
+    return None
+
+
+def prepare_source(template_name: str, dest: Path, bundle_chatbot_ui: bool = False) -> Path:
     src = git_copy_template(template_name, dest)
     app_yaml = src / "app.yaml"
     if app_yaml.exists():
         # Keep valueFrom refs intact so they resolve against the shared app's
         # bound resources; only strip a source-level resources block.
         app_yaml.write_text(resource_aware_app_yaml(app_yaml.read_text()))
+    # --val-bundle-chatbot-ui: consumers clone the chatbot UI from GitHub main
+    # at startup, so a deploy would test main's UI, not this checkout's. Vendor
+    # this checkout's copy where they look first, so they skip the clone.
+    ui_dir = chatbot_ui_dir(template_name, src) if bundle_chatbot_ui else None
+    if ui_dir:
+        git_copy_template(CHATBOT_UI_TEMPLATE, src)
+        if ui_dir != CHATBOT_UI_TEMPLATE:
+            (src / CHATBOT_UI_TEMPLATE).rename(src / ui_dir)
+        _log(f"[{template_name}] bundled this checkout's {CHATBOT_UI_TEMPLATE} as ./{ui_dir}")
     return src
 
 
@@ -415,7 +439,8 @@ def test_validate_template(val_template, val_cfg, request):
 
     ws_path = f"{val_cfg.workspace_source_root}/{val_template.name}"
     with tempfile.TemporaryDirectory(prefix=f"val-{val_template.name}-") as tmp:
-        src = prepare_source(val_template.name, Path(tmp))
+        src = prepare_source(val_template.name, Path(tmp),
+                             request.config.getoption("--val-bundle-chatbot-ui"))
         sync_source(src, ws_path, val_cfg.profile)
         apps_deploy_source(shared_app, ws_path, val_cfg.profile)
         try:

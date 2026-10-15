@@ -402,3 +402,24 @@ def test_force_build_env_plain_host_without_warehouse(monkeypatch):
     monkeypatch.setattr(vt, "_shared_app_warehouse_id", lambda _a, _p: "")
     monkeypatch.setattr(vt, "_profile_workspace_id", lambda _p: "")
     assert vt.force_build_env("app", "dev") == {"DATABRICKS_CONFIG_PROFILE": "dev"}
+
+
+def test_chatbot_ui_dir_finds_consumers(tmp_path):
+    import validate_templates as vt
+
+    agent = tmp_path / "agent"
+    (agent / "scripts").mkdir(parents=True)
+    (agent / "scripts" / "start_app.py").write_text("")
+    assert vt.chatbot_ui_dir("agent-langgraph", agent) == "e2e-chatbot-app-next"
+    assert vt.chatbot_ui_dir("agent-langchain-ts", tmp_path / "ts") == "ui"
+    assert vt.chatbot_ui_dir("streamlit-hello-world-app", tmp_path / "other") is None
+
+
+def test_prepare_source_bundles_chatbot_ui(tmp_path):
+    import validate_templates as vt
+
+    src = vt.prepare_source("agent-langchain-ts", tmp_path, bundle_chatbot_ui=True)
+    assert (src / "ui" / "package.json").exists()
+    assert not (src / "e2e-chatbot-app-next").exists()
+    plain = vt.prepare_source("agent-langgraph", tmp_path / "plain")
+    assert not (plain / "e2e-chatbot-app-next").exists()

@@ -250,17 +250,21 @@ class ProcessManager:
             if not self.no_ui:
                 # Setup and start frontend
                 frontend_dir = Path("e2e-chatbot-app-next")
-                for cmd, desc in [("npm install", "install"), ("npm run build", "build")]:
+                # npm is a .cmd shim on Windows, which can't be launched by bare
+                # name without a shell; resolve its full path (honors PATHEXT) so
+                # argument lists work on every platform.
+                npm = shutil.which("npm") or "npm"
+                for args, desc in [(["install"], "install"), (["run", "build"], "build")]:
                     print(f"Running npm {desc}...")
                     result = subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
-                        cmd.split(), cwd=frontend_dir, capture_output=True, text=True
+                        [npm, *args], cwd=frontend_dir, capture_output=True, text=True
                     )
                     if result.returncode != 0:
                         print(f"npm {desc} failed: {result.stderr}")
                         return 1
 
                 self.frontend_process = self.start_process(
-                    ["npm", "run", "start"],
+                    [npm, "run", "start"],
                     "frontend",
                     self.frontend_log,
                     FRONTEND_READY,

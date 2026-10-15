@@ -1,3 +1,9 @@
+# Install crash/hang/exception diagnostics before importing agent code so
+# startup failures and unhandled exceptions land in the Apps log stream.
+from scripts.app_diagnostics import install_diagnostics  # noqa: E402
+
+install_diagnostics()
+
 """Agent server entry point. load_dotenv must run before agent imports (auth config)."""
 
 # ruff: noqa: E402
@@ -28,15 +34,15 @@ async def run_lakebase_session_setup() -> None:
     """Create session tables at startup so per-request _ensure_tables is a no-op."""
     session = AsyncDatabricksSession(
         session_id="__startup__",
-        instance_name=lakebase_config.instance_name,
         autoscaling_endpoint=lakebase_config.autoscaling_endpoint,
         project=lakebase_config.autoscaling_project,
         branch=lakebase_config.autoscaling_branch,
+        schema=lakebase_config.memory_schema,
     )
+
     # _ensure_tables is private API — needed to create tables at startup rather than per-request.
     # If this breaks on a databricks-openai upgrade, replace with the public equivalent.
     await session._ensure_tables()
-    logger.info("Lakebase session tables verified")
 
 
 class AgentServer(LongRunningAgentServer):
@@ -47,7 +53,6 @@ class AgentServer(LongRunningAgentServer):
 agent_server = AgentServer(
     "ResponsesAgent",
     enable_chat_proxy=True,
-    db_instance_name=lakebase_config.instance_name,
     db_autoscaling_endpoint=lakebase_config.autoscaling_endpoint,
     db_project=lakebase_config.autoscaling_project,
     db_branch=lakebase_config.autoscaling_branch,
@@ -72,8 +77,14 @@ async def _lifespan(app):
             keyword in error_msg
             for keyword in ["lakebase", "pg_hba", "postgres", "database instance", "insufficient privilege"]
         ):
-            logger.error("Lakebase access error during session setup:\n%s", get_lakebase_access_error_message(lakebase_config.description))
-        logger.warning("Lakebase session setup failed: %s. Session tables will be created per-request.", exc)
+            logger.error(
+                "Lakebase session setup failed: %s\n\n%s",
+                exc,
+                get_lakebase_access_error_message(lakebase_config.description),
+            )
+        else:
+            logger.error("Lakebase session setup failed: %s", exc, exc_info=True)
+        raise
     try:
         async with _original_lifespan(app):
             yield

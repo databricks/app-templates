@@ -7,9 +7,6 @@ Usage:
     # Get the SP client ID from your deployed app:
     databricks apps get <app-name> --output json | jq -r '.service_principal_client_id'
 
-    # Provisioned instance:
-    uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type <type> --instance-name <name>
-
     # Autoscaling instance (endpoint):
     uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type <type> --autoscaling-endpoint <endpoint>
 
@@ -27,11 +24,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Schema for memory tables. Defaults to "public" for backward compatibility.
+# Set LAKEBASE_AGENT_MEMORY_SCHEMA to use a custom schema (e.g. "agent_memory").
+MEMORY_SCHEMA = os.getenv("LAKEBASE_AGENT_MEMORY_SCHEMA", "public")
 
 # Per-memory-type schema -> table definitions.
 MEMORY_TYPE_SCHEMAS: dict[str, dict[str, list[str]]] = {
     "langgraph": {
-        "public": [
+        MEMORY_SCHEMA: [
             "checkpoint_migrations",
             "checkpoint_writes",
             "checkpoints",
@@ -47,7 +47,7 @@ MEMORY_TYPE_SCHEMAS: dict[str, dict[str, list[str]]] = {
         ],
     },
     "openai": {
-        "public": [
+        MEMORY_SCHEMA: [
             "agent_sessions",
             "agent_messages",
         ],
@@ -60,7 +60,7 @@ MEMORY_TYPE_SCHEMAS: dict[str, dict[str, list[str]]] = {
 
 # Memory types that need sequence privileges (auto-increment columns)
 NEEDS_SEQUENCES = {
-    "openai": ["public", "agent_server"],
+    "openai": [MEMORY_SCHEMA, "agent_server"],
     "langgraph": ["agent_server"],
 }
 
@@ -159,11 +159,6 @@ def main():
         help="Memory type to grant permissions for",
     )
     parser.add_argument(
-        "--instance-name",
-        default=os.getenv("LAKEBASE_INSTANCE_NAME"),
-        help="Lakebase instance name for provisioned instances (default: LAKEBASE_INSTANCE_NAME from .env)",
-    )
-    parser.add_argument(
         "--autoscaling-endpoint",
         default=os.getenv("LAKEBASE_AUTOSCALING_ENDPOINT"),
         help="Lakebase autoscaling endpoint path (default: LAKEBASE_AUTOSCALING_ENDPOINT from .env). "
@@ -181,11 +176,10 @@ def main():
     )
     args = parser.parse_args()
 
-    has_provisioned = bool(args.instance_name)
     has_autoscaling = bool(args.project and args.branch)
 
     # Parse project/branch from --autoscaling-endpoint if provided
-    if args.autoscaling_endpoint and not has_autoscaling and not has_provisioned:
+    if args.autoscaling_endpoint and not has_autoscaling:
         import re
 
         m = re.match(r"projects/([^/]+)/branches/([^/]+)", args.autoscaling_endpoint)
@@ -201,12 +195,11 @@ def main():
             )
             sys.exit(1)
 
-    if not has_provisioned and not has_autoscaling:
+    if not has_autoscaling:
         print(
-            "Error: Lakebase connection is required. Provide one of:\n"
-            "  Provisioned:  --instance-name <name>  (or set LAKEBASE_INSTANCE_NAME in .env)\n"
-            "  Autoscaling:  --autoscaling-endpoint <endpoint>  (or set LAKEBASE_AUTOSCALING_ENDPOINT in .env)\n"
-            "  Autoscaling:  --project <proj> --branch <branch>  (or set LAKEBASE_AUTOSCALING_PROJECT + LAKEBASE_AUTOSCALING_BRANCH in .env)",
+            "Error: Lakebase autoscaling connection is required. Provide one of:\n"
+            "  --autoscaling-endpoint <endpoint>  (or set LAKEBASE_AUTOSCALING_ENDPOINT in .env)\n"
+            "  --project <proj> --branch <branch>  (or set LAKEBASE_AUTOSCALING_PROJECT + LAKEBASE_AUTOSCALING_BRANCH in .env)",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -214,14 +207,10 @@ def main():
     from databricks_ai_bridge.lakebase import LakebaseClient
 
     with LakebaseClient(
-        instance_name=args.instance_name or None,
         project=args.project or None,
         branch=args.branch or None,
     ) as client:
-        if has_provisioned:
-            print(f"Using provisioned instance: {args.instance_name}")
-        else:
-            print(f"Using autoscaling project: {args.project}, branch: {args.branch}")
+        print(f"Using autoscaling project: {args.project}, branch: {args.branch}")
         print(f"Memory type: {args.memory_type}")
 
         grantee = args.sp_client_id

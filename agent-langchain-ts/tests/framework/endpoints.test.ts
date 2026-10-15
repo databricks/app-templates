@@ -13,6 +13,8 @@ describe("API Endpoints", () => {
   const PORT = 5555; // Use different port to avoid conflicts
   const BASE_URL = `http://localhost:${PORT}`;
   let client: OpenAI;
+  // Stable pseudonymous end-user ID, as recommended for Responses API calls
+  const TEST_SAFETY_IDENTIFIER = "endpoints-test-user";
 
   beforeAll(async () => {
     // Start framework server with stub agent (no LLM required)
@@ -46,6 +48,7 @@ describe("API Endpoints", () => {
         model: "test-model",
         input: [{ role: "user", content: "Say 'test' and nothing else" }],
         stream: true,
+        safety_identifier: TEST_SAFETY_IDENTIFIER,
       });
 
       let fullText = "";
@@ -72,6 +75,7 @@ describe("API Endpoints", () => {
         model: "test-model",
         input: [{ role: "user", content: "Say 'SDK test'" }],
         stream: true,
+        safety_identifier: TEST_SAFETY_IDENTIFIER,
       });
 
       let hasTextDelta = false;

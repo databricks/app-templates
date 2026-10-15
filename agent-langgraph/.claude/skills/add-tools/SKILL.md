@@ -61,27 +61,27 @@ See the `examples/` directory for complete YAML snippets:
 | `sql-warehouse.yaml` | SQL warehouse | SQL execution |
 | `serving-endpoint.yaml` | Model serving endpoint | Model inference |
 | `genie-space.yaml` | Genie space | Natural language data |
-| `lakebase.yaml` | Lakebase database | Agent memory storage (provisioned) |
-| `lakebase-autoscaling.yaml` | Lakebase autoscaling postgres | Agent memory storage (autoscaling) |
+| `lakebase-autoscaling.yaml` | Lakebase autoscaling postgres | Agent memory storage |
 | `experiment.yaml` | MLflow experiment | Tracing (already configured) |
+| `app.yaml` | Databricks App (app-to-app) | Custom MCP servers hosted as Apps |
 | `custom-mcp-server.md` | Custom MCP apps | Apps starting with `mcp-*` |
 
 ## Custom MCP Servers (Databricks Apps)
 
-Apps are **not yet supported** as resource dependencies in `databricks.yml`. Manual permission grant required:
+Declare the target app as an `app` resource in `databricks.yml` — the bundle grants `CAN_USE` on deploy. Requires Databricks CLI **v0.298.0+**.
 
-**Step 1:** Get your agent app's service principal:
-```bash
-databricks apps get <your-agent-app-name> --output json | jq -r '.service_principal_name'
+```yaml
+resources:
+  apps:
+    agent_langgraph:
+      resources:
+        - name: 'mcp_server'
+          app:
+            name: 'mcp-my-server'
+            permission: CAN_USE
 ```
 
-**Step 2:** Grant permission on the MCP server app:
-```bash
-databricks apps update-permissions <mcp-server-app-name> \
-  --json '{"access_control_list": [{"service_principal_name": "<agent-app-service-principal>", "permission_level": "CAN_USE"}]}'
-```
-
-See `examples/custom-mcp-server.md` for detailed steps.
+See `examples/custom-mcp-server.md` for the full flow (agent code + YAML + deploy).
 
 ## value_from Pattern
 
@@ -93,8 +93,8 @@ Some resources need environment variables in your app. Use `value_from` in `data
 env:
   - name: MLFLOW_EXPERIMENT_ID
     value_from: "experiment"        # References resources.apps.<app>.resources[name='experiment']
-  - name: LAKEBASE_INSTANCE_NAME
-    value_from: "database"   # References resources.apps.<app>.resources[name='database']
+  - name: LAKEBASE_AUTOSCALING_ENDPOINT
+    value_from: "postgres"   # References resources.apps.<app>.resources[name='postgres']
 ```
 
 **Critical:** Every `value_from` value must match a `name` field in `databricks.yml` resources.

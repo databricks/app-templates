@@ -8,10 +8,15 @@ from pathlib import Path
 # Workspace: https://db-ml-models-dev-us-west.cloud.databricks.com
 # ---------------------------------------------------------------------------
 DEFAULT_PROFILE = "dev"
-DEFAULT_LAKEBASE = "bbqiu"
 DEFAULT_LAKEBASE_AUTOSCALING_ENDPOINT = "projects/bryan-agent-integ-tests/branches/production/endpoints/primary"
 DEFAULT_GENIE_SPACE_ID = "01f05202dbb51d74b6cccf1b1b1683eb"
 DEFAULT_SERVING_ENDPOINT = "agents_dev-bbqiu-test-bb-2-25"
+# Default target for the multiagent template's <YOUR-TARGET-APP-NAME>
+# app-to-app CAN_USE permission. Empty means "strip the block" —
+# local users don't need to set up app-to-app to run the test. CI
+# sets this to a persistent app in the workspace to exercise the
+# feature end-to-end.
+DEFAULT_TARGET_APP_NAME = ""
 
 
 # ---------------------------------------------------------------------------
@@ -33,7 +38,7 @@ class TemplateConfig:
     app_resource_key: str  # DAB resource key under resources.apps
     is_conversational: bool = True  # /responses vs /invocations
     needs_lakebase: bool = False  # Whether template uses lakebase
-    lakebase_type: str = ""  # "provisioned", "autoscaling", or ""
+    lakebase_type: str = ""  # "autoscaling" or ""
     is_advanced: bool = False  # Whether this is an advanced template (has session + long-term memory)
     pre_test_edits: list[FileEdit] = field(default_factory=list)
     has_evaluate: bool = True
@@ -76,6 +81,7 @@ def _multiagent_edits(
     template_name: str,
     genie_space_id: str,
     serving_endpoint: str,
+    target_app_name: str,
 ) -> list[FileEdit]:
     """Build pre_test_edits for multiagent, skipping already-configured values."""
     template_dir = REPO_ROOT / template_name
@@ -102,6 +108,34 @@ def _multiagent_edits(
     ]:
         if old in yml_text:
             edits.append(FileEdit(relative_path="databricks.yml", old=old, new=new))
+
+    # Handle the `agent_app` permission entry that grants this app CAN_USE
+    # on another app. Two modes:
+    #   * target_app_name set: substitute the placeholder (exercises the
+    #     app-to-app CAN_USE feature). Target app must already exist in
+    #     the workspace, so use a persistent one — not a sibling template
+    #     that may or may not be deployed at the time this runs.
+    #   * target_app_name empty: strip the whole block so local tests
+    #     succeed without requiring any app-to-app setup.
+    agent_app_block = (
+        "\n        # TODO: Set the target app name to grant CAN_USE access.\n"
+        "        # Requires CLI v0.298.0+ for native app-to-app bundle resource support.\n"
+        "        - name: 'agent_app'\n"
+        "          app:\n"
+        "            name: '<YOUR-TARGET-APP-NAME>'\n"
+        "            permission: 'CAN_USE'\n"
+    )
+    if target_app_name:
+        if "<YOUR-TARGET-APP-NAME>" in yml_text:
+            edits.append(
+                FileEdit(
+                    relative_path="databricks.yml",
+                    old="<YOUR-TARGET-APP-NAME>",
+                    new=target_app_name,
+                )
+            )
+    elif agent_app_block in yml_text:
+        edits.append(FileEdit(relative_path="databricks.yml", old=agent_app_block, new=""))
 
     return edits
 
@@ -141,6 +175,7 @@ def _parse_databricks_yml(template_name: str) -> tuple[str, str]:
 def build_templates(
     genie_space_id: str = DEFAULT_GENIE_SPACE_ID,
     serving_endpoint: str = DEFAULT_SERVING_ENDPOINT,
+    target_app_name: str = DEFAULT_TARGET_APP_NAME,
 ) -> list[TemplateConfig]:
     # (name, needs_lakebase, overrides)
     configs: list[tuple[str, bool, dict]] = [
@@ -156,6 +191,7 @@ def build_templates(
                     "agent-openai-agents-sdk-multiagent",
                     genie_space_id,
                     serving_endpoint,
+                    target_app_name,
                 ),
                 "validate_time": False,
             },
@@ -186,17 +222,16 @@ def build_templates(
             continue
         dev_app_name, app_resource_key = _parse_databricks_yml(name)
         if needs_lakebase:
-            for lb_type in ("provisioned", "autoscaling"):
-                templates.append(
-                    TemplateConfig(
-                        name=name,
-                        dev_app_name=dev_app_name,
-                        app_resource_key=app_resource_key,
-                        needs_lakebase=True,
-                        lakebase_type=lb_type,
-                        **overrides,
-                    )
+            templates.append(
+                TemplateConfig(
+                    name=name,
+                    dev_app_name=dev_app_name,
+                    app_resource_key=app_resource_key,
+                    needs_lakebase=True,
+                    lakebase_type="autoscaling",
+                    **overrides,
                 )
+            )
         else:
             templates.append(
                 TemplateConfig(

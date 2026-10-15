@@ -1,3 +1,9 @@
+# Install crash/hang/exception diagnostics before importing agent code so
+# startup failures and unhandled exceptions land in the Apps log stream.
+from scripts.app_diagnostics import install_diagnostics  # noqa: E402
+
+install_diagnostics()
+
 """Agent server entry point. load_dotenv must run before agent imports (auth config)."""
 
 # ruff: noqa: E402
@@ -22,7 +28,11 @@ import agent_server.agent  # noqa: F401
 
 from agent_server.agent import LAKEBASE_CONFIG
 from agent_server.utils import replace_fake_id
-from agent_server.utils_memory import run_lakebase_setup
+from agent_server.utils_memory import (
+    get_lakebase_access_error_message,
+    lakebase_context,
+    set_lakebase_resources,
+)
 
 
 class AgentServer(LongRunningAgentServer):
@@ -33,7 +43,6 @@ class AgentServer(LongRunningAgentServer):
 agent_server = AgentServer(
     "ResponsesAgent",
     enable_chat_proxy=True,
-    db_instance_name=LAKEBASE_CONFIG.instance_name,
     db_autoscaling_endpoint=LAKEBASE_CONFIG.autoscaling_endpoint,
     db_project=LAKEBASE_CONFIG.autoscaling_project,
     db_branch=LAKEBASE_CONFIG.autoscaling_branch,
@@ -50,13 +59,45 @@ _original_lifespan = app.router.lifespan_context
 
 @asynccontextmanager
 async def _lifespan(app):
-    await run_lakebase_setup(LAKEBASE_CONFIG)
     try:
-        async with _original_lifespan(app):
-            yield
+        async with lakebase_context(LAKEBASE_CONFIG) as (checkpointer, store):
+            await checkpointer.setup()
+            await store.setup()
+            logger.info("Lakebase setup complete")
+
+            app.state.checkpointer = checkpointer
+            app.state.store = store
+            set_lakebase_resources(checkpointer, store)
+
+            try:
+                async with _original_lifespan(app):
+                    yield
+            except Exception as exc:
+                logger.warning(
+                    "Long-running DB initialization failed: %s. Background mode disabled.",
+                    exc,
+                )
+                yield
     except Exception as exc:
-        logger.warning("Long-running DB initialization failed: %s. Background mode disabled.", exc)
-        yield
+        error_msg = str(exc).lower()
+        if any(
+            keyword in error_msg
+            for keyword in [
+                "lakebase",
+                "pg_hba",
+                "postgres",
+                "database instance",
+                "insufficient privilege",
+            ]
+        ):
+            logger.error(
+                "Lakebase session setup failed: %s\n\n%s",
+                exc,
+                get_lakebase_access_error_message(LAKEBASE_CONFIG.description),
+            )
+        else:
+            logger.error("Lakebase session setup failed: %s", exc, exc_info=True)
+        raise
 
 
 app.router.lifespan_context = _lifespan

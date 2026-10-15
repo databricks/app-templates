@@ -3,7 +3,7 @@ import {
   type LanguageModelUsage,
   type UIMessageStreamWriter,
 } from 'ai';
-import { generateUUID } from '@chat-template/core';
+import { generateUUID } from '@databricks/chatbot-core';
 
 /**
  * Reads all chunks from a UI message stream, forwarding non-error parts to the

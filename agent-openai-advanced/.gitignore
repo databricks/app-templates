@@ -198,7 +198,6 @@ sketch
 
 # End of https://www.toptal.com/developers/gitignore/api/react
 
-**/uv.lock
 **/mlruns/
 **/.vite/
 **/.databricks
@@ -212,6 +211,7 @@ sketch
 !.claude/skills/discover-tools/
 !.claude/skills/create-tools/
 !.claude/skills/deploy/
+!.claude/skills/managed-memory/
 !.claude/skills/add-tools/
 !.claude/skills/run-locally/
 !.claude/skills/modify-agent/

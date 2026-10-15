@@ -77,7 +77,6 @@ class AgentServer(LongRunningAgentServer):
 agent_server = AgentServer(
     "ResponsesAgent",
     enable_chat_proxy=True,
-    db_instance_name=lakebase_config.instance_name,
     db_autoscaling_endpoint=lakebase_config.autoscaling_endpoint,
     db_project=lakebase_config.autoscaling_project,
     db_branch=lakebase_config.autoscaling_branch,
@@ -143,7 +142,6 @@ class AgentServer(LongRunningAgentServer):
 agent_server = AgentServer(
     "ResponsesAgent",
     enable_chat_proxy=True,
-    db_instance_name=LAKEBASE_CONFIG.instance_name,
     db_autoscaling_endpoint=LAKEBASE_CONFIG.autoscaling_endpoint,
     db_project=LAKEBASE_CONFIG.autoscaling_project,
     db_branch=LAKEBASE_CONFIG.autoscaling_branch,
@@ -232,37 +230,31 @@ from typing import Optional
 
 @dataclass(frozen=True)
 class LakebaseConfig:
-    instance_name: Optional[str]
     autoscaling_endpoint: Optional[str]
     autoscaling_project: Optional[str]
     autoscaling_branch: Optional[str]
 
 
 def init_lakebase_config() -> LakebaseConfig:
-    """Read lakebase env vars. Priority: endpoint > project+branch > instance_name."""
+    """Read lakebase env vars. Priority: endpoint > project+branch."""
     endpoint = os.getenv("LAKEBASE_AUTOSCALING_ENDPOINT") or None
-    raw_name = os.getenv("LAKEBASE_INSTANCE_NAME") or None
     project = os.getenv("LAKEBASE_AUTOSCALING_PROJECT") or None
     branch = os.getenv("LAKEBASE_AUTOSCALING_BRANCH") or None
 
     has_autoscaling = project and branch
-    if not endpoint and not raw_name and not has_autoscaling:
+    if not endpoint and not has_autoscaling:
         raise ValueError(
             "Lakebase configuration is required. Set one of:\n"
             "  LAKEBASE_AUTOSCALING_ENDPOINT=<endpoint>\n"
             "  LAKEBASE_AUTOSCALING_PROJECT + LAKEBASE_AUTOSCALING_BRANCH\n"
-            "  LAKEBASE_INSTANCE_NAME=<instance-name>\n"
         )
 
     if endpoint:
-        return LakebaseConfig(instance_name=None, autoscaling_endpoint=endpoint,
+        return LakebaseConfig(autoscaling_endpoint=endpoint,
                               autoscaling_project=None, autoscaling_branch=None)
-    elif has_autoscaling:
-        return LakebaseConfig(instance_name=None, autoscaling_endpoint=None,
-                              autoscaling_project=project, autoscaling_branch=branch)
     else:
-        return LakebaseConfig(instance_name=raw_name, autoscaling_endpoint=None,
-                              autoscaling_project=None, autoscaling_branch=None)
+        return LakebaseConfig(autoscaling_endpoint=None,
+                              autoscaling_project=project, autoscaling_branch=branch)
 
 
 # Module-level singleton
@@ -300,8 +292,6 @@ LAKEBASE_AUTOSCALING_ENDPOINT=<your-endpoint>
 # Option 2: Autoscaling project/branch
 LAKEBASE_AUTOSCALING_PROJECT=<project>
 LAKEBASE_AUTOSCALING_BRANCH=<branch>
-# Option 3: Provisioned instance
-LAKEBASE_INSTANCE_NAME=<instance-name>
 
 # Optional tuning
 TASK_TIMEOUT_SECONDS=3600
@@ -323,7 +313,6 @@ Follow the **lakebase-setup** skill Steps 5-7 to deploy, grant SP permissions, a
 |---|---|---|---|
 | `name` | `str` | required | Server name (e.g. `"ResponsesAgent"`) |
 | `enable_chat_proxy` | `bool` | `False` | Enable chat UI proxy endpoint |
-| `db_instance_name` | `str \| None` | `None` | Provisioned Lakebase instance name |
 | `db_autoscaling_endpoint` | `str \| None` | `None` | Autoscaling endpoint hostname |
 | `db_project` | `str \| None` | `None` | Autoscaling project name |
 | `db_branch` | `str \| None` | `None` | Autoscaling branch name |

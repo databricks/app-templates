@@ -14,8 +14,8 @@ test.describe('OBO Scope Banner', () => {
     adaContext,
   }) => {
     await adaContext.page.goto('/');
-    // The mock endpoint declares serving.serving-endpoints
-    const banner = adaContext.page.locator('text=serving.serving-endpoints');
+    // The mock endpoint declares model-serving
+    const banner = adaContext.page.locator('text=model-serving');
     await expect(banner).toBeVisible();
   });
 
@@ -32,7 +32,7 @@ test.describe('OBO Scope Banner', () => {
     browser,
   }) => {
     // Create a context with a JWT that has the required scope
-    const payload = { scope: 'serving.serving-endpoints offline_access', sub: 'test-user' };
+    const payload = { scope: 'model-serving offline_access', sub: 'test-user' };
     const fakeJwt = `eyJhbGciOiJSUzI1NiJ9.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.sig`;
 
     const context = await browser.newContext({

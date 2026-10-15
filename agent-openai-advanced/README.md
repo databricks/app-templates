@@ -515,6 +515,8 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
 This template uses [Databricks Asset Bundles (DABs)](https://docs.databricks.com/aws/en/dev-tools/bundles/) for deployment. The `databricks.yml` file defines the app configuration and resource permissions.
 
+> **`app.yaml` vs `databricks.yml`**: `app.yaml` is used when deploying via `databricks apps deploy` (manual path). When deploying via DABs (`databricks bundle deploy`), the `config:` section in `databricks.yml` takes precedence. If you change environment variables or the start command, update `databricks.yml` — that's what DABs reads.
+
 Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/tutorial) installed and configured.
 
 1. **Run the pre-flight check**
@@ -634,8 +636,8 @@ After deploying, the app's service principal needs Postgres-level permissions to
 # 1. Get the SP client ID from your deployed app
 databricks apps get <app-name> --profile <profile> --output json | jq -r '.service_principal_client_id'
 
-# 2. Grant permissions (reads LAKEBASE_INSTANCE_NAME from .env)
-DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permissions.py <sp-client-id>
+# 2. Grant permissions (reads LAKEBASE_AUTOSCALING_ENDPOINT from .env)
+DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type openai
 ```
 
 This grants USAGE + CREATE on the `agent_server`, `ai_chatbot`, and `drizzle` schemas, and SELECT/INSERT/UPDATE/DELETE on all tables within them.

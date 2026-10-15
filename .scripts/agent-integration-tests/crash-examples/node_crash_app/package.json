@@ -1,0 +1,10 @@
+{
+  "name": "node-crash-app",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Intentional-crash fixture for the diagnostics e2e test (not a real template).",
+  "scripts": {
+    "start": "node index.mjs"
+  }
+}

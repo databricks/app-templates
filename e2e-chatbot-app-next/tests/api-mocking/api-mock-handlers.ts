@@ -332,7 +332,7 @@ export const handlers = [
       task: 'agent/v1/responses',
       auth_policy: {
         user_auth_policy: {
-          api_scopes: ['serving.serving-endpoints'],
+          api_scopes: ['model-serving'],
         },
       },
     });

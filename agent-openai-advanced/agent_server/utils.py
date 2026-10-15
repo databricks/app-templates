@@ -15,6 +15,8 @@ from mlflow.genai.agent_server import get_request_headers
 from mlflow.types.responses import ResponsesAgentRequest, ResponsesAgentStreamEvent
 from uuid_utils import uuid7
 
+from agent_server.history import normalize_history_items
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,91 +27,44 @@ def _is_databricks_app_env() -> bool:
 
 @dataclass(frozen=True)
 class LakebaseConfig:
-    instance_name: Optional[str]
     autoscaling_endpoint: Optional[str]
     autoscaling_project: Optional[str]
     autoscaling_branch: Optional[str]
+    memory_schema: Optional[str] = None
 
     @property
     def description(self) -> str:
-        return self.autoscaling_endpoint or self.instance_name or f"{self.autoscaling_project}/{self.autoscaling_branch}"
-
-
-def _is_lakebase_hostname(value: str) -> bool:
-    """Check if the value looks like a Lakebase hostname rather than an instance name."""
-    return ".database." in value and value.endswith(".com")
-
-
-def resolve_lakebase_instance_name(
-    instance_name: str, workspace_client: WorkspaceClient | None = None
-) -> str:
-    if not _is_lakebase_hostname(instance_name):
-        return instance_name
-
-    client = workspace_client or WorkspaceClient()
-    hostname = instance_name
-
-    try:
-        instances = list(client.database.list_database_instances())
-    except Exception as exc:
-        raise ValueError(
-            f"Unable to list database instances to resolve hostname '{hostname}'. "
-            "Ensure you have access to database instances."
-        ) from exc
-
-    for instance in instances:
-        rw_dns = getattr(instance, "read_write_dns", None)
-        ro_dns = getattr(instance, "read_only_dns", None)
-        if hostname in (rw_dns, ro_dns):
-            resolved_name = getattr(instance, "name", None)
-            if not resolved_name:
-                raise ValueError(
-                    f"Found matching instance for hostname '{hostname}' "
-                    "but instance name is not available."
-                )
-            logger.info(
-                "Resolved Lakebase hostname '%s' to instance name '%s'",
-                hostname,
-                resolved_name,
-            )
-            return resolved_name
-
-    raise ValueError(
-        f"Unable to find database instance matching hostname '{hostname}'. "
-        "Ensure the hostname is correct and the instance exists."
-    )
+        return self.autoscaling_endpoint or f"{self.autoscaling_project}/{self.autoscaling_branch}"
 
 
 def init_lakebase_config() -> LakebaseConfig:
     """Read lakebase env vars and return a LakebaseConfig.
 
-    Validates that at least one mode (endpoint, provisioned, or autoscaling) is configured.
-    Priority: autoscaling_endpoint > instance_name > project+branch.
+    Validates that autoscaling Lakebase is configured (endpoint, or project+branch).
+    Priority: autoscaling_endpoint > project+branch.
     Only the winning mode's values are returned; others are None to avoid mutual-exclusivity
     errors in the underlying library.
     """
     endpoint = os.getenv("LAKEBASE_AUTOSCALING_ENDPOINT") or None
-    raw_name = os.getenv("LAKEBASE_INSTANCE_NAME") or None
     project = os.getenv("LAKEBASE_AUTOSCALING_PROJECT") or None
     branch = os.getenv("LAKEBASE_AUTOSCALING_BRANCH") or None
 
     has_autoscaling = project and branch
-    if not endpoint and not raw_name and not has_autoscaling:
+    if not endpoint and not has_autoscaling:
         raise ValueError(
             "Lakebase configuration is required but not set. "
             "Please set one of the following in your environment:\n"
             "  Option 1 (autoscaling endpoint): LAKEBASE_AUTOSCALING_ENDPOINT=<your-endpoint-name>\n"
             "  Option 2 (autoscaling): LAKEBASE_AUTOSCALING_PROJECT=<project> and LAKEBASE_AUTOSCALING_BRANCH=<branch>\n"
-            "  Option 3 (provisioned): LAKEBASE_INSTANCE_NAME=<your-instance-name>\n"
         )
 
-    # Priority: endpoint > project+branch > instance_name (mutually exclusive in the library)
+    memory_schema = os.getenv("LAKEBASE_AGENT_MEMORY_SCHEMA") or None
+
+    # Priority: endpoint > project+branch (mutually exclusive in the library)
     if endpoint:
-        return LakebaseConfig(instance_name=None, autoscaling_endpoint=endpoint, autoscaling_project=None, autoscaling_branch=None)
-    elif has_autoscaling:
-        return LakebaseConfig(instance_name=None, autoscaling_endpoint=None, autoscaling_project=project, autoscaling_branch=branch)
+        return LakebaseConfig(autoscaling_endpoint=endpoint, autoscaling_project=None, autoscaling_branch=None, memory_schema=memory_schema)
     else:
-        return LakebaseConfig(instance_name=resolve_lakebase_instance_name(raw_name), autoscaling_endpoint=None, autoscaling_project=None, autoscaling_branch=None)
+        return LakebaseConfig(autoscaling_endpoint=None, autoscaling_project=project, autoscaling_branch=branch, memory_schema=memory_schema)
 
 
 def get_lakebase_access_error_message(lakebase_description: str) -> str:
@@ -191,18 +146,10 @@ async def deduplicate_input(request: ResponsesAgentRequest, session: AsyncDatabr
     If the session already covers the prior turns, only the latest message is needed
     since the session will prepend the full history automatically.
     """
-    messages = [i.model_dump() for i in request.input]
-    # Normalize assistant message content from string to structured list format.
-    # MLflow evaluation sends assistant content as a plain string, but the OpenAI
-    # Agents SDK expects it as [{"type": "output_text", "text": ..., "annotations": []}].
-    for msg in messages:
-        if (
-            isinstance(msg, dict)
-            and msg.get("type") == "message"
-            and msg.get("role") == "assistant"
-            and isinstance(msg.get("content"), str)
-        ):
-            msg["content"] = [{"type": "output_text", "text": msg["content"], "annotations": []}]
+    # Replayed assistant turns arrive id-less (chat UI sends output_text lists,
+    # MLflow evaluation sends plain strings); collapse them to the easy-input
+    # form every openai-agents version accepts. See agent_server/history.py.
+    messages = normalize_history_items([i.model_dump() for i in request.input])
     session_items = await session.get_items()
     if len(session_items) >= len(messages) - 1:
         return [messages[-1]]

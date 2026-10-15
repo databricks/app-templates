@@ -1,0 +1,14 @@
+.DS_Store
+node_modules/
+client/dist/
+dist/
+build/
+.env
+.databricks/
+.smoke-test/
+test-results/
+playwright-report/
+
+# AppKit generated types (regenerated at build)
+shared/appkit-types/analytics.d.ts
+shared/appkit-types/serving.d.ts

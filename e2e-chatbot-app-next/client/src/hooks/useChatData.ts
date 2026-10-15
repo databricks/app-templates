@@ -1,6 +1,6 @@
 import useSWR from 'swr';
-import type { Chat } from '@chat-template/db';
-import type { ChatMessage, FeedbackMap } from '@chat-template/core';
+import type { Chat } from '@databricks/chatbot-db';
+import type { ChatMessage, FeedbackMap } from '@databricks/chatbot-core';
 import { convertToUIMessages } from '@/lib/utils';
 
 interface ChatData {

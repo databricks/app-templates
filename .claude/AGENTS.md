@@ -8,7 +8,7 @@ Shared files are copied from source-of-truth directories into each template. **N
 
 | Source directory | Sync command | What it syncs |
 |---|---|---|
-| `.scripts/source/` | `uv run python .scripts/sync-scripts.py` | `quickstart.py`, `start_app.py`, `evaluate_agent.py` |
+| `.scripts/source/` | `uv run python .scripts/sync-scripts.py` | `quickstart.py`, `start_app.py`, `evaluate_agent.py`, `grant_lakebase_permissions.py`, `preflight.py`, plus `.github/workflows/deploy.yml` for templates with `has_actions: True` (with `{{BUNDLE_NAME}}` substitution) |
 | `.claude/skills/` | `uv run python .scripts/sync-skills.py` | All skill directories under `{template}/.claude/skills/` |
 
 After modifying any source file, run the corresponding sync command and commit the synced copies.
@@ -65,6 +65,7 @@ All memory templates return the ID in `custom_outputs` so clients can reuse it.
 - Lakebase resources use `permission: 'CAN_CONNECT_AND_CREATE'`
 - Lakebase templates use `<your-lakebase-instance-name>` as placeholder — quickstart replaces it
 - Templates do not define a DAB-managed experiment resource (`resources.experiments`); instead, the app resource references an experiment by ID (initially empty), and quickstart fills in the literal experiment ID
+- Agent templates declare a `serving_endpoint` app resource named `llm-endpoint` (permission `CAN_QUERY`) whose `name` matches the model hardcoded in `agent_server/agent.py`. This grants the app's service principal query access to the model on deploy (and, via the matching `manifest.yaml` `serving_endpoint_spec`, on UI-based creation) without a manual grant. Change the model in both `agent.py` and this resource together.
 
 ### `app.yaml` files
 
@@ -104,6 +105,25 @@ uv run pytest test_e2e.py -v -n0 -s --template agent-langgraph
 ```
 
 Template test configs are in `.scripts/agent-integration-tests/template_config.py`.
+
+### Deploy validation & functional e2e (all templates)
+
+Beyond the agent `test_e2e.py` suite, `.scripts/agent-integration-tests/` also has
+two broader, serial (`-p no:xdist`) suites that run against ONE shared Databricks
+App (`template-e2e-test`): `validate_templates.py` (deploys each template's source
+and browser-verifies it serves — config in `validation-config.yaml`) and
+`functional_test.py` (drives each exemplar's real UI/protocol). Both need the shared
+app's resource bindings + an SSO storageState (`auth_setup.py`). **Use the
+`validate-templates` skill** (`.claude/skills/validate-templates/` — repo-dev only,
+not synced into templates) for prerequisites, commands, and how to read the reports.
+
+## Security Scanning (semgrep)
+
+Databricks Apps runs semgrep with the community rules against deployed app source, so every template must scan cleanly. Keep it that way when editing:
+
+- Prefer real fixes. When a finding is a false positive (e.g. `subprocess` with a script-built argument list, calls to Databricks endpoints flagged by OpenAI-platform rules), suppress it inline with `# nosemgrep: <rule-id>` plus a short justification.
+- Agent `pyproject.toml` files set `exclude-newer = "7 days"` under `[tool.uv]` (dependency cooldown; needs uv >= 0.9.17). npm `package.json` dependencies use exact versions.
+- Pin GitHub Actions to commit SHAs (with the tag in a trailing comment).
 
 ## Editing Workflow Summary
 

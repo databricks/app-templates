@@ -16,7 +16,7 @@ The skills contain tested commands, code patterns, and troubleshooting steps.
 
 This template defines a conversational agent app with **short-term memory**, **long-term memory**, and **long-running background tasks**. The app comes with a built-in chat UI, but also exposes an API endpoint for invoking the agent so that you can serve your UI elsewhere (e.g. on your website or in a mobile app).
 
-The agent in this template implements the [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses) interface. It has access to a single tool; the [built-in code interpreter tool](https://docs.databricks.com/aws/en/generative-ai/agent-framework/code-interpreter-tools#built-in-python-executor-tool) (`system.ai.python_exec`) on Databricks. You can customize agent code and test it via the API or UI.
+The agent in this template implements the [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses) interface. It ships with a sample `get_current_time` tool. The agent code includes commented-out examples showing how to connect to [Databricks MCP servers](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool) (including the built-in code interpreter, Vector Search, Genie, and UC functions). You can customize agent code and test it via the API or UI.
 
 The agent input and output format are defined by MLflow's ResponsesAgent interface, which closely follows the [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses) interface. See [the MLflow docs](https://mlflow.org/docs/latest/genai/flavors/responses-agent-intro/) for input and output formats for streaming and non-streaming requests, tracing requirements, and other agent authoring details.
 
@@ -220,13 +220,13 @@ Configure these in `.env` for local development, and in `databricks.yml` `config
 
 **Lakebase (required for memory and background mode):**
 
-Lakebase powers both memory (short-term and long-term) and background mode persistence. Configure either a provisioned instance OR an autoscaling project/branch — not both.
+Lakebase powers both memory (short-term and long-term) and background mode persistence. Configure an autoscaling Lakebase endpoint (or project/branch).
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LAKEBASE_INSTANCE_NAME` | Provisioned Lakebase instance name | _(option 1)_ |
-| `LAKEBASE_AUTOSCALING_PROJECT` | Autoscaling Lakebase project | _(option 2)_ |
-| `LAKEBASE_AUTOSCALING_BRANCH` | Autoscaling Lakebase branch | _(option 2)_ |
+| `LAKEBASE_AUTOSCALING_ENDPOINT` | Autoscaling Lakebase endpoint (resolved from the `postgres` resource) | _(required)_ |
+| `LAKEBASE_AUTOSCALING_PROJECT` | Autoscaling Lakebase project (alternative to endpoint) | _(optional)_ |
+| `LAKEBASE_AUTOSCALING_BRANCH` | Autoscaling Lakebase branch (alternative to endpoint) | _(optional)_ |
 | `DATABRICKS_EMBEDDING_ENDPOINT` | Embedding model for long-term memory vector search | `databricks-gte-large-en` |
 
 If no Lakebase variables are set, memory features and background mode are both disabled. The server falls back to stateless, standard request handling only.
@@ -419,6 +419,8 @@ After it completes, open the MLflow UI link for your experiment to inspect resul
 
 This template uses [Databricks Asset Bundles (DABs)](https://docs.databricks.com/aws/en/dev-tools/bundles/) for deployment. The `databricks.yml` file defines the app configuration and resource permissions.
 
+> **`app.yaml` vs `databricks.yml`**: `app.yaml` is used when deploying via `databricks apps deploy` (manual path). When deploying via DABs (`databricks bundle deploy`), the `config:` section in `databricks.yml` takes precedence. If you change environment variables or the start command, update `databricks.yml` — that's what DABs reads.
+
 Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/tutorial) installed and configured.
 
 1. **Run the pre-flight check**
@@ -461,9 +463,9 @@ Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tool
 
    After deploying, you need to ensure your app has access to the necessary Lakebase tables for memory. The Lakebase instance is already configured as a resource in `databricks.yml`, but you'll need to grant Postgres-level permissions on schemas and tables that were created during local testing.
 
-   > **Autoscaling Lakebase instances:** If your Lakebase instance is autoscaling (not provisioned), the postgres resource is **not yet supported** as a resource dependency in `databricks.yml`. After `databricks bundle run`, you must manually add the postgres resource to your app via the Databricks API, grant permissions, and then redeploy the app. See the [autoscaling Lakebase setup guide](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/lakebase) for detailed steps. Note that `databricks bundle deploy` will overwrite app resources, so you must re-add the postgres resource after each bundle deploy.
+   > **Tip:** `uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type langgraph` grants all the permissions below automatically (it reads the autoscaling endpoint from `.env`). Run the SQL manually only if you prefer to do it by hand.
 
-   **For provisioned Lakebase instances**, run the following SQL commands on your Lakebase instance (replace `app-sp-id` with your app's service principal UUID):
+   Run the following SQL commands on your Lakebase instance (replace `app-sp-id` with your app's service principal UUID):
 
    ```sql
    DO $$

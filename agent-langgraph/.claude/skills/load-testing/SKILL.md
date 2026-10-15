@@ -70,7 +70,7 @@ Create a `load-test-scripts/` directory in the project with the following files.
 - Full results table with peak QPS, users at peak, latency percentiles, failure rate
 - Can be run standalone: `uv run dashboard_template.py ../load-test-runs/<run-name>/`
 
-> **Starter examples:** a minimal [`examples/locustfile.py`](examples/locustfile.py) (streaming, TTFT, M2M OAuth, ramp shape) and [`examples/validate_with_mlflow.py`](examples/validate_with_mlflow.py) (server-side reliability + latency **and a span breakdown that pinpoints the bottleneck tool**) are included to copy from.
+> **Starter examples:** a minimal [`examples/locustfile.py`](examples/locustfile.py) (streaming, TTFT, U2M or M2M OAuth, ramp shape) and [`examples/validate_with_mlflow.py`](examples/validate_with_mlflow.py) (server-side reliability + latency **and a span breakdown that pinpoints the bottleneck tool**) are included to copy from.
 
 ### Install Dependencies
 

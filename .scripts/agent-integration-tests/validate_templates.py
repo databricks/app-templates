@@ -6,8 +6,10 @@ curl-verified. Run serially — never with pytest -n >0 (shared app).
 """
 from __future__ import annotations
 
+import html
 import json
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -21,7 +23,6 @@ from helpers import (
     _log,
     _run_cmd,
     _run_with_retries,
-    capture_app_logs,
     databricks_create_app,
     get_oauth_token,
     git_copy_template,
@@ -73,7 +74,7 @@ def prepare_source(template_name: str, dest: Path) -> Path:
     return src
 
 
-def build_template(template_name: str, dest: Path) -> None:
+def build_template(template_name: str, dest: Path, extra_env: dict | None = None) -> None:
     """Build-only validation for SPA/Node templates.
 
     Copies the template to a throwaway dir (never mutates the real template),
@@ -82,7 +83,8 @@ def build_template(template_name: str, dest: Path) -> None:
     src = git_copy_template(template_name, dest)
     # Route npm through the Databricks proxy — registry.npmjs.org is frequently
     # 503/unreachable from this environment.
-    env = {**os.environ, "npm_config_registry": "https://npm-proxy.cloud.databricks.com"}
+    env = {**os.environ, "npm_config_registry": "https://npm-proxy.cloud.databricks.com",
+           **(extra_env or {})}
     has_lock = (src / "package-lock.json").exists() or (src / "npm-shrinkwrap.json").exists()
     install_cmd = ["npm", "ci"] if has_lock else ["npm", "install"]
     for cmd in (install_cmd, ["npm", "run", "build"]):
@@ -106,19 +108,65 @@ def sync_source(src_dir: Path, ws_path: str, profile: str) -> None:
     )
 
 
+# A failed platform build (npm/pip install, `npm run build`) or a crash on start
+# is deterministic: retry once for a transient blip, not the full retry budget.
+DETERMINISTIC_FAILURE_MARKERS = ("Error building app", "app exited unexpectedly")
+BUILD_FAILED_MAX_ATTEMPTS = 2
+
+
+def _deploy_recover(stderr: str, attempt: int, max_attempts: int) -> bool:
+    if any(m in stderr for m in DETERMINISTIC_FAILURE_MARKERS) and attempt >= BUILD_FAILED_MAX_ATTEMPTS:
+        return False
+    if attempt >= max_attempts:
+        return False
+    time.sleep(POLL_INTERVAL)
+    return True
+
+
+def build_log_entries(logz_html: str, limit: int = 60, sources: tuple = ("BUILD",)) -> list[str]:
+    """Extract the given-source rows (BUILD/APP/SYSTEM) from /logz, oldest first."""
+    pattern = r'<tr class="log-entry" data-source="(?:%s)">(.*?)</tr>' % "|".join(sources)
+    rows = re.findall(pattern, logz_html, re.S)
+    entries = []
+    for row in rows:
+        cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
+        text = html.unescape(re.sub(r"<[^>]+>", "", cells[-1] if cells else row)).strip()
+        if text:
+            entries.append(text)
+    return list(reversed(entries[:limit]))  # page lists newest first
+
+
+def _log_build_failure(app_name: str, profile: str, sources: tuple = ("BUILD", "APP", "SYSTEM")) -> None:
+    """Log the app's build/runtime output — `databricks apps logs` is SSO-walled here."""
+    _, url, _ = _apps_status(app_name, profile)
+    if not url or not STORAGE_STATE.exists():
+        return
+    try:
+        _, logz, _ = _browser_load(str(STORAGE_STATE), f"{url}/logz")
+    except Exception as e:  # diagnostics only; never mask the deploy failure
+        _log(f"(could not read {url}/logz: {e})")
+        return
+    entries = build_log_entries(logz, sources=sources)
+    _log("\n--- App logs (/logz) ---\n" + "\n".join(entries) + "\n--- End logs ---")
+
+
 def apps_deploy_source(app_name: str, ws_path: str, profile: str) -> None:
     _log(f"Deploying source at {ws_path} into app {app_name}")
-    _run_with_retries(
-        [
-            "databricks", "apps", "deploy", app_name,
-            "--source-code-path", ws_path,
-            "-p", profile,
-        ],
-        cwd=Path.cwd(),
-        label="apps deploy",
-        timeout=BUNDLE_TIMEOUT,
-        recover=lambda stderr, a, m: (time.sleep(POLL_INTERVAL), True)[1] if a < m else False,
-    )
+    try:
+        _run_with_retries(
+            [
+                "databricks", "apps", "deploy", app_name,
+                "--source-code-path", ws_path,
+                "-p", profile,
+            ],
+            cwd=Path.cwd(),
+            label="apps deploy",
+            timeout=BUNDLE_TIMEOUT,
+            recover=_deploy_recover,
+        )
+    except Exception:
+        _log_build_failure(app_name, profile)
+        raise
 
 
 def wait_for_app_ready_generic(
@@ -308,6 +356,29 @@ def test_validate_template(val_template, val_cfg, request):
     log_dir.mkdir(exist_ok=True)
     set_log_file(log_dir / f"validate-{val_template.name}.log")
 
+    # --val-force-build: dependency-only changes (e.g. lockfile bumps) need every
+    # npm template to still install + build, including OBO templates that the
+    # deploy path would otherwise skip. Build-only, no deploy. AppKit templates'
+    # prebuild runs `appkit generate-types`, which needs a warehouse to type the
+    # SQL queries (Apps injects it from the bound resource); borrow the shared
+    # app's, or tsc fails on untyped query results. On unified hosts (profile has
+    # a workspace_id, e.g. dogfood staging) AppKit's JS SDK only sends the
+    # X-Databricks-Org-Id routing header in experimental unified-host mode;
+    # without it every query 403s ("account admin") and typegen degrades.
+    if request.config.getoption("--val-force-build"):
+        from template_config import REPO_ROOT
+        if not (REPO_ROOT / val_template.name / "package.json").exists():
+            pytest.skip("--val-force-build: no package.json")
+        extra_env = force_build_env(val_cfg.shared_app_name, val_cfg.profile)
+        with tempfile.TemporaryDirectory(prefix=f"val-{val_template.name}-") as tmp:
+            build_template(val_template.name, Path(tmp), extra_env)
+        return
+
+    # --val-verify-as: force the deploy path with the given verify mode, e.g.
+    # `spa` to prove build/OBO templates install + serve on the Apps runtime after
+    # a dependency-only change (no OBO success-signal needed).
+    verify = request.config.getoption("--val-verify-as") or val_template.verify
+
     # OBO (on-behalf-of-user): exercised like `html`, but the shared app must be
     # CREATED with the OBO scope union + resource bindings (see the validate-templates
     # skill) — Databricks binds the forwarded-token scopes at app creation, so scopes
@@ -316,11 +387,11 @@ def test_validate_template(val_template, val_cfg, request):
     # forwarded user token's downstream call SUCCEEDED (not the always-rendered page
     # header). Templates without a wired success-signal (or needing a binding the
     # shared app lacks, e.g. a UC connection) skip until one is added.
-    if val_template.verify == "obo" and not val_template.expect:
+    if verify == "obo" and not val_template.expect:
         pytest.skip("OBO template not yet wired for e2e (no success-signal expect)")
 
     # Build-only path: no shared app, no deploy.
-    if val_template.verify == "build":
+    if verify == "build":
         if request.config.getoption("--val-setup-only"):
             pytest.skip("--val-setup-only: nothing to set up for build-only template")
         with tempfile.TemporaryDirectory(prefix=f"val-{val_template.name}-") as tmp:
@@ -349,16 +420,14 @@ def test_validate_template(val_template, val_cfg, request):
         apps_deploy_source(shared_app, ws_path, val_cfg.profile)
         try:
             app_url, _token = wait_for_app_ready_generic(
-                shared_app, val_cfg.profile, health_path_for(val_template.verify)
+                shared_app, val_cfg.profile, health_path_for(verify)
             )
             verify_serving(
-                val_template.verify, app_url, str(STORAGE_STATE),
+                verify, app_url, str(STORAGE_STATE),
                 val_template.expect, val_template.obo_click,
             )
         except Exception:
-            logs = capture_app_logs(shared_app, val_cfg.profile)
-            if logs:
-                _log(f"\n--- App logs ({shared_app}) ---\n{logs}\n--- End logs ---")
+            _log_build_failure(shared_app, val_cfg.profile)
             raise
 
 
@@ -378,6 +447,42 @@ CRASH_FIXTURES = [
     ("python", "crash-examples/python_crash_app", "Traceback (most recent call last)"),
     ("node", "crash-examples/node_crash_app", "uncaughtException"),
 ]
+
+
+def force_build_env(app_name: str, profile: str) -> dict[str, str]:
+    """Env for a --val-force-build `npm run build`: the profile, the shared app's
+    warehouse (for AppKit typegen) and, on unified hosts, the workspace ID plus
+    the JS SDK's unified-host flag so it sends X-Databricks-Org-Id."""
+    env = {"DATABRICKS_CONFIG_PROFILE": profile}
+    warehouse_id = _shared_app_warehouse_id(app_name, profile)
+    if warehouse_id:
+        env["DATABRICKS_WAREHOUSE_ID"] = warehouse_id
+    workspace_id = _profile_workspace_id(profile)
+    if workspace_id:
+        env["DATABRICKS_WORKSPACE_ID"] = workspace_id
+        env["DATABRICKS_EXPERIMENTAL_IS_UNIFIED_HOST"] = "true"
+    return env
+
+
+def _profile_workspace_id(profile: str) -> str:
+    """Return the profile's workspace_id (set on unified hosts), or ''."""
+    from databricks.sdk.core import Config
+
+    return str(Config(profile=profile).workspace_id or "")
+
+
+def _shared_app_warehouse_id(app_name: str, profile: str) -> str:
+    """Return the id of the app's bound sql-warehouse resource, or '' if none."""
+    r = _run_cmd(
+        ["databricks", "apps", "get", app_name, "-p", profile, "--output", "json"],
+        timeout=60,
+    )
+    if r.returncode != 0 or not r.stdout.strip():
+        return ""
+    for res in json.loads(r.stdout).get("resources", []) or []:
+        if "sql_warehouse" in res:
+            return res["sql_warehouse"].get("id", "")
+    return ""
 
 
 def _apps_status(app_name: str, profile: str) -> tuple[str, str, str]:

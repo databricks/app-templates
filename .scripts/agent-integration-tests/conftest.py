@@ -69,6 +69,13 @@ def pytest_addoption(parser):
                      help="Limit validation to these template names (repeatable)")
     parser.addoption("--val-setup-only", action="store_true", default=False,
                      help="Only ensure the shared app exists; skip deploy/verify")
+    parser.addoption("--val-force-build", action="store_true", default=False,
+                     help="Build-only (npm ci + npm run build) every template with a "
+                          "package.json, regardless of verify mode; skip the rest")
+    parser.addoption("--val-verify-as", action="store", default=None,
+                     choices=["html", "spa", "mcp", "api", "obo"],
+                     help="Override every selected template's verify mode and run the "
+                          "deploy path with it (e.g. spa for build/OBO templates)")
     parser.addoption("--target", action="store", default="local",
                      choices=["local", "deployed"], help="functional_test.py target")
 
@@ -132,6 +139,10 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
                 })
                 continue
             verify = verify_by_name.get(name, "?")
+            if config.getoption("--val-force-build"):
+                verify = "build"
+            elif config.getoption("--val-verify-as"):
+                verify = config.getoption("--val-verify-as")
             mode = "build" if verify == "build" else "deploy"
             rows.append({
                 "template": name, "mode": mode, "verify": verify,

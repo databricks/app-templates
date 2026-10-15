@@ -26,16 +26,26 @@ def neutralize_app_yaml(text: str) -> str:
     return yaml.safe_dump(doc, sort_keys=False, default_flow_style=False)
 
 
+# Template resource keys that name the same kind of resource as one of the
+# shared app's bound keys (see validation-config.yaml) under another name.
+RESOURCE_KEY_ALIASES = {"files": "uc-volume"}
+
+
 def resource_aware_app_yaml(text: str) -> str:
     """Prepare an app.yaml for a shared app that HAS the expected resources bound.
 
     Preserves ``env`` (including every ``valueFrom`` ref, so the shared app's
-    bound resources resolve) and only drops a top-level ``resources`` block —
-    resource bindings are owned by the shared app's own config, not the deployed
-    source, so a source-level block would conflict.
+    bound resources resolve; refs in RESOURCE_KEY_ALIASES are renamed to the
+    shared app's key) and only drops a top-level ``resources`` block — resource
+    bindings are owned by the shared app's own config, not the deployed source,
+    so a source-level block would conflict.
     """
     doc = yaml.safe_load(text) or {}
     doc.pop("resources", None)
+    for entry in doc.get("env") or []:
+        ref = entry.get("valueFrom")
+        if ref in RESOURCE_KEY_ALIASES:
+            entry["valueFrom"] = RESOURCE_KEY_ALIASES[ref]
     return yaml.safe_dump(doc, sort_keys=False, default_flow_style=False)
 
 

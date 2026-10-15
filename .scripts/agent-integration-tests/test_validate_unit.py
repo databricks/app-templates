@@ -332,3 +332,73 @@ def test_detects_login_page_not_app():
     assert looks_like_login_page("<html>Sign in to Databricks</html>", "https://login.databricks.com/oidc")
     assert looks_like_login_page("", "https://accounts.cloud.databricks.com/login")
     assert not looks_like_login_page("<html>My App</html>", "https://myapp.databricksapps.com/")
+
+
+def test_deploy_recover_caps_build_failures(monkeypatch):
+    import validate_templates as vt
+
+    monkeypatch.setattr(vt.time, "sleep", lambda _s: None)
+    build_err = "Error: failed to reach SUCCEEDED, got FAILED: Error building app."
+    assert vt._deploy_recover(build_err, 1, 10) is True   # one retry for a blip
+    assert vt._deploy_recover(build_err, 2, 10) is False  # then give up
+    assert vt._deploy_recover("transient 503", 2, 10) is True
+    assert vt._deploy_recover("transient 503", 10, 10) is False
+
+
+def test_build_log_entries_extracts_build_rows_oldest_first():
+    from validate_templates import build_log_entries
+
+    page = (
+        '<tbody id="logTBody">'
+        '<tr class="log-entry" data-source="BUILD"><td>t2</td><td>BUILD</td>'
+        '<td><div>permission denied for schema &quot;drizzle&quot;</div></td></tr>'
+        '<tr class="log-entry" data-source="APP"><td>t1</td><td>APP</td><td>app line</td></tr>'
+        '<tr class="log-entry" data-source="BUILD"><td>t0</td><td>BUILD</td>'
+        '<td>&gt; npm run build</td></tr>'
+        '</tbody>'
+    )
+    assert build_log_entries(page) == ["> npm run build", 'permission denied for schema "drizzle"']
+
+
+def test_deploy_recover_caps_crash_on_start(monkeypatch):
+    import validate_templates as vt
+
+    monkeypatch.setattr(vt.time, "sleep", lambda _s: None)
+    crash = "got FAILED: Error: app exited unexpectedly. Please check /logz"
+    assert vt._deploy_recover(crash, 1, 10) is True
+    assert vt._deploy_recover(crash, 2, 10) is False
+
+
+def test_resource_aware_app_yaml_aliases_files_to_shared_uc_volume():
+    from validate_transforms import resource_aware_app_yaml
+
+    out = _yaml.safe_load(resource_aware_app_yaml(
+        "command: [npm, start]\n"
+        "env:\n"
+        "  - name: DATABRICKS_VOLUME_FILES\n    valueFrom: files\n"
+        "  - name: DATABRICKS_WAREHOUSE_ID\n    valueFrom: sql-warehouse\n"
+        "resources:\n  - name: files\n"
+    ))
+    assert "resources" not in out
+    assert [e["valueFrom"] for e in out["env"]] == ["uc-volume", "sql-warehouse"]
+
+
+def test_force_build_env_unified_host(monkeypatch):
+    import validate_templates as vt
+
+    monkeypatch.setattr(vt, "_shared_app_warehouse_id", lambda _a, _p: "wh1")
+    monkeypatch.setattr(vt, "_profile_workspace_id", lambda _p: "123")
+    assert vt.force_build_env("app", "dogfood") == {
+        "DATABRICKS_CONFIG_PROFILE": "dogfood",
+        "DATABRICKS_WAREHOUSE_ID": "wh1",
+        "DATABRICKS_WORKSPACE_ID": "123",
+        "DATABRICKS_EXPERIMENTAL_IS_UNIFIED_HOST": "true",
+    }
+
+
+def test_force_build_env_plain_host_without_warehouse(monkeypatch):
+    import validate_templates as vt
+
+    monkeypatch.setattr(vt, "_shared_app_warehouse_id", lambda _a, _p: "")
+    monkeypatch.setattr(vt, "_profile_workspace_id", lambda _p: "")
+    assert vt.force_build_env("app", "dev") == {"DATABRICKS_CONFIG_PROFILE": "dev"}

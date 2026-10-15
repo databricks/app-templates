@@ -8,7 +8,7 @@ from contextlib import closing
 import pytest
 import requests
 from mcp.client.session import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 
 
 def _find_free_port() -> int:
@@ -72,11 +72,7 @@ def run_mcp_server():
 @pytest.mark.asyncio
 async def test_list_tools(run_mcp_server):
     url = f"{run_mcp_server}/mcp"
-    async with streamablehttp_client(url=url) as (
-        read_stream,
-        write_stream,
-        _,
-    ):
+    async with streamable_http_client(url=url) as (read_stream, write_stream):
         async with ClientSession(read_stream, write_stream) as session:
             await session.initialize()
 
@@ -86,3 +82,17 @@ async def test_list_tools(run_mcp_server):
             assert tools is not None
             assert isinstance(tools, list)
             assert len(tools) > 0
+
+
+# Test Call Tools runs without errors
+@pytest.mark.asyncio
+async def test_call_tools(run_mcp_server):
+    url = f"{run_mcp_server}/mcp"
+    async with streamable_http_client(url=url) as (read_stream, write_stream):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+
+            tools = (await session.list_tools()).tools
+            for tool in tools:
+                result = await session.call_tool(tool.name, {})
+                assert result is not None

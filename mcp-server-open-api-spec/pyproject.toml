@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.12",
-    "mcp[cli]>=1.14.0",
+    "mcp[cli]>=2.0",
     "uvicorn>=0.34.2",
     "databricks-sdk==0.68.0",
     "pydantic>=2",

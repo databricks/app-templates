@@ -14,7 +14,7 @@ import json
 from typing import Any, List
 
 from mcp.client.session import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 from mcp.types import CallToolResult, Tool
 
 # ---------------------------------------------------------------------
@@ -33,11 +33,7 @@ async def list_tools() -> List[Tool]:
     """
     Fetch and return the list of tools exposed by the MCP server.
     """
-    async with streamablehttp_client(url=SERVER_URL) as (
-        read_stream,
-        write_stream,
-        _,
-    ):
+    async with streamable_http_client(url=SERVER_URL) as (read_stream, write_stream):
         async with ClientSession(read_stream, write_stream) as session:
             await session.initialize()
             return (await session.list_tools()).tools
@@ -50,11 +46,7 @@ async def call_tool(
     """
     Call a tool by name with optional arguments.
     """
-    async with streamablehttp_client(url=SERVER_URL) as (
-        read_stream,
-        write_stream,
-        _,
-    ):
+    async with streamable_http_client(url=SERVER_URL) as (read_stream, write_stream):
         async with ClientSession(read_stream, write_stream) as session:
             await session.initialize()
             return await session.call_tool(tool_name, arguments)
@@ -80,11 +72,11 @@ Description:
 
 {SEP}
 Input Schema:
-{json.dumps(tool.inputSchema, indent=2)}
+{json.dumps(tool.input_schema, indent=2)}
 
 {SEP}
 Output Schema:
-{json.dumps(tool.outputSchema, indent=2)}
+{json.dumps(tool.output_schema, indent=2)}
 {SEP}
 {SEP}
 """.strip()

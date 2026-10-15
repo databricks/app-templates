@@ -9,10 +9,10 @@
     "start": "NODE_ENV=production node --env-file-if-exists ../.env dist/index.mjs"
   },
   "dependencies": {
-    "@chat-template/ai-sdk-providers": "*",
-    "@chat-template/auth": "*",
-    "@chat-template/core": "*",
-    "@chat-template/db": "*",
+    "@databricks/chatbot-ai-sdk-providers": "*",
+    "@databricks/chatbot-auth": "*",
+    "@databricks/chatbot-core": "*",
+    "@databricks/chatbot-db": "*",
     "@databricks/ai-sdk-provider": "0.5.1",
     "ai": "6.0.94",
     "cors": "2.8.6",

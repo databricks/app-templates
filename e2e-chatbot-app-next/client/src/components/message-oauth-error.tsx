@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { UseChatHelpers } from '@ai-sdk/react';
-import type { ChatMessage } from '@chat-template/core';
+import type { ChatMessage } from '@databricks/chatbot-core';
 import {
   findLoginURLFromCredentialErrorMessage,
   findConnectionNameFromCredentialErrorMessage,

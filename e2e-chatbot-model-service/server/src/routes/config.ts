@@ -4,7 +4,7 @@ import {
   type Response,
   type Router as RouterType,
 } from 'express';
-import { isDatabaseAvailable } from '@chat-template/db';
+import { isDatabaseAvailable } from '@databricks/chatbot-db';
 
 export const configRouter: RouterType = Router();
 

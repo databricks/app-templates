@@ -15,7 +15,7 @@
  * in the in-memory message-meta-store only.
  */
 
-import { generateUUID } from '@chat-template/core';
+import { generateUUID } from '@databricks/chatbot-core';
 import { expect, test } from '../fixtures';
 import { sendChatAndGetMessageId } from '../helpers';
 

@@ -9,11 +9,11 @@ import {
   getMessageById,
   voteMessage,
   getVotesByChatId,
-} from '@chat-template/db';
-import { checkChatAccess } from '@chat-template/core';
-import { ChatSDKError } from '@chat-template/core/errors';
-import { getDatabricksToken } from '@chat-template/auth';
-import { getWorkspaceHostname } from '@chat-template/ai-sdk-providers';
+} from '@databricks/chatbot-db';
+import { checkChatAccess } from '@databricks/chatbot-core';
+import { ChatSDKError } from '@databricks/chatbot-core/errors';
+import { getDatabricksToken } from '@databricks/chatbot-auth';
+import { getWorkspaceHostname } from '@databricks/chatbot-ai-sdk-providers';
 import {
   getMessageMetadata,
   getAssessmentId,

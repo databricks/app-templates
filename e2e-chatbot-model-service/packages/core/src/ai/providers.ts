@@ -3,12 +3,12 @@
  * This file should NOT be imported by client components
  */
 
-import type { OAuthAwareProvider } from '@chat-template/ai-sdk-providers';
+import type { OAuthAwareProvider } from '@databricks/chatbot-ai-sdk-providers';
 
 // For server-side usage, get the authenticated provider
 async function getServerProvider() {
   const { getDatabricksServerProvider } = await import(
-    '@chat-template/ai-sdk-providers'
+    '@databricks/chatbot-ai-sdk-providers'
   );
   return getDatabricksServerProvider();
 }

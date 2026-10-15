@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@chat-template/core';
+import type { ChatMessage } from '@databricks/chatbot-core';
 import type {
   AnchorHTMLAttributes,
   ComponentType,

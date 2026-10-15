@@ -1,5 +1,5 @@
 {
-  "name": "@chat-template/auth",
+  "name": "@databricks/chatbot-auth",
   "version": "1.0.0",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -33,6 +33,6 @@
     "@types/node": "22.19.7"
   },
   "dependencies": {
-    "@chat-template/utils": "*"
+    "@databricks/chatbot-utils": "*"
   }
 }

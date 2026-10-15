@@ -25,7 +25,7 @@ import { MessageEditor } from './message-editor';
 import { MessageReasoning } from './message-reasoning';
 import { Shimmer } from './ui/shimmer';
 import type { UseChatHelpers } from '@ai-sdk/react';
-import type { ChatMessage, Feedback } from '@chat-template/core';
+import type { ChatMessage, Feedback } from '@databricks/chatbot-core';
 import { useDataStream } from './data-stream-provider';
 import {
   createMessagePartSegments,

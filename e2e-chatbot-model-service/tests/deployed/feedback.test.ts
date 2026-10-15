@@ -12,7 +12,7 @@
 
 import { test, expect } from '@playwright/test';
 import { execSync } from 'node:child_process';
-import { generateUUID } from '@chat-template/core';
+import { generateUUID } from '@databricks/chatbot-core';
 
 function getAuthToken(): string {
   try {

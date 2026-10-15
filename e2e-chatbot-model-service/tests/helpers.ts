@@ -1,4 +1,4 @@
-import { generateUUID } from '@chat-template/core';
+import { generateUUID } from '@databricks/chatbot-core';
 import type {
   APIRequestContext,
   Browser,

@@ -15,7 +15,7 @@
  */
 
 import { createDatabricksProvider } from '@databricks/ai-sdk-provider';
-import { getDatabricksToken } from '@chat-template/auth';
+import { getDatabricksToken } from '@databricks/chatbot-auth';
 import { getWorkspaceHostname } from './providers-server';
 
 // Mirrors the removed getProviderToken() in providers-server.ts.

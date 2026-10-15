@@ -12,17 +12,17 @@ import type {
   CustomUIDataTypes,
   FeedbackMap,
   VisibilityType,
-} from '@chat-template/core';
+} from '@databricks/chatbot-core';
 import { unstable_serialize } from 'swr/infinite';
 import { getChatHistoryPaginationKey } from './sidebar-history';
 import { toast } from './toast';
 import { useSearchParams } from 'react-router-dom';
 import { useChatVisibility } from '@/hooks/use-chat-visibility';
-import { ChatSDKError } from '@chat-template/core/errors';
+import { ChatSDKError } from '@databricks/chatbot-core/errors';
 import { useDataStream } from './data-stream-provider';
 import { isCredentialErrorMessage } from '@/lib/oauth-error-utils';
 import { ChatTransport } from '../lib/ChatTransport';
-import type { ClientSession } from '@chat-template/auth';
+import type { ClientSession } from '@databricks/chatbot-auth';
 import { softNavigateToChatId } from '@/lib/navigation';
 import { useAppConfig } from '@/contexts/AppConfigContext';
 import { Greeting } from './greeting';

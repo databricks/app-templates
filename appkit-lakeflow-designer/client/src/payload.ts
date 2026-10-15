@@ -3,6 +3,7 @@ import { DISPLAY_ROW_LIMIT, summarizeResultPreview, type ResultPreview } from '.
 import type { AppChartSpec } from '../../shared/appManifest';
 import { MAX_OUTPUT_FILES, parseFileOutputBehavior, type FileOutputBehavior, type WrittenFile } from '../../shared/fileOutputs';
 import { idString, isRecord, nonEmptyString, positiveInt, stringValues } from '../../shared/values';
+import { parseRunDiagnostics, type RunDiagnostics } from '../../shared/guardrails';
 
 export type SchemaField = {
   name: string;
@@ -54,9 +55,10 @@ export type MatchedOutput = {
   outcome: OutputOutcome;
 };
 
-export type RunOutcome =
+export type RunOutcome = (
   | { outcome: 'outputs'; outputs: MatchedOutput[] }
-  | { outcome: 'noPayload'; reason: string };
+  | { outcome: 'noPayload'; reason: string }
+) & RunDiagnostics;
 
 export type RunSnapshot = {
   jobRunId: string;
@@ -196,7 +198,7 @@ export function parseRunOutcome(raw: unknown): RunOutcome | undefined {
     return undefined;
   }
   if (raw.outcome === 'noPayload') {
-    return { outcome: 'noPayload', reason: typeof raw.reason === 'string' ? raw.reason : 'The run returned no output.' };
+    return { outcome: 'noPayload', reason: typeof raw.reason === 'string' ? raw.reason : 'The run returned no output.', ...parseRunDiagnostics(raw) };
   }
   if (raw.outcome !== 'outputs' || !Array.isArray(raw.outputs)) {
     return undefined;
@@ -205,7 +207,7 @@ export function parseRunOutcome(raw: unknown): RunOutcome | undefined {
   if (outputs.some((output) => output === undefined)) {
     return undefined;
   }
-  return { outcome: 'outputs', outputs: outputs as MatchedOutput[] };
+  return { outcome: 'outputs', outputs: outputs as MatchedOutput[], ...parseRunDiagnostics(raw) };
 }
 
 export function parseRunSnapshot(raw: unknown): RunSnapshot | undefined {

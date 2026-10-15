@@ -3,6 +3,7 @@ import { outputBlockTitle, type AppOutputBlock } from '../shared/appManifest';
 import type { FileOutputBehavior } from '../shared/fileOutputs';
 import { errorMessage, isRecord, nonEmptyString } from '../shared/values';
 import { recordedFileOutput } from './outputFiles';
+import { parseRunDiagnostics, type RunDiagnostics } from '../shared/guardrails';
 
 const NO_OUTPUT_REASON = 'The run finished but returned no output. The notebook did not call dbutils.notebook.exit().';
 const NO_OUTPUTS_REASON =
@@ -55,9 +56,9 @@ function classifyOutputEntry(entry: unknown, index: number): ClassifiedEntry {
 
 function classifyMultiRunOutput(
   raw: string | undefined,
-): { outcome: 'noPayload'; reason: string } | {
+): ({ outcome: 'noPayload'; reason: string } | {
   outcome: 'outputs'; outputs: ClassifiedEntry[]; runtimeNodeStates: Map<string, boolean>;
-} {
+}) & RunDiagnostics {
   if (raw === undefined || raw.trim() === '') {
     return { outcome: 'noPayload', reason: NO_OUTPUT_REASON };
   }
@@ -70,8 +71,10 @@ function classifyMultiRunOutput(
   if (!isRecord(parsed) || Object.keys(parsed).length === 0) {
     return { outcome: 'noPayload', reason: 'The run returned an empty output object.' };
   }
+  const diagnostics = parseRunDiagnostics(parsed);
   if (!Array.isArray(parsed.outputs)) {
     return {
+      ...diagnostics,
       outcome: 'noPayload',
       reason: 'The run returned output with no outputs list, so it is not a multi-output payload.',
     };
@@ -85,13 +88,14 @@ function classifyMultiRunOutput(
     }
   }
   if (parsed.outputs.length === 0 && runtimeNodeStates.size === 0) {
-    return { outcome: 'noPayload', reason: NO_OUTPUTS_REASON };
+    return { outcome: 'noPayload', reason: NO_OUTPUTS_REASON, ...diagnostics };
   }
   // Classify entries independently so one malformed output does not discard valid siblings.
   return {
     outcome: 'outputs',
     outputs: parsed.outputs.map((entry, index) => classifyOutputEntry(entry, index)),
     runtimeNodeStates,
+    ...diagnostics,
   };
 }
 
@@ -127,8 +131,9 @@ function matchedOutcome(entry: ClassifiedEntry): MatchOutcome {
 
 export function matchRunOutputs(declared: AppOutputBlock[], raw: string | undefined) {
   const multi = classifyMultiRunOutput(raw);
+  const diagnostics = parseRunDiagnostics(multi);
   if (multi.outcome !== 'outputs' && !declared.some((block) => block.fileOutput || block.disabled === true)) {
-    return { outcome: 'noPayload', reason: multi.reason };
+    return { outcome: 'noPayload', reason: multi.reason, ...diagnostics };
   }
   const classified = multi.outcome === 'outputs' ? multi.outputs : [];
   const runtimeNodeStates = multi.outcome === 'outputs' ? multi.runtimeNodeStates : undefined;
@@ -173,5 +178,5 @@ export function matchRunOutputs(declared: AppOutputBlock[], raw: string | undefi
     return { ...section, outcome: matchedOutcome(found) };
   });
 
-  return { outcome: 'outputs', outputs };
+  return { outcome: 'outputs', outputs, ...diagnostics };
 }

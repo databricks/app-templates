@@ -139,6 +139,7 @@ async function serverHarness(options = {}) {
   const state = {
     manifest, runs: [], listed: [], reads: [], cancelled: [], outputReads: [], submissions: [], apps: [],
     notebookPath: '/Users/author/app/runner', notebookSource: '', workspaceReads: [], commands: undefined,
+    taskOutput: {}, taskOutputReads: [], exportMissing: false, exportError: undefined,
     userProfile: { id: '123', displayName: ' Alice Smith ' }, profileError: undefined, profileReads: 0,
     permissions: { access_control_list: [] }, permissionReads: [], permissionUpdates: [], jobCalls: [],
     permissionReadError: undefined, permissionUpdateError: undefined,
@@ -200,6 +201,8 @@ async function serverHarness(options = {}) {
         },
         exportRun: async ({ run_id }) => {
           state.outputReads.push(run_id);
+          if (state.exportError) throw state.exportError;
+          if (state.exportMissing) return { views: [] };
           const model = Buffer.from(
             encodeURIComponent(
               JSON.stringify({
@@ -213,6 +216,10 @@ async function serverHarness(options = {}) {
             ),
           ).toString('base64');
           return { views: [{ content: `<script>__DATABRICKS_NOTEBOOK_MODEL = '${model}'</script>` }] };
+        },
+        getRunOutput: async ({ run_id }) => {
+          state.taskOutputReads.push(run_id);
+          return state.taskOutput;
         },
         cancelRun: async ({ run_id }) => {
           state.cancelled.push(run_id);
@@ -668,9 +675,128 @@ for (const filename of ['sales.csv', 'sales.xlsx', 'data.json', 'data.csv.gz', '
     assert.equal(last.body.run.resultState, 'SUCCESS');
     assert.deepEqual(last.body.parameters, { path: 'upload:829dcaa7-e505-49c1-b6d0-73d1841e990a' });
     assert.deepEqual(last.body.parameterDisplayValues, { path: filename });
-    assert.deepEqual(state.outputReads, [1010, 1010]);
+    assert.deepEqual(state.outputReads, [1010]);
   });
 }
+
+test('terminal failures preserve upstream Guardrails warnings and retrieve the failed task exception once', async () => {
+  const { state, request } = await serverHarness();
+  state.manifest = { ...manifest, storage: undefined, parameters: [] };
+  const failed = run(10, 'alice');
+  failed.state = { life_cycle_state: 'TERMINATED', result_state: 'FAILED', state_message: 'Task compute_operator failed.' };
+  state.runs = [failed];
+  state.commands = [{
+    command: '"""\nid: validate\ntemplate: guardrails\nname: Validate customers\n"""\nrun(config, inputs, spark)',
+    results: { type: 'ansi', data: '[guardrails] WARNING: checks[0] (not_null): missing customer ID' },
+  }, {
+    command: '"""\nid: stop\ntemplate: guardrails\nname: Validate amounts\n"""\nrun(config, inputs, spark)',
+    errorTrace: 'ValueError: [guardrails] checks[1] (range): negative amount',
+  }];
+  state.taskOutput = {
+    error: 'ValueError: Guardrails failed the workflow.',
+    error_trace: 'ValueError: [guardrails] checks[1] (range): negative amount',
+  };
+  const responses = await Promise.all(Array.from({ length: 3 }, () =>
+    request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: '10' } }),
+  ));
+  for (const response of responses) {
+    const snapshot = parseRunSnapshot(response.body);
+    assert.equal(snapshot.resultState, 'FAILED');
+    assert.equal(snapshot.result.outcome, 'noPayload');
+    assert.equal(snapshot.result.failureReason, state.taskOutput.error);
+    assert.deepEqual(snapshot.result.diagnostics.map(({ operatorName, severity, message }) => ({ operatorName, severity, message })), [
+      { operatorName: 'Validate customers', severity: 'warning', message: 'missing customer ID' },
+      { operatorName: 'Validate amounts', severity: 'failure', message: 'negative amount' },
+    ]);
+  }
+  assert.deepEqual(state.outputReads, [1010]);
+  assert.deepEqual(state.taskOutputReads, [1010]);
+  // A cached result cannot bypass ownership checks on a later request.
+  const denied = await request('get', '/api/designer/run/:jobRunId', { viewer: 'bob', params: { jobRunId: '10' } });
+  assert.equal(denied.status, 404);
+  assert.deepEqual(state.outputReads, [1010]);
+});
+
+test('failed task error fallback works when the notebook export is unavailable', async () => {
+  const { state, request } = await serverHarness();
+  state.runs = [run(10, 'alice')];
+  state.runs[0].state.result_state = 'FAILED';
+  state.exportMissing = true;
+  state.taskOutput = {
+    error: 'ValueError: Guardrails failed the workflow.',
+    error_trace: '[guardrails] checks[0] (unique): duplicate ID',
+  };
+  const response = await request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: '10' } });
+  const result = parseRunSnapshot(response.body).result;
+  assert.equal(result.failureReason, state.taskOutput.error);
+  assert.deepEqual(result.diagnostics, [{
+    operatorName: 'Guardrails', checkIndex: 0, checkType: 'unique', severity: 'failure', message: 'duplicate ID',
+  }]);
+});
+
+test('active runs never fetch notebook exports or task errors and successful history reuses the completed result', async () => {
+  const { state, request } = await serverHarness();
+  state.runs = [run(10, 'alice')];
+  state.runs[0].state = { life_cycle_state: 'RUNNING' };
+  const active = await request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: '10' } });
+  assert.equal(active.body.terminal, false);
+  assert.equal(active.body.result, undefined);
+  assert.deepEqual(state.outputReads, []);
+  assert.deepEqual(state.taskOutputReads, []);
+
+  state.runs[0].state = { life_cycle_state: 'TERMINATED', result_state: 'SUCCESS' };
+  state.listed = state.runs;
+  state.commands = [{
+    command: '"""\nid: validate\ntemplate: guardrails\nname: Validate\n"""\nrun(config, inputs, spark)',
+    results: { data: [{ type: 'ansi', data: '[guardrails] WARNING: checks[0] (unique): duplicate ID' }] },
+  }];
+  const completed = await request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: '10' } });
+  const last = await request('get', '/api/designer/last-run');
+  assert.deepEqual(last.body.result.diagnostics, completed.body.result.diagnostics);
+  assert.equal(last.body.result.diagnostics[0].message, 'duplicate ID');
+  assert.deepEqual(state.outputReads, [1010]);
+  assert.deepEqual(state.taskOutputReads, []);
+});
+
+test('a temporarily missing export recovers after the short cache lifetime', async (context) => {
+  const { state, request } = await serverHarness();
+  context.mock.timers.enable({ apis: ['Date'], now: 10000 });
+  state.runs = [run(10, 'alice')];
+  state.exportMissing = true;
+  const first = await request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: '10' } });
+  assert.equal(first.body.result.outcome, 'noPayload');
+  assert.equal(first.body.result.diagnostics, undefined);
+  state.exportMissing = false;
+  state.commands = [{
+    command: '"""\nid: validate\ntemplate: guardrails\nname: Validate\n"""\nrun(config, inputs, spark)',
+    results: { type: 'ansi', data: '[guardrails] WARNING: checks[0] (unique): duplicate ID' },
+  }];
+  context.mock.timers.tick(5001);
+  const recovered = await request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: '10' } });
+  assert.equal(recovered.body.result.diagnostics[0].message, 'duplicate ID');
+  assert.deepEqual(state.outputReads, [1010, 1010]);
+});
+
+test('completed result cache expires and evicts old tasks without dropping their diagnostics', async (context) => {
+  const { state, request } = await serverHarness();
+  context.mock.timers.enable({ apis: ['Date'], now: 10000 });
+  state.commands = [{
+    command: '"""\nid: validate\ntemplate: guardrails\nname: Validate\n"""\nrun(config, inputs, spark)',
+    results: { type: 'ansi', data: '[guardrails] WARNING: checks[0] (unique): duplicate ID' },
+  }];
+  state.runs = Array.from({ length: 21 }, (_, index) => run(index + 1, 'alice'));
+  for (const { run_id } of state.runs) {
+    const response = await request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: String(run_id) } });
+    assert.equal(response.body.result.diagnostics[0].message, 'duplicate ID');
+  }
+  const evicted = await request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: '1' } });
+  assert.equal(evicted.body.result.diagnostics[0].message, 'duplicate ID');
+  assert.equal(state.outputReads.filter((id) => id === 1001).length, 2);
+  context.mock.timers.tick(5 * 60 * 1000 + 1);
+  const expired = await request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: '21' } });
+  assert.equal(expired.body.result.diagnostics[0].message, 'duplicate ID');
+  assert.equal(state.outputReads.filter((id) => id === 1021).length, 2);
+});
 
 test('live status preserves ordinary parameters and leaves missing recorded values absent', async () => {
   const { state, request } = await serverHarness();
@@ -972,13 +1098,13 @@ test('preview-only submissions override any stale writer defaults with an explic
 });
 
 test('last-run and terminal status include file receipts without table preview or upload storage', async () => {
-  const { state, request } = await serverHarness();
-  state.manifest = {
-    ...manifest, storage: undefined, parameters: [],
-    blocks: [{ type: 'output', id: 'written', nodeId: 'output_0', port: 'result', fileOutput: { volumes: ['main.apps.files'] } }],
-  };
   const files = [{ path: '/Volumes/main/apps/files/original.xlsx' }];
   for (const behavior of ['run_artifact', 'shared_append', 'shared_workbook_update', undefined]) {
+    const { state, request } = await serverHarness();
+    state.manifest = {
+      ...manifest, storage: undefined, parameters: [],
+      blocks: [{ type: 'output', id: 'written', nodeId: 'output_0', port: 'result', fileOutput: { volumes: ['main.apps.files'] } }],
+    };
     state.commands = [{ command: 'write_file()', results: { data: [{
       type: 'mimeBundle', data: { 'application/vnd.databricks.lakeflow-designer.files+json': { node: 'output_0', files, behavior } },
     }] } }];

@@ -2,6 +2,8 @@ import { isHtmlOutput } from '../shared/htmlOutputs';
 import { DISPLAY_ROW_LIMIT, summarizeResultPreview } from '../shared/resultPreview';
 import { FILE_OUTPUTS_MIME_TYPE, MAX_OUTPUT_FILES, parseFileOutputBehavior, type WrittenFiles } from '../shared/fileOutputs';
 import { isRecord } from '../shared/values';
+import type { GuardrailDiagnostic } from '../shared/guardrails';
+import { commandGuardrailDiagnostics, mergeGuardrailDiagnostics } from './guardrails';
 
 const RUNNER_PAYLOAD_VERSION = 2;
 const NOTEBOOK_MODEL_ASSIGNMENT = /__DATABRICKS_NOTEBOOK_MODEL = '([^']*)'/;
@@ -83,7 +85,7 @@ function toDisplayTable(entry: unknown) {
 }
 
 function resultEntries(results: unknown): unknown[] {
-  if (isRecord(results) && (results.type === 'table' || results.type === 'mimeBundle' || results.type === 'htmlSandbox' || results.type === 'html')) return [results];
+  if (isRecord(results) && (results.type === 'table' || results.type === 'mimeBundle' || results.type === 'htmlSandbox' || results.type === 'html' || results.type === 'ansi' || results.type === 'text')) return [results];
   return isRecord(results) && Array.isArray(results.data) ? results.data : [];
 }
 
@@ -190,19 +192,22 @@ function htmlOutputs(source: unknown, results: unknown): Record<string, unknown>
 }
 
 // MIME metadata must not consume a table ordinal when pairing results with display calls.
-export function exportedModelToRunPayload(exportedHtml: unknown): string | undefined {
+export function exportedModelToRunPayload(exportedHtml: unknown, taskErrorTexts: string[] = []): string | undefined {
   const model = decodeNotebookModel(exportedHtml);
-  if (model === undefined || !Array.isArray(model.commands)) {
+  if ((model === undefined || !Array.isArray(model.commands)) && taskErrorTexts.length === 0) {
     return undefined;
   }
   const outputs: Record<string, unknown>[] = [];
   const files: WrittenFiles[] = [];
+  const diagnostics: GuardrailDiagnostic[] = [];
   const states = new Map<string, { disabled: boolean }>();
-  for (const command of model.commands) {
+  const commands = Array.isArray(model?.commands) ? model.commands : [];
+  for (const command of commands) {
     if (!isRecord(command)) {
       continue;
     }
     outputs.push(...htmlOutputs(command.command, command.results));
+    diagnostics.push(...commandGuardrailDiagnostics(command, resultEntries(command.results)));
     const keys = displayedCtxKeys(command.command);
     for (const [nodeId, state] of runtimeNodeStates(command.results)) {
       states.set(nodeId, state);
@@ -230,6 +235,7 @@ export function exportedModelToRunPayload(exportedHtml: unknown): string | undef
   }
   return JSON.stringify({
     version: RUNNER_PAYLOAD_VERSION, outputs, files,
+    diagnostics: mergeGuardrailDiagnostics(diagnostics, taskErrorTexts),
     ...(states.size > 0 ? { runtimeNodeStates: Object.fromEntries(states) } : {}),
   });
 }

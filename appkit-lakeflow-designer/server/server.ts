@@ -202,7 +202,7 @@ async function declaredOutputs() {
 }
 
 // The runs/export CODE view carries the displayed command results.
-async function readRunOutputPayload(taskRunId: string): Promise<string | undefined> {
+async function readRunExport(taskRunId: string): Promise<unknown> {
   const exported = await retryRead(() =>
     wsClient().jobs.exportRun({ run_id: Number(taskRunId), views_to_export: 'CODE' }),
   );
@@ -211,17 +211,70 @@ async function readRunOutputPayload(taskRunId: string): Promise<string | undefin
   const view = views.find(
     (candidate) => isRecord(candidate) && findNotebookModelValue(candidate.content) !== undefined,
   );
-  return isRecord(view) ? exportedModelToRunPayload(view.content) : undefined;
+  return isRecord(view) ? view.content : undefined;
 }
 
-async function readRunResult(taskRunId: string | undefined) {
+interface CompletedTaskOutput {
+  payload?: string;
+  failureReason?: string;
+  readError?: string;
+}
+
+const COMPLETED_RESULT_CACHE_LIMIT = 20;
+const COMPLETED_RESULT_CACHE_TTL_MS = 5 * 60 * 1000;
+const completedTaskOutputs = new Map<string, { expiresAt: number; value: Promise<CompletedTaskOutput> }>();
+
+async function readCompletedTaskOutput(taskRunId: string, failed = false): Promise<CompletedTaskOutput> {
+  const key = `${taskRunId}:${failed}`;
+  const now = Date.now();
+  const cached = completedTaskOutputs.get(key);
+  if (cached && cached.expiresAt > now) return cached.value;
+  for (const [id, entry] of completedTaskOutputs) {
+    if (entry.expiresAt <= now) completedTaskOutputs.delete(id);
+  }
+  const value = Promise.allSettled([
+    readRunExport(taskRunId),
+    failed ? retryRead(() => wsClient().jobs.getRunOutput({ run_id: Number(taskRunId) })) : Promise.resolve(undefined),
+  ]).then(([exported, taskOutput]) => {
+    const taskError = taskOutput.status === 'fulfilled' ? taskOutput.value : undefined;
+    const taskErrorTexts = [taskError?.error, taskError?.error_trace].filter((text): text is string => typeof text === 'string');
+    const html = exported.status === 'fulfilled' ? exported.value : undefined;
+    // Retention gaps and transient read errors can recover; do not retain them for the full cache TTL.
+    if (exported.status === 'rejected' || taskOutput.status === 'rejected' || html === undefined) {
+      const entry = completedTaskOutputs.get(key);
+      if (entry?.value === value) entry.expiresAt = Date.now() + 5000;
+    }
+    return {
+      payload: exportedModelToRunPayload(html, taskErrorTexts),
+      failureReason: nonEmptyString(taskError?.error) ?? nonEmptyString(taskError?.error_trace),
+      ...(exported.status === 'rejected' ? { readError: errorMessage(exported.reason) } : {}),
+    };
+  });
+  // Cache only after access checks, and share the in-flight read across concurrent viewers/pollers.
+  completedTaskOutputs.set(key, { expiresAt: now + COMPLETED_RESULT_CACHE_TTL_MS, value });
+  while (completedTaskOutputs.size > COMPLETED_RESULT_CACHE_LIMIT) {
+    completedTaskOutputs.delete(completedTaskOutputs.keys().next().value!);
+  }
+  return value;
+}
+
+async function readRunOutputPayload(taskRunId: string): Promise<string | undefined> {
+  return (await readCompletedTaskOutput(taskRunId)).payload;
+}
+
+async function readRunResult(taskRunId: string | undefined, failed = false) {
   if (taskRunId === undefined) {
     return { outcome: 'noPayload', reason: 'The run reported no task, so it has no output to read.' };
   }
   try {
     // Jobs requires the task run ID here, not the job run ID.
-    const payload = await readRunOutputPayload(taskRunId);
-    return matchRunOutputs(await declaredOutputs(), payload);
+    const { payload, failureReason, readError } = await readCompletedTaskOutput(taskRunId, failed);
+    const result = matchRunOutputs(await declaredOutputs(), payload);
+    return {
+      ...result,
+      ...(failureReason ? { failureReason } : {}),
+      ...(result.outcome === 'noPayload' && readError ? { reason: `Could not read the run output: ${readError}` } : {}),
+    };
   } catch (err) {
     return { outcome: 'noPayload', reason: `Could not read the run output: ${errorMessage(err)}` };
   }
@@ -584,23 +637,8 @@ await createApp({
           return;
         }
 
-        if (
-          (resultState === undefined || !SUCCESSFUL_RESULT_STATES.has(resultState)) &&
-          !(await declaredOutputs()).some((block) => block.fileOutput)
-        ) {
-          res.json({
-            ...snapshot,
-            result: {
-              outcome: 'noPayload',
-              reason:
-                run.state?.state_message?.trim() ||
-                `The run ended in state ${resultState ?? 'UNKNOWN'} without producing output.`,
-            },
-          });
-          return;
-        }
-
-        res.json({ ...snapshot, result: await readRunResult(snapshot.taskRunId) });
+        const failed = resultState === undefined || !SUCCESSFUL_RESULT_STATES.has(resultState);
+        res.json({ ...snapshot, result: await readRunResult(snapshot.taskRunId, failed) });
       });
 
       app.delete('/api/designer/run/:jobRunId', async (req, res) => {

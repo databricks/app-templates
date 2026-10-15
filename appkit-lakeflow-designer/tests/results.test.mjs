@@ -15,6 +15,7 @@ let fetchLastRun;
 let lastSuccessfulRunEntry;
 let planRunDisplay;
 let RunFailureAlert;
+let GuardrailSummary;
 let shouldRetainSettledFollowedRun;
 let ResultFooter;
 let ResultGrid;
@@ -37,6 +38,7 @@ before(async () => {
       ResultFooter: 'client/src/ResultFooter.tsx',
       ResultGrid: 'client/src/ResultGrid.tsx',
       App: 'client/src/App.tsx',
+      GuardrailSummary: 'client/src/GuardrailSummary.tsx',
       lastRun: 'client/src/lastRun.ts',
       landingPlan: 'client/src/landingPlan.ts',
     },
@@ -56,6 +58,7 @@ before(async () => {
   ({ ResultGrid } = await import(pathToFileURL(join(outputDirectory, 'ResultGrid.mjs')).href));
   ({ OutputSection, PublishedBlocks, lastSuccessfulRunEntry, planRunDisplay, RunFailureAlert } = await import(pathToFileURL(join(outputDirectory, 'App.mjs')).href));
   ({ fetchLastRun } = await import(pathToFileURL(join(outputDirectory, 'lastRun.mjs')).href));
+  ({ GuardrailSummary } = await import(pathToFileURL(join(outputDirectory, 'GuardrailSummary.mjs')).href));
   ({ shouldRetainSettledFollowedRun } = await import(pathToFileURL(join(outputDirectory, 'landingPlan.mjs')).href));
 });
 
@@ -95,6 +98,153 @@ function publishedBlocksHtml(blocks, outputs, unmatchedState = 'omitted') {
     blocks, outputs, unmatchedState, downloadRunId: '42', onRetry: () => {},
   }));
 }
+
+function guardrailCommand(nodeId, name, text, extra = {}) {
+  return {
+    command: `"""\nid: ${nodeId}\ntemplate: guardrails\ntemplateVersion: 2.0.0\nname: ${name}\n"""\nrun(config, inputs, spark)`,
+    results: { type: 'ansi', data: text },
+    ...extra,
+  };
+}
+
+const warningText = '[guardrails] WARNING: checks[0] (not_null): column "id" has 3 null values';
+
+test('upstream Guardrails warnings appear without a Guardrails output block', () => {
+  const blocks = [{ type: 'output', id: 'report', label: 'Report', nodeId: 'report', port: 'data' }];
+  const result = matchedRunOutputs(blocks, [
+    guardrailCommand('validate', "'Customer''s checks'", `\u001b[33m${warningText}\u001b[0m`),
+    { command: 'display(ctx["report.data"])', results: displayTable(1, false) },
+  ]);
+  assert.equal(result.outputs[0].outcome.outcome, 'result');
+  assert.deepEqual(result.diagnostics, [{
+    nodeId: 'validate', operatorName: "Customer's checks", checkIndex: 0, checkType: 'not_null',
+    severity: 'warning', message: 'column "id" has 3 null values',
+  }]);
+  const html = renderToStaticMarkup(createElement(GuardrailSummary, result));
+  assert.match(html, /Guardrails warnings/);
+  assert.match(html, /Customer&#x27;s checks/);
+  assert.match(html, /Check 1 \(not_null\)/);
+  assert.match(html, /3 null values/);
+});
+
+test('Stop traceback survives absent stdout, deduplicates, and retains earlier warnings with no payload', () => {
+  const failure = '[guardrails] checks[2] (unique): repeated IDs';
+  const payload = exportedModelToRunPayload(notebookHtml([
+    guardrailCommand('early', 'Early checks', warningText),
+    guardrailCommand('stop', 'Stop checks', '', {
+      results: null, errorTrace: `ValueError: ${failure}`,
+      errorSummaryHtml: `<div>${failure}</div>`,
+    }),
+  ]), [`ValueError: ${failure}`, failure]);
+  const result = parseRunOutcome(matchRunOutputs([], payload));
+  assert.equal(result.outcome, 'noPayload');
+  assert.deepEqual(result.diagnostics.map(({ nodeId, checkIndex, severity, message }) => ({ nodeId, checkIndex, severity, message })), [
+    { nodeId: 'early', checkIndex: 0, severity: 'warning', message: 'column "id" has 3 null values' },
+    { nodeId: 'stop', checkIndex: 2, severity: 'failure', message: 'repeated IDs' },
+  ]);
+  const html = renderToStaticMarkup(createElement(GuardrailSummary, result));
+  assert.match(html, /Guardrails failures/);
+  assert.match(html, /Warning/);
+  assert.match(html, /Failure/);
+});
+
+test('shared upstream diagnostics deduplicate per operator/check and FAILURE wins', () => {
+  const result = matchedRunOutputs([], [
+    guardrailCommand('a', 'Checks A', warningText, { results: { data: [
+      { type: 'ansi', data: warningText },
+      { type: 'ansi', data: warningText.replace('WARNING', 'FAILURE') },
+    ] } }),
+    guardrailCommand('a', 'Checks A', warningText),
+    guardrailCommand('b', 'Checks B', warningText),
+  ]);
+  assert.deepEqual(result.diagnostics.map(({ nodeId, severity }) => ({ nodeId, severity })), [
+    { nodeId: 'a', severity: 'failure' }, { nodeId: 'b', severity: 'warning' },
+  ]);
+});
+
+test('multiline YAML names and HTML stop summaries preserve each check and comparison text', () => {
+  const result = matchedRunOutputs([], [guardrailCommand('validate', '|-\n  Validate\n  customers', '', {
+    errorSummaryHtml: '<div>[guardrails] checks[0] (range): value &lt; 0<br>[guardrails] checks[1] (unique): duplicate &quot;id&quot;</div>',
+  })]);
+  assert.deepEqual(result.diagnostics.map(({ operatorName, message }) => ({ operatorName, message })), [
+    { operatorName: 'Validate\ncustomers', message: 'value < 0' },
+    { operatorName: 'Validate\ncustomers', message: 'duplicate "id"' },
+  ]);
+});
+
+test('unrelated stdout, source code, malformed annotations and passing checks produce no diagnostics', () => {
+  const commands = [
+    { command: `print(${JSON.stringify(warningText)})`, results: { type: 'ansi', data: warningText } },
+    { command: '"""\nid: other\ntemplate: filter\nname: Filter\n"""', results: { type: 'ansi', data: warningText } },
+    guardrailCommand('passing', 'Passing', '[guardrails] all checks passed'),
+    guardrailCommand('invalid', '[bad yaml', warningText),
+    { command: '"""\njust a scalar\n"""', results: { type: 'ansi', data: warningText } },
+  ];
+  const result = matchedRunOutputs([], commands);
+  assert.equal(result.diagnostics, undefined);
+  assert.equal(renderToStaticMarkup(createElement(GuardrailSummary, result)), '');
+});
+
+test('task error fallback preserves available checks without inventing an operator name', () => {
+  const payload = exportedModelToRunPayload(undefined, ['ValueError: [guardrails] checks[1] (range): too large']);
+  const result = parseRunOutcome(matchRunOutputs([], payload));
+  assert.deepEqual(result.diagnostics, [{
+    operatorName: 'Guardrails', checkIndex: 1, checkType: 'range', severity: 'failure', message: 'too large',
+  }]);
+});
+
+test('a task fallback does not relabel an earlier warning when a later Stop check has the same message', () => {
+  const payload = exportedModelToRunPayload(notebookHtml([
+    guardrailCommand('early', 'Early warnings', warningText),
+  ]), ['ValueError: [guardrails] checks[0] (not_null): column "id" has 3 null values']);
+  const result = parseRunOutcome(matchRunOutputs([], payload));
+  assert.deepEqual(result.diagnostics.map(({ operatorName, severity }) => ({ operatorName, severity })), [
+    { operatorName: 'Early warnings', severity: 'warning' }, { operatorName: 'Guardrails', severity: 'failure' },
+  ]);
+});
+
+test('diagnostic text is escaped and invalid diagnostic fields do not discard valid results', () => {
+  const result = parseRunOutcome({ outcome: 'noPayload', reason: 'No tables', diagnostics: [
+    { operatorName: '<script>name</script>', checkIndex: 0, severity: 'warning', message: '<img src=x onerror=alert(1)>' },
+    null, {}, { operatorName: 'Bad', checkIndex: -1, severity: 'warning', message: 'bad index' },
+    { operatorName: 'Bad', checkIndex: 1, severity: 'success', message: 'bad severity' },
+  ] });
+  assert.equal(result.diagnostics.length, 1);
+  const html = renderToStaticMarkup(createElement(GuardrailSummary, result));
+  assert.match(html, /&lt;script&gt;name&lt;\/script&gt;/);
+  assert.match(html, /&lt;img/);
+  assert.doesNotMatch(html, /<script|<img/);
+});
+
+test('Guardrails diagnostics follow displayed history, retained results, followed runs and terminal failures', () => {
+  const diagnostics = matchedRunOutputs([], [guardrailCommand('validate', 'Validate', warningText)]).diagnostics;
+  const lastRun = { status: 'found', run: { jobRunId: '41', resultState: 'SUCCESS' }, result: { outcome: 'outputs', outputs: [], diagnostics } };
+  const idle = { phase: 'idle', elapsedMs: 0, cancelling: false };
+  const notFollowing = { following: false, settled: false };
+  assert.deepEqual(planRunDisplay(idle, notFollowing, lastRun).diagnostics, diagnostics);
+  const selected = { jobRunId: '17' };
+  assert.equal(planRunDisplay(idle, notFollowing, lastRun, selected, { status: 'loading' }).diagnostics, undefined);
+  const historical = { outcome: 'noPayload', reason: 'No tables', diagnostics };
+  const retained = planRunDisplay(idle, notFollowing, { status: 'none' }, selected, { status: 'found', outcome: historical });
+  const running = planRunDisplay({ ...idle, phase: 'running' }, notFollowing, lastRun, undefined, undefined, retained);
+  assert.equal(running.displayedRun.jobRunId, '17');
+  assert.deepEqual(running.diagnostics, diagnostics);
+  const cleanSnapshot = { jobRunId: '42', terminal: true, resultState: 'FAILED', result: { outcome: 'noPayload', reason: 'A different failure' } };
+  assert.equal(planRunDisplay({ ...idle, phase: 'settled', snapshot: cleanSnapshot }, notFollowing, lastRun).diagnostics, undefined);
+  const followed = { following: true, settled: true, active: { run: { jobRunId: '43' } }, outcome: historical };
+  const followedPlan = planRunDisplay(idle, followed, lastRun);
+  assert.equal(followedPlan.displayedRun.jobRunId, '43');
+  assert.deepEqual(followedPlan.diagnostics, diagnostics);
+});
+
+test('failed run displays the actual task error ahead of the generic Job status', () => {
+  const html = renderToStaticMarkup(createElement(RunFailureAlert, {
+    snapshot: { jobRunId: '42', terminal: true, resultState: 'FAILED', stateMessage: 'Task compute_operator failed.' },
+    outcome: { outcome: 'noPayload', reason: 'No tables', failureReason: 'ValueError: Guardrails failed the workflow.' },
+  }));
+  assert.match(html, /ValueError: Guardrails failed the workflow/);
+  assert.doesNotMatch(html, /Task compute_operator failed/);
+});
 
 test('runtime states do not shift table ports, row counts, or file receipts', () => {
   const files = { node: 'writer', files: [{ path: '/Volumes/main/apps/files/report.csv' }] };

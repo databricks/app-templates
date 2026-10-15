@@ -158,6 +158,29 @@ data. Sorting uses schema types and preserves
 the precision of string-encoded integers and decimals. Run `npm test` to validate sorting,
 filtering, visibility, unusual SQL column aliases, and bounded-preview rendering.
 
+## Guardrails diagnostics
+
+Warnings and failures from upstream Guardrails operators appear above the displayed run's results.
+Authors do not need to select a Guardrails output block. Only operators included in the published
+runner (selected outputs and their ancestors) are inspected; unrelated branches do not run.
+Warn and Block modes show warnings and retain their native output behavior. Stop mode still fails
+the Job. Earlier warnings and any completed outputs remain available when a later operator fails.
+
+The server reads existing `[guardrails]` markers from annotated cells' stdout and error details.
+It deduplicates by operator and check, with failures taking precedence. Operator names come from
+the run's own YAML annotations. The existing AppKit dependency `yaml` 2.8.2 (ISC) is pinned as a
+direct dependency with its existing lockfile integrity hash to read these annotations.
+Failed runs also read Jobs task errors as a fallback; when the export cannot identify the operator,
+the summary labels the check `Guardrails` rather than guessing its name. The actual task error is
+shown ahead of the generic Job state message. All messages render as plain text.
+
+Diagnostics follow the displayed run, including history and results retained while a new run is
+running. Availability depends on Jobs export/error retention and truncation; an absent diagnostic
+does not mean every check passed. No codegen, manifest, or Guardrails runtime changes are required.
+Completed task reads are shared across concurrent requests and cached for five minutes, up to 20
+entries; unavailable exports or failed reads have a five-second cache lifetime. Access checks still
+run before cached results are read, and outputs are matched against the current manifest each time.
+
 ## Chart rendering
 
 Published bar, line, area, and pie charts use Vega-Lite/Vega, the same chart engine family as

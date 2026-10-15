@@ -4,6 +4,8 @@ import { Alert, AlertDescription, AlertTitle, Badge, Button, Card } from '@datab
 
 import { ActiveRunBanner } from './ActiveRunBanner';
 import type { FileOutputBehavior } from '../../shared/fileOutputs';
+import type { GuardrailDiagnostic } from '../../shared/guardrails';
+import { GuardrailSummary } from './GuardrailSummary';
 import {
   outputBlockTitle,
   type AppChartSpec,
@@ -69,6 +71,7 @@ type UnmatchedOutputState = 'beforeRun' | 'running' | 'omitted' | 'loading';
 export interface RunDisplayPlan {
   displayedRun?: RunHistoryEntry;
   outputs: MatchedOutput[];
+  diagnostics?: GuardrailDiagnostic[];
   unmatchedState: UnmatchedOutputState;
   showPreviousRunLabel?: boolean;
 }
@@ -289,7 +292,7 @@ export function App() {
   const result = state.snapshot?.result;
   const ownRunSucceeded = state.phase === 'settled' && isSuccessfulResultState(state.snapshot?.resultState);
   const ownFinishedAt = state.startedAt === undefined ? undefined : state.startedAt + state.elapsedMs;
-  const { displayedRun, outputs: displayedOutputs, unmatchedState: unmatchedOutputState, showPreviousRunLabel } = planRunDisplay(
+  const { displayedRun, outputs: displayedOutputs, diagnostics, unmatchedState: unmatchedOutputState, showPreviousRunLabel } = planRunDisplay(
     state,
     followed,
     lastRun,
@@ -450,6 +453,7 @@ export function App() {
           ) : null}
         </Card>
 
+        <GuardrailSummary diagnostics={diagnostics} />
         <PublishedBlocks
           blocks={manifest.blocks}
           downloadRunId={displayedRun?.jobRunId}
@@ -528,6 +532,7 @@ export function planRunDisplay(
     return {
       displayedRun: selectedEntry,
       outputs: selectedRun?.status === 'found' ? outputsFrom(selectedRun.outcome) : [],
+      diagnostics: selectedRun?.status === 'found' ? selectedRun.outcome?.diagnostics : undefined,
       unmatchedState: selectedRun?.status === 'found' || selectedRun?.status === 'unavailable' ? 'omitted' : 'loading',
     };
   }
@@ -540,7 +545,7 @@ export function planRunDisplay(
   }
   if (state.phase === 'running') {
     if (lastRun.status === 'found') {
-      return { displayedRun: lastSuccessful, outputs: outputsFrom(lastRun.result), unmatchedState: 'omitted', showPreviousRunLabel: true };
+      return { displayedRun: lastSuccessful, outputs: outputsFrom(lastRun.result), diagnostics: lastRun.result.diagnostics, unmatchedState: 'omitted', showPreviousRunLabel: true };
     }
     return { displayedRun: lastSuccessful, outputs: [], unmatchedState: 'running' };
   }
@@ -548,6 +553,7 @@ export function planRunDisplay(
     return {
       displayedRun: runHistoryEntryFromSnapshot(state.snapshot, state.startedAt, state.params),
       outputs: outputsFrom(state.snapshot.result),
+      diagnostics: state.snapshot.result?.diagnostics,
       unmatchedState: 'omitted',
     };
   }
@@ -561,17 +567,18 @@ export function planRunDisplay(
         followed.snapshot?.lifeCycleState,
       ),
       outputs: outputsFrom(followed.outcome),
+      diagnostics: followed.outcome?.diagnostics,
       unmatchedState: 'omitted',
     };
   }
   if (lastRun.status === 'found') {
-    return { displayedRun: lastSuccessful, outputs: outputsFrom(lastRun.result), unmatchedState: 'omitted' };
+    return { displayedRun: lastSuccessful, outputs: outputsFrom(lastRun.result), diagnostics: lastRun.result.diagnostics, unmatchedState: 'omitted' };
   }
   return { outputs: [], unmatchedState: followed.following ? 'running' : 'beforeRun' };
 }
 
 export function RunFailureAlert({ snapshot, outcome }: { snapshot: RunSnapshot; outcome?: RunOutcome }) {
-  const reason = snapshot.stateMessage?.trim() ||
+  const reason = outcome?.failureReason || snapshot.stateMessage?.trim() ||
     (outcome?.outcome === 'noPayload' ? outcome.reason : undefined) ||
     `The run ended in state ${snapshot.resultState ?? snapshot.lifeCycleState ?? 'UNKNOWN'}.`;
   return (

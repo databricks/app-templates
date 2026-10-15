@@ -90,9 +90,9 @@ function matchedRunOutputs(blocks, commands) {
     exportedModelToRunPayload(notebookHtml(commands))));
 }
 
-function publishedBlocksHtml(blocks, outputs, unmatchedState = 'omitted', hideOutputsUntilResults = false) {
+function publishedBlocksHtml(blocks, outputs, unmatchedState = 'omitted') {
   return renderToStaticMarkup(createElement(PublishedBlocks, {
-    blocks, outputs, unmatchedState, hideOutputsUntilResults, downloadRunId: '42', onRetry: () => {},
+    blocks, outputs, unmatchedState, downloadRunId: '42', onRetry: () => {},
   }));
 }
 
@@ -166,6 +166,131 @@ function environmentResult(environment) {
     results: { data: [nodeState(nodeId, nodeId !== environment), displayTable(1, false)] },
   })));
 }
+
+const GROUP_ENVIRONMENT_BLOCKS = ENVIRONMENT_BLOCKS.map((block) => ({
+  ...block, parentGroupId: `group_${block.nodeId}`,
+}));
+
+for (const environment of ['prod', 'dev']) {
+  test(`native group-only state renders the ${environment} branch without member state`, () => {
+    const manifest = parseAppManifest({
+      version: 6, appName: 'Environment branches', blocks: GROUP_ENVIRONMENT_BLOCKS, parameters: [],
+    });
+    const commands = [
+      ...['prod', 'dev'].map((nodeId) => ({
+        command: '_lb_groups = globals().setdefault("_lb_groups", {})',
+        results: nodeState(`group_${nodeId}`, nodeId !== environment),
+      })),
+      ...['prod', 'dev'].map((nodeId) => ({
+        command: `display(ctx["${nodeId}.data"])`,
+        results: displayTable(nodeId === environment ? 1 : 0, false),
+      })),
+    ];
+    const result = matchedRunOutputs(manifest.blocks, commands);
+    assert.deepEqual(result.outputs.map(({ id, disabled }) => ({ id, disabled })), [
+      { id: 'prod', disabled: environment !== 'prod' }, { id: 'dev', disabled: environment !== 'dev' },
+    ]);
+    const html = publishedBlocksHtml(manifest.blocks, result.outputs);
+    assert.match(html, environment === 'prod' ? /Prod Output/ : /Dev Output/);
+    assert.doesNotMatch(html, environment === 'prod' ? /Dev Output/ : /Prod Output/);
+    assert.match(html, /<table/);
+  });
+}
+
+for (const [ownDisabled, groupDisabled, expected] of [
+  [false, true, true], [true, false, true], [false, false, false], [true, true, true],
+]) {
+  test(`combines own ${ownDisabled} and group ${groupDisabled} disablement as ${expected}`, () => {
+    const blocks = [GROUP_ENVIRONMENT_BLOCKS[0]];
+    const result = matchedRunOutputs(blocks, [
+      { command: 'group_gate()', results: nodeState('group_prod', groupDisabled) },
+      { command: 'display(ctx["prod.data"])', results: { data: [nodeState('prod', ownDisabled), displayTable(1, false)] } },
+    ]);
+    assert.equal(result.outputs[0].disabled, expected);
+    const html = publishedBlocksHtml(blocks, result.outputs);
+    if (expected) assert.equal(html, '');
+    else {
+      assert.match(html, /Prod Output/);
+      assert.match(html, /<table/);
+    }
+  });
+}
+
+test('native disabled group hides file members without preview or file receipt', () => {
+  const blocks = GROUP_ENVIRONMENT_BLOCKS.map((block) => ({
+    ...block, fileOutput: { volumes: ['main.apps.files'] },
+  }));
+  const result = matchedRunOutputs(blocks, [
+    { command: 'group_gate()', results: nodeState('group_prod', true) },
+    { command: 'group_gate()', results: nodeState('group_dev', false) },
+  ]);
+  assert.deepEqual(result.outputs.map(({ disabled, files }) => ({ disabled, files })), [
+    { disabled: true, files: [] }, { disabled: false, files: [] },
+  ]);
+  const html = publishedBlocksHtml(blocks, result.outputs);
+  assert.doesNotMatch(html, /Prod Output/);
+  assert.match(html, /Dev Output/);
+  assert.match(html, /This output was not returned/);
+});
+
+test('literal disablement hides a table without runtime metadata while a missing sibling remains visible', () => {
+  const blocks = [
+    { ...ENVIRONMENT_BLOCKS[0], disabled: true },
+    ENVIRONMENT_BLOCKS[1],
+  ];
+  const result = matchedRunOutputs(blocks, []);
+  assert.equal(result.outcome, 'outputs');
+  assert.equal(result.outputs[0].disabled, true);
+  assert.equal(result.outputs[1].disabled, undefined);
+  const html = publishedBlocksHtml(blocks, result.outputs);
+  assert.doesNotMatch(html, /Prod Output/);
+  assert.match(html, /Dev Output/);
+  assert.match(html, /This output was not returned/);
+});
+
+test('native own state supersedes a manifest literal fallback', () => {
+  const blocks = [{ ...ENVIRONMENT_BLOCKS[0], disabled: true }];
+  const result = matchedRunOutputs(blocks, [{
+    command: 'display(ctx["prod.data"])', results: { data: [nodeState('prod', false), displayTable(0, false)] },
+  }]);
+  assert.equal(result.outputs[0].disabled, false);
+  const html = publishedBlocksHtml(blocks, result.outputs);
+  assert.match(html, /Prod Output/);
+  assert.match(html, /No rows returned/);
+});
+
+test('missing or malformed parent state does not hide an empty output', () => {
+  const blocks = [GROUP_ENVIRONMENT_BLOCKS[0]];
+  for (const disabled of [undefined, null, 'true', 'false', 0, 1, {}, []]) {
+    const result = matchedRunOutputs(blocks, [{
+      command: 'display(ctx["prod.data"])',
+      results: { data: [nodeState('group_prod', disabled), displayTable(0, false)] },
+    }]);
+    assert.equal(result.outputs[0].disabled, undefined);
+    const html = publishedBlocksHtml(blocks, result.outputs);
+    assert.match(html, /Prod Output/);
+    assert.match(html, /No rows returned/);
+  }
+});
+
+test('optional execution metadata preserves valid fields and ignores malformed values', () => {
+  const base = { version: 6, appName: 'Branch outputs', blocks: ENVIRONMENT_BLOCKS, parameters: [] };
+  for (const disabled of [true, false]) {
+    const parsed = parseAppManifest({
+      ...base, blocks: [{ ...ENVIRONMENT_BLOCKS[0], disabled, parentGroupId: 'group_prod' }],
+    });
+    assert.equal(parsed.blocks[0].disabled, disabled);
+    assert.equal(parsed.blocks[0].parentGroupId, 'group_prod');
+  }
+  for (const disabled of [undefined, null, 'true', 'false', 0, 1, {}, []]) {
+    const parsed = parseAppManifest({ ...base, blocks: [{ ...ENVIRONMENT_BLOCKS[0], disabled }] });
+    assert.deepEqual(parsed.blocks, [ENVIRONMENT_BLOCKS[0]]);
+  }
+  for (const parentGroupId of [undefined, null, '', true, false, 0, 1, {}, []]) {
+    const parsed = parseAppManifest({ ...base, blocks: [{ ...ENVIRONMENT_BLOCKS[0], parentGroupId }] });
+    assert.deepEqual(parsed.blocks, [ENVIRONMENT_BLOCKS[0]]);
+  }
+});
 
 for (const environment of ['prod', 'dev']) {
   test(`only renders the ${environment} branch recorded by the run`, () => {
@@ -244,51 +369,85 @@ test('optional visibility preferences preserve booleans and safely ignore other 
   const base = { version: 6, appName: 'Branch outputs', blocks: ENVIRONMENT_BLOCKS, parameters: [] };
   for (const value of [true, false]) {
     const parsed = parseAppManifest({
-      ...base, hideOutputsUntilResults: value,
-      blocks: base.blocks.map((block) => block.type === 'output' ? { ...block, hideUntilResults: value } : block),
+      ...base,
+      blocks: base.blocks.map((block) => ({ ...block, hideUntilResults: value })),
     });
-    assert.equal(parsed.hideOutputsUntilResults, value);
+    assert.equal(parsed.blocks[0].hideUntilResults, value);
     assert.equal(parsed.blocks[1].hideUntilResults, value);
   }
   for (const value of [undefined, null, 'true', 'false', 0, 1, {}, []]) {
     const parsed = parseAppManifest({
-      ...base, hideOutputsUntilResults: value,
-      blocks: base.blocks.map((block) => block.type === 'output' ? { ...block, hideUntilResults: value } : block),
+      ...base,
+      blocks: base.blocks.map((block) => ({ ...block, hideUntilResults: value })),
     });
-    assert.equal(parsed.hideOutputsUntilResults, undefined);
+    assert.equal(parsed.blocks[0].hideUntilResults, undefined);
     assert.equal(parsed.blocks[1].hideUntilResults, undefined);
-    assert.match(publishedBlocksHtml(parsed.blocks, [], 'beforeRun', parsed.hideOutputsUntilResults), /Prod Output/);
+    assert.match(publishedBlocksHtml(parsed.blocks, [], 'beforeRun'), /Prod Output/);
   }
 });
 
-test('output preferences inherit or override the app default for all pending states', () => {
+test('legacy app-wide visibility does not hide blocks without their own preference', () => {
+  const parsed = parseAppManifest({
+    version: 6, appName: 'Branch outputs', blocks: ENVIRONMENT_BLOCKS, parameters: [],
+    hideOutputsUntilResults: true,
+  });
+  assert.equal(Object.hasOwn(parsed, 'hideOutputsUntilResults'), false);
+  assert.match(publishedBlocksHtml(parsed.blocks, [], 'beforeRun'), /Prod Output/);
+  assert.match(publishedBlocksHtml(parsed.blocks, [], 'beforeRun'), /Dev Output/);
+});
+
+test('per-block preferences control output and Markdown visibility in all pending states', () => {
   const blocks = [
     { type: 'markdown', id: 'intro', text: 'Choose an environment.' },
-    { type: 'output', id: 'inherit', label: 'Inherited output', nodeId: 'inherited', port: 'data' },
+    { type: 'markdown', id: 'shown-text', text: 'Always visible text.', hideUntilResults: false },
+    { type: 'markdown', id: 'hidden-text', text: 'Result explanation.', hideUntilResults: true },
+    { type: 'output', id: 'default', label: 'Default output', nodeId: 'source', port: 'data' },
     { type: 'output', id: 'show', label: 'Visible placeholder', nodeId: 'shown', port: 'data', hideUntilResults: false },
     { type: 'output', id: 'hide', label: 'Hidden placeholder', nodeId: 'hidden', port: 'data', hideUntilResults: true },
   ];
   for (const state of ['beforeRun', 'running', 'loading']) {
-    const hidden = publishedBlocksHtml(blocks, [], state, true);
-    assert.match(hidden, /Choose an environment\./);
-    assert.match(hidden, /Visible placeholder/);
-    assert.doesNotMatch(hidden, /Inherited output|Hidden placeholder/);
-    const shown = publishedBlocksHtml(blocks, [], state, false);
-    assert.match(shown, /Inherited output/);
-    assert.match(shown, /Visible placeholder/);
-    assert.doesNotMatch(shown, /Hidden placeholder/);
+    const html = publishedBlocksHtml(blocks, [], state);
+    assert.match(html, /Choose an environment\./);
+    assert.match(html, /Always visible text\./);
+    assert.match(html, /Default output/);
+    assert.match(html, /Visible placeholder/);
+    assert.doesNotMatch(html, /Result explanation\.|Hidden placeholder/);
   }
+  assert.match(publishedBlocksHtml(blocks, [], 'omitted'), /Result explanation\./);
 });
 
 test('hiding every pending output removes its headings, placeholders, and surrounding card', () => {
-  const blocks = ENVIRONMENT_BLOCKS.filter((block) => block.type === 'output');
+  const blocks = ENVIRONMENT_BLOCKS.filter((block) => block.type === 'output')
+    .map((block) => ({ ...block, hideUntilResults: true }));
   for (const state of ['beforeRun', 'running', 'loading']) {
-    assert.equal(publishedBlocksHtml(blocks, [], state, true), '');
+    assert.equal(publishedBlocksHtml(blocks, [], state), '');
   }
-  const finished = publishedBlocksHtml(blocks, [], 'omitted', true);
+  const finished = publishedBlocksHtml(blocks, [], 'omitted');
   assert.match(finished, /Prod Output/);
   assert.match(finished, /Dev Output/);
   assert.match(finished, /The run finished without returning a result/);
+});
+
+test('hidden Markdown appears after completed empty results and errors, including disabled outputs', () => {
+  const blocks = [
+    { type: 'markdown', id: 'explanation', text: 'Completed run explanation.', hideUntilResults: true },
+    { type: 'output', id: 'data', label: 'Data output', nodeId: 'source', port: 'data', hideUntilResults: true },
+  ];
+  for (const state of ['beforeRun', 'running', 'loading']) {
+    assert.equal(publishedBlocksHtml(blocks, [], state), '');
+  }
+  const outcomes = [
+    { outcome: 'result', payload: outputFromTable(displayTable(0, false)) },
+    { outcome: 'computeError', payload: { status: 'error', error: { type: 'ReadError', message: 'Read failed' } } },
+  ];
+  for (const outcome of outcomes) {
+    const output = { key: 'declared:data', id: 'data', title: 'Data output', outcome };
+    assert.match(publishedBlocksHtml(blocks, [output], 'omitted'), /Completed run explanation\./);
+    const disabledHtml = publishedBlocksHtml(blocks, [{ ...output, disabled: true }], 'omitted');
+    assert.match(disabledHtml, /Completed run explanation\./);
+    assert.doesNotMatch(disabledHtml, /Data output/);
+  }
+  assert.match(publishedBlocksHtml(blocks, [], 'omitted'), /Completed run explanation\./);
 });
 
 test('available empty results and errors stay visible with hiding enabled, while disabled outputs do not', () => {
@@ -301,11 +460,11 @@ test('available empty results and errors stay visible with hiding enabled, while
   ];
   for (const outcome of outcomes) {
     const output = { key: 'declared:data', id: 'data', title: 'Returned output', outcome };
-    const html = publishedBlocksHtml([block], [output], 'omitted', true);
+    const html = publishedBlocksHtml([block], [output], 'omitted');
     assert.match(html, /Returned output/);
     assert.match(html, /No rows returned|Read failed|The output was not returned|The output was unreadable/);
     for (const hideUntilResults of [undefined, false, true]) {
-      assert.equal(publishedBlocksHtml([{ ...block, hideUntilResults }], [{ ...output, disabled: true }], 'omitted', true), '');
+      assert.equal(publishedBlocksHtml([{ ...block, hideUntilResults }], [{ ...output, disabled: true }], 'omitted'), '');
     }
   }
 });
@@ -319,7 +478,7 @@ test('file-only outcomes remain downloadable when output placeholders are hidden
     key: 'declared:file', id: 'file', title: 'Generated report', files: [{ path: '/Volumes/main/apps/files/report.csv' }],
     outcome: { outcome: 'missing', reason: 'No table preview' },
   };
-  const html = publishedBlocksHtml([block], [output], 'omitted', true);
+  const html = publishedBlocksHtml([block], [output], 'omitted');
   assert.match(html, /Generated report/);
   assert.match(html, /\/api\/designer\/run\/42\/files\/file\/0\/download/);
   assert.doesNotMatch(html, /No table preview/);
@@ -547,9 +706,11 @@ test('a rerun retains the displayed historical outcome and download run until a 
   assert.equal(running.showPreviousRunLabel, true);
   assert.deepEqual(running.displayedRun.parameters, { environment: 'dev' });
   const html = renderToStaticMarkup(createElement(PublishedBlocks, {
-    blocks: [block], outputs: running.outputs, unmatchedState: running.unmatchedState,
-    hideOutputsUntilResults: true, downloadRunId: running.displayedRun.jobRunId, onRetry: () => {},
+    blocks: [{ type: 'markdown', id: 'explanation', text: 'Previous run explanation.', hideUntilResults: true }, block],
+    outputs: running.outputs, unmatchedState: running.unmatchedState,
+    downloadRunId: running.displayedRun.jobRunId, onRetry: () => {},
   }));
+  assert.match(html, /Previous run explanation\./);
   assert.match(html, /\/api\/designer\/run\/17\/files\/report\/0\/download/);
   assert.doesNotMatch(html, /\/run\/42\//);
   const failed = planRunDisplay(

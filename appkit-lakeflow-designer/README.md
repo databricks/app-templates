@@ -83,20 +83,25 @@ there is no reader for deprecated notebook-parameter runs or historical backfill
 
 ## Result previews
 
-Output blocks are hidden when the displayed run records their operator's effective disabled
-state as `true`, including disablement inherited from a group. Configure branch conditions
+Output blocks are hidden when their own disabled state or their parent group's state is `true`.
+Manifest v6 carries literal operator disablement as optional `disabled` and links an active
+disabled group with `parentGroupId`. The server combines these with Designer's existing runtime
+node-state messages; operators report their own evaluated state and groups report theirs.
+Published runners preserve group annotations and evaluate each group condition once.
+Configure branch conditions
 on the published operator or its group, for example `:environment <> 'prod'` for the Prod
 branch and `:environment <> 'dev'` for Dev. Disabling an upstream operator alone does not
 disable downstream outputs. Enabled empty results and errors remain visible.
 
-Manifest v6 optionally sets `hideOutputsUntilResults` for the app and
-`hideUntilResults` on individual output blocks. An absent output preference
-inherits the app setting; `false` shows the placeholder and `true` hides it.
-Without an app preference, placeholders stay visible. Only boolean settings
-apply; other values fall back to inheritance or the app's existing default.
+Manifest v6 optionally sets `hideUntilResults` on individual output and Markdown
+blocks. An absent preference or `false` shows the block before results; `true`
+hides it. Only boolean settings apply; other values preserve the visible default.
+The authoring eye toggle controls this preference for each block. There is no
+app-wide visibility setting.
 
 Hidden outputs omit their heading and placeholder until a displayed run has an
-outcome. Parameters, markdown, and run-status messages remain visible. A completed
+outcome. Hidden Markdown appears once a displayed run completes, including empty
+results and errors. Parameters and run-status messages remain visible. A completed
 run still shows zero-row results, generated files without previews, errors, and
 missing-output diagnostics. Recorded `disabled: true` hides the block regardless
 of its placeholder setting. An all-hidden output area has no empty card.
@@ -110,9 +115,11 @@ and selected historical results appear as soon as their outcomes load. Placehold
 visibility does not evaluate branch conditions or change notebook code generation.
 
 Visibility follows the selected run, including history; changing a parameter takes effect
-after the next run. Older runs without runtime state metadata keep all output blocks visible.
-Existing apps need their runner notebook regenerated and republished to emit effective
-disablement metadata. The app does not evaluate Designer SQL expressions in the browser.
+after the next run. Missing runtime state does not imply disablement from an empty result;
+the published literal fallback still applies. Republish existing apps to update their manifest,
+template, and annotated runner, then run again. Previously exported run notebooks retain their
+old DAG metadata. Spark evaluates Designer SQL expressions in the job; the browser consumes
+the recorded state.
 
 The app reads each run's exported notebook display results and sends at most 1,000 rows per output
 to the client. Tables and charts use this same bounded preview. The notebook's `overflow` flag is

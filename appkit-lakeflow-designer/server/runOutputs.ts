@@ -116,10 +116,11 @@ function matchedOutcome(entry: ClassifiedEntry): MatchOutcome {
 
 export function matchRunOutputs(declared: AppOutputBlock[], raw: string | undefined) {
   const multi = classifyMultiRunOutput(raw);
-  if (multi.outcome !== 'outputs' && !declared.some((block) => block.fileOutput)) {
+  if (multi.outcome !== 'outputs' && !declared.some((block) => block.fileOutput || block.disabled === true)) {
     return { outcome: 'noPayload', reason: multi.reason };
   }
   const classified = multi.outcome === 'outputs' ? multi.outputs : [];
+  const runtimeNodeStates = multi.outcome === 'outputs' ? multi.runtimeNodeStates : undefined;
   const consumed = new Set<number>();
 
   // The run may include other nodes and ports, but only published output blocks are exposed.
@@ -138,7 +139,11 @@ export function matchRunOutputs(declared: AppOutputBlock[], raw: string | undefi
     const found = classified.find((entry) => !consumed.has(entry.index) && matches(entry)) ?? classified.find(matches);
     const source = joinSource(declaredNode, declaredPort);
     const fileReceipt = output.fileOutput ? recordedFileOutput(raw, output.nodeId, output.fileOutput) : undefined;
-    const disabled = multi.outcome === 'outputs' ? multi.runtimeNodeStates.get(output.nodeId) : undefined;
+    const ownDisabled = runtimeNodeStates?.get(output.nodeId) ?? output.disabled;
+    const groupDisabled = output.parentGroupId === undefined ? undefined : runtimeNodeStates?.get(output.parentGroupId);
+    const disabled = ownDisabled === true || groupDisabled === true
+      ? true
+      : ownDisabled === undefined && groupDisabled === undefined ? undefined : false;
     const section = {
       key: `declared:${output.id}`,
       id: output.id,

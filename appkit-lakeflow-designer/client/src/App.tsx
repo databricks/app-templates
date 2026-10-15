@@ -451,7 +451,6 @@ export function App() {
 
         <PublishedBlocks
           blocks={manifest.blocks}
-          hideOutputsUntilResults={manifest.hideOutputsUntilResults}
           downloadRunId={displayedRun?.jobRunId}
           outputs={displayedOutputs}
           unmatchedState={unmatchedOutputState}
@@ -805,24 +804,23 @@ function RunResult({
 
 export function PublishedBlocks({
   blocks,
-  hideOutputsUntilResults = false,
   downloadRunId,
   outputs,
   unmatchedState,
   onRetry,
 }: {
   blocks: AppManifestBlock[];
-  hideOutputsUntilResults?: boolean;
   downloadRunId?: string;
   outputs: MatchedOutput[];
   unmatchedState: UnmatchedOutputState;
   onRetry: () => void;
 }) {
   const matchedBlocks = matchPublishedBlocks(blocks, outputs).filter((match) => {
-    if (match.kind === 'markdown') return true;
-    if (match.output?.disabled === true) return false;
-    return match.output !== undefined || unmatchedState === 'omitted' ||
-      !(match.block.hideUntilResults ?? hideOutputsUntilResults);
+    if (match.kind === 'output') {
+      if (match.output?.disabled === true) return false;
+      if (match.output !== undefined) return true;
+    }
+    return unmatchedState === 'omitted' || match.block.hideUntilResults !== true;
   });
   if (matchedBlocks.length === 0) return null;
   return (

@@ -49,8 +49,14 @@ const markdownBlockSchema = z.pipe(
     type: z.literal('markdown'),
     id: z.catch(z.optional(nonEmptyString), undefined),
     text: z.string(),
+    hideUntilResults: optionalBoolean,
   }),
-  z.transform(({ type, id, text }) => ({ type, ...(id === undefined ? {} : { id }), text })),
+  z.transform(({ type, id, text, hideUntilResults }) => ({
+    type,
+    ...(id === undefined ? {} : { id }),
+    text,
+    ...(hideUntilResults === undefined ? {} : { hideUntilResults }),
+  })),
 );
 
 const outputBlockSchema = z.pipe(
@@ -63,12 +69,16 @@ const outputBlockSchema = z.pipe(
     chartSpec: z.catch(z.optional(chartSpecSchema), undefined),
     hideUntilResults: optionalBoolean,
     fileOutput: z.transform(parseFileOutput),
+    disabled: optionalBoolean,
+    parentGroupId: z.catch(z.optional(nonEmptyString), undefined),
   }),
-  z.transform(({ chartSpec, fileOutput, hideUntilResults, ...block }) => ({
+  z.transform(({ chartSpec, fileOutput, hideUntilResults, disabled, parentGroupId, ...block }) => ({
     ...block,
     ...(chartSpec === undefined ? {} : { chartSpec }),
     ...(fileOutput === undefined ? {} : { fileOutput }),
     ...(hideUntilResults === undefined ? {} : { hideUntilResults }),
+    ...(disabled === undefined ? {} : { disabled }),
+    ...(parentGroupId === undefined ? {} : { parentGroupId }),
   })),
 );
 
@@ -93,7 +103,6 @@ export const appManifestSchema = z.pipe(
   z.object({
     version: z.literal(6),
     appName: nonEmptyString,
-    hideOutputsUntilResults: optionalBoolean,
     subtitle: z.unknown(),
     provenance: z.unknown(),
     target: z.unknown(),
@@ -126,7 +135,6 @@ export const appManifestSchema = z.pipe(
       ...(storage === undefined ? {} : { storage }),
       version: raw.version,
       appName: raw.appName,
-      ...(raw.hideOutputsUntilResults === undefined ? {} : { hideOutputsUntilResults: raw.hideOutputsUntilResults }),
       ...(typeof raw.subtitle === 'string' && raw.subtitle !== '' ? { subtitle: raw.subtitle } : {}),
       ...(provenance === undefined ? {} : { provenance }),
       ...(target === undefined ? {} : { target }),

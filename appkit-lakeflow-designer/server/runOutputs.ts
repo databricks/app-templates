@@ -1,3 +1,4 @@
+import { isHtmlOutput } from '../shared/htmlOutputs';
 import { outputBlockTitle, type AppOutputBlock } from '../shared/appManifest';
 import type { FileOutputBehavior } from '../shared/fileOutputs';
 import { errorMessage, isRecord, nonEmptyString } from '../shared/values';
@@ -16,7 +17,7 @@ const isSchemaField = (value: unknown): value is { name: string; type: string } 
 
 type ClassifiedEntry =
   | { outcome: 'malformed'; index: number; id: string | undefined; reason: string }
-  | { outcome: 'computeError' | 'result'; index: number; id: string | undefined; payload: Record<string, unknown> };
+  | { outcome: 'computeError' | 'result' | 'html'; index: number; id: string | undefined; payload: Record<string, unknown> };
 
 function classifyOutputEntry(entry: unknown, index: number): ClassifiedEntry {
   if (!isRecord(entry)) {
@@ -31,6 +32,11 @@ function classifyOutputEntry(entry: unknown, index: number): ClassifiedEntry {
   }
   if (entry.status !== 'ok') {
     return malformed(`This output has an unrecognised status: ${JSON.stringify(entry.status)}`);
+  }
+  if (entry.kind === 'html') {
+    return isHtmlOutput(entry.html) && typeof entry.target_node === 'string' && entry.target_port === undefined
+      ? { outcome: 'html', index, id, payload: entry }
+      : malformed('This HTML output is invalid or too large.');
   }
   if (!Array.isArray(entry.schema) || !Array.isArray(entry.rows)) {
     return malformed('This output reported success but is missing the schema or rows.');
@@ -95,6 +101,7 @@ const joinSource = (node: string | undefined, port: string | undefined): string 
 type MatchOutcome =
   | { outcome: 'malformed'; reason: string }
   | { outcome: 'computeError' | 'result'; payload: Record<string, unknown> }
+  | { outcome: 'html'; html: string }
   | { outcome: 'missing'; reason: string };
 type OutputSection = {
   key: string;
@@ -109,6 +116,10 @@ type OutputSection = {
 };
 
 function matchedOutcome(entry: ClassifiedEntry): MatchOutcome {
+  if (entry.outcome === 'html') {
+    return isHtmlOutput(entry.payload.html) ? { outcome: 'html', html: entry.payload.html }
+      : { outcome: 'malformed', reason: 'This HTML output is invalid or too large.' };
+  }
   return entry.outcome === 'malformed'
     ? { outcome: 'malformed', reason: entry.reason }
     : { outcome: entry.outcome, payload: entry.payload };
@@ -134,6 +145,7 @@ export function matchRunOutputs(declared: AppOutputBlock[], raw: string | undefi
       entry.outcome === 'malformed'
         ? entry.id !== undefined && entry.id === output.id
         : nonEmptyString(entry.payload.target_node) === declaredNode &&
+          (entry.payload.kind === 'html') === (output.kind === 'html') &&
           nonEmptyString(entry.payload.target_port) === declaredPort;
     // Prefer an unconsumed entry; blocks published at the same (node, port) may share one.
     const found = classified.find((entry) => !consumed.has(entry.index) && matches(entry)) ?? classified.find(matches);

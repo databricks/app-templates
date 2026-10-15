@@ -1,3 +1,4 @@
+import { isHtmlOutput } from '../../shared/htmlOutputs';
 import { DISPLAY_ROW_LIMIT, summarizeResultPreview, type ResultPreview } from '../../shared/resultPreview';
 import type { AppChartSpec } from '../../shared/appManifest';
 import { MAX_OUTPUT_FILES, parseFileOutputBehavior, type FileOutputBehavior, type WrittenFile } from '../../shared/fileOutputs';
@@ -35,6 +36,7 @@ export type ErrorPayload = {
 };
 
 export type OutputOutcome =
+  | { outcome: 'html'; html: string }
   | { outcome: 'result'; payload: OkPayload }
   | { outcome: 'computeError'; payload: ErrorPayload }
   | { outcome: 'malformed'; reason: string }
@@ -137,6 +139,10 @@ function parseErrorPayload(raw: Record<string, unknown>): ErrorPayload | undefin
 function parseOutputOutcome(raw: unknown): OutputOutcome | undefined {
   if (!isRecord(raw)) {
     return undefined;
+  }
+  if (raw.outcome === 'html') {
+    return isHtmlOutput(raw.html) ? { outcome: 'html', html: raw.html }
+      : { outcome: 'malformed', reason: 'This HTML output is invalid or too large.' };
   }
   if (raw.outcome === 'result') {
     const payload = isRecord(raw.payload) ? parseOkPayload(raw.payload) : undefined;

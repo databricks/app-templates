@@ -84,7 +84,7 @@ there is no reader for deprecated notebook-parameter runs or historical backfill
 ## Result previews
 
 Output blocks are hidden when their own disabled state or their parent group's state is `true`.
-Manifest v6 carries literal operator disablement as optional `disabled` and links an active
+Manifest v7 carries literal operator disablement as optional `disabled` and links an active
 disabled group with `parentGroupId`. The server combines these with Designer's existing runtime
 node-state messages; operators report their own evaluated state and groups report theirs.
 Published runners preserve group annotations and evaluate each group condition once.
@@ -93,7 +93,7 @@ on the published operator or its group, for example `:environment <> 'prod'` for
 branch and `:environment <> 'dev'` for Dev. Disabling an upstream operator alone does not
 disable downstream outputs. Enabled empty results and errors remain visible.
 
-Manifest v6 optionally sets `hideUntilResults` on individual output and Markdown
+Manifest v7 optionally sets `hideUntilResults` on individual output and Markdown
 blocks. An absent preference or `false` shows the block before results; `true`
 hides it. Only boolean settings apply; other values preserve the visible default.
 The authoring eye toggle controls this preference for each block. There is no
@@ -208,11 +208,11 @@ Chart rendering does not change the manifest or runner-job contracts.
 
 ## App upload storage and file parameters
 
-Manifest v6 uses an optional storage declaration for uploads:
+Manifest v7 uses an optional storage declaration for uploads:
 
 ```json
 {
-  "version": 6,
+  "version": 7,
   "storage": {
     "volume": "main.apps.shared",
     "path": "/Volumes/main/apps/shared/designer_apps/my_app",
@@ -379,3 +379,55 @@ current downloaded file. The count is the operator's result count, not a count o
 There is no automatic TTL, cleanup Job, or consumer DELETE endpoint. Volume owners manage retention.
 Upgrading removes the generic export endpoints but does not delete previously staged exports, cache
 metadata, uploads, Output files or published helper versions. Republish and run again after upgrading.
+
+## HTML operator outputs
+
+Manifest v7 accepts terminal HTML blocks with `kind: "html"` and no `port`, `chartSpec`,
+or `fileOutput`:
+
+```json
+{ "type": "output", "id": "report", "label": "Report", "nodeId": "html_1", "kind": "html" }
+```
+
+The publisher retains native Designer HTML code and marks the selected runner cell
+with `# designer-app-html-output: "html_1"`. The export reader binds only that cell's
+single `text/html` MIME result (or native `htmlSandbox`/`html` result). It preserves
+`window.inputs`, parameters, scripts, and Unicode. Ambiguous or oversized results
+(over 4,194,304 characters) become readable output errors. Disabled operators/groups
+and the existing hide-until-results preference retain their usual behavior.
+
+Each output runs in a sandboxed iframe with scripts enabled and same-origin access
+disabled. Messages from the frame may only report bounded height and JavaScript
+errors; they cannot invoke App APIs or obtain its credentials. A new run remounts
+the iframe even when the HTML is identical, so script variables do not leak across
+runs. A Content Security Policy precedes all author content: inline scripts and CSS
+can run, but external scripts, styles, images, fonts, fetch/WebSocket connections,
+nested frames, workers, plugins, forms, and dynamic code evaluation are blocked.
+Images, fonts, and media embedded as data/blob URLs can still render. Browser device
+and clipboard permissions are explicitly disabled on the frame.
+
+HTML is passed through unchanged after the policy and display bootstrap; the template
+does not supply libraries, rewrite CDN references, or fetch missing resources. Code
+that relies on external resources can fail. CSP violations and script/resource errors
+appear above the output. Designer's authoring preview retains Designer's policy, so
+a working Designer preview does not guarantee that external resources work after publication.
+
+The sandbox and CSP do not make arbitrary author code trustworthy. Publishers must
+still be trusted with the output's data and parameters. Browser CSP is not a complete
+data-loss boundary (for example, it does not comprehensively block navigation within
+the frame), and scripts can still consume browser resources or display misleading
+content. Forms, popups, downloads, and same-origin storage are disabled.
+
+All `/api/designer` routes reject browser requests from opaque, cross-site, or sibling-site
+origins before invoking handlers. Origin comparison uses `DATABRICKS_APP_URL`, because
+Apps ingress can rewrite `Host`; local development falls back to the local request URL.
+Requests without browser origin metadata retain ingress-authenticated API access.
+The frame's message bridge exposes no privileged operation. The template already
+disables AppKit remote serving through `DISABLE_REMOTE_SERVING` in `app.yaml`.
+
+Before customer rollout, validate the origin checks through Apps ingress and review
+the iframe/API boundary with security. Local browser checks and route tests do not
+establish protection against arbitrary data egress or browser resource exhaustion.
+
+Publish this template with the matching Universe manifest-v7/HTML runner changes.
+The template accepts v7 only; this coordinated greenfield change has no v6 reader.

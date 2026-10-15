@@ -41,7 +41,7 @@ const storage = {
 };
 const fileParameter = { name: 'path', type: 'file', label: 'Data', defaultValue: '/Volumes/private/author.csv' };
 const manifest = {
-  version: 6,
+  version: 7,
   appName: 'Uploads',
   storage,
   parameters: [fileParameter],
@@ -395,20 +395,20 @@ test('validates versioned storage and never initializes a file input with the au
     assert.equal(config.parseAppStorage(invalid), undefined);
   }
   const parsed = appConfig.parseAppManifest(manifest);
-  assert.equal(parsed.version, 6);
+  assert.equal(parsed.version, 7);
   assert.deepEqual(parsed.storage, storage);
   assert.equal(parsed.parameters[0].defaultValue, '');
   assert.deepEqual(appConfig.initialValuesFor(parsed, { path: '/Volumes/private/file.csv' }), { path: '' });
   assert.deepEqual(appConfig.initialValuesFor(parsed, { path: 'upload:829dcaa7-e505-49c1-b6d0-73d1841e990a' }), {
     path: '',
   });
-  for (const version of [3, 4, 5, 7]) {
+  for (const version of [3, 4, 5, 6, 8]) {
     assert.equal(appConfig.parseAppManifest({ ...manifest, version }), undefined);
   }
   assert.equal(appConfig.parseAppManifest({ ...manifest, storage: undefined }), undefined);
   const regular = appConfig.parseAppManifest({
     ...manifest,
-    version: 6,
+    version: 7,
     storage: undefined,
     parameters: [{ ...fileParameter, type: 'text' }],
   });

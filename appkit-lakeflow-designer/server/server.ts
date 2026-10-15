@@ -16,6 +16,7 @@ import { APP_REVISION_PARAM } from '../shared/fileOutputs';
 import { runJobParameters } from './jobParameters';
 import { runAttribution } from './runAttribution';
 import { ensureJobViewPermission } from './jobPermissions';
+import { isSameOriginBrowserRequest } from './browserRequestOrigin';
 
 // Publishing writes the manifest beside the runner notebook in the app's publisher-owned folder, outside
 // the git-backed source and client/dist, so it is never served publicly.
@@ -380,8 +381,19 @@ await createApp({
   onPluginsReady: async (appkit) => {
     appkit.server.extend((app) => {
       // These responses contain per-viewer filenames and results, never shared cache entries.
-      app.use('/api/designer', (_req, res, next) => {
+      app.use('/api/designer', (req, res, next) => {
         res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+        if (!isSameOriginBrowserRequest({
+          origin: req.get('origin'),
+          // Apps ingress can rewrite Host; the runtime URL names the public origin.
+          appUrl: process.env.DATABRICKS_APP_URL || `${req.protocol}://${req.get('host')}`,
+          fetchSite: req.get('sec-fetch-site'),
+        })) {
+          res.status(403).json({ error: 'Open the App directly to use its APIs.' });
+          return;
+        }
         next();
       });
 

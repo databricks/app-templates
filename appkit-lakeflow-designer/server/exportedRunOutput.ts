@@ -1,3 +1,4 @@
+import { isHtmlOutput } from '../shared/htmlOutputs';
 import { DISPLAY_ROW_LIMIT, summarizeResultPreview } from '../shared/resultPreview';
 import { FILE_OUTPUTS_MIME_TYPE, MAX_OUTPUT_FILES, parseFileOutputBehavior, type WrittenFiles } from '../shared/fileOutputs';
 import { isRecord } from '../shared/values';
@@ -82,7 +83,7 @@ function toDisplayTable(entry: unknown) {
 }
 
 function resultEntries(results: unknown): unknown[] {
-  if (isRecord(results) && (results.type === 'table' || results.type === 'mimeBundle')) return [results];
+  if (isRecord(results) && (results.type === 'table' || results.type === 'mimeBundle' || results.type === 'htmlSandbox' || results.type === 'html')) return [results];
   return isRecord(results) && Array.isArray(results.data) ? results.data : [];
 }
 
@@ -152,6 +153,42 @@ function writtenFiles(results: unknown): WrittenFiles[] {
   });
 }
 
+// Only runner-marked HTML cells can become App HTML blocks. Other rich displays stay private.
+function htmlOutputs(source: unknown, results: unknown): Record<string, unknown>[] {
+  if (typeof source !== 'string') return [];
+  const markers = [...source.matchAll(/^# designer-app-html-output: (.+)$/gm)];
+  if (markers.length !== 1) return [];
+  let node: unknown;
+  try {
+    node = JSON.parse(markers[0][1]);
+  } catch {
+    return [];
+  }
+  if (typeof node !== 'string' || node === '') return [];
+  const entries = resultEntries(results).flatMap((entry) => {
+    if (!isRecord(entry)) return [];
+    if (entry.type === 'mimeBundle' && isRecord(entry.data) && 'text/html' in entry.data) {
+      return [entry.data['text/html']];
+    }
+    return entry.type === 'htmlSandbox' || entry.type === 'html' ? [entry.data] : [];
+  });
+  if (entries.length === 0) return [];
+  const binding = { kind: 'html', target_node: node };
+  if (entries.length !== 1 || !isHtmlOutput(entries[0])) {
+    return [{
+      ...binding,
+      status: 'error',
+      error: {
+        type: 'HtmlOutputError',
+        message: entries.length !== 1
+          ? 'The HTML operator must display exactly one HTML page.'
+          : 'The HTML output is invalid or exceeds the 4,194,304-character limit. Reduce the page size or its input data.',
+      },
+    }];
+  }
+  return [{ ...binding, status: 'ok', html: entries[0] }];
+}
+
 // MIME metadata must not consume a table ordinal when pairing results with display calls.
 export function exportedModelToRunPayload(exportedHtml: unknown): string | undefined {
   const model = decodeNotebookModel(exportedHtml);
@@ -165,6 +202,7 @@ export function exportedModelToRunPayload(exportedHtml: unknown): string | undef
     if (!isRecord(command)) {
       continue;
     }
+    outputs.push(...htmlOutputs(command.command, command.results));
     const keys = displayedCtxKeys(command.command);
     for (const [nodeId, state] of runtimeNodeStates(command.results)) {
       states.set(nodeId, state);

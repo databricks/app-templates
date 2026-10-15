@@ -51,6 +51,7 @@ import type { RunState } from './useDesignerRun';
 import { useDesignerRun } from './useDesignerRun';
 import type { FollowedRunState } from './useFollowedRun';
 import { useFollowedRun } from './useFollowedRun';
+import { OutputHtml } from './OutputHtml';
 import type { MatchedOutput, OkPayload, RunOutcome, RunSnapshot } from './payload';
 
 const EMPTY_LANDING_MESSAGES = {
@@ -867,6 +868,7 @@ function PublishedOutputBlock({
   return (
     <OutputSection
       downloadRequest={downloadRunId && block.fileOutput ? { runId: downloadRunId, outputId: block.id } : undefined}
+      executionKey={downloadRunId}
       output={{ ...output, title: outputBlockTitle(block), chartSpec: block.chartSpec }}
       onRetry={onRetry}
     />
@@ -903,11 +905,13 @@ const FILE_OUTPUT_LABELS: Record<FileOutputBehavior, string> = {
 };
 
 export function OutputSection({
+  executionKey,
   output,
   onRetry,
   downloadRequest,
 }: {
   output: MatchedOutput;
+  executionKey?: string;
   onRetry: () => void;
   downloadRequest?: { runId: string; outputId: string };
 }) {
@@ -917,6 +921,7 @@ export function OutputSection({
   return (
     <section className="border-border border-t [&>*]:border-t-0">
       <OutputHeading title={output.title} />
+      {outcome.outcome === 'html' ? <OutputHtml key={`${output.key}:${executionKey}`} html={outcome.html} title={output.title} /> : null}
       {outcome.outcome === 'result' ? (
         <ResultSection payload={outcome.payload} chartSpec={output.chartSpec} />
       ) : null}

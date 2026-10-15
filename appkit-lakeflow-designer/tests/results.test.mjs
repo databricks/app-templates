@@ -174,7 +174,7 @@ const GROUP_ENVIRONMENT_BLOCKS = ENVIRONMENT_BLOCKS.map((block) => ({
 for (const environment of ['prod', 'dev']) {
   test(`native group-only state renders the ${environment} branch without member state`, () => {
     const manifest = parseAppManifest({
-      version: 6, appName: 'Environment branches', blocks: GROUP_ENVIRONMENT_BLOCKS, parameters: [],
+      version: 7, appName: 'Environment branches', blocks: GROUP_ENVIRONMENT_BLOCKS, parameters: [],
     });
     const commands = [
       ...['prod', 'dev'].map((nodeId) => ({
@@ -274,7 +274,7 @@ test('missing or malformed parent state does not hide an empty output', () => {
 });
 
 test('optional execution metadata preserves valid fields and ignores malformed values', () => {
-  const base = { version: 6, appName: 'Branch outputs', blocks: ENVIRONMENT_BLOCKS, parameters: [] };
+  const base = { version: 7, appName: 'Branch outputs', blocks: ENVIRONMENT_BLOCKS, parameters: [] };
   for (const disabled of [true, false]) {
     const parsed = parseAppManifest({
       ...base, blocks: [{ ...ENVIRONMENT_BLOCKS[0], disabled, parentGroupId: 'group_prod' }],
@@ -366,7 +366,7 @@ test('initial placeholders remain visible without recorded runtime state', () =>
 });
 
 test('optional visibility preferences preserve booleans and safely ignore other values', () => {
-  const base = { version: 6, appName: 'Branch outputs', blocks: ENVIRONMENT_BLOCKS, parameters: [] };
+  const base = { version: 7, appName: 'Branch outputs', blocks: ENVIRONMENT_BLOCKS, parameters: [] };
   for (const value of [true, false]) {
     const parsed = parseAppManifest({
       ...base,
@@ -388,7 +388,7 @@ test('optional visibility preferences preserve booleans and safely ignore other 
 
 test('legacy app-wide visibility does not hide blocks without their own preference', () => {
   const parsed = parseAppManifest({
-    version: 6, appName: 'Branch outputs', blocks: ENVIRONMENT_BLOCKS, parameters: [],
+    version: 7, appName: 'Branch outputs', blocks: ENVIRONMENT_BLOCKS, parameters: [],
     hideOutputsUntilResults: true,
   });
   assert.equal(Object.hasOwn(parsed, 'hideOutputsUntilResults'), false);
@@ -1084,4 +1084,66 @@ test('missing client metadata does not imply completeness or break rendering', (
   assert.equal(payload.truncated, null);
   assert.equal(payload.total_row_count, undefined);
   assert.match(footer(payload), /10 returned rows/);
+});
+
+const HTML_BLOCK = { type: 'output', id: 'page', nodeId: 'html_1', kind: 'html', label: 'Report' };
+const htmlCommand = (html, extra = {}) => ({
+  command: '# designer-app-html-output: "html_1"',
+  results: { type: 'listResults', data: [{ type: 'mimeBundle', data: { 'text/html': html } }] },
+  ...extra,
+});
+
+test('binds exported HTML to its selected node alongside a table, ignoring unrelated HTML', () => {
+  const markup = '<h1>東京</h1><script>const report = window.inputs;</script>';
+  const result = matchedRunOutputs([HTML_BLOCK, { type: 'output', id: 'table', nodeId: 'source', port: 'data', label: 'Rows' }], [
+    htmlCommand('<h1>unselected</h1>', { command: 'displayHTML("unselected")' }),
+    htmlCommand(markup),
+    { command: 'display(ctx["source.data"])', results: displayTable(3, false) },
+  ]);
+  assert.equal(result.outcome, 'outputs');
+  assert.deepEqual(result.outputs[0].outcome, { outcome: 'html', html: markup });
+  assert.equal(result.outputs[1].outcome.payload.rows.length, 3);
+  assert.equal(result.outputs.length, 2);
+  const rendered = renderToStaticMarkup(createElement(OutputSection, { output: result.outputs[0], onRetry() {} }));
+  assert.match(rendered, /sandbox="allow-scripts"/);
+  assert.match(rendered, /title="Report"/);
+  assert.match(rendered, /srcDoc=/i);
+  assert.doesNotMatch(rendered, /allow-same-origin/);
+});
+
+test('refuses oversized or ambiguous HTML while retaining valid siblings', () => {
+  for (const results of [
+    { type: 'mimeBundle', data: { 'text/html': 'x'.repeat(4 * 1024 * 1024 + 1) } },
+    { type: 'listResults', data: ['one', 'two'].map((html) => ({ type: 'mimeBundle', data: { 'text/html': html } })) },
+  ]) {
+    const result = matchedRunOutputs([HTML_BLOCK], [htmlCommand('', { results })]);
+    assert.equal(result.outputs[0].outcome.outcome, 'computeError');
+    assert.equal(result.outputs[0].outcome.payload.error.type, 'HtmlOutputError');
+  }
+});
+
+test('HTML selection cannot bind a table or an HTML result with a different node', () => {
+  const result = matchedRunOutputs([HTML_BLOCK], [
+    htmlCommand('<h1>Other</h1>', { command: '# designer-app-html-output: "other"' }),
+    { command: 'display(ctx["html_1.data"])', results: displayTable(1, false) },
+  ]);
+  assert.equal(result.outputs[0].outcome.outcome, 'missing');
+});
+
+test('supports direct sandbox results and disabled HTML nodes', () => {
+  const html = '<p>HTML</p>';
+  const result = matchedRunOutputs([HTML_BLOCK], [htmlCommand('', { results: { type: 'htmlSandbox', data: html } })]);
+  assert.deepEqual(result.outputs[0].outcome, { outcome: 'html', html });
+  const disabled = matchedRunOutputs([HTML_BLOCK], [{ command: '', results: nodeState('html_1', true) }]);
+  assert.equal(disabled.outputs[0].disabled, true);
+  assert.equal(renderToStaticMarkup(createElement(OutputSection, { output: disabled.outputs[0], onRetry() {} })), '');
+});
+
+test('manifest retains HTML without a port and discards contradictory output declarations', () => {
+  const manifest = parseAppManifest({ version: 7, appName: 'HTML app', parameters: [], blocks: [
+    HTML_BLOCK, { ...HTML_BLOCK, id: 'bad', port: 'data' }, { type: 'output', id: 'no-port', nodeId: 'source' },
+  ] });
+  assert.equal(manifest.blocks.length, 1);
+  assert.equal(manifest.blocks[0].kind, 'html');
+  assert.equal(manifest.blocks[0].port, undefined);
 });

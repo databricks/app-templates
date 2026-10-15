@@ -20,7 +20,7 @@ let ParameterForm, parseAppManifest, initialValuesFor;
 let instance = 0;
 const harnessKey = Symbol.for('designer-upload-route-tests');
 const originalRuntimeEnv = Object.fromEntries(
-  ['DATABRICKS_JOB_ID', 'DATABRICKS_APP_ID', 'DATABRICKS_CLIENT_ID'].map((name) => [name, process.env[name]]),
+  ['DATABRICKS_JOB_ID', 'DATABRICKS_APP_ID', 'DATABRICKS_CLIENT_ID', 'DATABRICKS_APP_URL'].map((name) => [name, process.env[name]]),
 );
 
 before(async () => {
@@ -120,7 +120,7 @@ after(async () => {
 });
 
 const manifest = {
-  version: 6,
+  version: 7,
   appName: 'Uploads',
   storage: {
     volume: 'main.default.designer_app1',
@@ -249,6 +249,7 @@ async function serverHarness(options = {}) {
     },
   };
   process.env.DATABRICKS_JOB_ID = '100';
+  process.env.DATABRICKS_APP_URL = 'https://app.example.test';
   if (appId === undefined) delete process.env.DATABRICKS_APP_ID;
   else process.env.DATABRICKS_APP_ID = appId;
   if (clientId === undefined) delete process.env.DATABRICKS_CLIENT_ID;
@@ -277,7 +278,11 @@ async function serverHarness(options = {}) {
         response.headers[name] = value;
       },
     };
-    for (const handler of middleware) handler(req, res, () => {});
+    for (const handler of middleware) {
+      let next = false;
+      handler(req, res, () => { next = true; });
+      if (!next) return response;
+    }
     const handler = routes.get(`${method}:${path}`) ?? routes.get(`all:${path}`);
     assert.ok(handler, `registered ${method} ${path}`);
     await handler(req, res);
@@ -286,6 +291,40 @@ async function serverHarness(options = {}) {
   };
   return { state, request };
 }
+
+test('browser origin checks run before Designer API handlers', async () => {
+  const { state, request } = await serverHarness();
+  for (const [method, path] of [
+    ['get', '/api/designer/config'],
+    ['get', '/api/designer/run/:jobRunId'],
+    ['post', '/api/designer/run'],
+    ['delete', '/api/designer/run/:jobRunId'],
+    ['post', '/api/designer/uploads/:parameterName'],
+    ['get', '/api/designer/uploads/:parameterName/:reference/download'],
+    ['get', '/api/designer/run/:jobRunId/files/:outputId/:fileIndex/download'],
+  ]) {
+    const response = await request(method, path, {
+      headers: { origin: 'null', 'sec-fetch-site': 'cross-site' },
+    });
+    assert.equal(response.status, 403);
+    assert.equal(response.headers['Cache-Control'], 'no-store');
+    assert.equal(response.headers['X-Content-Type-Options'], 'nosniff');
+    assert.equal(response.headers['Cross-Origin-Resource-Policy'], 'same-origin');
+  }
+  assert.deepEqual(state.workspaceReads, []);
+  assert.deepEqual(state.reads, []);
+  assert.deepEqual(state.submissions, []);
+  assert.deepEqual(state.cancelled, []);
+});
+
+test('the App page works when ingress rewrites the Host header', async () => {
+  const { request } = await serverHarness();
+  const response = await request('get', '/api/designer/config', {
+    headers: { origin: 'https://app.example.test', host: 'internal-upstream:8000', 'sec-fetch-site': 'same-origin' },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.body.runnable, true);
+});
 
 function run(id, owner, params = {}) {
   return {
@@ -637,7 +676,7 @@ test('live status preserves ordinary parameters and leaves missing recorded valu
   const { state, request } = await serverHarness();
   state.manifest = {
     ...manifest,
-    version: 6,
+    version: 7,
     storage: undefined,
     parameters: [{ name: 'year', label: 'Year', type: 'text', defaultValue: '2015' }],
   };
@@ -962,7 +1001,7 @@ test('last-run and terminal status include file receipts without table preview o
 
 test('enables plugin storage on republish and binds a completed upload to a run', async () => {
   const { state, request } = await serverHarness();
-  state.manifest = { ...manifest, version: 6, storage: undefined, parameters: [] };
+  state.manifest = { ...manifest, version: 7, storage: undefined, parameters: [] };
   assert.equal((await request('post', '/api/designer/run')).status, 200);
   assert.deepEqual(state.apps.map((plugins) => plugins.map(({ name }) => name)), [['server']]);
 
@@ -1059,7 +1098,7 @@ test('denies cross-viewer results and cancellation at the server routes', async 
 test('requires ingress identity and uploaded references, and fails closed on invalid published configuration', async () => {
   const { state, request } = await serverHarness();
   const configured = await request('get', '/api/designer/config');
-  assert.equal(configured.body.manifest.version, 6);
+  assert.equal(configured.body.manifest.version, 7);
   assert.deepEqual(configured.body.manifest.storage, manifest.storage);
   assert.equal(configured.body.manifest.parameters[0].defaultValue, '');
   const missingIdentity = await request('post', '/api/designer/uploads/:parameterName', {

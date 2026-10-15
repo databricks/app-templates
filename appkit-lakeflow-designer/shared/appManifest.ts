@@ -65,13 +65,16 @@ const outputBlockSchema = z.pipe(
     id: nonEmptyString,
     label: stringOrEmpty,
     nodeId: stringOrEmpty,
-    port: stringOrEmpty,
+    port: z.optional(nonEmptyString),
+    kind: z.optional(z.literal('html')),
     chartSpec: z.catch(z.optional(chartSpecSchema), undefined),
     hideUntilResults: optionalBoolean,
     fileOutput: z.transform(parseFileOutput),
     disabled: optionalBoolean,
     parentGroupId: z.catch(z.optional(nonEmptyString), undefined),
-  }),
+  }).check(z.refine((block) => block.kind === 'html'
+    ? block.port === undefined && block.chartSpec === undefined && block.fileOutput === undefined
+    : block.port !== undefined)),
   z.transform(({ chartSpec, fileOutput, hideUntilResults, disabled, parentGroupId, ...block }) => ({
     ...block,
     ...(chartSpec === undefined ? {} : { chartSpec }),
@@ -101,7 +104,7 @@ function parseBlocks(raw: unknown): AppManifestBlock[] {
 // entries can be omitted; declarations governing file access must reject the entire manifest.
 export const appManifestSchema = z.pipe(
   z.object({
-    version: z.literal(6),
+    version: z.literal(7),
     appName: nonEmptyString,
     subtitle: z.unknown(),
     provenance: z.unknown(),

@@ -5,6 +5,10 @@ description: "Add tools to your agent and grant required permissions in databric
 
 # Add Tools & Grant Permissions
 
+> **Profile reminder:** All `databricks` CLI commands must include the profile from `.env`: `databricks <command> --profile <profile>`
+
+> Don't have the resource yet? See **create-tools** skill first.
+
 **After adding any MCP server to your agent, you MUST grant the app access in `databricks.yml`.**
 
 Without this, you'll get permission errors when the agent tries to use the resource.
@@ -48,32 +52,47 @@ See the `examples/` directory for complete YAML snippets:
 
 | File | Resource Type | When to Use |
 |------|--------------|-------------|
-| `uc-function.yaml` | Unity Catalog function | UC functions via MCP |
+| `uc-function.yaml` | Unity Catalog function | UC functions |
 | `uc-connection.yaml` | UC connection | External MCP servers |
 | `vector-search.yaml` | Vector search index | RAG applications |
 | `sql-warehouse.yaml` | SQL warehouse | SQL execution |
 | `serving-endpoint.yaml` | Model serving endpoint | Model inference |
 | `genie-space.yaml` | Genie space | Natural language data |
+| `lakebase-autoscaling.yaml` | Lakebase autoscaling postgres | Agent memory storage (autoscaling) |
 | `experiment.yaml` | MLflow experiment | Tracing (already configured) |
+| `app.yaml` | Databricks App (app-to-app) | Custom MCP servers hosted as Apps |
 | `custom-mcp-server.md` | Custom MCP apps | Apps starting with `mcp-*` |
 
 ## Custom MCP Servers (Databricks Apps)
 
-Apps are **not yet supported** as resource dependencies in `databricks.yml`. Manual permission grant required:
+Declare the target app as an `app` resource in `databricks.yml` — the bundle grants `CAN_USE` on deploy. Requires Databricks CLI **v0.298.0+**.
 
-**Step 1:** Get your agent app's service principal:
-```bash
-databricks apps get <your-agent-app-name> --output json | jq -r '.service_principal_name'
+```yaml
+resources:
+  apps:
+    agent_openai_agents_sdk:
+      resources:
+        - name: 'mcp_server'
+          app:
+            name: 'mcp-my-server'
+            permission: CAN_USE
 ```
 
-**Step 2:** Grant permission on the MCP server app:
-```bash
-databricks apps update-permissions <mcp-server-app-name> \
-  --service-principal <agent-app-service-principal> \
-  --permission-level CAN_USE
+See `examples/custom-mcp-server.md` for the full flow (agent code + YAML + deploy).
+
+## MCP Error Handling
+
+MCP tool calls can fail (network issues, permission errors, timeouts). The OpenAI Agents SDK catches tool errors by default and returns the error message to the LLM. To customize timeout behavior for MCP servers:
+
+```python
+mcp_server = McpServer(
+    url=f"{host}/api/2.0/mcp/genie/{space_id}",
+    name="genie",
+    timeout=60.0,  # Increase timeout for slow tools like Genie (default: 20s)
+)
 ```
 
-See `examples/custom-mcp-server.md` for detailed steps.
+For local function tools, see `create-tools` skill > `examples/local-python-tools.md` for `failure_error_function` patterns.
 
 ## Important Notes
 

@@ -25,7 +25,9 @@ test.describe('Ephemeral Mode (No Database)', () => {
 
     const secondResponse = await chatPage.getRecentAssistantMessage();
     const responseText = (
-      secondResponse.content || secondResponse.reasoning || ''
+      secondResponse.content ||
+      secondResponse.reasoning ||
+      ''
     ).toLowerCase();
 
     // The AI should remember that the user's favorite color is blue
@@ -65,7 +67,9 @@ test.describe('Ephemeral Mode (No Database)', () => {
 
     const response = await chatPage.getRecentAssistantMessage();
     const responseText = (
-      response.content || response.reasoning || ''
+      response.content ||
+      response.reasoning ||
+      ''
     ).toLowerCase();
 
     // The AI should NOT remember the name after refresh

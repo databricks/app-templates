@@ -1,0 +1,53 @@
+bundle:
+  name: vacation-rentals
+
+variables:
+  sql_warehouse_id:
+    description: SQL Warehouse ID
+  genie_space_id:
+    description: Default Genie Space ID
+  genie_space_name:
+    description: Genie Space for AI-powered data queries. Space IDs configured via plugin config.
+  postgres_branch:
+    description: Full Lakebase Postgres branch resource name. Obtain by running `databricks postgres list-branches projects/{project-id}`, select the desired item from the output array and use its .name value.
+  postgres_database:
+    description: Full Lakebase Postgres database resource name. Obtain by running `databricks postgres list-databases {branch-name}`, select the desired item from the output array and use its .name value. Requires the branch resource name.
+
+resources:
+  apps:
+    app:
+      name: 'vacation-rentals'
+      description: 'A Databricks App powered by AppKit'
+      source_code_path: ./
+      user_api_scopes:
+        - dashboards.genie
+
+      # The resources which this app has access to.
+      resources:
+        - name: sql-warehouse
+          sql_warehouse:
+            id: ${var.sql_warehouse_id}
+            permission: CAN_USE
+        - name: genie-space
+          genie_space:
+            name: ${var.genie_space_name}
+            space_id: ${var.genie_space_id}
+            permission: CAN_RUN
+        - name: postgres
+          postgres:
+            branch: ${var.postgres_branch}
+            database: ${var.postgres_database}
+            permission: CAN_CONNECT_AND_CREATE
+
+targets:
+  default:
+    default: true
+    workspace:
+      host: https://your-workspace.cloud.databricks.com
+
+    variables:
+      sql_warehouse_id: your_sql_warehouse_id
+      genie_space_id: your_genie_space_id
+      genie_space_name: Wanderbricks
+      postgres_branch: projects/{project-id}/branches/{branch-id}
+      postgres_database: projects/{project-id}/branches/{branch-id}/databases/{database-id}

@@ -2,12 +2,29 @@
 """
 Quickstart setup script for Databricks agent development.
 
-This script handles:
-- Checking prerequisites (uv, nvm, Node 20, Databricks CLI)
-- Databricks authentication (OAuth)
-- MLflow experiment creation
-- Environment variable configuration (.env)
-- Lakebase instance setup (for memory-enabled templates)
+NOTE: Keep this comment up to date when editing the script.
+
+Steps:
+  1. Check prerequisites — uv, Node.js (>=20.19/22.12/23), npm, Databricks CLI.
+     Exit if any are missing or Node version is unsupported by Vite.
+  2. Set up .env — copy .env.example → .env (or create a minimal one).
+  3. Databricks auth — use --profile if provided, otherwise list existing profiles
+     for interactive selection, or create a new DEFAULT profile with --host / prompt.
+     Validate the profile; authenticate via OAuth if invalid. Save profile to .env.
+  4. App binding (optional) — if --app-name is provided (or entered interactively),
+     update databricks.yml with the app name, then fetch the app's resources via API.
+     If the app has an experiment resource, use that ID instead of creating a new one.
+     If the app has a postgres or database resource, build the lakebase config from it
+     (and resolve the endpoint name for local dev .env via the API).
+  5. MLflow experiment — if not already set from app resources (step 4), get username,
+     seed MLFLOW_EXPERIMENT_ID from databricks.yml if not in .env, then create or
+     reuse an experiment. Update .env and databricks.yml.
+  6. Lakebase setup — skip if already resolved from app resources (step 4).
+     Otherwise: if the template requires Lakebase (has LAKEBASE_* in databricks.yml)
+     or CLI flags are provided, set up via CLI args or interactive selection.
+     For non-memory templates, optionally offer Lakebase for chat UI history.
+     Update databricks.yml resources and env vars.
+  7. Print summary with links to experiment and Lakebase.
 
 Usage:
     uv run quickstart [OPTIONS]
@@ -15,7 +32,10 @@ Usage:
 Options:
     --profile NAME    Use specified Databricks profile (non-interactive)
     --host URL        Databricks workspace URL (for initial setup)
-    --lakebase NAME   Lakebase instance name (for memory features)
+    --lakebase-autoscaling-endpoint NAME  Autoscaling Lakebase endpoint name
+    --lakebase-create-new NAME  Create a new Lakebase autoscaling project with this name
+    --skip-lakebase   Skip Lakebase setup (non-interactive / CI use)
+    --app-name NAME   Existing Databricks app name to bind this bundle to
     -h, --help        Show this help message
 """
 
@@ -30,12 +50,30 @@ import subprocess
 import sys
 from pathlib import Path
 
+from ruamel.yaml import YAML
+from ruamel.yaml.scalarstring import DoubleQuotedScalarString
+
+
+def _load_yml(path: Path):
+    """Load a YAML file in round-trip mode (preserves comments and formatting)."""
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    yaml.indent(sequence=4, offset=2)
+    with open(path) as f:
+        return yaml, yaml.load(f)
+
+
+def _save_yml(yaml: YAML, data, path: Path) -> None:
+    """Write YAML back to file using the same loader instance (preserves formatting)."""
+    with open(path, "w") as f:
+        yaml.dump(data, f)
+
 
 def print_header(text: str) -> None:
     """Print a section header."""
     print(f"\n{'=' * 67}")
     print(text)
-    print('=' * 67)
+    print("=" * 67)
 
 
 def print_step(text: str) -> None:
@@ -82,9 +120,12 @@ def run_command(
 ) -> subprocess.CompletedProcess:
     """Run a command and return the result."""
     merged_env = {**os.environ, **(env or {})}
+    # cmd is always an argument list built by this script (never shell=True)
     if show_output:
-        return subprocess.run(cmd, check=check, env=merged_env)
-    return subprocess.run(cmd, capture_output=capture_output, text=True, check=check, env=merged_env)
+        return subprocess.run(cmd, check=check, env=merged_env)  # nosemgrep: dangerous-subprocess-use-audit
+    return subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
+        cmd, capture_output=capture_output, text=True, check=check, env=merged_env
+    )
 
 
 def get_command_output(cmd: list[str], env: dict = None) -> str:
@@ -138,12 +179,82 @@ def check_missing_prerequisites(prereqs: dict[str, bool]) -> list[str]:
         if platform.system() == "Darwin":
             missing.append("Databricks CLI - Install with: brew install databricks/tap/databricks")
         else:
-            missing.append("Databricks CLI - Install with: curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh")
+            missing.append(
+                "Databricks CLI - Install with: curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh"
+            )
 
     if missing:
-        missing.append("Note: These install commands are for Unix/macOS. For Windows, please visit the official documentation for each tool.")
+        missing.append(
+            "Note: These install commands are for Unix/macOS. For Windows, please visit the official documentation for each tool."
+        )
 
     return missing
+
+
+def check_node_version() -> str | None:
+    """Check if the installed Node.js version meets Vite's requirements.
+
+    Vite requires Node.js >=20.19, >=22.12, or >=23.
+    Node 21.x is an odd-numbered release and not supported.
+
+    Returns None if the version is OK, or an error string if not.
+    """
+    if not command_exists("node"):
+        return None  # Missing node is handled by check_missing_prerequisites
+
+    try:
+        version_str = get_command_output(["node", "--version"])
+    except Exception:
+        return None
+
+    match = re.match(r"v(\d+)\.(\d+)\.(\d+)", version_str)
+    if not match:
+        return None
+
+    major, minor = int(match.group(1)), int(match.group(2))
+
+    # Node 21.x is odd-numbered and not a Vite target
+    if major == 21:
+        return (
+            f"Node.js {version_str} is not supported by Vite (odd-numbered release).\n"
+            "  Please install Node.js 20.19+, 22.12+, or 23+.\n"
+            "  Run: nvm install 22"
+        )
+
+    # Check supported version ranges
+    if major == 20 and minor >= 19:
+        return None
+    if major == 22 and minor >= 12:
+        return None
+    if major >= 23:
+        return None
+
+    # Version is too old or unsupported
+    if major == 20:
+        return (
+            f"Node.js {version_str} is too old for Vite (requires 20.19+).\n"
+            f"  Your version: {version_str}\n"
+            "  Run: nvm install 20  (to get latest 20.x)"
+        )
+    if major == 22:
+        return (
+            f"Node.js {version_str} is too old for Vite (requires 22.12+).\n"
+            f"  Your version: {version_str}\n"
+            "  Run: nvm install 22  (to get latest 22.x)"
+        )
+
+    if major < 20:
+        return (
+            f"Node.js {version_str} is too old for Vite (requires 20.19+).\n"
+            f"  Your version: {version_str}\n"
+            "  Run: nvm install 22"
+        )
+
+    return (
+        f"Node.js {version_str} is not supported by Vite.\n"
+        "  Vite requires Node.js 20.19+, 22.12+, or 23+.\n"
+        "  Run: nvm install 22"
+    )
 
 
 def setup_env_file() -> None:
@@ -171,7 +282,12 @@ def setup_env_file() -> None:
 
 
 def update_env_file(key: str, value: str) -> None:
-    """Update or add a key-value pair in .env."""
+    """Update or add a key-value pair in .env.
+
+    Priority: if a commented-out line (``# KEY=...``) exists, replace it
+    in-place so the value stays in its original position.  Any extra active
+    or commented duplicates are removed.
+    """
     env_file = Path(".env")
 
     if not env_file.exists():
@@ -180,13 +296,25 @@ def update_env_file(key: str, value: str) -> None:
 
     content = env_file.read_text()
 
-    # Check if key exists (with or without quotes, with any value)
-    pattern = rf'^{re.escape(key)}=.*$'
-    if re.search(pattern, content, re.MULTILINE):
-        # Replace existing key
-        content = re.sub(pattern, f"{key}={value}", content, flags=re.MULTILINE)
+    active_pattern = rf"^{re.escape(key)}=.*$"
+    commented_pattern = rf"^#\s*{re.escape(key)}=.*$"
+
+    has_active = re.search(active_pattern, content, re.MULTILINE)
+    has_commented = re.search(commented_pattern, content, re.MULTILINE)
+
+    if has_commented:
+        # Replace at the commented line's position. Remove all active and
+        # commented duplicates, then insert the value where the first
+        # commented line was.
+        insert_pos = has_commented.start()
+        content = re.sub(commented_pattern + r"\n?", "", content, flags=re.MULTILINE)
+        content = re.sub(active_pattern + r"\n?", "", content, flags=re.MULTILINE)
+        content = content[:insert_pos] + f"{key}={value}\n" + content[insert_pos:]
+    elif has_active:
+        # No commented line — replace the active line in-place
+        content = re.sub(active_pattern, f"{key}={value}", content, flags=re.MULTILINE)
     else:
-        # Add new key
+        # Key doesn't exist at all — append
         if not content.endswith("\n"):
             content += "\n"
         content += f"{key}={value}\n"
@@ -212,10 +340,12 @@ def get_databricks_profiles() -> list[dict]:
                 # Profile name is the first column
                 parts = line.split()
                 if parts:
-                    profiles.append({
-                        "name": parts[0],
-                        "line": line,
-                    })
+                    profiles.append(
+                        {
+                            "name": parts[0],
+                            "line": line,
+                        }
+                    )
 
         return profiles
     except Exception:
@@ -247,7 +377,7 @@ def authenticate_profile(profile_name: str, host: str = None) -> bool:
 
     try:
         # Run interactively so user can see browser prompt
-        result = subprocess.run(cmd)
+        result = subprocess.run(cmd)  # nosemgrep: dangerous-subprocess-use-audit
         return result.returncode == 0
     except Exception as e:
         print_error(f"Authentication failed: {e}")
@@ -318,7 +448,9 @@ def setup_databricks_auth(profile_arg: str = None, host_arg: str = None) -> str:
             host = host_arg
             print(f"Using specified host: {host}")
         else:
-            host = input("\nPlease enter your Databricks host URL\n(e.g., https://your-workspace.cloud.databricks.com): ").strip()
+            host = input(
+                "\nPlease enter your Databricks host URL\n(e.g., https://your-workspace.cloud.databricks.com): "
+            ).strip()
 
             if not host:
                 print_error("Databricks host is required")
@@ -339,14 +471,30 @@ def setup_databricks_auth(profile_arg: str = None, host_arg: str = None) -> str:
     return profile_name
 
 
+def get_databricks_host(profile_name: str) -> str:
+    """Get the Databricks workspace host URL from the profile."""
+    try:
+        result = run_command(
+            ["databricks", "auth", "env", "--profile", profile_name, "--output", "json"],
+            check=False,
+        )
+        if result.returncode == 0:
+            env_data = json.loads(result.stdout)
+            env_vars = env_data.get("env", {})
+            host = env_vars.get("DATABRICKS_HOST", "")
+            return host.rstrip("/")
+    except Exception:
+        pass
+    return ""
+
+
 def get_databricks_username(profile_name: str) -> str:
     """Get the current Databricks username."""
     try:
-        result = run_command(
-            ["databricks", "-p", profile_name, "current-user", "me", "--output", "json"]
-        )
-        user_data = json.loads(result.stdout)
-        return user_data.get("userName", "")
+        w = get_workspace_client(profile_name)
+        if w:
+            return w.current_user.me().user_name or ""
+        raise RuntimeError("Could not connect to Databricks workspace")
     except Exception as e:
         print_error(f"Failed to get Databricks username: {e}")
         print_troubleshooting_api()
@@ -354,34 +502,43 @@ def get_databricks_username(profile_name: str) -> str:
 
 
 def create_mlflow_experiment(profile_name: str, username: str) -> tuple[str, str]:
-    """Create an MLflow experiment and return (name, id)."""
-    print_step("Creating MLflow experiment...")
+    """Create (or reuse) an MLflow experiment and return (name, id)."""
+    print_step("Setting up MLflow experiment...")
+
+    w = get_workspace_client(profile_name)
+    if not w:
+        print_error("Could not connect to Databricks workspace")
+        print_troubleshooting_api()
+        sys.exit(1)
+
+    # Check if we already have an experiment ID in .env (idempotency)
+    existing_id = get_env_value("MLFLOW_EXPERIMENT_ID")
+    if existing_id:
+        try:
+            exp = w.experiments.get_experiment(experiment_id=existing_id).experiment
+            if exp and exp.name:
+                print_success(f"Reusing existing experiment '{exp.name}' (ID: {existing_id})")
+                return exp.name, existing_id
+        except Exception:
+            pass
+        print("Existing experiment not found or invalid, creating a new one...")
 
     experiment_name = f"/Users/{username}/agents-on-apps"
 
     try:
         # Try to create with default name
-        result = run_command(
-            ["databricks", "-p", profile_name, "experiments", "create-experiment",
-             experiment_name, "--output", "json"],
-            check=False
-        )
-
-        if result.returncode == 0:
-            experiment_id = json.loads(result.stdout).get("experiment_id", "")
+        try:
+            experiment_id = w.experiments.create_experiment(name=experiment_name).experiment_id or ""
             print_success(f"Created experiment '{experiment_name}' with ID: {experiment_id}")
             return experiment_name, experiment_id
+        except Exception:
+            pass
 
         # Name already exists, try with random suffix
         print("Experiment name already exists, creating with random suffix...")
         random_suffix = secrets.token_hex(4)
         experiment_name = f"/Users/{username}/agents-on-apps-{random_suffix}"
-
-        result = run_command(
-            ["databricks", "-p", profile_name, "experiments", "create-experiment",
-             experiment_name, "--output", "json"]
-        )
-        experiment_id = json.loads(result.stdout).get("experiment_id", "")
+        experiment_id = w.experiments.create_experiment(name=experiment_name).experiment_id or ""
         print_success(f"Created experiment '{experiment_name}' with ID: {experiment_id}")
         return experiment_name, experiment_id
 
@@ -392,13 +549,13 @@ def create_mlflow_experiment(profile_name: str, username: str) -> tuple[str, str
 
 
 def check_lakebase_required() -> bool:
-    """Check if app.yaml has LAKEBASE_INSTANCE_NAME configured."""
-    app_yaml = Path("app.yaml")
-    if not app_yaml.exists():
+    """Check if databricks.yml has Lakebase (autoscaling) configuration."""
+    databricks_yml = Path("databricks.yml")
+    if not databricks_yml.exists():
         return False
 
-    content = app_yaml.read_text()
-    return "LAKEBASE_INSTANCE_NAME" in content
+    content = databricks_yml.read_text()
+    return "LAKEBASE_AUTOSCALING_ENDPOINT" in content
 
 
 def get_env_value(key: str) -> str:
@@ -408,77 +565,768 @@ def get_env_value(key: str) -> str:
         return ""
 
     content = env_file.read_text()
-    pattern = rf'^{re.escape(key)}=(.*)$'
+    pattern = rf"^{re.escape(key)}=(.*)$"
     match = re.search(pattern, content, re.MULTILINE)
     if match:
         return match.group(1).strip().strip('"').strip("'")
     return ""
 
 
-def validate_lakebase_instance(profile_name: str, lakebase_name: str) -> bool:
-    """Validate that the Lakebase instance exists and user has access."""
-    print(f"Validating Lakebase instance '{lakebase_name}'...")
+def get_existing_lakebase_config() -> dict | None:
+    """Read existing Lakebase config from .env, if any.
 
-    result = run_command(
-        ["databricks", "-p", profile_name, "postgres", "get-project",
-         f"projects/{lakebase_name}", "--output", "json"],
-        check=False
-    )
+    Returns:
+        Dict with either:
+        - {"type": "autoscaling", "endpoint": str}
+        - None if no Lakebase config found
+    """
+    endpoint = get_env_value("LAKEBASE_AUTOSCALING_ENDPOINT")
+    if endpoint:
+        return {"type": "autoscaling", "endpoint": endpoint}
 
-    if result.returncode == 0:
-        print_success(f"Lakebase instance '{lakebase_name}' validated")
-        return True
+    return None
 
-    # Check if postgres command is not recognized (old CLI version)
-    if 'unknown command "postgres" for "databricks"' in (result.stderr or ""):
-        print_error("The 'databricks postgres' command requires a newer version of the Databricks CLI.")
-        print("  Please upgrade: https://docs.databricks.com/dev-tools/cli/install.html")
-        return False
 
-    error_msg = result.stderr.lower() if result.stderr else ""
-    if "not found" in error_msg:
-        print_error(f"Lakebase instance '{lakebase_name}' not found. Please check the instance name.")
-    elif "permission" in error_msg or "forbidden" in error_msg or "unauthorized" in error_msg:
-        print_error(f"No permission to access Lakebase instance '{lakebase_name}'")
-    else:
-        print_error(f"Failed to validate Lakebase instance: {result.stderr.strip() if result.stderr else 'Unknown error'}")
+def validate_lakebase_config(profile_name: str, config: dict) -> bool:
+    """Validate that an existing Lakebase config from .env is accessible in the current workspace."""
+    if config["type"] == "autoscaling":
+        return (
+            validate_lakebase_autoscaling_endpoint(profile_name, config["endpoint"])
+            is not None
+        )
     return False
 
 
-def setup_lakebase(profile_name: str, lakebase_arg: str = None) -> str:
-    """Set up Lakebase instance for memory features."""
-    print_step("Setting up Lakebase instance for memory...")
+def get_workspace_client(profile_name: str):
+    """Create a WorkspaceClient with the given profile."""
+    try:
+        from databricks.sdk import WorkspaceClient
 
-    lakebase_name = None
+        return WorkspaceClient(profile=profile_name)
+    except Exception:
+        return None
 
-    # If --lakebase was provided, use it directly
-    if lakebase_arg:
-        lakebase_name = lakebase_arg
-        print(f"Using provided Lakebase instance: {lakebase_name}")
-    else:
-        # Check if already set in .env
-        existing = get_env_value("LAKEBASE_INSTANCE_NAME")
-        if existing:
-            print(f"Found existing Lakebase instance in .env: {existing}")
-            new_value = input("Press Enter to keep this value, or enter a new instance name: ").strip()
-            lakebase_name = new_value if new_value else existing
+
+def get_app_resources(profile_name: str, app_name: str) -> list[dict]:
+    """Fetch resources from an existing Databricks app.
+
+    Returns the resources list from the apps API, or empty list on failure.
+    """
+    print(f"Fetching resources from app '{app_name}'...")
+    result = run_command(
+        ["databricks", "-p", profile_name, "apps", "get", app_name, "--output", "json"],
+        check=False,
+    )
+    if result.returncode != 0:
+        print(
+            f"  Could not fetch app details: "
+            f"{result.stderr.strip() if result.stderr else 'Unknown error'}"
+        )
+        return []
+    try:
+        data = json.loads(result.stdout)
+        resources = data.get("resources", [])
+        if resources:
+            print_success(f"Found {len(resources)} resource(s) in app '{app_name}'")
         else:
-            # Interactive mode - prompt for instance name
-            lakebase_name = input("Please enter your Lakebase instance name: ").strip()
+            print(f"  App '{app_name}' has no resources configured")
+        return resources
+    except (json.JSONDecodeError, KeyError):
+        return []
 
-            if not lakebase_name:
-                print_error("Lakebase instance name is required for memory features")
-                sys.exit(1)
 
-    # Validate that the Lakebase instance exists and user has access
-    if not validate_lakebase_instance(profile_name, lakebase_name):
+def create_lakebase_instance(profile_name: str, name: str = None) -> dict:
+    """Create a new Lakebase autoscaling instance (project + branch).
+
+    Args:
+        name: Optional project name. If None, prompts the user via stdin.
+
+    Returns:
+        Dict with {"type": "autoscaling", "endpoint": str}
+    """
+    w = get_workspace_client(profile_name)
+    if not w:
+        print_error("Could not connect to Databricks. Check your CLI profile.")
         sys.exit(1)
 
-    # Update .env with the Lakebase instance name
-    update_env_file("LAKEBASE_INSTANCE_NAME", lakebase_name)
-    print_success(f"Lakebase instance name '{lakebase_name}' saved to .env")
+    if name is None:
+        name = input("Enter a name for the new Lakebase autoscaling project: ").strip()
+    if not name:
+        print_error("Instance name is required")
+        sys.exit(1)
 
-    return lakebase_name
+    print(f"\nCreating Lakebase autoscaling project '{name}'...")
+    try:
+        from databricks.sdk.service.postgres import Branch, BranchSpec, Project, ProjectSpec
+
+        project_op = w.postgres.create_project(
+            project=Project(spec=ProjectSpec(display_name=name)),
+            project_id=name,
+        )
+        project = project_op.wait()
+        project_short = project.name.removeprefix("projects/")
+        print_success(f"Created project: {project_short}")
+
+        # Create a default branch
+        branch_id = f"{name}-branch"
+        branch_op = w.postgres.create_branch(
+            parent=project.name,
+            branch=Branch(spec=BranchSpec(no_expiry=True)),
+            branch_id=branch_id,
+        )
+        branch = branch_op.wait()
+        branch_name = (
+            branch.name.split("/branches/")[-1]
+            if "/branches/" in branch.name
+            else branch_id
+        )
+        print_success(f"Created branch: {branch_name}")
+
+        # Fetch the endpoint info (which also resolves branch/database paths)
+        endpoint_info = validate_lakebase_autoscaling_endpoint(
+            profile_name,
+            f"projects/{project_short}/branches/{branch_name}/endpoints/primary",
+        )
+        if not endpoint_info:
+            print_error(
+                "Could not determine endpoint name for the created Lakebase instance.\n"
+                "  Please find the endpoint name in the Databricks UI and use:\n"
+                f"  uv run quickstart --lakebase-autoscaling-endpoint <endpoint-name>"
+            )
+            sys.exit(1)
+
+        return {
+            "type": "autoscaling",
+            "endpoint": endpoint_info["endpoint"],
+            "host": endpoint_info["host"],
+            "branch": endpoint_info["branch"],
+            "database": endpoint_info["database"],
+        }
+    except Exception as e:
+        print_error(f"Failed to create Lakebase instance: {e}")
+        sys.exit(1)
+
+
+def _fetch_autoscaling_endpoint_info(
+    profile_name: str, project: str, branch: str
+) -> tuple[str, str]:
+    """Fetch endpoint info for an autoscaling Lakebase branch.
+
+    Returns (endpoint_path, host) where:
+    - endpoint_path is the full resource path (e.g. "projects/{id}/branches/{id}/endpoints/{id}")
+    - host is the connection hostname (e.g. "ep-xxx.database.us-west-2.cloud.databricks.com")
+
+    Returns ("", "") if not found.
+    """
+    result = run_command(
+        [
+            "databricks",
+            "-p",
+            profile_name,
+            "api",
+            "get",
+            f"/api/2.0/postgres/projects/{project}/branches/{branch}/endpoints",
+            "--output",
+            "json",
+        ],
+        check=False,
+    )
+    if result.returncode == 0 and result.stdout:
+        try:
+            data = json.loads(result.stdout)
+            endpoints = data.get("endpoints", [])
+            if endpoints:
+                ep = endpoints[0]
+                name = ep.get("name", "")
+                host = ep.get("status", {}).get("hosts", {}).get("host", "")
+                return name, host
+        except (json.JSONDecodeError, IndexError, KeyError):
+            pass
+    return "", ""
+
+
+def select_lakebase_interactive(profile_name: str) -> dict:
+    """Interactive Lakebase setup.
+
+    Flow:
+    1. New or existing?
+    2. New -> Create autoscaling project + branch, return endpoint
+    3. Existing -> ask for autoscaling endpoint
+
+    Returns:
+        Dict with {"type": "autoscaling", "endpoint": str}
+    """
+    print("\nLakebase Setup")
+    print("  1) Create a new Lakebase instance")
+    print("  2) Use an existing Lakebase instance")
+    print()
+
+    while True:
+        choice = input("Enter your choice (1 or 2): ").strip()
+        if choice in ("1", "2"):
+            break
+        print_error("Please enter 1 or 2")
+
+    if choice == "1":
+        return create_lakebase_instance(profile_name)
+
+    # Existing autoscaling instance - ask for endpoint name
+    endpoint = input("\nEnter the autoscaling Lakebase endpoint name: ").strip()
+    if not endpoint:
+        print_error("Endpoint name is required")
+        sys.exit(1)
+
+    return {"type": "autoscaling", "endpoint": endpoint}
+
+
+def validate_lakebase_autoscaling_endpoint(profile_name: str, endpoint: str) -> dict | None:
+    """Validate that the Lakebase autoscaling endpoint exists.
+
+    Uses the postgres API to verify the endpoint, then fetches the branch and
+    database paths needed for the DAB postgres resource in databricks.yml.
+
+    Returns a dict with {"endpoint": str, "host": str, "branch": str, "database": str}
+    on success, or None on failure.
+    """
+    print(f"Validating Lakebase autoscaling endpoint '{endpoint}'...")
+
+    # endpoint can be a full resource path (projects/p/branches/b/endpoints/e)
+    # or a legacy short name — build the API path accordingly
+    if endpoint.startswith("projects/"):
+        api_path = f"/api/2.0/postgres/{endpoint}"
+    else:
+        api_path = f"/api/2.0/postgres/endpoints/{endpoint}"
+
+    result = run_command(
+        [
+            "databricks",
+            "-p",
+            profile_name,
+            "api",
+            "get",
+            api_path,
+            "--output",
+            "json",
+        ],
+        check=False,
+    )
+
+    if result.returncode != 0:
+        error_msg = result.stderr.lower() if result.stderr else ""
+        if "not found" in error_msg or "404" in error_msg:
+            print_error(f"Lakebase autoscaling endpoint '{endpoint}' not found.")
+        elif "permission" in error_msg or "forbidden" in error_msg or "unauthorized" in error_msg:
+            print_error(f"No permission to access Lakebase endpoint '{endpoint}'")
+        else:
+            print_error(
+                f"Failed to validate Lakebase endpoint: {result.stderr.strip() if result.stderr else 'Unknown error'}"
+            )
+        return None
+
+    print_success(f"Lakebase autoscaling endpoint '{endpoint}' validated")
+    host = ""
+    branch = ""
+    try:
+        data = json.loads(result.stdout)
+        host = data.get("status", {}).get("hosts", {}).get("host", "")
+        branch = data.get("parent", "")
+    except (json.JSONDecodeError, KeyError):
+        pass
+
+    # Fetch database name from the branch
+    database = ""
+    if branch:
+        db_result = run_command(
+            [
+                "databricks",
+                "-p",
+                profile_name,
+                "api",
+                "get",
+                f"/api/2.0/postgres/{branch}/databases",
+                "--output",
+                "json",
+            ],
+            check=False,
+        )
+        if db_result.returncode == 0 and db_result.stdout:
+            try:
+                db_data = json.loads(db_result.stdout)
+                databases = db_data.get("databases", [])
+                if databases:
+                    database = databases[0].get("name", "")
+            except (json.JSONDecodeError, IndexError, KeyError):
+                pass
+
+    if not branch:
+        print_error(
+            "Could not resolve branch path from endpoint response "
+            "(missing 'parent' field). Please check the endpoint configuration."
+        )
+        return None
+    if not database:
+        print_error(
+            f"Could not resolve database from branch '{branch}' "
+            "(the databases API returned no results). Please check the endpoint configuration."
+        )
+        return None
+
+    return {"endpoint": endpoint, "host": host, "branch": branch, "database": database}
+
+
+def setup_lakebase(
+    profile_name: str,
+    username: str,
+    autoscaling_endpoint: str = None,
+    create_new_lakebase_proj: str = None,
+    purpose: str = "memory",
+) -> dict:
+    """Set up Lakebase autoscaling instance.
+
+    Args:
+        purpose: "memory" for agent memory templates, "ui" for chat UI conversation history.
+
+    Returns:
+        Dict with {"type": "autoscaling", "endpoint": str}
+    """
+    if purpose == "ui":
+        print_step("Setting up Lakebase for chat UI conversation history...")
+    else:
+        print_step("Setting up Lakebase instance for agent memory...")
+
+    # If --lakebase-create-new was provided, provision a new autoscaling project + branch
+    if create_new_lakebase_proj:
+        print(f"Creating new Lakebase autoscaling project: {create_new_lakebase_proj}")
+        selection = create_lakebase_instance(profile_name, create_new_lakebase_proj)
+        endpoint = selection["endpoint"]
+        update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", endpoint)
+        # Clear any stale provisioned instance name from a previous config
+        update_env_file("LAKEBASE_INSTANCE_NAME", "")
+
+        pg_host = selection.get("host", "")
+        if pg_host:
+            update_env_file("PGHOST", pg_host)
+            print_success(f"PGHOST set to '{pg_host}'")
+
+        update_env_file("PGUSER", username)
+        print_success(f"PGUSER set to '{username}'")
+
+        update_env_file("PGDATABASE", "databricks_postgres")
+        print_success("PGDATABASE set to 'databricks_postgres'")
+
+        print_success(f"Lakebase autoscaling endpoint saved to .env: {endpoint}")
+        return selection
+
+    # If --lakebase-autoscaling-endpoint was provided
+    if autoscaling_endpoint:
+        print(f"Using autoscaling Lakebase endpoint: {autoscaling_endpoint}")
+        endpoint_info = validate_lakebase_autoscaling_endpoint(profile_name, autoscaling_endpoint)
+        if not endpoint_info:
+            sys.exit(1)
+        update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", autoscaling_endpoint)
+        # Clear any stale provisioned instance name from a previous config
+        update_env_file("LAKEBASE_INSTANCE_NAME", "")
+
+        pg_host = endpoint_info.get("host", "")
+        if pg_host:
+            update_env_file("PGHOST", pg_host)
+            print_success(f"PGHOST set to '{pg_host}'")
+        else:
+            print_error(
+                "Could not resolve PGHOST from endpoint. "
+                "Local PostgreSQL connections may not work until PGHOST is set manually in .env."
+            )
+
+        update_env_file("PGUSER", username)
+        print_success(f"PGUSER set to '{username}'")
+
+        update_env_file("PGDATABASE", "databricks_postgres")
+        print_success("PGDATABASE set to 'databricks_postgres'")
+
+        print_success(
+            f"Lakebase autoscaling endpoint saved to .env: {autoscaling_endpoint}"
+        )
+        return {
+            "type": "autoscaling",
+            "endpoint": autoscaling_endpoint,
+            "host": pg_host,
+            "branch": endpoint_info["branch"],
+            "database": endpoint_info["database"],
+        }
+
+    # Interactive selection
+    selection = select_lakebase_interactive(profile_name)
+
+    endpoint = selection["endpoint"]
+    endpoint_info = validate_lakebase_autoscaling_endpoint(profile_name, endpoint)
+    if not endpoint_info:
+        sys.exit(1)
+    update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", endpoint)
+    # Clear any stale provisioned instance name from a previous config
+    update_env_file("LAKEBASE_INSTANCE_NAME", "")
+
+    pg_host = endpoint_info.get("host", "")
+    if pg_host:
+        update_env_file("PGHOST", pg_host)
+        print_success(f"PGHOST set to '{pg_host}'")
+    else:
+        print_error(
+            "Could not resolve PGHOST from endpoint. "
+            "Local PostgreSQL connections may not work until PGHOST is set manually in .env."
+        )
+
+    update_env_file("PGUSER", username)
+    print_success(f"PGUSER set to '{username}'")
+
+    update_env_file("PGDATABASE", "databricks_postgres")
+    print_success("PGDATABASE set to 'databricks_postgres'")
+
+    print_success(
+        f"Lakebase autoscaling endpoint saved to .env: {endpoint}"
+    )
+    # Merge branch/database from endpoint validation into selection
+    selection["branch"] = endpoint_info["branch"]
+    selection["database"] = endpoint_info["database"]
+
+    return selection
+
+
+def _replace_lakebase_env_vars(content: str, lakebase_config: dict) -> str:
+    """Remove all Lakebase env var lines and insert only the relevant ones.
+
+    Handles both active and commented-out LAKEBASE_ env vars, plus their
+    associated comment lines (e.g. "# Autoscaling Lakebase config").
+    """
+    lines = content.splitlines()
+    result = []
+    insert_idx = None
+    skip_next_value = False
+
+    for line in lines:
+        if skip_next_value:
+            skip_next_value = False
+            if re.match(r"\s*(?:#\s*)?(?:value|value_from)\s*:", line):
+                continue
+            # Not a value line — fall through to normal processing
+
+        stripped = line.strip()
+
+        # Match lakebase section comments
+        bare = stripped.lstrip("#").strip().lower()
+        if bare == "autoscaling lakebase config":
+            if insert_idx is None:
+                insert_idx = len(result)
+            continue
+
+        # Match only the LAKEBASE_ env vars that quickstart manages
+        if re.search(r"- name: LAKEBASE_(INSTANCE_NAME|AUTOSCALING_ENDPOINT|AUTOSCALING_PROJECT|AUTOSCALING_BRANCH)", stripped):
+            if insert_idx is None:
+                insert_idx = len(result)
+            skip_next_value = True
+            continue
+
+        result.append(line)
+
+    if insert_idx is None:
+        return content
+
+    # Detect indent from surrounding `- name:` env var lines
+    indent = "          "
+    for line in result:
+        m = re.match(r"^(\s+)- name: ", line)
+        if m:
+            indent = m.group(1)
+            break
+
+    # Build replacement block with the autoscaling endpoint env var
+    new_lines = [
+        f"{indent}- name: LAKEBASE_AUTOSCALING_ENDPOINT",
+        f'{indent}  value_from: "postgres"',
+    ]
+
+    final = result[:insert_idx] + new_lines + result[insert_idx:]
+    return "\n".join(final) + "\n"
+
+
+def _build_postgres_resource_lines(indent: str, lakebase_config: dict) -> list[str]:
+    """Build the postgres resource YAML lines from a lakebase config dict.
+
+    DAB requires branch and database fields (not endpoint) for postgres resources.
+    """
+    lines = [
+        f"{indent}- name: 'postgres'",
+        f"{indent}  postgres:",
+    ]
+    if "branch" in lakebase_config:
+        lines.append(f'{indent}    branch: "{lakebase_config["branch"]}"')
+    if "database" in lakebase_config:
+        lines.append(f'{indent}    database: "{lakebase_config["database"]}"')
+    lines.append(f"{indent}    permission: 'CAN_CONNECT_AND_CREATE'")
+    return lines
+
+
+def _replace_lakebase_resource(content: str, lakebase_config: dict) -> str:
+    """Update the Lakebase postgres resource section in databricks.yml.
+
+    Fills in the autoscaling postgres resource block with actual values, and
+    removes any legacy provisioned database resource block (no longer supported).
+    """
+    LAKEBASE_COMMENTS = {
+        "autoscaling postgres resource",
+        "use for provisioned lakebase resource",
+        # Backward compat: old comment text from pre-native-postgres templates
+        "autoscaling postgres resource must be added via api after deploy",
+        "see: .claude/skills/add-tools/examples/lakebase-autoscaling.md",
+        "see: .claude/skills/add-tools/examples/lakebase-autoscaling.yaml",
+    }
+
+    lines = content.splitlines()
+    result = []
+    i = 0
+    found_database = False
+    found_postgres = False
+    resource_indent = None
+
+    def _detect_indent():
+        nonlocal resource_indent
+        if resource_indent is None:
+            for prev in reversed(result):
+                m = re.match(r"^(\s+)- name:", prev)
+                if m:
+                    resource_indent = m.group(1)
+                    break
+
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        bare = stripped.lstrip("#").strip().lower()
+
+        # Skip lakebase-related comment lines in the resources section
+        if bare in LAKEBASE_COMMENTS or (bare == "" and stripped == "#"):
+            is_lakebase_area = False
+            if bare in LAKEBASE_COMMENTS:
+                is_lakebase_area = True
+            elif stripped == "#":
+                # Check surrounding lines for lakebase context
+                for offset in [-1, 1]:
+                    neighbor_idx = i + offset
+                    if 0 <= neighbor_idx < len(lines):
+                        neighbor_bare = lines[neighbor_idx].strip().lstrip("#").strip().lower()
+                        if neighbor_bare in LAKEBASE_COMMENTS or "database" in neighbor_bare or "postgres" in neighbor_bare:
+                            is_lakebase_area = True
+                            break
+
+            if is_lakebase_area:
+                _detect_indent()
+                i += 1
+                continue
+
+        # Match the commented-out database resource lines (legacy provisioned).
+        # Provisioned is no longer supported — drop the block without inserting.
+        if re.match(r"\s*#\s*- name: ['\"]?database['\"]?", stripped):
+            found_database = True
+            _detect_indent()
+            # Skip all subsequent commented lines that are part of this block
+            i += 1
+            while i < len(lines):
+                next_stripped = lines[i].strip()
+                if next_stripped.startswith("#") and (
+                    "database:" in next_stripped
+                    or "instance_name:" in next_stripped
+                    or "database_name:" in next_stripped
+                    or "permission:" in next_stripped
+                ):
+                    i += 1
+                else:
+                    break
+            continue
+
+        # Match an uncommented database resource (from a previous provisioned run).
+        # Provisioned is no longer supported — drop the block without inserting.
+        if re.match(r"\s*- name: ['\"]?database['\"]?", stripped):
+            found_database = True
+            if resource_indent is None:
+                m = re.match(r"^(\s+)- name:", line)
+                if m:
+                    resource_indent = m.group(1)
+            # Skip all subsequent lines that are part of this block
+            i += 1
+            while i < len(lines):
+                next_stripped = lines[i].strip()
+                if next_stripped and not next_stripped.startswith("-") and not next_stripped.startswith("#"):
+                    i += 1
+                else:
+                    break
+            continue
+
+        # Match the commented-out postgres resource lines
+        if re.match(r"\s*#\s*- name: ['\"]?postgres['\"]?", stripped):
+            found_postgres = True
+            _detect_indent()
+            # Skip all subsequent commented lines that are part of this block
+            i += 1
+            while i < len(lines):
+                next_stripped = lines[i].strip()
+                if next_stripped.startswith("#") and (
+                    "postgres:" in next_stripped
+                    or "branch:" in next_stripped
+                    or "endpoint:" in next_stripped
+                    or "database:" in next_stripped
+                    or "permission:" in next_stripped
+                ):
+                    i += 1
+                else:
+                    break
+
+            # Insert the uncommented postgres resource block
+            indent = resource_indent or "        "
+            result.extend(_build_postgres_resource_lines(indent, lakebase_config))
+            continue
+
+        # Match an uncommented postgres resource (from a previous autoscaling run or template default)
+        if re.match(r"\s*- name: ['\"]?postgres['\"]?", stripped):
+            found_postgres = True
+            if resource_indent is None:
+                m = re.match(r"^(\s+)- name:", line)
+                if m:
+                    resource_indent = m.group(1)
+            # Skip all subsequent lines that are part of this block
+            i += 1
+            while i < len(lines):
+                next_stripped = lines[i].strip()
+                if next_stripped and not next_stripped.startswith("-") and not next_stripped.startswith("#"):
+                    i += 1
+                else:
+                    break
+
+            # Insert the updated postgres resource block
+            indent = resource_indent or "        "
+            result.extend(_build_postgres_resource_lines(indent, lakebase_config))
+            continue
+
+        result.append(line)
+        i += 1
+
+    # If no existing postgres resource was found (e.g. after a legacy provisioned
+    # database resource was removed), append the resource block after the last
+    # resource entry. Only do this if we found some lakebase resource (database or
+    # comments), indicating this is a lakebase-enabled template.
+    if not found_postgres and found_database:
+        insert_idx = _find_last_resource_insert_idx(result)
+        if insert_idx is not None:
+            if resource_indent is None:
+                for idx in range(insert_idx - 1, -1, -1):
+                    m = re.match(r"^(\s+)- name:", result[idx])
+                    if m:
+                        resource_indent = m.group(1)
+                        break
+            indent = resource_indent or "        "
+            new_lines = _build_postgres_resource_lines(indent, lakebase_config)
+            result = result[:insert_idx] + new_lines + result[insert_idx:]
+
+    return "\n".join(result) + "\n"
+
+
+def _find_last_resource_insert_idx(lines: list[str]) -> int | None:
+    """Find the index after the last resource block entry in the lines list."""
+    for idx in range(len(lines) - 1, -1, -1):
+        if re.match(r"\s+- name:", lines[idx]):
+            # Find the end of this resource block
+            insert_idx = idx + 1
+            while insert_idx < len(lines):
+                next_stripped = lines[insert_idx].strip()
+                if next_stripped and not next_stripped.startswith("-") and not next_stripped.startswith("#"):
+                    insert_idx += 1
+                else:
+                    break
+            return insert_idx
+    return None
+
+
+def update_databricks_yml_lakebase(lakebase_config: dict) -> None:
+    """Update databricks.yml: keep only the relevant Lakebase env vars and resources."""
+    yml_path = Path("databricks.yml")
+    if not yml_path.exists():
+        return
+
+    content = yml_path.read_text()
+    updated = _replace_lakebase_env_vars(content, lakebase_config)
+    updated = _replace_lakebase_resource(updated, lakebase_config)
+    if updated != content:
+        yml_path.write_text(updated)
+        print_success("Updated databricks.yml with Lakebase config")
+
+
+
+def get_databricks_yml_experiment_id() -> str:
+    """Read the experiment_id already written into databricks.yml, if any.
+
+    Returns the experiment_id string, or "" if not set / file missing.
+    Useful for re-running quickstart against a previously-configured app so we
+    can skip experiment creation and reuse the existing ID.
+    """
+    yml_path = Path("databricks.yml")
+    if not yml_path.exists():
+        return ""
+    _, data = _load_yml(yml_path)
+    apps = data.get("resources", {}).get("apps", {})
+    for app_val in apps.values():
+        for resource in app_val.get("resources", []):
+            if "experiment" in resource:
+                exp_id = resource["experiment"].get("experiment_id", "")
+                if exp_id and str(exp_id).strip():
+                    return str(exp_id).strip()
+    return ""
+
+
+def update_databricks_yml_experiment(experiment_id: str) -> None:
+    """Update databricks.yml to set the experiment ID in the app resource."""
+    yml_path = Path("databricks.yml")
+    if not yml_path.exists():
+        return
+
+    yaml, data = _load_yml(yml_path)
+    apps = data.get("resources", {}).get("apps", {})
+    for app_val in apps.values():
+        for resource in app_val.get("resources", []):
+            if "experiment" in resource:
+                resource["experiment"]["experiment_id"] = DoubleQuotedScalarString(experiment_id)
+    _save_yml(yaml, data, yml_path)
+    print_success("Updated databricks.yml with experiment ID")
+
+
+def update_databricks_yml_app_name(app_name: str, budget_policy_id: str | None = None) -> str:
+    """Update the app name field in databricks.yml.
+
+    Args:
+        app_name: New app name to set (e.g. "agent-my-app")
+        budget_policy_id: Optional budget policy ID to set on the app
+
+    Returns:
+        The bundle resource key (resources.apps.<key>), or "" if file not found.
+    """
+    yml_path = Path("databricks.yml")
+    if not yml_path.exists():
+        return ""
+
+    yaml, data = _load_yml(yml_path)
+    apps = data.get("resources", {}).get("apps", {})
+    if not apps:
+        return ""
+
+    app_key = next(iter(apps))
+    app_map = apps[app_key]
+    app_map["name"] = DoubleQuotedScalarString(app_name)
+
+    if budget_policy_id:
+        if "budget_policy_id" not in app_map:
+            app_map.insert(1, "budget_policy_id", DoubleQuotedScalarString(budget_policy_id))
+        else:
+            app_map["budget_policy_id"] = DoubleQuotedScalarString(budget_policy_id)
+
+    _save_yml(yaml, data, yml_path)
+    print_success(f"Updated databricks.yml app name to '{app_name}'")
+    return app_key
 
 
 def main():
@@ -490,8 +1338,11 @@ Examples:
     uv run quickstart                    # Interactive setup
     uv run quickstart --profile DEFAULT  # Use existing profile (non-interactive)
     uv run quickstart --host https://...  # Set up new profile with host
-    uv run quickstart --lakebase my-db   # Include Lakebase setup for memory
-        """
+    uv run quickstart --lakebase-autoscaling-endpoint my-endpoint  # Autoscaling Lakebase
+    uv run quickstart --lakebase-create-new my-new-project  # Provision a new Lakebase
+    uv run quickstart --app-name my-existing-app  # Bind to existing Databricks app
+    uv run quickstart --skip-lakebase    # Skip Lakebase setup
+        """,
     )
     parser.add_argument(
         "--profile",
@@ -504,8 +1355,23 @@ Examples:
         metavar="URL",
     )
     parser.add_argument(
-        "--lakebase",
-        help="Lakebase instance name (for memory features)",
+        "--lakebase-autoscaling-endpoint",
+        help="Autoscaling Lakebase endpoint name",
+        metavar="NAME",
+    )
+    parser.add_argument(
+        "--lakebase-create-new",
+        help="Create a new Lakebase autoscaling project with this name (non-interactive)",
+        metavar="NAME",
+    )
+    parser.add_argument(
+        "--skip-lakebase",
+        action="store_true",
+        help="Skip Lakebase setup (non-interactive / CI use)",
+    )
+    parser.add_argument(
+        "--app-name",
+        help="Existing Databricks app name to bind this bundle to",
         metavar="NAME",
     )
 
@@ -525,45 +1391,203 @@ Examples:
             print("\nPlease install the missing prerequisites and run this script again.")
             sys.exit(1)
 
+        # Check Node.js version meets Vite requirements
+        node_error = check_node_version()
+        if node_error:
+            print_error(f"Node.js version check failed:\n  {node_error}")
+            sys.exit(1)
+
         # Step 2: Set up .env
         setup_env_file()
 
         # Step 3: Databricks authentication
         profile_name = setup_databricks_auth(args.profile, args.host)
 
-        # Step 4: Get username and create MLflow experiment
+        # Step 4: Existing app binding (optional) — do this early so app resources
+        # (experiment, lakebase) take precedence over fresh creation.
+        app_name = args.app_name
+        if not app_name and sys.stdin.isatty():
+            print_step("Optional: Bind to an existing Databricks app")
+            print("If you created an app via the Databricks UI before cloning this template,")
+            print("you can bind this bundle to it to avoid a 'app already exists' error.")
+            answer = input(
+                "Enter the existing app name to bind to (or press Enter to skip): "
+            ).strip()
+            if answer:
+                app_name = answer
+
+        bundle_key = ""
+        lakebase_config = None
+        app_experiment_id = None
+        if app_name:
+            bundle_key = update_databricks_yml_app_name(app_name)
+
+            # Fetch resources from the existing app and use them in databricks.yml
+            app_resources = get_app_resources(profile_name, app_name)
+            for resource in app_resources:
+                if "experiment" in resource:
+                    app_exp_id = resource["experiment"].get("experiment_id", "")
+                    if app_exp_id:
+                        app_experiment_id = app_exp_id
+                        print_success(f"Found experiment ID from app: {app_exp_id}")
+
+                if "postgres" in resource:
+                    pg = resource["postgres"]
+                    lakebase_config = {"type": "autoscaling"}
+                    for key in ("branch", "database"):
+                        if pg.get(key):
+                            lakebase_config[key] = pg[key]
+
+                    # Resolve endpoint path and host for local dev .env via API
+                    if "branch" in lakebase_config:
+                        branch_path = lakebase_config["branch"]
+                        parts = branch_path.split("/")
+                        if (
+                            len(parts) >= 4
+                            and parts[0] == "projects"
+                            and parts[2] == "branches"
+                        ):
+                            endpoint_path, endpoint_host = _fetch_autoscaling_endpoint_info(
+                                profile_name, parts[1], parts[3]
+                            )
+                            if endpoint_path:
+                                lakebase_config["endpoint"] = endpoint_path
+                                lakebase_config["host"] = endpoint_host
+                                update_env_file(
+                                    "LAKEBASE_AUTOSCALING_ENDPOINT", endpoint_path
+                                )
+                                print_success(
+                                    f"Lakebase endpoint '{endpoint_path}' saved to .env"
+                                )
+                                if endpoint_host:
+                                    update_env_file("PGHOST", endpoint_host)
+                                    print_success(f"PGHOST set to '{endpoint_host}'")
+                    update_env_file("PGDATABASE", "databricks_postgres")
+                    print_success("Using postgres resource from app")
+
+            print(f"\nTo bind this bundle to your existing app, run:")
+            if bundle_key:
+                print(
+                    f"  databricks bundle deployment bind {bundle_key} {app_name} --auto-approve"
+                )
+            print(f"  databricks bundle deploy")
+
+        # Step 5: Get username and create MLflow experiment
         print_step("Getting Databricks username...")
         username = get_databricks_username(profile_name)
         print(f"Username: {username}")
 
-        experiment_name, experiment_id = create_mlflow_experiment(profile_name, username)
+        # Set PGUSER now that we have the username (needed for app-bind and lakebase paths)
+        if lakebase_config:
+            update_env_file("PGUSER", username)
+            print_success(f"PGUSER set to '{username}'")
 
-        # Step 5: Update .env with experiment ID
-        update_env_file("MLFLOW_EXPERIMENT_ID", experiment_id)
-        print_success("Updated .env with experiment ID")
+        # Use experiment ID from app if available, otherwise create/reuse one
+        if app_experiment_id:
+            experiment_id = app_experiment_id
+            experiment_name = experiment_id
+            # Try to resolve experiment name for display
+            w = get_workspace_client(profile_name)
+            if w:
+                try:
+                    exp = w.experiments.get_experiment(experiment_id=experiment_id).experiment
+                    if exp and exp.name:
+                        experiment_name = exp.name
+                except Exception:
+                    pass
+            update_env_file("MLFLOW_EXPERIMENT_ID", experiment_id)
+            update_databricks_yml_experiment(experiment_id)
+            print_success(f"Using experiment ID from app: {experiment_id}")
+        else:
+            # Seed MLFLOW_EXPERIMENT_ID from databricks.yml if not already in .env.
+            # This handles the case where the user created the app via the Databricks UI,
+            # downloaded the template (which has the experiment_id in databricks.yml already),
+            # and is now running quickstart for the first time locally.
+            if not get_env_value("MLFLOW_EXPERIMENT_ID"):
+                yml_experiment_id = get_databricks_yml_experiment_id()
+                if yml_experiment_id:
+                    update_env_file("MLFLOW_EXPERIMENT_ID", yml_experiment_id)
 
-        # Step 6: Lakebase setup (if needed for memory features)
-        lakebase_name = None
-        lakebase_required = args.lakebase or check_lakebase_required()
-        if lakebase_required:
-            lakebase_name = setup_lakebase(profile_name, args.lakebase)
+            experiment_name, experiment_id = create_mlflow_experiment(profile_name, username)
+            update_env_file("MLFLOW_EXPERIMENT_ID", experiment_id)
+            print_success("Updated .env with experiment ID")
+            update_databricks_yml_experiment(experiment_id)
+
+        # Step 6: Lakebase setup
+        # lakebase_config may already be set from app resources above
+        lakebase_memory_required = bool(
+            args.lakebase_autoscaling_endpoint
+            or args.lakebase_create_new
+            or check_lakebase_required()
+        )
+
+        if lakebase_config:
+            # Already got config from app resources — skip interactive setup
+            print_step("Using Lakebase config from app resources")
+        elif lakebase_memory_required:
+            # Check for existing config (idempotency)
+            existing_lakebase = get_existing_lakebase_config()
+            if existing_lakebase and not args.lakebase_autoscaling_endpoint and not args.lakebase_create_new and validate_lakebase_config(
+                profile_name, existing_lakebase
+            ):
+                print_step("Reusing existing Lakebase config from .env")
+                lakebase_config = existing_lakebase
+            else:
+                lakebase_config = setup_lakebase(
+                    profile_name,
+                    username,
+                    autoscaling_endpoint=args.lakebase_autoscaling_endpoint,
+                    create_new_lakebase_proj=args.lakebase_create_new,
+                    purpose="memory",
+                )
+        elif not args.skip_lakebase:
+            # Optional for non-memory templates — for UI chat history
+            existing_lakebase = get_existing_lakebase_config()
+            if existing_lakebase and validate_lakebase_config(profile_name, existing_lakebase):
+                print_step("Reusing existing Lakebase config from .env")
+                lakebase_config = existing_lakebase
+            else:
+                print_step("Optional: Set up Lakebase for chat UI")
+                print("The built-in chat UI can save conversation history across sessions")
+                print("if connected to Lakebase. This is for the UI to persist chats —")
+                print("not for the agent itself.")
+                answer = input("Set up Lakebase for chat history? [Y/n]: ").strip().lower()
+                if answer != "n":
+                    lakebase_config = setup_lakebase(
+                        profile_name,
+                        username,
+                        purpose="ui",
+                    )
+
+        if lakebase_config:
+            # Update databricks.yml with Lakebase config
+            update_databricks_yml_lakebase(lakebase_config)
 
         # Final summary
+        host = get_databricks_host(profile_name)
+
         print_header("Setup Complete!")
         summary = f"""
 ✓ Prerequisites verified (uv, Node.js, Databricks CLI)
 ✓ Databricks authenticated with profile: {profile_name}
 ✓ Configuration files created (.env)
-✓ MLflow experiment created: {experiment_name}
+
+✓ MLflow experiment set up for tracing and evaluation: {experiment_name}
 ✓ Experiment ID: {experiment_id}"""
 
-        if lakebase_name:
-            summary += f"\n✓ Lakebase instance: {lakebase_name}"
+        if host and experiment_id:
+            summary += f"\n  {host}/ml/experiments/{experiment_id}"
 
-        summary += """
+        if lakebase_config:
+            lakebase_purpose = "agent memory" if lakebase_memory_required else "chat UI conversation history"
+            if "endpoint" in lakebase_config:
+                summary += f"\n\n✓ Lakebase for {lakebase_purpose}: endpoint {lakebase_config['endpoint']}"
+            elif "branch" in lakebase_config:
+                summary += f"\n\n✓ Lakebase for {lakebase_purpose}: {lakebase_config['branch']}"
+            else:
+                summary += f"\n\n✓ Lakebase for {lakebase_purpose}: autoscaling"
 
-Next step: Run 'uv run start-app' to start the agent locally
-"""
+        summary += "\nNext step: Run 'uv run start-app' to start the agent locally\n"
         print(summary)
 
     except KeyboardInterrupt:

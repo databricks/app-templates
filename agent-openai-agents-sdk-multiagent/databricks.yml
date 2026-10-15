@@ -1,0 +1,82 @@
+bundle:
+  name: agent_openai_agents_sdk_multiagent
+
+resources:
+  apps:
+    agent_openai_agents_sdk_multiagent:
+      name: "agent-openai-multiagent"
+      description: "Multi-agent orchestrator that queries other agents, Genie spaces, and serving endpoints"
+      source_code_path: ./
+      config:
+        command: ["uv", "run", "start-app"]
+        env:
+          - name: MLFLOW_TRACKING_URI
+            value: "databricks"
+          - name: MLFLOW_REGISTRY_URI
+            value: "databricks-uc"
+          - name: API_PROXY
+            value: "http://localhost:8000/invocations"
+          - name: CHAT_APP_PORT
+            value: "3000"
+          - name: CHAT_PROXY_TIMEOUT_SECONDS
+            value: "300"
+          - name: MLFLOW_EXPERIMENT_ID
+            value_from: "experiment"
+
+      # Resources which this app has access to
+      resources:
+        - name: 'experiment'
+          experiment:
+            experiment_id: ""
+            permission: 'CAN_MANAGE'
+
+        # NOTE: grants the app's service principal CAN_QUERY on the LLM endpoint so
+        # the deployed app (and UI-created apps via manifest.yaml) can call the model
+        # without a manual grant. If you change the model in agent_server/agent.py,
+        # update the name below to match.
+        - name: 'llm-endpoint'
+          serving_endpoint:
+            name: 'databricks-claude-sonnet-5-5'
+            permission: 'CAN_QUERY'
+
+        # TODO: Set your Genie space ID
+        - name: 'genie_space'
+          genie_space:
+            name: 'Genie Space'
+            space_id: '<YOUR-GENIE-SPACE-ID>'
+            permission: 'CAN_RUN'
+
+        # TODO: Set your knowledge-assistant serving endpoint name
+        - name: 'knowledge_assistant'
+          serving_endpoint:
+            name: '<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>'
+            permission: 'CAN_QUERY'
+
+        # TODO: Set your serving endpoint name
+        - name: 'serving_endpoint'
+          serving_endpoint:
+            name: '<YOUR-SERVING-ENDPOINT>'
+            permission: 'CAN_QUERY'
+
+        # TODO: Set the target app name to grant CAN_USE access.
+        # Requires CLI v0.298.0+ for native app-to-app bundle resource support.
+        - name: 'agent_app'
+          app:
+            name: '<YOUR-TARGET-APP-NAME>'
+            permission: 'CAN_USE'
+
+targets:
+  dev:
+    mode: development
+    default: true
+    # workspace:
+    #   host: https://...
+
+  prod:
+    mode: production
+    # workspace:
+    #   host: https://...
+    resources:
+      apps:
+        agent_openai_agents_sdk_multiagent:
+          name: agent-openai-multiagent

@@ -1,28 +1,20 @@
 import { motion } from 'framer-motion';
+import { useAppConfig } from '@/contexts/AppConfigContext';
 
 export const Greeting = () => {
+  const { greeting } = useAppConfig();
   return (
     <div
       key="overview"
-      className="mx-auto mt-4 flex size-full max-w-3xl flex-col justify-center px-4 md:mt-16 md:px-8"
+      className="mx-auto flex size-full max-w-3xl flex-col justify-center px-4 mb-6"
     >
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 10 }}
-        transition={{ delay: 0.5 }}
-        className="font-semibold text-xl md:text-2xl"
+        className="font-semibold text-lg md:text-xl text-center"
       >
-        Hello there!
-      </motion.div>
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 10 }}
-        transition={{ delay: 0.6 }}
-        className="text-xl text-zinc-500 md:text-2xl"
-      >
-        How can I help you today?
+        {greeting}
       </motion.div>
     </div>
   );

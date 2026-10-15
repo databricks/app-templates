@@ -1,0 +1,9 @@
+version: 1
+name: "Chat UI (Model Service)"
+description: "Create a chat UI that queries a Unity Catalog model service via the Databricks Unity Gateway."
+
+# NOTE: there is no model-service resource_spec type yet, so there is no
+# resources_specs entry here. DATABRICKS_MODEL_SERVICE is set as a plain
+# literal env value in app.yaml, and the app's service principal must be
+# granted EXECUTE on the model service (plus USE CATALOG / USE SCHEMA on its
+# containing catalog/schema) via Unity Catalog grants, out-of-band.

@@ -1,15 +1,35 @@
 # Agent Development Guide
 
-## MANDATORY First Action
+## MANDATORY First Actions
 
-**BEFORE any other action, run `databricks auth profiles` to check authentication status.**
+**Ask the user interactively:**
 
-This helps you understand:
-- Which Databricks profiles are configured
-- Whether authentication is already set up
-- Which profile to use for subsequent commands
+1. **App deployment target:**
+   > "Do you have an existing Databricks app you want to deploy to, or should we create a new one? If existing, what's the app name?"
 
-If no profiles exist, guide the user through running `uv run quickstart` to set up authentication.
+   *Note: New apps should use the `agent-*` prefix (e.g., `agent-data-analyst`) unless the user specifies otherwise.*
+
+2. **If the user mentions memory, conversation history, or persistence:**
+   > "For memory capabilities, do you have an existing Lakebase instance? If so, what's the instance name?"
+
+**Then set up the environment using quickstart:**
+
+1. **Read the quickstart skill** at `.claude/skills/quickstart/SKILL.md` — it contains all available CLI flags, what the script configures, and fallback instructions.
+2. **Check if `.env` exists.** If it does, the environment is already configured — read it to find `DATABRICKS_CONFIG_PROFILE` and skip to verifying auth. If `.env` does not exist, run quickstart:
+   ```bash
+   uv run quickstart --profile <profile-name>
+   ```
+3. Run `databricks auth profiles` to verify the profile is configured and valid.
+
+**CRITICAL: All `databricks` CLI commands must include the profile from `.env`.** Either use `--profile` or set the env var:
+
+```bash
+databricks <command> --profile <profile>
+# or
+DATABRICKS_CONFIG_PROFILE=<profile> databricks <command>
+```
+
+> **Why this matters:** Without the profile, the CLI may target the wrong workspace, causing "not found" errors for experiments, apps, or other resources.
 
 ## Understanding User Goals
 
@@ -34,6 +54,52 @@ Ask the user: "I see there's an existing app with the same name. Would you like 
 - **If they want to bind**: See the **deploy** skill for binding steps
 - **If they want to delete**: Run `databricks apps delete <app-name>` then deploy again
 
+## Supervisor API (Offloading the Agent Loop)
+
+The **Supervisor API** lets Databricks run the tool-selection and agent loop server-side. Declare hosted tools (Genie spaces, UC functions, Knowledge Assistants, UC connection MCP servers, Databricks App endpoints) and call `responses.create()` — Databricks handles the rest.
+
+**Use when the user wants to** connect Genie spaces, UC functions, or other Databricks-hosted tools without managing the agent loop themselves.
+
+**Limitations:**
+- Tools run as the app's service principal (no user token forwarding) — grant permissions in `databricks.yml`
+- Cannot mix hosted tools with client-side function tools in the same request
+- Inference parameters (`temperature`, `top_p`, etc.) are not supported when tools are passed
+- `stream` and `background` cannot both be `true` in the same request
+- Background mode has a maximum execution time of 30 minutes
+
+**Skills:**
+- Use **supervisor-api** to set up the Supervisor API with hosted tools
+- Use **supervisor-api-background-mode** for tasks that may exceed HTTP timeout limits (complex multi-tool workflows, large data analysis)
+
+## Long-Term Memory (Managed)
+
+> **Beta.** Managed memory uses the Databricks memory-store APIs, which are in beta — APIs and behavior may change.
+
+This template is **stateless by default** (the client carries conversation history). **Managed memory** adds durable memory that persists *across* conversations, backed by a **Unity Catalog memory store** (`catalog.schema.name`, type `MEMORY_STORE`) — governed by UC, with no database for you to provision or run. Databricks manages the underlying quality logic — deduplication, scope isolation, and fact reconciliation. The agent gets tools to store, retrieve, and modify memories, and memories are scoped per end user through code (the model never chooses the scope).
+
+**Use when the user wants to** have the agent remember a user's preferences, facts, or decisions across separate sessions — without standing up or operating any storage infrastructure.
+
+> **Managed memory vs. Lakebase.** Managed memory is the simplest, governed, zero-ops path. The alternative is **Lakebase** — long-term memories in your own Postgres instance (billable) with direct SQL access and embedding-based semantic search; choose it when you need SQL access or it's already part of your stack.
+
+**Skills:**
+- Use **managed-memory** to add the memory-store tools and per-user scope wiring.
+
+## Agent Evaluation
+
+When the user asks about evaluating their agent (quality, metrics, scorers, datasets, or tracing), suggest installing the **MLflow Skills** from https://github.com/mlflow/skills. These provide expert guidance for evaluation workflows using MLflow's native APIs.
+
+**Relevant skills:**
+- **agent-evaluation** — end-to-end evaluation: dataset creation, scorer selection, execution, result analysis
+- **instrumenting-with-mlflow-tracing** — set up automatic tracing for debugging and observability
+- **analyze-mlflow-trace** — examine span data and assessments to identify issues
+
+**Install command:**
+```bash
+npx skills add mlflow/skills
+```
+
+After installation, the skills will be available as slash commands (e.g., `/agent-evaluation`). This template also includes a built-in `evaluate_agent.py` script — run it with `uv run agent-evaluate` after starting the local server.
+
 ---
 
 ## Available Skills
@@ -44,10 +110,14 @@ Ask the user: "I see there's an existing app with the same name. Would you like 
 |------|-------|------|
 | Setup, auth, first-time | **quickstart** | `.claude/skills/quickstart/SKILL.md` |
 | Find tools/resources | **discover-tools** | `.claude/skills/discover-tools/SKILL.md` |
+| Create tool resources | **create-tools** | `.claude/skills/create-tools/SKILL.md` |
 | Deploy to Databricks | **deploy** | `.claude/skills/deploy/SKILL.md` |
 | Add tools & permissions | **add-tools** | `.claude/skills/add-tools/SKILL.md` |
 | Run/test locally | **run-locally** | `.claude/skills/run-locally/SKILL.md` |
 | Modify agent code | **modify-agent** | `.claude/skills/modify-agent/SKILL.md` |
+| Add long-term (cross-session) memory | **managed-memory** | `.claude/skills/managed-memory/SKILL.md` |
+| Offload agent loop to Databricks | **supervisor-api** | `.claude/skills/supervisor-api/SKILL.md` |
+| Long-running background tasks | **supervisor-api-background-mode** | `.claude/skills/supervisor-api-background-mode/SKILL.md` |
 
 **Note:** All agent skills are located in `.claude/skills/` directory.
 
@@ -73,6 +143,7 @@ Ask the user: "I see there's an existing app with the same name. Would you like 
 | `agent_server/start_server.py` | FastAPI server + MLflow setup |
 | `agent_server/evaluate_agent.py` | Agent evaluation with MLflow scorers |
 | `databricks.yml` | Bundle config & resource permissions |
+| `.github/workflows/deploy.yml` | GitHub Actions workflow to deploy this app (synced from `.scripts/source/.github/workflows/`) |
 | `scripts/quickstart.py` | One-command setup script |
 | `scripts/discover_tools.py` | Discovers available workspace resources |
 

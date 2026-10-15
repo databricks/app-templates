@@ -1,12 +1,12 @@
 import { config } from 'dotenv';
 import postgres from 'postgres';
 import * as readline from 'node:readline';
-import { getDatabricksToken } from '@chat-template/auth';
+import { getDatabricksToken } from '@databricks/chatbot-auth';
 import {
   getPostgresUrlFromEnv,
   getDatabaseConfigFromEnv,
   buildConnectionUrl,
-} from '@chat-template/db';
+} from '@databricks/chatbot-db';
 
 config({ path: '.env' });
 
@@ -80,8 +80,12 @@ async function resetDatabase() {
     await sql`DROP TABLE IF EXISTS drizzle.__drizzle_migrations CASCADE`;
     console.log('✅ Drizzle schema migrations table dropped if existed');
 
-    console.log('\n✅ Database reset complete! All data and migrations removed.');
-    console.log('💡 Run "npm run db:migrate" to recreate the schema and apply migrations.\n');
+    console.log(
+      '\n✅ Database reset complete! All data and migrations removed.',
+    );
+    console.log(
+      '💡 Run "npm run db:migrate" to recreate the schema and apply migrations.\n',
+    );
     await sql.end();
   } catch (error) {
     console.error('❌ Failed to reset database:', error);

@@ -12,6 +12,26 @@ has_brew() {
     command_exists brew
 }
 
+# Helper function to download a pinned installer script, verify its SHA-256
+# checksum, and print the path of the verified local copy. Avoids piping remote
+# content straight into a shell.
+download_verified_installer() {
+    local url="$1" expected_sha256="$2" dest actual_sha256
+    dest="$(mktemp)"
+    curl -fsSL -o "$dest" "$url"
+    if command_exists sha256sum; then
+        actual_sha256="$(sha256sum "$dest" | awk '{print $1}')"
+    else
+        actual_sha256="$(shasum -a 256 "$dest" | awk '{print $1}')"
+    fi
+    if [ "$actual_sha256" != "$expected_sha256" ]; then
+        echo "Error: checksum mismatch for $url" >&2
+        rm -f "$dest"
+        return 1
+    fi
+    echo "$dest"
+}
+
 # Helper function to extract bundle name from databricks.yml
 get_current_bundle_name() {
     if [ -f "databricks.yml" ]; then
@@ -25,6 +45,17 @@ get_current_app_name() {
         # Look for the name field under apps section (6 spaces indent)
         awk '/^  apps:$/ {found=1} found && /^      name:/ {gsub(/^      name: /, ""); gsub(/\$\{var\.resource_name_suffix\}/, ""); gsub(/db-chatbot-/, ""); print; exit}' databricks.yml
     fi
+}
+
+# Helper function to check if feedback/experiment is already configured in databricks.yml
+is_feedback_enabled() {
+    if [ -f "databricks.yml" ]; then
+        # Check if the experiment resource is uncommented (line starts with spaces, not # )
+        if grep -q "^        - name: experiment$" databricks.yml; then
+            return 0  # Feedback is enabled
+        fi
+    fi
+    return 1  # Feedback is not enabled
 }
 
 # Helper function to check if database is enabled in databricks.yml
@@ -141,7 +172,11 @@ else
         [ -s "/usr/local/opt/nvm/nvm.sh" ] && \. "/usr/local/opt/nvm/nvm.sh"
     else
         echo "Using curl to install nvm..."
-        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+        NVM_INSTALLER="$(download_verified_installer \
+            https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh \
+            8e45fa547f428e9196a5613efad3bfa4d4608b74ca870f930090598f5af5f643)"
+        bash "$NVM_INSTALLER"
+        rm -f "$NVM_INSTALLER"
         export NVM_DIR="$HOME/.nvm"
         [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
     fi
@@ -169,12 +204,16 @@ else
         brew install databricks
     else
         echo "Using curl to install Databricks CLI..."
-        if curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh; then
+        CLI_INSTALLER="$(download_verified_installer \
+            https://raw.githubusercontent.com/databricks/setup-cli/v1.18.0/install.sh \
+            33be5976d44b7c98822030b5e62813bcb046e5feba387e663b5f0f9030dd7926)"
+        if sh "$CLI_INSTALLER"; then
             echo "✓ Databricks CLI installed successfully"
         else
             echo "Installation failed, trying with sudo..."
-            curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sudo sh
+            sudo sh "$CLI_INSTALLER"
         fi
+        rm -f "$CLI_INSTALLER"
     fi
     echo "✓ Databricks CLI installed successfully"
 fi
@@ -300,7 +339,7 @@ else
 
     echo "Authenticating with Databricks..."
     set +e
-    databricks auth login --host "$DATABRICKS_HOST"
+    databricks auth login --host="$DATABRICKS_HOST"
     AUTH_EXIT_CODE=$?
     set -e
 
@@ -410,7 +449,78 @@ else
 fi
 echo "✓ Serving endpoint configured"
 
-# 2. App and Bundle Name Configuration (within Section 4)
+# 2. Feedback Widget Configuration (within Section 4)
+echo
+echo "Feedback Widget Configuration"
+echo "-----------------------------"
+echo "The feedback widget lets users submit thumbs up/down on AI responses."
+echo "It requires your serving endpoint to have an associated MLflow experiment."
+echo
+
+if is_feedback_enabled; then
+    CURRENT_EXP_ID=$(grep "^        experiment_id:" databricks.yml 2>/dev/null | head -1 | awk '{print $2}' | tr -d '"' || true)
+    echo "✓ Feedback widget already configured (experiment_id: $CURRENT_EXP_ID)"
+else
+    # Extract the numeric experiment ID from the endpoint's MONITOR_EXPERIMENT_ID tag
+    EXPERIMENT_ID=""
+    if [ $ENDPOINT_EXISTS -eq 0 ]; then
+        EXPERIMENT_ID=$(echo "$ENDPOINT_CHECK" \
+            | jq -r '(.tags // []) | map(select(.key == "MONITOR_EXPERIMENT_ID")) | .[0].value // empty' \
+            2>/dev/null || true)
+    fi
+
+    if [ -n "$EXPERIMENT_ID" ]; then
+        echo "✓ Found MLflow experiment (ID: $EXPERIMENT_ID) linked to '$SERVING_ENDPOINT'."
+        echo
+
+        if prompt_yes_no "Do you want to enable the feedback widget?" "Y"; then
+            # Update .env
+            if grep -q "MLFLOW_EXPERIMENT_ID=" .env; then
+                if [[ "$OSTYPE" == "darwin"* ]]; then
+                    sed -i '' "s|.*MLFLOW_EXPERIMENT_ID=.*|MLFLOW_EXPERIMENT_ID=$EXPERIMENT_ID|" .env
+                else
+                    sed -i "s|.*MLFLOW_EXPERIMENT_ID=.*|MLFLOW_EXPERIMENT_ID=$EXPERIMENT_ID|" .env
+                fi
+            else
+                echo "MLFLOW_EXPERIMENT_ID=$EXPERIMENT_ID" >> .env
+            fi
+            echo "✓ MLFLOW_EXPERIMENT_ID set in .env"
+
+            # Uncomment and configure experiment resource in databricks.yml
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                sed -i '' '/# - name: experiment$/s/^        # /        /' databricks.yml
+                sed -i '' '/#   description: "MLflow experiment/s/^        # /        /' databricks.yml
+                sed -i '' '/#   experiment:$/s/^        # /        /' databricks.yml
+                sed -i '' '/#     experiment_id:/s/^        # /        /' databricks.yml
+                sed -i '' '/#     permission: CAN_EDIT/s/^        # /        /' databricks.yml
+                sed -i '' "s/experiment_id: \"your-experiment-id\"/experiment_id: \"$EXPERIMENT_ID\"/" databricks.yml
+                # Uncomment MLFLOW_EXPERIMENT_ID in app.yaml
+                sed -i '' '/# - name: MLFLOW_EXPERIMENT_ID/s/^  # /  /' app.yaml
+                sed -i '' '/#   valueFrom: experiment/s/^  # /  /' app.yaml
+            else
+                sed -i '/# - name: experiment$/s/^        # /        /' databricks.yml
+                sed -i '/#   description: "MLflow experiment/s/^        # /        /' databricks.yml
+                sed -i '/#   experiment:$/s/^        # /        /' databricks.yml
+                sed -i '/#     experiment_id:/s/^        # /        /' databricks.yml
+                sed -i '/#     permission: CAN_EDIT/s/^        # /        /' databricks.yml
+                sed -i "s/experiment_id: \"your-experiment-id\"/experiment_id: \"$EXPERIMENT_ID\"/" databricks.yml
+                # Uncomment MLFLOW_EXPERIMENT_ID in app.yaml
+                sed -i '/# - name: MLFLOW_EXPERIMENT_ID/s/^  # /  /' app.yaml
+                sed -i '/#   valueFrom: experiment/s/^  # /  /' app.yaml
+            fi
+            echo "✓ Feedback widget enabled in databricks.yml and app.yaml"
+        else
+            echo "Skipping feedback setup."
+            echo "To enable it later, run: npx tsx scripts/get-experiment-id.ts --endpoint $SERVING_ENDPOINT"
+        fi
+    else
+        echo "ℹ️  No MLflow experiment linked to endpoint '$SERVING_ENDPOINT'."
+        echo "   Feedback widget is only available for custom agents and Agent Bricks endpoints."
+        echo "   To enable it later, run: npx tsx scripts/get-experiment-id.ts --endpoint <endpoint-name>"
+    fi
+fi
+
+# 3. App and Bundle Name Configuration (within Section 4)
 echo
 echo "App and Bundle Name Configuration"
 echo "-----------------------------------"
@@ -563,7 +673,7 @@ else
     FINAL_APP_NAME="$DEFAULT_APP_NAME"
 fi
 
-# 3. Database Setup (within Section 4)
+# 4. Database Setup (within Section 4)
 echo
 echo "Database Configuration"
 echo "----------------------"
@@ -768,6 +878,12 @@ echo "✓ Dependencies installed"
 # Section 5: Deployment
 # ===================================================================
 echo
+if [ "$USE_DATABASE" = true ]; then
+    echo "💡 Recommended: deploy to Databricks now to ensure the app service principal has"
+    echo "   the correct database permissions. If you skip this step and deploy later, you"
+    echo "   may need to manually grant the service principal permissions on your database instance."
+    echo
+fi
 if prompt_yes_no "Do you want to deploy the app to Databricks now?" "Y"; then
     # Clear bundle cache to ensure fresh deployment with new names
     if [ -d ".databricks" ]; then
@@ -856,9 +972,17 @@ PGDATABASE=databricks_postgres
 PGPORT=5432
 EOF
 
-        echo "Running database migrations..."
-        npm run db:migrate
-        echo "✓ Database migrations completed"
+        if [ "$DID_DEPLOY" = true ]; then
+            # Skip local migrations when deploying to Databricks: the app's build step
+            # (npm run build → npm run db:migrate) runs migrations as the service principal,
+            # which ensures it owns the drizzle schema. Running migrations locally first
+            # would make your CLI user the schema owner, causing permission errors on deploy.
+            echo "ℹ️  Skipping local migrations — they will run automatically when the app builds on Databricks."
+        else
+            echo "Running database migrations..."
+            npm run db:migrate
+            echo "✓ Database migrations completed"
+        fi
 
     else
         if [ "$DID_DEPLOY" = true ]; then

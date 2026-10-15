@@ -1,0 +1,50 @@
+bundle:
+  name: agent_non_conversational
+
+resources:
+  apps:
+    agent_non_conversational:
+      name: "agent-non-conversational"
+      description: "Non-conversational agent application"
+      source_code_path: ./
+      config:
+        command: ["uv", "run", "start-server"]
+        env:
+          - name: MLFLOW_TRACKING_URI
+            value: "databricks"
+          - name: MLFLOW_REGISTRY_URI
+            value: "databricks-uc"
+          - name: MLFLOW_EXPERIMENT_ID
+            value_from: "experiment"
+
+      # Resources which this app has access to
+      resources:
+        - name: 'experiment'
+          experiment:
+            experiment_id: ""
+            permission: 'CAN_MANAGE'
+
+        # NOTE: grants the app's service principal CAN_QUERY on the LLM endpoint so
+        # the deployed app (and UI-created apps via manifest.yaml) can call the model
+        # without a manual grant. If you change the model in agent_server/agent.py,
+        # update the name below to match.
+        - name: 'llm-endpoint'
+          serving_endpoint:
+            name: 'databricks-claude-sonnet-5-5'
+            permission: 'CAN_QUERY'
+
+targets:
+  dev:
+    mode: development
+    default: true
+    # workspace:
+    #   host: https://...
+
+  prod:
+    mode: production
+    # workspace:
+    #   host: https://...
+    resources:
+      apps:
+        agent_non_conversational:
+          name: agent-non-conversational

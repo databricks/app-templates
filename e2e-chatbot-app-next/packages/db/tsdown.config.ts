@@ -1,4 +1,4 @@
-import { defineConfig } from 'tsdown'
+import { defineConfig } from 'tsdown';
 
 export default defineConfig({
   entry: ['./src/**/*.ts'],
@@ -6,4 +6,4 @@ export default defineConfig({
   dts: false,
   format: ['esm', 'cjs'],
   target: 'esnext',
-})
+});

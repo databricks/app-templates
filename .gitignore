@@ -127,6 +127,9 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# uv
+**/uv.lock
+
 # Visual Studio Code
 .vscode/
 
@@ -168,3 +171,37 @@ yarn-error.log*
 /blob-report/
 /playwright/*
 tsconfig.tsbuildinfo
+mlflow.db
+
+# Claude Code - track source of truth skills and sync script
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/quickstart/
+!.claude/skills/run-locally/
+!.claude/skills/discover-tools/
+!.claude/skills/deploy/
+!.claude/skills/add-tools-langgraph/
+!.claude/skills/add-tools-openai/
+!.claude/skills/modify-langgraph-agent/
+!.claude/skills/modify-openai-agent/
+!.claude/skills/lakebase-setup/
+!.claude/skills/agent-langgraph-memory/
+!.claude/skills/agent-openai-memory/
+!.claude/skills/migrate-from-model-serving/
+!.claude/skills/create-tools/
+!.claude/skills/enable-feedback/
+!.claude/skills/long-running-server/
+!.claude/skills/supervisor-api/
+!.claude/skills/supervisor-api-background-mode/
+!.claude/skills/managed-memory/
+!.claude/skills/load-testing/
+!.claude/skills/validate-templates/
+!.claude/skills/diagnostics/
+!.claude/skills/sync-check/
+!.claude/skills/review-templates/
+!.claude/AGENTS.md
+!.claude/CLAUDE.md
+
+# agent-integration-tests scratch logs/reports (generated)
+.scripts/agent-integration-tests/logs/

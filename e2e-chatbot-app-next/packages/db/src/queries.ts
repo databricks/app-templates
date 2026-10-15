@@ -13,15 +13,19 @@ import {
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
-import { chat, message, type DBMessage, type Chat } from './schema';
-import type { VisibilityType } from '@chat-template/utils';
-import { ChatSDKError } from '@chat-template/core/errors';
-import type { LanguageModelV2Usage } from '@ai-sdk/provider';
+import {
+  chat,
+  message,
+  vote,
+  type DBMessage,
+  type Chat,
+  type Vote,
+} from './schema';
+import type { VisibilityType } from '@databricks/chatbot-utils';
+import { ChatSDKError } from '@databricks/chatbot-core/errors';
+import type { LanguageModelV3Usage } from '@ai-sdk/provider';
 import { isDatabaseAvailable } from './connection';
-import { getAuthMethod, getAuthMethodDescription } from '@chat-template/auth';
-
-// Re-export User type for external use
-export type { User } from './schema';
+import { getAuthMethod, getAuthMethodDescription } from '@databricks/chatbot-auth';
 
 // Optionally, if not using email/pass login, you can
 // use the Drizzle adapter for Auth.js / NextAuth
@@ -70,7 +74,8 @@ async function ensureDb() {
       return database;
     } catch (error) {
       console.error(
-        `[ensureDb] Failed to get ${authDescription} connection:`,
+        '[ensureDb] Failed to get %s connection:',
+        authDescription,
         error,
       );
       throw error;
@@ -285,16 +290,20 @@ export async function saveMessages({
         set: {
           parts: sql`excluded.parts`,
           attachments: sql`excluded.attachments`,
+          traceId: sql`excluded."traceId"`,
         },
       });
   } catch (_error) {
+    console.error('[saveMessages] DB error:', _error);
     throw new ChatSDKError('bad_request:database', 'Failed to save messages');
   }
 }
 
 export async function getMessagesByChatId({ id }: { id: string }) {
   if (!isDatabaseAvailable()) {
-    console.log('[getMessagesByChatId] Database not available, returning empty');
+    console.log(
+      '[getMessagesByChatId] Database not available, returning empty',
+    );
     return [];
   }
 
@@ -305,6 +314,7 @@ export async function getMessagesByChatId({ id }: { id: string }) {
       .where(eq(message.chatId, id))
       .orderBy(asc(message.createdAt));
   } catch (_error) {
+    console.error('[getMessagesByChatId] Database error:', _error);
     throw new ChatSDKError(
       'bad_request:database',
       'Failed to get messages by chat id',
@@ -339,7 +349,9 @@ export async function deleteMessagesByChatIdAfterTimestamp({
   timestamp: Date;
 }) {
   if (!isDatabaseAvailable()) {
-    console.log('[deleteMessagesByChatIdAfterTimestamp] Database not available, skipping deletion');
+    console.log(
+      '[deleteMessagesByChatIdAfterTimestamp] Database not available, skipping deletion',
+    );
     return;
   }
 
@@ -354,7 +366,10 @@ export async function deleteMessagesByChatIdAfterTimestamp({
     const messageIds = messagesToDelete.map((message) => message.id);
 
     if (messageIds.length > 0) {
-      return await (await ensureDb())
+      const db = await ensureDb();
+      // Delete votes first to satisfy the Vote.messageId → Message.id FK constraint
+      await db.delete(vote).where(inArray(vote.messageId, messageIds));
+      return await db
         .delete(message)
         .where(
           and(eq(message.chatId, chatId), inArray(message.id, messageIds)),
@@ -376,7 +391,9 @@ export async function updateChatVisiblityById({
   visibility: 'private' | 'public';
 }) {
   if (!isDatabaseAvailable()) {
-    console.log('[updateChatVisiblityById] Database not available, skipping update');
+    console.log(
+      '[updateChatVisiblityById] Database not available, skipping update',
+    );
     return;
   }
 
@@ -393,16 +410,44 @@ export async function updateChatVisiblityById({
   }
 }
 
+
+export async function updateChatTitleById({
+  chatId,
+  title,
+}: {
+  chatId: string;
+  title: string;
+}) {
+  if (!isDatabaseAvailable()) {
+    console.log('[updateChatTitleById] Database not available, skipping update');
+    return;
+  }
+
+  try {
+    return await (await ensureDb())
+      .update(chat)
+      .set({ title })
+      .where(eq(chat.id, chatId));
+  } catch (_error) {
+    throw new ChatSDKError(
+      'bad_request:database',
+      'Failed to update chat title by id',
+    );
+  }
+}
+
 export async function updateChatLastContextById({
   chatId,
   context,
 }: {
   chatId: string;
   // Store raw LanguageModelUsage to keep it simple
-  context: LanguageModelV2Usage;
+  context: LanguageModelV3Usage;
 }) {
   if (!isDatabaseAvailable()) {
-    console.log('[updateChatLastContextById] Database not available, skipping update');
+    console.log(
+      '[updateChatLastContextById] Database not available, skipping update',
+    );
     return;
   }
 
@@ -415,4 +460,36 @@ export async function updateChatLastContextById({
     console.warn('Failed to update lastContext for chat', chatId, error);
     return;
   }
+}
+
+export async function voteMessage({
+  chatId,
+  messageId,
+  type,
+}: {
+  chatId: string;
+  messageId: string;
+  type: 'up' | 'down';
+}) {
+  if (!isDatabaseAvailable()) {
+    return;
+  }
+
+  const db = await ensureDb();
+  await db
+    .insert(vote)
+    .values({ chatId, messageId, isUpvoted: type === 'up' })
+    .onConflictDoUpdate({
+      target: [vote.chatId, vote.messageId],
+      set: { isUpvoted: type === 'up' },
+    });
+}
+
+export async function getVotesByChatId({ id }: { id: string }): Promise<Vote[]> {
+  if (!isDatabaseAvailable()) {
+    return [];
+  }
+
+  const db = await ensureDb();
+  return db.select().from(vote).where(eq(vote.chatId, id));
 }

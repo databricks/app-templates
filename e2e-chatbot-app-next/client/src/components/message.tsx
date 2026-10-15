@@ -1,4 +1,3 @@
-import { motion } from 'framer-motion';
 import React, { memo, useState } from 'react';
 import { AnimatedAssistantIcon } from './animation-assistant-icon';
 import { Response } from './elements/response';
@@ -24,8 +23,9 @@ import equal from 'fast-deep-equal';
 import { cn, sanitizeText } from '@/lib/utils';
 import { MessageEditor } from './message-editor';
 import { MessageReasoning } from './message-reasoning';
+import { Shimmer } from './ui/shimmer';
 import type { UseChatHelpers } from '@ai-sdk/react';
-import type { ChatMessage } from '@chat-template/core';
+import type { ChatMessage, Feedback } from '@databricks/chatbot-core';
 import { useDataStream } from './data-stream-provider';
 import {
   createMessagePartSegments,
@@ -36,14 +36,12 @@ import {
 import { MessageError } from './message-error';
 import { MessageOAuthError } from './message-oauth-error';
 import { isCredentialErrorMessage } from '@/lib/oauth-error-utils';
-import { Streamdown } from 'streamdown';
 import {
-  DATABRICKS_TOOL_CALL_ID,
-  extractDatabricksMetadata,
-  isMcpApprovalRequest,
-  getMcpApprovalState,
-  isApprovalStatusOutput,
-} from '@databricks/ai-sdk-provider';
+  groupConsecutiveToolSegments,
+  type ChatPart,
+  type ToolPart,
+} from '@/lib/tool-group-segments';
+import { Streamdown } from 'streamdown';
 import { useApproval } from '@/hooks/use-approval';
 
 const PurePreviewMessage = ({
@@ -51,29 +49,30 @@ const PurePreviewMessage = ({
   allMessages,
   isLoading,
   setMessages,
-  addToolResult,
+  addToolApprovalResponse,
   sendMessage,
   regenerate,
   isReadonly,
   requiresScrollPadding,
+  initialFeedback,
 }: {
-  chatId: string;
   message: ChatMessage;
   allMessages: ChatMessage[];
   isLoading: boolean;
   setMessages: UseChatHelpers<ChatMessage>['setMessages'];
-  addToolResult: UseChatHelpers<ChatMessage>['addToolResult'];
+  addToolApprovalResponse: UseChatHelpers<ChatMessage>['addToolApprovalResponse'];
   sendMessage: UseChatHelpers<ChatMessage>['sendMessage'];
   regenerate: UseChatHelpers<ChatMessage>['regenerate'];
   isReadonly: boolean;
   requiresScrollPadding: boolean;
+  initialFeedback?: Feedback;
 }) => {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [showErrors, setShowErrors] = useState(false);
 
   // Hook for handling MCP approval requests
   const { submitApproval, isSubmitting, pendingApprovalId } = useApproval({
-    addToolResult,
+    addToolApprovalResponse,
     sendMessage,
   });
 
@@ -111,6 +110,11 @@ const PurePreviewMessage = ({
     [message.parts],
   );
 
+  const renderBlocks = React.useMemo(
+    () => groupConsecutiveToolSegments(partSegments),
+    [partSegments],
+  );
+
   // Check if message only contains non-OAuth errors (no other content)
   const hasOnlyErrors = React.useMemo(() => {
     const nonErrorParts = message.parts.filter(
@@ -132,8 +136,8 @@ const PurePreviewMessage = ({
           'justify-start': message.role === 'assistant',
         })}
       >
-        {message.role === 'assistant' && (
-          <AnimatedAssistantIcon size={14} isLoading={isLoading} />
+        {partSegments.length === 0 && errorParts.length === 0 && message.role === 'assistant' && (
+          <AwaitingResponseMessage />
         )}
 
         <div
@@ -147,7 +151,9 @@ const PurePreviewMessage = ({
           {attachmentsFromMessage.length > 0 && (
             <div
               data-testid={`message-attachments`}
-              className="flex flex-row justify-end gap-2"
+              className={cn('flex flex-row justify-end gap-2', {
+                'justify-start': message.role === 'assistant',
+              })}
             >
               {attachmentsFromMessage.map((attachment) => (
                 <PreviewAttachment
@@ -162,7 +168,22 @@ const PurePreviewMessage = ({
             </div>
           )}
 
-          {partSegments?.map((parts, index) => {
+          {renderBlocks.map((block) => {
+            if (block.kind === 'tool-group') {
+              return (
+                <MessageToolGroup
+                  key={`tool-group-${block.startIndex}`}
+                  tools={block.tools}
+                  isLoading={isLoading}
+                  submitApproval={submitApproval}
+                  isSubmitting={isSubmitting}
+                  pendingApprovalId={pendingApprovalId}
+                />
+              );
+            }
+
+            const parts = block.parts;
+            const index = block.index;
             const [part] = parts;
             const { type } = part;
             const key = `message-${message.id}-part-${index}`;
@@ -192,16 +213,11 @@ const PurePreviewMessage = ({
                     <MessageContent
                       data-testid="message-content"
                       className={cn({
-                        'w-fit break-words rounded-2xl px-3 py-2 text-right text-white':
+                        'bg-secondary w-fit break-words rounded-2xl px-3 py-2 text-left text-base':
                           message.role === 'user',
-                        'bg-transparent px-0 py-0 text-left':
+                        'bg-transparent px-0 py-0 text-left text-base':
                           message.role === 'assistant',
                       })}
-                      style={
-                        message.role === 'user'
-                          ? { backgroundColor: '#006cff' }
-                          : undefined
-                      }
                     >
                       <Response>
                         {sanitizeText(joinMessagePartSegments(parts))}
@@ -232,116 +248,7 @@ const PurePreviewMessage = ({
               }
             }
 
-            // Render Databricks tool calls and results
-            if (part.type === `tool-${DATABRICKS_TOOL_CALL_ID}`) {
-              const { toolCallId, input, state, errorText, output } = part;
-              const metadata =
-                'callProviderMetadata' in part
-                  ? extractDatabricksMetadata(part)
-                  : undefined;
-              const toolName = metadata?.toolName?.toString();
-
-              // Check if this is an MCP tool call
-              const isMcpApproval = isMcpApprovalRequest(metadata);
-              const mcpServerName = metadata?.mcpServerName?.toString();
-
-              // Determine approval status for MCP tools
-              const approvalStatus = getMcpApprovalState(output);
-
-              // When approved but only have approval status (not actual output), show as input-available
-              const effectiveState: ToolState =
-                isMcpApproval &&
-                approvalStatus === 'approved' &&
-                isApprovalStatusOutput(output)
-                  ? 'input-available'
-                  : state;
-
-              // Render MCP tool calls with special styling
-              if (isMcpApproval) {
-                return (
-                  <McpTool key={toolCallId} defaultOpen={true}>
-                    <McpToolHeader
-                      serverName={mcpServerName}
-                      toolName={toolName || 'mcp-tool'}
-                      state={effectiveState}
-                      approvalStatus={approvalStatus}
-                    />
-                    <McpToolContent>
-                      <McpToolInput input={input} />
-                      {approvalStatus === 'awaiting-approval' && (
-                        <McpApprovalActions
-                          onApprove={() =>
-                            submitApproval({
-                              approvalRequestId: toolCallId,
-                              approve: true,
-                            })
-                          }
-                          onDeny={() =>
-                            submitApproval({
-                              approvalRequestId: toolCallId,
-                              approve: false,
-                            })
-                          }
-                          isSubmitting={
-                            isSubmitting && pendingApprovalId === toolCallId
-                          }
-                        />
-                      )}
-                      {state === 'output-available' &&
-                        !isApprovalStatusOutput(output) && (
-                          <ToolOutput
-                            output={
-                              errorText ? (
-                                <div className="rounded border p-2 text-red-500">
-                                  Error: {errorText}
-                                </div>
-                              ) : (
-                                <div className="whitespace-pre-wrap font-mono text-sm">
-                                  {typeof output === 'string'
-                                    ? output
-                                    : JSON.stringify(output, null, 2)}
-                                </div>
-                              )
-                            }
-                            errorText={undefined}
-                          />
-                        )}
-                    </McpToolContent>
-                  </McpTool>
-                );
-              }
-
-              // Render regular tool calls
-              return (
-                <Tool key={toolCallId} defaultOpen={true}>
-                  <ToolHeader
-                    type={toolName || 'tool-call'}
-                    state={effectiveState}
-                  />
-                  <ToolContent>
-                    <ToolInput input={input} />
-                    {state === 'output-available' && (
-                      <ToolOutput
-                        output={
-                          errorText ? (
-                            <div className="rounded border p-2 text-red-500">
-                              Error: {errorText}
-                            </div>
-                          ) : (
-                            <div className="whitespace-pre-wrap font-mono text-sm">
-                              {typeof output === 'string'
-                                ? output
-                                : JSON.stringify(output, null, 2)}
-                            </div>
-                          )
-                        }
-                        errorText={undefined}
-                      />
-                    )}
-                  </ToolContent>
-                </Tool>
-              );
-            }
+            // dynamic-tool parts are rendered by MessageToolGroup above.
 
             // Support for citations/annotations
             if (type === 'source-url') {
@@ -381,6 +288,7 @@ const PurePreviewMessage = ({
               errorCount={errorParts.length}
               showErrors={showErrors}
               onToggleErrors={() => setShowErrors(!showErrors)}
+              initialFeedback={initialFeedback}
             />
           )}
 
@@ -404,14 +312,165 @@ export const PreviewMessage = memo(
   PurePreviewMessage,
   (prevProps, nextProps) => {
     if (prevProps.isLoading !== nextProps.isLoading) return false;
+    // While streaming, re-render whenever the AI SDK produces a new message
+    // object (each throttled update). We use reference equality rather than
+    // deep-equal on parts because fast-deep-equal short-circuits on identical
+    // references — and the SDK may mutate parts in place during streaming.
+    if (nextProps.isLoading && prevProps.message !== nextProps.message)
+      return false;
+
     if (prevProps.message.id !== nextProps.message.id) return false;
     if (prevProps.requiresScrollPadding !== nextProps.requiresScrollPadding)
       return false;
     if (!equal(prevProps.message.parts, nextProps.message.parts)) return false;
+    if (prevProps.initialFeedback?.feedbackType !== nextProps.initialFeedback?.feedbackType)
+      return false;
 
-    return false;
+    return true; // Props are equal, skip re-render
   },
 );
+
+
+const MessageToolGroup = ({
+  tools,
+  isLoading,
+  submitApproval,
+  isSubmitting,
+  pendingApprovalId,
+}: {
+  tools: ToolPart[];
+  isLoading: boolean;
+  submitApproval: ReturnType<typeof useApproval>['submitApproval'];
+  isSubmitting: boolean;
+  pendingApprovalId: string | null;
+}) => {
+  const isMultiple = tools.length > 1;
+  return (
+    <div
+      className={cn('flex flex-col gap-2', {
+        'rounded-md border border-border/60 bg-muted/20 p-2': isMultiple,
+      })}
+      data-testid={isMultiple ? 'tool-group' : undefined}
+    >
+      {tools.map((tool) => (
+        <ToolPartRenderer
+          key={tool.toolCallId}
+          part={tool}
+          isLoading={isLoading}
+          submitApproval={submitApproval}
+          isSubmitting={isSubmitting}
+          pendingApprovalId={pendingApprovalId}
+        />
+      ))}
+    </div>
+  );
+};
+
+const ToolPartRenderer = ({
+  part,
+  isLoading,
+  submitApproval,
+  isSubmitting,
+  pendingApprovalId,
+}: {
+  part: ToolPart;
+  isLoading: boolean;
+  submitApproval: ReturnType<typeof useApproval>['submitApproval'];
+  isSubmitting: boolean;
+  pendingApprovalId: string | null;
+}) => {
+  const { toolCallId, input, state, errorText, output, toolName } = part;
+
+  const isMcpApproval =
+    part.callProviderMetadata?.databricks?.approvalRequestId != null;
+  const mcpServerName =
+    part.callProviderMetadata?.databricks?.mcpServerName?.toString();
+
+  const approved: boolean | undefined =
+    'approval' in part ? part.approval?.approved : undefined;
+
+  const effectiveState: ToolState = (() => {
+    if (part.providerExecuted && !isLoading && state === 'input-available') {
+      return 'output-available';
+    }
+    return state;
+  })();
+
+  if (isMcpApproval) {
+    return (
+      <McpTool defaultOpen={true}>
+        <McpToolHeader
+          serverName={mcpServerName}
+          toolName={toolName}
+          state={effectiveState}
+          approved={approved}
+        />
+        <McpToolContent>
+          <McpToolInput input={input} />
+          {state === 'approval-requested' && (
+            <McpApprovalActions
+              onApprove={() =>
+                submitApproval({ approvalRequestId: toolCallId, approve: true })
+              }
+              onDeny={() =>
+                submitApproval({
+                  approvalRequestId: toolCallId,
+                  approve: false,
+                })
+              }
+              isSubmitting={isSubmitting && pendingApprovalId === toolCallId}
+            />
+          )}
+          {state === 'output-available' && output != null && (
+            <ToolOutput
+              output={
+                errorText ? (
+                  <div className="rounded border p-2 text-red-500">
+                    Error: {errorText}
+                  </div>
+                ) : (
+                  <div className="whitespace-pre-wrap font-mono text-sm">
+                    {typeof output === 'string'
+                      ? output
+                      : JSON.stringify(output, null, 2)}
+                  </div>
+                )
+              }
+              errorText={undefined}
+            />
+          )}
+        </McpToolContent>
+      </McpTool>
+    );
+  }
+
+  return (
+    <Tool defaultOpen={true}>
+      <ToolHeader type={toolName} state={effectiveState} />
+      <ToolContent>
+        <ToolInput input={input} />
+        {state === 'output-available' && (
+          <ToolOutput
+            output={
+              errorText ? (
+                <div className="rounded border p-2 text-red-500">
+                  Error: {errorText}
+                </div>
+              ) : (
+                <div className="whitespace-pre-wrap font-mono text-sm">
+                  {typeof output === 'string'
+                    ? output
+                    : JSON.stringify(output, null, 2)}
+                </div>
+              )
+            }
+            errorText={undefined}
+          />
+        )}
+      </ToolContent>
+    </Tool>
+  );
+};
 
 export const AwaitingResponseMessage = () => {
   const role = 'assistant';
@@ -423,37 +482,8 @@ export const AwaitingResponseMessage = () => {
       data-role={role}
     >
       <div className="flex items-start justify-start gap-3">
-        <AnimatedAssistantIcon size={14} isLoading={false} muted={true} />
-
-        <div className="flex w-full flex-col gap-2 md:gap-4">
-          <div className="p-0 text-muted-foreground text-sm">
-            <LoadingText>Thinking...</LoadingText>
-          </div>
-        </div>
+        <Shimmer className="flex items-center">Generating response</Shimmer>
       </div>
     </div>
-  );
-};
-
-const LoadingText = ({ children }: { children: React.ReactNode }) => {
-  return (
-    <motion.div
-      animate={{ backgroundPosition: ['100% 50%', '-100% 50%'] }}
-      transition={{
-        duration: 1.5,
-        repeat: Number.POSITIVE_INFINITY,
-        ease: 'linear',
-      }}
-      style={{
-        background:
-          'linear-gradient(90deg, hsl(var(--muted-foreground)) 0%, hsl(var(--muted-foreground)) 35%, hsl(var(--foreground)) 50%, hsl(var(--muted-foreground)) 65%, hsl(var(--muted-foreground)) 100%)',
-        backgroundSize: '200% 100%',
-        WebkitBackgroundClip: 'text',
-        backgroundClip: 'text',
-      }}
-      className="flex items-center text-transparent"
-    >
-      {children}
-    </motion.div>
   );
 };

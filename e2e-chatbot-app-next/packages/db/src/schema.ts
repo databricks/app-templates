@@ -6,25 +6,17 @@ import {
   jsonb,
   uuid,
   text,
+  boolean,
   pgSchema,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
-import type { LanguageModelV2Usage } from '@ai-sdk/provider';
-import type { User as SharedUser } from '@chat-template/utils';
-
+import type { LanguageModelV3Usage } from '@ai-sdk/provider';
 const schemaName = 'ai_chatbot';
 const customSchema = pgSchema(schemaName);
 
 // Helper function to create table with proper schema handling
 // Use the schema object for proper drizzle-kit migration generation
 const createTable = customSchema.table;
-
-export const user = createTable('User', {
-  id: text('id').primaryKey().notNull(),
-  email: varchar('email', { length: 64 }).notNull(),
-  // Password removed - using Databricks SSO authentication
-});
-
-export type User = SharedUser;
 
 export const chat = createTable('Chat', {
   id: uuid('id').primaryKey().notNull().defaultRandom(),
@@ -34,7 +26,7 @@ export const chat = createTable('Chat', {
   visibility: varchar('visibility', { enum: ['public', 'private'] })
     .notNull()
     .default('private'),
-  lastContext: jsonb('lastContext').$type<LanguageModelV2Usage | null>(),
+  lastContext: jsonb('lastContext').$type<LanguageModelV3Usage | null>(),
 });
 
 export type Chat = InferSelectModel<typeof chat>;
@@ -48,6 +40,21 @@ export const message = createTable('Message', {
   parts: json('parts').notNull(),
   attachments: json('attachments').notNull(),
   createdAt: timestamp('createdAt').notNull(),
+  traceId: text('traceId'), // MLflow trace ID for feedback submission
 });
 
 export type DBMessage = InferSelectModel<typeof message>;
+
+export const vote = createTable(
+  'Vote',
+  {
+    chatId: uuid('chatId').notNull().references(() => chat.id),
+    messageId: uuid('messageId').notNull().references(() => message.id),
+    isUpvoted: boolean('isUpvoted').notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.chatId, table.messageId] }),
+  }),
+);
+
+export type Vote = InferSelectModel<typeof vote>;

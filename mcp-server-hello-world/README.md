@@ -37,7 +37,7 @@ mcp-server-hello-world/
 ├── requirements.txt              # Python dependencies (for pip)
 ├── app.yaml                      # Databricks Apps configuration
 ├── Claude.md                     # AI assistant context and documentation
-└── README.md          
+└── README.md
 ```
 
 ## Prerequisites
@@ -89,9 +89,9 @@ The server will start on `http://localhost:8000` by default (or your specified p
 ### Accessing the Server
 
 - **MCP Endpoints**: `http://localhost:8000/mcp`
-- **Available Tools**: 
-  - `health`: Check server status
-  - `get_current_user`: Get authenticated user information
+- **Available Tools**:
+    - `health`: Check server status
+    - `get_current_user`: Get authenticated user information
 
 ## Testing the MCP Server
 
@@ -107,6 +107,7 @@ uv run pytest tests/
 ```
 
 **What the tests do:**
+
 - Automatically start the MCP server
 - Test that `list_tools()` works correctly
 - Test that all registered tools can be called without errors by invoking the `call_tools()`
@@ -119,11 +120,12 @@ uv run pytest tests/
 ```bash
 ./scripts/dev/start_server.sh
 ```
+
 ```bash
 uv run query-local
 ```
 
-With the server running you can run the `query_local.py` file to test the server locally. `query_local.py` lists and returns all the available tools. Uncomment code as necessary in the script to call an individual tool.
+With the server running, `query-local` connects to it with a plain MCP client (no Databricks auth needed) and lists the available tools. Uncomment the example in `scripts/dev/query_local.py` to call an individual tool.
 
 #### End-to-end test your deployed MCP server
 
@@ -135,6 +137,7 @@ chmod +x scripts/dev/query_remote.sh
 ```
 
 The script will guide you through:
+
 1. **Profile selection**: Choose your Databricks CLI profile
 2. **App name**: Enter your deployed app name
 3. **Automatic configuration**: Extracts app scopes and URLs automatically
@@ -142,6 +145,7 @@ The script will guide you through:
 5. **End-to-end test**: Tests `list_tools()`, and invokes each tool returned in list_tools
 
 **What it does:**
+
 - Retrieves app configuration using `databricks apps get`
 - Extracts user authorization scopes from `effective_user_api_scopes`
 - Gets workspace host from your Databricks profile
@@ -174,11 +178,11 @@ To add a new tool to your MCP server:
 def calculate_sum(a: int, b: int) -> dict:
     """
     Calculate the sum of two numbers.
-    
+
     Args:
         a: First number
         b: Second number
-    
+
     Returns:
         dict: Contains the sum result
     """
@@ -200,13 +204,16 @@ def calculate_sum(a: int, b: int) -> dict:
 The `utils.py` module provides two helper methods for interacting with Databricks resources via the Databricks SDK Workspace Client:
 
 **When deployed as a Databricks App:**
+
 - `get_workspace_client()` - Returns a client authenticated as the service principal associated with the app. See [App Authorization](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth#app-authorization) for more details.
 - `get_user_authenticated_workspace_client()` - Returns a client authenticated as the end user with scopes specified by the app creator. See [User Authorization](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth#user-authorization) for more details.
 
 **When running locally:**
+
 - Both methods return a client authenticated as the current developer, since no service principal identity exists in the local environment.
 
 **Example usage in tools:**
+
 ```python
 from server import utils
 
@@ -231,6 +238,7 @@ python scripts/dev/generate_oauth_token.py \
 ```
 
 **Parameters:**
+
 - `--host`: Databricks workspace URL (required)
 - `--scopes`: Space-separated OAuth scopes (default: `all-apis offline_access`)
 - `--redirect-uri`: Callback URI (default: `http://localhost:8020`)
@@ -238,6 +246,7 @@ python scripts/dev/generate_oauth_token.py \
 **Note:** The script uses the `databricks-cli` OAuth client ID by default.
 
 **The script will:**
+
 1. Generate a PKCE code verifier and challenge
 2. Open your browser for authorization
 3. Capture the authorization code via local HTTP server
@@ -245,6 +254,7 @@ python scripts/dev/generate_oauth_token.py \
 5. Display the token response as JSON (token is valid for 1 hour)
 
 **Example with custom scopes:**
+
 ```bash
 python scripts/dev/generate_oauth_token.py \
     --host https://your-workspace.cloud.databricks.com \
@@ -266,6 +276,7 @@ uv run custom-mcp-server --help
 ```
 
 The default configuration:
+
 - **Host**: `0.0.0.0` (listens on all network interfaces)
 - **Port**: `8000` (configurable via `--port` argument)
 
@@ -332,11 +343,13 @@ Change the port in `server/main.py` or set the `PORT` environment variable.
 ### Import Errors
 
 Ensure all dependencies are installed:
+
 ```bash
 uv sync  # or pip install -r requirements.txt
 ```
 
 ## Resources
+
 - [Databricks MCP Documentation](https://docs.databricks.com/aws/en/generative-ai/mcp/custom-mcp)
 - [Databricks Apps](https://www.databricks.com/product/databricks-apps)
 - [FastMCP Documentation](https://github.com/jlowin/fastmcp)
@@ -347,5 +360,3 @@ uv sync  # or pip install -r requirements.txt
 ## AI Assistant Context
 
 See [`Claude.md`](./Claude.md) for detailed project context specifically designed for AI assistants working with this codebase.
-
-

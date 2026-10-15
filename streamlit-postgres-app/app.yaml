@@ -1,0 +1,4 @@
+command: ["streamlit", "run", "app.py"]
+env:
+  - name: PGENDPOINT
+    valueFrom: postgres

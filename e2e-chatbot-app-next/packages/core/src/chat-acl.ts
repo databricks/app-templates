@@ -1,6 +1,5 @@
-
-import { getChatById } from '@chat-template/db';
-import type { Chat } from '@chat-template/db';
+import { getChatById } from '@databricks/chatbot-db';
+import type { Chat } from '@databricks/chatbot-db';
 
 interface ChatAccessResult {
   allowed: boolean;
@@ -19,7 +18,9 @@ export async function checkChatAccess(
   chatId: string,
   userId?: string,
 ): Promise<ChatAccessResult> {
-  console.log(`checking chat access for chat ID: ${chatId} and user ID: ${userId}`);
+  console.log(
+    `checking chat access for chat ID: ${chatId} and user ID: ${userId}`,
+  );
   const chat = await getChatById({ id: chatId });
   console.log(`chat: ${JSON.stringify(chat)}`);
   if (!chat) {

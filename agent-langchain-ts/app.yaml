@@ -1,0 +1,28 @@
+command:
+  - bash
+  - start.sh
+
+env:
+  # Model serving endpoint
+  - name: DATABRICKS_MODEL
+    value: "databricks-claude-sonnet-4-5"
+
+  # MLflow tracing
+  - name: MLFLOW_TRACKING_URI
+    value: "databricks"
+  - name: MLFLOW_EXPERIMENT_ID
+    valueFrom: "experiment"
+
+  # Server configuration
+  - name: PORT
+    value: "8000"
+
+  # UI Backend URL (for reverse proxy)
+  - name: UI_BACKEND_URL
+    value: "http://localhost:3000"
+
+resources:
+  - name: serving-endpoint
+    serving_endpoint:
+      name: ${var.serving_endpoint_name}
+      permission: CAN_QUERY

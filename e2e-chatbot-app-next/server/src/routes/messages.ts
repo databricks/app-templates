@@ -8,14 +8,15 @@ import {
   authMiddleware,
   requireAuth,
   requireChatAccess,
+  getIdFromRequest,
 } from '../middleware/auth';
 import {
   getMessageById,
   deleteMessagesByChatIdAfterTimestamp,
   getMessagesByChatId,
   isDatabaseAvailable,
-} from '@chat-template/db';
-import { ChatSDKError, checkChatAccess } from '@chat-template/core';
+} from '@databricks/chatbot-db';
+import { ChatSDKError, checkChatAccess } from '@databricks/chatbot-core';
 
 export const messagesRouter: RouterType = Router();
 
@@ -29,8 +30,8 @@ messagesRouter.get(
   '/:id',
   [requireAuth, requireChatAccess],
   async (req: Request, res: Response) => {
-    const { id } = req.params;
-    if (!id) return; // handled by middleware
+    const id = getIdFromRequest(req);
+    if (!id) return;
 
     try {
       const messages = await getMessagesByChatId({ id });
@@ -62,7 +63,8 @@ messagesRouter.delete(
         return res.status(204).end();
       }
 
-      const { id } = req.params;
+      const id = getIdFromRequest(req);
+      if (!id) return;
       const [message] = await getMessageById({ id });
 
       if (!message) {

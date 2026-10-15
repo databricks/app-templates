@@ -1,4 +1,4 @@
-import type { LanguageModelV2StreamPart } from '@ai-sdk/provider';
+import type { LanguageModelV3StreamPart } from '@ai-sdk/provider';
 /**
  * This file contains "known-good" LLM output used for testing completeness of this template and all its
  * moving parts.
@@ -665,5 +665,5 @@ data: {
 
 type LLMOutputFixtures = {
   in: string;
-  out: Array<LanguageModelV2StreamPart>;
+  out: Array<LanguageModelV3StreamPart>;
 };

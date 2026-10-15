@@ -1,8 +1,6 @@
 # Created by https://www.toptal.com/developers/gitignore/api/python
 # Edit at https://www.toptal.com/developers/gitignore?templates=python
 
-databricks.yml
-
 ### Python ###
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -200,10 +198,28 @@ sketch
 
 # End of https://www.toptal.com/developers/gitignore/api/react
 
-**/uv.lock
 **/mlruns/
 **/.vite/
 **/.databricks
-**/.claude
+
+# Ignore .claude directory but track template-provided skills
+# User-created skills will be ignored by default (no conflicts)
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/quickstart/
+!.claude/skills/discover-tools/
+!.claude/skills/create-tools/
+!.claude/skills/deploy/
+!.claude/skills/add-tools/
+!.claude/skills/run-locally/
+!.claude/skills/modify-agent/
+!.claude/skills/lakebase-setup/
+!.claude/skills/agent-memory/
+!.claude/skills/migrate-from-model-serving/
+!.claude/skills/supervisor-api/
+!.claude/skills/supervisor-api-background-mode/
+
 **/.env
 **/.env.local
+load-test-runs/

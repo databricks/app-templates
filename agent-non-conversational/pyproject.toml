@@ -10,13 +10,14 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.12",
     "uvicorn[standard]>=0.34.2",
-    "mlflow>=3.7.0",
+    "mlflow>=3.9.0",
     "databricks-sdk>=0.63.0",
     "databricks-langchain>=0.7.0",
     "databricks-vectorsearch>=0.57.0",
     "databricks-agents>=1.4.0",
     "pydantic>=2.11",
     "python-dotenv",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.25.0",
 ]
 
 [build-system]
@@ -29,6 +30,15 @@ dev = [
     "pytest>=7.0.0",
     "httpx>=0.24.0",
 ]
+
+setup = [
+    "ruamel.yaml>=0.18.0",
+]
+
+[tool.uv]
+# Dependency cooldown: skip package versions published in the last 7 days (uv >= 0.9.17)
+exclude-newer = "7 days"
+default-groups = ["dev", "setup"]
 
 [project.scripts]
 quickstart = "scripts.quickstart:main"

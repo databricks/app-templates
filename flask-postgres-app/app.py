@@ -1,0 +1,203 @@
+# --- diagnostics bootstrap: install crash/exception logging before app code ---
+import os as _diag_os
+import sys as _diag_sys
+
+_diag_dir = _diag_os.path.dirname(_diag_os.path.abspath(__file__))
+if _diag_dir not in _diag_sys.path:
+    _diag_sys.path.insert(0, _diag_dir)
+import app_diagnostics  # noqa: E402
+
+app_diagnostics.install_diagnostics()
+# --- end diagnostics bootstrap ---
+
+from flask import Flask, render_template, request, redirect, url_for, flash, session, abort
+import secrets
+import psycopg
+import os
+from databricks import sdk
+from psycopg import sql
+from psycopg_pool import ConnectionPool
+
+# Database connection setup
+workspace_client = sdk.WorkspaceClient()
+endpoint = os.getenv("PGENDPOINT", "")
+connection_pool = None
+
+
+class OAuthConnection(psycopg.Connection):
+    """Connection subclass that auto-refreshes OAuth credentials."""
+
+    @classmethod
+    def connect(cls, conninfo="", **kwargs):
+        credential = workspace_client.postgres.generate_database_credential(
+            endpoint=endpoint
+        )
+        kwargs["password"] = credential.token
+        return super().connect(conninfo, **kwargs)
+
+
+def get_connection_pool():
+    """Get or create the connection pool."""
+    global connection_pool
+    if connection_pool is None:
+        conn_string = (
+            f"dbname={os.getenv('PGDATABASE')} "
+            f"user={os.getenv('PGUSER')} "
+            f"host={os.getenv('PGHOST')} "
+            f"port={os.getenv('PGPORT')} "
+            f"sslmode={os.getenv('PGSSLMODE', 'require')} "
+            f"application_name={os.getenv('PGAPPNAME')}"
+        )
+        connection_pool = ConnectionPool(
+            conn_string, connection_class=OAuthConnection, min_size=2, max_size=10
+        )
+    return connection_pool
+
+
+def get_connection():
+    """Get a connection from the pool."""
+    return get_connection_pool().connection()
+
+
+def get_schema_name():
+    """Get the schema name in the format {PGAPPNAME}_schema_{PGUSER}."""
+    pgappname = os.getenv("PGAPPNAME", "my_app")
+    pguser = os.getenv("PGUSER", "").replace('-', '')
+    return f"{pgappname}_schema_{pguser}"
+
+
+def schema_sql(query):
+    """Compose a query, filling {schema} with the app's schema name quoted as a SQL identifier."""
+    return sql.SQL(query).format(schema=sql.Identifier(get_schema_name()))
+
+
+def init_database():
+    """Initialize database schema and table."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(schema_sql("CREATE SCHEMA IF NOT EXISTS {schema}"))
+                cur.execute(schema_sql("""
+                    CREATE TABLE IF NOT EXISTS {schema}.todos (
+                        id SERIAL PRIMARY KEY,
+                        task TEXT NOT NULL,
+                        completed BOOLEAN DEFAULT FALSE,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+                conn.commit()
+                return True
+    except Exception as e:
+        print(f"Database initialization error: {e}")
+        return False
+
+
+def add_todo(task):
+    """Add a new todo item."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(schema_sql("INSERT INTO {schema}.todos (task) VALUES (%s)"), (task.strip(),))
+                conn.commit()
+                return True
+    except Exception as e:
+        print(f"Add todo error: {e}")
+        return False
+
+
+def get_todos():
+    """Get all todo items."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(schema_sql("SELECT id, task, completed, created_at FROM {schema}.todos ORDER BY created_at DESC"))
+                return cur.fetchall()
+    except Exception as e:
+        print(f"Get todos error: {e}")
+        return []
+
+
+def toggle_todo(todo_id):
+    """Toggle the completed status of a todo item."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(schema_sql("UPDATE {schema}.todos SET completed = NOT completed WHERE id = %s"), (todo_id,))
+                conn.commit()
+                return True
+    except Exception as e:
+        print(f"Toggle todo error: {e}")
+        return False
+
+
+def delete_todo(todo_id):
+    """Delete a todo item."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(schema_sql("DELETE FROM {schema}.todos WHERE id = %s"), (todo_id,))
+                conn.commit()
+                return True
+    except Exception as e:
+        print(f"Delete todo error: {e}")
+        return False
+
+# Initialize Flask app
+app = Flask(__name__)
+app.secret_key = os.getenv('SECRET_KEY') or secrets.token_hex(32)
+
+@app.before_request
+def csrf_protect():
+    """Issue a per-session CSRF token and require it on every POST."""
+    token = session.setdefault('csrf_token', secrets.token_urlsafe(32))
+    if request.method == 'POST' and not secrets.compare_digest(request.form.get('csrf_token', ''), token):
+        abort(400, 'Invalid CSRF token')
+
+# Initialize database
+if not init_database():
+    print("Failed to initialize database")
+
+@app.route('/')
+def index():
+    """Main page showing all todos."""
+    todos = get_todos()
+    return render_template('index.html', todos=todos)
+
+@app.route('/add', methods=['POST'])
+def add_todo_route():
+    """Add a new todo item."""
+    task = request.form.get('task', '').strip()
+    if task:
+        if add_todo(task):
+            flash('Todo added successfully!', 'success')
+        else:
+            flash('Failed to add todo.', 'error')
+    else:
+        flash('Please enter a task.', 'error')
+    return redirect(url_for('index'))
+
+@app.route('/toggle/<int:todo_id>', methods=['POST'])
+def toggle_todo_route(todo_id):
+    """Toggle the completed status of a todo item."""
+    if toggle_todo(todo_id):
+        flash('Todo updated successfully!', 'success')
+    else:
+        flash('Failed to update todo.', 'error')
+    return redirect(url_for('index'))
+
+@app.route('/delete/<int:todo_id>', methods=['POST'])
+def delete_todo_route(todo_id):
+    """Delete a todo item."""
+    if delete_todo(todo_id):
+        flash('Todo deleted successfully!', 'success')
+    else:
+        flash('Failed to delete todo.', 'error')
+    return redirect(url_for('index'))
+
+if __name__ == '__main__':
+    host = os.getenv('FLASK_RUN_HOST', '0.0.0.0')
+    port = int(os.getenv('FLASK_RUN_PORT', 8000))
+
+    # Debug mode is off by default; set FLASK_DEBUG=1 to enable it for local development.
+    app.run(host=host, port=port)
+    print(f"Flask app running on http://{host}:{port}")

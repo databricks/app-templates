@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { UseChatHelpers } from '@ai-sdk/react';
-import type { ChatMessage } from '@chat-template/core';
+import type { ChatMessage } from '@databricks/chatbot-core';
 import {
   findLoginURLFromCredentialErrorMessage,
   findConnectionNameFromCredentialErrorMessage,
@@ -47,7 +47,7 @@ export const MessageOAuthError = ({
     const lastMessage = allMessages.at(-1);
     if (lastMessage) {
       const updatedLastMessageParts = lastMessage.parts.filter(
-        (p) => p.type !== 'data-error'
+        (p) => p.type !== 'data-error',
       );
       setMessages([
         ...allMessages.slice(0, -1),

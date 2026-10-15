@@ -205,20 +205,20 @@ To enable **persistent chat history** with a managed Lakebase database, you need
 
 1. Open `databricks.yml`
 
-2. **Uncomment DATABASE RESOURCE (1)** - Find the database instance definition (around lines 17-21):
+2. **Uncomment the first database TODO** - Find the database instance definition (around lines 17-21):
    ```yaml
    resources:
      database_instances:
-     # DATABASE RESOURCE (1): Uncomment the database resource below...
+     # TODO (optional): Uncomment the database resource below to enable persistent chat history
      #   chatbot_lakebase:
      #     name: ${var.database_instance_name}-${var.resource_name_suffix}
      #     capacity: CU_1
    ```
    Remove the `#` symbols to uncomment it.
 
-3. **Uncomment DATABASE RESOURCE (2)** - Find the database resource binding (around lines 39-44):
+3. **Uncomment the second database TODO** - Find the database resource binding (around lines 39-44):
    ```yaml
-   # DATABASE RESOURCE (2): uncomment the database resource below...
+   # TODO (optional): Uncomment the database resource below to bind the app to the database instance above
    # - name: database
    #   description: "Lakebase database instance for the chat app"
    #   database:
@@ -261,9 +261,9 @@ databricks bundle summary              # View deployment status
 - **Module**: ESNext with bundler resolution
 - **Imports**: Use TypeScript path aliases for workspace packages:
   ```typescript
-  import { something } from "@chat-template/core";
-  import { auth } from "@chat-template/auth";
-  import { db } from "@chat-template/db";
+  import { something } from "@databricks/chatbot-core";
+  import { auth } from "@databricks/chatbot-auth";
+  import { db } from "@databricks/chatbot-db";
   ```
 
 ### Component Organization (React)
@@ -321,16 +321,16 @@ myRouter.post("/endpoint", requireAuth, async (req, res) => {
 
 ### Querying Patterns
 
-Use helper functions from `@chat-template/db`:
+Use helper functions from `@databricks/chatbot-db`:
 
 ```typescript
-import { getChatById, saveMessages, deleteChatById } from "@chat-template/db";
+import { getChatById, saveMessages, deleteChatById } from "@databricks/chatbot-db";
 ```
 
 For custom queries, use Drizzle syntax with the exported schema:
 
 ```typescript
-import { db, chat, message } from "@chat-template/db";
+import { db, chat, message } from "@databricks/chatbot-db";
 import { eq, and, desc } from "drizzle-orm";
 
 const results = await db
@@ -504,7 +504,7 @@ No support for image or other multi-modal inputs currently.
 
 ### Debugging AI Stream Responses
 
-The app uses `StreamCache` (in `@chat-template/core`) to cache streaming responses. This prevents duplicate API calls on reconnection.
+The app uses `StreamCache` (in `@databricks/chatbot-core`) to cache streaming responses. This prevents duplicate API calls on reconnection.
 
 Streaming is handled by Vercel AI SDK:
 

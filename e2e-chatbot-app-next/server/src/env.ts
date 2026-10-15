@@ -12,5 +12,6 @@ const TEST_MODE = process.env.TEST_MODE;
 if (!TEST_MODE) {
   dotenv.config({
     path: path.resolve(__dirname, '../..', '.env'),
+    override: false, // Don't override environment variables already set (e.g., API_PROXY from start.sh)
   });
 }

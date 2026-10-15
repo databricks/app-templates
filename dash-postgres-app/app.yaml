@@ -1,0 +1,4 @@
+command: ["python", "app.py"]
+env:
+  - name: PGENDPOINT
+    valueFrom: postgres

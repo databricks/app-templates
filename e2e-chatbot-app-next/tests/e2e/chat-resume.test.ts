@@ -23,7 +23,10 @@ test.describe('Chat stream resume behavior', () => {
     // Track if resumeStream was called by monitoring network requests
     const resumeRequests: string[] = [];
     page.on('request', (request) => {
-      if (request.url().includes('/api/chat/') && request.url().includes('/stream')) {
+      if (
+        request.url().includes('/api/chat/') &&
+        request.url().includes('/stream')
+      ) {
         resumeRequests.push(request.url());
       }
     });
@@ -47,7 +50,10 @@ test.describe('Chat stream resume behavior', () => {
     // Track resume requests
     const resumeRequests: string[] = [];
     page.on('request', (request) => {
-      if (request.url().includes('/api/chat/') && request.url().includes('/stream')) {
+      if (
+        request.url().includes('/api/chat/') &&
+        request.url().includes('/stream')
+      ) {
         resumeRequests.push(request.url());
       }
     });
@@ -134,8 +140,8 @@ test.describe('Chat stream resume behavior', () => {
     // and the UI returns to a usable state (send button visible)
     //
     // If there are any onFinish logs, verify no error occurred
-    const errorLog = consoleLogs.find((log) =>
-      log.includes('[Chat onError]') && !log.includes('AbortError'),
+    const errorLog = consoleLogs.find(
+      (log) => log.includes('[Chat onError]') && !log.includes('AbortError'),
     );
     expect(errorLog).toBeFalsy();
 

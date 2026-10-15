@@ -1,4 +1,4 @@
-import type { Attachment } from '@chat-template/core';
+import type { Attachment } from '@databricks/chatbot-core';
 import { Loader } from './elements/loader';
 import { Button } from './ui/button';
 import { X } from 'lucide-react';
@@ -17,7 +17,7 @@ export const PreviewAttachment = ({
   return (
     <div
       data-testid="input-attachment-preview"
-      className="group relative size-16 overflow-hidden rounded-lg border bg-muted"
+      className="group relative max-w-64 max-h-64 overflow-hidden rounded-lg border bg-muted"
     >
       {contentType?.startsWith('image') ? (
         <img

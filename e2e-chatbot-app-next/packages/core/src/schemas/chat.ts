@@ -17,7 +17,9 @@ const partSchema = z.union([textPartSchema, filePartSchema]);
 // Schema for previous messages in ephemeral mode
 // More permissive to handle various message types (user, assistant, tool calls, etc.)
 const previousMessageSchema = z.object({
-  id: z.string().uuid(),
+  // Accept any string ID: user messages have UUIDs, but assistant messages
+  // from the AI SDK use nanoid (16-char alphanumeric), not UUIDs.
+  id: z.string(),
   role: z.enum(['user', 'assistant', 'system']),
   parts: z.array(z.any()), // Permissive to handle text, tool calls, tool results
 });

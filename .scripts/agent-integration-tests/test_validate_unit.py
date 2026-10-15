@@ -421,5 +421,7 @@ def test_prepare_source_bundles_chatbot_ui(tmp_path):
     src = vt.prepare_source("agent-langchain-ts", tmp_path, bundle_chatbot_ui=True)
     assert (src / "ui" / "package.json").exists()
     assert not (src / "e2e-chatbot-app-next").exists()
+    # agent-langchain-ts gitignores /ui; the copy must not, or sync skips it
+    assert "/ui" not in (src / ".gitignore").read_text().splitlines()
     plain = vt.prepare_source("agent-langgraph", tmp_path / "plain")
     assert not (plain / "e2e-chatbot-app-next").exists()

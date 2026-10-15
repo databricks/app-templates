@@ -94,6 +94,13 @@ def prepare_source(template_name: str, dest: Path, bundle_chatbot_ui: bool = Fal
         git_copy_template(CHATBOT_UI_TEMPLATE, src)
         if ui_dir != CHATBOT_UI_TEMPLATE:
             (src / CHATBOT_UI_TEMPLATE).rename(src / ui_dir)
+        # `databricks sync` skips gitignored paths, and agent-langchain-ts
+        # ignores /ui; un-ignore it in the copy or the vendored UI never uploads.
+        gitignore = src / ".gitignore"
+        if gitignore.exists():
+            ignored = {ui_dir, f"/{ui_dir}", f"{ui_dir}/", f"/{ui_dir}/"}
+            lines = gitignore.read_text().splitlines()
+            gitignore.write_text("\n".join(l for l in lines if l.strip() not in ignored) + "\n")
         _log(f"[{template_name}] bundled this checkout's {CHATBOT_UI_TEMPLATE} as ./{ui_dir}")
     return src
 

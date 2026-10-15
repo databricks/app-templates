@@ -425,3 +425,27 @@ def test_prepare_source_bundles_chatbot_ui(tmp_path):
     assert "/ui" not in (src / ".gitignore").read_text().splitlines()
     plain = vt.prepare_source("agent-langgraph", tmp_path / "plain")
     assert not (plain / "e2e-chatbot-app-next").exists()
+
+def test_apply_replacements_rewrites_text_but_not_lockfiles(tmp_path):
+    import validate_templates as vt
+
+    (tmp_path / "config" / "queries").mkdir(parents=True)
+    q = tmp_path / "config" / "queries" / "q.sql"
+    q.write_text("SELECT 1 FROM REPLACE_ME.gold.t")
+    lock = tmp_path / "package-lock.json"
+    lock.write_text("REPLACE_ME.gold.")
+    (tmp_path / "logo.png").write_bytes(b"\x89PNG\xff\xfe")
+    n = vt.apply_replacements(tmp_path, (("REPLACE_ME.gold.", "main.s."),))
+    assert n == 1
+    assert q.read_text() == "SELECT 1 FROM main.s.t"
+    assert lock.read_text() == "REPLACE_ME.gold."
+
+
+def test_config_parses_replace_mapping(tmp_path):
+    cfg_path = tmp_path / "c.yaml"
+    cfg_path.write_text(
+        "profile: p\nshared_app_name: a\nworkspace_source_root: /x\n"
+        "templates:\n  t: { verify: spa, replace: { 'A.': 'B.' } }\n"
+    )
+    cfg = load_validation_config(cfg_path, resolve_workspace_root=False)
+    assert cfg.templates[0].replace == (("A.", "B."),)

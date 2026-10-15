@@ -1,5 +1,5 @@
 {
-  "name": "@chat-template/core",
+  "name": "@databricks/chatbot-core",
   "version": "1.0.0",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -44,9 +44,9 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@chat-template/ai-sdk-providers": "*",
-    "@chat-template/db": "*",
-    "@chat-template/utils": "*",
+    "@databricks/chatbot-ai-sdk-providers": "*",
+    "@databricks/chatbot-db": "*",
+    "@databricks/chatbot-utils": "*",
     "date-fns": "^4.1.0",
     "zod": "^4.3.5"
   }

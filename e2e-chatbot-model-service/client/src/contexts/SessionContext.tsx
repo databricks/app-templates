@@ -5,7 +5,7 @@ import React, {
   useEffect,
   useCallback,
 } from 'react';
-import type { ClientSession } from '@chat-template/auth';
+import type { ClientSession } from '@databricks/chatbot-auth';
 
 interface SessionContextType {
   session: ClientSession | null;

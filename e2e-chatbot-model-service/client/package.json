@@ -50,9 +50,9 @@
     "zod": "^4.3.5"
   },
   "devDependencies": {
-    "@chat-template/auth": "*",
-    "@chat-template/core": "*",
-    "@chat-template/db": "*",
+    "@databricks/chatbot-auth": "*",
+    "@databricks/chatbot-core": "*",
+    "@databricks/chatbot-db": "*",
     "@tailwindcss/postcss": "^4.1.13",
     "@tailwindcss/typography": "^0.5.19",
     "@types/react": "^18",

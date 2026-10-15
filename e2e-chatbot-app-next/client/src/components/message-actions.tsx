@@ -3,7 +3,7 @@ import { useCopyToClipboard } from 'usehooks-ts';
 import { Actions, Action } from './elements/actions';
 import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
-import type { ChatMessage, Feedback } from '@chat-template/core';
+import type { ChatMessage, Feedback } from '@databricks/chatbot-core';
 import { useAppConfig } from '@/contexts/AppConfigContext';
 import {
   ChevronDown,

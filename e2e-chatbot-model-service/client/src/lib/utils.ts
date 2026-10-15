@@ -1,13 +1,13 @@
 import type { UIMessagePart } from 'ai';
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import type { DBMessage } from '@chat-template/db';
-import { ChatSDKError, type ErrorCode } from '@chat-template/core/errors';
+import type { DBMessage } from '@databricks/chatbot-db';
+import { ChatSDKError, type ErrorCode } from '@databricks/chatbot-core/errors';
 import type {
   ChatMessage,
   ChatTools,
   CustomUIDataTypes,
-} from '@chat-template/core';
+} from '@databricks/chatbot-core';
 import { formatISO } from 'date-fns';
 
 export function cn(...inputs: ClassValue[]) {

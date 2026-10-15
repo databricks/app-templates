@@ -83,6 +83,11 @@ DATABRICKS_CONFIG_PROFILE=dogfood uv run --no-sync pytest validate_templates.py 
 # template through the shared app with one verify mode (e.g. spa for build/OBO)
 ... --val-verify-as spa -k test_validate_template
 
+# Changing e2e-chatbot-app-next? Its consumers (Python agents via start_app.py,
+# agent-langchain-ts via setup-ui.sh) clone it from GitHub main at startup, so a
+# plain deploy tests main's UI. Vendor this checkout's copy into them instead:
+... --val-bundle-chatbot-ui --val-template agent-langgraph --val-template agent-langchain-ts
+
 # Functional e2e (local apps on this machine)
 DATABRICKS_CONFIG_PROFILE=dogfood uv run --no-sync pytest functional_test.py -p no:xdist -v --target local
 # ...against the deployed shared app

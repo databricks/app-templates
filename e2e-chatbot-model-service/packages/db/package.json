@@ -1,5 +1,5 @@
 {
-  "name": "@chat-template/db",
+  "name": "@databricks/chatbot-db",
   "version": "1.0.0",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -33,8 +33,8 @@
   },
   "dependencies": {
     "@ai-sdk/provider": "^3.0.5",
-    "@chat-template/auth": "*",
-    "@chat-template/utils": "*",
+    "@databricks/chatbot-auth": "*",
+    "@databricks/chatbot-utils": "*",
     "drizzle-orm": "^0.45.3",
     "drizzle-kit": "^0.31.11",
     "postgres": "^3.4.4"

@@ -4,8 +4,8 @@ import {
   type Response,
   type Router as RouterType,
 } from 'express';
-import { isDatabaseAvailable } from '@chat-template/db';
-import { getEndpointOboInfo } from '@chat-template/ai-sdk-providers';
+import { isDatabaseAvailable } from '@databricks/chatbot-db';
+import { getEndpointOboInfo } from '@databricks/chatbot-ai-sdk-providers';
 
 export const configRouter: RouterType = Router();
 

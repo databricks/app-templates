@@ -1,12 +1,12 @@
 import type { LanguageModelV3 } from '@ai-sdk/provider';
 
-import { getHostUrl } from '@chat-template/utils';
+import { getHostUrl } from '@databricks/chatbot-utils';
 // Import auth module directly
 import {
   getAuthMethod,
   getDatabricksUserIdentity,
   getCachedCliHost,
-} from '@chat-template/auth';
+} from '@databricks/chatbot-auth';
 import { extractReasoningMiddleware, wrapLanguageModel } from 'ai';
 import { getModelServiceLanguageModel } from './model-service-provider';
 

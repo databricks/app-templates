@@ -5,7 +5,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import type postgres from 'postgres';
 import * as schema from './schema';
 import { getConnectionUrl, getSchemaName } from './connection';
-import { getDatabricksToken } from '@chat-template/auth';
+import { getDatabricksToken } from '@databricks/chatbot-auth';
 
 // Connection pool management
 let sqlConnection: postgres.Sql | null = null;

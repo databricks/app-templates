@@ -1,4 +1,4 @@
-import { generateUUID } from '@chat-template/core';
+import { generateUUID } from '@databricks/chatbot-core';
 import { mockFmapiSSE, mockFmapiResponseObject } from '../helpers';
 
 export type TEST_NETWORK_COMMANDS = {

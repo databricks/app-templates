@@ -5,7 +5,7 @@ import {
   getDatabricksToken,
   getAuthMethodDescription,
   getDatabaseUsername,
-} from '@chat-template/auth';
+} from '@databricks/chatbot-auth';
 import {
   getSchemaName,
   getDatabaseConfigFromEnv,

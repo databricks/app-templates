@@ -20,7 +20,7 @@ import {
   isDatabaseAvailable,
   getSchemaName,
   getConnectionUrl,
-} from '@chat-template/db';
+} from '@databricks/chatbot-db';
 
 async function main() {
   const { default: postgres } = await import('postgres');

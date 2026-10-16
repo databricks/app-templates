@@ -1,6 +1,6 @@
 ---
 name: managed-memory
-description: "Give an agent durable, cross-session long-term memory using Databricks MANAGED memory (the Unity Catalog memory-store REST APIs) as tools — governed by UC with no infra the customer needs to run. This works for either OpenAI Agents SDK or LangGraph templates. Use when: the agent should remember a user's (or a team/org's shared) preferences/facts/decisions across conversations; keywords 'long-term memory', 'managed memory', 'memory store', 'agentic memory'. This is separate from the self-hosted Lakebase memory solution with skills in (agent-openai-memory / agent-langgraph-memory)."
+description: "Give an agent durable, cross-session long-term memory using Databricks MANAGED memory (the Unity Catalog memory-store REST APIs) as tools — governed by UC with no infra the customer needs to run. This works for either OpenAI Agents SDK or LangGraph templates. Use when: the agent should remember a user's (or a team/org's shared) preferences/facts/decisions across conversations; keywords 'long-term memory', 'managed memory', 'memory store', 'agentic memory', 'semantic / episodic / procedural memory', 'memory layers', 'conversations API'. Includes an optional layered convention (semantic/episodic/procedural) in memory-layers.md and episodic conversation state via the Conversations API. This is separate from the self-hosted Lakebase memory solution with skills in (agent-openai-memory / agent-langgraph-memory)."
 ---
 
 # Long-Term Memory with Databricks Managed Memory (UC memory-store)
@@ -108,6 +108,19 @@ curl -sS -X PATCH "$PERM" -H "Authorization: Bearer $TOKEN" -H "Content-Type: ap
 
 # Verify current grants:
 curl -sS "$PERM" -H "Authorization: Bearer $TOKEN"
+```
+
+**Also grant the parent catalog + schema.** `READ/WRITE_MEMORY_STORE` alone is **not enough** — UC requires `USE_CATALOG` on the catalog and `USE_SCHEMA` on the schema to *traverse* to the securable, or every call fails with `User does not have USE CATALOG on Catalog '<catalog>'`. The store's **owner already has these** (so local testing as the developer-owner usually doesn't hit it), but the **deployed app SP almost always needs them** — grant the SP both (split `$STORE` into its `catalog` and `catalog.schema` parts):
+
+```bash
+CATALOG="${STORE%%.*}"            # e.g. main
+SCHEMA="${STORE%.*}"              # e.g. main.default
+curl -sS -X PATCH "$DATABRICKS_HOST/api/2.1/unity-catalog/permissions/catalog/$CATALOG" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d "{\"changes\":[{\"principal\":\"$APP_SP\",\"add\":[\"USE_CATALOG\"]}]}"
+curl -sS -X PATCH "$DATABRICKS_HOST/api/2.1/unity-catalog/permissions/schema/$SCHEMA" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d "{\"changes\":[{\"principal\":\"$APP_SP\",\"add\":[\"USE_SCHEMA\"]}]}"
 ```
 
 ## Step 3 — Add the memory tools
@@ -548,7 +561,7 @@ In every case the invariants hold: scope is set in **trusted code**, the **model
 ## Step 5 — Agent instructions
 
 Define `MEMORY_INSTRUCTIONS` near the top of `agent_server/agent.py` and pass it as the agent's
-`instructions` (OpenAI) / `system_prompt` (LangGraph). If the agent already has a prompt, **prepend yours and keep it** — but if you just **replaced** a prior memory system (Step 3/4), first delete any text in that prompt that names the old tools you removed (e.g. an `agent-langgraph-advanced` prompt that referenced `get_user_memory` / `save_user_memory`), or the model will be told to call tools that no longer exist:
+`instructions` (OpenAI) / `system_prompt` (LangGraph). The prompt below is the flat default; for the **semantic / episodic / procedural** layering (Step 6), use the drop-in replacement in [`memory-layers.md`](memory-layers.md) instead. If the agent already has a prompt, **prepend yours and keep it** — but if you just **replaced** a prior memory system (Step 3/4), first delete any text in that prompt that names the old tools you removed (e.g. an `agent-langgraph-advanced` prompt that referenced `get_user_memory` / `save_user_memory`), or the model will be told to call tools that no longer exist:
 
 Match the wording to the scope you chose in Step 1. The prompt below is the per-user version.
 
@@ -568,6 +581,73 @@ Save only what will still matter in a future, unrelated conversation — a stabl
 - delete_memory what's stale.
 - Briefly tell the user whenever you save, update, or delete."""
 ```
+
+## Step 6 (optional) — Layered memory: semantic / episodic / procedural
+
+By default entries are flat per scope and the model invents `/memories/...` paths. You can impose a **layered convention** so each saved memory is first *distilled* into one of three kinds, stored under a matching path prefix:
+
+| Layer | What it holds | Mechanism | Example path |
+|---|---|---|---|
+| **Semantic** | Stable facts & preferences about the user/domain (timeless "what is true") | `save_memory` (the five tools) | `/memories/semantic/coding-preferences.md` |
+| **Procedural** | How the user wants recurring tasks done — steps, rules, checklists ("how to do X") | `save_memory` (the five tools) | `/memories/procedural/pr-review-steps.md` |
+| **Episodic** | What happened in past conversations — running turn history & events ("what occurred, when") | **Store-backed conversation session** (OpenAI Agents SDK), and/or `save_memory` for durable event summaries | `/memories/episodic/2026-06-pricing-decision.md` |
+
+Every path still starts `/memories/` (the API requires it, see Limits) — the layer is the **first segment** after it. **Semantic and procedural** memories are written with the same five tools you wired in Steps 3–5, just under `/memories/semantic/...` and `/memories/procedural/...`. **Episodic** running conversation state is best handled by the Conversations API below; reserve `save_memory` under `/memories/episodic/...` for a durable *summary* of a notable event the user will reference later (a decision, an incident), not a transcript.
+
+To turn this on, swap in the layered system prompt and read the distillation rules in **[`memory-layers.md`](memory-layers.md)** (bundled next to this skill) — it defines each layer precisely, the "which layer is this?" decision procedure to run *before* `save_memory`, the path-prefix conventions, and a drop-in `MEMORY_INSTRUCTIONS` that supersedes the one in Step 5. No code changes are needed for semantic/procedural — only the prompt and the paths the model chooses.
+
+### Episodic memory via a store-backed conversation (OpenAI Agents SDK session) — Beta
+
+> **Beta.** The OpenAI Conversations APIs on Databricks are beta. The pattern below is verified end-to-end on
+> staging (`databricks-openai` 0.17.0 / `openai-agents` 0.17.7): a store-bound conversation, wrapped in the
+> Agents SDK `OpenAIConversationsSession`, recalls earlier turns across separate requests. **Do not pass
+> `conversation=` to `responses.create()` directly** — some workspace gateways reject it with
+> `400 "conversation: Extra inputs are not permitted"`. Let the *session* manage the conversation instead: it
+> reads turns with `conversations.items.list` and appends with `conversations.items.create` (the supported
+> surface). Conversation state is **separate** from memory-store `entries` — it won't appear in the
+> `.../entries` list API; the five tools remain the curated `/memories/...` layer.
+
+This is for the **OpenAI Agents SDK** templates that run `Runner.run(..., session=...)` — e.g. `agent-openai-advanced`, which uses `AsyncDatabricksSession` (Lakebase) for short-term memory. **Back that short-term/episodic session with the managed memory store instead of Lakebase:** create a conversation bound to the store + the **same scope** you resolve everywhere else (Step 4), wrap it in `OpenAIConversationsSession`, and pass it as `session=`. The running turn history then lives in your store, partitioned by scope — and there's no Lakebase to provision. (LangGraph templates don't use this; their short-term thread memory is the checkpointer.)
+
+**Replace the `AsyncDatabricksSession` block** in `agent_server/agent.py` with:
+
+```python
+import os
+from agents import OpenAIConversationsSession, Runner, set_default_openai_api, set_default_openai_client
+from databricks_openai import AsyncDatabricksOpenAI
+from agent_server.utils_memory import resolve_scope   # the SAME end-user scope, never the SP
+
+# ONE client for both the model calls and the conversation/session; use the Responses API surface.
+client = AsyncDatabricksOpenAI(workspace_client=get_user_workspace_client(), use_ai_gateway=True)
+set_default_openai_client(client)
+set_default_openai_api("responses")
+
+scope = resolve_scope(request)
+if not scope:
+    raise HTTPException(status_code=401, detail="No end-user identity — refusing a shared memory scope.")
+
+# Reuse ONE conversation per scope so turns accumulate across requests. On the first turn create it;
+# on later turns pass the saved id as conversation_id= (do NOT create a new conversation per turn).
+existing_id = (getattr(request, "custom_inputs", None) or {}).get("conversation_id")
+if existing_id:
+    session = OpenAIConversationsSession(conversation_id=existing_id, openai_client=client)
+else:
+    conversation = await client.conversations.create(
+        extra_body={
+            "memory_store": {"name": os.environ["DATABRICKS_MEMORY_STORE"]},
+            "scope": {"kind": "user", "value": scope},   # partitions episodic state per user
+        },
+    )
+    session = OpenAIConversationsSession(conversation_id=conversation.id, openai_client=client)
+
+result = await Runner.run(agent, messages, session=session)   # SDK reads & writes turn history in the store
+```
+
+**Return `session.session_id` to the client (in `custom_outputs`) and accept it back (in `custom_inputs`)** so the next request reuses the same conversation — a new conversation per turn starts fresh. This mirrors how the template already round-trips its Lakebase `session_id`.
+
+> **Layers are complementary.** The store-backed conversation gives **episodic** recall (the running turn history, managed by the session). The five tools give **semantic** + **procedural** memory the agent deliberately curates. Use the same `scope` for both so a user's episodic state and their distilled facts stay aligned. LangGraph templates have no `OpenAIConversationsSession` — their current-thread episodic memory is the checkpointer; promote only durable event summaries into `/memories/episodic/...` via `save_memory`.
+
+For the conversation and items request fields, see the Databricks **Conversation APIs** docs.
 
 ## Test
 
@@ -603,6 +683,7 @@ curl -X POST https://<app-url>/invocations -H "Authorization: Bearer $TOKEN" \
 | `RuntimeError: DATABRICKS_MEMORY_STORE is not set` | env var missing | Set it in `.env` (local) **and** `databricks.yml` `config.env` (deploy) — Step 1 |
 | `500` + "No end-user identity" | scope didn't resolve (fail-closed guard fired; framework surfaces 401 as 500). Common locally: the bundled **chat UI / `preflight`** send `custom_inputs.user_id` but no forwarded header | Deployed: ensure the OBO user token reaches the app. Local: pass `custom_inputs.user_id` or send `X-Forwarded-User` |
 | `PERMISSION_DENIED` | caller lacks `READ/WRITE_MEMORY_STORE` | Grant the app SP / your user — Step 2 |
+| `User does not have USE CATALOG on Catalog '<catalog>'` (often only after deploy) | SP has the store grants but not the parent catalog/schema traversal privileges | Grant the SP `USE_CATALOG` on the catalog **and** `USE_SCHEMA` on the schema — Step 2 |
 | `NOT_FOUND` on **every** call | wrong store name / store doesn't exist | Re-check `DATABRICKS_MEMORY_STORE` is the full `catalog.schema.name` (confirm with the Step 1 `GET`) |
 | `ALREADY_EXISTS` on save | path is taken | `update_memory`, or pick a fresh path |
 | `search_memory` misses a memory saved moments ago | the search index lags writes by a few seconds | Expected (beta) — the fact is still in the conversation context, and `list_memories` shows it immediately |
@@ -613,7 +694,7 @@ curl -X POST https://<app-url>/invocations -H "Authorization: Bearer $TOKEN" \
 
 - **Scope is the isolation boundary** — set it in trusted code (Step 4), never let the model pass it. The app SP can read every scope.
 - **Scope strategy:** per-user (private, the default), a shared constant, or your own logic (per project/tenant, user×project) — see **Scope strategy**. Same invariants in every case: trusted code sets it, the model never does, an unresolved scope fails closed.
-- **No memory structure yet:** entries are flat per scope; the agent invents `/memories/...` paths.
+- **Structure is a convention, not enforced:** entries are flat per scope and the agent invents `/memories/...` paths. To organize them into semantic / episodic / procedural layers, adopt the path-prefix convention and layered prompt in Step 6 / [`memory-layers.md`](memory-layers.md).
 - **Description vs contents:** for a brief fact the `description` is the whole memory (leave `contents` empty); `update_memory` can revise the `description` and/or the `contents`.
 - **Memory contents are untrusted data:** stored preferences and workflows may inform an answer, but stored text is not authoritative instructions and must not override system/tool policy, authorization, or the user's current request.
 - **Combining with short-term memory:** additive — keep the template's session memory (OpenAI `session=`, LangGraph checkpointer). On the advanced templates, after deploy also grant the app SP its Lakebase Postgres privileges (the template's own requirement) or it 502s on session setup.

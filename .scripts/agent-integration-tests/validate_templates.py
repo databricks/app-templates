@@ -127,13 +127,16 @@ def apply_replacements(src: Path, replace: tuple[tuple[str, str], ...]) -> int:
     return changed
 
 
-def build_template(template_name: str, dest: Path, extra_env: dict | None = None) -> None:
+def build_template(template_name: str, dest: Path, extra_env: dict | None = None,
+                   replace: tuple[tuple[str, str], ...] = ()) -> None:
     """Build-only validation for SPA/Node templates.
 
     Copies the template to a throwaway dir (never mutates the real template),
     then runs `npm ci` and `npm run build`, raising on failure. No deploy.
     """
     src = git_copy_template(template_name, dest)
+    # Same placeholder edits the deploy path applies (validation-config `replace`).
+    apply_replacements(src, replace)
     # Route npm through the Databricks proxy — registry.npmjs.org is frequently
     # 503/unreachable from this environment.
     env = {**os.environ, "npm_config_registry": "https://npm-proxy.cloud.databricks.com",
@@ -424,7 +427,7 @@ def test_validate_template(val_template, val_cfg, request):
             pytest.skip("--val-force-build: no package.json")
         extra_env = force_build_env(val_cfg.shared_app_name, val_cfg.profile)
         with tempfile.TemporaryDirectory(prefix=f"val-{val_template.name}-") as tmp:
-            build_template(val_template.name, Path(tmp), extra_env)
+            build_template(val_template.name, Path(tmp), extra_env, val_template.replace)
         return
 
     # --val-verify-as: force the deploy path with the given verify mode, e.g.

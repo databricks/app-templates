@@ -32,8 +32,8 @@
   "dependencies": {
     "@ai-sdk/openai": "3.0.52",
     "@ai-sdk/react": "3.0.157",
-    "@databricks/appkit": "0.40.0",
-    "@databricks/appkit-ui": "0.40.0",
+    "@databricks/appkit": "0.87.0",
+    "@databricks/appkit-ui": "0.87.0",
     "@databricks/sdk-experimental": "0.17.0",
     "ai": "6.0.155",
     "clsx": "2.1.1",

@@ -429,6 +429,13 @@ nested frames, workers, plugins, forms, and dynamic code evaluation are blocked.
 Images, fonts, and media embedded as data/blob URLs can still render. Browser device
 and clipboard permissions are explicitly disabled on the frame.
 
+The output frame sits inside a trusted, same-origin wrapper whose `frame-src 'none'`
+policy blocks URL navigation, including links, script navigation, and meta refresh.
+The inner frame uses `srcDoc`, so rendering requires no sandbox-hosting service.
+Author content mounts only after the wrapper policy is verified. The wrapper contains
+no author HTML or scripts; resize/error messages still come only from the opaque-origin
+inner frame. A blocked navigation produces a readable error above the output.
+
 HTML is passed through unchanged after the policy and display bootstrap; the template
 does not supply libraries, rewrite CDN references, or fetch missing resources. Code
 that relies on external resources can fail. CSP violations and script/resource errors
@@ -437,9 +444,8 @@ a working Designer preview does not guarantee that external resources work after
 
 The sandbox and CSP do not make arbitrary author code trustworthy. Publishers must
 still be trusted with the output's data and parameters. Browser CSP is not a complete
-data-loss boundary (for example, it does not comprehensively block navigation within
-the frame), and scripts can still consume browser resources or display misleading
-content. Forms, popups, downloads, and same-origin storage are disabled.
+data-loss boundary, and scripts can still consume browser resources or display
+misleading content. Forms, popups, downloads, and same-origin storage are disabled.
 
 All `/api/designer` routes reject browser requests from opaque, cross-site, or sibling-site
 origins before invoking handlers. Origin comparison uses `DATABRICKS_APP_URL`, because
@@ -451,6 +457,13 @@ disables AppKit remote serving through `DISABLE_REMOTE_SERVING` in `app.yaml`.
 Before customer rollout, validate the origin checks through Apps ingress and review
 the iframe/API boundary with security. Local browser checks and route tests do not
 establish protection against arbitrary data egress or browser resource exhaustion.
+
+Run `npm run test:browser` with a local Chrome installation (`CHROME_BIN` overrides
+the Linux default `/usr/bin/google-chrome`). It exercises the real React component
+in an isolated, headless Chrome profile, checks that blocked URLs never reach the
+local server, and covers rendering, resize/error messaging, output updates, wrapper
+reloads, missing policies, and unmounting. It uses the existing Vite dependencies
+and Node test runner; no browser or test packages are downloaded.
 
 Publish this template with the matching Universe manifest-v7/HTML runner changes.
 The template accepts v7 only; this coordinated greenfield change has no v6 reader.

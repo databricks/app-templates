@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite --config client/vite.config.ts",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "test:browser": "tsc -p tests/browser/tsconfig.json && node --experimental-strip-types --test tests/browser/*.test.ts",
     "build": "npm run build:server && npm run build:client",
     "build:server": "tsc -b tsconfig.server.json && tsdown -c tsdown.server.config.ts",
     "build:client": "tsc -b tsconfig.client.json && vite build --config client/vite.config.ts",

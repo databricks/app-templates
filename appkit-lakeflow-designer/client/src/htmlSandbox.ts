@@ -14,6 +14,12 @@ export const HTML_OUTPUT_CSP = [
   "form-action 'none'",
 ].join('; ');
 
+// The parent policy also restricts navigation of the output frame itself.
+export const HTML_OUTPUT_WRAPPER_CSP = "frame-src 'none'";
+export const HTML_OUTPUT_WRAPPER_DOCUMENT = '<!doctype html><html><head>' +
+  '<meta http-equiv="Content-Security-Policy" content="' + HTML_OUTPUT_WRAPPER_CSP + '">' +
+  '</head><body></body></html>';
+
 // The frame can report display state only; it has no bridge to App credentials or APIs.
 const FRAME_BOOTSTRAP = `<script>
 (function () {

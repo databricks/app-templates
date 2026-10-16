@@ -1255,7 +1255,8 @@ test('binds exported HTML to its selected node alongside a table, ignoring unrel
   assert.equal(result.outputs[1].outcome.payload.rows.length, 3);
   assert.equal(result.outputs.length, 2);
   const rendered = renderToStaticMarkup(createElement(OutputSection, { output: result.outputs[0], onRetry() {} }));
-  assert.match(rendered, /sandbox="allow-scripts"/);
+  assert.match(rendered, /frame-src &#x27;none&#x27;/);
+  assert.doesNotMatch(rendered, /const report/);
   assert.match(rendered, /title="Report"/);
   assert.match(rendered, /srcDoc=/i);
   assert.doesNotMatch(rendered, /allow-same-origin/);

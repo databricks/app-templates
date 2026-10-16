@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { memo } from 'react';
 import type { UseChatHelpers } from '@ai-sdk/react';
 import type { VisibilityType } from './visibility-selector';
-import type { ChatMessage } from '@chat-template/core';
+import type { ChatMessage } from '@databricks/chatbot-core';
 import { Suggestion } from './elements/suggestion';
 import { LightbulbIcon } from '@/components/icons';
 import { softNavigateToChatId } from '@/lib/navigation';

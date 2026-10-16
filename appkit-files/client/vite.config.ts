@@ -16,7 +16,7 @@ export default defineConfig({
     sourcemap: process.env.NODE_ENV === 'development',
   },
   optimizeDeps: {
-    include: ['react', 'react-dom', 'react/jsx-dev-runtime', 'react/jsx-runtime', 'recharts'],
+    include: ['react', 'react-dom', 'react/jsx-dev-runtime', 'react/jsx-runtime'],
   },
   resolve: {
     alias: {

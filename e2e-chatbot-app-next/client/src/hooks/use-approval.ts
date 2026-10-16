@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { UseChatHelpers } from '@ai-sdk/react';
-import type { ChatMessage } from '@chat-template/core';
+import type { ChatMessage } from '@databricks/chatbot-core';
 
 interface ApprovalSubmission {
   approvalRequestId: string;

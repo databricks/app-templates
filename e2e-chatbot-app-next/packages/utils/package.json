@@ -1,5 +1,5 @@
 {
-  "name": "@chat-template/utils",
+  "name": "@databricks/chatbot-utils",
   "version": "1.0.0",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -29,6 +29,6 @@
     "clean": "rm -rf dist"
   },
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "5.9.3"
   }
 }

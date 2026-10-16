@@ -1,5 +1,5 @@
 import { createBrowserRouter, RouterProvider, NavLink, Outlet } from 'react-router';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Button,
   Card,
@@ -17,6 +17,7 @@ import { AnalyticsPage } from './pages/analytics/AnalyticsPage';
 import { LakebasePage } from './pages/lakebase/LakebasePage';
 import { GeniePage } from './pages/genie/GeniePage';
 import { FilesPage } from './pages/files/FilesPage';
+import { ServingPage } from './pages/serving/ServingPage';
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   `px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
@@ -52,6 +53,9 @@ function NavLinks({ className, linkClass, onClick }: { className?: string; linkC
       <NavLink to="/files" className={linkClass} onClick={onClick}>
         Files
       </NavLink>
+      <NavLink to="/serving" className={linkClass} onClick={onClick}>
+        Serving
+      </NavLink>
     </nav>
   );
 }
@@ -59,11 +63,6 @@ function NavLinks({ className, linkClass, onClick }: { className?: string; linkC
 function Layout() {
   const isMobile = useIsMobile();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-
-  // Close mobile nav when viewport crosses to desktop
-  useEffect(() => {
-    if (!isMobile) setMobileNavOpen(false);
-  }, [isMobile]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -73,7 +72,9 @@ function Layout() {
         <NavLinks className="hidden md:flex gap-1" linkClass={navLinkClass} />
         {/* Mobile nav — visible below md breakpoint */}
         <div className="ml-auto md:hidden">
-          <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+          {/* Gate on isMobile so the portaled sheet can't linger on desktop
+              (replaces a set-state-in-effect reset). */}
+          <Sheet open={mobileNavOpen && isMobile} onOpenChange={setMobileNavOpen}>
             <Button variant="ghost" size="icon" onClick={() => setMobileNavOpen(true)}>
               <Menu className="h-5 w-5" />
               <span className="sr-only">Open navigation</span>
@@ -104,6 +105,7 @@ const router = createBrowserRouter([
       { path: '/lakebase', element: <LakebasePage /> },
       { path: '/genie', element: <GeniePage /> },
       { path: '/files', element: <FilesPage /> },
+      { path: '/serving', element: <ServingPage /> },
     ],
   },
 ]);
@@ -143,7 +145,7 @@ function HomePage() {
             </li>
             <li>
               <a
-                href="https://www.databricks.com/devhub/docs/appkit/v0/"
+                href="https://developers.databricks.com/docs/appkit/v0/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary underline underline-offset-4 hover:text-primary/80"

@@ -73,7 +73,7 @@ export async function seedFromWikipedia(
         });
       }
     } catch (err) {
-      console.warn(`[seed] ${title} failed:`, (err as Error).message);
+      console.warn('[seed] %s failed:', title, (err as Error).message);
     }
   }
 }

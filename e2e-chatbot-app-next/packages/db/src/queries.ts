@@ -21,11 +21,11 @@ import {
   type Chat,
   type Vote,
 } from './schema';
-import type { VisibilityType } from '@chat-template/utils';
-import { ChatSDKError } from '@chat-template/core/errors';
+import type { VisibilityType } from '@databricks/chatbot-utils';
+import { ChatSDKError } from '@databricks/chatbot-core/errors';
 import type { LanguageModelV3Usage } from '@ai-sdk/provider';
 import { isDatabaseAvailable } from './connection';
-import { getAuthMethod, getAuthMethodDescription } from '@chat-template/auth';
+import { getAuthMethod, getAuthMethodDescription } from '@databricks/chatbot-auth';
 
 // Optionally, if not using email/pass login, you can
 // use the Drizzle adapter for Auth.js / NextAuth
@@ -74,7 +74,8 @@ async function ensureDb() {
       return database;
     } catch (error) {
       console.error(
-        `[ensureDb] Failed to get ${authDescription} connection:`,
+        '[ensureDb] Failed to get %s connection:',
+        authDescription,
         error,
       );
       throw error;

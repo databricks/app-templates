@@ -201,6 +201,7 @@
       <div class="add-todo-section">
         <h3>➕ Add New Todo</h3>
         <form method="POST" action="{{ url_for('add_todo_route') }}">
+          <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}" />
           <div class="form-group">
             <input
               type="text"
@@ -223,18 +224,18 @@
             {{ todo[1] }}
           </span>
           <div class="todo-actions">
-            <a
-              href="{{ url_for('toggle_todo_route', todo_id=todo[0]) }}"
-              class="btn btn-small {{ 'btn-success' if not todo[2] else 'btn-primary' }}"
-            >
-              {{ '✓ Complete' if not todo[2] else '↻ Undo' }}
-            </a>
-            <a
-              href="{{ url_for('delete_todo_route', todo_id=todo[0]) }}"
-              class="btn btn-small btn-danger"
-            >
-              🗑️ Delete
-            </a>
+            <form method="POST" action="{{ url_for('toggle_todo_route', todo_id=todo[0]) }}">
+              <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}" />
+              <button type="submit" class="btn btn-small {{ 'btn-success' if not todo[2] else 'btn-primary' }}">
+                {{ '✓ Complete' if not todo[2] else '↻ Undo' }}
+              </button>
+            </form>
+            <form method="POST" action="{{ url_for('delete_todo_route', todo_id=todo[0]) }}">
+              <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}" />
+              <button type="submit" class="btn btn-small btn-danger">
+                🗑️ Delete
+              </button>
+            </form>
           </div>
         </div>
         {% endfor %} {% else %}

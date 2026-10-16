@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
 import type { DataUIPart } from 'ai';
-import type { CustomUIDataTypes } from '@chat-template/core';
+import type { CustomUIDataTypes } from '@databricks/chatbot-core';
 
 interface DataStreamContextValue {
   dataStream: DataUIPart<CustomUIDataTypes>[];

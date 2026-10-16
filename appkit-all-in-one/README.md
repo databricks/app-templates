@@ -1,6 +1,6 @@
 # appkit-all-in-one
 
-A Databricks App powered by [AppKit](https://www.databricks.com/devhub/docs/appkit/v0/), featuring React, TypeScript, and Tailwind CSS.
+A Databricks App powered by [AppKit](https://developers.databricks.com/docs/appkit/v0/), featuring React, TypeScript, and Tailwind CSS.
 
 **Enabled plugins:**
 - **Analytics** -- SQL query execution against Databricks SQL Warehouses
@@ -34,7 +34,7 @@ DATABRICKS_APP_PORT=8000
 
 #### Lakebase Configuration
 
-The Lakebase plugin requires additional environment variables for PostgreSQL connectivity. To learn how to configure the Lakebase plugin, see the [Lakebase plugin documentation](https://www.databricks.com/devhub/docs/appkit/v0/plugins/lakebase).
+The Lakebase plugin requires additional environment variables for PostgreSQL connectivity. To learn how to configure the Lakebase plugin, see the [Lakebase plugin documentation](https://developers.databricks.com/docs/appkit/v0/plugins/lakebase).
 
 ### CLI Authentication
 
@@ -143,27 +143,15 @@ targets:
 
 Make sure to replace all placeholder values in `databricks.yml` with your actual resource IDs.
 
-### 2. Validate Bundle
+### 2. Deploy
+
+Deploy and start the app with a single command:
 
 ```bash
-databricks bundle validate
+databricks apps deploy
 ```
 
-### 3. Deploy
-
-Deploy to the default target:
-
-```bash
-databricks bundle deploy
-```
-
-### 4. Run
-
-Start the deployed app:
-
-```bash
-databricks bundle run <APP_NAME> -t dev
-```
+`databricks apps deploy` validates the project, deploys it, starts the app, and prints its URL.
 
 ### Deploy to Production
 
@@ -171,8 +159,10 @@ databricks bundle run <APP_NAME> -t dev
 2. Deploy to production:
 
 ```bash
-databricks bundle deploy -t prod
+databricks apps deploy -t prod
 ```
+
+> **Restarting a stopped app:** apps stop after a period of inactivity. To start one again without redeploying, run `databricks apps start <APP_NAME>`.
 
 ## Project Structure
 

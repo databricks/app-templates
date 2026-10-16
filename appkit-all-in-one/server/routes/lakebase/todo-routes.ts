@@ -1,5 +1,5 @@
 // For per-user connections (OBO) with Row-Level Security, see:
-// https://www.databricks.com/devhub/docs/appkit/v0/plugins/lakebase#on-behalf-of-obo--per-user-connections
+// https://developers.databricks.com/docs/appkit/v0/plugins/lakebase#on-behalf-of-obo--per-user-connections
 
 import { z } from 'zod';
 import { Application } from 'express';
@@ -44,7 +44,7 @@ export async function setupSampleLakebaseRoutes(appkit: AppKitWithLakebase) {
   } catch (err) {
     console.warn('[lakebase] Database setup failed:', (err as Error).message);
     console.warn('[lakebase] Routes will be registered but may return errors');
-    console.warn('[lakebase] See https://www.databricks.com/devhub/docs/appkit/v0/plugins/lakebase#database-permissions for troubleshooting');
+    console.warn('[lakebase] See https://developers.databricks.com/docs/appkit/v0/plugins/lakebase#database-permissions for troubleshooting');
   }
 
   appkit.server.extend((app) => {

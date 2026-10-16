@@ -16,18 +16,23 @@ variables:
     description: Full Lakebase Postgres branch resource name. Obtain by running `databricks postgres list-branches {project-name}`, select the desired item from the output array and use its .name value. Requires the project resource name.
   postgres_database:
     description: Full Lakebase Postgres database resource name. Obtain by running `databricks postgres list-databases {branch-name}`, select the desired item from the output array and use its .name value. Requires the branch resource name.
-  postgres_project:
-    description: Full Lakebase Postgres project resource name. Obtain by running `databricks postgres list-projects`, select the desired item from the output array and use its .name value.
+  serving_endpoint_name:
+    description: Serving endpoint name
 
 resources:
   apps:
     app:
       name: "appkit-all-in-one"
-      description: "Full-stack Node.js app with SQL analytics dashboards, file browser, Genie AI conversations, and Lakebase Autoscaling (Postgres) CRUD"
+      description: "Full-stack Node.js app with SQL analytics dashboards, file browser, Genie AI conversations, Lakebase Autoscaling (Postgres) CRUD, and Model Serving"
       source_code_path: ./
+
+      # Start the app automatically on deploy.
+      lifecycle:
+        started: true
       user_api_scopes:
         - dashboards.genie
         - files.files
+        - serving.serving-endpoints
 
       # The resources which this app has access to.
       resources:
@@ -50,6 +55,10 @@ resources:
             branch: ${var.postgres_branch}
             database: ${var.postgres_database}
             permission: CAN_CONNECT_AND_CREATE
+        - name: serving-endpoint
+          serving_endpoint:
+            name: ${var.serving_endpoint_name}
+            permission: CAN_QUERY
 
 targets:
   default:
@@ -64,4 +73,4 @@ targets:
       genie_space_name: placeholder
       postgres_branch: placeholder
       postgres_database: placeholder
-      postgres_project: placeholder
+      serving_endpoint_name: placeholder

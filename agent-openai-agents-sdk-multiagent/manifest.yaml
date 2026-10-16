@@ -19,3 +19,7 @@ resource_specs:
     description: "The Databricks Model Serving endpoint hosting an additional agent or LLM the orchestrator calls."
     serving_endpoint_spec:
       permission: "CAN_QUERY"
+  - name: "llm-endpoint"
+    description: "The Databricks Model Serving endpoint hosting the LLM that powers the agent."
+    serving_endpoint_spec:
+      permission: "CAN_QUERY"

@@ -5,7 +5,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import type postgres from 'postgres';
 import * as schema from './schema';
 import { getConnectionUrl, getSchemaName } from './connection';
-import { getDatabricksToken } from '@chat-template/auth';
+import { getDatabricksToken } from '@databricks/chatbot-auth';
 
 // Connection pool management
 let sqlConnection: postgres.Sql | null = null;
@@ -60,7 +60,8 @@ export async function getDb() {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       console.error(
-        `[DB Pool] Failed to set search_path for '${schemaName}':`,
+        "[DB Pool] Failed to set search_path for '%s':",
+        schemaName,
         errorMessage,
       );
       // Don't throw - continue anyway

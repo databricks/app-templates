@@ -180,6 +180,7 @@ def build_templates(
     # (name, needs_lakebase, overrides)
     configs: list[tuple[str, bool, dict]] = [
         ("agent-langgraph", False, {}),
+        ("agent-adk", False, {}),
         ("agent-langgraph-advanced", True, {"is_advanced": True}),
         ("agent-openai-agents-sdk", False, {}),
         ("agent-openai-advanced", True, {"is_advanced": True}),

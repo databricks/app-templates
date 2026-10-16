@@ -1,0 +1,9 @@
+version: 1
+name: "Agent - Google ADK"
+description: "A conversational agent backend and UI using Google's Agent Development Kit (ADK) and MLflow AgentServer"
+
+resource_specs:
+  - name: "experiment"
+    description: "The destination experiment for traces from the agent's execution."
+    experiment_spec:
+      permission: "CAN_EDIT"

@@ -25,6 +25,10 @@ class ValidationTemplate:
     # page loads (e.g. a "Run Query" button) before waiting for `expect` — for apps
     # that run the OBO call on interaction rather than on page load. None = on-load.
     obo_click: str | None = None
+    # (old, new) literal replacements applied to the copied source before deploy,
+    # standing in for the placeholder edits a user makes (e.g. REPLACE_ME catalog
+    # names in SQL queries) so the template can run against the shared app.
+    replace: tuple[tuple[str, str], ...] = field(default=())
 
 
 @dataclass(frozen=True)
@@ -79,8 +83,12 @@ def load_validation_config(
         assert obo_click is None or verify == "obo", (
             f"{name}: obo_click is only valid for verify: obo"
         )
+        raw_replace = entry.get("replace") or {}
+        assert isinstance(raw_replace, dict), f"{name}: `replace` must be a mapping"
+        replace = tuple((str(k), str(v)) for k, v in raw_replace.items())
         templates.append(
-            ValidationTemplate(name=name, verify=verify, expect=expect, obo_click=obo_click)
+            ValidationTemplate(name=name, verify=verify, expect=expect,
+                               obo_click=obo_click, replace=replace)
         )
 
     root = data.get("workspace_source_root") or ""

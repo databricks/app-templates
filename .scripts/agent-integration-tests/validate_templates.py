@@ -105,6 +105,28 @@ def prepare_source(template_name: str, dest: Path, bundle_chatbot_ui: bool = Fal
     return src
 
 
+def apply_replacements(src: Path, replace: tuple[tuple[str, str], ...]) -> int:
+    """Apply a template's configured `replace` pairs to every text file in its
+    copied source (never lockfiles). Returns the number of files changed."""
+    if not replace:
+        return 0
+    changed = 0
+    for f in sorted(p for p in src.rglob("*") if p.is_file()):
+        if f.name == "package-lock.json":
+            continue
+        try:
+            text = f.read_text()
+        except (UnicodeDecodeError, OSError):
+            continue
+        new = text
+        for old, repl in replace:
+            new = new.replace(old, repl)
+        if new != text:
+            f.write_text(new)
+            changed += 1
+    return changed
+
+
 def build_template(template_name: str, dest: Path, extra_env: dict | None = None) -> None:
     """Build-only validation for SPA/Node templates.
 
@@ -448,6 +470,9 @@ def test_validate_template(val_template, val_cfg, request):
     with tempfile.TemporaryDirectory(prefix=f"val-{val_template.name}-") as tmp:
         src = prepare_source(val_template.name, Path(tmp),
                              request.config.getoption("--val-bundle-chatbot-ui"))
+        if val_template.replace:
+            n = apply_replacements(src, val_template.replace)
+            _log(f"[{val_template.name}] applied config replacements to {n} file(s)")
         sync_source(src, ws_path, val_cfg.profile)
         apps_deploy_source(shared_app, ws_path, val_cfg.profile)
         try:

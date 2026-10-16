@@ -86,7 +86,11 @@ templates:
   appkit-genie: { verify: obo }
   appkit-lakebase: { verify: obo }
   appkit-serving: { verify: obo }
-  agentic-support-console: { verify: obo }
+  agentic-support-console:
+    verify: obo
+    # Queries read <catalog>.gold.*; point them at the shared demo tables (empty
+    # Delta tables with the gold schema, owned by the shared-app maintainer).
+    replace: { "REPLACE_ME.gold.": "main.`apps-e2e-template-schema`." }
   content-moderator: { verify: obo }
   inventory-intelligence: { verify: obo }
   saas-tracker: { verify: obo }

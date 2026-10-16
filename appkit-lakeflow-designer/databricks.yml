@@ -1,0 +1,30 @@
+# For local/dev deploys of a single reference instance (databricks bundle deploy / apps run-local).
+# Production publishing does NOT use this bundle: the publish saga creates one git-backed app per
+# Designer flow via the Apps API, pointed at this repo, with the job bound and the manifest written
+# to the per-app workspace path.
+bundle:
+  name: appkit_lakeflow_designer
+
+variables:
+  runner_job_id:
+    description: Runner job id to bind for local/dev testing
+
+resources:
+  apps:
+    app:
+      name: 'appkit-lakeflow-designer'
+      description: 'Published Lakeflow Designer app'
+      source_code_path: ./
+      lifecycle:
+        started: true
+      resources:
+        - name: job
+          job:
+            id: ${var.runner_job_id}
+            permission: CAN_MANAGE
+
+targets:
+  dev:
+    default: true
+    variables:
+      runner_job_id: 'placeholder'

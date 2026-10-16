@@ -1,0 +1,5 @@
+node_modules/
+client/dist/
+.env
+.DS_Store
+dist/

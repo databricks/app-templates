@@ -41,7 +41,7 @@ export function ParameterForm({
   const uploadCache = useRef<ReturnType<typeof createFileUploadCache> | undefined>(undefined);
   const submitting = useRef(false);
   const [uploadErrors, setUploadErrors] = useState<Record<string, string | undefined>>({});
-  const [uploading, setUploading] = useState(false);
+  const [submissionPhase, setSubmissionPhase] = useState<'idle' | 'starting' | 'uploading'>('idle');
   useEffect(() => {
     const cache = createFileUploadCache();
     uploadCache.current = cache;
@@ -51,7 +51,7 @@ export function ParameterForm({
   const fileParameters = parameters.filter(({ type }) => type === 'file');
   const disabled =
     running ||
-    uploading ||
+    submissionPhase !== 'idle' ||
     !runnable ||
     fileParameters.some(({ name }) => stagedFiles[name] === undefined || uploadErrors[name] !== undefined);
 
@@ -70,13 +70,14 @@ export function ParameterForm({
     if (disabled || submitting.current || cache === undefined) return;
 
     submitting.current = true;
-    setUploading(true);
+    setSubmissionPhase('starting');
     setUploadErrors({});
     try {
       if (!(await onPrepareRun()) || cache.signal.aborted) return;
       const nextValues = { ...values };
       const errors: Record<string, string> = {};
       let unavailable = false;
+      if (fileParameters.length > 0) setSubmissionPhase('uploading');
       await Promise.all(fileParameters.map(async ({ name, fileFormats }) => {
         const file = stagedFiles[name];
         if (file === undefined) return;
@@ -96,15 +97,23 @@ export function ParameterForm({
       setUploadErrors(errors);
       if (Object.keys(errors).length > 0) return;
       onChange(nextValues);
+      setSubmissionPhase('starting');
       await onRun(nextValues, cache.signal);
     } finally {
       submitting.current = false;
-      if (!cache.signal.aborted) setUploading(false);
+      if (!cache.signal.aborted) setSubmissionPhase('idle');
     }
   };
 
   return (
-    <form className="grid gap-4 p-6" onSubmit={(event) => void submit(event)}>
+    <form
+      className={
+        parameters.length === 0
+          ? 'flex items-center justify-between gap-4 px-6 py-4'
+          : 'grid gap-4 p-6'
+      }
+      onSubmit={(event) => void submit(event)}
+    >
       {parameters.map((parameter) => (
         <div
           key={parameter.name}
@@ -121,7 +130,7 @@ export function ParameterForm({
                 file={stagedFiles[parameter.name]}
                 error={uploadErrors[parameter.name]}
                 onFileChange={(file) => stageFile(parameter, file)}
-                disabled={running || uploading || !runnable}
+                disabled={running || submissionPhase !== 'idle' || !runnable}
               />
             ) : (
               <ParameterControl
@@ -135,11 +144,17 @@ export function ParameterForm({
         </div>
       ))}
 
-      {parameters.length === 0 ? <p className="text-muted-foreground text-xs">This app takes no parameters.</p> : null}
+      {parameters.length === 0 ? <p className="text-muted-foreground text-sm">This app takes no parameters.</p> : null}
 
-      <div className="flex justify-end">
+      <div className="ml-auto flex shrink-0 justify-end">
         <Button type="submit" disabled={disabled} className="px-6">
-          {uploading ? 'Uploading…' : running ? 'Running…' : 'Run'}
+          {running
+            ? 'Running…'
+            : submissionPhase === 'uploading'
+              ? 'Uploading…'
+              : submissionPhase === 'starting'
+                ? 'Starting…'
+                : 'Run'}
         </Button>
       </div>
     </form>

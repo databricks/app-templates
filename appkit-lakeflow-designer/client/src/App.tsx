@@ -340,7 +340,7 @@ export function App() {
       </header>
 
       <div className="grid gap-6">
-        <Card className="overflow-hidden p-0">
+        <Card className={`overflow-hidden p-0 ${manifest.parameters.length === 0 ? 'gap-0' : ''}`}>
           {configurationMessage && (
             <div className="px-6 pt-6" role="status">
               <Alert>

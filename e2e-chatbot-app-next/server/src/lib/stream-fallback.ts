@@ -34,7 +34,7 @@ export async function drainStreamToWriter(
           'Mid-stream error, forwarding to client:',
           chunk.value.errorText,
         );
-        writer.write(chunk.value);
+        writer.write({ type: 'data-error', data: chunk.value.errorText ?? chunk.value.message ?? 'Unknown error' });
       } else {
         if (!receivedTextChunk && chunk.value.type.startsWith('text-')) {
           receivedTextChunk = true;

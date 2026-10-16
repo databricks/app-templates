@@ -16,7 +16,7 @@
  * - With-db:   trace ID is persisted to the database alongside the message.
  */
 
-import { generateUUID } from '@chat-template/core';
+import { generateUUID } from '@databricks/chatbot-core';
 import { expect, test } from '../fixtures';
 import { sendChatAndGetMessageId } from '../helpers';
 

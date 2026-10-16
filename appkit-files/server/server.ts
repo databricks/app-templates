@@ -5,5 +5,4 @@ createApp({
     files(),
     server(),
   ],
-})
-  .catch(console.error);
+}).catch(console.error);

@@ -61,8 +61,7 @@ See the `examples/` directory for complete YAML snippets:
 | `sql-warehouse.yaml` | SQL warehouse | SQL execution |
 | `serving-endpoint.yaml` | Model serving endpoint | Model inference |
 | `genie-space.yaml` | Genie space | Natural language data |
-| `lakebase.yaml` | Lakebase database | Agent memory storage (provisioned) |
-| `lakebase-autoscaling.yaml` | Lakebase autoscaling postgres | Agent memory storage (autoscaling) |
+| `lakebase-autoscaling.yaml` | Lakebase autoscaling postgres | Agent memory storage |
 | `experiment.yaml` | MLflow experiment | Tracing (already configured) |
 | `app.yaml` | Databricks App (app-to-app) | Custom MCP servers hosted as Apps |
 | `custom-mcp-server.md` | Custom MCP apps | Apps starting with `mcp-*` |
@@ -94,8 +93,8 @@ Some resources need environment variables in your app. Use `value_from` in `data
 env:
   - name: MLFLOW_EXPERIMENT_ID
     value_from: "experiment"        # References resources.apps.<app>.resources[name='experiment']
-  - name: LAKEBASE_INSTANCE_NAME
-    value_from: "database"   # References resources.apps.<app>.resources[name='database']
+  - name: LAKEBASE_AUTOSCALING_ENDPOINT
+    value_from: "postgres"   # References resources.apps.<app>.resources[name='postgres']
 ```
 
 **Critical:** Every `value_from` value must match a `name` field in `databricks.yml` resources.

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { shouldInjectContextForEndpoint } from "@chat-template/ai-sdk-providers";
+import { shouldInjectContextForEndpoint } from "@databricks/chatbot-ai-sdk-providers";
 
 test.describe("Request Context Utils", () => {
   test.describe("shouldInjectContextForEndpoint", () => {

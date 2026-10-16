@@ -2,42 +2,9 @@
 
 ## MANDATORY First Actions
 
-**Ask the user interactively:**
+For first-time environment setup, invoke the **quickstart** skill at `.claude/skills/quickstart/SKILL.md` — its "Setup Flow (for Claude)" section walks through the `AskUserQuestion` calls needed to collect the workspace, app target, and Lakebase configuration, then runs `uv run quickstart` with the right flags.
 
-1. **App deployment target:**
-   > "Do you have an existing Databricks app you want to deploy to, or should we create a new one? If existing, what's the app name?"
-
-   *Note: New apps should use the `agent-*` prefix (e.g., `agent-data-analyst`) unless the user specifies otherwise.*
-
-2. **Lakebase instance (required for memory) — use `AskUserQuestion` tool:**
-
-   **Step A:** Use the `AskUserQuestion` tool to ask the user which type of Lakebase instance they are using:
-   - Option 1: **Provisioned** — "I have a provisioned Lakebase instance"
-   - Option 2: **Autoscaling** — "I have an autoscaling Lakebase project/branch"
-
-   **Step B (if Provisioned):** Use `AskUserQuestion` to ask:
-   > "What is your Lakebase instance name?"
-
-   Then pass it to quickstart: `uv run quickstart --lakebase-provisioned-name <instance-name>`
-   For post-deploy setup, see the **lakebase-setup** skill.
-
-   **Step B (if Autoscaling):** Use `AskUserQuestion` to ask:
-   > "What is your Lakebase project and branch? You can provide them separately (project name and branch name) or paste the full resource path (e.g. `project/my-project/branch/my-branch`)."
-
-   - If the user provides a resource path like `project/<project>/branch/<branch>`, parse out the project and branch components
-   - The user may also paste just a branch resource path like `project/<project-id>/branch/<branch-id>` — parse project and branch from the path segments
-
-   Then pass to quickstart: `uv run quickstart --lakebase-autoscaling-project <project> --lakebase-autoscaling-branch <branch>`
-   For post-deploy setup (postgres resource config, granting permissions), see `.claude/skills/add-tools/examples/lakebase-autoscaling.yaml`.
-
-**Then set up the environment using quickstart:**
-
-1. **Read the quickstart skill** at `.claude/skills/quickstart/SKILL.md` — it contains all available CLI flags (including Lakebase options), what the script configures, and fallback instructions.
-2. **Check if `.env` exists.** If it does, the environment is already configured — read it to find `DATABRICKS_CONFIG_PROFILE` and skip to verifying auth. If `.env` does not exist, run quickstart:
-   ```bash
-   uv run quickstart --profile <profile-name> --lakebase-provisioned-name <instance-name>
-   ```
-3. Run `databricks auth profiles` to verify the profile is configured and valid.
+If `.env` already exists, the environment is already configured — read it to find `DATABRICKS_CONFIG_PROFILE` and skip to verifying auth with `databricks auth profiles`.
 
 **CRITICAL: All `databricks` CLI commands must include the profile from `.env`.** Either use `--profile` or set the env var:
 
@@ -71,7 +38,7 @@ This template includes both **short-term memory** (conversation history within a
 - **Long-term memory** uses `AsyncDatabricksStore` with memory tools to persist user preferences and information across multiple interactions.
 
 **Required setup:**
-1. Configure Lakebase — follow the `AskUserQuestion` flow in MANDATORY First Actions above to determine provisioned vs autoscaling and pass the right flags to quickstart
+1. Configure Lakebase — follow the `AskUserQuestion` flow in MANDATORY First Actions above to collect the autoscaling endpoint and pass it to quickstart
 2. Use `thread_id` in requests to maintain conversation context (see **agent-memory** skill)
 3. Use `user_id` in requests to scope long-term memories per user (see **agent-memory** skill)
 
@@ -101,6 +68,17 @@ The **Supervisor API** lets Databricks run the tool-selection and agent loop ser
 - Use **supervisor-api** to set up the Supervisor API with hosted tools
 - Use **supervisor-api-background-mode** for tasks that may exceed HTTP timeout limits (complex multi-tool workflows, large data analysis)
 
+## Long-Term Memory: Managed (Governed) Alternative
+
+> **Beta.** Managed memory uses the Databricks memory-store APIs, which are in beta — APIs and behavior may change.
+
+This template **defaults to Lakebase** for long-term memory (`AsyncDatabricksStore` — see the Memory Template Note above). **Managed memory** is a governed, zero-ops alternative: long-term memories live in a **Unity Catalog memory store** (`catalog.schema.name`, type `MEMORY_STORE`) with no database for you to provision or run. Databricks manages the underlying quality logic — deduplication, scope isolation, and fact reconciliation. The agent gets tools to store, retrieve, and modify memories, scoped per end user through code.
+
+> **Which to use.** Both persist facts across sessions. Stick with the default **Lakebase** store when you need direct SQL access, embedding-based semantic search, or it's already part of your stack. Choose **managed memory** when you'd rather not run any infrastructure and want UC governance out of the box.
+
+**Skills:**
+- Use **managed-memory** to add (or swap in) the UC memory-store tools.
+
 ## Agent Evaluation
 
 When the user asks about evaluating their agent (quality, metrics, scorers, datasets, or tracing), suggest installing the **MLflow Skills** from https://github.com/mlflow/skills. These provide expert guidance for evaluation workflows using MLflow's native APIs.
@@ -127,7 +105,8 @@ After installation, the skills will be available as slash commands (e.g., `/agen
 |------|-------|------|
 | Setup, auth, first-time | **quickstart** | `.claude/skills/quickstart/SKILL.md` |
 | Lakebase configuration | **lakebase-setup** | `.claude/skills/lakebase-setup/SKILL.md` |
-| Memory patterns | **agent-memory** | `.claude/skills/agent-memory/SKILL.md` |
+| Memory patterns (short-term + long-term, Lakebase) | **agent-memory** | `.claude/skills/agent-memory/SKILL.md` |
+| Long-term memory — managed/governed alternative | **managed-memory** | `.claude/skills/managed-memory/SKILL.md` |
 | Find tools/resources | **discover-tools** | `.claude/skills/discover-tools/SKILL.md` |
 | Create tool resources | **create-tools** | `.claude/skills/create-tools/SKILL.md` |
 | Deploy to Databricks | **deploy** | `.claude/skills/deploy/SKILL.md` |

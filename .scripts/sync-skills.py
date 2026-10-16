@@ -38,30 +38,28 @@ def copy_skill(src: Path, dest: Path, substitutions: dict = None):
 
 
 LAKEBASE_OPTIONS = (
-    "- `--lakebase-provisioned-name NAME`: Provisioned Lakebase instance name (memory templates)\n"
-    "- `--lakebase-autoscaling-project PROJECT`: Autoscaling Lakebase project name (memory templates)\n"
-    "- `--lakebase-autoscaling-branch BRANCH`: Autoscaling Lakebase branch name (memory templates)\n"
+    "- `--lakebase-autoscaling-endpoint NAME`: Autoscaling Lakebase endpoint — short name or full resource path `projects/<p>/branches/<b>/endpoints/<e>` (memory templates)\n"
+    "- `--lakebase-create-new NAME`: Provision a new Lakebase autoscaling project + branch with this name (memory templates)\n"
 )
 
 LAKEBASE_EXAMPLES = (
     "\n"
-    "# Memory template with provisioned Lakebase\n"
-    "uv run quickstart --lakebase-provisioned-name my-instance\n"
-    "\n"
     "# Memory template with autoscaling Lakebase\n"
-    "uv run quickstart --lakebase-autoscaling-project my-project --lakebase-autoscaling-branch production\n"
+    "uv run quickstart --lakebase-autoscaling-endpoint projects/my-project/branches/production/endpoints/primary\n"
+    "\n"
+    "# Memory template — create a new Lakebase autoscaling project\n"
+    "uv run quickstart --lakebase-create-new my-new-project\n"
 )
 
 LAKEBASE_CONFIGURES_ENV = (
-    "- `LAKEBASE_INSTANCE_NAME` - Provisioned Lakebase instance name (if `--lakebase-provisioned-name` provided)\n"
-    "- `LAKEBASE_AUTOSCALING_PROJECT` and `LAKEBASE_AUTOSCALING_BRANCH` - Autoscaling project/branch (if `--lakebase-autoscaling-project/branch` provided)\n"
+    "- `LAKEBASE_AUTOSCALING_ENDPOINT` - Autoscaling Lakebase endpoint (if `--lakebase-autoscaling-endpoint` provided)\n"
+    "- `PGHOST`, `PGUSER`, `PGDATABASE` - Postgres connection details (auto-resolved from the endpoint)\n"
 )
 
 LAKEBASE_CONFIGURES_YML = (
     "\n"
     "Updates `databricks.yml` and `app.yaml` (if Lakebase flags provided):\n"
-    "- Keeps only the env vars relevant to the selected Lakebase type (provisioned or autoscaling)\n"
-    "- Removes the env vars for the other type\n"
+    "- Sets the autoscaling Lakebase env vars and the `postgres` resource block with concrete branch/database values fetched from the workspace\n"
 )
 
 
@@ -87,7 +85,7 @@ def sync_template(template: str, config: dict):
     copy_skill(SOURCE / "quickstart", dest / "quickstart", quickstart_subs)
 
     # Shared skills (no substitution needed)
-    for skill in ["run-locally", "discover-tools", "create-tools", "migrate-from-model-serving"]:
+    for skill in ["run-locally", "discover-tools", "create-tools", "migrate-from-model-serving", "diagnostics"]:
         copy_skill(SOURCE / skill, dest / skill)
 
     # Load-testing skill (excluded for non-conversational — incompatible input format)
@@ -101,10 +99,16 @@ def sync_template(template: str, config: dict):
     # Deploy skill (with substitution)
     copy_skill(SOURCE / "deploy", dest / "deploy", subs)
 
+    # Managed memory (UC memory-store) skill — durable long-term memory over REST, no infra.
+    # Conversational agent templates only (not the non-conversational or migration-helper templates).
+    if template not in ("agent-non-conversational", "agent-migration-from-model-serving"):
+        copy_skill(SOURCE / "managed-memory", dest / "managed-memory")
+
     # Add supervisor API to Open AI SDKs
     if sdk == "openai":
         copy_skill(SOURCE / "supervisor-api", dest / "supervisor-api")
         copy_skill(SOURCE / "supervisor-api-background-mode", dest / "supervisor-api-background-mode")
+        copy_skill(SOURCE / "supervisor-api-client-function-calling", dest / "supervisor-api-client-function-calling")
 
     # SDK-specific skills (with substitution for bundle name references)
     if isinstance(sdk, list):

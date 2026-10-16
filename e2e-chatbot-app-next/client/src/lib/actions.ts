@@ -1,5 +1,5 @@
 import { fetchWithErrorHandlers } from './utils';
-import type { VisibilityType } from '@chat-template/core';
+import type { VisibilityType } from '@databricks/chatbot-core';
 
 /**
  * Update chat visibility (public/private)

@@ -18,15 +18,13 @@ End-to-end tests that validate every agent template works correctly both locally
 ```
 test_e2e[template]
   |
-  |-- 0. (autoscaling only) generate unique branch name per test
-  |-- 1. (provisioned only) copy_template() to temp dir
-  |-- 2. setup log file            # Create logs/ dir, clear logs/{template}-{lakebase_type}.log
+  |-- 1. setup log file            # Create logs/ dir, clear logs/{template}-{lakebase_type}.log
   |
   |-- [--skip-local shortcut: skip steps 3-5, go straight to deploy]
   |
   |-- 3. clean_template()          # Remove .env, .bundle/, .databricks/ (keeps .venv/)
   |-- 4. uv_sync()                 # Run `uv sync` to create/update .venv
-  |-- 5. run_quickstart()          # uv run quickstart --profile <p> [--lakebase-provisioned-name <l> | --lakebase-autoscaling-project <proj> --lakebase-autoscaling-branch <br>]
+  |-- 5. run_quickstart()          # uv run quickstart --profile <p> [--lakebase-autoscaling-endpoint <endpoint>]
   |-- 6. apply_edits()             # Template-specific file edits (grouped by file)
   |
   |-- 7. +----------------------------------------------+
@@ -58,9 +56,7 @@ Local and deploy phases run **in parallel** via `ThreadPoolExecutor`. Either pha
 | Flag | Default | Description |
 |---|---|---|
 | `--profile` | `dev` | Databricks CLI profile |
-| `--lakebase` | `bbqiu` | Lakebase provisioned instance name |
-| `--lakebase-autoscaling-project` | `test-{random}` | Lakebase autoscaling project name (random per run by default) |
-| `--lakebase-autoscaling-branch` | `test-{random}` | Lakebase autoscaling branch name (overridden per test with a unique value) |
+| `--lakebase-autoscaling-endpoint` | _(preset)_ | Lakebase autoscaling endpoint — short name or full resource path `projects/<p>/branches/<b>/endpoints/<e>` |
 | `--template` | _(all)_ | Run only specific templates (repeatable) |
 | `--genie-space-id` | `01f05202dbb51d74b6cccf1b1b1683eb` | Genie space ID for multiagent |
 | `--serving-endpoint` | `agents_dev-bbqiu-test-bb-2-25` | Serving endpoint for multiagent |
@@ -86,7 +82,13 @@ Local and deploy phases run **in parallel** via `ThreadPoolExecutor`. Either pha
 |-- template_config.py       # TemplateConfig/FileEdit dataclasses, databricks.yml parser, 6 template definitions, REPO_ROOT
 |-- test_e2e.py              # Single test_e2e() parametrized across templates; orchestrates setup/local/deploy/cleanup phases
 |-- test_quickstart_e2e.py   # Quickstart journey tests: 3 scenarios covering fresh run, idempotency, existing-app binding
-|-- logs/                    # Runtime directory: per-template and per-scenario log files
+|-- functional_config.py     # Registry of functional-e2e exemplar templates (FUNCTIONAL_TEMPLATES)
+|-- functional_runners.py    # Per-kind runners: node-playwright, py-playwright, mcp, agent-api
+|-- local_launch.py          # Launches a template app locally by family, waits for readiness
+|-- functional_test.py       # Orchestrator: test_functional() parametrized across FUNCTIONAL_TEMPLATES
+|-- functional_report.py     # Renders functional e2e results as logs/functional-report.md
+|-- auth_setup.py            # One-time human SSO login -> saves Playwright storageState for deployed runs
+|-- logs/                    # Runtime directory: per-template and per-scenario log files, plus functional-report.md
 +-- pyproject.toml       # Dependencies (pytest, pytest-xdist, openai, requests, databricks-sdk, databricks-ai-bridge[memory])
 ```
 
@@ -131,11 +133,8 @@ uv run pytest test_e2e.py -v -n0 -s
 # Keep deployed apps running for inspection
 uv run pytest test_e2e.py -v --template agent-langgraph --skip-local --no-destroy
 
-# Custom profile and provisioned lakebase
-uv run pytest test_e2e.py -v -n 8 --profile staging --lakebase my-instance
-
 # Custom profile and autoscaling lakebase
-uv run pytest test_e2e.py -v -n 8 --profile staging --lakebase-project my-project --lakebase-branch production
+uv run pytest test_e2e.py -v -n 8 --profile staging --lakebase-autoscaling-endpoint projects/my-project/branches/production/endpoints/primary
 
 # Multiagent with custom Genie space and endpoint
 uv run pytest test_e2e.py -v --template agent-openai-agents-sdk-multiagent \
@@ -176,9 +175,7 @@ When the user asks you to run e2e tests, use this pattern:
    ```bash
    # Run these as parallel tool calls (one per template variant):
    tail -20 .scripts/agent-integration-tests/logs/agent-langgraph-advanced-autoscaling.log
-   tail -20 .scripts/agent-integration-tests/logs/agent-langgraph-advanced-provisioned.log
    tail -20 .scripts/agent-integration-tests/logs/agent-openai-advanced-autoscaling.log
-   tail -20 .scripts/agent-integration-tests/logs/agent-openai-advanced-provisioned.log
    ```
 
 3. **Summarize status** after each poll: report which phase each template is in (setup, local queries, evaluate, deploy, etc.) and whether anything has passed or failed.
@@ -246,4 +243,86 @@ Each template writes a detailed log to `logs/{template-name}.log` (e.g. `logs/ag
 
 **Multiagent** (`agent-openai-agents-sdk-multiagent`): Has the most complex pre-test setup. Uncomments a SUBAGENTS block in `agent_server/agent.py` and enables 2 subagents (genie + serving_endpoint). Also replaces placeholders in `databricks.yml` (Genie space ID, serving endpoint; the knowledge assistant placeholder is filled with the serving endpoint value as a stand-in). Runs `agent-evaluate` after endpoint queries.
 
-**Lakebase memory templates** (`*-advanced`): The quickstart command receives `--lakebase-provisioned-name` (or `--lakebase-autoscaling-project` + `--lakebase-autoscaling-branch` for autoscaling) and handles all `databricks.yml` modifications: it sets the experiment ID in the app resource and replaces `<your-lakebase-instance-name>` placeholders with the actual instance name. During deploy, the app's service principal is granted Lakebase access. This applies to `agent-langgraph-advanced` and `agent-openai-agents-advanced`.
+**Lakebase memory templates** (`*-advanced`): The quickstart command receives `--lakebase-autoscaling-endpoint` and handles all `databricks.yml` modifications: it sets the experiment ID in the app resource and fills the `postgres` resource with the branch/database resolved from the endpoint. During deploy, the app's service principal is granted Lakebase access. This applies to `agent-langgraph-advanced` and `agent-openai-advanced`.
+
+## Functional E2E
+
+A separate, smaller suite from `test_e2e.py` above. Where `test_e2e.py` validates an agent template's **backend** contract (quickstart -> deploy -> `/invocations`/`/responses`), `functional_test.py` validates that each exemplar app's **UI or protocol surface actually works** for a real user/client — a browser loads the page and the real content renders, or an API call gets a real response.
+
+### Registry
+
+`functional_config.py` holds `FUNCTIONAL_TEMPLATES`, a dict of 4 exemplars (one per "kind" of functional check):
+
+| Template | Family | Test kind | Spec / check | Required env |
+|---|---|---|---|---|
+| `streamlit-database-app` | `streamlit` | `py-playwright` | `streamlit-database-app/tests/e2e/test_app.py` | — |
+| `e2e-chatbot-app-next` | `node` | `node-playwright` | `npx playwright test` (existing suite, `tests/e2e/chat.test.ts`'s "Send a user message and receive response") | `DATABRICKS_SERVING_ENDPOINT` |
+| `mcp-server-hello-world` | `mcp` | `mcp` | `run_mcp` — GETs `/` and asserts non-5xx (no new test file) | — |
+| `agent-langgraph` | `agent` | `agent-api` | `run_agent_api` — POSTs `/invocations` and asserts `"output"` in the JSON (no new test file) | — |
+
+Each `FunctionalTemplate` also carries `required_resources`: env vars that must be set or the row is skipped (not failed) with a `missing creds: ...` note. Add new exemplars by adding an entry here — no other registry file needs updating.
+
+### Running it
+
+```bash
+cd .scripts/agent-integration-tests
+
+# One-time: install the Chromium browser Playwright drives
+playwright install chromium
+
+# All 4 exemplars, local target (apps launched on the machine running the test)
+uv run --no-sync pytest functional_test.py -p no:xdist -v --target local
+
+# A subset, repeatable --val-template
+uv run --no-sync pytest functional_test.py -p no:xdist -v --target local \
+  --val-template streamlit-database-app --val-template e2e-chatbot-app-next
+
+# Against an already-deployed shared app instead of a local process
+uv run --no-sync pytest functional_test.py -p no:xdist -v --target deployed
+```
+
+**Serial-only (`-p no:xdist`) is required.** Each row launches/stops a local server (or hits a shared deployed app) and drives a real browser; running templates concurrently under `pytest-xdist` would race on ports, browser profiles, and the shared deployed app's auth state. Always pass `-p no:xdist` for this file, unlike `test_e2e.py` which runs happily under `-n 8`.
+
+### Local vs. deployed target
+
+- **`--target local` (default)**: `local_launch.py` first runs `ensure_deps` (`uv sync` / `uv venv --python 3.11` + `uv pip install -r requirements.txt` for python families, `npm install` for node, all via the Databricks pypi/npm proxies), then starts the template's own dev process per family (`streamlit run app.py`, `npm run dev`, `uv run start-server`, the MCP server command) on a free port and polls `launch.ready_path`. Python-family apps run from the template's own `.venv` (via `VIRTUAL_ENV`/`PATH`), not `uv run`. The runner then points Playwright/requests at `http://127.0.0.1:<port>`.
+- **`--target deployed`**: skips `local_launch` entirely and resolves a shared, already-deployed app's URL + OAuth token via `validate_templates.wait_for_app_ready_generic` and `validation_config`. Browser-driven exemplars (`py-playwright`, `node-playwright`) additionally require a saved Playwright `storageState` — if `.auth/dogfood.json` doesn't exist yet, the row is skipped with `no storageState -- run auth_setup first` rather than failing.
+
+### Model-dependent exemplars on SSO-walled workspaces
+
+Exemplars with `model_dependent=True` (`agent-langgraph`, `e2e-chatbot-app-next`) call a model serving endpoint on their happy path. On an **SSO-walled workspace (dogfood staging)**, a local client hitting the **OpenAI-compat serving path** (`/serving-endpoints/<name>/invocations`, what `ChatDatabricks` and OpenAI-style clients use) is **303-redirected to the login page** and receives sign-in HTML — surfacing as `'str' object has no attribute 'choices'` / "No generations found in stream". The **SDK-native** `w.serving_endpoints.query()` and the **deployed SP** path are unaffected; this is purely a staging-SSO quirk, not a template bug (the same `ChatDatabricks` call passes against a normal workspace).
+
+So for `--target local`, `functional_test.py` prechecks the serving path via `openai_serving_sso_walled()` and, when it detects the login wall, **skips** the model-dependent row with `serving path SSO-walled on this workspace — run --target deployed or use a non-SSO workspace` rather than failing. To actually exercise these exemplars locally, run against a non-SSO workspace profile (`DATABRICKS_CONFIG_PROFILE=<non-staging>`); otherwise validate them with `--target deployed`.
+
+### SSO auth for deployed browser tests
+
+Browser-driven exemplars against a deployed app sit behind Databricks SSO, which can't be scripted headlessly. Run the one-time, human-in-the-loop login once per app/credential lifetime:
+
+```bash
+cd .scripts/agent-integration-tests
+uv run --no-sync python auth_setup.py <deployed-app-url> .auth/dogfood.json
+```
+
+This opens a real (headed) browser, waits for you to complete SSO + consent, then saves the authenticated session to `.auth/dogfood.json` on Enter. `functional_test.py` picks that file up automatically for `--target deployed` runs and passes it through as `PLAYWRIGHT_STORAGE_STATE` to both Playwright runners. `agent-api` and `mcp` checks don't need it — they authenticate with the OAuth bearer token / are unauthenticated, respectively.
+
+### Required env/creds per exemplar
+
+| Exemplar | Local | Deployed |
+|---|---|---|
+| `streamlit-database-app` | none (no DB calls on the happy path) | `.auth/dogfood.json` via `auth_setup.py` |
+| `e2e-chatbot-app-next` | `DATABRICKS_SERVING_ENDPOINT` | `DATABRICKS_SERVING_ENDPOINT` + `.auth/dogfood.json` |
+| `mcp-server-hello-world` | none | none (unauthenticated GET) |
+| `agent-langgraph` | none | none (uses the OAuth token `wait_for_app_ready_generic` already fetched) |
+
+Missing required env vars produce a skip (`missing creds: VAR_NAME`) for that row, not a hard failure — the run still reports pass/fail for the other 3 exemplars.
+
+### Runners (`functional_runners.py`)
+
+- `run_py_playwright(template_dir, spec, base_url, storage_state)` — runs `[sys.executable, -m, pytest, <spec_path>]` from the orchestrator's own directory (the test venv, which has playwright+pytest) with `PLAYWRIGHT_BASE_URL` (and `PLAYWRIGHT_STORAGE_STATE` if set) in the environment. Asserts Chromium is installed first (`assert_browser_installed`) and raises an actionable error naming `playwright install chromium` if not.
+- `run_node_playwright(template_dir, base_url, storage_state)` — same, but `npx playwright test` inside the node template; relies on `playwright.config.ts`'s `use.baseURL` reading `PLAYWRIGHT_BASE_URL` (falling back to `http://localhost:<PORT>` when unset).
+- `run_mcp(base_url)` — plain `requests.get(base_url + "/")`, fails only on 5xx.
+- `run_agent_api(base_url, token)` — POSTs the standard agent payload to `/invocations`, fails on non-2xx or a missing `"output"` key.
+
+### Report
+
+Every run (local or deployed, whatever subset of `--val-template`) writes `logs/functional-report.md` via `functional_report.render_functional_report`: one row per template with Local/Deployed pass-fail-skip marks and a Notes column (missing creds, timeout, or truncated exception text). This mirrors `test_e2e.py`'s per-template `.log` files but as a single human-readable summary table rather than full subprocess logs.

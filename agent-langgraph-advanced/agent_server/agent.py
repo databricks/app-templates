@@ -28,10 +28,10 @@ from agent_server.utils import (
     process_agent_astream_events,
 )
 from agent_server.utils_memory import (
+    acquire_lakebase_resources,
     get_lakebase_access_error_message,
     get_user_id,
     init_lakebase_config,
-    lakebase_context,
     memory_tools,
 )
 
@@ -40,7 +40,7 @@ mlflow.langchain.autolog()
 logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
 sp_workspace_client = WorkspaceClient()
 
-LLM_ENDPOINT_NAME = "databricks-gpt-5-2"
+LLM_ENDPOINT_NAME = "databricks-claude-sonnet-5-5"
 LAKEBASE_CONFIG = init_lakebase_config()
 
 
@@ -116,7 +116,7 @@ async def stream_handler(
     }
 
     try:
-        async with lakebase_context(LAKEBASE_CONFIG) as (checkpointer, store):
+        async with acquire_lakebase_resources(LAKEBASE_CONFIG) as (checkpointer, store):
             config["configurable"]["store"] = store
 
             # By default, uses service principal credentials.

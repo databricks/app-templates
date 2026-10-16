@@ -1,5 +1,5 @@
 {
-  "name": "@chat-template/ai-sdk-providers",
+  "name": "@databricks/chatbot-ai-sdk-providers",
   "version": "1.0.0",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -29,14 +29,14 @@
     "clean": "rm -rf dist"
   },
   "devDependencies": {
-    "@types/node": "^22.8.6",
-    "typescript": "^5.9.3"
+    "@types/node": "22.19.7",
+    "typescript": "5.9.3"
   },
   "dependencies": {
-    "@ai-sdk/provider": "^3.0.7",
-    "@chat-template/auth": "*",
-    "@chat-template/utils": "*",
+    "@ai-sdk/provider": "3.0.8",
+    "@databricks/chatbot-auth": "*",
+    "@databricks/chatbot-utils": "*",
     "@databricks/ai-sdk-provider": "0.5.1",
-    "ai": "^6.0.70"
+    "ai": "6.0.94"
   }
 }

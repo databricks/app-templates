@@ -24,7 +24,7 @@ This eliminates the need to manually manage conversation state between runs.
 | **Session** | Stores conversation history for a specific `session_id` |
 | **`session_id`** | Unique identifier linking requests to the same conversation |
 | **`AsyncDatabricksSession`** | Session implementation backed by Databricks Lakebase |
-| **`LAKEBASE_INSTANCE_NAME`** | Environment variable specifying the Lakebase instance |
+| **`LAKEBASE_AUTOSCALING_ENDPOINT`** | Environment variable specifying the autoscaling Lakebase endpoint |
 
 ## How This Template Uses Sessions
 
@@ -35,7 +35,9 @@ from databricks_openai.agents import AsyncDatabricksSession
 
 session = AsyncDatabricksSession(
     session_id=get_session_id(request),
-    instance_name=LAKEBASE_INSTANCE_NAME,
+    autoscaling_endpoint=lakebase_config.autoscaling_endpoint,
+    project=lakebase_config.autoscaling_project,
+    branch=lakebase_config.autoscaling_branch,
 )
 
 result = await Runner.run(agent, messages, session=session)
@@ -53,13 +55,12 @@ def get_session_id(request: ResponsesAgentRequest) -> str:
     return str(uuid7())
 ```
 
-### Lakebase Instance Resolution (`agent_server/utils.py`)
+### Lakebase Config (`agent_server/utils.py`)
 
-The `LAKEBASE_INSTANCE_NAME` env var can be either an instance name or a hostname. The `resolve_lakebase_instance_name()` function handles both cases:
+The autoscaling Lakebase config is read from env vars into a `LakebaseConfig` by `init_lakebase_config()` (priority: endpoint > project+branch):
 
 ```python
-_LAKEBASE_INSTANCE_NAME_RAW = os.environ.get("LAKEBASE_INSTANCE_NAME")
-LAKEBASE_INSTANCE_NAME = resolve_lakebase_instance_name(_LAKEBASE_INSTANCE_NAME_RAW)
+lakebase_config = init_lakebase_config()  # reads LAKEBASE_AUTOSCALING_ENDPOINT / PROJECT / BRANCH
 ```
 
 ---
@@ -68,11 +69,11 @@ LAKEBASE_INSTANCE_NAME = resolve_lakebase_instance_name(_LAKEBASE_INSTANCE_NAME_
 
 1. **Dependency**: `databricks-openai[memory]` must be in `pyproject.toml` (already included)
 
-2. **Lakebase instance**: You need a Databricks Lakebase instance. See the **lakebase-setup** skill for creating and configuring one.
+2. **Lakebase instance**: You need an autoscaling Databricks Lakebase instance. See the **lakebase-setup** skill for creating and configuring one.
 
-3. **Environment variable**: Set `LAKEBASE_INSTANCE_NAME` in your `.env` file:
+3. **Environment variable**: Set `LAKEBASE_AUTOSCALING_ENDPOINT` in your `.env` file:
    ```bash
-   LAKEBASE_INSTANCE_NAME=<your-lakebase-instance-name>
+   LAKEBASE_AUTOSCALING_ENDPOINT=<your-endpoint>
    ```
 
 ---
@@ -81,7 +82,7 @@ LAKEBASE_INSTANCE_NAME = resolve_lakebase_instance_name(_LAKEBASE_INSTANCE_NAME_
 
 ### databricks.yml (Lakebase Resource)
 
-Add the Lakebase database resource to your app:
+Add the autoscaling `postgres` resource to your app:
 
 ```yaml
 resources:
@@ -93,29 +94,29 @@ resources:
       resources:
         # ... other resources (experiment, etc.) ...
 
-        # Lakebase instance for session storage
-        - name: 'database'
-          database:
-            instance_name: '<your-lakebase-instance-name>'
-            database_name: 'databricks_postgres'
+        # Autoscaling Lakebase instance for session storage
+        - name: 'postgres'
+          postgres:
+            branch: "projects/<project-name>/branches/<branch-name>"
+            database: "projects/<project-name>/branches/<branch-name>/databases/<database-id>"
             permission: 'CAN_CONNECT_AND_CREATE'
 ```
 
 ### databricks.yml config block (Environment Variables)
 
-The `LAKEBASE_INSTANCE_NAME` env var is resolved from the database resource at deploy time. Add to your app's `config.env` in `databricks.yml`:
+The `LAKEBASE_AUTOSCALING_ENDPOINT` env var is resolved from the postgres resource at deploy time. Add to your app's `config.env` in `databricks.yml`:
 
 ```yaml
       config:
         env:
-          - name: LAKEBASE_INSTANCE_NAME
-            value_from: "database"
+          - name: LAKEBASE_AUTOSCALING_ENDPOINT
+            value_from: "postgres"
 ```
 
 ### .env (Local Development)
 
 ```bash
-LAKEBASE_INSTANCE_NAME=<your-lakebase-instance-name>
+LAKEBASE_AUTOSCALING_ENDPOINT=<your-endpoint>
 ```
 
 ---
@@ -161,11 +162,10 @@ curl -X POST http://localhost:8000/invocations \
 
 | Issue | Cause | Solution |
 |-------|-------|----------|
-| **"LAKEBASE_INSTANCE_NAME environment variable is required"** | Missing env var | Set `LAKEBASE_INSTANCE_NAME` in `.env` |
-| **SSL connection closed unexpectedly** | Network/instance issue | Verify Lakebase instance is running: `databricks lakebase instances get <name>` |
+| **"Lakebase configuration is required"** | Missing env var | Set `LAKEBASE_AUTOSCALING_ENDPOINT` in `.env` |
+| **SSL connection closed unexpectedly** | Network/instance issue | Verify the Lakebase endpoint is reachable via the postgres API |
 | **Agent doesn't remember previous messages** | Different session_id | Pass the same `session_id` via `custom_inputs` across requests |
-| **"Unable to resolve hostname"** | Hostname doesn't match any instance | Verify the hostname or use the instance name directly |
-| **Permission denied** | Missing Lakebase access | Add `database` resource to `databricks.yml` with `CAN_CONNECT_AND_CREATE` |
+| **Permission denied** | Missing Lakebase access | Add `postgres` resource to `databricks.yml` with `CAN_CONNECT_AND_CREATE` |
 
 ---
 

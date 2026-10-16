@@ -1,3 +1,9 @@
+# Install crash/hang/exception diagnostics before importing agent code so
+# startup failures and unhandled exceptions land in the Apps log stream.
+from scripts.app_diagnostics import install_diagnostics  # noqa: E402
+
+install_diagnostics()
+
 """Agent server entry point. load_dotenv must run before agent imports (auth config)."""
 
 # ruff: noqa: E402
@@ -28,7 +34,6 @@ async def run_lakebase_session_setup() -> None:
     """Create session tables at startup so per-request _ensure_tables is a no-op."""
     session = AsyncDatabricksSession(
         session_id="__startup__",
-        instance_name=lakebase_config.instance_name,
         autoscaling_endpoint=lakebase_config.autoscaling_endpoint,
         project=lakebase_config.autoscaling_project,
         branch=lakebase_config.autoscaling_branch,
@@ -48,7 +53,6 @@ class AgentServer(LongRunningAgentServer):
 agent_server = AgentServer(
     "ResponsesAgent",
     enable_chat_proxy=True,
-    db_instance_name=lakebase_config.instance_name,
     db_autoscaling_endpoint=lakebase_config.autoscaling_endpoint,
     db_project=lakebase_config.autoscaling_project,
     db_branch=lakebase_config.autoscaling_branch,

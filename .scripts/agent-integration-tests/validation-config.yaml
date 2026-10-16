@@ -1,0 +1,110 @@
+# Deploy-validation config — all templates.
+# Serial single-app model — see docs/superpowers/specs/2026-09-25-template-deploy-validation-design.md
+#
+# verify modes:
+#   html  = deploy into shared app + browser(storageState) confirms the app's own
+#           content renders. REQUIRES `expect`: substring(s) the app renders in its
+#           (hydrated) DOM, so a generic 404 / error page / framework shell can't
+#           false-pass. Pick stable visible text (a title/header) from the app source.
+#   spa   = deploy + browser confirms / references built JS/CSS assets (a real Vite
+#           build served, not an error page). Used for apps whose UI is a framework-
+#           provided SPA with no per-template text to assert (the agent chat UI).
+#   mcp   = deploy + browser-authenticated GET of / is non-5xx and not the login page
+#   api   = deploy + API-only surface (/invocations), no chat UI at /
+#   build = local `npm ci && npm run build` only (no deploy) — for node/SPA templates
+#   obo   = on-behalf-of-user; deploy + browser(storageState), like `html`, but
+#           `expect` must be a SUCCESS SIGNAL: text that renders ONLY if the
+#           forwarded user token's downstream call succeeded (not the always-rendered
+#           header), so a token-less/403 render can't false-pass. REQUIRES the shared
+#           app to be CREATED with the OBO scope union (sql, dashboards.genie,
+#           files.files, serving.serving-endpoints, catalog.connections) + bindings —
+#           scopes added to an existing app do NOT reach the forwarded token. An obo
+#           entry with no `expect` is skipped (not yet wired / missing a binding).
+#
+# The shared app must have these resource KEYS bound (see AGENTS.md):
+#   serving-endpoint, sql-warehouse, postgres, genie-space, uc-volume, experiment
+# and be CREATED with --forward-user-access-token + the OBO user_api_scopes above.
+profile: dogfood
+shared_app_name: template-e2e-test
+workspace_source_root: ""
+templates:
+  # ---- Tier 0: no resources (deploy + browser verify) ----
+  streamlit-hello-world-app: { verify: html, expect: "Hello world" }
+  dash-hello-world-app: { verify: html, expect: "Hello world" }
+  flask-hello-world-app: { verify: html, expect: "Hello, World" }
+  gradio-hello-world-app: { verify: html, expect: "Hello world" }
+  shiny-hello-world-app: { verify: html, expect: "Hello World" }
+  mcp-server-hello-world: { verify: mcp }
+
+  # ---- Tier 1: serving-endpoint ----
+  streamlit-chatbot-app: { verify: html, expect: "Chatbot App" }
+  dash-chatbot-app: { verify: html, expect: "Chat with Databricks AI" }
+  gradio-chatbot-app: { verify: html, expect: "Databricks LLM Chatbot" }
+  shiny-chatbot-app: { verify: html, expect: "Databricks LLM Chat" }
+  e2e-chatbot-app: { verify: html, expect: "Chatbot App" }   # Streamlit (not node) — serving-endpoint
+
+  # ---- Tier 2: sql-warehouse ----
+  streamlit-data-app: { verify: html, expect: "Taxi fare distribution" }
+  dash-data-app: { verify: html, expect: "Taxi Fare Distribution" }
+  gradio-data-app: { verify: html, expect: "Taxi fare distribution" }
+  shiny-data-app: { verify: html, expect: "Data Playground" }
+
+  # ---- Tier 3: postgres (Lakebase Autoscaling) ----
+  streamlit-postgres-app: { verify: html, expect: "Todo List App" }
+  dash-postgres-app: { verify: html, expect: "Todo List App" }
+  flask-postgres-app: { verify: html, expect: "Todo List App" }
+
+  # ---- Tier 3b: database (Lakebase Provisioned) — may need a `database`-type binding ----
+  streamlit-database-app: { verify: html, expect: "Todo List App" }
+  dash-database-app: { verify: html, expect: "Todo List App" }
+  flask-database-app: { verify: html, expect: "Todo List App" }
+
+  # ---- Agents (deploy + browser verify) ----
+  # The conversational chat UI is a platform-provided Vite SPA proxied at / (served
+  # by a separate CHAT_APP_PORT process, not template source), so there is no
+  # per-template text to assert — verify the real built app via its JS/CSS assets.
+  agent-langgraph: { verify: spa }
+  agent-langgraph-advanced: { verify: spa }
+  agent-non-conversational: { verify: api }   # API-only (/invocations), no chat UI at /
+  agent-openai-advanced: { verify: spa }
+  agent-openai-agents-sdk: { verify: spa }
+  agent-openai-agents-sdk-multiagent: { verify: spa }
+  agent-migration-from-model-serving: { verify: spa }
+
+  # ---- Build-only (node / SPA; no deploy) ----
+  nodejs-fastapi-hello-world-app: { verify: build }
+  e2e-chatbot-app-next: { verify: build }
+  e2e-chatbot-model-service: { verify: build }
+  rag-chat: { verify: build }
+  agent-langchain-ts: { verify: build }
+
+  # ---- OBO (on-behalf-of-user) — NOT testable in this environment ----
+  mcp-server-open-api-spec: { verify: obo }   # user_api_scopes: catalog.connections
+  appkit-all-in-one: { verify: obo }
+  appkit-analytics: { verify: obo }
+  appkit-files: { verify: obo }
+  appkit-genie: { verify: obo }
+  appkit-lakebase: { verify: obo }
+  appkit-serving: { verify: obo }
+  agentic-support-console:
+    verify: obo
+    # Queries read <catalog>.gold.*; point them at the shared demo tables (empty
+    # Delta tables with the gold schema, owned by the shared-app maintainer).
+    replace: { "REPLACE_ME.gold.": "main.`apps-e2e-template-schema`." }
+  content-moderator: { verify: obo }
+  inventory-intelligence: { verify: obo }
+  saas-tracker: { verify: obo }
+  vacation-rentals: { verify: obo }
+  # "Predict fare" renders only AFTER the on-load SQL query succeeds via the
+  # forwarded user token (the header above it renders even on a 403), so it's a
+  # true OBO success signal.
+  streamlit-data-app-obo-user: { verify: obo, expect: ["Taxi fare distribution", "Predict fare"] }
+  # dash queries on load; the result column headers render in the ag-grid only if
+  # the forwarded-token query returned rows (empty/403 -> no columns).
+  dash-data-app-obo-user: { verify: obo, expect: ["fare_amount", "trip_distance"] }
+  # gradio/shiny gate the query behind a "Run Query" button, so click it first.
+  # gradio: the "Taxi fare distribution" heading renders only on a successful query.
+  gradio-data-app-obo-user: { verify: obo, obo_click: "Run Query", expect: ["Taxi fare distribution"] }
+  # shiny: the result DataGrid's column headers render only on success (failure
+  # shows an "Error executing query" notification instead).
+  shiny-data-app-obo-user: { verify: obo, obo_click: "Run Query", expect: ["fare_amount", "trip_distance"] }

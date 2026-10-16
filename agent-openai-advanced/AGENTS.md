@@ -2,44 +2,9 @@
 
 ## MANDATORY First Actions
 
-**Ask the user interactively:**
+For first-time environment setup, invoke the **quickstart** skill at `.claude/skills/quickstart/SKILL.md` — its "Setup Flow (for Claude)" section walks through the `AskUserQuestion` calls needed to collect the workspace, app target, and Lakebase configuration, then runs `uv run quickstart` with the right flags.
 
-1. **App deployment target:**
-   > "Do you have an existing Databricks app you want to deploy to, or should we create a new one? If existing, what's the app name?"
-
-   *Note: New apps should use the `agent-*` prefix (e.g., `agent-data-analyst`) unless the user specifies otherwise.*
-
-2. **Lakebase instance (required for memory and long-running persistence) — use `AskUserQuestion` tool:**
-
-   **Step A:** Use the `AskUserQuestion` tool to ask the user which type of Lakebase instance they are using:
-   - Option 1: **Provisioned** — "I have a provisioned Lakebase instance"
-   - Option 2: **Autoscaling** — "I have an autoscaling Lakebase project/branch"
-
-   **Step B (if Provisioned):** Use `AskUserQuestion` to ask:
-   > "What is your Lakebase instance name?"
-
-   Then pass it to quickstart: `uv run quickstart --lakebase-provisioned-name <instance-name>`
-   For post-deploy setup, see the **lakebase-setup** skill.
-
-   **Step B (if Autoscaling):** Use `AskUserQuestion` to ask:
-   > "What is your Lakebase project and branch? You can provide them separately (project name and branch name) or paste the full resource path (e.g. `project/my-project/branch/my-branch`)."
-
-   - If the user provides a resource path like `project/<project>/branch/<branch>`, parse out the project and branch components
-   - The user may also paste just a branch resource path like `project/<project-id>/branch/<branch-id>` — parse project and branch from the path segments
-
-   Then pass to quickstart: `uv run quickstart --lakebase-autoscaling-project <project> --lakebase-autoscaling-branch <branch>`
-   For post-deploy setup (postgres resource config, granting permissions), see `.claude/skills/add-tools/examples/lakebase-autoscaling.yaml`.
-
-**Autoscaling keywords**: If the user mentions "autoscaling", "project", "branch", or "postgres" in the context of Lakebase/memory, use the **autoscaling** guide at `.claude/skills/add-tools/examples/lakebase-autoscaling.yaml`.
-
-**Then set up the environment using quickstart:**
-
-1. **Read the quickstart skill** at `.claude/skills/quickstart/SKILL.md` — it contains all available CLI flags (including Lakebase options), what the script configures, and fallback instructions.
-2. **Check if `.env` exists.** If it does, the environment is already configured — read it to find `DATABRICKS_CONFIG_PROFILE` and skip to verifying auth. If `.env` does not exist, run quickstart:
-   ```bash
-   uv run quickstart --profile <profile-name> --lakebase-provisioned-name <instance-name>
-   ```
-3. Run `databricks auth profiles` to verify the profile is configured and valid.
+If `.env` already exists, the environment is already configured — read it to find `DATABRICKS_CONFIG_PROFILE` and skip to verifying auth with `databricks auth profiles`.
 
 **CRITICAL: All `databricks` CLI commands must include the profile from `.env`.** Either use `--profile` or set the env var:
 
@@ -73,8 +38,8 @@ After deploying, grant the app's SP Postgres-level permissions to access Lakebas
 # Get SP client ID
 databricks apps get <app-name> --profile <profile> --output json | jq -r '.service_principal_client_id'
 
-# Grant all permissions (reads LAKEBASE_INSTANCE_NAME from .env)
-DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permissions.py <sp-client-id>
+# Grant all permissions (reads LAKEBASE_AUTOSCALING_ENDPOINT from .env)
+DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type openai
 ```
 
 This grants permissions on the `agent_server`, `ai_chatbot`, and `drizzle` schemas and their tables.
@@ -104,6 +69,19 @@ The **Supervisor API** lets Databricks run the tool-selection and agent loop ser
 **Skills:**
 - Use **supervisor-api** to set up the Supervisor API with hosted tools
 - Use **supervisor-api-background-mode** for tasks that may exceed HTTP timeout limits (complex multi-tool workflows, large data analysis)
+
+## Long-Term Memory (Managed)
+
+> **Beta.** Managed memory uses the Databricks memory-store APIs, which are in beta — APIs and behavior may change.
+
+This template ships only **short-term** session memory. **Managed memory** adds durable memory that persists *across* conversations, backed by a **Unity Catalog memory store** (`catalog.schema.name`, type `MEMORY_STORE`) — governed by UC, with no database for you to provision or run. Databricks manages the underlying quality logic — deduplication, scope isolation, and fact reconciliation. The agent gets tools to store, retrieve, and modify memories, and memories are scoped per end user through code (the model never chooses the scope).
+
+**Use when the user wants to** have the agent remember a user's preferences, facts, or decisions across separate sessions — without standing up or operating any storage infrastructure.
+
+> **Managed memory vs. Lakebase.** Managed memory is the simplest, governed, zero-ops path. The alternative is **Lakebase** — long-term memories in your own Postgres instance (billable) with direct SQL access and embedding-based semantic search; choose it when you need SQL access or it's already part of your stack.
+
+**Skills:**
+- Use **managed-memory** to add the memory-store tools and per-user scope wiring.
 
 ## Agent Evaluation
 
@@ -136,6 +114,7 @@ After installation, the skills will be available as slash commands (e.g., `/agen
 | Add tools & permissions | **add-tools** | `.claude/skills/add-tools/SKILL.md` |
 | Run/test locally | **run-locally** | `.claude/skills/run-locally/SKILL.md` |
 | Modify agent code | **modify-agent** | `.claude/skills/modify-agent/SKILL.md` |
+| Add long-term (cross-session) memory | **managed-memory** | `.claude/skills/managed-memory/SKILL.md` |
 | Offload agent loop to Databricks | **supervisor-api** | `.claude/skills/supervisor-api/SKILL.md` |
 | Long-running background tasks | **supervisor-api-background-mode** | `.claude/skills/supervisor-api-background-mode/SKILL.md` |
 

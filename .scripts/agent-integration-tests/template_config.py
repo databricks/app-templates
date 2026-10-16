@@ -8,7 +8,6 @@ from pathlib import Path
 # Workspace: https://db-ml-models-dev-us-west.cloud.databricks.com
 # ---------------------------------------------------------------------------
 DEFAULT_PROFILE = "dev"
-DEFAULT_LAKEBASE = "bbqiu"
 DEFAULT_LAKEBASE_AUTOSCALING_ENDPOINT = "projects/bryan-agent-integ-tests/branches/production/endpoints/primary"
 DEFAULT_GENIE_SPACE_ID = "01f05202dbb51d74b6cccf1b1b1683eb"
 DEFAULT_SERVING_ENDPOINT = "agents_dev-bbqiu-test-bb-2-25"
@@ -39,7 +38,7 @@ class TemplateConfig:
     app_resource_key: str  # DAB resource key under resources.apps
     is_conversational: bool = True  # /responses vs /invocations
     needs_lakebase: bool = False  # Whether template uses lakebase
-    lakebase_type: str = ""  # "provisioned", "autoscaling", or ""
+    lakebase_type: str = ""  # "autoscaling" or ""
     is_advanced: bool = False  # Whether this is an advanced template (has session + long-term memory)
     pre_test_edits: list[FileEdit] = field(default_factory=list)
     has_evaluate: bool = True
@@ -223,17 +222,16 @@ def build_templates(
             continue
         dev_app_name, app_resource_key = _parse_databricks_yml(name)
         if needs_lakebase:
-            for lb_type in ("provisioned", "autoscaling"):
-                templates.append(
-                    TemplateConfig(
-                        name=name,
-                        dev_app_name=dev_app_name,
-                        app_resource_key=app_resource_key,
-                        needs_lakebase=True,
-                        lakebase_type=lb_type,
-                        **overrides,
-                    )
+            templates.append(
+                TemplateConfig(
+                    name=name,
+                    dev_app_name=dev_app_name,
+                    app_resource_key=app_resource_key,
+                    needs_lakebase=True,
+                    lakebase_type="autoscaling",
+                    **overrides,
                 )
+            )
         else:
             templates.append(
                 TemplateConfig(

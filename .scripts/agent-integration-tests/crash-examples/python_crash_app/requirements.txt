@@ -1,0 +1,1 @@
+# Intentional-crash fixture — stdlib only, no dependencies.

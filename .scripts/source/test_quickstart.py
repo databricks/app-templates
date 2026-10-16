@@ -6,9 +6,9 @@
 # 5. Creates MLflow experiment via `databricks experiments create-experiment`
 # 6. Updates .env with: DATABRICKS_CONFIG_PROFILE, MLFLOW_TRACKING_URI, MLFLOW_EXPERIMENT_ID
 # 7. Updates databricks.yml: sets experiment_id in app resource
-# 8. (If lakebase needed) Sets up lakebase (provisioned or autoscaling)
-# 9. (If lakebase needed) Updates databricks.yml: keeps only relevant lakebase env vars, removes the others
-# 10. (If lakebase needed) Updates .env with LAKEBASE_INSTANCE_NAME or LAKEBASE_AUTOSCALING_PROJECT + BRANCH
+# 8. (If lakebase needed) Sets up autoscaling lakebase
+# 9. (If lakebase needed) Updates databricks.yml: sets the autoscaling lakebase env vars and postgres resource
+# 10. (If lakebase needed) Updates .env with LAKEBASE_AUTOSCALING_ENDPOINT
 
 import json
 import os
@@ -20,11 +20,12 @@ import pytest
 from quickstart import (
     _replace_lakebase_env_vars,
     _replace_lakebase_resource,
+    create_lakebase_instance,
     create_mlflow_experiment,
     get_databricks_yml_experiment_id,
     get_existing_lakebase_config,
     setup_env_file,
-
+    setup_lakebase,
     update_databricks_yml_app_name,
     update_databricks_yml_experiment,
     update_databricks_yml_lakebase,
@@ -90,7 +91,6 @@ targets:
 """
 
 # A databricks.yml with lakebase env vars (like agent-langgraph-advanced)
-# Default state: autoscaling active, provisioned commented out
 LAKEBASE_YML = """\
 bundle:
   name: agent_langgraph_advanced
@@ -108,9 +108,6 @@ resources:
             value_from: "experiment"
           - name: LAKEBASE_AUTOSCALING_ENDPOINT
             value_from: "postgres"
-          # Use for provisioned lakebase resource
-          # - name: LAKEBASE_INSTANCE_NAME
-          #   value: "<your-lakebase-instance-name>"
 
       # Resources which this app has access to
       resources:
@@ -123,12 +120,6 @@ resources:
           postgres:
             endpoint: "<your-autoscaling-endpoint>"
             permission: 'CAN_CONNECT_AND_CREATE'
-        # Use for provisioned lakebase resource
-        # - name: 'database'
-        #   database:
-        #     instance_name: '<your-lakebase-instance-name>'
-        #     database_name: 'databricks_postgres'
-        #     permission: 'CAN_CONNECT_AND_CREATE'
 
 targets:
   dev:
@@ -150,9 +141,6 @@ resources:
             value_from: "experiment"
           - name: LAKEBASE_AUTOSCALING_ENDPOINT
             value_from: "postgres"
-          # Use for provisioned lakebase resource
-          # - name: LAKEBASE_INSTANCE_NAME
-          #   value: "<your-lakebase-instance-name>"
 
       # Resources which this app has access to
       resources:
@@ -165,12 +153,6 @@ resources:
           postgres:
             endpoint: "<your-autoscaling-endpoint>"
             permission: "CAN_CONNECT_AND_CREATE"
-        # Use for provisioned lakebase resource
-        # - name: "database"
-        #   database:
-        #     instance_name: "<your-lakebase-instance-name>"
-        #     database_name: "databricks_postgres"
-        #     permission: "CAN_CONNECT_AND_CREATE"
 
 targets:
   dev:
@@ -256,21 +238,7 @@ class TestUpdateDatabricksYmlExperiment:
 class TestReplaceLakebaseEnvVars:
     """Tests for _replace_lakebase_env_vars helper."""
 
-    def test_provisioned_removes_autoscaling_env_vars(self):
-        result = _replace_lakebase_env_vars(
-            LAKEBASE_YML, {"type": "provisioned", "instance_name": "my-db"}
-        )
-        assert "LAKEBASE_INSTANCE_NAME" in result
-        assert 'value: "my-db"' in result
-        assert "LAKEBASE_AUTOSCALING_ENDPOINT" not in result
-
-    def test_provisioned_removes_lakebase_comments(self):
-        result = _replace_lakebase_env_vars(
-            LAKEBASE_YML, {"type": "provisioned", "instance_name": "my-db"}
-        )
-        assert "Use for provisioned lakebase resource" not in result
-
-    def test_autoscaling_removes_provisioned_env_var(self):
+    def test_autoscaling_sets_endpoint_env_var(self):
         result = _replace_lakebase_env_vars(
             LAKEBASE_YML, {"type": "autoscaling", "endpoint": "my-endpoint"}
         )
@@ -278,15 +246,21 @@ class TestReplaceLakebaseEnvVars:
         assert 'value_from: "postgres"' in result
         assert "LAKEBASE_INSTANCE_NAME" not in result
 
-    def test_autoscaling_removes_lakebase_comments(self):
-        result = _replace_lakebase_env_vars(
-            LAKEBASE_YML, {"type": "autoscaling", "endpoint": "ep"}
+    def test_autoscaling_removes_legacy_provisioned_env_var(self):
+        """A stale provisioned env var (from an old config) should be removed."""
+        stale = LAKEBASE_YML.replace(
+            '          - name: LAKEBASE_AUTOSCALING_ENDPOINT\n            value_from: "postgres"\n',
+            '          - name: LAKEBASE_INSTANCE_NAME\n            value: "old-db"\n',
         )
-        assert "Use for provisioned lakebase resource" not in result
+        result = _replace_lakebase_env_vars(
+            stale, {"type": "autoscaling", "endpoint": "ep"}
+        )
+        assert "LAKEBASE_AUTOSCALING_ENDPOINT" in result
+        assert "LAKEBASE_INSTANCE_NAME" not in result
 
     def test_preserves_non_lakebase_env_vars(self):
         result = _replace_lakebase_env_vars(
-            LAKEBASE_YML, {"type": "provisioned", "instance_name": "x"}
+            LAKEBASE_YML, {"type": "autoscaling", "endpoint": "x"}
         )
         assert "MLFLOW_EXPERIMENT_ID" in result
         assert 'value_from: "experiment"' in result
@@ -302,45 +276,21 @@ class TestReplaceLakebaseEnvVars:
 
     def test_noop_without_lakebase_env_vars(self):
         result = _replace_lakebase_env_vars(
-            MINIMAL_YML, {"type": "provisioned", "instance_name": "x"}
+            MINIMAL_YML, {"type": "autoscaling", "endpoint": "x"}
         )
         assert result == MINIMAL_YML
 
     def test_indent_matches_existing_env_vars(self):
         result = _replace_lakebase_env_vars(
-            LAKEBASE_YML, {"type": "provisioned", "instance_name": "my-db"}
+            LAKEBASE_YML, {"type": "autoscaling", "endpoint": "my-endpoint"}
         )
         # The LAKEBASE env var should be at the same indent as MLFLOW_EXPERIMENT_ID
         for line in result.splitlines():
-            if "- name: LAKEBASE_INSTANCE_NAME" in line:
+            if "- name: LAKEBASE_AUTOSCALING_ENDPOINT" in line:
                 lakebase_indent = len(line) - len(line.lstrip())
             if "- name: MLFLOW_EXPERIMENT_ID" in line:
                 mlflow_indent = len(line) - len(line.lstrip())
         assert lakebase_indent == mlflow_indent
-
-    def test_idempotent_provisioned_to_autoscaling(self):
-        """Running provisioned then autoscaling should produce clean autoscaling output."""
-        step1 = _replace_lakebase_env_vars(
-            LAKEBASE_YML, {"type": "provisioned", "instance_name": "my-db"}
-        )
-        step2 = _replace_lakebase_env_vars(
-            step1, {"type": "autoscaling", "endpoint": "new-ep"}
-        )
-        assert "LAKEBASE_AUTOSCALING_ENDPOINT" in step2
-        assert 'value_from: "postgres"' in step2
-        assert "LAKEBASE_INSTANCE_NAME" not in step2
-
-    def test_idempotent_autoscaling_to_provisioned(self):
-        """Running autoscaling then provisioned should produce clean provisioned output."""
-        step1 = _replace_lakebase_env_vars(
-            LAKEBASE_YML, {"type": "autoscaling", "endpoint": "ep"}
-        )
-        step2 = _replace_lakebase_env_vars(
-            step1, {"type": "provisioned", "instance_name": "switched-db"}
-        )
-        assert "LAKEBASE_INSTANCE_NAME" in step2
-        assert 'value: "switched-db"' in step2
-        assert "LAKEBASE_AUTOSCALING_ENDPOINT" not in step2
 
     def test_idempotent_same_type_twice(self):
         """Running the same type twice produces clean output."""
@@ -355,38 +305,41 @@ class TestReplaceLakebaseEnvVars:
 
     def test_double_quoted_yml(self):
         result = _replace_lakebase_env_vars(
-            DOUBLE_QUOTED_YML, {"type": "provisioned", "instance_name": "prod-db"}
+            DOUBLE_QUOTED_YML, {"type": "autoscaling", "endpoint": "prod-ep"}
         )
-        assert "LAKEBASE_INSTANCE_NAME" in result
-        assert 'value: "prod-db"' in result
-        assert "LAKEBASE_AUTOSCALING_ENDPOINT" not in result
+        assert "LAKEBASE_AUTOSCALING_ENDPOINT" in result
+        assert 'value_from: "postgres"' in result
+        assert "LAKEBASE_INSTANCE_NAME" not in result
 
 
 class TestReplaceLakebaseResource:
-    """Tests for _replace_lakebase_resource helper (database resource section)."""
+    """Tests for _replace_lakebase_resource helper (postgres resource section)."""
 
-    def test_provisioned_uncomments_database_resource(self):
+    def test_autoscaling_fills_postgres_resource(self):
         result = _replace_lakebase_resource(
-            LAKEBASE_YML, {"type": "provisioned", "instance_name": "my-db"}
+            LAKEBASE_YML, {"type": "autoscaling", "endpoint": "my-ep", "branch": "projects/p/branches/b", "database": "projects/p/branches/b/databases/db-1"}
         )
-        assert "- name: 'database'" in result
-        assert "instance_name: 'my-db'" in result
-        assert "database_name: 'databricks_postgres'" in result
+        assert "- name: 'postgres'" in result
+        assert 'branch: "projects/p/branches/b"' in result
         assert "permission: 'CAN_CONNECT_AND_CREATE'" in result
-        # Should not have commented-out resource
-        assert "# - name: 'database'" not in result
+        # Should not have a database (provisioned) resource
+        assert "- name: 'database'" not in result
 
-    def test_autoscaling_removes_commented_resource(self):
+    def test_removes_legacy_commented_database_resource(self):
+        """A stale commented-out provisioned database resource should be removed."""
+        stale = LAKEBASE_YML.replace(
+            "        # Autoscaling postgres resource\n",
+            "        # - name: 'database'\n        #   database:\n        #     instance_name: '<your-lakebase-instance-name>'\n        # Autoscaling postgres resource\n",
+        )
         result = _replace_lakebase_resource(
-            LAKEBASE_YML, {"type": "autoscaling", "endpoint": "my-ep"}
+            stale, {"type": "autoscaling", "endpoint": "my-ep"}
         )
         assert "- name: 'database'" not in result
         assert "# - name: 'database'" not in result
-        assert "instance_name:" not in result.replace("instance_name: agent", "")  # ignore bundle name
 
     def test_preserves_experiment_resource(self):
         result = _replace_lakebase_resource(
-            LAKEBASE_YML, {"type": "provisioned", "instance_name": "my-db"}
+            LAKEBASE_YML, {"type": "autoscaling", "endpoint": "my-ep"}
         )
         assert "- name: 'experiment'" in result
         assert "experiment_id:" in result
@@ -394,19 +347,11 @@ class TestReplaceLakebaseResource:
 
     def test_preserves_non_resource_content(self):
         result = _replace_lakebase_resource(
-            LAKEBASE_YML, {"type": "provisioned", "instance_name": "x"}
+            LAKEBASE_YML, {"type": "autoscaling", "endpoint": "x"}
         )
         assert "bundle:" in result
         assert "targets:" in result
         assert "mode: development" in result
-
-    def test_adds_resource_to_yml_without_lakebase_section(self):
-        """If no lakebase resource section exists, provisioned should add one."""
-        result = _replace_lakebase_resource(
-            MINIMAL_YML, {"type": "provisioned", "instance_name": "x"}
-        )
-        assert "- name: 'database'" in result
-        assert "instance_name: 'x'" in result
 
     def test_autoscaling_fills_branch_and_database(self):
         result = _replace_lakebase_resource(
@@ -424,42 +369,16 @@ class TestReplaceLakebaseResource:
         )
         assert result == MINIMAL_YML
 
-    def test_idempotent_provisioned_twice(self):
-        """Running provisioned twice should update the instance name."""
+    def test_idempotent_autoscaling_twice(self):
+        """Running autoscaling twice should update branch/database cleanly."""
         step1 = _replace_lakebase_resource(
-            LAKEBASE_YML, {"type": "provisioned", "instance_name": "db-1"}
+            LAKEBASE_YML, {"type": "autoscaling", "branch": "projects/p/branches/b1", "database": "projects/p/branches/b1/databases/db-1"}
         )
         step2 = _replace_lakebase_resource(
-            step1, {"type": "provisioned", "instance_name": "db-2"}
+            step1, {"type": "autoscaling", "branch": "projects/p/branches/b2", "database": "projects/p/branches/b2/databases/db-2"}
         )
-        assert "instance_name: 'db-2'" in step2
-        assert "db-1" not in step2
-
-    def test_idempotent_provisioned_then_autoscaling(self):
-        """Switching from provisioned to autoscaling should remove the database resource."""
-        step1 = _replace_lakebase_resource(
-            LAKEBASE_YML, {"type": "provisioned", "instance_name": "my-db"}
-        )
-        assert "- name: 'database'" in step1
-        step2 = _replace_lakebase_resource(
-            step1, {"type": "autoscaling", "branch": "projects/p/branches/b", "database": "projects/p/branches/b/databases/db-1"}
-        )
-        assert "- name: 'database'" not in step2
-        assert "- name: 'postgres'" in step2
-        assert 'branch: "projects/p/branches/b"' in step2
-        assert 'database: "projects/p/branches/b/databases/db-1"' in step2
-
-    def test_idempotent_autoscaling_then_provisioned(self):
-        """Switching from autoscaling to provisioned should add the database resource."""
-        step1 = _replace_lakebase_resource(
-            LAKEBASE_YML, {"type": "autoscaling", "branch": "projects/p/branches/b", "database": "projects/p/branches/b/databases/db-1"}
-        )
-        assert "- name: 'database'" not in step1
-        step2 = _replace_lakebase_resource(
-            step1, {"type": "provisioned", "instance_name": "new-db"}
-        )
-        assert "- name: 'database'" in step2
-        assert "instance_name: 'new-db'" in step2
+        assert 'branch: "projects/p/branches/b2"' in step2
+        assert "b1" not in step2
 
     def test_no_placeholder_in_autoscaling_output(self):
         """Autoscaling should never leave placeholder values like <your-database-id>."""
@@ -482,34 +401,18 @@ class TestReplaceLakebaseResource:
                 continue
             content = yml_path.read_text()
 
-            # Test provisioned
-            result = _replace_lakebase_resource(
-                content, {"type": "provisioned", "instance_name": "test-db"}
-            )
-            assert "- name: 'database'" in result, f"{template_name}: database resource not added"
-            assert "instance_name: 'test-db'" in result, f"{template_name}: instance name not set"
-            assert "# - name: 'database'" not in result, f"{template_name}: commented resource should be removed"
-
             # Test autoscaling
-            result2 = _replace_lakebase_resource(
-                content, {"type": "autoscaling", "endpoint": "test-ep"}
+            result = _replace_lakebase_resource(
+                content, {"type": "autoscaling", "endpoint": "test-ep", "branch": "projects/p/branches/b", "database": "projects/p/branches/b/databases/db-1"}
             )
-            assert "# - name: 'database'" not in result2, f"{template_name}: commented resource should be removed"
-            assert 'endpoint: "test-ep"' in result2, f"{template_name}: endpoint not set in postgres resource"
+            assert "# - name: 'database'" not in result, f"{template_name}: commented resource should be removed"
+            assert 'branch: "projects/p/branches/b"' in result, f"{template_name}: branch not set in postgres resource"
             # Make sure we didn't add an uncommented database resource
-            lines_with_database = [l for l in result2.splitlines() if "- name:" in l and "database" in l]
+            lines_with_database = [l for l in result.splitlines() if "- name:" in l and "database" in l]
             assert len(lines_with_database) == 0, f"{template_name}: database resource should not exist for autoscaling"
 
 
 class TestUpdateDatabricksYmlLakebase:
-    def test_provisioned_updates_file(self, tmp_path):
-        (tmp_path / "databricks.yml").write_text(LAKEBASE_YML)
-        update_databricks_yml_lakebase({"type": "provisioned", "instance_name": "my-instance"})
-        content = (tmp_path / "databricks.yml").read_text()
-        assert "LAKEBASE_INSTANCE_NAME" in content
-        assert 'value: "my-instance"' in content
-        assert "LAKEBASE_AUTOSCALING_PROJECT" not in content
-
     def test_autoscaling_updates_file(self, tmp_path):
         (tmp_path / "databricks.yml").write_text(LAKEBASE_YML)
         update_databricks_yml_lakebase(
@@ -530,7 +433,7 @@ class TestUpdateDatabricksYmlLakebase:
         assert content == MINIMAL_YML
 
     def test_handles_missing_file(self, tmp_path):
-        update_databricks_yml_lakebase({"type": "provisioned", "instance_name": "x"})
+        update_databricks_yml_lakebase({"type": "autoscaling", "endpoint": "x"})
         assert not (tmp_path / "databricks.yml").exists()
 
     def test_against_real_template_files(self, tmp_path):
@@ -545,33 +448,20 @@ class TestUpdateDatabricksYmlLakebase:
             if not yml_path.exists():
                 continue
 
-            # Test provisioned
-            tdir = tmp_path / f"{template_name}-provisioned"
+            # Test autoscaling
+            tdir = tmp_path / f"{template_name}-autoscaling"
             tdir.mkdir()
             (tdir / "databricks.yml").write_text(yml_path.read_text())
             os.chdir(tdir)
-            update_databricks_yml_lakebase({"type": "provisioned", "instance_name": "test-db"})
-            content = (tdir / "databricks.yml").read_text()
-            assert "LAKEBASE_INSTANCE_NAME" in content, f"{template_name}: missing LAKEBASE_INSTANCE_NAME"
-            assert 'value: "test-db"' in content, f"{template_name}: instance name not set"
-            assert "LAKEBASE_AUTOSCALING_ENDPOINT" not in content, (
-                f"{template_name}: autoscaling env vars should be removed"
-            )
-
-            # Test autoscaling
-            tdir2 = tmp_path / f"{template_name}-autoscaling"
-            tdir2.mkdir()
-            (tdir2 / "databricks.yml").write_text(yml_path.read_text())
-            os.chdir(tdir2)
             update_databricks_yml_lakebase(
-                {"type": "autoscaling", "endpoint": "test-ep"}
+                {"type": "autoscaling", "endpoint": "test-ep", "branch": "projects/p/branches/b", "database": "projects/p/branches/b/databases/db-1"}
             )
-            content = (tdir2 / "databricks.yml").read_text()
+            content = (tdir / "databricks.yml").read_text()
             assert "LAKEBASE_AUTOSCALING_ENDPOINT" in content, (
                 f"{template_name}: missing LAKEBASE_AUTOSCALING_ENDPOINT"
             )
             assert 'value_from: "postgres"' in content, f"{template_name}: value_from not set"
-            assert 'endpoint: "test-ep"' in content, f"{template_name}: endpoint not set"
+            assert 'branch: "projects/p/branches/b"' in content, f"{template_name}: branch not set"
             assert "LAKEBASE_INSTANCE_NAME" not in content, (
                 f"{template_name}: provisioned env var should be removed"
             )
@@ -579,16 +469,6 @@ class TestUpdateDatabricksYmlLakebase:
 
 
 class TestCombined:
-    def test_experiment_then_provisioned_lakebase(self, tmp_path):
-        (tmp_path / "databricks.yml").write_text(LAKEBASE_YML)
-        update_databricks_yml_experiment("54321")
-        update_databricks_yml_lakebase({"type": "provisioned", "instance_name": "prod-db"})
-        content = (tmp_path / "databricks.yml").read_text()
-        assert 'experiment_id: "54321"' in content
-        assert "LAKEBASE_INSTANCE_NAME" in content
-        assert 'value: "prod-db"' in content
-        assert "LAKEBASE_AUTOSCALING_ENDPOINT" not in content
-
     def test_experiment_then_autoscaling_lakebase(self, tmp_path):
         (tmp_path / "databricks.yml").write_text(LAKEBASE_YML)
         update_databricks_yml_experiment("54321")
@@ -647,92 +527,78 @@ class TestUpdateEnvFile:
 
     def test_replaces_commented_out_key(self, tmp_path):
         (tmp_path / ".env").write_text(
-            "# Option 1: Provisioned\n# LAKEBASE_INSTANCE_NAME=\nOTHER=yes\n"
+            "# Lakebase autoscaling endpoint\n# LAKEBASE_AUTOSCALING_ENDPOINT=\nOTHER=yes\n"
         )
-        update_env_file("LAKEBASE_INSTANCE_NAME", "my-db")
+        update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", "my-ep")
         content = (tmp_path / ".env").read_text()
-        assert "LAKEBASE_INSTANCE_NAME=my-db" in content
-        assert "# LAKEBASE_INSTANCE_NAME=" not in content
+        assert "LAKEBASE_AUTOSCALING_ENDPOINT=my-ep" in content
+        assert "# LAKEBASE_AUTOSCALING_ENDPOINT=" not in content
         assert "OTHER=yes" in content
         # Should not be appended at the end (replaced in-place)
         lines = content.strip().split("\n")
-        assert lines[1] == "LAKEBASE_INSTANCE_NAME=my-db"
+        assert lines[1] == "LAKEBASE_AUTOSCALING_ENDPOINT=my-ep"
 
     def test_replaces_commented_out_key_with_space(self, tmp_path):
-        (tmp_path / ".env").write_text("# LAKEBASE_AUTOSCALING_PROJECT=\n")
-        update_env_file("LAKEBASE_AUTOSCALING_PROJECT", "my-proj")
+        (tmp_path / ".env").write_text("# LAKEBASE_AUTOSCALING_ENDPOINT=\n")
+        update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", "my-ep")
         content = (tmp_path / ".env").read_text()
-        assert "LAKEBASE_AUTOSCALING_PROJECT=my-proj" in content
-        assert content.count("LAKEBASE_AUTOSCALING_PROJECT") == 1
+        assert "LAKEBASE_AUTOSCALING_ENDPOINT=my-ep" in content
+        assert content.count("LAKEBASE_AUTOSCALING_ENDPOINT") == 1
 
     def test_active_line_removes_leftover_commented_line(self, tmp_path):
         """When an active line exists alongside a commented-out version, the
         commented version should be cleaned up."""
         (tmp_path / ".env").write_text(
-            "# LAKEBASE_INSTANCE_NAME=\n"
+            "# LAKEBASE_AUTOSCALING_ENDPOINT=\n"
             "OTHER=yes\n"
-            "LAKEBASE_INSTANCE_NAME=old-db\n"
+            "LAKEBASE_AUTOSCALING_ENDPOINT=old-ep\n"
         )
-        update_env_file("LAKEBASE_INSTANCE_NAME", "new-db")
+        update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", "new-ep")
         content = (tmp_path / ".env").read_text()
-        assert "LAKEBASE_INSTANCE_NAME=new-db" in content
-        assert "# LAKEBASE_INSTANCE_NAME=" not in content
-        assert content.count("LAKEBASE_INSTANCE_NAME") == 1
+        assert "LAKEBASE_AUTOSCALING_ENDPOINT=new-ep" in content
+        assert "# LAKEBASE_AUTOSCALING_ENDPOINT=" not in content
+        assert content.count("LAKEBASE_AUTOSCALING_ENDPOINT") == 1
         assert "OTHER=yes" in content
 
     def test_full_env_example_scenario(self, tmp_path):
         """Simulates .env from .env.example with commented lakebase vars
         plus active lines from a previous quickstart run."""
         (tmp_path / ".env").write_text(
-            "# TODO: Update with your Lakebase instance\n"
-            "# Option 1: Provisioned instance (set instance name)\n"
-            "# LAKEBASE_INSTANCE_NAME=\n"
-            "# Option 2: Autoscaling endpoint name\n"
+            "# TODO: Update with your Lakebase autoscaling endpoint\n"
             "# LAKEBASE_AUTOSCALING_ENDPOINT=\n"
             "\n"
             "CHAT_APP_PORT=3000\n"
-            "LAKEBASE_INSTANCE_NAME=\n"
             "LAKEBASE_AUTOSCALING_ENDPOINT=old-ep\n"
         )
         # Simulate autoscaling quickstart
         update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", "new-ep")
-        update_env_file("LAKEBASE_INSTANCE_NAME", "")
         content = (tmp_path / ".env").read_text()
         assert content.count("LAKEBASE_AUTOSCALING_ENDPOINT") == 1
-        assert content.count("LAKEBASE_INSTANCE_NAME") == 1
         assert "LAKEBASE_AUTOSCALING_ENDPOINT=new-ep" in content
-        assert "# LAKEBASE_INSTANCE_NAME=" not in content
         assert "# LAKEBASE_AUTOSCALING_ENDPOINT=" not in content
         assert "CHAT_APP_PORT=3000" in content
         # Values should be in the TODO section, not appended at the bottom
         lines = content.strip().split("\n")
-        lakebase_idx = next(i for i, l in enumerate(lines) if l.startswith("LAKEBASE_INSTANCE_NAME="))
+        lakebase_idx = next(i for i, l in enumerate(lines) if l.startswith("LAKEBASE_AUTOSCALING_ENDPOINT="))
         chat_idx = next(i for i, l in enumerate(lines) if l.startswith("CHAT_APP_PORT="))
         assert lakebase_idx < chat_idx, "Lakebase vars should be in the TODO section, not appended after CHAT_APP_PORT"
 
     def test_fresh_env_example_autoscaling(self, tmp_path):
         """First quickstart run on a fresh .env copied from .env.example."""
         (tmp_path / ".env").write_text(
-            "# TODO: Update with your Lakebase instance\n"
-            "# Option 1: Provisioned instance (set instance name)\n"
-            "# LAKEBASE_INSTANCE_NAME=\n"
-            "# Option 2: Autoscaling endpoint name\n"
+            "# TODO: Update with your Lakebase autoscaling endpoint\n"
             "# LAKEBASE_AUTOSCALING_ENDPOINT=\n"
             "\n"
             "CHAT_APP_PORT=3000\n"
         )
         update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", "my-ep")
-        update_env_file("LAKEBASE_INSTANCE_NAME", "")
         content = (tmp_path / ".env").read_text()
-        # Both should appear in-place where the commented lines were
+        # Should appear in-place where the commented line was
         lines = content.strip().split("\n")
-        assert "LAKEBASE_INSTANCE_NAME=" in lines
         assert "LAKEBASE_AUTOSCALING_ENDPOINT=my-ep" in lines
         # Should be before CHAT_APP_PORT, not appended
-        inst_idx = lines.index("LAKEBASE_INSTANCE_NAME=")
         ep_idx = lines.index("LAKEBASE_AUTOSCALING_ENDPOINT=my-ep")
         chat_idx = lines.index("CHAT_APP_PORT=3000")
-        assert inst_idx < chat_idx
         assert ep_idx < chat_idx
 
 
@@ -759,101 +625,6 @@ class TestSetupEnvFile:
         assert (tmp_path / ".env").exists()
         content = (tmp_path / ".env").read_text()
         assert "DATABRICKS_CONFIG_PROFILE=DEFAULT" in content
-
-
-class TestHappyPathProvisionedOnRealTemplates:
-    """End-to-end happy path: provisioned Lakebase on real template files.
-
-    Simulates what quickstart does: copy .env.example -> .env, set experiment,
-    set lakebase config, and verify both .env and databricks.yml are correct.
-    """
-
-    MEMORY_TEMPLATES = [
-        "agent-langgraph-advanced",
-        "agent-openai-advanced",
-    ]
-
-    def test_provisioned_happy_path(self, tmp_path):
-        repo_root = Path(__file__).resolve().parents[1]
-
-        for template_name in self.MEMORY_TEMPLATES:
-            template_dir = repo_root / template_name
-            if not template_dir.exists():
-                continue
-
-            # Set up working directory
-            tdir = tmp_path / f"{template_name}-provisioned"
-            tdir.mkdir()
-
-            # Copy template files
-            for fname in ["databricks.yml", ".env.example"]:
-                src = template_dir / fname
-                if src.exists():
-                    (tdir / fname).write_text(src.read_text())
-            if (template_dir / "app.yaml").exists():
-                (tdir / "app.yaml").write_text((template_dir / "app.yaml").read_text())
-
-            os.chdir(tdir)
-
-            # Step 1: Copy .env.example to .env
-            setup_env_file()
-            assert (tdir / ".env").exists(), f"{template_name}: .env not created"
-
-            # Step 2: Set experiment ID
-            update_databricks_yml_experiment("12345")
-
-            # Step 3: Set provisioned lakebase in .env
-            update_env_file("LAKEBASE_INSTANCE_NAME", "my-provisioned-db")
-            update_env_file("LAKEBASE_AUTOSCALING_PROJECT", "")
-            update_env_file("LAKEBASE_AUTOSCALING_BRANCH", "")
-            update_env_file("PGHOST", "instance-abc.database.cloud.databricks.com")
-            update_env_file("PGUSER", "test@databricks.com")
-            update_env_file("PGDATABASE", "databricks_postgres")
-
-            # Step 4: Set provisioned lakebase in databricks.yml
-            update_databricks_yml_lakebase(
-                {"type": "provisioned", "instance_name": "my-provisioned-db"}
-            )
-
-            # Verify .env
-            env_content = (tdir / ".env").read_text()
-            assert "LAKEBASE_INSTANCE_NAME=my-provisioned-db" in env_content, (
-                f"{template_name}: .env missing LAKEBASE_INSTANCE_NAME"
-            )
-            assert "PGHOST=instance-abc" in env_content, (
-                f"{template_name}: .env missing PGHOST"
-            )
-            assert "PGUSER=test@databricks.com" in env_content, (
-                f"{template_name}: .env missing PGUSER"
-            )
-            assert "PGDATABASE=databricks_postgres" in env_content, (
-                f"{template_name}: .env missing PGDATABASE"
-            )
-
-            # Verify databricks.yml
-            yml_content = (tdir / "databricks.yml").read_text()
-            assert 'experiment_id: "12345"' in yml_content, (
-                f"{template_name}: databricks.yml missing experiment_id"
-            )
-            assert "LAKEBASE_INSTANCE_NAME" in yml_content, (
-                f"{template_name}: databricks.yml missing LAKEBASE_INSTANCE_NAME"
-            )
-            assert 'value: "my-provisioned-db"' in yml_content, (
-                f"{template_name}: databricks.yml missing instance name value"
-            )
-            assert "LAKEBASE_AUTOSCALING_PROJECT" not in yml_content, (
-                f"{template_name}: databricks.yml should not have autoscaling project"
-            )
-            assert "LAKEBASE_AUTOSCALING_BRANCH" not in yml_content, (
-                f"{template_name}: databricks.yml should not have autoscaling branch"
-            )
-            # Should have database resource
-            assert "- name: 'database'" in yml_content, (
-                f"{template_name}: databricks.yml missing database resource"
-            )
-            assert "instance_name: 'my-provisioned-db'" in yml_content, (
-                f"{template_name}: databricks.yml missing instance_name in resource"
-            )
 
 
 class TestHappyPathAutoscalingOnRealTemplates:
@@ -1096,11 +867,6 @@ class TestLakebaseIdempotency:
         result = get_existing_lakebase_config()
         assert result == {"type": "autoscaling", "endpoint": "my-endpoint"}
 
-    def test_detects_existing_provisioned_config(self, tmp_path):
-        (tmp_path / ".env").write_text("LAKEBASE_INSTANCE_NAME=my-instance\n")
-        result = get_existing_lakebase_config()
-        assert result == {"type": "provisioned", "instance_name": "my-instance"}
-
     def test_returns_none_when_not_configured(self, tmp_path):
         (tmp_path / ".env").write_text("DATABRICKS_CONFIG_PROFILE=DEFAULT\n")
         result = get_existing_lakebase_config()
@@ -1110,27 +876,9 @@ class TestLakebaseIdempotency:
         result = get_existing_lakebase_config()
         assert result is None
 
-    def test_autoscaling_takes_priority_over_provisioned(self, tmp_path):
-        """When both are set, autoscaling takes priority."""
-        (tmp_path / ".env").write_text(
-            "LAKEBASE_AUTOSCALING_ENDPOINT=ep\n"
-            "LAKEBASE_INSTANCE_NAME=inst\n"
-        )
-        result = get_existing_lakebase_config()
-        assert result is not None
-        assert result["type"] == "autoscaling"
-
 
 class TestLakebaseForNonMemoryTemplate:
-    """Tests that Lakebase setup works on non-memory templates (for UI chat history)."""
-
-    def test_provisioned_adds_database_resource_to_minimal_yml(self):
-        result = _replace_lakebase_resource(
-            MINIMAL_YML, {"type": "provisioned", "instance_name": "mydb"}
-        )
-        assert "- name: 'database'" in result
-        assert "instance_name: 'mydb'" in result
-        assert "database_name: 'databricks_postgres'" in result
+    """Tests that Lakebase setup is a noop on non-memory templates (no lakebase resource)."""
 
     def test_autoscaling_noop_on_minimal_yml(self):
         result = _replace_lakebase_resource(
@@ -1141,35 +889,9 @@ class TestLakebaseForNonMemoryTemplate:
     def test_env_vars_noop_on_minimal_yml(self):
         """Non-memory templates have no LAKEBASE_ env vars in databricks.yml — noop."""
         result = _replace_lakebase_env_vars(
-            MINIMAL_YML, {"type": "provisioned", "instance_name": "mydb"}
+            MINIMAL_YML, {"type": "autoscaling", "endpoint": "ep"}
         )
         assert result == MINIMAL_YML
-
-    def test_against_real_non_memory_templates(self, tmp_path):
-        """Provisioned Lakebase can be added to real non-memory template databricks.yml."""
-        repo_root = Path(__file__).resolve().parents[1]
-        non_memory_templates = [
-            "agent-langgraph",
-            "agent-openai-agents-sdk",
-            "agent-non-conversational",
-        ]
-        for template_name in non_memory_templates:
-            yml_path = repo_root / template_name / "databricks.yml"
-            if not yml_path.exists():
-                continue
-            tdir = tmp_path / template_name
-            tdir.mkdir()
-            (tdir / "databricks.yml").write_text(yml_path.read_text())
-            os.chdir(tdir)
-
-            update_databricks_yml_lakebase({"type": "provisioned", "instance_name": "ui-db"})
-            content = (tdir / "databricks.yml").read_text()
-            assert "- name: 'database'" in content, (
-                f"{template_name}: database resource not added"
-            )
-            assert "instance_name: 'ui-db'" in content, (
-                f"{template_name}: instance name not set"
-            )
 
 
 class TestGetDatabricksYmlExperimentId:
@@ -1196,16 +918,6 @@ class TestGetDatabricksYmlExperimentId:
 class TestValidateLakebaseConfig:
     """Tests for validate_lakebase_config — validates .env lakebase before reusing."""
 
-    def test_provisioned_valid(self):
-        config = {"type": "provisioned", "instance_name": "my-db"}
-        with patch("quickstart.validate_lakebase_instance", return_value={"read_write_dns": "host"}):
-            assert validate_lakebase_config("DEFAULT", config) is True
-
-    def test_provisioned_invalid(self):
-        config = {"type": "provisioned", "instance_name": "missing-db"}
-        with patch("quickstart.validate_lakebase_instance", return_value=None):
-            assert validate_lakebase_config("DEFAULT", config) is False
-
     def test_autoscaling_valid(self):
         config = {"type": "autoscaling", "endpoint": "my-ep"}
         with patch("quickstart.validate_lakebase_autoscaling_endpoint", return_value={"endpoint": "my-ep"}):
@@ -1215,12 +927,6 @@ class TestValidateLakebaseConfig:
         config = {"type": "autoscaling", "endpoint": "missing-ep"}
         with patch("quickstart.validate_lakebase_autoscaling_endpoint", return_value=None):
             assert validate_lakebase_config("DEFAULT", config) is False
-
-    def test_provisioned_calls_correct_validator(self):
-        config = {"type": "provisioned", "instance_name": "my-db"}
-        with patch("quickstart.validate_lakebase_instance", return_value={}) as mock_validate:
-            validate_lakebase_config("my-profile", config)
-        mock_validate.assert_called_once_with("my-profile", "my-db")
 
     def test_autoscaling_calls_correct_validator(self):
         config = {"type": "autoscaling", "endpoint": "my-ep"}
@@ -1237,22 +943,14 @@ REQUIRED_ENV_VARS_AUTOSCALING = [
     "PGUSER",
 ]
 
-REQUIRED_ENV_VARS_PROVISIONED = [
-    "MLFLOW_EXPERIMENT_ID",
-    "LAKEBASE_INSTANCE_NAME",
-    "PGHOST",
-    "PGUSER",
-]
-
-
 class TestRequiredEnvVarsContract:
     """Verifies that all required env vars are populated after quickstart completes.
 
-    Every quickstart path (autoscaling, provisioned, app-bind) must set:
+    Every quickstart path (autoscaling, app-bind) must set:
     - MLFLOW_EXPERIMENT_ID
     - PGHOST
     - PGUSER
-    - Either LAKEBASE_AUTOSCALING_ENDPOINT or LAKEBASE_INSTANCE_NAME
+    - LAKEBASE_AUTOSCALING_ENDPOINT
     """
 
     def _setup_env(self, tmp_path, template_name):
@@ -1305,19 +1003,6 @@ class TestRequiredEnvVarsContract:
                 tdir, REQUIRED_ENV_VARS_AUTOSCALING, template_name, "autoscaling"
             )
 
-    def test_provisioned_sets_all_required_env_vars(self, tmp_path):
-        for template_name in self.MEMORY_TEMPLATES:
-            tdir = self._setup_env(tmp_path / "prov", template_name)
-            update_databricks_yml_experiment("12345")
-            update_env_file("MLFLOW_EXPERIMENT_ID", "12345")
-            update_env_file("LAKEBASE_INSTANCE_NAME", "my-db")
-            update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", "")
-            update_env_file("PGHOST", "instance-abc.database.cloud.databricks.com")
-            update_env_file("PGUSER", "user@databricks.com")
-            self._assert_env_has_vars(
-                tdir, REQUIRED_ENV_VARS_PROVISIONED, template_name, "provisioned"
-            )
-
     def test_app_bind_autoscaling_sets_all_required_env_vars(self, tmp_path):
         """Simulates what happens when quickstart binds to an existing app with postgres."""
         for template_name in self.MEMORY_TEMPLATES:
@@ -1332,15 +1017,158 @@ class TestRequiredEnvVarsContract:
                 tdir, REQUIRED_ENV_VARS_AUTOSCALING, template_name, "app-bind autoscaling"
             )
 
-    def test_app_bind_provisioned_sets_all_required_env_vars(self, tmp_path):
-        """Simulates what happens when quickstart binds to an existing app with database."""
-        for template_name in self.MEMORY_TEMPLATES:
-            tdir = self._setup_env(tmp_path / "app-prov", template_name)
-            update_env_file("MLFLOW_EXPERIMENT_ID", "99999")
-            update_env_file("LAKEBASE_INSTANCE_NAME", "my-provisioned-db")
-            update_env_file("LAKEBASE_AUTOSCALING_ENDPOINT", "")
-            update_env_file("PGHOST", "instance-abc.database.cloud.databricks.com")
-            update_env_file("PGUSER", "user@databricks.com")
-            self._assert_env_has_vars(
-                tdir, REQUIRED_ENV_VARS_PROVISIONED, template_name, "app-bind provisioned"
+
+class TestLakebaseCreateNew:
+    """Tests for --lakebase-create-new flag (non-interactive Lakebase provisioning)."""
+
+    @staticmethod
+    def _mock_endpoint_info(project="test-proj", branch="test-proj-branch"):
+        return {
+            "endpoint": f"projects/{project}/branches/{branch}/endpoints/primary",
+            "host": "ep-xxx.database.us-west-2.cloud.databricks.com",
+            "branch": f"projects/{project}/branches/{branch}",
+            "database": f"projects/{project}/branches/{branch}/databases/db-xxx",
+        }
+
+    def test_create_lakebase_instance_uses_name_without_prompting(self, tmp_path):
+        """When name kwarg is passed, create_lakebase_instance does NOT call input()."""
+        os.chdir(tmp_path)
+        mock_w = MagicMock()
+        mock_project = MagicMock()
+        mock_project.name = "projects/my-new-project"
+        mock_w.postgres.create_project.return_value.wait.return_value = mock_project
+        mock_branch = MagicMock()
+        mock_branch.name = "projects/my-new-project/branches/my-new-project-branch"
+        mock_w.postgres.create_branch.return_value.wait.return_value = mock_branch
+
+        with patch("quickstart.get_workspace_client", return_value=mock_w), patch(
+            "quickstart.validate_lakebase_autoscaling_endpoint",
+            return_value=self._mock_endpoint_info(
+                project="my-new-project", branch="my-new-project-branch"
+            ),
+        ), patch("builtins.input") as mock_input:
+            result = create_lakebase_instance("DEFAULT", "my-new-project")
+
+        mock_input.assert_not_called()
+        mock_w.postgres.create_project.assert_called_once()
+        mock_w.postgres.create_branch.assert_called_once()
+        assert result["type"] == "autoscaling"
+        assert result["endpoint"].endswith("/endpoints/primary")
+        assert result["host"] == "ep-xxx.database.us-west-2.cloud.databricks.com"
+
+    def test_setup_lakebase_create_new_writes_env_vars(self, tmp_path):
+        """setup_lakebase(create_new_lakebase_proj=X) writes all required env vars to .env."""
+        os.chdir(tmp_path)
+        (tmp_path / ".env").write_text("DATABRICKS_CONFIG_PROFILE=DEFAULT\n")
+        # Pre-seed a stale instance name to verify it gets cleared
+        update_env_file("LAKEBASE_INSTANCE_NAME", "stale-instance")
+
+        endpoint_info = {**self._mock_endpoint_info(), "type": "autoscaling"}
+        with patch("quickstart.create_lakebase_instance", return_value=endpoint_info):
+            result = setup_lakebase(
+                profile_name="DEFAULT",
+                username="test@example.com",
+                create_new_lakebase_proj="test-proj",
+                purpose="memory",
             )
+
+        env_content = (tmp_path / ".env").read_text()
+        assert (
+            "LAKEBASE_AUTOSCALING_ENDPOINT=projects/test-proj/branches/test-proj-branch/endpoints/primary"
+            in env_content
+        )
+        assert "PGHOST=ep-xxx.database.us-west-2.cloud.databricks.com" in env_content
+        assert "PGUSER=test@example.com" in env_content
+        assert "PGDATABASE=databricks_postgres" in env_content
+        # Stale instance name should be cleared
+        assert "LAKEBASE_INSTANCE_NAME=stale-instance" not in env_content
+        assert "LAKEBASE_INSTANCE_NAME=" in env_content
+        # Return value is the endpoint config dict
+        assert result["type"] == "autoscaling"
+        assert result["endpoint"].startswith("projects/test-proj/")
+
+    def test_setup_lakebase_create_new_passes_name_through(self, tmp_path):
+        """setup_lakebase forwards create_new_lakebase_proj verbatim to create_lakebase_instance."""
+        os.chdir(tmp_path)
+        (tmp_path / ".env").write_text("DATABRICKS_CONFIG_PROFILE=DEFAULT\n")
+
+        endpoint_info = {**self._mock_endpoint_info(project="custom-name"), "type": "autoscaling"}
+        with patch(
+            "quickstart.create_lakebase_instance", return_value=endpoint_info
+        ) as mock_create:
+            setup_lakebase(
+                profile_name="DEFAULT",
+                username="test@example.com",
+                create_new_lakebase_proj="custom-name",
+                purpose="memory",
+            )
+
+        mock_create.assert_called_once_with("DEFAULT", "custom-name")
+
+    def test_end_to_end_create_new_chain(self, tmp_path):
+        """Seam test: setup_lakebase → create_lakebase_instance → endpoint validation.
+
+        Mocks only the deepest layer (workspace SDK + endpoint API). Catches contract
+        drift between setup_lakebase, create_lakebase_instance, and validate_lakebase_autoscaling_endpoint.
+        """
+        os.chdir(tmp_path)
+        (tmp_path / ".env").write_text("DATABRICKS_CONFIG_PROFILE=DEFAULT\n")
+
+        mock_w = MagicMock()
+        mock_project = MagicMock()
+        mock_project.name = "projects/integration-test"
+        mock_w.postgres.create_project.return_value.wait.return_value = mock_project
+        mock_branch = MagicMock()
+        mock_branch.name = "projects/integration-test/branches/integration-test-branch"
+        mock_w.postgres.create_branch.return_value.wait.return_value = mock_branch
+
+        endpoint_info = self._mock_endpoint_info(
+            project="integration-test", branch="integration-test-branch"
+        )
+
+        with patch("quickstart.get_workspace_client", return_value=mock_w), patch(
+            "quickstart.validate_lakebase_autoscaling_endpoint", return_value=endpoint_info
+        ) as mock_validate:
+            result = setup_lakebase(
+                profile_name="DEFAULT",
+                username="test@example.com",
+                create_new_lakebase_proj="integration-test",
+                purpose="memory",
+            )
+
+        # SDK was called with the user-supplied name
+        assert (
+            mock_w.postgres.create_project.call_args.kwargs.get("project_id")
+            == "integration-test"
+        )
+        assert (
+            mock_w.postgres.create_branch.call_args.kwargs.get("branch_id")
+            == "integration-test-branch"
+        )
+        # Endpoint validation was called with the constructed resource path
+        mock_validate.assert_called_once()
+        validated_path = mock_validate.call_args.args[1]
+        assert validated_path == (
+            "projects/integration-test/branches/integration-test-branch/endpoints/primary"
+        )
+        # Result dict has the expected shape (all four keys consumed by callers)
+        for key in ("type", "endpoint", "host", "branch", "database"):
+            assert key in result, f"setup_lakebase return missing key {key!r}"
+        assert result["type"] == "autoscaling"
+        # .env got populated correctly
+        env_content = (tmp_path / ".env").read_text()
+        assert "LAKEBASE_AUTOSCALING_ENDPOINT=projects/integration-test/" in env_content
+        assert "PGHOST=ep-xxx.database.us-west-2.cloud.databricks.com" in env_content
+        assert "PGUSER=test@example.com" in env_content
+        assert "PGDATABASE=databricks_postgres" in env_content
+
+    def test_create_lakebase_instance_rejects_empty_name(self, tmp_path):
+        """Passing an empty string for name exits non-zero without provisioning."""
+        os.chdir(tmp_path)
+        mock_w = MagicMock()
+        with patch("quickstart.get_workspace_client", return_value=mock_w):
+            with pytest.raises(SystemExit) as exc_info:
+                create_lakebase_instance("DEFAULT", "")
+        assert exc_info.value.code == 1
+        mock_w.postgres.create_project.assert_not_called()
+        mock_w.postgres.create_branch.assert_not_called()

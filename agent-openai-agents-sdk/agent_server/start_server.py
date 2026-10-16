@@ -1,3 +1,9 @@
+# Install crash/hang/exception diagnostics before importing agent code so
+# startup failures and unhandled exceptions land in the Apps log stream.
+from scripts.app_diagnostics import install_diagnostics  # noqa: E402
+
+install_diagnostics()
+
 from pathlib import Path
 
 from dotenv import load_dotenv

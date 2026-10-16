@@ -9,7 +9,7 @@ export function GeniePage() {
           Ask questions about your data using Databricks AI/BI Genie.
         </p>
       </div>
-      <div className="h-[600px] border rounded-lg overflow-hidden">
+      <div className="h-[min(600px,70vh)] border rounded-lg overflow-hidden">
         <GenieChat alias="default" />
       </div>
     </div>

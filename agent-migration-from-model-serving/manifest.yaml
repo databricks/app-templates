@@ -1,0 +1,9 @@
+version: 1
+name: "Agent Migration"
+description: "Scaffold for migrating an MLflow ResponsesAgent from Databricks Model Serving to Databricks Apps."
+
+resource_specs:
+  - name: "experiment"
+    description: "The destination experiment for traces from the migrated agent's execution."
+    experiment_spec:
+      permission: "CAN_EDIT"

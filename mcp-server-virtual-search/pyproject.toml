@@ -1,5 +1,5 @@
 [project]
-name = "virtual-mcp-server"
+name = "virtual-mcp-search-server"
 version = "0.1.0"
 description = "One MCP endpoint for the tools of several Unity Catalog MCP services, on Databricks Apps"
 readme = "README.md"
@@ -20,7 +20,7 @@ dev = [
 ]
 
 [project.scripts]
-virtual-mcp-server = "server.main:main"
+virtual-mcp-search-server = "server.main:main"
 
 [build-system]
 requires = ["hatchling"]

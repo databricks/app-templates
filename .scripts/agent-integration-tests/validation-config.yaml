@@ -54,7 +54,7 @@ templates:
   dash-postgres-app: { verify: html, expect: "Todo List App" }
   flask-postgres-app: { verify: html, expect: "Todo List App" }
   # Also binds uc-volume + serving-endpoint. The page shell renders without OBO; its data (/api) needs the ai-gateway user scope.
-  mcp-server-virtual: { verify: html, expect: "Virtual MCP Server" }
+  mcp-server-virtual-search: { verify: html, expect: "Virtual MCP Server" }
 
   # ---- Tier 3b: database (Lakebase Provisioned) — may need a `database`-type binding ----
   streamlit-database-app: { verify: html, expect: "Todo List App" }

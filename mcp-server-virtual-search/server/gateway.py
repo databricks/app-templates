@@ -131,7 +131,7 @@ class GatewayMcpClient:
         params = {
             "protocolVersion": _MCP_PROTOCOL_VERSION,
             "capabilities": {},
-            "clientInfo": {"name": "databricks-virtual-mcp-server", "version": "0.1.0"},
+            "clientInfo": {"name": "databricks-virtual-mcp-search-server", "version": "0.1.0"},
         }
         try:
             _, session_id = await self._rpc(service, "initialize", params, None)

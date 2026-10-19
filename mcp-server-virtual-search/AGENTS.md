@@ -1,4 +1,4 @@
-# Virtual MCP server: guide for coding agents
+# Virtual MCP server with tool search: guide for coding agents
 
 A Databricks App that serves one MCP endpoint for the tools of several Unity Catalog MCP services, plus a tool-search endpoint. See `README.md` for what users do with it.
 
@@ -6,7 +6,7 @@ A Databricks App that serves one MCP endpoint for the tools of several Unity Cat
 
 ```
 server/
-├── main.py             Entry point (`uv run virtual-mcp-server`), runs uvicorn
+├── main.py             Entry point (`uv run virtual-mcp-search-server`), runs uvicorn
 ├── app.py              FastAPI routes (/, /api/*) and the ASGI entrypoint that serves /mcp and /mcp/search
 ├── proxy.py            The two MCP servers: merged tool listing, call routing, search_tools/call_tool
 ├── gateway.py          AI Gateway MCP client and the Unity Catalog per-user credential API

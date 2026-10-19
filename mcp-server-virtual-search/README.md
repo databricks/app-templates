@@ -1,4 +1,4 @@
-# Virtual MCP server for Databricks Apps
+# Virtual MCP server with tool search for Databricks Apps
 
 This app template combines the tools of several [Unity Catalog MCP services](https://docs.databricks.com/aws/en/generative-ai/mcp/) (for example GitHub, Slack, and Genie) behind one MCP endpoint. You choose which services and which of their tools to expose. Every user signs in to each service once, from the app, and the app routes each tool call to the service that owns it, as that user.
 
@@ -156,7 +156,7 @@ Locally, your Databricks CLI credentials stand in for the signed-in user, so the
 
 ```bash
 uv sync
-DATABRICKS_CONFIG_PROFILE=<profile> uv run virtual-mcp-server
+DATABRICKS_CONFIG_PROFILE=<profile> uv run virtual-mcp-search-server
 ```
 
 The explorer is at http://localhost:8000. To test another config without uploading it, put it inline: `VIRTUAL_MCP_CONFIG='{"services": [...]}'`.

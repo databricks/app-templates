@@ -1,4 +1,4 @@
-"""Entry point: ``uv run virtual-mcp-server`` starts the app with uvicorn."""
+"""Entry point: ``uv run virtual-mcp-search-server`` starts the app with uvicorn."""
 
 # --- diagnostics bootstrap: install crash/exception logging before app code ---
 import os as _diag_os

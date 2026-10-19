@@ -1,5 +1,5 @@
 version: 1
-name: "MCP Server - Virtual MCP"
+name: "MCP Server - Virtual MCP with Tool Search"
 description: "Combine the tools of several Unity Catalog MCP services behind one MCP endpoint, with guided per-service sign-in and a Lakebase-backed tool-search endpoint that returns only the tools relevant to a task."
 
 resource_specs:

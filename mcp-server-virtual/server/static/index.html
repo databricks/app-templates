@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Virtual MCP Server</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div>
+        <h1><span class="logo-mark"></span>Virtual MCP Server</h1>
+        <p class="muted">One MCP endpoint for the tools of several Unity Catalog MCP services. Each call is routed to the service that owns the tool.</p>
+        <div class="endpoint">
+          <span class="endpoint-label">All tools</span><code id="mcp-url">…</code>
+          <button class="btn btn-secondary btn-sm" data-copy="mcp-url">Copy</button>
+        </div>
+        <div class="endpoint">
+          <span class="endpoint-label">Tool search</span><code id="search-url">…</code>
+          <button class="btn btn-secondary btn-sm" data-copy="search-url">Copy</button>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-primary" id="sign-in-all">Sign in to all</button>
+        <button class="btn btn-secondary" id="revoke-all" hidden>Revoke all</button>
+      </div>
+    </div>
+  </header>
+  <main class="layout">
+    <aside class="sidebar">
+      <section class="card">
+        <h2 class="card-title">Search tools</h2>
+        <form class="search" id="search-form">
+          <input id="search-query" placeholder="e.g. schedule a meeting" autocomplete="off" aria-label="Search query">
+          <select id="search-top-n" aria-label="Number of results">
+            <option>3</option><option selected>5</option><option>10</option>
+          </select>
+          <button class="btn btn-primary btn-sm" type="submit">Search</button>
+        </form>
+      </section>
+      <section class="card">
+        <h2 class="card-title">Services</h2>
+        <div id="service-list"><div class="muted pad">Loading…</div></div>
+        <div class="card-footer muted">Config: <span id="config-source">…</span></div>
+      </section>
+    </aside>
+    <section class="card detail" id="detail"><div class="pad-lg muted">Loading…</div></section>
+  </main>
+</body>
+</html>

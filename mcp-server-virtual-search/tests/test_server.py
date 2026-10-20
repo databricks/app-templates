@@ -371,3 +371,67 @@ def test_gateway_turns_transport_errors_into_upstream_errors():
 
     with pytest.raises(UpstreamError, match="connection refused"):
         asyncio.run(_gateway(handler).list_tools("system.ai.github"))
+
+
+# --------------------------------------------------------------------------- #
+# Embedding failures
+# --------------------------------------------------------------------------- #
+
+TOOL = {
+    "name": "slack__slack_send_message",
+    "alias": "slack",
+    "description": "Send a message to a Slack channel.",
+    "input_schema": {"type": "object"},
+}
+VECTOR = [1.0] + [0.0] * (tool_index.EMBEDDING_DIM - 1)
+
+
+class FlakyEmbedder:
+    """Fails the first `failures` calls, then returns a fixed vector per text."""
+
+    def __init__(self, failures: int):
+        self.failures = failures
+        self.calls = 0
+
+    def __call__(self, texts):
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise ConnectionError("embedding endpoint unreachable")
+        return [VECTOR for _ in texts]
+
+
+@pytest.fixture
+def fresh_index(monkeypatch):
+    index = tool_index.MemoryIndex()
+    monkeypatch.setattr(tool_index, "_index", index)
+    monkeypatch.setattr(tool_index, "_embedding_retry_at", 0.0)
+    return index
+
+
+def _embedded(index) -> bool:
+    return index.stored()[TOOL["name"]][1]
+
+
+def test_a_failed_embedding_is_retried_on_a_later_sync(fresh_index, monkeypatch):
+    embedder = FlakyEmbedder(failures=1)
+    monkeypatch.setattr(tool_index, "embed", embedder)
+    assert tool_index.sync([TOOL])["embedded"] == 0
+    assert not _embedded(fresh_index)
+    monkeypatch.setattr(tool_index, "_embedding_retry_at", 0.0)  # retry wait elapsed
+    assert tool_index.sync([TOOL])["embedded"] == 1
+    assert _embedded(fresh_index)
+
+
+def test_embedding_is_not_retried_during_the_retry_wait(fresh_index, monkeypatch):
+    embedder = FlakyEmbedder(failures=1)
+    monkeypatch.setattr(tool_index, "embed", embedder)
+    tool_index.sync([TOOL])
+    tool_index.sync([TOOL])
+    assert tool_index.search("send a slack message", 3, [TOOL["name"]])
+    assert embedder.calls == 1
+
+
+def test_search_falls_back_to_keywords_on_network_errors(fresh_index, monkeypatch):
+    monkeypatch.setattr(tool_index, "embed", FlakyEmbedder(failures=99))
+    tool_index.sync([TOOL])
+    assert tool_index.search("slack message", 3, [TOOL["name"]])[0][0] == TOOL["name"]

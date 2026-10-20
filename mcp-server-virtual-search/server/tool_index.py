@@ -15,7 +15,7 @@ take tool metadata from that listing, so one user's tools never reach another.
 
 Embeddings are computed as the app's service principal with the endpoint bound as
 the ``serving-endpoint`` resource. If embedding fails, tools are still indexed and
-searched by keyword.
+searched by keyword, and embedded on a later sync.
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ import time
 
 import psycopg
 from databricks.sdk import WorkspaceClient
+from databricks.sdk.config import Config
 from databricks.sdk.errors import DatabricksError
 from psycopg import sql
 
@@ -45,6 +46,12 @@ DEFAULT_TOP_N = int(os.environ.get("VIRTUAL_MCP_SEARCH_TOP_N", "5"))
 MAX_TOP_N = 25
 INDEX_SCHEMA = os.environ.get("VIRTUAL_MCP_INDEX_SCHEMA", "virtual_mcp")
 _EMBED_BATCH_SIZE = 32
+# After an embedding failure, skip the endpoint for this long: tools are indexed for
+# keyword search meanwhile and embedded on a later sync.
+_EMBEDDING_RETRY_AFTER_S = 60
+# Errors from the embedding endpoint (OSError covers network errors and timeouts)
+# that fall back to keyword-only ranking instead of failing the sync or search.
+_EMBEDDING_ERRORS = (DatabricksError, OSError, KeyError, ValueError)
 # Reciprocal-rank-fusion damping constant from the original RRF paper.
 _RRF_K = 60
 # Lakebase OAuth credentials expire after an hour; reconnect well before that.
@@ -67,7 +74,9 @@ def _sql(template: str) -> sql.Composed:
 
 @functools.cache
 def _workspace_client() -> WorkspaceClient:
-    return WorkspaceClient()
+    # The SDK retries 429s and 5xx itself, by default for five minutes, which would
+    # stall a search that long while the embedding endpoint is down.
+    return WorkspaceClient(config=Config(retry_timeout_seconds=30, http_timeout_seconds=30))
 
 
 def embedding_endpoint() -> str:
@@ -191,9 +200,11 @@ class LakebaseIndex:
         )
         conn.execute(_sql("CREATE INDEX IF NOT EXISTS tools_tsv_idx ON {tools} USING gin (tsv)"))
 
-    def hashes(self) -> dict[str, str]:
-        query = _sql("SELECT name, content_hash FROM {tools}")
-        return dict(self._run(lambda c: c.execute(query).fetchall()))
+    def stored(self) -> dict[str, tuple[str, bool]]:
+        """name -> (content hash, whether it has an embedding)."""
+        query = _sql("SELECT name, content_hash, embedding IS NOT NULL FROM {tools}")
+        rows = self._run(lambda c: c.execute(query).fetchall())
+        return {name: (digest, embedded) for name, digest, embedded in rows}
 
     def upsert(self, rows: list[dict]) -> None:
         statement = _sql(
@@ -263,9 +274,13 @@ class MemoryIndex:
         self._lock = threading.Lock()
         self._rows: dict[str, dict] = {}
 
-    def hashes(self) -> dict[str, str]:
+    def stored(self) -> dict[str, tuple[str, bool]]:
+        """name -> (content hash, whether it has an embedding)."""
         with self._lock:
-            return {name: row["content_hash"] for name, row in self._rows.items()}
+            return {
+                name: (row["content_hash"], row["embedding"] is not None)
+                for name, row in self._rows.items()
+            }
 
     def upsert(self, rows: list[dict]) -> None:
         with self._lock:
@@ -302,6 +317,23 @@ _index: LakebaseIndex | MemoryIndex | None = None
 _index_error: str | None = None
 _sync_lock = threading.Lock()
 _last_sync_at = 0.0
+# time.monotonic() before which the embedding endpoint isn't called again.
+_embedding_retry_at = 0.0
+
+
+def _try_embed(texts: list[str]) -> list[list[float]] | None:
+    """Embeddings for texts, or None if the endpoint is failing or in its retry wait."""
+    global _embedding_retry_at
+    if time.monotonic() < _embedding_retry_at:
+        return None
+    try:
+        return embed(texts)
+    except _EMBEDDING_ERRORS as e:
+        _embedding_retry_at = time.monotonic() + _EMBEDDING_RETRY_AFTER_S
+        log.warning(
+            "embedding failed, using keyword search only for %ss: %s", _EMBEDDING_RETRY_AFTER_S, e
+        )
+        return None
 
 
 def _get_index() -> LakebaseIndex | MemoryIndex:
@@ -346,38 +378,43 @@ def count() -> int:
 
 def sync(tools: list[dict]) -> dict:
     """Add or update the given {name, alias, description, input_schema} tools,
-    re-embedding only those that changed. Never deletes: listings differ by caller,
-    and search only ranks tools the caller can list right now, so a row for a tool
-    that no longer exists is never returned."""
+    embedding those that changed or have no embedding yet, so a tool whose embedding
+    failed is retried on a later sync. Never deletes: listings differ by caller, and
+    search only ranks tools the caller can list right now, so a row for a tool that
+    no longer exists is never returned."""
     global _last_sync_at
     index = _get_index()
     with _sync_lock:
-        existing = index.hashes()
-        changed = []
+        stored = index.stored()
+        changed, unembedded = [], []
         for tool in tools:
-            digest = _content_hash(tool)
-            if existing.get(tool["name"]) != digest:
-                changed.append({**tool, "content_hash": digest})
-        if changed:
-            try:
-                vectors = embed([tool_text(t["name"], t["description"]) for t in changed])
-            except (DatabricksError, KeyError, ValueError) as e:
-                log.warning("embedding failed, indexing for keyword search only: %s", e)
-                vectors = [None] * len(changed)
-            for tool, vector in zip(changed, vectors, strict=True):
-                tool["embedding"] = vector
+            row = {**tool, "content_hash": _content_hash(tool), "embedding": None}
+            digest, embedded = stored.get(tool["name"], (None, False))
+            if digest != row["content_hash"]:
+                changed.append(row)
+            elif not embedded:
+                unembedded.append(row)
+        pending = changed + unembedded
+        vectors = (
+            _try_embed([tool_text(t["name"], t["description"]) for t in pending])
+            if pending
+            else None
+        )
+        if vectors is not None:
+            for row, vector in zip(pending, vectors, strict=True):
+                row["embedding"] = vector
+            index.upsert(pending)
+        elif changed:
+            # Keep the content current for keyword search; embed it on a later sync.
             index.upsert(changed)
         _last_sync_at = time.time()
-        return {"embedded": len(changed), "total": index.count()}
+        return {"embedded": len(pending) if vectors is not None else 0, "total": index.count()}
 
 
 def search(query: str, top_n: int, names: list[str]) -> list[tuple[str, float]]:
     """The top_n of the given tool names for query, best first, as (name, score)."""
-    try:
-        query_vec = embed([query])[0]
-    except (DatabricksError, KeyError, ValueError) as e:
-        log.warning("query embedding failed, ranking by keyword only: %s", e)
-        query_vec = None
+    vectors = _try_embed([query])
+    query_vec = vectors[0] if vectors else None
     index = _get_index()
     by_vector, by_keyword = index.rank(query, query_vec, max(top_n * 4, 20), names)
     scores: dict[str, float] = {}

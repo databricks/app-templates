@@ -31,12 +31,14 @@ async function getFallbackToken(): Promise<string> {
  * service via the Unity Gateway's OpenAI-compatible chat-completions endpoint.
  */
 export async function getModelServiceLanguageModel(
-  modelServiceName: string | undefined = process.env.DATABRICKS_MODEL_SERVICE,
+  modelServiceName: string | undefined = process.env.DATABRICKS_MODEL_SERVICE ||
+    process.env.DATABRICKS_MODEL_SERVICE_DEFAULT,
 ) {
   if (!modelServiceName) {
     throw new Error(
-      'Please set the DATABRICKS_MODEL_SERVICE environment variable to a ' +
-        '3-part Unity Catalog model-service name (e.g. "system.ai.claude-sonnet-4-5")',
+      'Please set the DATABRICKS_MODEL_SERVICE or DATABRICKS_MODEL_SERVICE_DEFAULT ' +
+        'environment variable to a 3-part Unity Catalog model-service name ' +
+        '(e.g. "system.ai.claude-sonnet-4-5")',
     );
   }
 

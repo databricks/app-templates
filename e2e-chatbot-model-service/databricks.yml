@@ -26,13 +26,6 @@ resources:
       description: "Agentic Chat application for Unity Catalog model services (Unity Gateway)"
       source_code_path: .
       resources:
-        # NOTE: there is no model-service DAB/Apps resource type yet, so
-        # there is no `resources` entry here for the model service.
-        # DATABRICKS_MODEL_SERVICE is set as a plain literal env value in
-        # app.yaml instead, and the app's
-        # service principal must be granted EXECUTE on the model service,
-        # plus USE CATALOG / USE SCHEMA on its containing catalog/schema, via
-        # Unity Catalog grants -- out-of-band, outside of this bundle.
         # TODO (optional): Uncomment the database resource below to bind the app to the database instance above
         # and enable persistent chat history
         # - name: database

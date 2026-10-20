@@ -352,15 +352,14 @@ echo
 echo "Setting up Application Configuration..."
 
 # 1. Model Service
-DEFAULT_MODEL_SERVICE="system.ai.claude-sonnet-4-5"
-echo "Enter the Unity Catalog model service to invoke via the Unity Gateway (3-part name, e.g. system.ai.claude-sonnet-4-5)"
-echo "Press Enter to use default: $DEFAULT_MODEL_SERVICE"
-read -r MODEL_SERVICE
-
-if [ -z "$MODEL_SERVICE" ]; then
-    MODEL_SERVICE="$DEFAULT_MODEL_SERVICE"
-    echo "Using default model service: $MODEL_SERVICE"
-fi
+MODEL_SERVICE=""
+while [ -z "$MODEL_SERVICE" ]; do
+    echo "Enter the Unity Catalog model service to invoke via the Unity Gateway (3-part name, e.g. system.ai.claude-sonnet-4-5)"
+    read -r MODEL_SERVICE
+    if [ -z "$MODEL_SERVICE" ]; then
+        echo "A model service name is required."
+    fi
+done
 
 # Model services are Unity Catalog securables (3-part names). There's no
 # verified CLI command to check for their existence here. Existence and the
@@ -369,10 +368,13 @@ fi
 MODEL_SERVICE_CHECK=""
 MODEL_SERVICE_EXISTS=1
 
-# databricks.yml's model_service_name variable is documented as
-# non-functional (no model-service DAB/Apps resource type exists yet), so
-# there's no placeholder there to substitute; DATABRICKS_MODEL_SERVICE in
-# .env is what actually drives the app.
+# Update databricks.yml with the model service
+MODEL_SERVICE_DEFAULT_SED="/^  model_service_name:/,/^  database_instance_name:/ s|^    \(# \)\{0,1\}default: .*|    default: \"$MODEL_SERVICE\"|"
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    sed -i '' "$MODEL_SERVICE_DEFAULT_SED" databricks.yml
+else
+    sed -i "$MODEL_SERVICE_DEFAULT_SED" databricks.yml
+fi
 
 # Update .env with the model service
 if grep -q "DATABRICKS_MODEL_SERVICE=" .env; then

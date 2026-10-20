@@ -3,9 +3,9 @@
 - The AI Gateway MCP proxy (``POST {host}/ai-gateway/mcp-services/{name}``) speaks
   MCP JSON-RPC to each Unity Catalog MCP service. Needs the ``ai-gateway`` scope.
 - The Unity Catalog per-user credential API
-  (``/api/2.1/unity-catalog/mcp-services/{name}/user-credentials``) reads and revokes
-  the user's sign-in for a service. Needs the ``unity-catalog`` scope; the app works
-  without it, minus revoke and "no sign-in needed" detection.
+  (``GET /api/2.1/unity-catalog/mcp-services/{name}/user-credentials``) reads whether
+  the user has signed in to a service. Needs the ``unity-catalog:read`` scope; without
+  it the app still works, minus the "no sign-in needed" labels.
 """
 
 from __future__ import annotations
@@ -166,7 +166,7 @@ class Credential(str, Enum):
 
 
 async def credential_state(token: str, service: str) -> Credential | None:
-    """None when it can't be determined, e.g. the app lacks the unity-catalog scope
+    """None when it can't be determined, e.g. the app lacks the unity-catalog:read scope
     or Unity Catalog is throttling."""
     url = databricks_host() + _CREDENTIALS_PATH.format(name=quote(service, safe=""))
     try:
@@ -182,11 +182,3 @@ async def credential_state(token: str, service: str) -> Credential | None:
     if resp.status_code == 400:  # the service takes no per-user credential
         return Credential.NOT_REQUIRED
     return None
-
-
-async def revoke_credential(token: str, service: str) -> tuple[int, str]:
-    """Delete the user's stored credential. Returns (HTTP status, response body)."""
-    url = databricks_host() + _CREDENTIALS_PATH.format(name=quote(service, safe=""))
-    async with httpx.AsyncClient(timeout=30.0) as http:
-        resp = await http.delete(url, headers={"Authorization": f"Bearer {token}"})
-    return resp.status_code, resp.text[:500]

@@ -74,7 +74,6 @@ async function load() {
   services = resp.data.services;
   loginUrl = resp.data.login_url;
   $("config-source").textContent = resp.data.config_source;
-  $("revoke-all").hidden = !services.some((s) => s.credential === "ACTIVE");
   if (!selected && services.length) selected = services[0].name;
   renderServiceList();
   renderService();
@@ -105,12 +104,9 @@ function renderService() {
     detail.innerHTML = '<div class="pad-lg muted">Select a service.</div>';
     return;
   }
-  let action = "";
-  if (service.state === "NEEDS_LOGIN") {
-    action = `<a class="btn btn-primary btn-sm" id="sign-in" target="_blank" rel="noopener" href="${esc(signInHref(service.name))}">Sign in</a>`;
-  } else if (service.credential === "ACTIVE") {
-    action = '<button class="btn btn-secondary btn-sm" id="revoke">Revoke</button>';
-  }
+  const action = service.state === "NEEDS_LOGIN"
+    ? `<a class="btn btn-primary btn-sm" id="sign-in" target="_blank" rel="noopener" href="${esc(signInHref(service.name))}">Sign in</a>`
+    : "";
   const tools = service.tools;
   const rows = tools.map((t) => `
     <tr><td class="tool-name" title="${esc(t.name)}">${esc(shortToolName(t.name))}</td>
@@ -135,7 +131,6 @@ function renderService() {
     ${toolsSection}
   </div>`;
   $("sign-in")?.addEventListener("click", () => pollUntilSignedIn(service.name).then(load));
-  $("revoke")?.addEventListener("click", () => revoke([service.name]));
   if (tools.length && !service.error) wireInvokeForm(tools);
 }
 
@@ -228,17 +223,6 @@ function openTool(name) {
   }
 }
 
-async function revoke(names) {
-  for (const name of names) {
-    const resp = await postJson("/api/revoke", { name });
-    if (!resp.data?.ok) {
-      alert(`Revoke failed for ${name} (HTTP ${resp.data?.status ?? resp.status}): ${resp.data?.detail || resp.data?.error || ""}`);
-      break;
-    }
-  }
-  await load();
-}
-
 async function pollUntilSignedIn(name) {
   for (let i = 0; i < POLL_ATTEMPTS; i++) {
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
@@ -280,7 +264,6 @@ document.addEventListener("DOMContentLoaded", () => {
     navigator.clipboard?.writeText($(b.dataset.copy).textContent);
   }));
   $("sign-in-all").addEventListener("click", signInAll);
-  $("revoke-all").addEventListener("click", () => revoke(services.filter((s) => s.credential === "ACTIVE").map((s) => s.name)));
   $("search-form").addEventListener("submit", runSearch);
   load();
 });

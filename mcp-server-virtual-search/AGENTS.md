@@ -9,7 +9,7 @@ server/
 ├── main.py             Entry point (`uv run virtual-mcp-search-server`), runs uvicorn
 ├── app.py              FastAPI routes (/, /api/*) and the ASGI entrypoint that serves /mcp and /mcp/search
 ├── proxy.py            The two MCP servers: merged tool listing, call routing, search_tools/call_tool
-├── gateway.py          AI Gateway MCP client and the Unity Catalog per-user credential API
+├── gateway.py          AI Gateway MCP client and the read-only Unity Catalog sign-in status API
 ├── tool_index.py       Tool-search index: Lakebase (pgvector + full text) or in-memory
 ├── config.py           Loads and validates virtual_mcp_config.json
 ├── request_context.py  The caller's token, workspace host, and the app's public URL
@@ -21,7 +21,7 @@ virtual_mcp_config.json Bundled default config, used when the volume has none
 
 ## Invariants
 
-- **Every upstream call uses the caller's token**, from the `x-forwarded-access-token` header. A deployed app never falls back to its service principal for MCP or credential calls. Only tool embeddings and Lakebase access use the service principal.
+- **Every upstream call uses the caller's token**, from the `x-forwarded-access-token` header. A deployed app never falls back to its service principal for MCP or sign-in status calls. Only tool embeddings and Lakebase access use the service principal.
 - **Tool names are `<alias>__<tool>`.** `proxy.call_tool` splits on the first `__` to route, and re-checks the service's selection, so a client can't call a tool the config doesn't expose.
 - **No blocking I/O on the event loop.** Config loading, embeddings, and Lakebase run in worker threads (`asyncio.to_thread`). A blocking call on the loop under a throttled Unity Catalog stalls every route.
 - **The MCP servers use the low-level `mcp` API** (`Server(on_list_tools=..., on_call_tool=...)`), not FastMCP: the tool list depends on the caller.
@@ -46,3 +46,4 @@ uv run ruff check . && uv run ruff format --check --exclude server/app_diagnosti
 ```
 
 Databricks Apps scans deployed source with semgrep. Run the repo's `review-templates` skill before opening a PR.
+- **Scopes are `ai-gateway` and `unity-catalog:read`.** The app only reads Unity Catalog. Apps can't hold the write-capable bare `unity-catalog` scope, so don't add features that change Unity Catalog state, such as revoking a user's sign-in.

@@ -18,7 +18,7 @@ How it works:
 
 1. **Configuration.** `virtual_mcp_config.json` in a Unity Catalog volume lists the services to combine and, optionally, which of their tools to expose.
 2. **Routing.** Tool listings and calls go through the [AI Gateway](https://docs.databricks.com/aws/en/ai-gateway/) to each service, with the signed-in user's token ([on-behalf-of-user authorization](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth#user-authorization)). Results respect that user's own grants and credentials.
-3. **Sign-in.** The app walks the user through the platform sign-in page of each service that needs it.
+3. **Sign-in.** The app walks the user through the platform sign-in page of each service that needs it. With the `unity-catalog:read` scope it also reads each user's sign-in status, to label services that need no sign-in. Signing out of a service is done on its platform sign-in page.
 4. **Tool search.** Each tool's name and description is embedded with a serving endpoint and stored in [Lakebase](https://docs.databricks.com/aws/en/oltp/) with pgvector. A search combines vector similarity with Postgres full-text ranking (reciprocal-rank fusion), so it matches both exact words ("jira") and paraphrases ("schedule a meeting"). It ranks only the tools the caller can list right now, so it never returns another user's tools. The index refreshes whenever tools are listed and re-embeds only tools that changed.
 
 ## Quickstart
@@ -85,13 +85,13 @@ Without it, tool search still works, using an in-memory index that is rebuilt af
 
 Give the app a name that starts with `mcp-`. That makes it discoverable as an MCP server in Databricks product UIs such as the [AI Playground](https://docs.databricks.com/aws/en/large-language-models/ai-playground).
 
-**From the CLI.** Create the app with the same resources and the `ai-gateway` user scope, then deploy this directory:
+**From the CLI.** Create the app with the same resources and the `ai-gateway` and `unity-catalog:read` user scopes, then deploy this directory. Set the scopes when you create the app: scopes added to an existing app don't reach its token.
 
 ```bash
 APP_NAME="mcp-virtual"
 databricks apps create --json '{
   "name": "'"$APP_NAME"'",
-  "user_api_scopes": ["ai-gateway"],
+  "user_api_scopes": ["ai-gateway", "unity-catalog:read"],
   "resources": [
     {"name": "uc-volume", "uc_securable": {"securable_type": "VOLUME", "securable_full_name": "<catalog>.<schema>.<volume>", "permission": "READ_VOLUME"}},
     {"name": "postgres", "postgres": {"branch": "projects/<project>/branches/<branch>", "database": "projects/<project>/branches/<branch>/databases/<database>", "permission": "CAN_CONNECT_AND_CREATE"}},
@@ -103,27 +103,7 @@ databricks sync . "/Users/$DATABRICKS_USERNAME/$APP_NAME"
 databricks apps deploy "$APP_NAME" --source-code-path "/Workspace/Users/$DATABRICKS_USERNAME/$APP_NAME"
 ```
 
-### 4. (Optional) Enable revoke
-
-With only the `ai-gateway` scope, users can sign in, list tools and call them. Two features read the user's stored credentials in Unity Catalog and need the `unity-catalog` scope:
-
-- **Revoke**, which signs the user out of a service from the app.
-- **"No sign-in needed"** labels, for services that take no per-user credential.
-
-`unity-catalog` can't be set in `user_api_scopes`, so an account admin adds it to the app's OAuth integration. Do this **before anyone signs in to the app**: a user's consent is fixed at the scopes the app had at their first sign-in.
-
-```bash
-INTEGRATION_ID=$(databricks apps get "$APP_NAME" -o json | jq -r .oauth2_app_integration_id)
-databricks account custom-app-integration get "$INTEGRATION_ID" -o json \
-  | jq '{scopes: (.scopes + ["unity-catalog"] | unique)}' \
-  | databricks account custom-app-integration update "$INTEGRATION_ID" --json @-
-databricks account custom-app-integration update "$INTEGRATION_ID" \
-  --json '{"user_authorized_scopes": ["ai-gateway", "unity-catalog"]}'
-```
-
-Use `unity-catalog`, not `unity-catalog:read`: the read-only scope can't revoke. The change takes up to 10 minutes to apply.
-
-### 5. Sign in and connect
+### 4. Sign in and connect
 
 Open the app and click **Sign in to all**. A window opens and walks you through the sign-in page of each service that needs one. Allow popups for the app if your browser blocks it.
 
@@ -175,10 +155,10 @@ uv run pytest
 |---------|-----|
 | `No user token` (HTTP 401) | Enable user authorization for Databricks Apps in the workspace, then reopen the app |
 | A service shows **error** with `required scopes: ai-gateway` | Add `ai-gateway` to the app's user authorization scopes |
+| No service ever shows **no sign-in needed** | The app lacks the `unity-catalog:read` scope. Recreate it with that scope: scopes added to an existing app don't reach its token |
 | A service shows **needs sign-in** after signing in | Reload the page. The platform can take a few seconds to store the credential |
 | The explorer shows `Config: bundled default` | The volume has no `virtual_mcp_config.json`. Upload it, then restart the app |
 | The explorer shows `Config: error loading ...` and no services | The file is invalid or unreadable; the message says which. Fix it or the app's `READ_VOLUME` permission, then restart the app |
-| Revoke fails with HTTP 403 | The app lacks the writable `unity-catalog` scope. See [Enable revoke](#4-optional-enable-revoke) |
 | `/api/index-status` shows the `memory` backend | Read `backend_error`. Usually pgvector isn't installed; see [Enable pgvector](#2-enable-pgvector) |
 
 Crashes and stack traces go to the app's logs at `https://<app-url>/logz`.

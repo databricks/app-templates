@@ -19,3 +19,4 @@ resource_specs:
 
 user_api_scopes:
   - "ai-gateway"
+  - "unity-catalog:read"

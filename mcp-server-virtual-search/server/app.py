@@ -20,7 +20,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel, Field
 
 from . import config, proxy, tool_index
-from .gateway import credential_state, revoke_credential
+from .gateway import credential_state
 from .request_context import (
     databricks_host,
     public_app_url,
@@ -143,24 +143,6 @@ async def api_call(request: Request, body: CallRequest):
         for block in result.content
     )
     return {"ok": result.ok, "text": text, "error": result.error, "needs_login": result.needs_login}
-
-
-class RevokeRequest(BaseModel):
-    name: str
-
-
-@app.post("/api/revoke")
-async def api_revoke(request: Request, body: RevokeRequest):
-    """Delete the caller's stored credential for one service. Needs the app to have
-    the unity-catalog user scope."""
-    token = _require_token(request)
-    if isinstance(token, JSONResponse):
-        return token
-    if body.name not in {s.name for s in config.load().services}:
-        return JSONResponse({"error": f"'{body.name}' is not configured"}, status_code=400)
-    status, detail = await revoke_credential(token, body.name)
-    # 404: there was no credential to revoke.
-    return {"ok": status < 400 or status == 404, "status": status, "detail": detail}
 
 
 @app.get("/api/search")

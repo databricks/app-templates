@@ -31,14 +31,16 @@ async function getFallbackToken(): Promise<string> {
  * service via the Unity Gateway's OpenAI-compatible chat-completions endpoint.
  */
 export async function getModelServiceLanguageModel(
-  modelServiceName: string | undefined = process.env.DATABRICKS_MODEL_SERVICE ||
-    process.env.DATABRICKS_MODEL_SERVICE_DEFAULT,
+  modelServiceName: string | undefined = process.env.DATABRICKS_MODEL_SERVICE,
 ) {
   if (!modelServiceName) {
     throw new Error(
-      'Please set the DATABRICKS_MODEL_SERVICE or DATABRICKS_MODEL_SERVICE_DEFAULT ' +
-        'environment variable to a 3-part Unity Catalog model-service name ' +
-        '(e.g. "system.ai.claude-sonnet-4-5")',
+      'DATABRICKS_MODEL_SERVICE is not set. In Databricks Apps, attach a Unity ' +
+        'Catalog model service to this app as a resource named "model-service" ' +
+        '(app.yaml reads DATABRICKS_MODEL_SERVICE from it via valueFrom), then ' +
+        'redeploy. For local development, set DATABRICKS_MODEL_SERVICE in .env ' +
+        'to a 3-part Unity Catalog model-service name ' +
+        '(e.g. "system.ai.claude-sonnet-4-5").',
     );
   }
 

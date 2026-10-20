@@ -5,7 +5,7 @@ variables:
   model_service_name:
     description: "Name of the Unity Catalog model service (3-part UC name, e.g. system.ai.claude-sonnet-4-5) to be used by the app"
     # TODO: uncomment the line below and specify a default value to avoid needing to specify it on each deployment
-    # default: "system.ai.claude-sonnet-4-5"
+    # default: "your-model-service-name-goes-here"
   database_instance_name:
     description: "Base name of the Lakebase database instance"
     default: "chatbot-lakebase"

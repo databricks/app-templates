@@ -91,10 +91,11 @@ This automated script handles:
 - Database migration (if enabled)
 - Application startup
 
-**IMPORTANT - For Claude Code**: `quickstart.sh` prompts directly for the Unity Catalog model service name and writes it to `DATABRICKS_MODEL_SERVICE` in `.env`. It cannot validate that the model service exists. Before running `quickstart.sh`, ask the user:
+**IMPORTANT - For Claude Code**: `quickstart.sh` prompts directly for the Unity Catalog model service name and writes it to `DATABRICKS_MODEL_SERVICE` in `.env`. Before running `quickstart.sh`, ask the user:
 
 1. **"Do you have a Unity Catalog model service ready?"** (3-part UC name, e.g. `system.ai.claude-sonnet-4-5`)
    - If yes: Get the model service name to enter when the script prompts for it
+   - If no: Suggest they use the default `system.ai.claude-sonnet-4-5` (a built-in Foundation Model)
 
 2. **"Do you want to customize the app/bundle name?"**
    - Default will be `db-chatbot-dev-<username>`

@@ -17,7 +17,7 @@ The script walks through the following steps interactively:
 
 1. **Prerequisites** — installs jq, nvm, Node 20, and the Databricks CLI if missing
 2. **Databricks auth** — lets you select an existing profile or create a new one via `databricks auth login`
-3. **Model service** — prompts for your Unity Catalog model service name (3-part UC name) and writes it to `.env`
+3. **Model service** — prompts for your Unity Catalog model service name (3-part UC name); validates it exists
 4. **Feedback widget** — the script cannot auto-detect a linked MLflow experiment for a model service, so it tells you to set `MLFLOW_EXPERIMENT_ID` manually (see [Enabling Feedback After Initial Setup](#enabling-feedback-after-initial-setup) below)
 5. **App/bundle name** — optionally customize the app name (default: `db-chatbot-dev-<username>`, max 30 chars)
 6. **Database** — optionally enable persistent chat history via a Lakebase instance (~5-10 min, costs apply)

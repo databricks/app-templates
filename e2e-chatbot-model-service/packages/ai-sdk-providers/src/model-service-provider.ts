@@ -35,12 +35,8 @@ export async function getModelServiceLanguageModel(
 ) {
   if (!modelServiceName) {
     throw new Error(
-      'DATABRICKS_MODEL_SERVICE is not set. In Databricks Apps, attach a Unity ' +
-        'Catalog model service to this app as a resource named "model-service" ' +
-        '(app.yaml reads DATABRICKS_MODEL_SERVICE from it via valueFrom), then ' +
-        'redeploy. For local development, set DATABRICKS_MODEL_SERVICE in .env ' +
-        'to a 3-part Unity Catalog model-service name ' +
-        '(e.g. "system.ai.claude-sonnet-4-5").',
+      'Please set the DATABRICKS_MODEL_SERVICE environment variable to the name of ' +
+        'a 3-part Unity Catalog model-service name',
     );
   }
 

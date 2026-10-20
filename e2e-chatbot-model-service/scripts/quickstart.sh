@@ -12,6 +12,26 @@ has_brew() {
     command_exists brew
 }
 
+# Helper function to download a pinned installer script, verify its SHA-256
+# checksum, and print the path of the verified local copy. Avoids piping remote
+# content straight into a shell.
+download_verified_installer() {
+    local url="$1" expected_sha256="$2" dest actual_sha256
+    dest="$(mktemp)"
+    curl -fsSL -o "$dest" "$url"
+    if command_exists sha256sum; then
+        actual_sha256="$(sha256sum "$dest" | awk '{print $1}')"
+    else
+        actual_sha256="$(shasum -a 256 "$dest" | awk '{print $1}')"
+    fi
+    if [ "$actual_sha256" != "$expected_sha256" ]; then
+        echo "Error: checksum mismatch for $url" >&2
+        rm -f "$dest"
+        return 1
+    fi
+    echo "$dest"
+}
+
 # Helper function to extract bundle name from databricks.yml
 get_current_bundle_name() {
     if [ -f "databricks.yml" ]; then
@@ -152,7 +172,11 @@ else
         [ -s "/usr/local/opt/nvm/nvm.sh" ] && \. "/usr/local/opt/nvm/nvm.sh"
     else
         echo "Using curl to install nvm..."
-        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+        NVM_INSTALLER="$(download_verified_installer \
+            https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh \
+            8e45fa547f428e9196a5613efad3bfa4d4608b74ca870f930090598f5af5f643)"
+        bash "$NVM_INSTALLER"
+        rm -f "$NVM_INSTALLER"
         export NVM_DIR="$HOME/.nvm"
         [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
     fi
@@ -180,12 +204,16 @@ else
         brew install databricks
     else
         echo "Using curl to install Databricks CLI..."
-        if curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh; then
+        CLI_INSTALLER="$(download_verified_installer \
+            https://raw.githubusercontent.com/databricks/setup-cli/v1.21.0/install.sh \
+            863261ca1f6db04f34de884156e207ac79fa9f1c54ae97cb26029a35dbff2e75)"
+        if sh "$CLI_INSTALLER"; then
             echo "✓ Databricks CLI installed successfully"
         else
             echo "Installation failed, trying with sudo..."
-            curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sudo sh
+            sudo sh "$CLI_INSTALLER"
         fi
+        rm -f "$CLI_INSTALLER"
     fi
     echo "✓ Databricks CLI installed successfully"
 fi
@@ -311,7 +339,7 @@ else
 
     echo "Authenticating with Databricks..."
     set +e
-    databricks auth login --host "$DATABRICKS_HOST"
+    databricks auth login --host="$DATABRICKS_HOST"
     AUTH_EXIT_CODE=$?
     set -e
 
@@ -362,17 +390,52 @@ if [ -z "$MODEL_SERVICE" ]; then
     echo "Using default model service: $MODEL_SERVICE"
 fi
 
-# Model services are Unity Catalog securables (3-part names). There's no
-# verified CLI command to check for their existence here. Existence and the
-# required EXECUTE / USE CATALOG / USE SCHEMA grants are verified when the
-# app actually calls the Unity Gateway at deploy/runtime.
-MODEL_SERVICE_CHECK=""
-MODEL_SERVICE_EXISTS=1
+# Soft-check if model service exists
+echo "Checking if model service '$MODEL_SERVICE' exists..."
+set +e
+MODEL_SERVICE_CHECK=$(databricks ai-gateway get-model-service "model-services/$MODEL_SERVICE" --profile "$PROFILE_NAME" 2>/dev/null)
+MODEL_SERVICE_EXISTS=$?
+set -e
 
-# databricks.yml's model_service_name variable is documented as
-# non-functional (no model-service DAB/Apps resource type exists yet), so
-# there's no placeholder there to substitute; DATABRICKS_MODEL_SERVICE in
-# .env is what actually drives the app.
+if [ $MODEL_SERVICE_EXISTS -ne 0 ]; then
+    echo
+    echo "⚠️  Warning: Model service '$MODEL_SERVICE' could not be found in your workspace."
+    echo
+    
+    echo "Attempting to list available model services..."
+    set +e
+    # List model services in the same schema, parse JSON to get names, limit to top 5
+    AVAILABLE_MODEL_SERVICES=$(databricks ai-gateway list-model-services --parent "schemas/${MODEL_SERVICE%.*}" --profile "$PROFILE_NAME" --output json 2>/dev/null | jq -r '.[].name | sub("^model-services/"; "")' | head -n 5)
+    LIST_EXIT_CODE=$?
+    set -e
+
+    if [ $LIST_EXIT_CODE -eq 0 ] && [ -n "$AVAILABLE_MODEL_SERVICES" ]; then
+        echo "Here are some available model services found in your workspace:"
+        echo "------------------------------------------------"
+        echo "$AVAILABLE_MODEL_SERVICES"
+        echo "------------------------------------------------"
+        echo "(showing first 5)"
+    else
+        echo "Could not list available model services (or none found)."
+    fi
+    
+    echo
+    if prompt_yes_no "Do you want to proceed with '$MODEL_SERVICE' anyway?" "N"; then
+        echo "Proceeding with '$MODEL_SERVICE'..."
+    else
+        echo "Please re-run the script with the correct model service name."
+        exit 1
+    fi
+else
+    echo "✓ Model service found and validated"
+fi
+
+# Update databricks.yml with the model service
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    sed -i '' 's/# default: "your-model-service-name-goes-here"/default: "'"$MODEL_SERVICE"'"/' databricks.yml
+else
+    sed -i 's/# default: "your-model-service-name-goes-here"/default: "'"$MODEL_SERVICE"'"/' databricks.yml
+fi
 
 # Update .env with the model service
 if grep -q "DATABRICKS_MODEL_SERVICE=" .env; then
@@ -398,8 +461,8 @@ if is_feedback_enabled; then
     CURRENT_EXP_ID=$(grep "^        experiment_id:" databricks.yml 2>/dev/null | head -1 | awk '{print $2}' | tr -d '"' || true)
     echo "✓ Feedback widget already configured (experiment_id: $CURRENT_EXP_ID)"
 else
-    # Model services have no discoverable link to an MLflow experiment (see
-    # MODEL_SERVICE_EXISTS above), so this never auto-detects here.
+    # Model services have no discoverable link to an MLflow experiment, so this
+    # never auto-detects here.
     EXPERIMENT_ID=""
     if [ $MODEL_SERVICE_EXISTS -eq 0 ]; then
         EXPERIMENT_ID=$(echo "$MODEL_SERVICE_CHECK" \

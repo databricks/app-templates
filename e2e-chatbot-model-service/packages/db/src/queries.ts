@@ -74,7 +74,8 @@ async function ensureDb() {
       return database;
     } catch (error) {
       console.error(
-        `[ensureDb] Failed to get ${authDescription} connection:`,
+        '[ensureDb] Failed to get %s connection:',
+        authDescription,
         error,
       );
       throw error;

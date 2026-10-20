@@ -3,9 +3,9 @@ bundle:
 
 variables:
   model_service_name:
-    description: "Name of the Unity Catalog model service (3-part UC name, e.g. system.ai.claude-sonnet-4-5) to be used by the app. This isn't wired into a bundle resource below (no model-service DAB/Apps resource type exists yet) -- it's for documentation/consistency only. Set DATABRICKS_MODEL_SERVICE directly in app.yaml to the same value."
+    description: "Name of the Unity Catalog model service (3-part UC name, e.g. system.ai.claude-sonnet-4-5) to be used by the app"
     # TODO: uncomment the line below and specify a default value to avoid needing to specify it on each deployment
-    # default: "system.ai.claude-sonnet-4-5"
+    # default: "your-model-service-name-goes-here"
   database_instance_name:
     description: "Base name of the Lakebase database instance"
     default: "chatbot-lakebase"
@@ -26,13 +26,12 @@ resources:
       description: "Agentic Chat application for Unity Catalog model services (Unity Gateway)"
       source_code_path: .
       resources:
-        # NOTE: there is no model-service DAB/Apps resource type yet, so
-        # there is no `resources` entry here for the model service.
-        # DATABRICKS_MODEL_SERVICE is set as a plain literal env value in
-        # app.yaml instead, and the app's
-        # service principal must be granted EXECUTE on the model service,
-        # plus USE CATALOG / USE SCHEMA on its containing catalog/schema, via
-        # Unity Catalog grants -- out-of-band, outside of this bundle.
+        - name: model-service
+          description: "Unity Catalog model service the app chats with"
+          uc_securable:
+            securable_full_name: ${var.model_service_name}
+            securable_type: MODEL_SERVICE
+            permission: EXECUTE
         # TODO (optional): Uncomment the database resource below to bind the app to the database instance above
         # and enable persistent chat history
         # - name: database

@@ -51,7 +51,7 @@ This project includes a [Databricks Asset Bundle (DAB)](https://docs.databricks.
    cd e2e-chatbot-model-service
    ```
 2. **Databricks authentication**: Ensure auth is configured as described in [Prerequisites](#prerequisites).
-3. **Specify the model service**: Set `DATABRICKS_MODEL_SERVICE` in `app.yaml` to the 3-part Unity Catalog name of the model service to chat with (e.g. `system.ai.claude-sonnet-4-5`). There is no bundle resource for model services yet (see the NOTE in `databricks.yml`), so this is a plain literal env value rather than a `valueFrom` resource binding. Separately, grant the app's service principal `EXECUTE` on the model service, plus `USE CATALOG` / `USE SCHEMA` on its containing catalog/schema, via Unity Catalog grants.
+3. **Specify the model service**: Set `model_service_name` in `databricks.yml` to the 3-part Unity Catalog name of the model service to chat with (e.g. `system.ai.claude-sonnet-4-5`).
 
    The optional commented-out sections in `databricks.yml` allow you to enable:
    - **Persistent chat history** — uncomment the two optional `TODO` database blocks to provision and bind a Lakebase database. See [Database Modes](#database-modes) for details. **Tip:** run `./scripts/quickstart.sh` to do this automatically.
@@ -98,8 +98,6 @@ To deploy to a specific target:
 databricks bundle deploy -t staging
 ```
 
-(`model_service_name` isn't passed via `--var` here since it isn't wired into a bundle resource -- set `DATABRICKS_MODEL_SERVICE` directly in `app.yaml` instead.)
-
 ## Running Locally
 
 ### Quick Start (Recommended)
@@ -119,7 +117,7 @@ Use our automated quickstart script for the fastest setup experience:
    ./scripts/quickstart.sh
    ```
 
-   > **Note:** `quickstart.sh` prompts directly for your Unity Catalog model service name (3-part UC name) and writes it to `DATABRICKS_MODEL_SERVICE` in `.env` for local development. It cannot validate that the model service exists, and it does not update `app.yaml` -- set `DATABRICKS_MODEL_SERVICE` there yourself before deploying, per [Prerequisites](#prerequisites).
+   > **Note:** `quickstart.sh` prompts directly for your Unity Catalog model service name (3-part UC name) and writes it to `DATABRICKS_MODEL_SERVICE` in `.env` for local development.
 
    The quickstart script will:
    - **Install prerequisites** - Automatically installs jq, nvm, Node.js 20, and Databricks CLI

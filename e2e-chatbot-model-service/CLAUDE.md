@@ -91,10 +91,10 @@ This automated script handles:
 - Database migration (if enabled)
 - Application startup
 
-**IMPORTANT - For Claude Code**: `quickstart.sh` prompts directly for the Unity Catalog model service name and writes it to `DATABRICKS_MODEL_SERVICE` in `.env`. It cannot validate that the model service exists, and it does not update `app.yaml` -- set `DATABRICKS_MODEL_SERVICE` there yourself for the deployed app (see [Environment Variables](#environment-variables)). Before running `quickstart.sh`, ask the user:
+**IMPORTANT - For Claude Code**: `quickstart.sh` prompts directly for the Unity Catalog model service name and writes it to `DATABRICKS_MODEL_SERVICE` in `.env`. Before running `quickstart.sh`, ask the user:
 
 1. **"Do you have a Unity Catalog model service ready?"** (3-part UC name, e.g. `system.ai.claude-sonnet-4-5`)
-   - If yes: Get the model service name to enter when the script prompts for it, and set the same value in `app.yaml` before deploying
+   - If yes: Get the model service name to enter when the script prompts for it
    - If no: Suggest they use the default `system.ai.claude-sonnet-4-5` (a built-in Foundation Model)
 
 2. **"Do you want to customize the app/bundle name?"**
@@ -194,7 +194,7 @@ npx playwright test --headed --project=e2e  # Run E2E tests with browser visible
 
 **IMPORTANT Pre-Deployment Checklist:**
 1. **Check `databricks.yml` for TODOs** - When a user requests deployment, ALWAYS check `databricks.yml` for any TODO comments
-2. **Check `app.yaml` for the model service** - `DATABRICKS_MODEL_SERVICE` is a plain literal env value there (not a bundle resource/variable); ask the user for the 3-part UC model-service name and set it directly
+2. **Check `databricks.yml` for the model service** - ask the user for the 3-part UC model-service name and set it as the `model_service_name` default
 3. **Update the files** - Set the values and remove the TODO comments
 
 #### Enabling Database Integration (Optional)
@@ -389,7 +389,7 @@ When running locally (`npm run dev`), the application uses **Databricks CLI auth
 DATABRICKS_CONFIG_PROFILE=your-profile-name
 
 # AI Model (3-part Unity Catalog model-service name, queried via Unity Gateway)
-DATABRICKS_MODEL_SERVICE=system.ai.claude-sonnet-4-5
+DATABRICKS_MODEL_SERVICE=your-catalog.your-schema.your-model-service
 
 # Database (Individual variables preferred)
 PGUSER=your-databricks-username
@@ -541,7 +541,6 @@ The `databricks.yml` file defines:
    - Name: `db-chatbot-model-service-{suffix}`
    - Resources:
      - Database (with CAN_CONNECT_AND_CREATE permission)
-   - Note: the model service is NOT a bundle resource (no model-service DAB/Apps resource type exists yet). `DATABRICKS_MODEL_SERVICE` is set as a plain literal env value in `app.yaml`, and the app's service principal is granted `EXECUTE` on the model service (plus `USE CATALOG`/`USE SCHEMA`) out-of-band via Unity Catalog grants.
 
 ### Deployment Targets
 

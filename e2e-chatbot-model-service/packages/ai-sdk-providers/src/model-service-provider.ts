@@ -35,8 +35,8 @@ export async function getModelServiceLanguageModel(
 ) {
   if (!modelServiceName) {
     throw new Error(
-      'Please set the DATABRICKS_MODEL_SERVICE environment variable to a ' +
-        '3-part Unity Catalog model-service name (e.g. "system.ai.claude-sonnet-4-5")',
+      'Please set the DATABRICKS_MODEL_SERVICE environment variable to the name of ' +
+        'a 3-part Unity Catalog model-service name',
     );
   }
 

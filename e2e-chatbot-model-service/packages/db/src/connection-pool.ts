@@ -60,7 +60,8 @@ export async function getDb() {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       console.error(
-        `[DB Pool] Failed to set search_path for '${schemaName}':`,
+        "[DB Pool] Failed to set search_path for '%s':",
+        schemaName,
         errorMessage,
       );
       // Don't throw - continue anyway

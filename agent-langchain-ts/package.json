@@ -33,7 +33,7 @@
     "@databricks/sdk-experimental": "0.15.0",
     "@langchain/core": "1.2.16",
     "@langchain/langgraph": "1.4.19",
-    "@langchain/mcp-adapters": "1.1.3",
+    "@langchain/mcp-adapters": "2.0.1",
     "@opentelemetry/api": "1.9.0",
     "@opentelemetry/exporter-trace-otlp-proto": "0.223.0",
     "@opentelemetry/resources": "2.12.0",

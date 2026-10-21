@@ -28,8 +28,8 @@
   "license": "Unlicensed",
   "description": "Full-stack Node.js app with SQL analytics dashboards, file browser, Genie AI conversations, Lakebase Autoscaling (Postgres) CRUD, and Model Serving",
   "dependencies": {
-    "@databricks/appkit": "0.65.0",
-    "@databricks/appkit-ui": "0.65.0",
+    "@databricks/appkit": "0.87.0",
+    "@databricks/appkit-ui": "0.87.0",
     "@databricks/sdk-experimental": "0.17.0",
     "clsx": "2.1.1",
     "embla-carousel-react": "8.6.0",

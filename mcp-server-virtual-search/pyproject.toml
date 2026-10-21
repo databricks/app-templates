@@ -1,0 +1,53 @@
+[project]
+name = "virtual-mcp-search-server"
+version = "0.1.0"
+description = "One MCP endpoint for the tools of several Unity Catalog MCP services, on Databricks Apps"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "databricks-sdk>=0.81.0",
+    "fastapi>=0.115.12",
+    "httpx>=0.27",
+    "mcp>=2.2,<3",
+    "psycopg[binary]>=3.2",
+    "uvicorn>=0.34.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff>=0.8.0",
+]
+
+[project.scripts]
+virtual-mcp-search-server = "server.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["server"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [".git", ".venv", "__pycache__", "build", "dist", "*.egg-info"]
+
+[tool.ruff.lint]
+select = [
+  "I",      # isort
+  "B",      # bugbear
+  "F401",   # unused imports
+  "E722",   # bare except
+  "T203",   # pprint
+  "TID251", # banned imports
+  "F403",   # import *
+]
+
+[tool.ruff.format]
+docstring-code-format = true
+docstring-code-line-length = 88

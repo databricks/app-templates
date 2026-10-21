@@ -98,6 +98,7 @@ DIAGNOSTICS_PY_TARGETS = {
     "shiny-chatbot-app": ".",
     "shiny-data-app": ".",
     "mcp-server-hello-world": "server",
+    "mcp-server-virtual-search": "server",
     "nodejs-fastapi-hello-world-app": "backend",
 }
 

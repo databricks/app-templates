@@ -1,0 +1,15 @@
+command: ["uv", "run", "virtual-mcp-search-server"]
+
+env:
+  # /Volumes/... path of the volume holding virtual_mcp_config.json.
+  - name: VIRTUAL_MCP_CONFIG_VOLUME
+    valueFrom: uc-volume
+  # Lakebase endpoint for the /mcp/search tool index.
+  - name: PGENDPOINT
+    valueFrom: postgres
+  # Embedding model for tool search; must emit 1024-d vectors.
+  - name: EMBEDDING_ENDPOINT
+    valueFrom: serving-endpoint
+  # Number of tools search_tools returns when the caller doesn't say.
+  - name: VIRTUAL_MCP_SEARCH_TOP_N
+    value: "5"

@@ -31,6 +31,7 @@ See [Create an App from a Template](https://docs.databricks.com/aws/en/dev-tools
 | `e2e-chatbot-app-next` | A chat UI that queries a remote agent endpoint or foundation model | Serving endpoint |
 | `mcp-server-hello-world` | A basic MCP server | None |
 | `mcp-server-open-api-spec` | An MCP server that exposes REST API operations from an OpenAPI specification stored in a Unity Catalog volume | UC volume |
+| `mcp-server-virtual-search` | An MCP server that combines the tools of several Unity Catalog MCP services behind one endpoint, with per-service sign-in and Lakebase-backed tool search | UC volume, Database, Serving endpoint |
 
 ### Dashboard
 

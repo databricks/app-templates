@@ -47,7 +47,7 @@
     "@databricks/chatbot-ai-sdk-providers": "*",
     "@databricks/chatbot-db": "*",
     "@databricks/chatbot-utils": "*",
-    "date-fns": "4.1.0",
-    "zod": "4.3.6"
+    "date-fns": "4.4.0",
+    "zod": "4.6.7"
   }
 }

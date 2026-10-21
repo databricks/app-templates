@@ -35,8 +35,8 @@
     "@ai-sdk/provider": "^3.0.5",
     "@databricks/chatbot-auth": "*",
     "@databricks/chatbot-utils": "*",
-    "drizzle-orm": "^0.45.3",
+    "drizzle-orm": "^0.45.4",
     "drizzle-kit": "^0.31.11",
-    "postgres": "^3.4.4"
+    "postgres": "^3.4.9"
   }
 }

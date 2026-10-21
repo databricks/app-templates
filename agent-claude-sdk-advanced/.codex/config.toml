@@ -1,0 +1,10 @@
+
+[mcp_servers.databricks]
+command = "/Users/ben.doan/.ai-dev-kit/.venv/bin/python"
+args = ["/Users/ben.doan/.ai-dev-kit/repo/databricks-mcp-server/run_server.py"]
+
+[mcp_servers.databricks.tools.manage_lakebase_database]
+approval_mode = "approve"
+
+[mcp_servers.databricks.tools.manage_app]
+approval_mode = "approve"

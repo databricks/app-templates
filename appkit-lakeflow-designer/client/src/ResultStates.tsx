@@ -70,7 +70,7 @@ export function MalformedOutput({ reason }: { reason: string }) {
   );
 }
 
-export function NoPayload({ reason, runPageUrl }: { reason: string; runPageUrl?: string }) {
+export function NoPayload({ reason }: { reason: string }) {
   return (
     <div className="border-border border-t p-6">
       <Alert variant="destructive">
@@ -83,16 +83,6 @@ export function NoPayload({ reason, runPageUrl }: { reason: string; runPageUrl?:
           </p>
         </AlertDescription>
       </Alert>
-      {runPageUrl ? (
-        <a
-          className="text-muted-foreground mt-4 inline-block text-xs underline underline-offset-2"
-          href={runPageUrl}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Open the run in Jobs
-        </a>
-      ) : null}
     </div>
   );
 }

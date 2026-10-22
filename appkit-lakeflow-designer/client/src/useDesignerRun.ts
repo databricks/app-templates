@@ -20,6 +20,8 @@ export type RunState = {
   // values it actually used rather than whatever the form holds now.
   params?: Record<string, string>;
   requestError?: string;
+  trackingError?: string;
+  cancelError?: string;
   cancelling: boolean;
 };
 
@@ -36,7 +38,10 @@ export function useDesignerRun(onUploadUnavailable?: () => void) {
     tickTimer.current = undefined;
   }, []);
 
-  useEffect(() => clearTimers, [clearTimers]);
+  useEffect(() => () => {
+    runGeneration.current += 1;
+    clearTimers();
+  }, [clearTimers]);
 
   const start = useCallback(
     async (params: Record<string, string>) => {
@@ -79,6 +84,8 @@ export function useDesignerRun(onUploadUnavailable?: () => void) {
         return;
       }
 
+      if (runGeneration.current !== generation) return;
+      let consecutivePollFailures = 0;
       const poll = async () => {
         if (runGeneration.current !== generation) return;
         try {
@@ -90,11 +97,15 @@ export function useDesignerRun(onUploadUnavailable?: () => void) {
             settle({ snapshot });
             return;
           }
-          setState((prev) => ({ ...prev, snapshot }));
+          consecutivePollFailures = 0;
+          setState((prev) => ({ ...prev, snapshot, trackingError: undefined }));
           pollTimer.current = setTimeout(poll, POLL_INTERVAL_MS);
         } catch (err) {
           if (runGeneration.current !== generation) return;
-          settle({ requestError: (err as Error).message });
+          // A lost status response does not end the accepted Job or make another submission safe.
+          setState((prev) => ({ ...prev, trackingError: (err as Error).message }));
+          const delay = Math.min(30_000, POLL_INTERVAL_MS * 2 ** Math.min(consecutivePollFailures++, 4));
+          pollTimer.current = setTimeout(poll, delay);
         }
       };
 
@@ -107,8 +118,17 @@ export function useDesignerRun(onUploadUnavailable?: () => void) {
   const cancel = useCallback(async () => {
     const jobRunId = state.snapshot?.jobRunId;
     if (jobRunId == null) return;
-    setState((prev) => ({ ...prev, cancelling: true }));
-    await fetch(runStatusRoute(jobRunId), { method: 'DELETE' }).catch(() => undefined);
+    const generation = runGeneration.current;
+    setState((prev) => ({ ...prev, cancelling: true, cancelError: undefined }));
+    try {
+      const response = await fetch(runStatusRoute(jobRunId), { method: 'DELETE' });
+      if (!response.ok) throw await readRunError(response);
+    } catch (error) {
+      if (runGeneration.current !== generation) return;
+      setState((prev) => (prev.phase === 'running'
+        ? { ...prev, cancelling: false, cancelError: (error as Error).message }
+        : prev));
+    }
   }, [state.snapshot?.jobRunId]);
 
   const reset = useCallback(() => {

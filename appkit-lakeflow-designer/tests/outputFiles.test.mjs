@@ -29,7 +29,8 @@ async function harness(t) {
     ],
   };
   const viewer = 'a'.repeat(64);
-  const notebookPath = '/Users/author/app/runner-hash.designer.py';
+  const runnerRevision = 'b'.repeat(64);
+  const notebookPath = `/Users/author/app/runner-${runnerRevision}.designer.py`;
   const state = {
     manifest, notebookPath, reports: [], reads: [],
     receipts: [{ node: 'output_0', files: [{ path: '/Volumes/main/apps/files/report.csv' }] }],
@@ -38,6 +39,7 @@ async function harness(t) {
       tasks: [{ run_id: 2, notebook_task: { notebook_path: notebookPath } }],
       job_parameters: Object.entries({
         _lb_app_viewer: viewer,
+        _lb_runner_revision: runnerRevision,
         _lb_app_revision: manifestRevision(manifest),
         _lb_file_outputs: JSON.stringify({ output_0: manifest.blocks[0].fileOutput }),
       }).map(([name, value]) => ({ name, value })),
@@ -85,6 +87,14 @@ test('downloads original bytes repeatedly without another Job, file copy or dele
   }
   assert.equal(h.files.size, 1);
   assert.equal(h.state.reads.length, 3);
+});
+
+test('historical downloads survive a runner-code update with unchanged file policy', async (t) => {
+  const h = await harness(t);
+  h.state.notebookPath = `/Users/author/app/runner-${'c'.repeat(64)}.designer.py`;
+  const response = await h.call();
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), 'price\n42\n');
 });
 
 test('downloads the recorded split-file index from any author-approved volume', async (t) => {
@@ -136,7 +146,8 @@ for (const [label, mutate, status] of [
   ['missing owner', (h) => { delete h.state.run.job_parameters; }, 404],
   ['legacy export run', (h) => { setRunParameter(h.state.run, '_lb_export_request', '{}'); }, 404],
   ['missing revision', (h) => { setRunParameter(h.state.run, '_lb_app_revision', undefined); }, 409],
-  ['changed runner', (h) => { h.state.notebookPath += '-new'; }, 409],
+  ['unverified runner path', (h) => { h.state.run.tasks[0].notebook_task.notebook_path = '/Users/other/runner.designer.py'; }, 409],
+  ['missing runner revision', (h) => { setRunParameter(h.state.run, '_lb_runner_revision', undefined); }, 409],
   ['missing run policy', (h) => { setRunParameter(h.state.run, '_lb_file_outputs', undefined); }, 409],
   ['changed run policy', (h) => { setRunParameter(h.state.run, '_lb_file_outputs', JSON.stringify({ output_0: { volumes: ['main.apps.other'] } })); }, 409],
   ['missing artifact', (h) => { h.files.clear(); }, 404],

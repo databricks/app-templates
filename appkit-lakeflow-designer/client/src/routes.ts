@@ -12,4 +12,5 @@ export const uploadDownloadRoute = (parameterName: string, reference: string): s
 
 export const runStatusRoute = (jobRunId: string): string => `${RUN_ROUTE}/${jobRunId}`;
 
-export const runHistoryRoute = (windowSize: number): string => `${RUN_HISTORY_ROUTE}?window=${windowSize}`;
+export const runHistoryRoute = (windowSize: number, cursor?: string): string =>
+  `${RUN_HISTORY_ROUTE}?${new URLSearchParams({ window: String(windowSize), ...(cursor ? { cursor } : {}) })}`;

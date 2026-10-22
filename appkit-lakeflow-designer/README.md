@@ -1,14 +1,14 @@
 # appkit-lakeflow-designer
 
 The published Lakeflow Designer app: a Vite + React client and a Node/AppKit server. One published
-Databricks App is deployed per published Designer flow, all sharing this single source, deployed
-git-backed (the app points at this repo; Databricks pulls, builds, and runs it).
+Databricks App is deployed in the selected App Space for each published Designer App document.
+Publishing snapshots this template from a pinned commit in a workspace Git folder.
 
 Per-app differences are injected at deploy time rather than baked into the source:
 
-- **Runner job** — bound as an app resource named `job`, surfaced to the server as the
-  `DATABRICKS_JOB_ID` env var via `app.yaml`'s `valueFrom`. The App service principal needs
-  `CAN_MANAGE` on this Job to grant submitters permission to view runs.
+- **Runner Job** — supplied through the `DATABRICKS_JOB_ID` environment variable. Designer grants
+  the App service principal access to submit, inspect and cancel runs; the Job executes as its
+  configured run-as identity. App Spaces use direct grants and environment overrides.
 - **Manifest** (`designerApp.json`, which operators/parameters/markdown to render) — written by the
   publish flow beside the runner notebook in its publisher-owned workspace folder. The server
   derives that folder from the bound job's notebook path; no shared manifest root is needed.
@@ -23,25 +23,16 @@ and snapshot their display name. An unavailable profile falls back to the ingres
 Submissions without authenticated ingress identity, an ingress email or a runtime App ID are refused
 before starting a Job. These headers must come from the trusted Apps ingress in production.
 
-The server starts the saved runner Job with `runNow`. Before starting it, the server uses the
-verified ingress email as `user_name` to grant the submitter `CAN_VIEW` on that Job. Existing user
-permissions, including owner and manager grants, are retained; other principals' ACL entries are
-preserved by an incremental permissions update. The server reads the ACL again to confirm the grant;
-a failed read, grant or confirmation prevents the run from starting. The update uses SDK authentication
-with a native HTTP PATCH because `sdk-experimental` 0.17.0 omits PATCH request bodies. Both the local
-bundle and the Designer publish flow must bind the `job` resource with
-`CAN_MANAGE`; existing published Apps need their Job resource grant upgraded before adopting this
-template version.
+The server starts the saved runner Job with `runNow` and stamps every submission with a
+server-owned viewer identity. History, results, cancellation and downloads within the App require
+that identity to match the current viewer, including Apps without file inputs or outputs.
+The consumer UI keeps run access within the App. Submitting a run grants no direct Job permissions;
+independent Job permissions remain effective and can expose runs outside the App's viewer controls.
+Authors retain the Job-management link in Designer.
 
-This permission allows the user to view every run of this App's runner Job in Databricks Jobs,
-including other users' runs and results. It persists independently of App access, so removing a
-user's App access does not revoke their Job permission. History, results, cancellation and downloads
-inside the App continue to enforce per-viewer ownership.
-
-The explicit `DATABRICKS_APP_ID` takes precedence. Standalone Apps on older runtimes expose only
-`DATABRICKS_CLIENT_ID`; their App service principal uses the App UUID, so that OAuth client ID is
-the fallback. This template targets standalone Apps; App-space service principals have a different
-identity relationship.
+`DATABRICKS_APP_ID` supplies the runtime App ID. The OAuth client ID fallback is specific to
+standalone runtimes whose principal shares the App UUID; App Space deployments need the explicit
+App ID for accurate attribution.
 
 The reserved parameters are `_lb_app_id`, `_lb_app_user_id`, `_lb_app_user_name`,
 `_lb_app_user_email`, `_lb_app_submission_id` and `_lb_app_parameters`. The last contains a JSON
@@ -50,13 +41,32 @@ and explicit empty multi-selects. File inputs report the uploaded filename; the 
 parameter remains the validated UC file path. Consumer parameters cannot override `_lb_` metadata.
 Names and input labels reflect the time of submission, so republishing does not rewrite past runs.
 
-Designer can create a workspace-scoped UC reporting view and AI/BI dashboard when publishing.
-The source is `system.lakeflow.job_run_timeline`, which retains job-level parameters; no OTel
-delivery is required for a run to be attributed. The report combines timeline slices into one
-row per Job run and derives elapsed time from timestamps. Owners can query the reporting view
-with SQL. Dashboard access is separate from App access and publishing does not embed credentials.
-System-table updates are delayed and retain 365 days of history. This is a greenfield run contract;
-there is no reader for deprecated notebook-parameter runs or historical backfill.
+Owners can build usage reports from `system.lakeflow.job_run_timeline`, which retains job-level
+parameters. Reporting access is separate from App access, and system-table delivery is delayed.
+The publisher records run metadata; reporting views and dashboards are separately managed.
+
+## Republishing and concurrent runs
+
+Each publication records an immutable `runner-<sha256>.designer.py` notebook and a snapshot of all
+execution defaults in `designerApp.json`. The server compares this snapshot with the bound Job
+before accepting a submission and passes the complete snapshot with each run. Hidden defaults
+stay on the server. A revision check in the first notebook cell rejects requests racing changes to
+workflow code or parameter defaults before any workflow code executes.
+
+Republishing prepares volume grants and the template before changing the active runner. New
+submissions pause with an “App is updating” message until the manifest and Job agree; existing runs
+continue. A failure between changing the Job and updating the manifest keeps submissions paused
+until the author retries. This protocol detects mixed configurations; it does not serialize
+concurrent publishers.
+
+Ordinary Apps allow five concurrent runs. Apps with file Outputs allow one run at a time to protect
+shared append and workbook updates. Both explicitly enable Jobs queueing. The UI retains an
+accepted run through temporary status failures, retries reads, and exposes cancellation failures
+so the consumer can retry. It never retries Job submission automatically.
+
+History filters every run by viewer and returns a continuation cursor when a bounded scan has not
+reached the end. “Load older runs” continues beyond pages filled by other viewers. The last-successful
+run search follows those cursors automatically.
 
 ## Layout
 
@@ -272,7 +282,7 @@ This is extension validation, not content or schema validation: renamed or malfo
 reach the reader. Uploading never changes the Source format, read options (including Excel
 sheet/range), or expected columns. Parse/schema errors are reported by the normal Job run.
 
-Apps with uploads or file Outputs require the authenticated `x-forwarded-user` header supplied by Databricks Apps ingress.
+All Apps require the authenticated `x-forwarded-user` header supplied by Databricks Apps ingress.
 Do not expose this server directly to untrusted traffic that can supply its own identity headers.
 There is no anonymous/local-development fallback. Uploads are partitioned by job, viewer and
 parameter. Run submissions carry a server-owned `_lb_app_viewer` parameter; history, result reads,
@@ -318,7 +328,7 @@ Download tests use real HTTP responses and cover original bytes/names, ownership
 missing or changed files, completed and interrupted transfers, and run-summary parameter links.
 Actual Apps ingress, UC provisioning/grants and Jobs
 execution still require a deployed smoke test, including resource read-back versus effective
-grant propagation and Jobs running as the App principal. Complete these checks before deploying
+grant propagation and Jobs running as their configured run-as identity. Complete these checks before deploying
 the authoring and template changes.
 
 ## Native Output-file downloads
@@ -374,9 +384,10 @@ Excel downloads contain the entire workbook, and append downloads include the en
 destination, not only new rows.
 
 The authenticated endpoint accepts only run/output/index IDs. It verifies viewer ownership, Job,
-completed run, selected Output, matching recorded policy/revision, and the current content-addressed
-runner notebook path before resolving the recorded canonical file path. Presentation-only manifest
-changes do not invalidate downloads. Changed execution configuration requires another App run.
+completed run, selected Output, matching recorded file policy, and the run's immutable runner
+revision in the App's source folder before resolving the recorded canonical file path. A runner-code
+update preserves historical downloads when the file policy still matches. Changed output policy
+requires another App run.
 Treat generated runner files as immutable deployment artifacts; edit in Designer and republish.
 
 The App server streams UC bytes through backend-only AppKit Files handles using its service principal.
@@ -462,7 +473,8 @@ Run `npm run test:browser` with a local Chrome installation (`CHROME_BIN` overri
 the Linux default `/usr/bin/google-chrome`). It exercises the real React component
 in an isolated, headless Chrome profile, checks that blocked URLs never reach the
 local server, and covers rendering, resize/error messaging, output updates, wrapper
-reloads, missing policies, and unmounting. It uses the existing Vite dependencies
+reloads, missing policies, and unmounting. A full-App journey also covers polling failure/recovery,
+cancellation retries, history continuation, and the republish pause. It uses the existing Vite dependencies
 and Node test runner; no browser or test packages are downloaded.
 
 Publish this template with the matching Universe manifest-v7/HTML runner changes.

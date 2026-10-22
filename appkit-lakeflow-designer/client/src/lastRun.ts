@@ -77,41 +77,54 @@ function parseActive(raw: unknown): ActiveRun | undefined {
   };
 }
 
-export async function fetchLastRun(): Promise<LastRunState> {
+export async function fetchLastRun(signal?: AbortSignal): Promise<LastRunState> {
+  const seen = new Set<string>();
+  let cursor: string | undefined;
+  let active: ActiveRun | undefined;
   try {
-    const response = await fetch(LAST_RUN_ROUTE);
-    if (!response.ok) {
-      return { status: 'unavailable', reason: `the server returned ${response.status}` };
+    for (;;) {
+      const response = await fetch(`${LAST_RUN_ROUTE}${cursor ? `?${new URLSearchParams({ cursor })}` : ''}`, { signal });
+      if (!response.ok) {
+        return { status: 'unavailable', reason: `the server returned ${response.status}` };
+      }
+      const body: unknown = await response.json();
+      if (!isRecord(body)) {
+        return { status: 'unavailable', reason: 'the server returned an unreadable response' };
+      }
+      if (body.status === 'noJob') {
+        return { status: 'noJob' };
+      }
+      active = parseActive(body.active) ?? active;
+      if (body.status === 'searching') {
+        if (typeof body.nextPageToken !== 'string' || !body.nextPageToken || seen.has(body.nextPageToken)) {
+          return { status: 'unavailable', reason: 'the server could not continue searching run history' };
+        }
+        cursor = body.nextPageToken;
+        seen.add(cursor);
+        continue;
+      }
+      if (body.status === 'none') {
+        return { status: 'none', ...(active === undefined ? {} : { active }) };
+      }
+      if (body.status === 'unavailable') {
+        return { status: 'unavailable', reason: typeof body.reason === 'string' ? body.reason : 'unknown reason' };
+      }
+      const run = parseSummary(body.run);
+      const result = parseRunOutcome(body.result);
+      if (body.status !== 'found' || run === undefined || result === undefined) {
+        return { status: 'unavailable', reason: 'the server returned an unreadable last run' };
+      }
+      const parameters = stringValues(body.parameters);
+      const parameterDisplayValues = stringValues(body.parameterDisplayValues);
+      return {
+        status: 'found',
+        run,
+        ...(parameters === undefined ? {} : { parameters }),
+        ...(parameterDisplayValues === undefined ? {} : { parameterDisplayValues }),
+        result,
+        ...(active === undefined ? {} : { active }),
+      };
     }
-    const body: unknown = await response.json();
-    if (!isRecord(body)) {
-      return { status: 'unavailable', reason: 'the server returned an unreadable response' };
-    }
-    if (body.status === 'noJob') {
-      return { status: 'noJob' };
-    }
-    const active = parseActive(body.active);
-    if (body.status === 'none') {
-      return { status: 'none', ...(active === undefined ? {} : { active }) };
-    }
-    if (body.status === 'unavailable') {
-      return { status: 'unavailable', reason: typeof body.reason === 'string' ? body.reason : 'unknown reason' };
-    }
-    const run = parseSummary(body.run);
-    const result = parseRunOutcome(body.result);
-    if (body.status !== 'found' || run === undefined || result === undefined) {
-      return { status: 'unavailable', reason: 'the server returned an unreadable last run' };
-    }
-    const parameters = stringValues(body.parameters);
-    const parameterDisplayValues = stringValues(body.parameterDisplayValues);
-    return {
-      status: 'found',
-      run,
-      ...(parameters === undefined ? {} : { parameters }),
-      ...(parameterDisplayValues === undefined ? {} : { parameterDisplayValues }),
-      result,
-      ...(active === undefined ? {} : { active }),
-    };
   } catch (error) {
     return { status: 'unavailable', reason: errorMessage(error) };
   }

@@ -28,10 +28,9 @@ export function viewerKey(forwardedUser: string | undefined, jobId: string | und
   return forwardedUser?.trim() && jobId ? hash(JSON.stringify([jobId, forwardedUser.trim()])) : undefined;
 }
 
-export function canAccessRun(run: unknown, viewer: string | undefined, privateApp: boolean): boolean {
+export function canAccessRun(run: unknown, viewer: string | undefined): boolean {
   const owner = runJobParameters(run)[APP_VIEWER_PARAM];
-  if (owner === undefined) return !privateApp;
-  return viewer !== undefined && owner === viewer;
+  return viewer !== undefined && viewer !== '' && owner === viewer;
 }
 
 export interface StoredUpload {

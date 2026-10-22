@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createServer } from 'node:http';
-import { once } from 'node:events';
 import { Readable } from 'node:stream';
 import { after, before, test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -12,8 +10,7 @@ import { ApiError } from '@databricks/appkit';
 import { build } from 'tsdown';
 
 let outputDirectory;
-let permissionsServer;
-let workspaceHost;
+const workspaceHost = 'http://workspace.test';
 let viewerKey;
 let parseRunSnapshot, LastRunLabel;
 let ParameterForm, parseAppManifest, initialValuesFor;
@@ -24,34 +21,6 @@ const originalRuntimeEnv = Object.fromEntries(
 );
 
 before(async () => {
-  // Exercise the permission write over HTTP so SDK request serialization cannot be hidden by a stub.
-  permissionsServer = createServer(async (req, res) => {
-    const { state } = globalThis[harnessKey];
-    assert.equal(req.method, 'PATCH');
-    assert.equal(req.url, '/api/2.0/permissions/jobs/100');
-    assert.equal(req.headers.authorization, 'Bearer route-test-only');
-    let body = '';
-    for await (const chunk of req) body += chunk;
-    const update = JSON.parse(body);
-    state.jobCalls.push('updatePermissions');
-    state.permissionUpdates.push({ job_id: '100', ...update });
-    res.setHeader('Content-Type', 'application/json');
-    if (state.permissionUpdateError) {
-      res.writeHead(403);
-      res.end(JSON.stringify({ message: state.permissionUpdateError.message }));
-      return;
-    }
-    if (!state.ignorePermissionUpdate) {
-      state.permissions.access_control_list ??= [];
-      state.permissions.access_control_list.push(...update.access_control_list.map(
-        ({ permission_level, ...principal }) => ({ ...principal, all_permissions: [{ permission_level }] }),
-      ));
-    }
-    res.end(JSON.stringify(state.permissions));
-  });
-  permissionsServer.listen(0, '127.0.0.1');
-  await once(permissionsServer, 'listening');
-  workspaceHost = `http://127.0.0.1:${permissionsServer.address().port}`;
   outputDirectory = await mkdtemp(fileURLToPath(new URL('../.upload-route-tests-', import.meta.url)));
   await build({
     entry: { server: 'server/server.ts', fileUploads: 'server/fileUploads.ts' },
@@ -109,8 +78,6 @@ before(async () => {
 });
 
 after(async () => {
-  permissionsServer?.closeAllConnections();
-  if (permissionsServer) await new Promise((resolve) => permissionsServer.close(resolve));
   delete globalThis[harnessKey];
   for (const [name, value] of Object.entries(originalRuntimeEnv)) {
     if (value === undefined) delete process.env[name];
@@ -121,6 +88,7 @@ after(async () => {
 
 const manifest = {
   version: 7,
+  runner: { revision: 'a'.repeat(64), parameters: { _lb_runner_revision: 'a'.repeat(64) } },
   appName: 'Uploads',
   storage: {
     volume: 'main.default.designer_app1',
@@ -138,7 +106,7 @@ async function serverHarness(options = {}) {
   const middleware = [];
   const state = {
     manifest, runs: [], listed: [], reads: [], cancelled: [], outputReads: [], submissions: [], apps: [],
-    notebookPath: '/Users/author/app/runner', notebookSource: '', workspaceReads: [], commands: undefined,
+    notebookPath: `/Users/author/app/runner-${manifest.runner.revision}.designer.py`, notebookSource: '', workspaceReads: [], commands: undefined,
     taskOutput: {}, taskOutputReads: [], exportMissing: false, exportError: undefined,
     userProfile: { id: '123', displayName: ' Alice Smith ' }, profileError: undefined, profileReads: 0,
     permissions: { access_control_list: [] }, permissionReads: [], permissionUpdates: [], jobCalls: [],
@@ -191,7 +159,7 @@ async function serverHarness(options = {}) {
         hostType: () => 'workspaceHost',
       },
       jobs: {
-        get: async () => ({ settings: { tasks: [{ notebook_task: { notebook_path: state.notebookPath } }] } }),
+        get: async () => ({ settings: { tasks: [{ notebook_task: { notebook_path: state.notebookPath, base_parameters: manifest.runner.parameters } }] } }),
         getRun: async ({ run_id }) => {
           state.reads.push(run_id);
           return state.runs.find((run) => run.run_id === run_id);
@@ -237,6 +205,16 @@ async function serverHarness(options = {}) {
         },
       },
       toLegacyWorkspaceClient: () => ({
+        apiClient: {
+          request: async ({ path, query }) => {
+            assert.equal(path, '/api/2.2/jobs/runs/list');
+            assert.equal(query.job_id, 100);
+            const rows = query.active_only ? [] : state.listed;
+            const offset = Number(query.page_token ?? 0);
+            const end = offset + query.limit;
+            return { runs: rows.slice(offset, end), ...(end < rows.length ? { next_page_token: String(end) } : {}) };
+          },
+        },
         workspace: {
           export: async ({ path, format }) => {
             state.workspaceReads.push({ path, format });
@@ -377,7 +355,7 @@ test('live status and last-run responses carry each published output’s recorde
   assert.deepEqual(last.body.result, status.body.result);
 });
 
-test('grants the ingress user Job visibility before running and preserves other principals', async () => {
+test('submits as the ingress user while preserving independent Job permissions', async () => {
   const { state, request } = await serverHarness();
   state.manifest = { ...manifest, storage: undefined, parameters: [] };
   const existingAcl = [
@@ -396,23 +374,18 @@ test('grants the ingress user Job visibility before running and preserves other 
     },
   };
   assert.equal((await request('post', '/api/designer/run', submission)).status, 200);
-  assert.deepEqual(state.permissionReads, [{ job_id: '100' }, { job_id: '100' }]);
-  assert.deepEqual(state.permissionUpdates, [{
-    job_id: '100', access_control_list: [{ user_name: 'Alice@Example.com', permission_level: 'CAN_VIEW' }],
-  }]);
-  assert.deepEqual(state.jobCalls, ['getPermissions', 'updatePermissions', 'getPermissions', 'runNow']);
-  assert.deepEqual(state.permissions.access_control_list, [
-    ...existingAcl,
-    { user_name: 'Alice@Example.com', all_permissions: [{ permission_level: 'CAN_VIEW' }] },
-  ]);
+  assert.deepEqual(state.permissionReads, []);
+  assert.deepEqual(state.permissionUpdates, []);
+  assert.deepEqual(state.jobCalls, ['runNow']);
+  assert.deepEqual(state.permissions.access_control_list, existingAcl);
   assert.equal(state.submissions[0].job_id, 100);
   assert.equal(state.submissions[0].job_parameters._lb_app_user_email, 'Alice@Example.com');
   assert.equal(state.submissions[0].job_parameters._lb_app_user_name, 'Alice Smith');
 
   assert.equal((await request('post', '/api/designer/run', submission)).status, 200);
-  assert.equal(state.permissionUpdates.length, 1);
+  assert.equal(state.permissionUpdates.length, 0);
   assert.equal(state.submissions.length, 2);
-  assert.deepEqual(state.jobCalls.slice(4), ['getPermissions', 'runNow']);
+  assert.deepEqual(state.jobCalls, ['runNow', 'runNow']);
 });
 
 for (const [permissionLevel, inherited] of [
@@ -428,22 +401,20 @@ for (const [permissionLevel, inherited] of [
     assert.equal((await request('post', '/api/designer/run')).status, 200);
     assert.deepEqual(state.permissions, before);
     assert.deepEqual(state.permissionUpdates, []);
-    assert.deepEqual(state.jobCalls, ['getPermissions', 'runNow']);
+    assert.deepEqual(state.jobCalls, ['runNow']);
     assert.equal(state.submissions.length, 1);
   });
 }
 
-test('grants Job visibility when the permissions response has no ACL', async () => {
+test('runs without granting Job visibility when the permissions response has no ACL', async () => {
   const { state, request } = await serverHarness();
   state.manifest = { ...manifest, storage: undefined, parameters: [] };
   state.permissions = {};
   assert.equal((await request('post', '/api/designer/run')).status, 200);
-  assert.deepEqual(state.permissionUpdates, [{
-    job_id: '100', access_control_list: [{ user_name: 'alice@example.com', permission_level: 'CAN_VIEW' }],
-  }]);
+  assert.deepEqual(state.permissionUpdates, []);
 });
 
-test('requires an ingress email before granting permissions or starting a Job', async () => {
+test('requires an ingress email for attribution before starting a Job', async () => {
   const { state, request } = await serverHarness();
   state.manifest = { ...manifest, storage: undefined, parameters: [] };
   for (const email of [undefined, '', '   ']) {
@@ -459,29 +430,28 @@ test('requires an ingress email before granting permissions or starting a Job', 
 });
 
 for (const operation of ['read', 'grant']) {
-  test(`does not start a Job when its permission ${operation} fails`, async () => {
+  test(`does not require a Job permission ${operation} to submit a run`, async () => {
     const { state, request } = await serverHarness();
     state.manifest = { ...manifest, storage: undefined, parameters: [] };
     state[operation === 'read' ? 'permissionReadError' : 'permissionUpdateError'] = new Error('Permission denied');
     const response = await request('post', '/api/designer/run');
-    assert.equal(response.status, 502);
-    assert.match(response.body.error, /Permission denied/);
-    assert.equal(state.permissionReads.length, 1);
-    assert.equal(state.permissionUpdates.length, operation === 'read' ? 0 : 1);
-    assert.deepEqual(state.submissions, []);
+    assert.equal(response.status, 200);
+    assert.equal(state.permissionReads.length, 0);
+    assert.equal(state.permissionUpdates.length, 0);
+    assert.equal(state.submissions.length, 1);
   });
 }
 
-test('does not start a Job when an accepted permission update leaves its ACL unchanged', async () => {
+test('ordinary Apps scope results and cancellation to the viewer who submitted the run', async () => {
   const { state, request } = await serverHarness();
   state.manifest = { ...manifest, storage: undefined, parameters: [] };
-  state.ignorePermissionUpdate = true;
-  const response = await request('post', '/api/designer/run');
-  assert.equal(response.status, 502);
-  assert.match(response.body.error, /did not confirm your permission/);
-  assert.equal(state.permissionUpdates.length, 1);
-  assert.equal(state.permissionReads.length, 2);
-  assert.deepEqual(state.submissions, []);
+  state.runs = [run(10, 'alice')];
+  for (const method of ['get', 'delete']) {
+    const denied = await request(method, '/api/designer/run/:jobRunId', { viewer: 'bob', params: { jobRunId: '10' } });
+    assert.equal(denied.status, 404);
+  }
+  assert.deepEqual(state.cancelled, []);
+  assert.equal((await request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: '10' } })).status, 200);
 });
 
 test('records trusted ingress identity, resolved Designer inputs and fresh submission IDs', async () => {
@@ -812,11 +782,13 @@ test('live status preserves ordinary parameters and leaves missing recorded valu
   assert.deepEqual(snapshot.parameters, { year: '2016' });
   assert.equal(snapshot.parameterDisplayValues, undefined);
 
-  delete state.runs[0].job_parameters;
+  state.runs[0].job_parameters = [{ name: '_lb_app_viewer', value: viewerKey('alice', '100') }];
   response = await request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: '10' } });
   snapshot = parseRunSnapshot(response.body);
-  assert.equal(snapshot.parameters, undefined);
+  assert.deepEqual(snapshot.parameters, {});
   assert.equal(snapshot.parameterDisplayValues, undefined);
+  delete state.runs[0].job_parameters;
+  assert.equal((await request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: '10' } })).status, 404);
 });
 
 test('run APIs return only outputs selected in the published manifest', async () => {
@@ -1094,7 +1066,7 @@ test('preview-only submissions override any stale writer defaults with an explic
   assert.equal(response.status, 200);
   assert.equal(state.submissions[0].job_parameters._lb_file_outputs, '{}');
   assert.equal(state.submissions[0].job_parameters._lb_collect_row_counts, 'true');
-  assert.equal(state.submissions[0].job_parameters._lb_app_viewer, undefined);
+  assert.equal(state.submissions[0].job_parameters._lb_app_viewer, viewerKey('alice', '100'));
 });
 
 test('last-run and terminal status include file receipts without table preview or upload storage', async () => {

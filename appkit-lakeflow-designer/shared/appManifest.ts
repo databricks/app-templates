@@ -3,6 +3,7 @@ import { parseAppStorage } from './storageConfig';
 import { isFileFormats } from './fileFormats';
 import { hasInvalidFileOutputDeclaration, parseFileOutput } from './fileOutputs';
 import { isValidMultiselectConfig } from './multiselect';
+import { RUNNER_REVISION_PARAM } from './publishedRunner';
 
 const nonEmptyString = z.string().check(z.minLength(1));
 const stringOrEmpty = z.catch(z.string(), '');
@@ -18,6 +19,10 @@ export function isReservedParameter(name: string): boolean {
 const chartSpecSchema = z.looseObject({ widgetType: nonEmptyString });
 const provenanceSchema = z.looseObject({ publishedAt: z.number().check(z.positive()) });
 const targetSchema = z.object({ nodeId: nonEmptyString, label: stringOrEmpty });
+const runnerSchema = z.object({
+  revision: z.string().check(z.regex(/^[0-9a-f]{64}$/)),
+  parameters: z.record(z.string(), z.string()),
+}).check(z.refine((runner) => runner.parameters[RUNNER_REVISION_PARAM] === runner.revision));
 
 const parameterSchema = z.pipe(
   z.object({
@@ -105,6 +110,7 @@ function parseBlocks(raw: unknown): AppManifestBlock[] {
 export const appManifestSchema = z.pipe(
   z.object({
     version: z.literal(7),
+    runner: z.optional(runnerSchema),
     appName: nonEmptyString,
     subtitle: z.unknown(),
     provenance: z.unknown(),
@@ -136,6 +142,7 @@ export const appManifestSchema = z.pipe(
     const target = targetSchema.safeParse(raw.target).data;
     return {
       ...(storage === undefined ? {} : { storage }),
+      ...(raw.runner === undefined ? {} : { runner: raw.runner }),
       version: raw.version,
       appName: raw.appName,
       ...(typeof raw.subtitle === 'string' && raw.subtitle !== '' ? { subtitle: raw.subtitle } : {}),

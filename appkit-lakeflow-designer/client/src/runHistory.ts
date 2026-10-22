@@ -20,7 +20,7 @@ export type RunHistoryState =
   | { status: 'loading' }
   | { status: 'noJob' }
   | { status: 'unavailable'; reason: string }
-  | { status: 'found'; runs: RunHistoryEntry[]; hasMore: boolean; window: number };
+  | { status: 'found'; runs: RunHistoryEntry[]; hasMore: boolean; window: number; nextPageToken?: string };
 
 export const RUN_HISTORY_FIRST_WINDOW = 100;
 
@@ -104,9 +104,9 @@ function parseEntry(raw: unknown): RunHistoryEntry | undefined {
   };
 }
 
-export async function fetchRunHistory(windowSize: number): Promise<RunHistoryState> {
+export async function fetchRunHistory(windowSize: number, cursor?: string, signal?: AbortSignal): Promise<RunHistoryState> {
   try {
-    const response = await fetch(runHistoryRoute(windowSize));
+    const response = await fetch(runHistoryRoute(windowSize, cursor), { signal });
     if (!response.ok) {
       return { status: 'unavailable', reason: `the server returned ${response.status}` };
     }
@@ -127,7 +127,8 @@ export async function fetchRunHistory(windowSize: number): Promise<RunHistorySta
     return {
       status: 'found',
       runs,
-      hasMore: body.hasMore === true,
+      hasMore: nonEmptyString(body.nextPageToken) !== undefined,
+      nextPageToken: nonEmptyString(body.nextPageToken),
       window: positiveInt(body.window) ?? windowSize,
     };
   } catch (error) {

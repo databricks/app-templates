@@ -85,7 +85,7 @@ export function activeRunStageLabel(lifeCycleState: string | undefined): string 
 }
 
 export const ACTIVE_RUN_ATTRIBUTION =
-  'A run of this app is in progress. It may have been started by someone else, and its result will appear here when it finishes.';
+  'Your run is in progress. Its result will appear here when it finishes.';
 
 export const FOLLOWED_RESULT_AVAILABLE_OFFER =
   'A run of this app finished while you were looking at an earlier one. Open it to see its outcome; ' +

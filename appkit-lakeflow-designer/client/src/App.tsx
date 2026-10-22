@@ -48,6 +48,7 @@ import { ResultFooter } from './ResultFooter';
 import { ResultGrid } from './ResultGrid';
 import { ComputeError, EmptyResult, MalformedOutput, MissingOutput, NoPayload } from './ResultStates';
 import { RunStatus } from './RunStatus';
+import { APP_UPDATING_MESSAGE } from '../../shared/publishedRunner';
 import { ThemeToggle } from './ThemeToggle';
 import type { RunState } from './useDesignerRun';
 import { useDesignerRun } from './useDesignerRun';
@@ -61,9 +62,12 @@ const EMPTY_LANDING_MESSAGES = {
   unavailable: 'The last run could not be loaded. Run the operator to compute a fresh result.',
 } as const;
 
+const CONFIGURATION_REFRESH_ERROR = 'Could not refresh the app configuration. Try Run again after the app is available.';
+
 const NOT_RUNNABLE_MESSAGES: Record<NotRunnableReason, string> = {
   noManifest: 'This app has no published outputs, so there is nothing to run. It may need republishing.',
   noJob: 'This app is not connected to a job yet, so it cannot run. Its publisher needs to finish setting it up.',
+  updating: APP_UPDATING_MESSAGE,
 };
 
 type UnmatchedOutputState = 'beforeRun' | 'running' | 'omitted' | 'loading';
@@ -121,9 +125,10 @@ export function App() {
     const previous = currentConfig.current;
     if (next.status !== 'ready') {
       if (previous.status !== 'ready') setConfig(next);
-      setConfigurationMessage('Could not refresh the app configuration. Try Run again after the app is available.');
+      setConfigurationMessage(CONFIGURATION_REFRESH_ERROR);
       return false;
     }
+    setConfigurationMessage((current) => (current === CONFIGURATION_REFRESH_ERROR ? undefined : current));
     const changed =
       previous.status === 'ready' &&
       uploadConfigurationKey(previous.manifest) !== uploadConfigurationKey(next.manifest);
@@ -155,6 +160,9 @@ export function App() {
   }, [invalidateUploads, refreshConfiguration]);
   const { state, start, cancel, reset } = useDesignerRun(uploadUnavailable);
   const [history, setHistory] = useState<RunHistoryState>({ status: 'loading' });
+  const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
+  const [historyError, setHistoryError] = useState<string>();
+  const historyGeneration = useRef(0);
 
   const [selectedEntry, setSelectedEntry] = useState<RunHistoryEntry | undefined>(undefined);
   const [selectedRun, setSelectedRun] = useState<SelectedRunState | undefined>(undefined);
@@ -175,13 +183,35 @@ export function App() {
     };
   }, [refreshConfiguration]);
 
+  const updating = config.status === 'ready' && config.notRunnableReason === 'updating';
+  useEffect(() => {
+    if (!updating) return;
+    let cancelled = false;
+    const refresh = async () => {
+      await refreshConfiguration();
+      if (!cancelled) timer = setTimeout(refresh, 3000);
+    };
+    let timer = setTimeout(refresh, 3000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [updating, refreshConfiguration]);
+
   useEffect(() => {
     if (config.status === 'ready') {
       document.title = config.manifest.appName;
     }
   }, [config]);
 
-  useEffect(() => applyUnlessCancelled(fetchLastRun(), setLastRun), [ownFinishedRunId, followedFinishedRunId]);
+  useEffect(() => {
+    const controller = new AbortController();
+    const cancel = applyUnlessCancelled(fetchLastRun(controller.signal), setLastRun);
+    return () => {
+      controller.abort();
+      cancel();
+    };
+  }, [ownFinishedRunId, followedFinishedRunId]);
 
   const historyEnabled = config.status === 'ready' && config.runnable;
 
@@ -189,9 +219,37 @@ export function App() {
     if (!historyEnabled) {
       return undefined;
     }
+    historyGeneration.current += 1;
+    setHistoryLoadingMore(false);
+    setHistoryError(undefined);
     setHistory((prev) => (prev.status === 'found' ? prev : { status: 'loading' }));
-    return applyUnlessCancelled(fetchRunHistory(RUN_HISTORY_FIRST_WINDOW), setHistory);
+    const controller = new AbortController();
+    const cancel = applyUnlessCancelled(
+      fetchRunHistory(RUN_HISTORY_FIRST_WINDOW, undefined, controller.signal),
+      setHistory,
+    );
+    return () => {
+      historyGeneration.current += 1;
+      controller.abort();
+      cancel();
+    };
   }, [historyEnabled, ownFinishedRunId, followedFinishedRunId]);
+
+  const loadOlderRuns = async () => {
+    if (history.status !== 'found' || !history.nextPageToken || historyLoadingMore) return;
+    const generation = historyGeneration.current;
+    setHistoryLoadingMore(true);
+    setHistoryError(undefined);
+    const page = await fetchRunHistory(RUN_HISTORY_FIRST_WINDOW, history.nextPageToken);
+    if (generation !== historyGeneration.current) return;
+    setHistoryLoadingMore(false);
+    if (page.status !== 'found') {
+      setHistoryError(page.status === 'unavailable' ? page.reason : 'Could not load older runs. Try again.');
+      return;
+    }
+    const runs = [...new Map([...history.runs, ...page.runs].map((run) => [run.jobRunId, run])).values()];
+    setHistory({ ...page, runs });
+  };
 
   useEffect(() => {
     const jobRunId = selectedEntry?.jobRunId;
@@ -333,7 +391,14 @@ export function App() {
         </div>
         <div className="flex max-w-full flex-wrap items-start justify-end gap-2">
           {runnable || notRunnableReason === 'noJob' ? (
-            <RunHistorySelect state={historyState} displayedRun={displayedRun} onSelect={selectRun} />
+            <RunHistorySelect
+              state={historyState}
+              displayedRun={displayedRun}
+              onSelect={selectRun}
+              onLoadMore={() => void loadOlderRuns()}
+              loadingMore={historyLoadingMore}
+              loadMoreError={historyError}
+            />
           ) : null}
           <ThemeToggle />
         </div>
@@ -418,6 +483,8 @@ export function App() {
               elapsedMs={state.elapsedMs}
               onCancel={() => void cancel()}
               cancelling={state.cancelling}
+              trackingError={state.trackingError}
+              cancelError={state.cancelError}
             />
           ) : null}
 
@@ -449,7 +516,7 @@ export function App() {
           ) : null}
 
           {state.phase === 'settled' && ownRunSucceeded && result?.outcome === 'noPayload' ? (
-            <NoPayload reason={result.reason} runPageUrl={state.snapshot?.runPageUrl} />
+            <NoPayload reason={result.reason} />
           ) : null}
         </Card>
 
@@ -804,7 +871,7 @@ function RunResult({
       {snapshot?.terminal && !isSuccessfulResultState(snapshot.resultState) ? (
         <RunFailureAlert snapshot={snapshot} outcome={result} />
       ) : result.outcome === 'noPayload' ? (
-        <NoPayload reason={result.reason} runPageUrl={run.runPageUrl} />
+        <NoPayload reason={result.reason} />
       ) : null}
     </>
   );

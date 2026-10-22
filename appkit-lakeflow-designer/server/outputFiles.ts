@@ -15,6 +15,7 @@ import { isLegacyExportRun, manifestRevision, type FileOutputManifest } from './
 import { runJobParameters } from './jobParameters';
 import type { OutputFileStore } from './outputFileStore';
 import { streamFileDownload } from './fileDownloads';
+import { RUNNER_REVISION_PARAM } from '../shared/publishedRunner';
 
 export function recordedFileOutput(
   payload: string | undefined,
@@ -79,7 +80,7 @@ export function registerOutputFileRoutes(app: Pick<Application, 'get'>, deps: De
       const run = await deps.getRun(Number(runId));
       if (
         !isRecord(run) || String(run.job_id) !== deps.jobId ||
-        !canAccessRun(run, viewer, true) || isLegacyExportRun(run)
+        !canAccessRun(run, viewer) || isLegacyExportRun(run)
       ) {
         throw new DownloadError(404, 'Run not found.');
       }
@@ -101,12 +102,15 @@ export function registerOutputFileRoutes(app: Pick<Application, 'get'>, deps: De
         throw new DownloadError(409, 'This run did not declare this file output. Run the app again.');
       }
       const task = Array.isArray(run.tasks) && run.tasks.length === 1 ? run.tasks[0] : undefined;
+      const currentNotebookPath = await deps.notebookPath();
+      const revision = params[RUNNER_REVISION_PARAM];
+      const folder = currentNotebookPath?.slice(0, currentNotebookPath.lastIndexOf('/'));
       if (
         !isRecord(task) || !isRecord(task.notebook_task) || !task.run_id ||
-        typeof task.notebook_task.notebook_path !== 'string' ||
-        task.notebook_task.notebook_path !== await deps.notebookPath()
+        !folder || typeof revision !== 'string' || !/^[0-9a-f]{64}$/.test(revision) ||
+        task.notebook_task.notebook_path !== `${folder}/runner-${revision}.designer.py`
       ) {
-        throw new DownloadError(409, 'The runner changed since this run. Run the app again to download files.');
+        throw new DownloadError(409, 'This run’s published workflow could not be verified. Run the app again to download files.');
       }
       const state = isRecord(run.state) ? run.state : {};
       if (!state.result_state && !['TERMINATED', 'SKIPPED', 'INTERNAL_ERROR'].includes(String(state.life_cycle_state))) {

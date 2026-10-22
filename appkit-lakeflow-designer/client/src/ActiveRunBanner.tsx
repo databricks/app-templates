@@ -5,7 +5,7 @@ import type { ActiveRun } from './lastRun';
 import { ACTIVE_RUN_ATTRIBUTION, activeRunStageLabel } from './landingPlan';
 import { RunParameterList } from './LastRunLabel';
 
-// A landing run may belong to another consumer, so never imply ownership or offer cancellation.
+// Runs restored after a reload are polled separately from a newly submitted run.
 export function ActiveRunBanner({ active, declared }: { active: ActiveRun; declared: AppParameter[] }) {
   const { run, parameters, parameterDisplayValues, lifeCycleState } = active;
   const startedAt = run.startTime;
@@ -32,16 +32,6 @@ export function ActiveRunBanner({ active, declared }: { active: ActiveRun; decla
             started {new Date(startedAt).toLocaleTimeString(undefined, { hour12: false })}
           </span>
         )}
-        {run.runPageUrl ? (
-          <a
-            className="text-muted-foreground text-xs underline underline-offset-2"
-            href={run.runPageUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            View run
-          </a>
-        ) : null}
       </div>
 
       <p className="text-muted-foreground mt-2 text-xs">{ACTIVE_RUN_ATTRIBUTION}</p>

@@ -212,6 +212,7 @@ test('substitutes only completed owned uploads and stamps ownership for run para
   assert.equal(resolved.ok, true);
   assert.deepEqual(resolved.params, {
     _lb_file_outputs: '{}',
+    _lb_file_output_volume: '',
     path: (await uploads.resolveUpload(store, storage, owner, 'path', saved.reference)).path,
     ld_display_outputs_for: 'source',
     _lb_collect_row_counts: 'true',
@@ -343,6 +344,7 @@ for (const filename of ['data.csv', 'workbook.xlsx', 'workbook.xls', 'data.json'
       ok: true,
       params: {
         _lb_file_outputs: '{}',
+        _lb_file_output_volume: '',
         path: resolved.path,
         ld_display_outputs_for: 'source',
         _lb_collect_row_counts: 'true',
@@ -368,13 +370,10 @@ test('run ownership protects history, results and cancellation even after upload
   const alice = uploads.viewerKey('alice', '100');
   const bob = uploads.viewerKey('bob', '100');
   const privateRun = { job_parameters: [{ name: '_lb_app_viewer', value: alice }] };
-  for (const privateApp of [true, false]) {
-    assert.equal(uploads.canAccessRun(privateRun, alice, privateApp), true);
-    assert.equal(uploads.canAccessRun(privateRun, bob, privateApp), false);
-    assert.equal(uploads.canAccessRun(privateRun, undefined, privateApp), false);
-  }
-  assert.equal(uploads.canAccessRun({}, alice, true), false);
-  assert.equal(uploads.canAccessRun({}, alice, false), true);
+  assert.equal(uploads.canAccessRun(privateRun, alice), true);
+  assert.equal(uploads.canAccessRun(privateRun, bob), false);
+  assert.equal(uploads.canAccessRun(privateRun, undefined), false);
+  assert.equal(uploads.canAccessRun({}, alice), false);
   assert.equal(uploads.viewerKey(undefined, '100'), undefined);
   assert.equal(uploads.viewerKey(' ', '100'), undefined);
 });
@@ -420,17 +419,18 @@ test('validates versioned storage and never initializes a file input with the au
   }
 });
 
-test('ordinary parameters retain defaults and dropdown validation without ownership metadata', async () => {
+test('ordinary parameters retain defaults and dropdown validation with authenticated ownership', async () => {
   const regular = {
     parameters: [{ name: 'choice', label: 'Choice', type: 'dropdown', defaultValue: 'A', choices: ['A', 'B'] }],
   };
-  assert.deepEqual(await parameters.resolveRunParameters(regular, {}, undefined, memoryStore()), {
+  assert.deepEqual(await parameters.resolveRunParameters(regular, {}, 'alice', memoryStore()), {
     ok: true,
-    params: { choice: 'A', _lb_file_outputs: '{}',
+    params: { choice: 'A', _lb_file_outputs: '{}', _lb_file_output_volume: '', _lb_app_viewer: 'alice',
       _lb_app_parameters: JSON.stringify({ choice: { label: 'Choice', type: 'dropdown', value: 'A' } }),
     },
   });
-  assert.equal((await parameters.resolveRunParameters(regular, { choice: 'C' }, undefined, memoryStore())).ok, false);
+  assert.equal((await parameters.resolveRunParameters(regular, { choice: 'C' }, 'alice', memoryStore())).ok, false);
+  assert.equal((await parameters.resolveRunParameters(regular, {}, undefined, memoryStore())).ok, false);
 });
 
 test('preview-only and empty selections explicitly clear inherited file-output Job policies', async () => {
@@ -439,12 +439,12 @@ test('preview-only and empty selections explicitly clear inherited file-output J
     const resolved = await parameters.resolveRunParameters(
       { parameters: [], blocks },
       { _lb_file_outputs: stalePolicy },
-      undefined,
+      'alice',
       memoryStore(),
     );
     assert.equal(resolved.ok, true);
     assert.equal(resolved.params._lb_file_outputs, '{}');
-    assert.equal(resolved.params._lb_app_viewer, undefined);
+    assert.equal(resolved.params._lb_app_viewer, 'alice');
     // Jobs may merge request overrides with defaults from a newer, partially published runner.
     const effectiveParams = { _lb_file_outputs: stalePolicy, ...resolved.params };
     assert.deepEqual(JSON.parse(effectiveParams._lb_file_outputs), {});

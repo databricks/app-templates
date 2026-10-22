@@ -34,6 +34,8 @@ export function RunStatus({
   elapsedMs,
   onCancel,
   cancelling,
+  trackingError,
+  cancelError,
 }: {
   snapshot: RunSnapshot | undefined;
   computingLabel: string;
@@ -41,6 +43,8 @@ export function RunStatus({
   elapsedMs: number;
   onCancel: () => void;
   cancelling: boolean;
+  trackingError?: string;
+  cancelError?: string;
 }) {
   const activeIndex = stageIndexFor(snapshot?.lifeCycleState);
   const startTime = new Date(startedAt).toLocaleTimeString(undefined, { hour12: false });
@@ -77,21 +81,21 @@ export function RunStatus({
         ))}
       </div>
 
+      {trackingError && (
+        <p role="status" className="text-muted-foreground mt-4 text-sm">
+          Status is temporarily unavailable. Your run may still be active; reconnecting… ({trackingError})
+        </p>
+      )}
+      {cancelError && (
+        <p role="alert" className="text-destructive mt-4 text-sm">
+          Cancellation could not be confirmed. You can try Cancel again. ({cancelError})
+        </p>
+      )}
       <dl className="text-muted-foreground mt-5 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
         <dt>Computing</dt>
         <dd className="text-foreground">{computingLabel}</dd>
         <dt>Started</dt>
         <dd className="tabular-nums">{startTime}</dd>
-        {snapshot?.runPageUrl ? (
-          <>
-            <dt>Run</dt>
-            <dd>
-              <a className="underline underline-offset-2" href={snapshot.runPageUrl} target="_blank" rel="noreferrer">
-                Open in Jobs
-              </a>
-            </dd>
-          </>
-        ) : null}
       </dl>
     </div>
   );

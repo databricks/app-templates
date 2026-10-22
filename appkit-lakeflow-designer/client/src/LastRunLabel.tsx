@@ -126,16 +126,6 @@ export function LastRunLabel({
             ? 'Finished at an unrecorded time.'
             : `Finished ${relative(finished, Date.now())}, ${new Date(finished).toLocaleString()}.`}
         </span>
-        {run.runPageUrl ? (
-          <a
-            className="text-muted-foreground underline underline-offset-2"
-            href={run.runPageUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            View run
-          </a>
-        ) : null}
       </div>
 
       {variant === 'last' && newerRunDidNotSucceed ? (

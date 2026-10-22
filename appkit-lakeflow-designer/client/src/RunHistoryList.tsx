@@ -1,5 +1,6 @@
 import {
   Badge,
+  Button,
   Select,
   SelectContent,
   SelectItem,
@@ -57,10 +58,16 @@ export function RunHistorySelect({
   state,
   displayedRun,
   onSelect,
+  onLoadMore,
+  loadingMore = false,
+  loadMoreError,
 }: {
   state: RunHistoryState;
   displayedRun?: RunHistoryEntry;
   onSelect: (entry: RunHistoryEntry) => void;
+  onLoadMore?: () => void;
+  loadingMore?: boolean;
+  loadMoreError?: string;
 }) {
   if (state.status === 'loading') {
     return <HistoryStatus>Loading run history…</HistoryStatus>;
@@ -75,40 +82,47 @@ export function RunHistorySelect({
   }
 
   const options = historyEntriesWithDisplayedRun(state.runs, displayedRun);
-  if (options.length === 0) {
-    return <HistoryStatus>This app has no completed runs yet.</HistoryStatus>;
+  if (options.length === 0 && !state.hasMore) {
+    return <HistoryStatus>You have no completed runs yet.</HistoryStatus>;
   }
 
   return (
     <div className="grid max-w-full justify-items-end gap-1">
-      <Select
-        value={displayedRun === undefined ? undefined : String(displayedRun.jobRunId)}
-        onValueChange={(value) => {
-          const entry = options.find((option) => String(option.jobRunId) === value);
-          if (entry !== undefined) {
-            onSelect(entry);
-          }
-        }}
-      >
-        <SelectTrigger aria-label="Run history" className="w-80 max-w-full">
-          <SelectValue placeholder="Select a run" />
-        </SelectTrigger>
-        <SelectContent className="max-h-80 overflow-y-auto">
-          {options.map((entry) => (
-            <SelectItem key={entry.jobRunId} value={String(entry.jobRunId)} textValue={runLabel(entry)}>
-              <span className="flex min-w-0 items-center gap-2">
-                <OutcomeBadge resultState={entry.resultState} />
-                <span className="text-muted-foreground truncate text-xs">{runLabel(entry)}</span>
-              </span>
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {options.length === 0 ? (
+        <HistoryStatus>No runs found in this page.</HistoryStatus>
+      ) : (
+        <Select
+          value={displayedRun === undefined ? undefined : String(displayedRun.jobRunId)}
+          onValueChange={(value) => {
+            const entry = options.find((option) => String(option.jobRunId) === value);
+            if (entry !== undefined) {
+              onSelect(entry);
+            }
+          }}
+        >
+          <SelectTrigger aria-label="Run history" className="w-80 max-w-full">
+            <SelectValue placeholder="Select a run" />
+          </SelectTrigger>
+          <SelectContent className="max-h-80 overflow-y-auto">
+            {options.map((entry) => (
+              <SelectItem key={entry.jobRunId} value={String(entry.jobRunId)} textValue={runLabel(entry)}>
+                <span className="flex min-w-0 items-center gap-2">
+                  <OutcomeBadge resultState={entry.resultState} />
+                  <span className="text-muted-foreground truncate text-xs">{runLabel(entry)}</span>
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
       {state.hasMore ? (
-        <p className="text-muted-foreground text-right text-xs">
-          Showing the {state.window} most recent runs. Older runs are available in Jobs.
-        </p>
+        <Button variant="outline" size="sm" onClick={onLoadMore} disabled={loadingMore || !onLoadMore}>
+          {loadingMore ? 'Loading older runs…' : 'Load older runs'}
+        </Button>
       ) : null}
+      {loadMoreError && (
+        <p role="alert" className="text-destructive max-w-80 text-right text-xs">{loadMoreError}</p>
+      )}
     </div>
   );
 }

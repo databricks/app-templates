@@ -3,7 +3,7 @@ import { appManifestSchema, type AppManifest } from '../../shared/appManifest';
 import { isValidMultiselectValue } from '../../shared/multiselect';
 import { errorMessage, isRecord } from '../../shared/values';
 
-export type NotRunnableReason = 'noManifest' | 'noJob';
+export type NotRunnableReason = 'noManifest' | 'noJob' | 'updating';
 
 export type AppConfigState =
   | { status: 'loading' }
@@ -83,7 +83,7 @@ export async function fetchAppConfig(): Promise<AppConfigState> {
       status: 'ready',
       manifest,
       runnable: body.runnable === true,
-      ...(reason === 'noManifest' || reason === 'noJob' ? { notRunnableReason: reason } : {}),
+      ...(reason === 'noManifest' || reason === 'noJob' || reason === 'updating' ? { notRunnableReason: reason } : {}),
     };
   } catch (error) {
     return { status: 'unavailable', detail: errorMessage(error) };

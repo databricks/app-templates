@@ -15,8 +15,9 @@ import { appKitOutputFileStore } from './outputFileStore';
 import { APP_REVISION_PARAM } from '../shared/fileOutputs';
 import { runJobParameters } from './jobParameters';
 import { runAttribution } from './runAttribution';
-import { ensureJobViewPermission } from './jobPermissions';
 import { isSameOriginBrowserRequest } from './browserRequestOrigin';
+import { APP_UPDATING_MESSAGE, isPublishedRunner } from '../shared/publishedRunner';
+import { scanVisibleRuns, type VisibleRunPage } from './runHistory';
 
 // Publishing writes the manifest beside the runner notebook in the app's publisher-owned folder, outside
 // the git-backed source and client/dist, so it is never served publicly.
@@ -78,7 +79,7 @@ const loadManifest = async (forceFresh = false): Promise<AppManifest | undefined
     return cachedManifest;
   }
   const manifest = await readManifest();
-  // A stale pre-upload manifest must not re-enable public execution after a private republish.
+  // A failed fresh read must not keep stale execution or file policies active.
   if (manifest !== undefined || forceFresh) {
     cachedManifest = manifest;
   }
@@ -90,7 +91,7 @@ function manifestFolderFromNotebookPath(notebookPath: string): string {
   return lastSlash <= 0 ? notebookPath : notebookPath.slice(0, lastSlash);
 }
 
-// The runner notebook path is stable for the app's lifetime, so resolve its folder from the bound job once.
+// All immutable runner revisions share the App folder, so resolve it from the bound Job once.
 let cachedManifestFolder: string | undefined;
 
 async function resolveManifestFolder(): Promise<string | undefined> {
@@ -166,11 +167,7 @@ async function accessibleRun(
   return isRecord(detail) &&
     !isLegacyExportRun(detail) &&
     runBelongsToJob(detail, JOB_ID) &&
-    canAccessRun(
-      detail,
-      requestViewer(req),
-      manifest.storage !== undefined || manifest.blocks.some((block) => block.type === 'output' && block.fileOutput),
-    )
+    canAccessRun(detail, requestViewer(req))
     ? detail
     : undefined;
 }
@@ -281,9 +278,6 @@ async function readRunResult(taskRunId: string | undefined, failed = false) {
 }
 
 const LAST_RUN_PAGE_SIZE = 25;
-const ACTIVE_RUN_SCAN_LIMIT = 5;
-// Bounds every run-list scan so a history with few visible runs cannot page forever.
-const RUN_SCAN_CAP = 200;
 const SUCCESSFUL_RESULT_STATES = new Set(['SUCCESS', 'SUCCESS_WITH_FAILURES']);
 
 type ListRunsRequest = Parameters<WorkspaceClient['jobs']['listRuns']>[0];
@@ -292,18 +286,22 @@ async function collectVisibleRuns(
   req: Request,
   options: Omit<ListRunsRequest, 'job_id'>,
   isComplete: (visible: Record<string, unknown>[]) => boolean,
-): Promise<Record<string, unknown>[]> {
-  const visible: Record<string, unknown>[] = [];
-  let scanned = 0;
-  for await (const run of wsClient().jobs.listRuns({ job_id: Number(JOB_ID), ...options })) {
-    const accessible = await accessibleRun(run, req, true);
-    if (accessible) {
-      visible.push(accessible);
-      if (isComplete(visible)) break;
-    }
-    if (++scanned >= RUN_SCAN_CAP) break;
-  }
-  return visible;
+): Promise<VisibleRunPage> {
+  return scanVisibleRuns({
+    pageToken: options.page_token,
+    // The SDK iterator consumes page tokens internally; use its authenticated transport to
+    // return a continuation when this request's scan budget is exhausted.
+    readPage: (pageToken) =>
+      wsClient().toLegacyWorkspaceClient().apiClient.request({
+        path: '/api/2.2/jobs/runs/list',
+        method: 'GET',
+        headers: new Headers({ Accept: 'application/json' }),
+        raw: false,
+        query: { ...options, job_id: Number(JOB_ID), page_token: pageToken },
+      }),
+    accessible: (run) => accessibleRun(run, req, true),
+    isComplete,
+  });
 }
 
 function isSuccessfulRun(run: unknown): run is Record<string, unknown> {
@@ -363,7 +361,7 @@ function runParameterData(
   const params: Record<string, string> = {};
   const displayValues: Record<string, string> = {};
   for (const [name, value] of Object.entries(runJobParameters(run))) {
-    if (isReservedParameter(name)) {
+    if (isReservedParameter(name) || !cachedManifest?.parameters.some((parameter) => parameter.name === name)) {
       continue;
     }
     const isFile = cachedManifest?.parameters.some((parameter) => parameter.name === name && parameter.type === 'file');
@@ -414,10 +412,11 @@ function summarizeHistoryRun(run: Record<string, unknown>) {
   return summary;
 }
 
-function summarizeRunHistory(runs: Record<string, unknown>[], windowSize: number) {
+function summarizeRunHistory(page: VisibleRunPage) {
   return {
-    entries: [...runs].sort(newestFirst).flatMap((run) => summarizeHistoryRun(run) ?? []).slice(0, windowSize),
-    hasMore: runs.length > windowSize,
+    entries: [...page.runs].sort(newestFirst).flatMap((run) => summarizeHistoryRun(run) ?? []),
+    hasMore: page.nextPageToken !== undefined,
+    nextPageToken: page.nextPageToken,
   };
 }
 
@@ -479,11 +478,14 @@ await createApp({
             res.json({ manifest: null, runnable: false, notRunnableReason: 'noManifest' });
             return;
           }
+          // Hidden runner defaults are execution policy, not consumer-visible configuration.
+          const { runner: _runner, ...publicManifest } = manifest;
           if (JOB_ID === undefined) {
-            res.json({ manifest, runnable: false, notRunnableReason: 'noJob' });
+            res.json({ manifest: publicManifest, runnable: false, notRunnableReason: 'noJob' });
             return;
           }
-          res.json({ manifest, runnable: true });
+          const runnable = isPublishedRunner(manifest.runner, await wsClient().jobs.get({ job_id: Number(JOB_ID) }));
+          res.json({ manifest: publicManifest, runnable, ...(runnable ? {} : { notRunnableReason: 'updating' }) });
         } catch (err) {
           console.error(err);
           res.status(500).json({ error: 'The app could not read its own configuration.' });
@@ -496,15 +498,20 @@ await createApp({
           return;
         }
 
-        let listed: Record<string, unknown>[];
+        let listed: VisibleRunPage;
         try {
           // completed_only includes failures, so page until the newest success is in hand: a streak
           // of recent failures must not hide an older successful run.
           listed = await retryRead(() =>
             collectVisibleRuns(
               req,
-              { completed_only: true, expand_tasks: true, limit: LAST_RUN_PAGE_SIZE },
-              (visible) => isSuccessfulRun(visible.at(-1)),
+              {
+                completed_only: true,
+                expand_tasks: true,
+                limit: LAST_RUN_PAGE_SIZE,
+                page_token: nonEmptyString(req.query.cursor),
+              },
+              (visible) => visible.some(isSuccessfulRun),
             ),
           );
         } catch (err) {
@@ -518,11 +525,13 @@ await createApp({
           // Trust active_only instead of duplicating Jobs lifecycle-state logic. Not retried: this
           // best-effort signal must not delay primary content.
           const activeRun = selectActiveRun(
-            await collectVisibleRuns(
-              req,
-              { active_only: true, expand_tasks: true, limit: ACTIVE_RUN_SCAN_LIMIT },
-              (visible) => visible.length >= ACTIVE_RUN_SCAN_LIMIT,
-            ),
+            (
+              await collectVisibleRuns(
+                req,
+                { active_only: true, expand_tasks: true, limit: LAST_RUN_PAGE_SIZE },
+                (visible) => visible.length > 0,
+              )
+            ).runs,
           );
           const activeSummary = activeRun === undefined ? undefined : summarizeLastRun(activeRun);
           if (activeRun !== undefined && activeSummary !== undefined) {
@@ -537,10 +546,14 @@ await createApp({
           console.error(err);
         }
 
-        const run = selectLastSuccessfulRun(listed);
+        const run = selectLastSuccessfulRun(listed.runs);
         const summary = run === undefined ? undefined : summarizeLastRun(run);
         if (run === undefined || summary === undefined) {
-          res.json({ status: 'none', ...(active === undefined ? {} : { active }) });
+          res.json({
+            status: listed.nextPageToken === undefined ? 'none' : 'searching',
+            nextPageToken: listed.nextPageToken,
+            ...(active === undefined ? {} : { active }),
+          });
           return;
         }
         summary.resultState = resultStateOf(run);
@@ -568,6 +581,10 @@ await createApp({
             res.status(409).json({ error: 'This app has no runtime App ID, so it cannot attribute Job runs.' });
             return;
           }
+          if (!isPublishedRunner(manifest.runner, await wsClient().jobs.get({ job_id: Number(JOB_ID) }))) {
+            res.status(409).json({ error: APP_UPDATING_MESSAGE });
+            return;
+          }
           const attribution = await runAttribution(req, APP_ID, (token) =>
             createWorkspaceClient({ host: wsClient().config.host, token }).currentUser.me(),
           );
@@ -587,8 +604,6 @@ await createApp({
             res.status(400).json({ error: resolved.error, ...(resolved.code ? { code: resolved.code } : {}) });
             return;
           }
-
-          await ensureJobViewPermission(wsClient(), JOB_ID, userName);
 
           // Writes MUST NEVER BE retried; replaying runNow can start duplicate compute.
           resolved.params[APP_REVISION_PARAM] = manifestRevision(manifest);
@@ -661,14 +676,13 @@ await createApp({
         }
         const windowSize = resolveHistoryWindow(req.query?.window);
 
-        let history: Record<string, unknown>[];
+        let history: VisibleRunPage;
         try {
-          // One visible run past the window shows that older history exists.
           history = await retryRead(() =>
             collectVisibleRuns(
               req,
-              { completed_only: true, limit: RUN_HISTORY_PAGE_SIZE },
-              (visible) => visible.length > windowSize,
+              { completed_only: true, limit: RUN_HISTORY_PAGE_SIZE, page_token: nonEmptyString(req.query.cursor) },
+              (visible) => visible.length >= windowSize,
             ),
           );
         } catch (err) {
@@ -677,8 +691,14 @@ await createApp({
           return;
         }
 
-        const page = summarizeRunHistory(history, windowSize);
-        res.json({ status: 'found', runs: page.entries, hasMore: page.hasMore, window: windowSize });
+        const page = summarizeRunHistory(history);
+        res.json({
+          status: 'found',
+          runs: page.entries,
+          hasMore: page.hasMore,
+          nextPageToken: page.nextPageToken,
+          window: windowSize,
+        });
       });
     });
   },

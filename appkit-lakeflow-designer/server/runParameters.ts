@@ -7,10 +7,12 @@ import { FILE_OUTPUTS_PARAM, OUTPUT_NAMESPACE_PARAM, type FileOutputConfig } fro
 import { isValidMultiselectConfig, isValidMultiselectValue } from '../shared/multiselect';
 import { isReservedParameter } from '../shared/appManifest';
 import { APP_PARAMETERS_PARAM } from './runAttribution';
+import { RUNNER_REVISION_PARAM, type PublishedRunner } from '../shared/publishedRunner';
 
 export { isReservedParameter };
 
 interface ParameterManifest {
+  runner?: PublishedRunner;
   storage?: AppStorage;
   blocks?: { type: string; nodeId?: string; fileOutput?: FileOutputConfig }[];
   parameters: {
@@ -42,16 +44,16 @@ export async function resolveRunParameters(
   viewer: string | undefined,
   store: UploadStore,
 ): Promise<{ ok: true; params: Record<string, string> } | { ok: false; error: string; code?: typeof UPLOAD_UNAVAILABLE }> {
-  const params: Record<string, string> = {};
+  // Pin hidden defaults as well as exposed inputs to the selected publication. A Job reset can
+  // race submission, so inheriting the Job's newer defaults would mix publication versions.
+  const params: Record<string, string> = { ...manifest.runner?.parameters };
   const filenames = new Map<string, string>();
   const fileOutputs = Object.fromEntries(
     (manifest.blocks ?? []).flatMap((block) =>
       block.type === 'output' && block.nodeId && block.fileOutput ? [[block.nodeId, block.fileOutput]] : [],
     ),
   );
-  const privateApp = manifest.storage !== undefined || Object.keys(fileOutputs).length > 0;
-  if (privateApp && !viewer)
-    return { ok: false, error: 'Sign in through Databricks Apps to run an app with uploads or file outputs.' };
+  if (!viewer) return { ok: false, error: 'Sign in through Databricks Apps to run this app.' };
   for (const parameter of manifest.parameters) {
     if (isReservedParameter(parameter.name)) continue;
     const raw = submitted[parameter.name];
@@ -103,10 +105,12 @@ export async function resolveRunParameters(
   // An empty override is intentional: a partially completed republish may leave newer
   // file-writing Job defaults behind the current manifest. Never inherit that policy.
   params[FILE_OUTPUTS_PARAM] = JSON.stringify(fileOutputs);
+  params._lb_file_output_volume = manifest.runner?.parameters._lb_file_output_volume ?? '';
+  if (manifest.runner) params[RUNNER_REVISION_PARAM] = manifest.runner.revision;
   // The runtime adds an attempt ID and node ID beneath this server-owned submission namespace.
   // Consumer parameters must not choose/reuse a previous run's artifact directory.
   if (Object.keys(fileOutputs).length > 0) params[OUTPUT_NAMESPACE_PARAM] = randomUUID();
-  if (privateApp && viewer) params[APP_VIEWER_PARAM] = viewer;
+  params[APP_VIEWER_PARAM] = viewer;
   // Preserve labels and resolved values at submission time, including inputs later removed or
   // renamed on republish. File reporting exposes the filename rather than its private storage path.
   params[APP_PARAMETERS_PARAM] = JSON.stringify(Object.fromEntries(

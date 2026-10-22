@@ -109,7 +109,7 @@ function parseBlocks(raw: unknown): AppManifestBlock[] {
 // entries can be omitted; declarations governing file access must reject the entire manifest.
 export const appManifestSchema = z.pipe(
   z.object({
-    version: z.literal(7),
+    version: z.literal(8),
     runner: z.optional(runnerSchema),
     appName: nonEmptyString,
     subtitle: z.unknown(),

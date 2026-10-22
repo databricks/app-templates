@@ -87,7 +87,7 @@ after(async () => {
 });
 
 const manifest = {
-  version: 7,
+  version: 8,
   runner: { revision: 'a'.repeat(64), parameters: { _lb_runner_revision: 'a'.repeat(64) } },
   appName: 'Uploads',
   storage: {
@@ -772,7 +772,7 @@ test('live status preserves ordinary parameters and leaves missing recorded valu
   const { state, request } = await serverHarness();
   state.manifest = {
     ...manifest,
-    version: 7,
+    version: 8,
     storage: undefined,
     parameters: [{ name: 'year', label: 'Year', type: 'text', defaultValue: '2015' }],
   };
@@ -818,6 +818,8 @@ test('rejects unsupported manifest versions and malformed optional storage', asy
   for (const invalid of [
     { ...manifest, version: 3 },
     { ...manifest, version: 4 },
+    { ...manifest, version: 7 },
+    { ...manifest, version: 9 },
     { ...manifest, storage: null, parameters: [] },
     { ...manifest, storage: { ...manifest.storage, path: '/Volumes/main/default/other' }, parameters: [] },
   ]) {
@@ -1099,7 +1101,7 @@ test('last-run and terminal status include file receipts without table preview o
 
 test('enables plugin storage on republish and binds a completed upload to a run', async () => {
   const { state, request } = await serverHarness();
-  state.manifest = { ...manifest, version: 7, storage: undefined, parameters: [] };
+  state.manifest = { ...manifest, version: 8, storage: undefined, parameters: [] };
   assert.equal((await request('post', '/api/designer/run')).status, 200);
   assert.deepEqual(state.apps.map((plugins) => plugins.map(({ name }) => name)), [['server']]);
 
@@ -1196,7 +1198,7 @@ test('denies cross-viewer results and cancellation at the server routes', async 
 test('requires ingress identity and uploaded references, and fails closed on invalid published configuration', async () => {
   const { state, request } = await serverHarness();
   const configured = await request('get', '/api/designer/config');
-  assert.equal(configured.body.manifest.version, 7);
+  assert.equal(configured.body.manifest.version, 8);
   assert.deepEqual(configured.body.manifest.storage, manifest.storage);
   assert.equal(configured.body.manifest.parameters[0].defaultValue, '');
   const missingIdentity = await request('post', '/api/designer/uploads/:parameterName', {

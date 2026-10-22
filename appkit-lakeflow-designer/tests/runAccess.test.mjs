@@ -48,7 +48,7 @@ async function harness(t) {
   const state = {
     requests: [], submissions: [], cancellations: [], runs: [],
     manifest: {
-      version: 7, appName: 'Report', runner: { revision, parameters },
+      version: 8, appName: 'Report', runner: { revision, parameters },
       parameters: [{ name: 'choice', label: 'Choice', type: 'text', defaultValue: 'A' }],
       blocks: [{ type: 'output', id: 'out', nodeId: 'source', port: 'data', label: 'Data' }],
     },

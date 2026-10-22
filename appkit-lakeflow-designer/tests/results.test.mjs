@@ -324,7 +324,7 @@ const GROUP_ENVIRONMENT_BLOCKS = ENVIRONMENT_BLOCKS.map((block) => ({
 for (const environment of ['prod', 'dev']) {
   test(`native group-only state renders the ${environment} branch without member state`, () => {
     const manifest = parseAppManifest({
-      version: 7, appName: 'Environment branches', blocks: GROUP_ENVIRONMENT_BLOCKS, parameters: [],
+      version: 8, appName: 'Environment branches', blocks: GROUP_ENVIRONMENT_BLOCKS, parameters: [],
     });
     const commands = [
       ...['prod', 'dev'].map((nodeId) => ({
@@ -424,7 +424,7 @@ test('missing or malformed parent state does not hide an empty output', () => {
 });
 
 test('optional execution metadata preserves valid fields and ignores malformed values', () => {
-  const base = { version: 7, appName: 'Branch outputs', blocks: ENVIRONMENT_BLOCKS, parameters: [] };
+  const base = { version: 8, appName: 'Branch outputs', blocks: ENVIRONMENT_BLOCKS, parameters: [] };
   for (const disabled of [true, false]) {
     const parsed = parseAppManifest({
       ...base, blocks: [{ ...ENVIRONMENT_BLOCKS[0], disabled, parentGroupId: 'group_prod' }],
@@ -516,7 +516,7 @@ test('initial placeholders remain visible without recorded runtime state', () =>
 });
 
 test('optional visibility preferences preserve booleans and safely ignore other values', () => {
-  const base = { version: 7, appName: 'Branch outputs', blocks: ENVIRONMENT_BLOCKS, parameters: [] };
+  const base = { version: 8, appName: 'Branch outputs', blocks: ENVIRONMENT_BLOCKS, parameters: [] };
   for (const value of [true, false]) {
     const parsed = parseAppManifest({
       ...base,
@@ -538,7 +538,7 @@ test('optional visibility preferences preserve booleans and safely ignore other 
 
 test('legacy app-wide visibility does not hide blocks without their own preference', () => {
   const parsed = parseAppManifest({
-    version: 7, appName: 'Branch outputs', blocks: ENVIRONMENT_BLOCKS, parameters: [],
+    version: 8, appName: 'Branch outputs', blocks: ENVIRONMENT_BLOCKS, parameters: [],
     hideOutputsUntilResults: true,
   });
   assert.equal(Object.hasOwn(parsed, 'hideOutputsUntilResults'), false);
@@ -1291,7 +1291,7 @@ test('supports direct sandbox results and disabled HTML nodes', () => {
 });
 
 test('manifest retains HTML without a port and discards contradictory output declarations', () => {
-  const manifest = parseAppManifest({ version: 7, appName: 'HTML app', parameters: [], blocks: [
+  const manifest = parseAppManifest({ version: 8, appName: 'HTML app', parameters: [], blocks: [
     HTML_BLOCK, { ...HTML_BLOCK, id: 'bad', port: 'data' }, { type: 'output', id: 'no-port', nodeId: 'source' },
   ] });
   assert.equal(manifest.blocks.length, 1);

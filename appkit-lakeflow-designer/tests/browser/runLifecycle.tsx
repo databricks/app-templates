@@ -16,7 +16,7 @@ let unavailableConfigReads = 0;
 let continuedLastRun = false;
 let continuedHistory = false;
 const manifest = {
-  version: 7, appName: 'Run lifecycle test', parameters: [],
+  version: 8, appName: 'Run lifecycle test', parameters: [],
   blocks: [{ type: 'output', id: 'table', label: 'Output', nodeId: 'source', port: 'data' }],
 };
 const json = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status }));

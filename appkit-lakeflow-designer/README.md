@@ -94,7 +94,7 @@ run search follows those cursors automatically.
 ## Result previews
 
 Output blocks are hidden when their own disabled state or their parent group's state is `true`.
-Manifest v7 carries literal operator disablement as optional `disabled` and links an active
+Manifest v8 carries literal operator disablement as optional `disabled` and links an active
 disabled group with `parentGroupId`. The server combines these with Designer's existing runtime
 node-state messages; operators report their own evaluated state and groups report theirs.
 Published runners preserve group annotations and evaluate each group condition once.
@@ -103,7 +103,7 @@ on the published operator or its group, for example `:environment <> 'prod'` for
 branch and `:environment <> 'dev'` for Dev. Disabling an upstream operator alone does not
 disable downstream outputs. Enabled empty results and errors remain visible.
 
-Manifest v7 optionally sets `hideUntilResults` on individual output and Markdown
+Manifest v8 optionally sets `hideUntilResults` on individual output and Markdown
 blocks. An absent preference or `false` shows the block before results; `true`
 hides it. Only boolean settings apply; other values preserve the visible default.
 The authoring eye toggle controls this preference for each block. There is no
@@ -245,11 +245,11 @@ Chart rendering does not change the manifest or runner-job contracts.
 
 ## App upload storage and file parameters
 
-Manifest v7 uses an optional storage declaration for uploads:
+Manifest v8 uses an optional storage declaration for uploads:
 
 ```json
 {
-  "version": 7,
+  "version": 8,
   "storage": {
     "volume": "main.apps.shared",
     "path": "/Volumes/main/apps/shared/designer_apps/my_app",
@@ -420,7 +420,7 @@ metadata, uploads, Output files or published helper versions. Republish and run 
 
 ## HTML operator outputs
 
-Manifest v7 accepts terminal HTML blocks with `kind: "html"` and no `port`, `chartSpec`,
+Manifest v8 accepts terminal HTML blocks with `kind: "html"` and no `port`, `chartSpec`,
 or `fileOutput`:
 
 ```json
@@ -481,5 +481,15 @@ reloads, missing policies, and unmounting. A full-App journey also covers pollin
 cancellation retries, history continuation, and the republish pause. It uses the existing Vite dependencies
 and Node test runner; no browser or test packages are downloaded.
 
-Publish this template with the matching Universe manifest-v7/HTML runner changes.
-The template accepts v7 only; this coordinated greenfield change has no v6 reader.
+Release and select this template before deploying the matching Universe manifest-v8
+publisher. The template accepts v8 only; v7 and future manifests are rejected before
+Job submission. Republish existing Apps to update their template, runner and manifest.
+A v7-to-v8 upgrade can pause submissions until publication finishes. Do not roll back
+to a v7-only template while an App has a v8 manifest.
+
+Universe publishes the exact content-addressed Python helper before activating the
+runner that imports it. File-validation and receipt hooks are added only to the
+published runner; ordinary Designer Output v4 code remains unchanged. Publishing and
+setup recovery require the author's acknowledgement that App users can execute reads
+and writes with the Job's run-as data permissions. The acknowledgement does not grant
+permissions or substitute for security review of that execution model.

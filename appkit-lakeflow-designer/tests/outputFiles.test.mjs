@@ -22,7 +22,7 @@ after(async () => { if (outputDirectory) await rm(outputDirectory, { recursive: 
 
 async function harness(t) {
   const manifest = {
-    version: 7, appName: 'Output app', parameters: [{ name: 'filename' }],
+    version: 8, appName: 'Output app', parameters: [{ name: 'filename' }],
     blocks: [
       { type: 'output', id: 'out', nodeId: 'output_0', port: 'result', fileOutput: { volumes: ['main.apps.files', 'main.apps.other'] } },
       { type: 'output', id: 'preview', nodeId: 'source', port: 'data' },

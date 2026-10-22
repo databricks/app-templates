@@ -1,0 +1,13 @@
+version: 1
+name: "Agent - LangGraph Basic"
+description: "A lean LangGraph agent backend that runs locally with no database. Exposes the Responses API; optionally adds Lakebase-backed long-running background execution and durable session history when configured."
+
+resource_specs:
+  - name: "experiment"
+    description: "Optional. The destination experiment for MLflow traces from the agent's execution."
+    experiment_spec:
+      permission: "CAN_EDIT"
+  - name: "postgres"
+    description: "Optional. A Lakebase Autoscaling database backing LongRunningAgentServer's durable store — long-running background execution and crash recovery. Omit to run in-request. (Conversation history is separate: in-memory by default, or a durable LangGraph checkpointer.)"
+    postgres_spec:
+      permission: "CAN_CONNECT_AND_CREATE"

@@ -32,7 +32,7 @@ import { FOLLOWED_RESULT_AVAILABLE_OFFER, planLandingArea } from './landingPlan'
 import type { ActiveRun, LastRunState, LastRunSummary } from './lastRun';
 import { fetchLastRun } from './lastRun';
 import type { LastRunVariant } from './LastRunLabel';
-import { LastRunLabel, relative } from './LastRunLabel';
+import { LastRunLabel, relative, RunParametersDisclosureProvider } from './LastRunLabel';
 import { ParameterForm } from './ParameterForm';
 import { LazyOutputChart, preloadOutputChart } from './renderersLazy';
 import { RunHistorySelect } from './RunHistoryList';
@@ -536,7 +536,9 @@ export function App() {
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="bg-background text-foreground min-h-screen">
-      <div className="mx-auto max-w-6xl p-6">{children}</div>
+      <div className="mx-auto max-w-6xl p-6">
+        <RunParametersDisclosureProvider>{children}</RunParametersDisclosureProvider>
+      </div>
     </div>
   );
 }

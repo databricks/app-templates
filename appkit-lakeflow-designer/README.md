@@ -124,6 +124,10 @@ diagnostics; a failed submission keeps it alongside the submission error. Latest
 and selected historical results appear as soon as their outcomes load. Placeholder
 visibility does not evaluate branch conditions or change notebook code generation.
 
+Run parameters appear in a collapsed Parameters expander below the run status. Expanding it
+shows parameter names and their recorded values in two columns, including uploaded-file links.
+The expanded or collapsed preference is retained while switching runs within the App.
+
 Visibility follows the selected run, including history; changing a parameter takes effect
 after the next run. Missing runtime state does not imply disablement from an empty result;
 the published literal fallback still applies. Republish existing apps to update their manifest,

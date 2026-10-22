@@ -1,4 +1,6 @@
 import { Badge } from '@databricks/appkit-ui/react';
+import type { ReactNode } from 'react';
+import { createContext, Fragment, useContext, useMemo, useState } from 'react';
 
 import type { AppParameter } from '../../shared/appManifest';
 import type { LastRunSummary } from './lastRun';
@@ -42,19 +44,29 @@ export const relative = (endTime: number, now: number): string => {
   return `${days} day${days === 1 ? '' : 's'} ago`;
 };
 
+const RunParametersDisclosureContext = createContext<{
+  expanded: boolean;
+  setExpanded: (expanded: boolean) => void;
+} | undefined>(undefined);
+
+export function RunParametersDisclosureProvider({ children }: { children: ReactNode }) {
+  const [expanded, setExpanded] = useState(false);
+  const value = useMemo(() => ({ expanded, setExpanded }), [expanded]);
+  return <RunParametersDisclosureContext.Provider value={value}>{children}</RunParametersDisclosureContext.Provider>;
+}
+
 export function RunParameterList({
-  intro,
   parameters,
   parameterDisplayValues,
   declared,
   linkUploads = false,
 }: {
-  intro: string;
   parameters?: Record<string, string>;
   parameterDisplayValues?: Record<string, string>;
   declared: AppParameter[];
   linkUploads?: boolean;
 }) {
+  const disclosure = useContext(RunParametersDisclosureContext);
   if (parameters === undefined) {
     return <p className="text-muted-foreground mt-2 text-xs">The parameters for this run were not recorded.</p>;
   }
@@ -63,36 +75,42 @@ export function RunParameterList({
     return <p className="text-muted-foreground mt-2 text-xs">This run took no parameters.</p>;
   }
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-      <span className="text-muted-foreground">{intro}</span>
-      {entries.map(([name, value]) => {
-        const displayValue = parameterDisplayValues?.[name] ?? value;
-        const downloadable =
-          linkUploads &&
-          parameterDisplayValues?.[name] !== undefined &&
-          UPLOAD_REFERENCE.test(value) &&
-          declared.some((parameter) => parameter.name === name && parameter.type === 'file');
-        return (
-          <span key={name} className="text-muted-foreground">
-            <span>{labelFor(name, declared)}</span>
-            <span className="text-foreground ml-1 font-mono">
-              {downloadable ? (
-                <a
-                  href={uploadDownloadRoute(name, value)}
-                  aria-label={`Download ${displayValue}`}
-                  title="Download uploaded file"
-                  className="underline underline-offset-2"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {displayValue}
-                </a>
-              ) : displayValue === '' ? '(blank)' : displayValue}
-            </span>
-          </span>
-        );
-      })}
-    </div>
+    <details
+      className="mt-2 text-xs"
+      open={disclosure?.expanded}
+      onToggle={(event) => disclosure?.setExpanded(event.currentTarget.open)}
+    >
+      <summary className="text-muted-foreground cursor-pointer select-none">Parameters ({entries.length})</summary>
+      <dl className="mt-3 grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-start gap-x-4 gap-y-2">
+        {entries.map(([name, value]) => {
+          const displayValue = parameterDisplayValues?.[name] ?? value;
+          const downloadable =
+            linkUploads &&
+            parameterDisplayValues?.[name] !== undefined &&
+            UPLOAD_REFERENCE.test(value) &&
+            declared.some((parameter) => parameter.name === name && parameter.type === 'file');
+          return (
+            <Fragment key={name}>
+              <dt className="text-muted-foreground break-words">{labelFor(name, declared)}</dt>
+              <dd className="text-foreground min-w-0 break-words font-mono">
+                {downloadable ? (
+                  <a
+                    href={uploadDownloadRoute(name, value)}
+                    aria-label={`Download ${displayValue}`}
+                    title="Download uploaded file"
+                    className="underline underline-offset-2"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {displayValue}
+                  </a>
+                ) : displayValue === '' ? '(blank)' : displayValue}
+              </dd>
+            </Fragment>
+          );
+        })}
+      </dl>
+    </details>
   );
 }
 
@@ -135,7 +153,6 @@ export function LastRunLabel({
       ) : null}
 
       <RunParameterList
-        intro="Computed with"
         parameters={parameters}
         parameterDisplayValues={parameterDisplayValues}
         declared={declared}

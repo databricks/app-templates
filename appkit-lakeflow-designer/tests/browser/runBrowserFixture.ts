@@ -30,7 +30,8 @@ export async function runBrowserFixture(context: TestContext, fixture: string) {
       await exited;
     }
     await server?.close();
-    await rm(profile, { recursive: true, force: true });
+    // Chrome child processes can still flush profile files after the parent exits.
+    await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
   const forbiddenRequests: string[] = [];
   let reportResult: (result: BrowserCheckResult) => void = () => {};

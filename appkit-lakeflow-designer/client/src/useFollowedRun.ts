@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ActiveRun } from './lastRun';
 import type { ConsumerRunPhase } from './landingPlan';
 import { FOLLOWED_RUN_NO_OUTCOME_REASON, shouldFollowActiveRun, shouldRetainSettledFollowedRun } from './landingPlan';
-import type { RunOutcome, RunSnapshot } from './payload';
+import { parseRunSnapshot, type RunOutcome, type RunSnapshot } from './payload';
 import { runStatusRoute } from './routes';
 import { POLL_INTERVAL_MS } from './useDesignerRun';
 
@@ -67,7 +67,8 @@ export function useFollowedRun(active: ActiveRun | undefined, consumerRunPhase: 
           }
           throw new Error(`Status check failed with HTTP ${response.status}`);
         }
-        const snapshot = (await response.json()) as RunSnapshot;
+        const snapshot = parseRunSnapshot(await response.json());
+        if (snapshot?.jobRunId !== activeRunId) throw new Error('The server returned an unreadable run status.');
         if (cancelled) return;
         if (snapshot.terminal) {
           settle({ snapshot, outcome: snapshot.result ?? NO_OUTCOME });

@@ -6,6 +6,7 @@ import {
 } from '../../shared/storageConfig';
 import { uploadsRoute } from './routes';
 import { validateFileFormat } from '../../shared/fileFormats';
+import { isRecord } from '../../shared/values';
 
 interface UploadChoice {
   reference: string;
@@ -16,10 +17,7 @@ export class UploadUnavailableError extends Error {}
 
 function isUpload(value: unknown): value is UploadChoice {
   return (
-    typeof value === 'object' &&
-    value !== null &&
-    'reference' in value &&
-    'filename' in value &&
+    isRecord(value) &&
     typeof value.reference === 'string' &&
     UPLOAD_REFERENCE.test(value.reference) &&
     typeof value.filename === 'string'
@@ -28,15 +26,15 @@ function isUpload(value: unknown): value is UploadChoice {
 
 async function readResponse(response: Response): Promise<Record<string, unknown>> {
   const value: unknown = await response.json();
-  if (typeof value !== 'object' || value === null) {
+  if (!isRecord(value)) {
     throw new Error('The upload server returned an unreadable response.');
   }
   if (!response.ok) {
-    const message = 'error' in value && typeof value.error === 'string' ? value.error : 'The upload request failed.';
-    if ('code' in value && value.code === UPLOAD_UNAVAILABLE) throw new UploadUnavailableError(message);
+    const message = typeof value.error === 'string' ? value.error : 'The upload request failed.';
+    if (value.code === UPLOAD_UNAVAILABLE) throw new UploadUnavailableError(message);
     throw new Error(message);
   }
-  return value as Record<string, unknown>;
+  return value;
 }
 
 export function validateUpload(file: File, fileFormats?: readonly string[]): string | undefined {

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { RunSnapshot, TriggerResponse } from './payload';
+import { parseRunSnapshot, type RunSnapshot } from './payload';
 import { RUN_ROUTE, runStatusRoute } from './routes';
 import { UploadUnavailableError } from './fileUpload';
 import { UPLOAD_UNAVAILABLE } from '../../shared/storageConfig';
-import { isRecord } from '../../shared/values';
+import { errorMessage, idString, isRecord } from '../../shared/values';
 
 export const POLL_INTERVAL_MS = 2000;
 const TICK_INTERVAL_MS = 250;
@@ -79,10 +79,15 @@ export function useDesignerRun(onUploadUnavailable?: () => void) {
           body: JSON.stringify({ params }),
         });
         if (!response.ok) throw await readRunError(response);
-        jobRunId = ((await response.json()) as TriggerResponse).jobRunId;
+        const body: unknown = await response.json();
+        const acceptedRunId = isRecord(body) ? idString(body.jobRunId) : undefined;
+        if (acceptedRunId === undefined) {
+          throw new Error('The server did not return a valid run ID. Check run history before trying again.');
+        }
+        jobRunId = acceptedRunId;
       } catch (err) {
         if (runGeneration.current !== generation) return;
-        settle({ requestError: (err as Error).message });
+        settle({ requestError: errorMessage(err) });
         if (err instanceof UploadUnavailableError) onUploadUnavailable?.();
         return;
       }
@@ -94,7 +99,8 @@ export function useDesignerRun(onUploadUnavailable?: () => void) {
         try {
           const response = await fetch(runStatusRoute(jobRunId));
           if (!response.ok) throw new Error(`Status check failed with HTTP ${response.status}`);
-          const snapshot = (await response.json()) as RunSnapshot;
+          const snapshot = parseRunSnapshot(await response.json());
+          if (snapshot?.jobRunId !== jobRunId) throw new Error('The server returned an unreadable run status.');
           if (runGeneration.current !== generation) return;
           if (snapshot.terminal) {
             settle({ snapshot });
@@ -106,7 +112,7 @@ export function useDesignerRun(onUploadUnavailable?: () => void) {
         } catch (err) {
           if (runGeneration.current !== generation) return;
           // A lost status response does not end the accepted Job or make another submission safe.
-          setState((prev) => ({ ...prev, trackingError: (err as Error).message }));
+          setState((prev) => ({ ...prev, trackingError: errorMessage(err) }));
           const delay = Math.min(30_000, POLL_INTERVAL_MS * 2 ** Math.min(consecutivePollFailures++, 4));
           pollTimer.current = setTimeout(() => void poll(), delay);
         }
@@ -129,7 +135,7 @@ export function useDesignerRun(onUploadUnavailable?: () => void) {
     } catch (error) {
       if (runGeneration.current !== generation) return;
       setState((prev) =>
-        prev.phase === 'running' ? { ...prev, cancelling: false, cancelError: (error as Error).message } : prev
+        prev.phase === 'running' ? { ...prev, cancelling: false, cancelError: errorMessage(error) } : prev
       );
     }
   }, [state.snapshot?.jobRunId]);
@@ -146,5 +152,5 @@ async function readRunError(response: Response): Promise<Error> {
   if (isRecord(body) && typeof body.error === 'string' && body.error !== '') {
     return body.code === UPLOAD_UNAVAILABLE ? new UploadUnavailableError(body.error) : new Error(body.error);
   }
-  return new Error(`Trigger failed with HTTP ${response.status}`);
+  return new Error(`Request failed with HTTP ${response.status}`);
 }

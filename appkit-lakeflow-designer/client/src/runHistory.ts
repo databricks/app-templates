@@ -1,5 +1,5 @@
 import type { RunOutcome, RunSnapshot } from './payload';
-import { parseRunOutcome, parseRunSnapshot } from './payload';
+import { parseRunSnapshot } from './payload';
 import { runHistoryRoute, runStatusRoute } from './routes';
 import { errorMessage, idString, isRecord, nonEmptyString, positiveInt, stringValues } from '../../shared/values';
 
@@ -158,12 +158,11 @@ export async function fetchRunResult(jobRunId: string): Promise<SelectedRunState
     if (!isRecord(body)) {
       return { status: 'unavailable', reason: 'the server returned an unreadable response' };
     }
-    const outcome = parseRunOutcome(body.result);
     const snapshot = parseRunSnapshot(body);
-    if (outcome === undefined || snapshot === undefined) {
+    if (snapshot?.result === undefined) {
       return { status: 'unavailable', reason: 'the run reported no readable result' };
     }
-    return { status: 'found', outcome, snapshot };
+    return { status: 'found', outcome: snapshot.result, snapshot };
   } catch (error) {
     return { status: 'unavailable', reason: errorMessage(error) };
   }

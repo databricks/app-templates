@@ -78,8 +78,6 @@ export type RunSnapshot = {
   result?: RunOutcome;
 };
 
-export type TriggerResponse = { jobRunId: string };
-
 function parseSchemaField(raw: unknown): SchemaField | undefined {
   if (!isRecord(raw) || typeof raw.name !== 'string' || typeof raw.type !== 'string') {
     return undefined;
@@ -107,14 +105,14 @@ function parseOkPayload(raw: Record<string, unknown>): OkPayload | undefined {
     return undefined;
   }
   const schema = raw.schema.map(parseSchemaField);
-  if (schema.some((field) => field === undefined)) {
+  if (!schema.every((field) => field !== undefined)) {
     return undefined;
   }
   return {
     status: 'ok',
     target_node: raw.target_node,
     target_port: raw.target_port,
-    schema: schema as SchemaField[],
+    schema,
     rows: raw.rows.slice(0, DISPLAY_ROW_LIMIT),
     ...summarizeResultPreview(raw.rows.length, raw.truncated, raw.total_row_count),
     metrics: parseMetrics(raw.metrics),
@@ -219,10 +217,10 @@ export function parseRunOutcome(raw: unknown): RunOutcome | undefined {
     return undefined;
   }
   const outputs = raw.outputs.map(parseMatchedOutput);
-  if (outputs.some((output) => output === undefined)) {
+  if (!outputs.every((output) => output !== undefined)) {
     return undefined;
   }
-  return { outcome: 'outputs', outputs: outputs as MatchedOutput[], ...parseRunDiagnostics(raw) };
+  return { outcome: 'outputs', outputs, ...parseRunDiagnostics(raw) };
 }
 
 export function parseRunSnapshot(raw: unknown): RunSnapshot | undefined {

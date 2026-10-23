@@ -63,7 +63,7 @@ A collection of templates for building full-stack Databricks Apps with [AppKit](
 | `appkit-files` | Node.js app with file browser for Databricks Volumes | Volume |
 | `appkit-serving` | Node.js app with Databricks Model Serving endpoint integration | Serving Endpoint |
 | `appkit-lakebase` | Node.js app with Lakebase Autoscaling (Postgres) CRUD operations | Database |
-| `appkit-lakeflow-designer` | Node.js app provisioned by Lakeflow Designer to run a published flow and display its results | Designer-published Job and manifest |
+| `appkit-lakeflow-designer` | Node.js app that serves a published Lakeflow Designer flow, deployed per published flow (git-backed) | Job |
 
 <!-- appkit-end -->
 

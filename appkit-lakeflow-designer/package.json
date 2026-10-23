@@ -38,7 +38,7 @@
     "vega": "6.2.0",
     "vega-embed": "7.0.2",
     "vega-lite": "6.4.3",
-    "yaml": "2.8.2",
+    "yaml": "2.8.3",
     "zod": "4.3.6"
   },
   "devDependencies": {
@@ -67,6 +67,11 @@
   "overrides": {
     "vite": "npm:rolldown-vite@7.1.14",
     "@opentelemetry/core": "2.8.0",
+    "dompurify": "3.4.17",
+    "echarts": "6.1.0",
+    "js-yaml": "4.3.2",
+    "qs": "6.16.0",
+    "yaml": "$yaml",
     "systeminformation": "5.31.7"
   }
 }

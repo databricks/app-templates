@@ -119,6 +119,9 @@ npm start
 tool versions as the other AppKit templates. The Node test runner and Chrome fixtures exercise
 this template without a workspace; they do not replace deployed Jobs, ingress and UC validation.
 
+The lockfile and `overrides` pin compatible security fixes, including AppKit's YAML, DOMPurify
+and ECharts dependencies. Recheck these overrides when upgrading AppKit.
+
 ## Result previews
 
 Output blocks are hidden when their own disabled state or their parent group's state is `true`.

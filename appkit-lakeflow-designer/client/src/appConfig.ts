@@ -10,6 +10,23 @@ export type AppConfigState =
   | { status: 'ready'; manifest: AppManifest; runnable: boolean; notRunnableReason?: NotRunnableReason }
   | { status: 'unavailable'; detail: string };
 
+const STARTUP_RELOAD_KEY = 'designer-app:startup-reload';
+let startupReloadRequested = false;
+
+function reloadForStartup(): boolean {
+  if (startupReloadRequested) return true;
+  try {
+    // The guard must survive navigation, so skip automatic recovery if storage is unavailable.
+    if (window.sessionStorage.getItem(STARTUP_RELOAD_KEY) !== null) return false;
+    window.sessionStorage.setItem(STARTUP_RELOAD_KEY, 'pending');
+    window.location.reload();
+    startupReloadRequested = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function parseAppManifest(raw: unknown): AppManifest | undefined {
   return appManifestSchema.safeParse(raw).data;
 }
@@ -67,6 +84,14 @@ export function refreshedValuesFor(
 export async function fetchAppConfig(): Promise<AppConfigState> {
   try {
     const response = await fetch(CONFIG_ROUTE);
+    if (
+      response.status === 202 &&
+      response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() === 'text/html'
+    ) {
+      return reloadForStartup()
+        ? { status: 'loading' }
+        : { status: 'unavailable', detail: 'The App is starting. Reload the page to reconnect.' };
+    }
     if (!response.ok) {
       return { status: 'unavailable', detail: `the server returned ${response.status}` };
     }
@@ -77,6 +102,14 @@ export async function fetchAppConfig(): Promise<AppConfigState> {
     const manifest = parseAppManifest(body.manifest);
     if (manifest === undefined) {
       return { status: 'unavailable', detail: 'this app has no readable configuration' };
+    }
+    // Only a healthy response in the next document can reset automatic recovery.
+    if (!startupReloadRequested) {
+      try {
+        window.sessionStorage.removeItem(STARTUP_RELOAD_KEY);
+      } catch {
+        // Configuration remains usable when the browser denies storage access.
+      }
     }
     const reason = body.notRunnableReason;
     return {

@@ -122,6 +122,7 @@ export function App() {
     const request = ++configRequest.current;
     const next = await fetchAppConfig();
     if (request !== configRequest.current) return false;
+    if (next.status === 'loading') return false;
     const previous = currentConfig.current;
     if (next.status !== 'ready') {
       if (previous.status !== 'ready') setConfig(next);

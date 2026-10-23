@@ -325,6 +325,14 @@ reference missing from the current root with `UPLOAD_UNAVAILABLE`; the browser r
 configuration and asks for fresh files. It never retries a Job submission automatically. An entirely unobserved
 A-to-B-to-A cycle can retain an A reference; no persistent upload generation is introduced.
 
+When a configuration request receives the Apps gateway's HTTP 202 HTML startup response, the
+browser reloads the page so Databricks can show its startup screen and wake the App. Unsaved inputs
+and selected files are discarded; the user clicks Run again once the App is ready. Existing Jobs
+continue independently. A per-tab session-storage guard permits one automatic reload until a valid
+configuration loads in the new page. If startup still fails or session storage is unavailable,
+the user can reload manually. Other configuration, permission and network errors do not trigger
+automatic reloads. This adds no background polling or automatic Job submissions.
+
 `npm test` covers storage completion/partial failures, limits, parameter resolution and ownership
 policy with an in-memory storage boundary, plus server-route access checks, volume switches,
 stale-reference refusal before Job submission, upload cache invalidation, and history hydration.
@@ -480,6 +488,8 @@ local server, and covers rendering, resize/error messaging, output updates, wrap
 reloads, missing policies, and unmounting. A full-App journey also covers polling failure/recovery,
 cancellation retries, history continuation, and the republish pause. It uses the existing Vite dependencies
 and Node test runner; no browser or test packages are downloaded.
+Startup recovery checks reload the actual page and verify the loop guard, recovery on focus,
+configuration errors, and an explicit Run after waking without replaying earlier submissions.
 
 Release and select this template before deploying the matching Universe manifest-v8
 publisher. The template accepts v8 only; v7 and future manifests are rejected before

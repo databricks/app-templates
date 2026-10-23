@@ -1,5 +1,5 @@
 command: ["npm", "run", "start"]
-runtime: nodejs20
+runtime: nodejs22
 
 env:
   - name: DATABRICKS_SERVING_ENDPOINT

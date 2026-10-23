@@ -80,7 +80,7 @@ e2e-chatbot-app-next/
 ```
 
 This automated script handles:
-- Prerequisites installation (jq, nvm, Node 20, Databricks CLI)
+- Prerequisites installation (jq, nvm, Node 22, Databricks CLI)
 - Configuration file setup (.env)
 - Databricks authentication
 - Serving endpoint configuration
@@ -566,7 +566,7 @@ resources:
 ### Configuration Files
 
 - `databricks.yml` - Databricks Asset Bundle config
-- `app.yaml` - Databricks app runtime config (Node.js 20)
+- `app.yaml` - Databricks app runtime config (Node.js 22)
 - `drizzle.config.ts` - Drizzle ORM and migration configuration
 - `biome.jsonc` - Linting and formatting rules
 - `playwright.config.ts` - Test configuration
@@ -588,7 +588,7 @@ resources:
 ### Convenience Scripts
 
 - `scripts/quickstart.sh` - Interactive setup wizard for first-time deployment
-  - Installs all prerequisites (jq, nvm, Node 20, Databricks CLI)
+  - Installs all prerequisites (jq, nvm, Node 22, Databricks CLI)
   - Configures authentication and environment variables
   - Handles app/bundle name customization with validation
   - Manages database setup with conflict detection

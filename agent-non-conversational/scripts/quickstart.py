@@ -5,8 +5,8 @@ Quickstart setup script for Databricks agent development.
 NOTE: Keep this comment up to date when editing the script.
 
 Steps:
-  1. Check prerequisites — uv, Node.js (>=20.19/22.12/23), npm, Databricks CLI.
-     Exit if any are missing or Node version is unsupported by Vite.
+  1. Check prerequisites — uv, Node.js (>=22.23.4), npm, Databricks CLI.
+     Exit if any are missing or Node version is too old.
   2. Set up .env — copy .env.example → .env (or create a minimal one).
   3. Databricks auth — use --profile if provided, otherwise list existing profiles
      for interactive selection, or create a new DEFAULT profile with --host / prompt.
@@ -52,6 +52,9 @@ from pathlib import Path
 
 from ruamel.yaml import YAML
 from ruamel.yaml.scalarstring import DoubleQuotedScalarString
+
+MIN_NODE_VERSION = (22, 23, 4)
+MIN_NODE_VERSION_STR = ".".join(str(part) for part in MIN_NODE_VERSION)
 
 
 def _load_yml(path: Path):
@@ -173,7 +176,7 @@ def check_missing_prerequisites(prereqs: dict[str, bool]) -> list[str]:
         missing.append("uv - Install with: curl -LsSf https://astral.sh/uv/install.sh | sh")
 
     if not prereqs["node"] or not prereqs["npm"]:
-        missing.append("Node.js 20 - Install with: nvm install 20 (or download from nodejs.org)")
+        missing.append(f"Node.js {MIN_NODE_VERSION_STR}+ - Install with: nvm install 22 (or download from nodejs.org)")
 
     if not prereqs["databricks"]:
         if platform.system() == "Darwin":
@@ -192,10 +195,9 @@ def check_missing_prerequisites(prereqs: dict[str, bool]) -> list[str]:
 
 
 def check_node_version() -> str | None:
-    """Check if the installed Node.js version meets Vite's requirements.
+    """Check if the installed Node.js version meets the minimum requirement.
 
-    Vite requires Node.js >=20.19, >=22.12, or >=23.
-    Node 21.x is an odd-numbered release and not supported.
+    The templates require Node.js >=22.23.4.
 
     Returns None if the version is OK, or an error string if not.
     """
@@ -211,49 +213,14 @@ def check_node_version() -> str | None:
     if not match:
         return None
 
-    major, minor = int(match.group(1)), int(match.group(2))
-
-    # Node 21.x is odd-numbered and not a Vite target
-    if major == 21:
-        return (
-            f"Node.js {version_str} is not supported by Vite (odd-numbered release).\n"
-            "  Please install Node.js 20.19+, 22.12+, or 23+.\n"
-            "  Run: nvm install 22"
-        )
-
-    # Check supported version ranges
-    if major == 20 and minor >= 19:
+    version = tuple(int(part) for part in match.groups())
+    if version >= MIN_NODE_VERSION:
         return None
-    if major == 22 and minor >= 12:
-        return None
-    if major >= 23:
-        return None
-
-    # Version is too old or unsupported
-    if major == 20:
-        return (
-            f"Node.js {version_str} is too old for Vite (requires 20.19+).\n"
-            f"  Your version: {version_str}\n"
-            "  Run: nvm install 20  (to get latest 20.x)"
-        )
-    if major == 22:
-        return (
-            f"Node.js {version_str} is too old for Vite (requires 22.12+).\n"
-            f"  Your version: {version_str}\n"
-            "  Run: nvm install 22  (to get latest 22.x)"
-        )
-
-    if major < 20:
-        return (
-            f"Node.js {version_str} is too old for Vite (requires 20.19+).\n"
-            f"  Your version: {version_str}\n"
-            "  Run: nvm install 22"
-        )
 
     return (
-        f"Node.js {version_str} is not supported by Vite.\n"
-        "  Vite requires Node.js 20.19+, 22.12+, or 23+.\n"
-        "  Run: nvm install 22"
+        f"Node.js {version_str} is too old (requires {MIN_NODE_VERSION_STR}+).\n"
+        f"  Your version: {version_str}\n"
+        "  Run: nvm install 22  (to get latest 22.x)"
     )
 
 
@@ -1391,7 +1358,7 @@ Examples:
             print("\nPlease install the missing prerequisites and run this script again.")
             sys.exit(1)
 
-        # Check Node.js version meets Vite requirements
+        # Check Node.js version meets the minimum requirement
         node_error = check_node_version()
         if node_error:
             print_error(f"Node.js version check failed:\n  {node_error}")

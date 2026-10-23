@@ -119,7 +119,7 @@ Use our automated quickstart script for the fastest setup experience:
    ```
 
    The quickstart script will:
-   - **Install prerequisites** - Automatically installs jq, nvm, Node.js 20, and Databricks CLI
+   - **Install prerequisites** - Automatically installs jq, nvm, Node.js 22, and Databricks CLI
    - **Configure authentication** - Helps you select or create a Databricks CLI profile
    - **Set up serving endpoint** - Prompts for your endpoint name and validates it exists
    - **Database setup (optional)** - Choose persistent chat history or ephemeral mode

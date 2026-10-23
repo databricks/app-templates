@@ -183,11 +183,11 @@ else
     echo "✓ nvm installed successfully"
 fi
 
-# Use Node 20
-echo "Setting up Node.js 20..."
-nvm install 20
-nvm use 20
-echo "✓ Node.js 20 is now active"
+# Use Node 22
+echo "Setting up Node.js 22..."
+nvm install 22
+nvm use 22
+echo "✓ Node.js 22 is now active"
 node --version
 npm --version
 echo

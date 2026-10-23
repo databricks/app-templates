@@ -42,9 +42,9 @@ This will start the agent server and the chat app at http://localhost:8000.
 
    - [`uv` installation docs](https://docs.astral.sh/uv/getting-started/installation/)
    - [`nvm` installation](https://github.com/nvm-sh/nvm?tab=readme-ov-file#installing-and-updating)
-     - Run the following to use Node 20 LTS:
+     - Run the following to use Node 22.23.4 or later:
        ```bash
-       nvm use 20
+       nvm install 22 && nvm use 22
        ```
    - [`databricks CLI` installation](https://docs.databricks.com/aws/en/dev-tools/cli/install)
 

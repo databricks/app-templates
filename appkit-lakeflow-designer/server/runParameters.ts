@@ -32,9 +32,9 @@ function displayOutputsFor(manifest: ParameterManifest): string {
   return Array.from(
     new Set(
       (manifest.blocks ?? []).flatMap((block) =>
-        block.type === 'output' && typeof block.nodeId === 'string' && block.nodeId !== '' ? [block.nodeId] : [],
-      ),
-    ),
+        block.type === 'output' && typeof block.nodeId === 'string' && block.nodeId !== '' ? [block.nodeId] : []
+      )
+    )
   ).join(',');
 }
 
@@ -42,16 +42,18 @@ export async function resolveRunParameters(
   manifest: ParameterManifest,
   submitted: Record<string, unknown>,
   viewer: string | undefined,
-  store: UploadStore,
-): Promise<{ ok: true; params: Record<string, string> } | { ok: false; error: string; code?: typeof UPLOAD_UNAVAILABLE }> {
+  store: UploadStore
+): Promise<
+  { ok: true; params: Record<string, string> } | { ok: false; error: string; code?: typeof UPLOAD_UNAVAILABLE }
+> {
   // Pin hidden defaults as well as exposed inputs to the selected publication. A Job reset can
   // race submission, so inheriting the Job's newer defaults would mix publication versions.
   const params: Record<string, string> = { ...manifest.runner?.parameters };
   const filenames = new Map<string, string>();
   const fileOutputs = Object.fromEntries(
     (manifest.blocks ?? []).flatMap((block) =>
-      block.type === 'output' && block.nodeId && block.fileOutput ? [[block.nodeId, block.fileOutput]] : [],
-    ),
+      block.type === 'output' && block.nodeId && block.fileOutput ? [[block.nodeId, block.fileOutput]] : []
+    )
   );
   if (!viewer) return { ok: false, error: 'Sign in through Databricks Apps to run this app.' };
   for (const parameter of manifest.parameters) {
@@ -68,10 +70,20 @@ export async function resolveRunParameters(
       params[parameter.name] = resolved;
       continue;
     }
+    if (
+      raw !== undefined &&
+      raw !== null &&
+      typeof raw !== 'string' &&
+      typeof raw !== 'number' &&
+      typeof raw !== 'boolean'
+    ) {
+      return { ok: false, error: `"${parameter.label}" must be a string, number or boolean.` };
+    }
     const value = raw === undefined || raw === null ? '' : String(raw);
     const resolved = value.trim() === '' ? parameter.defaultValue : value;
     if (parameter.type === 'file') {
-      if (!manifest.storage || !viewer) return { ok: false, error: UPLOAD_UNAVAILABLE_MESSAGE, code: UPLOAD_UNAVAILABLE };
+      if (!manifest.storage || !viewer)
+        return { ok: false, error: UPLOAD_UNAVAILABLE_MESSAGE, code: UPLOAD_UNAVAILABLE };
       try {
         const { path, upload } = await resolveUpload(store, manifest.storage, viewer, parameter.name, resolved);
         const formatError = validateFileFormat(upload.filename, parameter.fileFormats);
@@ -113,11 +125,19 @@ export async function resolveRunParameters(
   params[APP_VIEWER_PARAM] = viewer;
   // Preserve labels and resolved values at submission time, including inputs later removed or
   // renamed on republish. File reporting exposes the filename rather than its private storage path.
-  params[APP_PARAMETERS_PARAM] = JSON.stringify(Object.fromEntries(
-    manifest.parameters.filter(({ name }) => !isReservedParameter(name)).map((parameter) => [
-      parameter.name,
-      { label: parameter.label, type: parameter.type, value: filenames.get(parameter.name) ?? params[parameter.name] },
-    ]),
-  ));
+  params[APP_PARAMETERS_PARAM] = JSON.stringify(
+    Object.fromEntries(
+      manifest.parameters
+        .filter(({ name }) => !isReservedParameter(name))
+        .map((parameter) => [
+          parameter.name,
+          {
+            label: parameter.label,
+            type: parameter.type,
+            value: filenames.get(parameter.name) ?? params[parameter.name],
+          },
+        ])
+    )
+  );
   return { ok: true, params };
 }

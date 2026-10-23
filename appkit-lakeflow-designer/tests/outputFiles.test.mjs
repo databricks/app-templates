@@ -12,19 +12,34 @@ before(async () => {
   outputDirectory = await mkdtemp(fileURLToPath(new URL('../.output-file-tests-', import.meta.url)));
   await build({
     entry: { outputFiles: 'server/outputFiles.ts', runRevision: 'server/runRevision.ts' },
-    config: false, tsconfig: 'tsconfig.server.json', outDir: outputDirectory,
-    outExtensions: () => ({ js: '.mjs' }), logLevel: 'silent',
+    config: false,
+    tsconfig: 'tsconfig.server.json',
+    outDir: outputDirectory,
+    outExtensions: () => ({ js: '.mjs' }),
+    logLevel: 'silent',
   });
-  ({ registerOutputFileRoutes, recordedFileOutput } = await import(pathToFileURL(join(outputDirectory, 'outputFiles.mjs')).href));
+  ({ registerOutputFileRoutes, recordedFileOutput } = await import(
+    pathToFileURL(join(outputDirectory, 'outputFiles.mjs')).href
+  ));
   ({ manifestRevision } = await import(pathToFileURL(join(outputDirectory, 'runRevision.mjs')).href));
 });
-after(async () => { if (outputDirectory) await rm(outputDirectory, { recursive: true }); });
+after(async () => {
+  if (outputDirectory) await rm(outputDirectory, { recursive: true });
+});
 
 async function harness(t) {
   const manifest = {
-    version: 8, appName: 'Output app', parameters: [{ name: 'filename' }],
+    version: 8,
+    appName: 'Output app',
+    parameters: [{ name: 'filename' }],
     blocks: [
-      { type: 'output', id: 'out', nodeId: 'output_0', port: 'result', fileOutput: { volumes: ['main.apps.files', 'main.apps.other'] } },
+      {
+        type: 'output',
+        id: 'out',
+        nodeId: 'output_0',
+        port: 'result',
+        fileOutput: { volumes: ['main.apps.files', 'main.apps.other'] },
+      },
       { type: 'output', id: 'preview', nodeId: 'source', port: 'data' },
     ],
   };
@@ -32,10 +47,15 @@ async function harness(t) {
   const runnerRevision = 'b'.repeat(64);
   const notebookPath = `/Users/author/app/runner-${runnerRevision}.designer.py`;
   const state = {
-    manifest, notebookPath, reports: [], reads: [],
+    manifest,
+    notebookPath,
+    reports: [],
+    reads: [],
     receipts: [{ node: 'output_0', files: [{ path: '/Volumes/main/apps/files/report.csv' }] }],
     run: {
-      run_id: 1, job_id: 10, state: { life_cycle_state: 'TERMINATED', result_state: 'SUCCESS' },
+      run_id: 1,
+      job_id: 10,
+      state: { life_cycle_state: 'TERMINATED', result_state: 'SUCCESS' },
       tasks: [{ run_id: 2, notebook_task: { notebook_path: notebookPath } }],
       job_parameters: Object.entries({
         _lb_app_viewer: viewer,
@@ -48,8 +68,11 @@ async function harness(t) {
   const files = new Map([['/Volumes/main/apps/files/report.csv', Buffer.from('price\n42\n')]]);
   const app = express();
   registerOutputFileRoutes(app, {
-    jobId: '10', manifest: async () => state.manifest, viewer: (req) => req.get('x-viewer'),
-    notebookPath: async () => state.notebookPath, getRun: async (id) => id === 1 ? state.run : undefined,
+    jobId: '10',
+    manifest: async () => state.manifest,
+    viewer: (req) => req.get('x-viewer'),
+    notebookPath: async () => state.notebookPath,
+    getRun: async (id) => (id === 1 ? state.run : undefined),
     readPayload: async (taskId) => {
       assert.equal(taskId, '2');
       return JSON.stringify({ outputs: [], files: state.receipts });
@@ -58,20 +81,29 @@ async function harness(t) {
       size: async (path) => files.get(path)?.length,
       download: async (path) => {
         state.reads.push({ volume, path });
-        return state.stream ? state.stream() : new ReadableStream({
-          start(controller) { controller.enqueue(files.get(path)); controller.close(); },
-        });
+        return state.stream
+          ? state.stream()
+          : new ReadableStream({
+              start(controller) {
+                controller.enqueue(files.get(path));
+                controller.close();
+              },
+            });
       },
     }),
     report: (error) => state.reports.push(error),
   });
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
-  t.after(() => { server.closeAllConnections(); server.close(); });
-  const call = (path = '/1/files/out/0/download', options = {}) => fetch(
-    `http://127.0.0.1:${server.address().port}/api/designer/run${path}`,
-    { ...options, headers: { 'x-viewer': viewer, ...options.headers } },
-  );
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
+  });
+  const call = (path = '/1/files/out/0/download', options = {}) =>
+    fetch(`http://127.0.0.1:${server.address().port}/api/designer/run${path}`, {
+      ...options,
+      headers: { 'x-viewer': viewer, ...options.headers },
+    });
   return { state, files, call };
 }
 
@@ -127,9 +159,13 @@ test('completed write receipts survive later preview/count errors and failed sib
 
 test('presentation-only changes preserve downloads while execution changes require a new run', async (t) => {
   const h = await harness(t);
-  h.state.manifest = { ...h.state.manifest, appName: 'Renamed', provenance: { publishedAt: 5000 },
+  h.state.manifest = {
+    ...h.state.manifest,
+    appName: 'Renamed',
+    provenance: { publishedAt: 5000 },
     parameters: [{ name: 'filename', defaultValue: 'changed' }],
-    blocks: h.state.manifest.blocks.toReversed().map((block) => ({ ...block, label: 'Changed' })) };
+    blocks: h.state.manifest.blocks.toReversed().map((block) => ({ ...block, label: 'Changed' })),
+  };
   assert.equal((await h.call()).status, 200);
   h.state.manifest.blocks.find((block) => block.id === 'out').fileOutput.volumes.push('main.apps.new');
   assert.equal((await h.call()).status, 409);
@@ -141,36 +177,121 @@ function setRunParameter(run, name, value) {
 }
 
 for (const [label, mutate, status] of [
-  ['wrong job', (h) => { h.state.run.job_id = 11; }, 404],
-  ['wrong owner', (h) => { setRunParameter(h.state.run, '_lb_app_viewer', 'other'); }, 404],
-  ['missing owner', (h) => { delete h.state.run.job_parameters; }, 404],
-  ['legacy export run', (h) => { setRunParameter(h.state.run, '_lb_export_request', '{}'); }, 404],
-  ['missing revision', (h) => { setRunParameter(h.state.run, '_lb_app_revision', undefined); }, 409],
-  ['unverified runner path', (h) => { h.state.run.tasks[0].notebook_task.notebook_path = '/Users/other/runner.designer.py'; }, 409],
-  ['missing runner revision', (h) => { setRunParameter(h.state.run, '_lb_runner_revision', undefined); }, 409],
-  ['missing run policy', (h) => { setRunParameter(h.state.run, '_lb_file_outputs', undefined); }, 409],
-  ['changed run policy', (h) => { setRunParameter(h.state.run, '_lb_file_outputs', JSON.stringify({ output_0: { volumes: ['main.apps.other'] } })); }, 409],
-  ['missing artifact', (h) => { h.files.clear(); }, 404],
-  ['missing receipt', (h) => { h.state.receipts = []; }, 404],
-  ['duplicate receipt', (h) => { h.state.receipts.push(h.state.receipts[0]); }, 404],
-  ['another node receipt', (h) => { h.state.receipts[0].node = 'source'; }, 404],
+  [
+    'wrong job',
+    (h) => {
+      h.state.run.job_id = 11;
+    },
+    404,
+  ],
+  [
+    'wrong owner',
+    (h) => {
+      setRunParameter(h.state.run, '_lb_app_viewer', 'other');
+    },
+    404,
+  ],
+  [
+    'missing owner',
+    (h) => {
+      delete h.state.run.job_parameters;
+    },
+    404,
+  ],
+  [
+    'legacy export run',
+    (h) => {
+      setRunParameter(h.state.run, '_lb_export_request', '{}');
+    },
+    404,
+  ],
+  [
+    'missing revision',
+    (h) => {
+      setRunParameter(h.state.run, '_lb_app_revision', undefined);
+    },
+    409,
+  ],
+  [
+    'unverified runner path',
+    (h) => {
+      h.state.run.tasks[0].notebook_task.notebook_path = '/Users/other/runner.designer.py';
+    },
+    409,
+  ],
+  [
+    'missing runner revision',
+    (h) => {
+      setRunParameter(h.state.run, '_lb_runner_revision', undefined);
+    },
+    409,
+  ],
+  [
+    'missing run policy',
+    (h) => {
+      setRunParameter(h.state.run, '_lb_file_outputs', undefined);
+    },
+    409,
+  ],
+  [
+    'changed run policy',
+    (h) => {
+      setRunParameter(h.state.run, '_lb_file_outputs', JSON.stringify({ output_0: { volumes: ['main.apps.other'] } }));
+    },
+    409,
+  ],
+  [
+    'missing artifact',
+    (h) => {
+      h.files.clear();
+    },
+    404,
+  ],
+  [
+    'missing receipt',
+    (h) => {
+      h.state.receipts = [];
+    },
+    404,
+  ],
+  [
+    'duplicate receipt',
+    (h) => {
+      h.state.receipts.push(h.state.receipts[0]);
+    },
+    404,
+  ],
+  [
+    'another node receipt',
+    (h) => {
+      h.state.receipts[0].node = 'source';
+    },
+    404,
+  ],
 ]) {
   test(`rejects ${label} before reading any file`, async (t) => {
-    const h = await harness(t); mutate(h);
+    const h = await harness(t);
+    mutate(h);
     assert.equal((await h.call()).status, status);
     assert.deepEqual(h.state.reads, []);
   });
 }
 
 for (const path of [
-  '/Volumes/main/apps/files_other/report.csv', '/Volumes/main/apps/secret/report.csv',
-  '/Volumes/main/apps/files/../secret/report.csv', '/Volumes/main/apps/files/a/./report.csv',
-  '/Volumes/main/apps/files//report.csv', '/Volumes/main/apps/files/back\\slash.csv',
-  '/Volumes/main/apps/files/bad\nname.csv', '/Volumes/main/apps/files/private.py',
-  's3://bucket/report.csv', '/Volumes/main/apps/files/report.xlsx/',
+  '/Volumes/main/apps/files_other/report.csv',
+  '/Volumes/main/apps/secret/report.csv',
+  '/Volumes/main/apps/files/../secret/report.csv',
+  '/Volumes/main/apps/files/a/./report.csv',
+  '/Volumes/main/apps/files//report.csv',
+  '/Volumes/main/apps/files/back\\slash.csv',
+  '/Volumes/main/apps/files/bad\nname.csv',
+  '/Volumes/main/apps/files/private.py',
+  's3://bucket/report.csv',
+  '/Volumes/main/apps/files/report.xlsx/',
 ]) {
   test(`rejects unsafe or undeclared artifact path ${JSON.stringify(path)}`, async (t) => {
-    const h = await harness(t); h.state.receipts[0].files[0].path = path;
+    const h = await harness(t);
+    h.state.receipts[0].files[0].path = path;
     assert.equal((await h.call()).status, 404);
     assert.deepEqual(h.state.reads, []);
   });
@@ -179,7 +300,12 @@ for (const path of [
 test('rejects anonymous, preview-only, invalid index and partial download requests', async (t) => {
   const h = await harness(t);
   assert.equal((await h.call(undefined, { headers: { 'x-viewer': '' } })).status, 401);
-  for (const path of ['/1/files/preview/0/download', '/1/files/out/-1/download', '/1/files/out/00/download', '/2/files/out/0/download'])
+  for (const path of [
+    '/1/files/preview/0/download',
+    '/1/files/out/-1/download',
+    '/1/files/out/00/download',
+    '/2/files/out/0/download',
+  ])
     assert.equal((await h.call(path)).status, 404);
   assert.equal((await h.call(undefined, { method: 'HEAD' })).status, 405);
   assert.equal((await h.call(undefined, { headers: { range: 'bytes=0-3' } })).status, 416);
@@ -187,19 +313,32 @@ test('rejects anonymous, preview-only, invalid index and partial download reques
 });
 
 test('rejects duplicate or too many files as an entire invalid receipt', () => {
-  for (const files of [[{ path: '/Volumes/main/apps/files/a.csv' }, { path: '/Volumes/main/apps/files/a.csv' }],
-    Array.from({ length: 51 }, (_, index) => ({ path: `/Volumes/main/apps/files/${index}.csv` }))]) {
-    assert.equal(recordedFileOutput(JSON.stringify({ files: [{ node: 'out', files }] }), 'out', { volumes: ['main.apps.files'] }), undefined);
+  for (const files of [
+    [{ path: '/Volumes/main/apps/files/a.csv' }, { path: '/Volumes/main/apps/files/a.csv' }],
+    Array.from({ length: 51 }, (_, index) => ({ path: `/Volumes/main/apps/files/${index}.csv` })),
+  ]) {
+    assert.equal(
+      recordedFileOutput(JSON.stringify({ files: [{ node: 'out', files }] }), 'out', { volumes: ['main.apps.files'] }),
+      undefined
+    );
   }
-  assert.deepEqual(recordedFileOutput(JSON.stringify({ files: [{ node: 'out', files: [] }] }), 'out', { volumes: ['main.apps.files'] }), { node: 'out', files: [] });
+  assert.deepEqual(
+    recordedFileOutput(JSON.stringify({ files: [{ node: 'out', files: [] }] }), 'out', {
+      volumes: ['main.apps.files'],
+    }),
+    { node: 'out', files: [] }
+  );
 });
 
 test('retains recorded write behavior without inferring it from the file path or current policy', () => {
   const files = [{ path: '/Volumes/main/apps/files/_designer_apps/old-namespace/report.csv' }];
   for (const behavior of ['run_artifact', 'shared_append', 'shared_workbook_update', undefined, 'unknown', null, {}]) {
-    const receipt = recordedFileOutput(JSON.stringify({ files: [{ node: 'out', files, behavior }] }), 'out', { volumes: ['main.apps.files'] });
+    const receipt = recordedFileOutput(JSON.stringify({ files: [{ node: 'out', files, behavior }] }), 'out', {
+      volumes: ['main.apps.files'],
+    });
     assert.deepEqual(receipt, {
-      node: 'out', files,
+      node: 'out',
+      files,
       ...(['run_artifact', 'shared_append', 'shared_workbook_update'].includes(behavior) ? { behavior } : {}),
     });
   }
@@ -211,15 +350,27 @@ test('each run downloads its recorded namespaced artifact rather than the latest
   h.state.receipts[0] = { node: 'output_0', behavior: 'run_artifact', files: [{ path }] };
   h.files.set(path, Buffer.from('first run\n'));
   h.files.set('/Volumes/main/apps/files/report.csv', Buffer.from('latest shared file\n'));
-  h.files.set('/Volumes/main/apps/files/_designer_apps/new-submission/attempt/output_0/report.csv', Buffer.from('next run\n'));
+  h.files.set(
+    '/Volumes/main/apps/files/_designer_apps/new-submission/attempt/output_0/report.csv',
+    Buffer.from('next run\n')
+  );
   assert.equal(await (await h.call()).text(), 'first run\n');
   assert.deepEqual(h.state.reads, [{ volume: 'main.apps.files', path }]);
 });
 
 test('aborts incomplete transfers without deleting the source file', async (t) => {
   const h = await harness(t);
-  h.state.stream = () => new ReadableStream({ start(controller) { controller.enqueue(Buffer.from('p')); controller.close(); } });
-  await assert.rejects(async () => { const response = await h.call(); await response.arrayBuffer(); });
+  h.state.stream = () =>
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(Buffer.from('p'));
+        controller.close();
+      },
+    });
+  await assert.rejects(async () => {
+    const response = await h.call();
+    await response.arrayBuffer();
+  });
   assert.equal(h.files.size, 1);
   assert.equal(h.state.reports.length, 1);
 });

@@ -15,37 +15,59 @@ before(async () => {
   outputDirectory = await mkdtemp(fileURLToPath(new URL('../.upload-download-tests-', import.meta.url)));
   await build({
     entry: {
-      uploads: 'server/uploads.ts', fileUploads: 'server/fileUploads.ts', routes: 'client/src/routes.ts',
-      FileParameterControl: 'client/src/FileParameterControl.tsx', LastRunLabel: 'client/src/LastRunLabel.tsx',
+      uploads: 'server/uploads.ts',
+      fileUploads: 'server/fileUploads.ts',
+      routes: 'client/src/routes.ts',
+      FileParameterControl: 'client/src/FileParameterControl.tsx',
+      LastRunLabel: 'client/src/LastRunLabel.tsx',
     },
-    config: false, tsconfig: 'tsconfig.client.json', outDir: outputDirectory,
+    config: false,
+    tsconfig: 'tsconfig.client.json',
+    outDir: outputDirectory,
     noExternal: [/^@databricks\/appkit-ui(?:\/|$)/],
-    outExtensions: () => ({ js: '.mjs' }), logLevel: 'silent',
+    outExtensions: () => ({ js: '.mjs' }),
+    logLevel: 'silent',
   });
   ({ registerUploadRoutes } = await import(pathToFileURL(join(outputDirectory, 'uploads.mjs')).href));
-  ({ saveUpload, resolveUpload, viewerKey, UploadError } = await import(pathToFileURL(join(outputDirectory, 'fileUploads.mjs')).href));
+  ({ saveUpload, resolveUpload, viewerKey, UploadError } = await import(
+    pathToFileURL(join(outputDirectory, 'fileUploads.mjs')).href
+  ));
   ({ uploadDownloadRoute } = await import(pathToFileURL(join(outputDirectory, 'routes.mjs')).href));
   ({ FileParameterControl } = await import(pathToFileURL(join(outputDirectory, 'FileParameterControl.mjs')).href));
   ({ LastRunLabel } = await import(pathToFileURL(join(outputDirectory, 'LastRunLabel.mjs')).href));
 });
-after(async () => { if (outputDirectory) await rm(outputDirectory, { recursive: true }); });
+after(async () => {
+  if (outputDirectory) await rm(outputDirectory, { recursive: true });
+});
 
 const storage = {
-  volume: 'main.apps.files', path: '/Volumes/main/apps/files/designer_apps/app1',
+  volume: 'main.apps.files',
+  path: '/Volumes/main/apps/files/designer_apps/app1',
   maxUploadFileSizeBytes: 5 * 1024 * 1024 * 1024,
 };
 const parameter = { name: 'path', label: 'Input file', type: 'file', defaultValue: '' };
 
 async function harness(t, { filename = 'sales.csv', bytes = Buffer.from('price\n42\n'), name = 'path' } = {}) {
   const state = {
-    jobId: '100', reads: [], reports: [],
-    manifest: { storage, parameters: [{ ...parameter, name }, { ...parameter, name: 'other' }] },
+    jobId: '100',
+    reads: [],
+    reports: [],
+    manifest: {
+      storage,
+      parameters: [
+        { ...parameter, name },
+        { ...parameter, name: 'other' },
+      ],
+    },
   };
   // Preserve actual upload bytes and sidecars; only UC storage is replaced.
   const files = new Map();
   const store = {
     mkdir: async () => {},
-    put: async (path, contents) => { assert.equal(files.has(path), false); files.set(path, Buffer.from(contents)); },
+    put: async (path, contents) => {
+      assert.equal(files.has(path), false);
+      files.set(path, Buffer.from(contents));
+    },
     putStream: async (path, stream) => {
       assert.equal(files.has(path), false);
       files.set(path, Buffer.from(await new Response(stream).arrayBuffer()));
@@ -58,11 +80,18 @@ async function harness(t, { filename = 'sales.csv', bytes = Buffer.from('price\n
     download: async (path) => {
       state.reads.push(path);
       if (state.downloadError) throw state.downloadError;
-      return state.stream ? state.stream() : new ReadableStream({
-        start(controller) { controller.enqueue(files.get(path)); controller.close(); },
-      });
+      return state.stream
+        ? state.stream()
+        : new ReadableStream({
+            start(controller) {
+              controller.enqueue(files.get(path));
+              controller.close();
+            },
+          });
     },
-    delete: async (path) => { files.delete(path); },
+    delete: async (path) => {
+      files.delete(path);
+    },
   };
   const owner = viewerKey('alice', '100');
   const upload = await saveUpload(store, storage, owner, name, filename, bytes);
@@ -76,12 +105,16 @@ async function harness(t, { filename = 'sales.csv', bytes = Buffer.from('price\n
   });
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
-  t.after(() => { server.closeAllConnections(); server.close(); });
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
+  });
   const origin = `http://127.0.0.1:${server.address().port}`;
-  const call = (options = {}) => fetch(
-    `${origin}${uploadDownloadRoute(options.name ?? name, options.reference ?? upload.reference)}${options.query ?? ''}`,
-    { ...options, headers: { 'x-forwarded-user': 'alice', ...options.headers } },
-  );
+  const call = (options = {}) =>
+    fetch(
+      `${origin}${uploadDownloadRoute(options.name ?? name, options.reference ?? upload.reference)}${options.query ?? ''}`,
+      { ...options, headers: { 'x-forwarded-user': 'alice', ...options.headers } }
+    );
   return { state, files, store, upload, path, call, origin };
 }
 
@@ -105,7 +138,8 @@ test('downloads completed uploads repeatedly and concurrently without changing f
 test('serves an upload confirmed by the HTTP upload route before any job is started', async (t) => {
   const h = await harness(t);
   const response = await fetch(`${h.origin}/api/designer/uploads/path`, {
-    method: 'POST', headers: { 'x-forwarded-user': 'alice', 'content-type': 'application/octet-stream', 'x-file-name': 'new.json' },
+    method: 'POST',
+    headers: { 'x-forwarded-user': 'alice', 'content-type': 'application/octet-stream', 'x-file-name': 'new.json' },
     body: Buffer.from('{"value":1}'),
   });
   assert.equal(response.status, 201);
@@ -129,14 +163,70 @@ for (const [label, change, options, status] of [
   ['another viewer', () => {}, { headers: { 'x-forwarded-user': 'bob' } }, 404],
   ['missing identity', () => {}, { headers: { 'x-forwarded-user': '' } }, 401],
   ['another parameter', () => {}, { name: 'other' }, 404],
-  ['another app', (h) => { h.state.jobId = '200'; }, {}, 404],
-  ['a removed parameter', (h) => { h.state.manifest.parameters = []; }, {}, 404],
-  ['a text parameter', (h) => { h.state.manifest.parameters[0].type = 'text'; }, {}, 404],
-  ['missing storage', (h) => { delete h.state.manifest.storage; }, {}, 404],
-  ['a different upload root', (h) => { h.state.manifest.storage = { ...storage, path: storage.path.replace('app1', 'app2') }; }, {}, 404],
-  ['a missing file', (h) => { h.files.delete(h.path); }, {}, 409],
-  ['changed file bytes', (h) => { h.files.set(h.path, Buffer.from('changed')); }, {}, 409],
-  ['an incomplete upload', (h) => { h.files.delete(`${h.path.slice(0, h.path.lastIndexOf('/'))}.json`); }, {}, 404],
+  [
+    'another app',
+    (h) => {
+      h.state.jobId = '200';
+    },
+    {},
+    404,
+  ],
+  [
+    'a removed parameter',
+    (h) => {
+      h.state.manifest.parameters = [];
+    },
+    {},
+    404,
+  ],
+  [
+    'a text parameter',
+    (h) => {
+      h.state.manifest.parameters[0].type = 'text';
+    },
+    {},
+    404,
+  ],
+  [
+    'missing storage',
+    (h) => {
+      delete h.state.manifest.storage;
+    },
+    {},
+    404,
+  ],
+  [
+    'a different upload root',
+    (h) => {
+      h.state.manifest.storage = { ...storage, path: storage.path.replace('app1', 'app2') };
+    },
+    {},
+    404,
+  ],
+  [
+    'a missing file',
+    (h) => {
+      h.files.delete(h.path);
+    },
+    {},
+    409,
+  ],
+  [
+    'changed file bytes',
+    (h) => {
+      h.files.set(h.path, Buffer.from('changed'));
+    },
+    {},
+    409,
+  ],
+  [
+    'an incomplete upload',
+    (h) => {
+      h.files.delete(`${h.path.slice(0, h.path.lastIndexOf('/'))}.json`);
+    },
+    {},
+    404,
+  ],
   ['an invalid reference', () => {}, { reference: 'upload:invalid' }, 400],
   ['an arbitrary volume path', () => {}, { reference: '/Volumes/main/apps/files/private.csv' }, 400],
   ['a HEAD request', () => {}, { method: 'HEAD' }, 405],
@@ -167,12 +257,24 @@ test('rejects an unsafe completion record and reports storage failures without e
   assert.equal(h.state.reports.length, 1);
 });
 
-for (const [label, bytes] of [['short', Buffer.from('p')], ['oversized', Buffer.alloc(10)]]) {
+for (const [label, bytes] of [
+  ['short', Buffer.from('p')],
+  ['oversized', Buffer.alloc(10)],
+]) {
   test(`aborts ${label} transfers and retains the original upload for retry`, async (t) => {
     const h = await harness(t);
     const original = new Map(h.files);
-    h.state.stream = () => new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close(); } });
-    await assert.rejects(async () => { const response = await h.call(); await response.arrayBuffer(); });
+    h.state.stream = () =>
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(bytes);
+          controller.close();
+        },
+      });
+    await assert.rejects(async () => {
+      const response = await h.call();
+      await response.arrayBuffer();
+    });
     assert.equal(h.state.reports.length, 1);
     assert.deepEqual(h.files, original);
     delete h.state.stream;
@@ -184,18 +286,30 @@ test('cancels UC reading on a disconnected download and retains the upload', asy
   const h = await harness(t);
   const original = new Map(h.files);
   let notify;
-  const cancelled = new Promise((resolve) => { notify = resolve; });
-  h.state.stream = () => new ReadableStream({
-    start(controller) { controller.enqueue(Buffer.from('p')); },
-    cancel() { notify(); },
+  const cancelled = new Promise((resolve) => {
+    notify = resolve;
   });
+  h.state.stream = () =>
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(Buffer.from('p'));
+      },
+      cancel() {
+        notify();
+      },
+    });
   const controller = new AbortController();
   const response = await h.call({ signal: controller.signal });
   const reader = response.body.getReader();
   assert.equal(Buffer.from((await reader.read()).value).toString(), 'p');
   controller.abort();
   const timeout = setTimeout(() => notify('timeout'), 2000);
-  try { assert.equal(await cancelled, undefined); } finally { clearTimeout(timeout); reader.releaseLock(); }
+  try {
+    assert.equal(await cancelled, undefined);
+  } finally {
+    clearTimeout(timeout);
+    reader.releaseLock();
+  }
   assert.deepEqual(h.files, original);
 });
 
@@ -212,15 +326,28 @@ test('keeps file selection controls without a Download action', () => {
 test('links uploaded filenames in run summaries without making ordinary parameters downloadable', async (t) => {
   const h = await harness(t);
   const props = {
-    run: { jobRunId: '1', endTime: 1000 }, parameters: { path: h.upload.reference },
-    parameterDisplayValues: { path: h.upload.filename }, declared: [parameter], variant: 'historical',
+    run: { jobRunId: '1', endTime: 1000 },
+    parameters: { path: h.upload.reference },
+    parameterDisplayValues: { path: h.upload.filename },
+    declared: [parameter],
+    variant: 'historical',
   };
   const html = renderToStaticMarkup(createElement(LastRunLabel, props));
   assert.match(html, /Selected run/);
   assert.match(html, /aria-label="Download sales.csv"/);
   const href = /href="([^"]+\/download)"/.exec(html)[1];
-  assert.equal(await (await fetch(`${h.origin}${href}`, { headers: { 'x-forwarded-user': 'alice' } })).text(), 'price\n42\n');
-  for (const changes of [{ declared: [] }, { declared: [{ ...parameter, type: 'text' }] }, { parameterDisplayValues: undefined }]) {
-    assert.doesNotMatch(renderToStaticMarkup(createElement(LastRunLabel, { ...props, ...changes })), /aria-label="Download/);
+  assert.equal(
+    await (await fetch(`${h.origin}${href}`, { headers: { 'x-forwarded-user': 'alice' } })).text(),
+    'price\n42\n'
+  );
+  for (const changes of [
+    { declared: [] },
+    { declared: [{ ...parameter, type: 'text' }] },
+    { parameterDisplayValues: undefined },
+  ]) {
+    assert.doesNotMatch(
+      renderToStaticMarkup(createElement(LastRunLabel, { ...props, ...changes })),
+      /aria-label="Download/
+    );
   }
 });

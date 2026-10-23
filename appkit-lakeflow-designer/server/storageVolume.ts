@@ -7,7 +7,7 @@ export const denyDiscoveredVolumes = () =>
   Object.fromEntries(
     Object.keys(process.env)
       .filter((key) => key.startsWith('DATABRICKS_VOLUME_') && process.env[key])
-      .map((key) => [key.slice('DATABRICKS_VOLUME_'.length).toLowerCase(), { policy: () => false }]),
+      .map((key) => [key.slice('DATABRICKS_VOLUME_'.length).toLowerCase(), { policy: () => false }])
   );
 
 let pendingVolumeSetup: Promise<unknown> = Promise.resolve();

@@ -16,8 +16,11 @@ export const HTML_OUTPUT_CSP = [
 
 // The parent policy also restricts navigation of the output frame itself.
 export const HTML_OUTPUT_WRAPPER_CSP = "frame-src 'none'";
-export const HTML_OUTPUT_WRAPPER_DOCUMENT = '<!doctype html><html><head>' +
-  '<meta http-equiv="Content-Security-Policy" content="' + HTML_OUTPUT_WRAPPER_CSP + '">' +
+export const HTML_OUTPUT_WRAPPER_DOCUMENT =
+  '<!doctype html><html><head>' +
+  '<meta http-equiv="Content-Security-Policy" content="' +
+  HTML_OUTPUT_WRAPPER_CSP +
+  '">' +
   '</head><body></body></html>';
 
 // The frame can report display state only; it has no bridge to App credentials or APIs.
@@ -40,6 +43,11 @@ const FRAME_BOOTSTRAP = `<script>
 
 export function htmlOutputDocument(html: string): string {
   // A policy before all author content cannot be relaxed by a later meta element or script.
-  return '<!doctype html><meta http-equiv="Content-Security-Policy" content="' + HTML_OUTPUT_CSP + '">' +
-    FRAME_BOOTSTRAP + html;
+  return (
+    '<!doctype html><meta http-equiv="Content-Security-Policy" content="' +
+    HTML_OUTPUT_CSP +
+    '">' +
+    FRAME_BOOTSTRAP +
+    html
+  );
 }

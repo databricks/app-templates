@@ -1,7 +1,12 @@
 import { isHtmlOutput } from '../../shared/htmlOutputs';
 import { DISPLAY_ROW_LIMIT, summarizeResultPreview, type ResultPreview } from '../../shared/resultPreview';
 import type { AppChartSpec } from '../../shared/appManifest';
-import { MAX_OUTPUT_FILES, parseFileOutputBehavior, type FileOutputBehavior, type WrittenFile } from '../../shared/fileOutputs';
+import {
+  MAX_OUTPUT_FILES,
+  parseFileOutputBehavior,
+  type FileOutputBehavior,
+  type WrittenFile,
+} from '../../shared/fileOutputs';
 import { idString, isRecord, nonEmptyString, positiveInt, stringValues } from '../../shared/values';
 import { parseRunDiagnostics, type RunDiagnostics } from '../../shared/guardrails';
 
@@ -55,10 +60,8 @@ export type MatchedOutput = {
   outcome: OutputOutcome;
 };
 
-export type RunOutcome = (
-  | { outcome: 'outputs'; outputs: MatchedOutput[] }
-  | { outcome: 'noPayload'; reason: string }
-) & RunDiagnostics;
+export type RunOutcome = ({ outcome: 'outputs'; outputs: MatchedOutput[] } | { outcome: 'noPayload'; reason: string }) &
+  RunDiagnostics;
 
 export type RunSnapshot = {
   jobRunId: string;
@@ -143,7 +146,8 @@ function parseOutputOutcome(raw: unknown): OutputOutcome | undefined {
     return undefined;
   }
   if (raw.outcome === 'html') {
-    return isHtmlOutput(raw.html) ? { outcome: 'html', html: raw.html }
+    return isHtmlOutput(raw.html)
+      ? { outcome: 'html', html: raw.html }
       : { outcome: 'malformed', reason: 'This HTML output is invalid or too large.' };
   }
   if (raw.outcome === 'result') {
@@ -159,7 +163,10 @@ function parseOutputOutcome(raw: unknown): OutputOutcome | undefined {
       : { outcome: 'computeError', payload };
   }
   if (raw.outcome === 'malformed' || raw.outcome === 'missing') {
-    return { outcome: raw.outcome, reason: typeof raw.reason === 'string' ? raw.reason : 'This output could not be read.' };
+    return {
+      outcome: raw.outcome,
+      reason: typeof raw.reason === 'string' ? raw.reason : 'This output could not be read.',
+    };
   }
   return undefined;
 }
@@ -181,9 +188,13 @@ function parseMatchedOutput(raw: unknown, index: number): MatchedOutput | undefi
     title: nonEmptyString(raw.title) ?? id ?? `Output ${index + 1}`,
     ...(source === undefined ? {} : { source }),
     ...(isRecord(raw.chartSpec) ? { chartSpec: raw.chartSpec as AppChartSpec } : {}),
-    ...(Array.isArray(raw.files) && raw.files.length <= MAX_OUTPUT_FILES &&
-      raw.files.every((file) => isRecord(file) && typeof file.path === 'string' && file.path.startsWith('/Volumes/'))
-      ? { files: raw.files.map((file) => ({ path: file.path as string })) }
+    ...(Array.isArray(raw.files) &&
+    raw.files.length <= MAX_OUTPUT_FILES &&
+    raw.files.every(
+      (file): file is { path: string } =>
+        isRecord(file) && typeof file.path === 'string' && file.path.startsWith('/Volumes/')
+    )
+      ? { files: raw.files.map((file) => ({ path: file.path })) }
       : {}),
     ...(fileBehavior ? { fileBehavior } : {}),
     ...(typeof raw.disabled === 'boolean' ? { disabled: raw.disabled } : {}),
@@ -198,7 +209,11 @@ export function parseRunOutcome(raw: unknown): RunOutcome | undefined {
     return undefined;
   }
   if (raw.outcome === 'noPayload') {
-    return { outcome: 'noPayload', reason: typeof raw.reason === 'string' ? raw.reason : 'The run returned no output.', ...parseRunDiagnostics(raw) };
+    return {
+      outcome: 'noPayload',
+      reason: typeof raw.reason === 'string' ? raw.reason : 'The run returned no output.',
+      ...parseRunDiagnostics(raw),
+    };
   }
   if (raw.outcome !== 'outputs' || !Array.isArray(raw.outputs)) {
     return undefined;

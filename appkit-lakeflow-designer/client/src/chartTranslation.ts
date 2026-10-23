@@ -141,7 +141,7 @@ interface Bound {
 
 function channelOf(
   chartSpec: PublishedChartSpecInput,
-  channel: string,
+  channel: string
 ): { fieldName: string; title: string; type?: PublishedChartFieldType; sort: unknown } | undefined {
   const encodings = chartSpec.encodings;
   if (!isRecord(encodings)) {
@@ -172,7 +172,7 @@ function bindChannel(
   chartSpec: PublishedChartSpecInput,
   channel: string,
   schema: readonly PublishedChartField[],
-  overrideType?: PublishedChartFieldType,
+  overrideType?: PublishedChartFieldType
 ): { ok: true; bound: Bound } | { ok: false; refusal: PublishedChartRefusal } {
   const declared = channelOf(chartSpec, channel);
   if (declared === undefined) {
@@ -198,7 +198,7 @@ function categoricalDomainOf(
   bound: Bound,
   chartSpec: PublishedChartSpecInput,
   schema: readonly PublishedChartField[],
-  defaultSort: PublishedChartSort = { by: 'natural-order' },
+  defaultSort: PublishedChartSort = { by: 'natural-order' }
 ): { ok: true; domain?: PublishedChartDomain } | { ok: false; refusal: PublishedChartRefusal } {
   if (bound.type !== 'nominal') {
     return { ok: true };

@@ -78,17 +78,19 @@ export function ParameterForm({
       const errors: Record<string, string> = {};
       let unavailable = false;
       if (fileParameters.length > 0) setSubmissionPhase('uploading');
-      await Promise.all(fileParameters.map(async ({ name, fileFormats }) => {
-        const file = stagedFiles[name];
-        if (file === undefined) return;
-        try {
-          nextValues[name] = await cache.upload(name, file, fileFormats);
-          if (!cache.signal.aborted) set(name, nextValues[name]);
-        } catch (error) {
-          unavailable ||= error instanceof UploadUnavailableError;
-          errors[name] = error instanceof Error ? error.message : 'The upload failed.';
-        }
-      }));
+      await Promise.all(
+        fileParameters.map(async ({ name, fileFormats }) => {
+          const file = stagedFiles[name];
+          if (file === undefined) return;
+          try {
+            nextValues[name] = await cache.upload(name, file, fileFormats);
+            if (!cache.signal.aborted) set(name, nextValues[name]);
+          } catch (error) {
+            unavailable ||= error instanceof UploadUnavailableError;
+            errors[name] = error instanceof Error ? error.message : 'The upload failed.';
+          }
+        })
+      );
       if (cache.signal.aborted) return;
       if (unavailable) {
         onUploadUnavailable();
@@ -107,11 +109,7 @@ export function ParameterForm({
 
   return (
     <form
-      className={
-        parameters.length === 0
-          ? 'flex items-center justify-between gap-4 px-6 py-4'
-          : 'grid gap-4 p-6'
-      }
+      className={parameters.length === 0 ? 'flex items-center justify-between gap-4 px-6 py-4' : 'grid gap-4 p-6'}
       onSubmit={(event) => void submit(event)}
     >
       {parameters.map((parameter) => (
@@ -196,9 +194,7 @@ function ParameterControl({
     );
   }
   if (parameter.type === 'combobox') {
-    return (
-      <ComboboxParameterControl parameter={parameter} value={value} onValueChange={onValueChange} />
-    );
+    return <ComboboxParameterControl parameter={parameter} value={value} onValueChange={onValueChange} />;
   }
   if (parameter.type === 'dropdown' && parameter.choices !== undefined) {
     return (

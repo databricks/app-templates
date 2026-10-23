@@ -52,13 +52,13 @@ export function hasNewerUnsuccessfulRun(runs: RunHistoryEntry[], lastSuccessfulE
       run.endTime !== undefined &&
       run.endTime > lastSuccessfulEndTime &&
       run.resultState !== undefined &&
-      TERMINAL_UNSUCCESSFUL_RESULT_STATES.has(run.resultState),
+      TERMINAL_UNSUCCESSFUL_RESULT_STATES.has(run.resultState)
   );
 }
 
 export function historyEntriesWithDisplayedRun(
   runs: RunHistoryEntry[],
-  displayedRun: RunHistoryEntry | undefined,
+  displayedRun: RunHistoryEntry | undefined
 ): RunHistoryEntry[] {
   if (displayedRun === undefined) {
     return runs;
@@ -104,7 +104,11 @@ function parseEntry(raw: unknown): RunHistoryEntry | undefined {
   };
 }
 
-export async function fetchRunHistory(windowSize: number, cursor?: string, signal?: AbortSignal): Promise<RunHistoryState> {
+export async function fetchRunHistory(
+  windowSize: number,
+  cursor?: string,
+  signal?: AbortSignal
+): Promise<RunHistoryState> {
   try {
     const response = await fetch(runHistoryRoute(windowSize, cursor), { signal });
     if (!response.ok) {

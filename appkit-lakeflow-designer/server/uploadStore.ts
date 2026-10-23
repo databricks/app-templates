@@ -31,19 +31,22 @@ export function appKitUploadStore(config: AppStorage | undefined): UploadStore {
         missing
           ? UPLOAD_UNAVAILABLE_MESSAGE
           : 'Could not access upload storage. Check the app volume resource and permissions.',
-        { cause: error, ...(missing ? { code: UPLOAD_UNAVAILABLE } : {}) },
+        { cause: error, ...(missing ? { code: UPLOAD_UNAVAILABLE } : {}) }
       );
     }
   };
   return {
     mkdir: (path) => access((volume) => volume.createDirectory(encodeStoragePath(path))),
-    put: (path, bytes) => access((volume) => volume.upload(encodeStoragePath(path), Buffer.from(bytes), { overwrite: false })),
-    putStream: (path, stream) => access((volume) => volume.upload(encodeStoragePath(path), stream, { overwrite: false })),
+    put: (path, bytes) =>
+      access((volume) => volume.upload(encodeStoragePath(path), Buffer.from(bytes), { overwrite: false })),
+    putStream: (path, stream) =>
+      access((volume) => volume.upload(encodeStoragePath(path), stream, { overwrite: false })),
     read: (path) =>
       access(async (volume) => {
         const contents = await volume.read(encodeStoragePath(path), { maxSize: 16 * 1024 });
         try {
-          return JSON.parse(contents);
+          const record: unknown = JSON.parse(contents);
+          return record;
         } catch {
           throw new UploadError(409, 'The upload record is unreadable.');
         }

@@ -1,3 +1,4 @@
+import { TypeGlyph } from './TypeGlyph';
 import {
   Button,
   DropdownMenu,
@@ -12,15 +13,10 @@ import {
   TableHeader,
   TableRow,
 } from '@databricks/appkit-ui/react';
-import {
-  getCoreRowModel,
-  getFilteredRowModel,
-  getSortedRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
+import { getCoreRowModel, getFilteredRowModel, getSortedRowModel, useReactTable } from '@tanstack/react-table';
 import { useMemo } from 'react';
 
-import { categorize, formatCell, isNumericCategory, TypeGlyph } from './dataTypes';
+import { categorize, formatCell, isNumericCategory } from './dataTypes';
 import type { OkPayload, SchemaField } from './payload';
 import { ResultFooter } from './ResultFooter';
 import { createResultColumns, createResultFilter } from './resultTable';
@@ -65,10 +61,14 @@ export function ResultGrid({ payload }: { payload: OkPayload }) {
 function InteractiveResultGrid({ payload }: { payload: OkPayload }) {
   const { schema, rows } = payload;
   const filter = useMemo(() => createResultFilter(schema), [schema]);
-  const columns = useMemo(() => createResultColumns(schema).map((column, index) => ({
-    ...column,
-    size: measureColumnWidth(schema[index], rows),
-  })), [schema, rows]);
+  const columns = useMemo(
+    () =>
+      createResultColumns(schema).map((column, index) => ({
+        ...column,
+        size: measureColumnWidth(schema[index], rows),
+      })),
+    [schema, rows]
+  );
   const table = useReactTable({
     data: rows,
     columns,
@@ -82,7 +82,8 @@ function InteractiveResultGrid({ payload }: { payload: OkPayload }) {
     getSortedRowModel: getSortedRowModel(),
   });
 
-  const globalFilter = table.getState().globalFilter ?? '';
+  const filterValue: unknown = table.getState().globalFilter;
+  const globalFilter = typeof filterValue === 'string' ? filterValue : '';
   const visibleColumns = table.getVisibleLeafColumns();
   const tableRows = table.getRowModel().rows;
   const rowNumberWidth = Math.max(44, String(rows.length).length * BODY_CHAR_WIDTH + 24);
@@ -176,11 +177,13 @@ function InteractiveResultGrid({ payload }: { payload: OkPayload }) {
                         strokeLinejoin="round"
                       >
                         <path
-                          d={sorted === 'asc'
-                            ? 'M12 19V5m-5 5 5-5 5 5'
-                            : sorted === 'desc'
-                              ? 'M12 5v14m-5-5 5 5 5-5'
-                              : 'M8 20V4m-4 4 4-4 4 4M16 4v16m-4-4 4 4 4-4'}
+                          d={
+                            sorted === 'asc'
+                              ? 'M12 19V5m-5 5 5-5 5 5'
+                              : sorted === 'desc'
+                                ? 'M12 5v14m-5-5 5 5 5-5'
+                                : 'M8 20V4m-4 4 4-4 4 4M16 4v16m-4-4 4 4 4-4'
+                          }
                         />
                       </svg>
                     </Button>
@@ -210,7 +213,8 @@ function InteractiveResultGrid({ payload }: { payload: OkPayload }) {
                         }
                         if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
                         event.preventDefault();
-                        const size = column.getSize() + (event.key === 'ArrowLeft' ? -COLUMN_RESIZE_STEP : COLUMN_RESIZE_STEP);
+                        const size =
+                          column.getSize() + (event.key === 'ArrowLeft' ? -COLUMN_RESIZE_STEP : COLUMN_RESIZE_STEP);
                         table.setColumnSizing((current) => ({
                           ...current,
                           [column.id]: size,
@@ -260,10 +264,7 @@ function InteractiveResultGrid({ payload }: { payload: OkPayload }) {
           </TableBody>
         </Table>
       </div>
-      <ResultFooter
-        payload={payload}
-        matchingRowCount={globalFilter.trim() === '' ? undefined : tableRows.length}
-      />
+      <ResultFooter payload={payload} matchingRowCount={globalFilter.trim() === '' ? undefined : tableRows.length} />
     </div>
   );
 }

@@ -18,7 +18,12 @@ const isSchemaField = (value: unknown): value is { name: string; type: string } 
 
 type ClassifiedEntry =
   | { outcome: 'malformed'; index: number; id: string | undefined; reason: string }
-  | { outcome: 'computeError' | 'result' | 'html'; index: number; id: string | undefined; payload: Record<string, unknown> };
+  | {
+      outcome: 'computeError' | 'result' | 'html';
+      index: number;
+      id: string | undefined;
+      payload: Record<string, unknown>;
+    };
 
 function classifyOutputEntry(entry: unknown, index: number): ClassifiedEntry {
   if (!isRecord(entry)) {
@@ -54,11 +59,15 @@ function classifyOutputEntry(entry: unknown, index: number): ClassifiedEntry {
   return { outcome: 'result', index, id, payload: entry };
 }
 
-function classifyMultiRunOutput(
-  raw: string | undefined,
-): ({ outcome: 'noPayload'; reason: string } | {
-  outcome: 'outputs'; outputs: ClassifiedEntry[]; runtimeNodeStates: Map<string, boolean>;
-}) & RunDiagnostics {
+function classifyMultiRunOutput(raw: string | undefined): (
+  | { outcome: 'noPayload'; reason: string }
+  | {
+      outcome: 'outputs';
+      outputs: ClassifiedEntry[];
+      runtimeNodeStates: Map<string, boolean>;
+    }
+) &
+  RunDiagnostics {
   if (raw === undefined || raw.trim() === '') {
     return { outcome: 'noPayload', reason: NO_OUTPUT_REASON };
   }
@@ -121,7 +130,8 @@ type OutputSection = {
 
 function matchedOutcome(entry: ClassifiedEntry): MatchOutcome {
   if (entry.outcome === 'html') {
-    return isHtmlOutput(entry.payload.html) ? { outcome: 'html', html: entry.payload.html }
+    return isHtmlOutput(entry.payload.html)
+      ? { outcome: 'html', html: entry.payload.html }
       : { outcome: 'malformed', reason: 'This HTML output is invalid or too large.' };
   }
   return entry.outcome === 'malformed'
@@ -158,9 +168,12 @@ export function matchRunOutputs(declared: AppOutputBlock[], raw: string | undefi
     const fileReceipt = output.fileOutput ? recordedFileOutput(raw, output.nodeId, output.fileOutput) : undefined;
     const ownDisabled = runtimeNodeStates?.get(output.nodeId) ?? output.disabled;
     const groupDisabled = output.parentGroupId === undefined ? undefined : runtimeNodeStates?.get(output.parentGroupId);
-    const disabled = ownDisabled === true || groupDisabled === true
-      ? true
-      : ownDisabled === undefined && groupDisabled === undefined ? undefined : false;
+    const disabled =
+      ownDisabled === true || groupDisabled === true
+        ? true
+        : ownDisabled === undefined && groupDisabled === undefined
+          ? undefined
+          : false;
     const section = {
       key: `declared:${output.id}`,
       id: output.id,

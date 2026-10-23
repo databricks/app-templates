@@ -7,12 +7,12 @@ export async function streamFileDownload(
   stream: ReadableStream<Uint8Array>,
   filename: string,
   size: number,
-  report: (error: unknown) => void,
+  report: (error: unknown) => void
 ) {
   const fallback = filename.replace(/[^A-Za-z0-9._ -]/g, '_');
   const encoded = encodeURIComponent(filename).replace(
     /['()*]/g,
-    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`
   );
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Content-Type', 'application/octet-stream');

@@ -153,7 +153,7 @@ const requestViewer = (req: Request) => viewerKey(req.get('x-forwarded-user'), J
 async function accessibleRun(
   run: unknown,
   req: Request,
-  hydrate = false,
+  hydrate = false
 ): Promise<Record<string, unknown> | undefined> {
   if (!runBelongsToJob(run, JOB_ID)) return undefined;
   const manifest = await loadManifest();
@@ -201,12 +201,12 @@ async function declaredOutputs() {
 // The runs/export CODE view carries the displayed command results.
 async function readRunExport(taskRunId: string): Promise<unknown> {
   const exported = await retryRead(() =>
-    wsClient().jobs.exportRun({ run_id: Number(taskRunId), views_to_export: 'CODE' }),
+    wsClient().jobs.exportRun({ run_id: Number(taskRunId), views_to_export: 'CODE' })
   );
   const views = isRecord(exported) && Array.isArray(exported.views) ? exported.views : [];
   // Probe with the decoder rather than a substring: a base64-wrapped view never contains the literal marker.
-  const view = views.find(
-    (candidate) => isRecord(candidate) && findNotebookModelValue(candidate.content) !== undefined,
+  const view: unknown = views.find(
+    (candidate) => isRecord(candidate) && findNotebookModelValue(candidate.content) !== undefined
   );
   return isRecord(view) ? view.content : undefined;
 }
@@ -234,7 +234,9 @@ async function readCompletedTaskOutput(taskRunId: string, failed = false): Promi
     failed ? retryRead(() => wsClient().jobs.getRunOutput({ run_id: Number(taskRunId) })) : Promise.resolve(undefined),
   ]).then(([exported, taskOutput]) => {
     const taskError = taskOutput.status === 'fulfilled' ? taskOutput.value : undefined;
-    const taskErrorTexts = [taskError?.error, taskError?.error_trace].filter((text): text is string => typeof text === 'string');
+    const taskErrorTexts = [taskError?.error, taskError?.error_trace].filter(
+      (text): text is string => typeof text === 'string'
+    );
     const html = exported.status === 'fulfilled' ? exported.value : undefined;
     // Retention gaps and transient read errors can recover; do not retain them for the full cache TTL.
     if (exported.status === 'rejected' || taskOutput.status === 'rejected' || html === undefined) {
@@ -285,20 +287,22 @@ type ListRunsRequest = Parameters<WorkspaceClient['jobs']['listRuns']>[0];
 async function collectVisibleRuns(
   req: Request,
   options: Omit<ListRunsRequest, 'job_id'>,
-  isComplete: (visible: Record<string, unknown>[]) => boolean,
+  isComplete: (visible: Record<string, unknown>[]) => boolean
 ): Promise<VisibleRunPage> {
   return scanVisibleRuns({
     pageToken: options.page_token,
     // The SDK iterator consumes page tokens internally; use its authenticated transport to
     // return a continuation when this request's scan budget is exhausted.
     readPage: (pageToken) =>
-      wsClient().toLegacyWorkspaceClient().apiClient.request({
-        path: '/api/2.2/jobs/runs/list',
-        method: 'GET',
-        headers: new Headers({ Accept: 'application/json' }),
-        raw: false,
-        query: { ...options, job_id: Number(JOB_ID), page_token: pageToken },
-      }),
+      wsClient()
+        .toLegacyWorkspaceClient()
+        .apiClient.request({
+          path: '/api/2.2/jobs/runs/list',
+          method: 'GET',
+          headers: new Headers({ Accept: 'application/json' }),
+          raw: false,
+          query: { ...options, job_id: Number(JOB_ID), page_token: pageToken },
+        }),
     accessible: (run) => accessibleRun(run, req, true),
     isComplete,
   });
@@ -353,7 +357,7 @@ function summarizeLastRun(run: Record<string, unknown>): RunSummary | undefined 
 }
 
 function runParameterData(
-  run: Record<string, unknown>,
+  run: Record<string, unknown>
 ): Pick<RunSummary, 'parameters' | 'parameterDisplayValues'> | undefined {
   if (!Array.isArray(run.job_parameters)) {
     return undefined;
@@ -430,19 +434,21 @@ function resolveHistoryWindow(raw: unknown) {
 
 await createApp({
   plugins: [server()],
-  onPluginsReady: async (appkit) => {
+  onPluginsReady: (appkit) => {
     appkit.server.extend((app) => {
       // These responses contain per-viewer filenames and results, never shared cache entries.
       app.use('/api/designer', (req, res, next) => {
         res.setHeader('Cache-Control', 'no-store');
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-        if (!isSameOriginBrowserRequest({
-          origin: req.get('origin'),
-          // Apps ingress can rewrite Host; the runtime URL names the public origin.
-          appUrl: process.env.DATABRICKS_APP_URL || `${req.protocol}://${req.get('host')}`,
-          fetchSite: req.get('sec-fetch-site'),
-        })) {
+        if (
+          !isSameOriginBrowserRequest({
+            origin: req.get('origin'),
+            // Apps ingress can rewrite Host; the runtime URL names the public origin.
+            appUrl: process.env.DATABRICKS_APP_URL || `${req.protocol}://${req.get('host')}`,
+            fetchSite: req.get('sec-fetch-site'),
+          })
+        ) {
           res.status(403).json({ error: 'Open the App directly to use its APIs.' });
           return;
         }
@@ -511,8 +517,8 @@ await createApp({
                 limit: LAST_RUN_PAGE_SIZE,
                 page_token: nonEmptyString(req.query.cursor),
               },
-              (visible) => visible.some(isSuccessfulRun),
-            ),
+              (visible) => visible.some(isSuccessfulRun)
+            )
           );
         } catch (err) {
           console.error(err);
@@ -529,9 +535,9 @@ await createApp({
               await collectVisibleRuns(
                 req,
                 { active_only: true, expand_tasks: true, limit: LAST_RUN_PAGE_SIZE },
-                (visible) => visible.length > 0,
+                (visible) => visible.length > 0
               )
-            ).runs,
+            ).runs
           );
           const activeSummary = activeRun === undefined ? undefined : summarizeLastRun(activeRun);
           if (activeRun !== undefined && activeSummary !== undefined) {
@@ -586,7 +592,7 @@ await createApp({
             return;
           }
           const attribution = await runAttribution(req, APP_ID, (token) =>
-            createWorkspaceClient({ host: wsClient().config.host, token }).currentUser.me(),
+            createWorkspaceClient({ host: wsClient().config.host, token }).currentUser.me()
           );
           const userName = attribution?._lb_app_user_email;
           if (!attribution || !userName) {
@@ -598,7 +604,7 @@ await createApp({
             manifest,
             submitted,
             requestViewer(req),
-            appKitUploadStore(manifest.storage),
+            appKitUploadStore(manifest.storage)
           );
           if (!resolved.ok) {
             res.status(400).json({ error: resolved.error, ...(resolved.code ? { code: resolved.code } : {}) });
@@ -682,8 +688,8 @@ await createApp({
             collectVisibleRuns(
               req,
               { completed_only: true, limit: RUN_HISTORY_PAGE_SIZE, page_token: nonEmptyString(req.query.cursor) },
-              (visible) => visible.length >= windowSize,
-            ),
+              (visible) => visible.length >= windowSize
+            )
           );
         } catch (err) {
           console.error(err);

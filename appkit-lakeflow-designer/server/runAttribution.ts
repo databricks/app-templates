@@ -10,7 +10,7 @@ interface ForwardedHeaders {
 export async function runAttribution(
   headers: ForwardedHeaders,
   appId: string,
-  readUserProfile?: (token: string) => Promise<{ id?: string; displayName?: string }>,
+  readUserProfile?: (token: string) => Promise<{ id?: string; displayName?: string }>
 ): Promise<Record<string, string> | undefined> {
   const subject = headers.get('x-forwarded-user')?.trim();
   if (!subject) return undefined;

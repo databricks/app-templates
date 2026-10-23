@@ -11,7 +11,7 @@ export const positiveInt = (value: unknown): number | undefined => {
 
 // Run and job IDs are int64: keep them as decimal strings, since Number corrupts values past 2^53-1.
 export const idString = (value: unknown): string | undefined => {
-  if (value === null || value === undefined || typeof value === 'boolean') {
+  if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'bigint') {
     return undefined;
   }
   const text = String(value);
@@ -20,7 +20,9 @@ export const idString = (value: unknown): string | undefined => {
 
 export const stringValues = (value: unknown): Record<string, string> | undefined =>
   isRecord(value)
-    ? Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+    ? Object.fromEntries(
+        Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+      )
     : undefined;
 
 export const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));

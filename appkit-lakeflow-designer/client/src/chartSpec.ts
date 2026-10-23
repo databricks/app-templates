@@ -24,7 +24,7 @@ export function buildPublishedVegaLiteSpec(
   data: PublishedChartData,
   colors: string[],
   ui: ChartUITokens,
-  font = 'Arial, sans-serif',
+  font = 'Arial, sans-serif'
 ): TopLevelSpec {
   const config: Config = {
     font,
@@ -161,7 +161,7 @@ function axisEncoding(
   plan: PublishedChartPlan,
   data: PublishedChartData,
   channel: 'x' | 'y',
-  stack: 'zero' | 'normalize' | null,
+  stack: 'zero' | 'normalize' | null
 ): PositionFieldDef<string> {
   const type = channel === 'x' ? plan.xType : plan.yType;
   const settings = channel === 'x' ? plan.xAxis : plan.yAxis;

@@ -4,13 +4,11 @@ import { Alert, AlertDescription, AlertTitle, Badge, Button, Card } from '@datab
 
 import { ActiveRunBanner } from './ActiveRunBanner';
 import type { FileOutputBehavior } from '../../shared/fileOutputs';
-import type { GuardrailDiagnostic } from '../../shared/guardrails';
 import { GuardrailSummary } from './GuardrailSummary';
 import {
   outputBlockTitle,
   type AppChartSpec,
   type AppManifestBlock,
-  type AppMarkdownBlock,
   type AppOutputBlock,
   type AppParameter,
 } from '../../shared/appManifest';
@@ -32,7 +30,9 @@ import { FOLLOWED_RESULT_AVAILABLE_OFFER, planLandingArea } from './landingPlan'
 import type { ActiveRun, LastRunState, LastRunSummary } from './lastRun';
 import { fetchLastRun } from './lastRun';
 import type { LastRunVariant } from './LastRunLabel';
-import { LastRunLabel, relative, RunParametersDisclosureProvider } from './LastRunLabel';
+import { LastRunLabel, RunParametersDisclosureProvider } from './LastRunLabel';
+import { relative } from './relativeTime';
+import { useNow } from './useNow';
 import { ParameterForm } from './ParameterForm';
 import { LazyOutputChart, preloadOutputChart } from './renderersLazy';
 import { RunHistorySelect } from './RunHistoryList';
@@ -50,56 +50,33 @@ import { ComputeError, EmptyResult, MalformedOutput, MissingOutput, NoPayload } 
 import { RunStatus } from './RunStatus';
 import { APP_UPDATING_MESSAGE } from '../../shared/publishedRunner';
 import { ThemeToggle } from './ThemeToggle';
-import type { RunState } from './useDesignerRun';
 import { useDesignerRun } from './useDesignerRun';
-import type { FollowedRunState } from './useFollowedRun';
 import { useFollowedRun } from './useFollowedRun';
 import { OutputHtml } from './OutputHtml';
 import type { MatchedOutput, OkPayload, RunOutcome, RunSnapshot } from './payload';
+
+import {
+  hasWrittenFiles,
+  matchPublishedBlocks,
+  planRunDisplay,
+  runHistoryEntryFromSnapshot,
+  type RunDisplayPlan,
+  type UnmatchedOutputState,
+} from './runDisplay';
 
 const EMPTY_LANDING_MESSAGES = {
   loading: 'Looking for the last run…',
   unavailable: 'The last run could not be loaded. Run the operator to compute a fresh result.',
 } as const;
 
-const CONFIGURATION_REFRESH_ERROR = 'Could not refresh the app configuration. Try Run again after the app is available.';
+const CONFIGURATION_REFRESH_ERROR =
+  'Could not refresh the app configuration. Try Run again after the app is available.';
 
 const NOT_RUNNABLE_MESSAGES: Record<NotRunnableReason, string> = {
   noManifest: 'This app has no published outputs, so there is nothing to run. It may need republishing.',
   noJob: 'This app is not connected to a job yet, so it cannot run. Its publisher needs to finish setting it up.',
   updating: APP_UPDATING_MESSAGE,
 };
-
-type UnmatchedOutputState = 'beforeRun' | 'running' | 'omitted' | 'loading';
-
-export interface RunDisplayPlan {
-  displayedRun?: RunHistoryEntry;
-  outputs: MatchedOutput[];
-  diagnostics?: GuardrailDiagnostic[];
-  unmatchedState: UnmatchedOutputState;
-  showPreviousRunLabel?: boolean;
-}
-
-type PublishedBlockMatch =
-  | { key: string; kind: 'markdown'; block: AppMarkdownBlock }
-  | { key: string; kind: 'output'; block: AppOutputBlock; output?: MatchedOutput };
-
-export function matchPublishedBlocks(
-  blocks: AppManifestBlock[],
-  outputs: MatchedOutput[],
-): PublishedBlockMatch[] {
-  const outputsById = new Map<string, MatchedOutput>();
-  for (const output of outputs) {
-    if (output.id !== undefined && !outputsById.has(output.id)) {
-      outputsById.set(output.id, output);
-    }
-  }
-  return blocks.map((block, index) =>
-    block.type === 'markdown'
-      ? { key: `markdown:${block.id ?? index}:${index}`, kind: 'markdown', block }
-      : { key: `output:${block.id}:${index}`, kind: 'output', block, output: outputsById.get(block.id) },
-  );
-}
 
 export function App() {
   const [config, setConfig] = useState<AppConfigState>({ status: 'loading' });
@@ -141,9 +118,11 @@ export function App() {
     if (changed) {
       // Keep an observed round trip invalid even if React batches both configuration updates.
       invalidateUploads();
-      setConfigurationMessage(next.manifest.parameters.some(({ type }) => type === 'file')
-        ? 'The app’s storage or file inputs changed. Select your files again, then click Run.'
-        : 'The app configuration changed. Review your inputs, then click Run.');
+      setConfigurationMessage(
+        next.manifest.parameters.some(({ type }) => type === 'file')
+          ? 'The app’s storage or file inputs changed. Select your files again, then click Run.'
+          : 'The app configuration changed. Review your inputs, then click Run.'
+      );
     }
     return next.runnable && !changed;
   }, [invalidateUploads]);
@@ -153,7 +132,7 @@ export function App() {
     if (current.status === 'ready') {
       const files = new Set(current.manifest.parameters.filter(({ type }) => type === 'file').map(({ name }) => name));
       setValues((previous) =>
-        Object.fromEntries(Object.entries(previous).map(([name, value]) => [name, files.has(name) ? '' : value])),
+        Object.fromEntries(Object.entries(previous).map(([name, value]) => [name, files.has(name) ? '' : value]))
       );
     }
     setConfigurationMessage('An upload is no longer available. Select your files again, then click Run.');
@@ -190,9 +169,9 @@ export function App() {
     let cancelled = false;
     const refresh = async () => {
       await refreshConfiguration();
-      if (!cancelled) timer = setTimeout(refresh, 3000);
+      if (!cancelled) timer = setTimeout(() => void refresh(), 3000);
     };
-    let timer = setTimeout(refresh, 3000);
+    let timer = setTimeout(() => void refresh(), 3000);
     return () => {
       cancelled = true;
       clearTimeout(timer);
@@ -227,7 +206,7 @@ export function App() {
     const controller = new AbortController();
     const cancel = applyUnlessCancelled(
       fetchRunHistory(RUN_HISTORY_FIRST_WINDOW, undefined, controller.signal),
-      setHistory,
+      setHistory
     );
     return () => {
       historyGeneration.current += 1;
@@ -297,7 +276,8 @@ export function App() {
       uploadReset !== currentUploadReset.current ||
       current.status !== 'ready' ||
       uploadConfigurationKey(current.manifest) !== uploadConfigurationKey(manifest)
-    ) return;
+    )
+      return;
     formUntouched.current = false;
     setValues(next);
   };
@@ -312,20 +292,27 @@ export function App() {
       // Refresh again after upload: publishing can overlap a long-running file transfer.
       if (!(await refreshConfiguration()) || signal?.aborted || uploadReset !== currentUploadReset.current) return;
       const current = currentConfig.current;
-      if (
-        current.status !== 'ready' ||
-        uploadConfigurationKey(current.manifest) !== uploadConfigurationKey(manifest)
-      ) return;
+      if (current.status !== 'ready' || uploadConfigurationKey(current.manifest) !== uploadConfigurationKey(manifest))
+        return;
       const currentValues = refreshedValuesFor(manifest, current.manifest, runValues);
-      if (current.manifest.parameters.some(
-        ({ name, type }) => type === 'file' && !UPLOAD_REFERENCE.test(currentValues[name] ?? ''),
-      )) {
+      if (
+        current.manifest.parameters.some(
+          ({ name, type }) => type === 'file' && !UPLOAD_REFERENCE.test(currentValues[name] ?? '')
+        )
+      ) {
         setConfigurationMessage('Select your files again, then click Run.');
         return;
       }
       formUntouched.current = false;
       setValues(currentValues);
-      const previousDisplay = planRunDisplay(state, followed, lastRun, selectedEntry, selectedRun, retainedRunDisplay.current);
+      const previousDisplay = planRunDisplay(
+        state,
+        followed,
+        lastRun,
+        selectedEntry,
+        selectedRun,
+        retainedRunDisplay.current
+      );
       retainedRunDisplay.current = previousDisplay.unmatchedState === 'omitted' ? previousDisplay : undefined;
       clearSelection();
       setConfigurationMessage(undefined);
@@ -351,21 +338,19 @@ export function App() {
   const result = state.snapshot?.result;
   const ownRunSucceeded = state.phase === 'settled' && isSuccessfulResultState(state.snapshot?.resultState);
   const ownFinishedAt = state.startedAt === undefined ? undefined : state.startedAt + state.elapsedMs;
-  const { displayedRun, outputs: displayedOutputs, diagnostics, unmatchedState: unmatchedOutputState, showPreviousRunLabel } = planRunDisplay(
-    state,
-    followed,
-    lastRun,
-    selectedEntry,
-    selectedRun,
-    retainedRunDisplay.current,
-  );
+  const {
+    displayedRun,
+    outputs: displayedOutputs,
+    diagnostics,
+    unmatchedState: unmatchedOutputState,
+    showPreviousRunLabel,
+  } = planRunDisplay(state, followed, lastRun, selectedEntry, selectedRun, retainedRunDisplay.current);
   const newerRunDidNotSucceed =
     selectedEntry === undefined &&
     lastRun.status === 'found' &&
     history.status === 'found' &&
     hasNewerUnsuccessfulRun(history.runs, lastRun.run.endTime);
-  const historyState: RunHistoryState =
-    !runnable && notRunnableReason === 'noJob' ? { status: 'noJob' } : history;
+  const historyState: RunHistoryState = !runnable && notRunnableReason === 'noJob' ? { status: 'noJob' } : history;
 
   return (
     <Shell>
@@ -375,20 +360,7 @@ export function App() {
           {manifest.subtitle === undefined ? null : (
             <p className="text-muted-foreground mt-1 text-sm">{manifest.subtitle}</p>
           )}
-          {manifest.provenance === undefined ? null : (
-            <p
-              className="text-muted-foreground mt-1 text-xs"
-              title={
-                manifest.provenance.generatorVersion === undefined
-                  ? undefined
-                  : `Generated by Designer app generator v${manifest.provenance.generatorVersion}`
-              }
-            >
-              {`Flow published ${relative(manifest.provenance.publishedAt, Date.now())}, ${new Date(
-                manifest.provenance.publishedAt,
-              ).toLocaleString()}.`}
-            </p>
-          )}
+          {manifest.provenance === undefined ? null : <PublicationTime {...manifest.provenance} />}
         </div>
         <div className="flex max-w-full flex-wrap items-start justify-end gap-2">
           {runnable || notRunnableReason === 'noJob' ? (
@@ -436,7 +408,8 @@ export function App() {
             </div>
           ) : null}
 
-          {!showPreviousRunLabel && (state.phase === 'idle' || (state.phase === 'settled' && state.snapshot === undefined))
+          {!showPreviousRunLabel &&
+          (state.phase === 'idle' || (state.phase === 'settled' && state.snapshot === undefined))
             ? planLandingArea({
                 lastRun: lastRun.status,
                 following: followed.following,
@@ -534,6 +507,24 @@ export function App() {
   );
 }
 
+function PublicationTime({
+  publishedAt,
+  generatorVersion,
+}: {
+  publishedAt: number;
+  generatorVersion?: string | number;
+}) {
+  const now = useNow();
+  return (
+    <p
+      className="text-muted-foreground mt-1 text-xs"
+      title={generatorVersion === undefined ? undefined : `Generated by Designer app generator v${generatorVersion}`}
+    >
+      {`Flow published ${relative(publishedAt, now)}, ${new Date(publishedAt).toLocaleString()}.`}
+    </p>
+  );
+}
+
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="bg-background text-foreground min-h-screen">
@@ -559,96 +550,10 @@ function activeRunOf(lastRun: LastRunState): ActiveRun | undefined {
   return lastRun.status === 'found' || lastRun.status === 'none' ? lastRun.active : undefined;
 }
 
-function outputsFrom(result: RunOutcome | undefined): MatchedOutput[] {
-  return result?.outcome === 'outputs' ? result.outputs : [];
-}
-
-function hasWrittenFiles(result: RunOutcome | undefined): boolean {
-  return outputsFrom(result).some((output) => (output.files?.length ?? 0) > 0);
-}
-
-function runHistoryEntry(
-  run: LastRunSummary,
-  parameters?: Record<string, string>,
-  parameterDisplayValues?: Record<string, string>,
-  resultState?: string,
-  lifeCycleState?: string,
-): RunHistoryEntry {
-  return {
-    ...run,
-    ...(parameters === undefined ? {} : { parameters }),
-    ...(parameterDisplayValues === undefined ? {} : { parameterDisplayValues }),
-    ...(resultState === undefined ? {} : { resultState }),
-    ...(lifeCycleState === undefined ? {} : { lifeCycleState }),
-  };
-}
-
-export function lastSuccessfulRunEntry(lastRun: LastRunState): RunHistoryEntry | undefined {
-  return lastRun.status === 'found'
-    ? runHistoryEntry(lastRun.run, lastRun.parameters, lastRun.parameterDisplayValues, lastRun.run.resultState)
-    : undefined;
-}
-
-export function planRunDisplay(
-  state: RunState,
-  followed: FollowedRunState,
-  lastRun: LastRunState,
-  selectedEntry?: RunHistoryEntry,
-  selectedRun?: SelectedRunState,
-  retainedDisplay?: RunDisplayPlan,
-): RunDisplayPlan {
-  if (selectedEntry !== undefined) {
-    // Explicit history selection always wins, including while its result is loading or unavailable.
-    return {
-      displayedRun: selectedEntry,
-      outputs: selectedRun?.status === 'found' ? outputsFrom(selectedRun.outcome) : [],
-      diagnostics: selectedRun?.status === 'found' ? selectedRun.outcome?.diagnostics : undefined,
-      unmatchedState: selectedRun?.status === 'found' || selectedRun?.status === 'unavailable' ? 'omitted' : 'loading',
-    };
-  }
-  const lastSuccessful = lastSuccessfulRunEntry(lastRun);
-  if (
-    retainedDisplay?.unmatchedState === 'omitted' &&
-    (state.phase === 'running' || (state.phase === 'settled' && state.snapshot === undefined && state.requestError !== undefined))
-  ) {
-    return { ...retainedDisplay, showPreviousRunLabel: true };
-  }
-  if (state.phase === 'running') {
-    if (lastRun.status === 'found') {
-      return { displayedRun: lastSuccessful, outputs: outputsFrom(lastRun.result), diagnostics: lastRun.result.diagnostics, unmatchedState: 'omitted', showPreviousRunLabel: true };
-    }
-    return { displayedRun: lastSuccessful, outputs: [], unmatchedState: 'running' };
-  }
-  if (state.phase === 'settled' && state.snapshot !== undefined) {
-    return {
-      displayedRun: runHistoryEntryFromSnapshot(state.snapshot, state.startedAt, state.params),
-      outputs: outputsFrom(state.snapshot.result),
-      diagnostics: state.snapshot.result?.diagnostics,
-      unmatchedState: 'omitted',
-    };
-  }
-  if (followed.following && followed.settled && followed.active !== undefined) {
-    return {
-      displayedRun: runHistoryEntry(
-        followed.active.run,
-        followed.active.parameters,
-        followed.active.parameterDisplayValues,
-        followed.snapshot?.resultState,
-        followed.snapshot?.lifeCycleState,
-      ),
-      outputs: outputsFrom(followed.outcome),
-      diagnostics: followed.outcome?.diagnostics,
-      unmatchedState: 'omitted',
-    };
-  }
-  if (lastRun.status === 'found') {
-    return { displayedRun: lastSuccessful, outputs: outputsFrom(lastRun.result), diagnostics: lastRun.result.diagnostics, unmatchedState: 'omitted' };
-  }
-  return { outputs: [], unmatchedState: followed.following ? 'running' : 'beforeRun' };
-}
-
 export function RunFailureAlert({ snapshot, outcome }: { snapshot: RunSnapshot; outcome?: RunOutcome }) {
-  const reason = outcome?.failureReason || snapshot.stateMessage?.trim() ||
+  const reason =
+    outcome?.failureReason ||
+    snapshot.stateMessage?.trim() ||
     (outcome?.outcome === 'noPayload' ? outcome.reason : undefined) ||
     `The run ended in state ${snapshot.resultState ?? snapshot.lifeCycleState ?? 'UNKNOWN'}.`;
   return (
@@ -664,25 +569,6 @@ export function RunFailureAlert({ snapshot, outcome }: { snapshot: RunSnapshot; 
       </Alert>
     </div>
   );
-}
-
-function runHistoryEntryFromSnapshot(
-  snapshot: RunSnapshot,
-  startedAt: number | undefined,
-  submittedParameters?: Record<string, string>,
-): RunHistoryEntry {
-  const parameters = snapshot.parameters ?? submittedParameters;
-  return {
-    jobRunId: snapshot.jobRunId,
-    ...(startedAt === undefined ? {} : { startTime: startedAt }),
-    ...(snapshot.setupDurationMs === undefined ? {} : { setupDurationMs: snapshot.setupDurationMs }),
-    ...(snapshot.executionDurationMs === undefined ? {} : { executionDurationMs: snapshot.executionDurationMs }),
-    ...(snapshot.runPageUrl === undefined ? {} : { runPageUrl: snapshot.runPageUrl }),
-    ...(snapshot.resultState === undefined ? {} : { resultState: snapshot.resultState }),
-    ...(snapshot.lifeCycleState === undefined ? {} : { lifeCycleState: snapshot.lifeCycleState }),
-    ...(parameters === undefined ? {} : { parameters }),
-    ...(snapshot.parameterDisplayValues === undefined ? {} : { parameterDisplayValues: snapshot.parameterDisplayValues }),
-  };
 }
 
 // Missing recorded parameters stay absent; published defaults would misstate what actually ran.
@@ -741,13 +627,7 @@ function LandingBlock({
   }
 
   if (section.kind === 'selectedRun') {
-    return (
-      <SelectedRunSection
-        selectedEntry={selectedEntry}
-        selectedRun={selectedRun}
-        declared={declared}
-      />
-    );
+    return <SelectedRunSection selectedEntry={selectedEntry} selectedRun={selectedRun} declared={declared} />;
   }
 
   if (section.kind === 'followedResultAvailable') {
@@ -915,7 +795,7 @@ export function PublishedBlocks({
             unmatchedState={unmatchedState}
             onRetry={onRetry}
           />
-        ),
+        )
       )}
     </Card>
   );
@@ -998,10 +878,10 @@ export function OutputSection({
   return (
     <section className="border-border border-t [&>*]:border-t-0">
       <OutputHeading title={output.title} />
-      {outcome.outcome === 'html' ? <OutputHtml key={`${output.key}:${executionKey}`} html={outcome.html} title={output.title} /> : null}
-      {outcome.outcome === 'result' ? (
-        <ResultSection payload={outcome.payload} chartSpec={output.chartSpec} />
+      {outcome.outcome === 'html' ? (
+        <OutputHtml key={`${output.key}:${executionKey}`} html={outcome.html} title={output.title} />
       ) : null}
+      {outcome.outcome === 'result' ? <ResultSection payload={outcome.payload} chartSpec={output.chartSpec} /> : null}
       {output.files && downloadRequest && (
         <div className="px-6 py-4 text-sm">
           {output.files.length > 0 ? (
@@ -1011,7 +891,9 @@ export function OutputSection({
                   ? 'Generated files'
                   : fileBehavior
                     ? FILE_OUTPUT_LABELS[fileBehavior]
-                    : output.files.length === 1 ? 'File' : 'Files'}
+                    : output.files.length === 1
+                      ? 'File'
+                      : 'Files'}
                 {output.files.length > 1 ? ` · ${output.files.length}` : ''}
               </p>
               <OutputFileDownloads

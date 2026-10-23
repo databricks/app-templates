@@ -8,7 +8,7 @@ import {
   SelectValue,
 } from '@databricks/appkit-ui/react';
 
-import { relative } from './LastRunLabel';
+import { relative } from './relativeTime';
 import type { RunHistoryEntry, RunHistoryState } from './runHistory';
 import { historyEntriesWithDisplayedRun } from './runHistory';
 
@@ -121,7 +121,9 @@ export function RunHistorySelect({
         </Button>
       ) : null}
       {loadMoreError && (
-        <p role="alert" className="text-destructive max-w-80 text-right text-xs">{loadMoreError}</p>
+        <p role="alert" className="text-destructive max-w-80 text-right text-xs">
+          {loadMoreError}
+        </p>
       )}
     </div>
   );

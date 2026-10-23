@@ -16,17 +16,22 @@ let unavailableConfigReads = 0;
 let continuedLastRun = false;
 let continuedHistory = false;
 const manifest = {
-  version: 8, appName: 'Run lifecycle test', parameters: [],
+  version: 8,
+  appName: 'Run lifecycle test',
+  parameters: [],
   blocks: [{ type: 'output', id: 'table', label: 'Output', nodeId: 'source', port: 'data' }],
 };
 const json = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status }));
 
 // Network failures are controlled at the fetch boundary; the complete App and its hooks run in Chrome.
 window.fetch = (input, init) => {
-  const url = new URL(String(input), location.origin);
+  const url = new URL(input instanceof Request ? input.url : input, location.origin);
   if (!url.pathname.startsWith('/api/designer/')) return originalFetch(input, init);
   if (url.pathname.endsWith('/config')) {
-    if (unavailableConfigReads > 0) { unavailableConfigReads -= 1; return json({}, 503); }
+    if (unavailableConfigReads > 0) {
+      unavailableConfigReads -= 1;
+      return json({}, 503);
+    }
     return json({ manifest, runnable: !updating, ...(updating ? { notRunnableReason: 'updating' } : {}) });
   }
   if (url.pathname.endsWith('/last-run')) {
@@ -50,12 +55,16 @@ window.fetch = (input, init) => {
     }
     if (pollState === 'unavailable') return json({}, 503);
     return json({
-      jobRunId: '42', terminal: pollState === 'complete',
+      jobRunId: '42',
+      terminal: pollState === 'complete',
       lifeCycleState: pollState === 'complete' ? 'TERMINATED' : 'RUNNING',
       runPageUrl: 'https://workspace.test/jobs/10/runs/42',
-      ...(pollState === 'complete' ? {
-        resultState: 'SUCCESS', result: { outcome: 'noPayload', reason: 'Finished without a preview.' },
-      } : {}),
+      ...(pollState === 'complete'
+        ? {
+            resultState: 'SUCCESS',
+            result: { outcome: 'noPayload', reason: 'Finished without a preview.' },
+          }
+        : {}),
     });
   }
   return json({ error: 'Unexpected request: ' + url.pathname }, 404);
@@ -68,13 +77,19 @@ async function waitFor(predicate: () => boolean, label: string) {
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
 }
-const button = (label: string) => [...document.getElementsByTagName('button')]
-  .find((candidate) => candidate.textContent?.trim() === label);
+const button = (label: string) =>
+  [...document.getElementsByTagName('button')].find((candidate) => candidate.textContent?.trim() === label);
 const contains = (text: string) => element?.textContent?.includes(text) === true;
 const hasJobLink = () => [...document.getElementsByTagName('a')].some((link) => link.href.includes('/jobs/'));
 
 async function runChecks() {
-  flushSync(() => root.render(<StrictMode><App /></StrictMode>));
+  flushSync(() =>
+    root.render(
+      <StrictMode>
+        <App />
+      </StrictMode>
+    )
+  );
   await waitFor(() => button('Run')?.disabled === false && continuedLastRun, 'ready App and paged last-run search');
   checks['last-run search follows a continuation past other viewers'] = true;
   await waitFor(() => button('Load older runs') !== undefined, 'history continuation');
@@ -84,9 +99,13 @@ async function runChecks() {
 
   button('Run')?.click();
   await waitFor(() => submissions === 1 && contains('Status is temporarily unavailable'), 'poll failure');
-  checks['a status error retains the accepted run and disables another submission'] = button('Running…')?.disabled === true;
+  checks['a status error retains the accepted run and disables another submission'] =
+    button('Running…')?.disabled === true;
   button('Cancel')?.click();
-  await waitFor(() => contains('Cancellation could not be confirmed') && button('Cancel')?.disabled === false, 'cancel retry');
+  await waitFor(
+    () => contains('Cancellation could not be confirmed') && button('Cancel')?.disabled === false,
+    'cancel retry'
+  );
   checks['a failed cancellation remains visible and can be retried'] = cancellations === 1;
   button('Cancel')?.click();
   await waitFor(() => cancellations === 2 && button('Cancelling…')?.disabled === true, 'accepted cancellation');
@@ -104,12 +123,20 @@ async function runChecks() {
   await waitFor(() => contains('This App is updating') && button('Run')?.disabled === true, 'republish pause');
   updating = false;
   unavailableConfigReads = 1;
-  await waitFor(() => !contains('This App is updating') && button('Run')?.disabled === false, 'republish recovery after read failure');
-  checks['republish pauses submissions and recovers through a temporary configuration error'] = !contains('Could not refresh');
+  await waitFor(
+    () => !contains('This App is updating') && button('Run')?.disabled === false,
+    'republish recovery after read failure'
+  );
+  checks['republish pauses submissions and recovers through a temporary configuration error'] =
+    !contains('Could not refresh');
   flushSync(() => root.unmount());
 }
 
 runChecks().then(
   () => originalFetch('/browser-result', { method: 'POST', body: JSON.stringify({ completed: true, checks }) }),
-  (error: Error) => originalFetch('/browser-result', { method: 'POST', body: JSON.stringify({ completed: false, checks, error: error.message }) }),
+  (error: Error) =>
+    originalFetch('/browser-result', {
+      method: 'POST',
+      body: JSON.stringify({ completed: false, checks, error: error.message }),
+    })
 );

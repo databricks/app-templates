@@ -12,7 +12,12 @@ export interface FileParameterControlProps {
 }
 
 export function FileParameterControl({
-  name, fileFormats, file, error, onFileChange, disabled,
+  name,
+  fileFormats,
+  file,
+  error,
+  onFileChange,
+  disabled,
 }: FileParameterControlProps) {
   const input = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -53,7 +58,14 @@ export function FileParameterControl({
           <p className="truncate text-sm font-medium">{file?.name ?? 'Drop a file here'}</p>
           {file === undefined ? null : <p className="text-muted-foreground text-xs">{formatFileSize(file.size)}</p>}
         </div>
-        <Button type="button" size="sm" variant="outline" className="shrink-0" disabled={disabled} onClick={() => input.current?.click()}>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="shrink-0"
+          disabled={disabled}
+          onClick={() => input.current?.click()}
+        >
           {file === undefined ? 'Choose file' : 'Replace'}
         </Button>
         <Input

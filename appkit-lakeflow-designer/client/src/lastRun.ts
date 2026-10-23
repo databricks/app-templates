@@ -83,7 +83,9 @@ export async function fetchLastRun(signal?: AbortSignal): Promise<LastRunState> 
   let active: ActiveRun | undefined;
   try {
     for (;;) {
-      const response = await fetch(`${LAST_RUN_ROUTE}${cursor ? `?${new URLSearchParams({ cursor })}` : ''}`, { signal });
+      const response = await fetch(`${LAST_RUN_ROUTE}${cursor ? `?${new URLSearchParams({ cursor })}` : ''}`, {
+        signal,
+      });
       if (!response.ok) {
         return { status: 'unavailable', reason: `the server returned ${response.status}` };
       }

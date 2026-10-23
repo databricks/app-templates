@@ -79,13 +79,23 @@ test('a volume switch requires a fresh upload while leaving previous files uncha
   const previous = await uploads.saveUpload(store, storage, viewer, 'path', 'old.csv', Buffer.from('original'));
   const before = new Map(store.files);
   const next = { ...storage, volume: 'main.default.other', path: '/Volumes/main/default/other/designer_apps/app1' };
-  const refused = await parameters.resolveRunParameters({ ...manifest, storage: next }, { path: previous.reference }, viewer, store);
+  const refused = await parameters.resolveRunParameters(
+    { ...manifest, storage: next },
+    { path: previous.reference },
+    viewer,
+    store
+  );
   assert.equal(refused.ok, false);
   assert.equal(refused.code, 'UPLOAD_UNAVAILABLE');
   assert.match(refused.error, /Upload the file again/);
   assert.deepEqual(store.files, before);
   const fresh = await uploads.saveUpload(store, next, viewer, 'path', 'fresh.csv', Buffer.from('fresh'));
-  const accepted = await parameters.resolveRunParameters({ ...manifest, storage: next }, { path: fresh.reference }, viewer, store);
+  const accepted = await parameters.resolveRunParameters(
+    { ...manifest, storage: next },
+    { path: fresh.reference },
+    viewer,
+    store
+  );
   assert.equal(accepted.ok, true);
   assert.ok(accepted.params.path.startsWith(next.path));
   for (const [path, bytes] of before) assert.deepEqual(store.files.get(path), bytes);
@@ -99,7 +109,9 @@ test('temporary storage failures keep the completed upload available for an expl
   const upload = await uploads.saveUpload(store, storage, viewer, 'path', 'data.csv', Buffer.from('value\n1'));
   const unavailable = {
     ...store,
-    read: async () => { throw new uploads.UploadError(502, 'Could not access upload storage.'); },
+    read: async () => {
+      throw new uploads.UploadError(502, 'Could not access upload storage.');
+    },
   };
   const refused = await parameters.resolveRunParameters(manifest, { path: upload.reference }, viewer, unavailable);
   assert.equal(refused.ok, false);
@@ -124,12 +136,25 @@ test('configuration refresh clears file references across switches and preserves
   const next = {
     ...previous,
     storage: { ...storage, volume: 'main.default.other', path: '/Volumes/main/default/other/designer_apps/app1' },
-    parameters: previous.parameters.map((parameter) => parameter.name === 'choice' ? { ...parameter, choices: ['east'] } : parameter),
+    parameters: previous.parameters.map((parameter) =>
+      parameter.name === 'choice' ? { ...parameter, choices: ['east'] } : parameter
+    ),
   };
   assert.notEqual(appConfig.uploadConfigurationKey(previous), appConfig.uploadConfigurationKey(next));
-  assert.equal(appConfig.uploadConfigurationKey(previous), appConfig.uploadConfigurationKey({ ...previous, appName: 'Renamed' }));
-  assert.deepEqual(appConfig.refreshedValuesFor(previous, next, values), { path: '', text: '', choice: 'east', regions: 'east,west' });
-  assert.equal(appConfig.refreshedValuesFor(previous, { ...previous, appName: 'Renamed' }, values).path, 'upload:cached');
+  assert.equal(
+    appConfig.uploadConfigurationKey(previous),
+    appConfig.uploadConfigurationKey({ ...previous, appName: 'Renamed' })
+  );
+  assert.deepEqual(appConfig.refreshedValuesFor(previous, next, values), {
+    path: '',
+    text: '',
+    choice: 'east',
+    regions: 'east,west',
+  });
+  assert.equal(
+    appConfig.refreshedValuesFor(previous, { ...previous, appName: 'Renamed' }, values).path,
+    'upload:cached'
+  );
   assert.equal(appConfig.refreshedValuesFor(next, previous, { ...values, path: '' }).path, '');
 });
 
@@ -163,9 +188,18 @@ test('upload caches reuse unchanged files and discard late completions after inv
 });
 
 test('upload failures expose a recognizable re-upload error to the form', async () => {
-  const request = mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({
-    error: 'Upload the file again.', code: 'UPLOAD_UNAVAILABLE',
-  }), { status: 409 }));
+  const request = mock.method(
+    globalThis,
+    'fetch',
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: 'Upload the file again.',
+          code: 'UPLOAD_UNAVAILABLE',
+        }),
+        { status: 409 }
+      )
+  );
   try {
     await assert.rejects(fileUpload.uploadFile('path', new File(['a'], 'data.csv')), fileUpload.UploadUnavailableError);
     assert.equal(request.mock.callCount(), 1);
@@ -207,7 +241,7 @@ test('substitutes only completed owned uploads and stamps ownership for run para
       ignored: 'value',
     },
     owner,
-    store,
+    store
   );
   assert.equal(resolved.ok, true);
   assert.deepEqual(resolved.params, {
@@ -224,12 +258,12 @@ test('substitutes only completed owned uploads and stamps ownership for run para
   }
   assert.equal(
     (await parameters.resolveRunParameters(manifest, { path: saved.reference }, undefined, store)).ok,
-    false,
+    false
   );
   assert.equal(
     (await parameters.resolveRunParameters(manifest, { path: saved.reference }, uploads.viewerKey('bob', '100'), store))
       .ok,
-    false,
+    false
   );
   assert.equal(
     (
@@ -237,10 +271,10 @@ test('substitutes only completed owned uploads and stamps ownership for run para
         { ...manifest, storage: undefined },
         { path: saved.reference },
         owner,
-        store,
+        store
       )
     ).ok,
-    false,
+    false
   );
 });
 
@@ -256,7 +290,7 @@ test('never makes incomplete or changed uploads available', async () => {
   };
   await assert.rejects(
     uploads.saveUpload(failing, storage, owner, 'path', 'data.csv', Buffer.from('a\n1\n')),
-    /metadata unavailable/,
+    /metadata unavailable/
   );
   assert.equal(store.files.size, 0);
   const saved = await uploads.saveUpload(store, storage, owner, 'path', 'data.csv', Buffer.from('a\n1\n'));
@@ -281,9 +315,13 @@ test('streams uploads while enforcing actual byte limits, empty files and interr
     'path',
     'data.csv',
     stream('ab', 'cd'),
-    4,
+    4
   );
-  assert.equal((await uploads.resolveUpload(store, { ...storage, maxUploadFileSizeBytes: 4 }, 'viewer', 'path', saved.reference)).upload.size, 4);
+  assert.equal(
+    (await uploads.resolveUpload(store, { ...storage, maxUploadFileSizeBytes: 4 }, 'viewer', 'path', saved.reference))
+      .upload.size,
+    4
+  );
 
   await assert.rejects(
     uploads.saveUploadStream(
@@ -292,14 +330,11 @@ test('streams uploads while enforcing actual byte limits, empty files and interr
       'viewer',
       'path',
       'large.csv',
-      stream('ab', 'cde'),
+      stream('ab', 'cde')
     ),
-    /5 GB/,
+    /5 GB/
   );
-  await assert.rejects(
-    uploads.saveUploadStream(store, storage, 'viewer', 'path', 'empty.csv', stream()),
-    /non-empty/,
-  );
+  await assert.rejects(uploads.saveUploadStream(store, storage, 'viewer', 'path', 'empty.csv', stream()), /non-empty/);
   await assert.rejects(
     uploads.saveUploadStream(
       store,
@@ -312,9 +347,9 @@ test('streams uploads while enforcing actual byte limits, empty files and interr
           controller.enqueue(Buffer.from('a'));
           controller.error(new Error('disconnected'));
         },
-      }),
+      })
     ),
-    /disconnected/,
+    /disconnected/
   );
   assert.equal([...store.files.keys()].filter((path) => /large|empty|interrupted/.test(path)).length, 0);
 });
@@ -322,16 +357,35 @@ test('streams uploads while enforcing actual byte limits, empty files and interr
 test('rejects unsafe filenames and declared sizes', async () => {
   const store = memoryStore();
   for (const filename of ['', ' ', '.', '..', '../data.csv', 'a\\b.csv', 'a\n.csv', 'é'.repeat(128)]) {
-    await assert.rejects(uploads.saveUpload(store, storage, 'viewer', 'path', filename, Buffer.from('a')), /valid filename/);
+    await assert.rejects(
+      uploads.saveUpload(store, storage, 'viewer', 'path', filename, Buffer.from('a')),
+      /valid filename/
+    );
   }
   await assert.rejects(
-    uploads.saveUpload(store, { ...storage, maxUploadFileSizeBytes: 1 }, 'viewer', 'path', 'data.csv', Buffer.from('aa')),
-    /at most/,
+    uploads.saveUpload(
+      store,
+      { ...storage, maxUploadFileSizeBytes: 1 },
+      'viewer',
+      'path',
+      'data.csv',
+      Buffer.from('aa')
+    ),
+    /at most/
   );
   assert.equal(store.files.size, 0);
 });
 
-for (const filename of ['data.csv', 'workbook.xlsx', 'workbook.xls', 'data.json', 'data.parquet', 'data.csv.gz', 'データ.xlsx', 'data']) {
+for (const filename of [
+  'data.csv',
+  'workbook.xlsx',
+  'workbook.xls',
+  'data.json',
+  'data.parquet',
+  'data.csv.gz',
+  'データ.xlsx',
+  'data',
+]) {
   test(`preserves ${filename}, its bytes and its reference through job parameter resolution`, async () => {
     const store = memoryStore();
     const viewer = uploads.viewerKey('alice', '100');
@@ -363,7 +417,10 @@ test('refuses an upload whose completion record contains an invalid filename', a
   const id = saved.reference.slice('upload:'.length);
   const sidecar = [...store.files.keys()].find((path) => path.endsWith(`/${id}.json`));
   store.files.set(sidecar, Buffer.from(JSON.stringify({ ...saved, filename: '../other.json' })));
-  await assert.rejects(uploads.resolveUpload(store, storage, viewer, 'path', saved.reference), /incomplete or unreadable/);
+  await assert.rejects(
+    uploads.resolveUpload(store, storage, viewer, 'path', saved.reference),
+    /incomplete or unreadable/
+  );
 });
 
 test('run ownership protects history, results and cancellation even after upload inputs are removed', () => {
@@ -425,7 +482,11 @@ test('ordinary parameters retain defaults and dropdown validation with authentic
   };
   assert.deepEqual(await parameters.resolveRunParameters(regular, {}, 'alice', memoryStore()), {
     ok: true,
-    params: { choice: 'A', _lb_file_outputs: '{}', _lb_file_output_volume: '', _lb_app_viewer: 'alice',
+    params: {
+      choice: 'A',
+      _lb_file_outputs: '{}',
+      _lb_file_output_volume: '',
+      _lb_app_viewer: 'alice',
       _lb_app_parameters: JSON.stringify({ choice: { label: 'Choice', type: 'dropdown', value: 'A' } }),
     },
   });
@@ -440,7 +501,7 @@ test('preview-only and empty selections explicitly clear inherited file-output J
       { parameters: [], blocks },
       { _lb_file_outputs: stalePolicy },
       'alice',
-      memoryStore(),
+      memoryStore()
     );
     assert.equal(resolved.ok, true);
     assert.equal(resolved.params._lb_file_outputs, '{}');
@@ -452,21 +513,52 @@ test('preview-only and empty selections explicitly clear inherited file-output J
   }
 });
 
+test('ordinary parameters accept scalar values and reject structured values before submission', async () => {
+  const regular = {
+    parameters: [{ name: 'value', label: 'Value', type: 'text', defaultValue: 'default' }],
+  };
+  for (const [value, expected] of [
+    ['hello', 'hello'],
+    [42, '42'],
+    [false, 'false'],
+    [null, 'default'],
+  ]) {
+    const resolved = await parameters.resolveRunParameters(regular, { value }, 'alice', memoryStore());
+    assert.equal(resolved.ok, true);
+    assert.equal(resolved.params.value, expected);
+  }
+  for (const value of [{ nested: 'value' }, ['a', 'b']]) {
+    const resolved = await parameters.resolveRunParameters(regular, { value }, 'alice', memoryStore());
+    assert.deepEqual(resolved, { ok: false, error: '"Value" must be a string, number or boolean.' });
+  }
+});
+
 test('file-output manifest scopes are explicit without requiring upload storage', async () => {
   const fileManifest = {
-    ...manifest, storage: undefined, parameters: [],
+    ...manifest,
+    storage: undefined,
+    parameters: [],
     blocks: [{ ...manifest.blocks[0], fileOutput: { volumes: ['main.default.files', 'main.default.other'] } }],
   };
   const parsed = appConfig.parseAppManifest(fileManifest);
   assert.deepEqual(parsed.blocks[0].fileOutput, fileManifest.blocks[0].fileOutput);
   assert.equal(parsed.storage, undefined);
   for (const fileOutput of [null, {}, { volumes: [] }, { volumes: ['bad'] }, { volumes: ['main.default.files/..'] }]) {
-    assert.equal(appConfig.parseAppManifest({ ...fileManifest, blocks: [{ ...fileManifest.blocks[0], fileOutput }] }), undefined);
+    assert.equal(
+      appConfig.parseAppManifest({ ...fileManifest, blocks: [{ ...fileManifest.blocks[0], fileOutput }] }),
+      undefined
+    );
   }
-  const resolved = await parameters.resolveRunParameters(fileManifest, {
-    _lb_file_outputs: JSON.stringify({ source: { volumes: ['main.private.secret'] } }),
-    _lb_collect_row_counts: 'false', _lb_app_viewer: 'attacker',
-  }, 'viewer', memoryStore());
+  const resolved = await parameters.resolveRunParameters(
+    fileManifest,
+    {
+      _lb_file_outputs: JSON.stringify({ source: { volumes: ['main.private.secret'] } }),
+      _lb_collect_row_counts: 'false',
+      _lb_app_viewer: 'attacker',
+    },
+    'viewer',
+    memoryStore()
+  );
   assert.equal(resolved.ok, true);
   assert.deepEqual(JSON.parse(resolved.params._lb_file_outputs), { source: fileManifest.blocks[0].fileOutput });
   assert.equal(resolved.params._lb_collect_row_counts, 'true');
@@ -483,9 +575,14 @@ test('each submitted file-output run gets a fresh server-owned namespace, never 
   assert.equal(parameters.isReservedParameter('_lb_output_namespace'), true);
   const namespaces = [];
   for (const viewer of ['alice', 'alice', 'bob']) {
-    const resolved = await parameters.resolveRunParameters(fileManifest, {
-      _lb_output_namespace: submittedNamespace,
-    }, viewer, memoryStore());
+    const resolved = await parameters.resolveRunParameters(
+      fileManifest,
+      {
+        _lb_output_namespace: submittedNamespace,
+      },
+      viewer,
+      memoryStore()
+    );
     assert.equal(resolved.ok, true);
     const namespace = resolved.params._lb_output_namespace;
     assert.match(namespace, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
@@ -493,16 +590,27 @@ test('each submitted file-output run gets a fresh server-owned namespace, never 
     namespaces.push(namespace);
   }
   assert.equal(new Set(namespaces).size, namespaces.length);
-  const previewOnly = await parameters.resolveRunParameters({ ...fileManifest, blocks: [] }, {
-    _lb_output_namespace: submittedNamespace,
-  }, 'alice', memoryStore());
+  const previewOnly = await parameters.resolveRunParameters(
+    { ...fileManifest, blocks: [] },
+    {
+      _lb_output_namespace: submittedNamespace,
+    },
+    'alice',
+    memoryStore()
+  );
   assert.equal(previewOnly.ok, true);
   assert.equal(previewOnly.params._lb_output_namespace, undefined);
 });
 
 test('malformed file-output identities cannot silently downgrade an App to preview-only behavior', () => {
   const preview = manifest.blocks[0];
-  const file = { type: 'output', id: 'file', nodeId: 'output_0', port: 'result', fileOutput: { volumes: ['main.apps.files'] } };
+  const file = {
+    type: 'output',
+    id: 'file',
+    nodeId: 'output_0',
+    port: 'result',
+    fileOutput: { volumes: ['main.apps.files'] },
+  };
   for (const blocks of [
     [preview, { ...file, id: undefined }],
     [preview, { ...file, id: '' }],
@@ -517,7 +625,10 @@ test('malformed file-output identities cannot silently downgrade an App to previ
     assert.equal(appConfig.parseAppManifest({ ...manifest, storage: undefined, parameters: [], blocks }), undefined);
   }
   const ordinary = appConfig.parseAppManifest({
-    ...manifest, storage: undefined, parameters: [], blocks: [preview, { ...preview, id: '' }, preview],
+    ...manifest,
+    storage: undefined,
+    parameters: [],
+    blocks: [preview, { ...preview, id: '' }, preview],
   });
   assert.equal(ordinary.blocks.length, 1);
 });
@@ -533,14 +644,26 @@ test('rejects mismatched uploads before network transfer, including drag-and-dro
 
 test('validates supported extensions case-insensitively without inferring formats or trusting MIME types', () => {
   for (const [format, filename] of [
-    ['excel', 'DATA.XLSX'], ['excel', 'legacy.xls'], ['csv', 'data.tsv'], ['csv', 'data.CSV.GZ'],
-    ['json', 'data.jsonl'], ['json', 'data.ndjson.bz2'], ['parquet', 'part.parquet'],
-    ['avro', 'part.avro'], ['orc', 'part.orc'], ['xml', 'data.xml'], ['pdf', 'data.pdf'],
-  ]) assert.equal(fileFormats.validateFileFormat(filename, [format]), undefined);
+    ['excel', 'DATA.XLSX'],
+    ['excel', 'legacy.xls'],
+    ['csv', 'data.tsv'],
+    ['csv', 'data.CSV.GZ'],
+    ['json', 'data.jsonl'],
+    ['json', 'data.ndjson.bz2'],
+    ['parquet', 'part.parquet'],
+    ['avro', 'part.avro'],
+    ['orc', 'part.orc'],
+    ['xml', 'data.xml'],
+    ['pdf', 'data.pdf'],
+  ])
+    assert.equal(fileFormats.validateFileFormat(filename, [format]), undefined);
   for (const filename of ['data.csv', 'data.xlsx.csv', 'data', 'data.xlsx.gz'])
     assert.match(fileFormats.validateFileFormat(filename, ['excel']), /expects Excel/);
   assert.match(fileFormats.validateFileFormat('data.xlsx', ['csv']), /expects CSV/);
-  assert.match(fileUpload.validateUpload(new File(['a'], 'data.csv', { type: 'application/vnd.ms-excel' }), ['excel']), /expects Excel/);
+  assert.match(
+    fileUpload.validateUpload(new File(['a'], 'data.csv', { type: 'application/vnd.ms-excel' }), ['excel']),
+    /expects Excel/
+  );
   for (const formats of [undefined, [], ['text'], ['binaryfile'], ['custom.provider'], ['constructor']]) {
     assert.equal(fileFormats.validateFileFormat('no-extension', formats), undefined);
     assert.equal(fileFormats.uploadAccept(formats), undefined);
@@ -554,7 +677,10 @@ test('preserves file format constraints through the browser manifest and rejects
   const configured = { ...manifest, parameters: [{ ...fileParameter, fileFormats: ['excel'] }] };
   assert.deepEqual(appConfig.parseAppManifest(configured).parameters[0].fileFormats, ['excel']);
   for (const invalid of ['excel', null, [1], [''], ['EXCEL']]) {
-    assert.equal(appConfig.parseAppManifest({ ...manifest, parameters: [{ ...fileParameter, fileFormats: invalid }] }), undefined);
+    assert.equal(
+      appConfig.parseAppManifest({ ...manifest, parameters: [{ ...fileParameter, fileFormats: invalid }] }),
+      undefined
+    );
   }
 });
 
@@ -564,7 +690,9 @@ test('rechecks retained uploads against the current publication before starting 
   const saved = await uploads.saveUpload(store, storage, owner, 'path', 'data.csv', Buffer.from('a\n1\n'));
   const result = await parameters.resolveRunParameters(
     { ...manifest, parameters: [{ ...fileParameter, fileFormats: ['excel'] }] },
-    { path: saved.reference }, owner, store,
+    { path: saved.reference },
+    owner,
+    store
   );
   assert.equal(result.ok, false);
   assert.match(result.error, /expects Excel/);

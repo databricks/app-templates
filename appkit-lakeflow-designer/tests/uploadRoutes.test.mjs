@@ -17,7 +17,10 @@ let ParameterForm, parseAppManifest, initialValuesFor;
 let instance = 0;
 const harnessKey = Symbol.for('designer-upload-route-tests');
 const originalRuntimeEnv = Object.fromEntries(
-  ['DATABRICKS_JOB_ID', 'DATABRICKS_APP_ID', 'DATABRICKS_CLIENT_ID', 'DATABRICKS_APP_URL'].map((name) => [name, process.env[name]]),
+  ['DATABRICKS_JOB_ID', 'DATABRICKS_APP_ID', 'DATABRICKS_CLIENT_ID', 'DATABRICKS_APP_URL'].map((name) => [
+    name,
+    process.env[name],
+  ])
 );
 
 before(async () => {
@@ -60,8 +63,10 @@ before(async () => {
   ({ viewerKey } = await import(pathToFileURL(join(outputDirectory, 'fileUploads.mjs')).href));
   await build({
     entry: {
-      payload: 'client/src/payload.ts', LastRunLabel: 'client/src/LastRunLabel.tsx',
-      ParameterForm: 'client/src/ParameterForm.tsx', appConfig: 'client/src/appConfig.ts',
+      payload: 'client/src/payload.ts',
+      LastRunLabel: 'client/src/LastRunLabel.tsx',
+      ParameterForm: 'client/src/ParameterForm.tsx',
+      appConfig: 'client/src/appConfig.ts',
     },
     config: false,
     tsconfig: 'tsconfig.client.json',
@@ -105,12 +110,31 @@ async function serverHarness(options = {}) {
   const routes = new Map();
   const middleware = [];
   const state = {
-    manifest, runs: [], listed: [], reads: [], cancelled: [], outputReads: [], submissions: [], apps: [],
-    notebookPath: `/Users/author/app/runner-${manifest.runner.revision}.designer.py`, notebookSource: '', workspaceReads: [], commands: undefined,
-    taskOutput: {}, taskOutputReads: [], exportMissing: false, exportError: undefined,
-    userProfile: { id: '123', displayName: ' Alice Smith ' }, profileError: undefined, profileReads: 0,
-    permissions: { access_control_list: [] }, permissionReads: [], permissionUpdates: [], jobCalls: [],
-    permissionReadError: undefined, permissionUpdateError: undefined,
+    manifest,
+    runs: [],
+    listed: [],
+    reads: [],
+    cancelled: [],
+    outputReads: [],
+    submissions: [],
+    apps: [],
+    notebookPath: `/Users/author/app/runner-${manifest.runner.revision}.designer.py`,
+    notebookSource: '',
+    workspaceReads: [],
+    commands: undefined,
+    taskOutput: {},
+    taskOutputReads: [],
+    exportMissing: false,
+    exportError: undefined,
+    userProfile: { id: '123', displayName: ' Alice Smith ' },
+    profileError: undefined,
+    profileReads: 0,
+    permissions: { access_control_list: [] },
+    permissionReads: [],
+    permissionUpdates: [],
+    jobCalls: [],
+    permissionReadError: undefined,
+    permissionUpdateError: undefined,
   };
   const stored = new Map();
   globalThis[harnessKey] = {
@@ -124,9 +148,7 @@ async function serverHarness(options = {}) {
         assert.equal(stored.has(path), false);
         stored.set(
           path,
-          bytes instanceof ReadableStream
-            ? Buffer.from(await new Response(bytes).arrayBuffer())
-            : Buffer.from(bytes),
+          bytes instanceof ReadableStream ? Buffer.from(await new Response(bytes).arrayBuffer()) : Buffer.from(bytes)
         );
       },
       read: async (path, options) => {
@@ -135,10 +157,13 @@ async function serverHarness(options = {}) {
         return stored.get(path).toString();
       },
       metadata: async (path) => ({ contentLength: stored.get(path)?.length }),
-      list: async (folder) => [...stored.keys()]
-        .filter((path) => path.startsWith(`${folder}/`) && !path.slice(folder.length + 1).includes('/'))
-        .map((path) => ({ name: path.slice(folder.length + 1), is_directory: false })),
-      delete: async (path) => { stored.delete(path); },
+      list: async (folder) =>
+        [...stored.keys()]
+          .filter((path) => path.startsWith(`${folder}/`) && !path.slice(folder.length + 1).includes('/'))
+          .map((path) => ({ name: path.slice(folder.length + 1), is_directory: false })),
+      delete: async (path) => {
+        stored.delete(path);
+      },
     },
     extend(apply) {
       apply({
@@ -147,7 +172,7 @@ async function serverHarness(options = {}) {
           ['get', 'post', 'delete', 'all'].map((method) => [
             method,
             (path, handler) => routes.set(`${method}:${path}`, handler),
-          ]),
+          ])
         ),
       });
     },
@@ -159,7 +184,13 @@ async function serverHarness(options = {}) {
         hostType: () => 'workspaceHost',
       },
       jobs: {
-        get: async () => ({ settings: { tasks: [{ notebook_task: { notebook_path: state.notebookPath, base_parameters: manifest.runner.parameters } }] } }),
+        get: async () => ({
+          settings: {
+            tasks: [
+              { notebook_task: { notebook_path: state.notebookPath, base_parameters: manifest.runner.parameters } },
+            ],
+          },
+        }),
         getRun: async ({ run_id }) => {
           state.reads.push(run_id);
           return state.runs.find((run) => run.run_id === run_id);
@@ -180,8 +211,8 @@ async function serverHarness(options = {}) {
                     results: { type: 'table', schema: [], data: [], overflow: false },
                   },
                 ],
-              }),
-            ),
+              })
+            )
           ).toString('base64');
           return { views: [{ content: `<script>__DATABRICKS_NOTEBOOK_MODEL = '${model}'</script>` }] };
         },
@@ -226,11 +257,15 @@ async function serverHarness(options = {}) {
     },
     userClient(options) {
       assert.equal(options.host, workspaceHost);
-      return { currentUser: { me: async () => {
-        state.profileReads += 1;
-        if (state.profileError) throw state.profileError;
-        return state.userProfile;
-      } } };
+      return {
+        currentUser: {
+          me: async () => {
+            state.profileReads += 1;
+            if (state.profileError) throw state.profileError;
+            return state.userProfile;
+          },
+        },
+      };
     },
   };
   process.env.DATABRICKS_JOB_ID = '100';
@@ -265,7 +300,9 @@ async function serverHarness(options = {}) {
     };
     for (const handler of middleware) {
       let next = false;
-      handler(req, res, () => { next = true; });
+      handler(req, res, () => {
+        next = true;
+      });
       if (!next) return response;
     }
     const handler = routes.get(`${method}:${path}`) ?? routes.get(`all:${path}`);
@@ -319,16 +356,21 @@ function run(id, owner, params = {}) {
     end_time: id + 1,
     state: { life_cycle_state: 'TERMINATED', result_state: 'SUCCESS' },
     tasks: [{ run_id: id + 1000 }],
-    job_parameters: Object.entries({ _lb_app_viewer: viewerKey(owner, '100'), ...params })
-      .map(([name, value]) => ({ name, value })),
+    job_parameters: Object.entries({ _lb_app_viewer: viewerKey(owner, '100'), ...params }).map(([name, value]) => ({
+      name,
+      value,
+    })),
   };
 }
 
 test('live status and last-run responses carry each published output’s recorded disablement', async () => {
   const { state, request } = await serverHarness();
   state.manifest = {
-    ...manifest, storage: undefined,
-    parameters: [{ name: 'environment', label: 'Environment', type: 'dropdown', defaultValue: 'prod', choices: ['prod', 'dev'] }],
+    ...manifest,
+    storage: undefined,
+    parameters: [
+      { name: 'environment', label: 'Environment', type: 'dropdown', defaultValue: 'prod', choices: ['prod', 'dev'] },
+    ],
     blocks: [
       { type: 'output', id: 'prod', label: 'Prod Output', nodeId: 'prod', port: 'data' },
       { type: 'output', id: 'dev', label: 'Dev Output', nodeId: 'dev', port: 'data' },
@@ -336,10 +378,15 @@ test('live status and last-run responses carry each published output’s recorde
   };
   const mimeType = 'application/vnd.databricks.lakebuilder.runtime-node-state+json';
   state.commands = [
-    { command: 'display(ctx["prod.data"])', results: { data: [
-      { type: 'mimeBundle', data: { [mimeType]: { nodeId: 'prod', disabled: false } } },
-      { type: 'table', schema: [{ name: 'value', type: 'long' }], data: [[1]], overflow: false },
-    ] } },
+    {
+      command: 'display(ctx["prod.data"])',
+      results: {
+        data: [
+          { type: 'mimeBundle', data: { [mimeType]: { nodeId: 'prod', disabled: false } } },
+          { type: 'table', schema: [{ name: 'value', type: 'long' }], data: [[1]], overflow: false },
+        ],
+      },
+    },
     { command: 'run()', results: { type: 'mimeBundle', data: { [mimeType]: { nodeId: 'dev', disabled: true } } } },
   ];
   state.runs = [run(10, 'alice', { environment: 'prod' })];
@@ -347,9 +394,13 @@ test('live status and last-run responses carry each published output’s recorde
   const status = await request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: '10' } });
   assert.equal(status.status, 200);
   const snapshot = parseRunSnapshot(status.body);
-  assert.deepEqual(snapshot.result.outputs.map(({ id, disabled, outcome }) => ({ id, disabled, outcome: outcome.outcome })), [
-    { id: 'prod', disabled: false, outcome: 'result' }, { id: 'dev', disabled: true, outcome: 'missing' },
-  ]);
+  assert.deepEqual(
+    snapshot.result.outputs.map(({ id, disabled, outcome }) => ({ id, disabled, outcome: outcome.outcome })),
+    [
+      { id: 'prod', disabled: false, outcome: 'result' },
+      { id: 'dev', disabled: true, outcome: 'missing' },
+    ]
+  );
   const last = await request('get', '/api/designer/last-run');
   assert.equal(last.body.status, 'found');
   assert.deepEqual(last.body.result, status.body.result);
@@ -389,14 +440,23 @@ test('submits as the ingress user while preserving independent Job permissions',
 });
 
 for (const [permissionLevel, inherited] of [
-  ['CAN_VIEW', false], ['CAN_MANAGE_RUN', false], ['CAN_MANAGE', false], ['IS_OWNER', false], ['CAN_VIEW', true],
+  ['CAN_VIEW', false],
+  ['CAN_MANAGE_RUN', false],
+  ['CAN_MANAGE', false],
+  ['IS_OWNER', false],
+  ['CAN_VIEW', true],
 ]) {
   test(`retains ${inherited ? 'inherited ' : ''}${permissionLevel} without rewriting the user's grant`, async () => {
     const { state, request } = await serverHarness();
     state.manifest = { ...manifest, storage: undefined, parameters: [] };
-    state.permissions = { access_control_list: [{
-      user_name: 'ALICE@EXAMPLE.COM', all_permissions: [{ permission_level: permissionLevel, inherited }],
-    }] };
+    state.permissions = {
+      access_control_list: [
+        {
+          user_name: 'ALICE@EXAMPLE.COM',
+          all_permissions: [{ permission_level: permissionLevel, inherited }],
+        },
+      ],
+    };
     const before = structuredClone(state.permissions);
     assert.equal((await request('post', '/api/designer/run')).status, 200);
     assert.deepEqual(state.permissions, before);
@@ -457,16 +517,23 @@ test('ordinary Apps scope results and cancellation to the viewer who submitted t
 test('records trusted ingress identity, resolved Designer inputs and fresh submission IDs', async () => {
   const { state, request } = await serverHarness();
   state.manifest = {
-    ...manifest, storage: undefined,
+    ...manifest,
+    storage: undefined,
     parameters: [
       { name: 'message', label: 'Message', type: 'text', defaultValue: 'Hello' },
       { name: 'regions', label: 'Regions', type: 'multiselect', defaultValue: 'East', choices: ['East', 'West'] },
     ],
   };
-  const body = { params: {
-    regions: '', _lb_app_user_id: 'mallory', _lb_app_user_name: 'Mallory',
-    _lb_app_id: 'other-app', _lb_app_parameters: '{}', _lb_app_submission_id: 'reuse-this',
-  } };
+  const body = {
+    params: {
+      regions: '',
+      _lb_app_user_id: 'mallory',
+      _lb_app_user_name: 'Mallory',
+      _lb_app_id: 'other-app',
+      _lb_app_parameters: '{}',
+      _lb_app_submission_id: 'reuse-this',
+    },
+  };
   for (let index = 0; index < 2; index += 1) {
     const response = await request('post', '/api/designer/run', {
       viewer: '123@456',
@@ -488,7 +555,10 @@ test('records trusted ingress identity, resolved Designer inputs and fresh submi
     });
     assert.match(params._lb_app_submission_id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   }
-  assert.notEqual(state.submissions[0].job_parameters._lb_app_submission_id, state.submissions[1].job_parameters._lb_app_submission_id);
+  assert.notEqual(
+    state.submissions[0].job_parameters._lb_app_submission_id,
+    state.submissions[1].job_parameters._lb_app_submission_id
+  );
   assert.equal(state.profileReads, 0);
 });
 
@@ -496,7 +566,8 @@ test('refuses an unauthenticated submission even for an App without files', asyn
   const { state, request } = await serverHarness();
   state.manifest = { ...manifest, storage: undefined, parameters: [] };
   const response = await request('post', '/api/designer/run', {
-    viewer: '', body: { params: { _lb_app_user_id: '123' } },
+    viewer: '',
+    body: { params: { _lb_app_user_id: '123' } },
   });
   assert.equal(response.status, 401);
   assert.deepEqual(state.jobCalls, []);
@@ -506,8 +577,17 @@ test('refuses an unauthenticated submission even for an App without files', asyn
 test('snapshots resolved defaults and labels without rewriting earlier submissions on republish', async () => {
   const { state, request } = await serverHarness();
   state.manifest = {
-    ...manifest, storage: undefined,
-    parameters: [{ name: 'regions', label: 'Original label', type: 'multiselect', defaultValue: 'East', choices: ['East', 'West'] }],
+    ...manifest,
+    storage: undefined,
+    parameters: [
+      {
+        name: 'regions',
+        label: 'Original label',
+        type: 'multiselect',
+        defaultValue: 'East',
+        choices: ['East', 'West'],
+      },
+    ],
   };
   assert.equal((await request('post', '/api/designer/run')).status, 200);
   state.manifest = {
@@ -515,10 +595,13 @@ test('snapshots resolved defaults and labels without rewriting earlier submissio
     parameters: [{ ...state.manifest.parameters[0], label: 'Updated label', defaultValue: 'West' }],
   };
   assert.equal((await request('post', '/api/designer/run')).status, 200);
-  assert.deepEqual(state.submissions.map(({ job_parameters }) => JSON.parse(job_parameters._lb_app_parameters)), [
-    { regions: { label: 'Original label', type: 'multiselect', value: 'East' } },
-    { regions: { label: 'Updated label', type: 'multiselect', value: 'West' } },
-  ]);
+  assert.deepEqual(
+    state.submissions.map(({ job_parameters }) => JSON.parse(job_parameters._lb_app_parameters)),
+    [
+      { regions: { label: 'Original label', type: 'multiselect', value: 'East' } },
+      { regions: { label: 'Updated label', type: 'multiselect', value: 'West' } },
+    ]
+  );
 });
 
 test('refuses a submission when both runtime App ID and OAuth client ID are absent', async () => {
@@ -529,7 +612,10 @@ test('refuses a submission when both runtime App ID and OAuth client ID are abse
 });
 
 test('uses the standalone App service-principal UUID when the explicit App ID is absent', async () => {
-  const { state, request } = await serverHarness({ appId: undefined, clientId: '416bdf21-1504-4c1b-b48d-b5f87e424d7c' });
+  const { state, request } = await serverHarness({
+    appId: undefined,
+    clientId: '416bdf21-1504-4c1b-b48d-b5f87e424d7c',
+  });
   state.manifest = { ...manifest, storage: undefined, parameters: [] };
   assert.equal((await request('post', '/api/designer/run')).status, 200);
   assert.equal(state.submissions[0].job_parameters._lb_app_id, '416bdf21-1504-4c1b-b48d-b5f87e424d7c');
@@ -545,12 +631,19 @@ test('prefers the explicit App ID over the OAuth client ID', async () => {
 test('resolves a display name with the forwarded user token and normalized ingress ID', async () => {
   const { state, request } = await serverHarness();
   state.manifest = { ...manifest, storage: undefined, parameters: [] };
-  assert.equal((await request('post', '/api/designer/run', {
-    viewer: '123@456', headers: {
-      'x-forwarded-preferred-username': 'alice@example.com', 'x-forwarded-email': 'alice@example.com',
-      'x-forwarded-access-token': 'user-oauth-token',
-    },
-  })).status, 200);
+  assert.equal(
+    (
+      await request('post', '/api/designer/run', {
+        viewer: '123@456',
+        headers: {
+          'x-forwarded-preferred-username': 'alice@example.com',
+          'x-forwarded-email': 'alice@example.com',
+          'x-forwarded-access-token': 'user-oauth-token',
+        },
+      })
+    ).status,
+    200
+  );
   const params = state.submissions[0].job_parameters;
   assert.equal(params._lb_app_user_id, '123');
   assert.equal(params._lb_app_user_name, 'Alice Smith');
@@ -567,11 +660,18 @@ for (const [label, profile, error] of [
     state.manifest = { ...manifest, storage: undefined, parameters: [] };
     state.userProfile = profile;
     state.profileError = error;
-    assert.equal((await request('post', '/api/designer/run', {
-      viewer: '123@456', headers: {
-        'x-forwarded-email': 'alice@example.com', 'x-forwarded-access-token': 'user-oauth-token',
-      },
-    })).status, 200);
+    assert.equal(
+      (
+        await request('post', '/api/designer/run', {
+          viewer: '123@456',
+          headers: {
+            'x-forwarded-email': 'alice@example.com',
+            'x-forwarded-access-token': 'user-oauth-token',
+          },
+        })
+      ).status,
+      200
+    );
     const params = state.submissions[0].job_parameters;
     assert.equal(params._lb_app_user_id, '123');
     assert.equal(params._lb_app_user_name, 'alice@example.com');
@@ -583,12 +683,19 @@ test('retains an ingress display name without requiring a profile lookup', async
   const { state, request } = await serverHarness();
   state.manifest = { ...manifest, storage: undefined, parameters: [] };
   state.profileError = new Error('should not be needed');
-  assert.equal((await request('post', '/api/designer/run', {
-    viewer: '123@456', headers: {
-      'x-forwarded-preferred-username': 'Ingress Name', 'x-forwarded-email': 'alice@example.com',
-      'x-forwarded-access-token': 'user-oauth-token',
-    },
-  })).status, 200);
+  assert.equal(
+    (
+      await request('post', '/api/designer/run', {
+        viewer: '123@456',
+        headers: {
+          'x-forwarded-preferred-username': 'Ingress Name',
+          'x-forwarded-email': 'alice@example.com',
+          'x-forwarded-access-token': 'user-oauth-token',
+        },
+      })
+    ).status,
+    200
+  );
   assert.equal(state.submissions[0].job_parameters._lb_app_user_name, 'Ingress Name');
   assert.equal(state.profileReads, 0);
 });
@@ -597,16 +704,29 @@ test('uses the ingress email as the display name when no user token is forwarded
   const { state, request } = await serverHarness();
   state.manifest = { ...manifest, storage: undefined, parameters: [] };
   state.profileError = new Error('no forwarded token');
-  assert.equal((await request('post', '/api/designer/run', {
-    viewer: '123@example.com', headers: { 'x-forwarded-email': 'alice@example.com' },
-  })).status, 200);
+  assert.equal(
+    (
+      await request('post', '/api/designer/run', {
+        viewer: '123@example.com',
+        headers: { 'x-forwarded-email': 'alice@example.com' },
+      })
+    ).status,
+    200
+  );
   const params = state.submissions[0].job_parameters;
   assert.equal(params._lb_app_user_id, '123@example.com');
   assert.equal(params._lb_app_user_name, 'alice@example.com');
   assert.equal(state.profileReads, 0);
 });
 
-for (const filename of ['sales.csv', 'sales.xlsx', 'data.json', 'data.csv.gz', 'carmax_car_prices copy (1).xlsx', 'データ.xlsx']) {
+for (const filename of [
+  'sales.csv',
+  'sales.xlsx',
+  'data.json',
+  'data.csv.gz',
+  'carmax_car_prices copy (1).xlsx',
+  'データ.xlsx',
+]) {
   test(`shows ${filename} on completion without refreshing and preserves it in history`, async () => {
     const { state, request } = await serverHarness();
     state.runs = [
@@ -620,13 +740,15 @@ for (const filename of ['sales.csv', 'sales.xlsx', 'data.json', 'data.csv.gz', '
     assert.equal(snapshot.terminal, true);
     assert.deepEqual(snapshot.parameters, { path: 'upload:829dcaa7-e505-49c1-b6d0-73d1841e990a' });
     assert.deepEqual(snapshot.parameterDisplayValues, { path: filename });
-    const html = renderToStaticMarkup(createElement(LastRunLabel, {
-      run: snapshot,
-      parameters: snapshot.parameters,
-      parameterDisplayValues: snapshot.parameterDisplayValues,
-      declared: manifest.parameters,
-      variant: 'justFinished',
-    }));
+    const html = renderToStaticMarkup(
+      createElement(LastRunLabel, {
+        run: snapshot,
+        parameters: snapshot.parameters,
+        parameterDisplayValues: snapshot.parameterDisplayValues,
+        declared: manifest.parameters,
+        variant: 'justFinished',
+      })
+    );
     assert.match(html, /Just finished/);
     assert.ok(html.includes(filename));
     assert.doesNotMatch(html, /upload:|\/Volumes\//);
@@ -634,7 +756,7 @@ for (const filename of ['sales.csv', 'sales.xlsx', 'data.json', 'data.csv.gz', '
     const history = await request('get', '/api/designer/runs');
     assert.deepEqual(
       history.body.runs.map(({ jobRunId }) => jobRunId),
-      ['10'],
+      ['10']
     );
     assert.deepEqual(history.body.runs[0].parameters, { path: 'upload:829dcaa7-e505-49c1-b6d0-73d1841e990a' });
     assert.deepEqual(history.body.runs[0].parameterDisplayValues, { path: filename });
@@ -653,31 +775,41 @@ test('terminal failures preserve upstream Guardrails warnings and retrieve the f
   const { state, request } = await serverHarness();
   state.manifest = { ...manifest, storage: undefined, parameters: [] };
   const failed = run(10, 'alice');
-  failed.state = { life_cycle_state: 'TERMINATED', result_state: 'FAILED', state_message: 'Task compute_operator failed.' };
+  failed.state = {
+    life_cycle_state: 'TERMINATED',
+    result_state: 'FAILED',
+    state_message: 'Task compute_operator failed.',
+  };
   state.runs = [failed];
-  state.commands = [{
-    command: '"""\nid: validate\ntemplate: guardrails\nname: Validate customers\n"""\nrun(config, inputs, spark)',
-    results: { type: 'ansi', data: '[guardrails] WARNING: checks[0] (not_null): missing customer ID' },
-  }, {
-    command: '"""\nid: stop\ntemplate: guardrails\nname: Validate amounts\n"""\nrun(config, inputs, spark)',
-    errorTrace: 'ValueError: [guardrails] checks[1] (range): negative amount',
-  }];
+  state.commands = [
+    {
+      command: '"""\nid: validate\ntemplate: guardrails\nname: Validate customers\n"""\nrun(config, inputs, spark)',
+      results: { type: 'ansi', data: '[guardrails] WARNING: checks[0] (not_null): missing customer ID' },
+    },
+    {
+      command: '"""\nid: stop\ntemplate: guardrails\nname: Validate amounts\n"""\nrun(config, inputs, spark)',
+      errorTrace: 'ValueError: [guardrails] checks[1] (range): negative amount',
+    },
+  ];
   state.taskOutput = {
     error: 'ValueError: Guardrails failed the workflow.',
     error_trace: 'ValueError: [guardrails] checks[1] (range): negative amount',
   };
-  const responses = await Promise.all(Array.from({ length: 3 }, () =>
-    request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: '10' } }),
-  ));
+  const responses = await Promise.all(
+    Array.from({ length: 3 }, () => request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: '10' } }))
+  );
   for (const response of responses) {
     const snapshot = parseRunSnapshot(response.body);
     assert.equal(snapshot.resultState, 'FAILED');
     assert.equal(snapshot.result.outcome, 'noPayload');
     assert.equal(snapshot.result.failureReason, state.taskOutput.error);
-    assert.deepEqual(snapshot.result.diagnostics.map(({ operatorName, severity, message }) => ({ operatorName, severity, message })), [
-      { operatorName: 'Validate customers', severity: 'warning', message: 'missing customer ID' },
-      { operatorName: 'Validate amounts', severity: 'failure', message: 'negative amount' },
-    ]);
+    assert.deepEqual(
+      snapshot.result.diagnostics.map(({ operatorName, severity, message }) => ({ operatorName, severity, message })),
+      [
+        { operatorName: 'Validate customers', severity: 'warning', message: 'missing customer ID' },
+        { operatorName: 'Validate amounts', severity: 'failure', message: 'negative amount' },
+      ]
+    );
   }
   assert.deepEqual(state.outputReads, [1010]);
   assert.deepEqual(state.taskOutputReads, [1010]);
@@ -699,9 +831,15 @@ test('failed task error fallback works when the notebook export is unavailable',
   const response = await request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: '10' } });
   const result = parseRunSnapshot(response.body).result;
   assert.equal(result.failureReason, state.taskOutput.error);
-  assert.deepEqual(result.diagnostics, [{
-    operatorName: 'Guardrails', checkIndex: 0, checkType: 'unique', severity: 'failure', message: 'duplicate ID',
-  }]);
+  assert.deepEqual(result.diagnostics, [
+    {
+      operatorName: 'Guardrails',
+      checkIndex: 0,
+      checkType: 'unique',
+      severity: 'failure',
+      message: 'duplicate ID',
+    },
+  ]);
 });
 
 test('active runs never fetch notebook exports or task errors and successful history reuses the completed result', async () => {
@@ -716,10 +854,12 @@ test('active runs never fetch notebook exports or task errors and successful his
 
   state.runs[0].state = { life_cycle_state: 'TERMINATED', result_state: 'SUCCESS' };
   state.listed = state.runs;
-  state.commands = [{
-    command: '"""\nid: validate\ntemplate: guardrails\nname: Validate\n"""\nrun(config, inputs, spark)',
-    results: { data: [{ type: 'ansi', data: '[guardrails] WARNING: checks[0] (unique): duplicate ID' }] },
-  }];
+  state.commands = [
+    {
+      command: '"""\nid: validate\ntemplate: guardrails\nname: Validate\n"""\nrun(config, inputs, spark)',
+      results: { data: [{ type: 'ansi', data: '[guardrails] WARNING: checks[0] (unique): duplicate ID' }] },
+    },
+  ];
   const completed = await request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: '10' } });
   const last = await request('get', '/api/designer/last-run');
   assert.deepEqual(last.body.result.diagnostics, completed.body.result.diagnostics);
@@ -737,10 +877,12 @@ test('a temporarily missing export recovers after the short cache lifetime', asy
   assert.equal(first.body.result.outcome, 'noPayload');
   assert.equal(first.body.result.diagnostics, undefined);
   state.exportMissing = false;
-  state.commands = [{
-    command: '"""\nid: validate\ntemplate: guardrails\nname: Validate\n"""\nrun(config, inputs, spark)',
-    results: { type: 'ansi', data: '[guardrails] WARNING: checks[0] (unique): duplicate ID' },
-  }];
+  state.commands = [
+    {
+      command: '"""\nid: validate\ntemplate: guardrails\nname: Validate\n"""\nrun(config, inputs, spark)',
+      results: { type: 'ansi', data: '[guardrails] WARNING: checks[0] (unique): duplicate ID' },
+    },
+  ];
   context.mock.timers.tick(5001);
   const recovered = await request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: '10' } });
   assert.equal(recovered.body.result.diagnostics[0].message, 'duplicate ID');
@@ -750,10 +892,12 @@ test('a temporarily missing export recovers after the short cache lifetime', asy
 test('completed result cache expires and evicts old tasks without dropping their diagnostics', async (context) => {
   const { state, request } = await serverHarness();
   context.mock.timers.enable({ apis: ['Date'], now: 10000 });
-  state.commands = [{
-    command: '"""\nid: validate\ntemplate: guardrails\nname: Validate\n"""\nrun(config, inputs, spark)',
-    results: { type: 'ansi', data: '[guardrails] WARNING: checks[0] (unique): duplicate ID' },
-  }];
+  state.commands = [
+    {
+      command: '"""\nid: validate\ntemplate: guardrails\nname: Validate\n"""\nrun(config, inputs, spark)',
+      results: { type: 'ansi', data: '[guardrails] WARNING: checks[0] (unique): duplicate ID' },
+    },
+  ];
   state.runs = Array.from({ length: 21 }, (_, index) => run(index + 1, 'alice'));
   for (const { run_id } of state.runs) {
     const response = await request('get', '/api/designer/run/:jobRunId', { params: { jobRunId: String(run_id) } });
@@ -808,7 +952,10 @@ test('run APIs return only outputs selected in the published manifest', async ()
   ]) {
     assert.equal(response.status, 200);
     assert.equal(response.body.result.outcome, 'outputs');
-    assert.deepEqual(response.body.result.outputs.map((output) => output.id), ['data']);
+    assert.deepEqual(
+      response.body.result.outputs.map((output) => output.id),
+      ['data']
+    );
     assert.equal(response.body.result.outputs[0].outcome.outcome, 'result');
   }
 });
@@ -843,9 +990,16 @@ for (const choices of [['us-west', 'us-east'], [], undefined, [42]]) {
     const parsed = parseAppManifest(response.body.manifest);
     assert.deepEqual(parsed.parameters, [expected]);
 
-    const html = renderToStaticMarkup(createElement(ParameterForm, {
-      parameters: parsed.parameters, values: {}, onChange: () => {}, onRun: () => {}, running: false, runnable: true,
-    }));
+    const html = renderToStaticMarkup(
+      createElement(ParameterForm, {
+        parameters: parsed.parameters,
+        values: {},
+        onChange: () => {},
+        onRun: () => {},
+        running: false,
+        runnable: true,
+      })
+    );
     assert.match(html, /for="region"[^>]*>Region<\/label>/);
     assert.match(html, /<input[^>]*id="region"[^>]*value="custom"/);
     const input = html.match(/<input\b[^>]*id="region"[^>]*>/)?.[0];
@@ -862,8 +1016,11 @@ for (const value of ['us-east', 'custom-value']) {
   test(`submits the combobox value ${value} without enforcing its suggestions`, async () => {
     const { state, request } = await serverHarness();
     state.manifest = {
-      ...manifest, storage: undefined,
-      parameters: [{ name: 'region', label: 'Region', type: 'combobox', defaultValue: 'us-west', choices: ['us-west', 'us-east'] }],
+      ...manifest,
+      storage: undefined,
+      parameters: [
+        { name: 'region', label: 'Region', type: 'combobox', defaultValue: 'us-west', choices: ['us-west', 'us-east'] },
+      ],
     };
     const response = await request('post', '/api/designer/run', { body: { params: { region: value } } });
     assert.equal(response.status, 200);
@@ -872,7 +1029,10 @@ for (const value of ['us-east', 'custom-value']) {
 }
 
 const multiselectParameter = {
-  name: 'region', label: 'Regions', type: 'multiselect', defaultValue: 'us-west, us-east ',
+  name: 'region',
+  label: 'Regions',
+  type: 'multiselect',
+  defaultValue: 'us-west, us-east ',
   choices: ['us-west', ' us-east ', 'eu-west'],
 };
 
@@ -888,13 +1048,20 @@ for (const defaultValue of [multiselectParameter.defaultValue, '']) {
     const parsed = parseAppManifest(response.body.manifest);
     assert.deepEqual(parsed.parameters, [parameter]);
 
-    const html = renderToStaticMarkup(createElement(ParameterForm, {
-      parameters: parsed.parameters, values: initialValuesFor(parsed),
-      onChange: () => {}, onRun: () => {}, running: false, runnable: true,
-    }));
+    const html = renderToStaticMarkup(
+      createElement(ParameterForm, {
+        parameters: parsed.parameters,
+        values: initialValuesFor(parsed),
+        onChange: () => {},
+        onRun: () => {},
+        running: false,
+        runnable: true,
+      })
+    );
     assert.match(html, /role="group" aria-label="Regions"/);
-    const labels = new Map([...html.matchAll(/<label\b[^>]*for="([^"]+)"[^>]*>([^<]*)<\/label>/g)]
-      .map((match) => [match[1], match[2]]));
+    const labels = new Map(
+      [...html.matchAll(/<label\b[^>]*for="([^"]+)"[^>]*>([^<]*)<\/label>/g)].map((match) => [match[1], match[2]])
+    );
     const checkboxes = [...html.matchAll(/<button\b[^>]*role="checkbox"[^>]*>/g)];
     assert.equal(checkboxes.length, parameter.choices.length);
     for (const [index, [button]] of checkboxes.entries()) {
@@ -939,9 +1106,15 @@ for (const value of ['unknown', 'us-west,unknown', 'us-west,', ',us-west', 'us-w
 }
 
 for (const invalid of [
-  { choices: undefined }, { choices: [] }, { choices: ['us-west', ''] },
-  { choices: ['us-west', 'us-east,eu-west'] }, { choices: ['us-west', 42] },
-  { defaultValue: 'unknown' }, { defaultValue: 'us-west,' }, { defaultValue: null }, { defaultValue: ['us-west'] },
+  { choices: undefined },
+  { choices: [] },
+  { choices: ['us-west', ''] },
+  { choices: ['us-west', 'us-east,eu-west'] },
+  { choices: ['us-west', 42] },
+  { defaultValue: 'unknown' },
+  { defaultValue: 'us-west,' },
+  { defaultValue: null },
+  { defaultValue: ['us-west'] },
 ]) {
   test(`refuses invalid multi-select configuration ${JSON.stringify(invalid)} in both manifest readers`, async () => {
     const { state, request } = await serverHarness();
@@ -988,8 +1161,11 @@ for (const [recorded, expected] of [
 test('still rejects custom values for a fixed-domain dropdown', async () => {
   const { state, request } = await serverHarness();
   state.manifest = {
-    ...manifest, storage: undefined,
-    parameters: [{ name: 'region', label: 'Region', type: 'dropdown', defaultValue: 'us-west', choices: ['us-west', 'us-east'] }],
+    ...manifest,
+    storage: undefined,
+    parameters: [
+      { name: 'region', label: 'Region', type: 'dropdown', defaultValue: 'us-west', choices: ['us-west', 'us-east'] },
+    ],
   };
   const response = await request('post', '/api/designer/run', { body: { params: { region: 'custom-value' } } });
   assert.equal(response.status, 400);
@@ -999,7 +1175,9 @@ test('still rejects custom values for a fixed-domain dropdown', async () => {
 test('preserves file-output scopes through the server manifest projection without upload storage', async () => {
   const { state, request } = await serverHarness();
   state.manifest = {
-    ...manifest, storage: undefined, parameters: [],
+    ...manifest,
+    storage: undefined,
+    parameters: [],
     blocks: [{ ...manifest.blocks[0], fileOutput: { volumes: ['main.default.files'] } }],
   };
   const response = await request('get', '/api/designer/config');
@@ -1020,7 +1198,13 @@ test('does not accept a malformed file-output scope from the stored manifest', a
 test('refuses malformed or duplicate file-output identities before starting an unowned run', async () => {
   const { state, request } = await serverHarness();
   const preview = manifest.blocks[0];
-  const file = { type: 'output', id: 'file', nodeId: 'output_0', port: 'result', fileOutput: { volumes: ['main.apps.files'] } };
+  const file = {
+    type: 'output',
+    id: 'file',
+    nodeId: 'output_0',
+    port: 'result',
+    fileOutput: { volumes: ['main.apps.files'] },
+  };
   for (const blocks of [
     [preview, { ...file, id: undefined }],
     [preview, { ...file, nodeId: undefined }],
@@ -1039,24 +1223,39 @@ test('refuses malformed or duplicate file-output identities before starting an u
 test('file-only runs carry server-owned destination, revision, counts and ownership without upload storage', async () => {
   const { state, request } = await serverHarness();
   state.manifest = {
-    ...manifest, storage: undefined, parameters: [],
+    ...manifest,
+    storage: undefined,
+    parameters: [],
     blocks: [{ ...manifest.blocks[0], fileOutput: { volumes: ['main.default.files'] } }],
   };
   assert.equal((await request('post', '/api/designer/run')).status, 200);
   const submission = state.submissions[0];
-  assert.deepEqual(JSON.parse(submission.job_parameters._lb_file_outputs), { source: { volumes: ['main.default.files'] } });
+  assert.deepEqual(JSON.parse(submission.job_parameters._lb_file_outputs), {
+    source: { volumes: ['main.default.files'] },
+  });
   assert.equal(submission.job_parameters._lb_collect_row_counts, 'true');
   assert.equal(submission.job_parameters.ld_display_outputs_for, 'source');
   assert.equal(submission.job_parameters._lb_app_viewer, viewerKey('alice', '100'));
   assert.match(submission.job_parameters._lb_app_revision, /^file-outputs-v1:/);
   assert.match(submission.job_parameters._lb_output_namespace, /^[0-9a-f-]{36}$/);
-  assert.equal((await request('post', '/api/designer/run', {
-    body: { params: { _lb_output_namespace: submission.job_parameters._lb_output_namespace } },
-  })).status, 200);
-  assert.notEqual(state.submissions[1].job_parameters._lb_output_namespace, submission.job_parameters._lb_output_namespace);
+  assert.equal(
+    (
+      await request('post', '/api/designer/run', {
+        body: { params: { _lb_output_namespace: submission.job_parameters._lb_output_namespace } },
+      })
+    ).status,
+    200
+  );
+  assert.notEqual(
+    state.submissions[1].job_parameters._lb_output_namespace,
+    submission.job_parameters._lb_output_namespace
+  );
   assert.equal((await request('post', '/api/designer/run', { viewer: '' })).status, 401);
   state.runs = [run(10, 'alice', submission.job_parameters)];
-  assert.equal((await request('get', '/api/designer/run/:jobRunId', { viewer: 'bob', params: { jobRunId: '10' } })).status, 404);
+  assert.equal(
+    (await request('get', '/api/designer/run/:jobRunId', { viewer: 'bob', params: { jobRunId: '10' } })).status,
+    404
+  );
 });
 
 test('preview-only submissions override any stale writer defaults with an explicit empty policy', async () => {
@@ -1076,12 +1275,34 @@ test('last-run and terminal status include file receipts without table preview o
   for (const behavior of ['run_artifact', 'shared_append', 'shared_workbook_update', undefined]) {
     const { state, request } = await serverHarness();
     state.manifest = {
-      ...manifest, storage: undefined, parameters: [],
-      blocks: [{ type: 'output', id: 'written', nodeId: 'output_0', port: 'result', fileOutput: { volumes: ['main.apps.files'] } }],
+      ...manifest,
+      storage: undefined,
+      parameters: [],
+      blocks: [
+        {
+          type: 'output',
+          id: 'written',
+          nodeId: 'output_0',
+          port: 'result',
+          fileOutput: { volumes: ['main.apps.files'] },
+        },
+      ],
     };
-    state.commands = [{ command: 'write_file()', results: { data: [{
-      type: 'mimeBundle', data: { 'application/vnd.databricks.lakeflow-designer.files+json': { node: 'output_0', files, behavior } },
-    }] } }];
+    state.commands = [
+      {
+        command: 'write_file()',
+        results: {
+          data: [
+            {
+              type: 'mimeBundle',
+              data: {
+                'application/vnd.databricks.lakeflow-designer.files+json': { node: 'output_0', files, behavior },
+              },
+            },
+          ],
+        },
+      },
+    ];
     state.runs = [run(20, 'bob'), run(10, 'alice')];
     state.listed = state.runs.map(({ run_id, job_id }) => ({ run_id, job_id }));
     const last = await request('get', '/api/designer/last-run');
@@ -1103,7 +1324,10 @@ test('enables plugin storage on republish and binds a completed upload to a run'
   const { state, request } = await serverHarness();
   state.manifest = { ...manifest, version: 8, storage: undefined, parameters: [] };
   assert.equal((await request('post', '/api/designer/run')).status, 200);
-  assert.deepEqual(state.apps.map((plugins) => plugins.map(({ name }) => name)), [['server']]);
+  assert.deepEqual(
+    state.apps.map((plugins) => plugins.map(({ name }) => name)),
+    [['server']]
+  );
 
   state.manifest = manifest;
   const response = await request('post', '/api/designer/uploads/:parameterName', {
@@ -1112,8 +1336,14 @@ test('enables plugin storage on republish and binds a completed upload to a run'
     bytes: Buffer.from('{"value":42}'),
   });
   assert.equal(response.status, 201);
-  assert.deepEqual(state.apps.map((plugins) => plugins.map(({ name }) => name)), [['server'], ['files']]);
-  assert.equal((await request('post', '/api/designer/run', { body: { params: { path: response.body.upload.reference } } })).status, 200);
+  assert.deepEqual(
+    state.apps.map((plugins) => plugins.map(({ name }) => name)),
+    [['server'], ['files']]
+  );
+  assert.equal(
+    (await request('post', '/api/designer/run', { body: { params: { path: response.body.upload.reference } } })).status,
+    200
+  );
   const submitted = state.submissions.at(-1).job_parameters;
   assert.ok(submitted.path.startsWith(`${manifest.storage.path}/uploads/${viewerKey('alice', '100')}/`));
   assert.ok(submitted.path.endsWith(`/${response.body.upload.reference.slice('upload:'.length)}/data.json`));
@@ -1129,16 +1359,21 @@ test('enables plugin storage on republish and binds a completed upload to a run'
 
 test('a stale upload after a volume switch is rejected before Job submission and fresh uploads use the new root', async () => {
   const { state, request } = await serverHarness();
-  const upload = () => request('post', '/api/designer/uploads/:parameterName', {
-    params: { parameterName: 'path' },
-    headers: { 'content-type': 'application/octet-stream', 'x-file-name': 'data.csv' },
-    bytes: Buffer.from('value\n42'),
-  });
+  const upload = () =>
+    request('post', '/api/designer/uploads/:parameterName', {
+      params: { parameterName: 'path' },
+      headers: { 'content-type': 'application/octet-stream', 'x-file-name': 'data.csv' },
+      bytes: Buffer.from('value\n42'),
+    });
   const old = await upload();
   assert.equal(old.status, 201);
   state.manifest = {
     ...manifest,
-    storage: { ...manifest.storage, volume: 'main.default.next', path: '/Volumes/main/default/next/designer_apps/app1' },
+    storage: {
+      ...manifest.storage,
+      volume: 'main.default.next',
+      path: '/Volumes/main/default/next/designer_apps/app1',
+    },
   };
   const stale = await request('post', '/api/designer/run', { body: { params: { path: old.body.upload.reference } } });
   assert.equal(stale.status, 400);
@@ -1147,7 +1382,10 @@ test('a stale upload after a volume switch is rejected before Job submission and
   assert.deepEqual(state.submissions, []);
   const fresh = await upload();
   assert.equal(fresh.status, 201);
-  assert.equal((await request('post', '/api/designer/run', { body: { params: { path: fresh.body.upload.reference } } })).status, 200);
+  assert.equal(
+    (await request('post', '/api/designer/run', { body: { params: { path: fresh.body.upload.reference } } })).status,
+    200
+  );
   assert.equal(state.submissions.length, 1);
   assert.ok(state.submissions[0].job_parameters.path.startsWith(state.manifest.storage.path));
   assert.equal(state.submissions[0].job_id, 100);
@@ -1158,11 +1396,12 @@ test('enforces published file formats at upload and run boundaries', async () =>
   state.manifest = { ...manifest, parameters: [{ ...manifest.parameters[0], fileFormats: ['excel'] }] };
   const configuration = await request('get', '/api/designer/config');
   assert.deepEqual(configuration.body.manifest.parameters[0].fileFormats, ['excel']);
-  const upload = (filename) => request('post', '/api/designer/uploads/:parameterName', {
-    params: { parameterName: 'path' },
-    headers: { 'content-type': 'application/octet-stream', 'x-file-name': filename },
-    bytes: Buffer.from('file contents'),
-  });
+  const upload = (filename) =>
+    request('post', '/api/designer/uploads/:parameterName', {
+      params: { parameterName: 'path' },
+      headers: { 'content-type': 'application/octet-stream', 'x-file-name': filename },
+      bytes: Buffer.from('file contents'),
+    });
   const rejected = await upload('data.csv');
   assert.equal(rejected.status, 400);
   assert.match(rejected.body.error, /expects Excel/);

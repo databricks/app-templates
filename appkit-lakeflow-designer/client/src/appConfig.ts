@@ -33,7 +33,7 @@ export function parseAppManifest(raw: unknown): AppManifest | undefined {
 
 export function initialValuesFor(
   manifest: AppManifest,
-  lastRunParameters?: Record<string, string>,
+  lastRunParameters?: Record<string, string>
 ): Record<string, string> {
   const values: Record<string, string> = {};
   for (const parameter of manifest.parameters) {
@@ -64,7 +64,7 @@ export function uploadConfigurationKey(manifest: AppManifest): string {
 export function refreshedValuesFor(
   previous: AppManifest,
   next: AppManifest,
-  values: Record<string, string>,
+  values: Record<string, string>
 ): Record<string, string> {
   const sameUploads = uploadConfigurationKey(previous) === uploadConfigurationKey(next);
   return Object.fromEntries(
@@ -72,12 +72,13 @@ export function refreshedValuesFor(
       const value = values[parameter.name];
       const sameType = previous.parameters.some(({ name, type }) => name === parameter.name && type === parameter.type);
       const valid =
-        value !== undefined && sameType &&
+        value !== undefined &&
+        sameType &&
         (parameter.type !== 'file' || sameUploads) &&
         (parameter.type !== 'dropdown' || (parameter.choices ?? []).includes(value)) &&
         (parameter.type !== 'multiselect' || isValidMultiselectValue(value, parameter.choices ?? []));
       return [parameter.name, valid ? value : parameter.type === 'file' ? '' : parameter.defaultValue];
-    }),
+    })
   );
 }
 

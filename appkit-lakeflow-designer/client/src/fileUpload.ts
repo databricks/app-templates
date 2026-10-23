@@ -1,4 +1,9 @@
-import { MAX_UPLOAD_BYTES, MAX_UPLOAD_SIZE_LABEL, UPLOAD_REFERENCE, UPLOAD_UNAVAILABLE } from '../../shared/storageConfig';
+import {
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_SIZE_LABEL,
+  UPLOAD_REFERENCE,
+  UPLOAD_UNAVAILABLE,
+} from '../../shared/storageConfig';
 import { uploadsRoute } from './routes';
 import { validateFileFormat } from '../../shared/fileFormats';
 
@@ -44,7 +49,7 @@ export async function uploadFile(
   parameterName: string,
   file: File,
   fileFormats?: readonly string[],
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<string> {
   const validationError = validateUpload(file, fileFormats);
   if (validationError !== undefined) throw new Error(validationError);

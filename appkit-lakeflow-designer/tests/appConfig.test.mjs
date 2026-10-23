@@ -24,12 +24,16 @@ after(async () => {
 });
 
 const manifest = {
-  version: 8, appName: 'Startup recovery', parameters: [],
+  version: 8,
+  appName: 'Startup recovery',
+  parameters: [],
   blocks: [{ type: 'output', id: 'table', label: 'Output', nodeId: 'source', port: 'data' }],
 };
-const startingResponse = () => new Response('<!doctype html><title>App Starting - Databricks</title>', {
-  status: 202, headers: { 'Content-Type': 'text/html; charset=utf-8' },
-});
+const startingResponse = () =>
+  new Response('<!doctype html><title>App Starting - Databricks</title>', {
+    status: 202,
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+  });
 const readyResponse = () => Response.json({ manifest, runnable: true });
 const newDocument = (name) => import(`${moduleUrl}?document=${encodeURIComponent(name)}`);
 
@@ -49,7 +53,11 @@ function browser(context, { denyStorage = false } = {}) {
           removeItem: (key) => values.delete(key),
         };
       },
-      location: { reload: () => { reloads += 1; } },
+      location: {
+        reload: () => {
+          reloads += 1;
+        },
+      },
     },
   });
   context.after(() => {
@@ -68,7 +76,8 @@ test('gateway startup reloads once and concurrent configuration reads do not sub
   });
   const config = await newDocument(context.name);
   assert.deepEqual(await Promise.all([config.fetchAppConfig(), config.fetchAppConfig()]), [
-    { status: 'loading' }, { status: 'loading' },
+    { status: 'loading' },
+    { status: 'loading' },
   ]);
   assert.equal(page.reloads(), 1);
   assert.deepEqual(requests, [['/api/designer/config'], ['/api/designer/config']]);
@@ -141,7 +150,9 @@ for (const [label, response] of [
 
 test('network failures remain configuration errors without reloading', async (context) => {
   const page = browser(context);
-  context.mock.method(globalThis, 'fetch', async () => { throw new TypeError('Failed to fetch'); });
+  context.mock.method(globalThis, 'fetch', async () => {
+    throw new TypeError('Failed to fetch');
+  });
   const config = await newDocument(context.name);
   assert.deepEqual(await config.fetchAppConfig(), { status: 'unavailable', detail: 'Failed to fetch' });
   assert.equal(page.reloads(), 0);

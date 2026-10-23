@@ -1,3 +1,5 @@
+import { relative } from './relativeTime';
+import { useNow } from './useNow';
 import { Badge } from '@databricks/appkit-ui/react';
 import type { ReactNode } from 'react';
 import { createContext, Fragment, useContext, useMemo, useState } from 'react';
@@ -24,30 +26,13 @@ const CONTAINER_CLASSES: Record<LastRunVariant, string> = {
   historical: 'bg-muted/40 border-l-transparent',
 };
 
-export const relative = (endTime: number, now: number): string => {
-  const seconds = Math.round((now - endTime) / 1000);
-  if (seconds < 0) {
-    return 'just now';
-  }
-  if (seconds < 60) {
-    return `${seconds}s ago`;
-  }
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) {
-    return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
-  }
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) {
-    return `${hours} hour${hours === 1 ? '' : 's'} ago`;
-  }
-  const days = Math.round(hours / 24);
-  return `${days} day${days === 1 ? '' : 's'} ago`;
-};
-
-const RunParametersDisclosureContext = createContext<{
-  expanded: boolean;
-  setExpanded: (expanded: boolean) => void;
-} | undefined>(undefined);
+const RunParametersDisclosureContext = createContext<
+  | {
+      expanded: boolean;
+      setExpanded: (expanded: boolean) => void;
+    }
+  | undefined
+>(undefined);
 
 export function RunParametersDisclosureProvider({ children }: { children: ReactNode }) {
   const [expanded, setExpanded] = useState(false);
@@ -104,7 +89,11 @@ export function RunParameterList({
                   >
                     {displayValue}
                   </a>
-                ) : displayValue === '' ? '(blank)' : displayValue}
+                ) : displayValue === '' ? (
+                  '(blank)'
+                ) : (
+                  displayValue
+                )}
               </dd>
             </Fragment>
           );
@@ -132,6 +121,7 @@ export function LastRunLabel({
   newerRunDidNotSucceed?: boolean;
 }) {
   const finished = run.endTime ?? finishedAt;
+  const now = useNow();
 
   return (
     <div className={`border-border border-t border-l-4 px-6 py-3 ${CONTAINER_CLASSES[variant]}`}>
@@ -142,7 +132,7 @@ export function LastRunLabel({
         <span className="text-muted-foreground">
           {finished === undefined
             ? 'Finished at an unrecorded time.'
-            : `Finished ${relative(finished, Date.now())}, ${new Date(finished).toLocaleString()}.`}
+            : `Finished ${relative(finished, now)}, ${new Date(finished).toLocaleString()}.`}
         </span>
       </div>
 

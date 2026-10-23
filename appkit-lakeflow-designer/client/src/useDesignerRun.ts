@@ -38,10 +38,13 @@ export function useDesignerRun(onUploadUnavailable?: () => void) {
     tickTimer.current = undefined;
   }, []);
 
-  useEffect(() => () => {
-    runGeneration.current += 1;
-    clearTimers();
-  }, [clearTimers]);
+  useEffect(
+    () => () => {
+      runGeneration.current += 1;
+      clearTimers();
+    },
+    [clearTimers]
+  );
 
   const start = useCallback(
     async (params: Record<string, string>) => {
@@ -99,20 +102,20 @@ export function useDesignerRun(onUploadUnavailable?: () => void) {
           }
           consecutivePollFailures = 0;
           setState((prev) => ({ ...prev, snapshot, trackingError: undefined }));
-          pollTimer.current = setTimeout(poll, POLL_INTERVAL_MS);
+          pollTimer.current = setTimeout(() => void poll(), POLL_INTERVAL_MS);
         } catch (err) {
           if (runGeneration.current !== generation) return;
           // A lost status response does not end the accepted Job or make another submission safe.
           setState((prev) => ({ ...prev, trackingError: (err as Error).message }));
           const delay = Math.min(30_000, POLL_INTERVAL_MS * 2 ** Math.min(consecutivePollFailures++, 4));
-          pollTimer.current = setTimeout(poll, delay);
+          pollTimer.current = setTimeout(() => void poll(), delay);
         }
       };
 
       setState((prev) => ({ ...prev, snapshot: { jobRunId, terminal: false, lifeCycleState: 'PENDING' } }));
-      pollTimer.current = setTimeout(poll, POLL_INTERVAL_MS);
+      pollTimer.current = setTimeout(() => void poll(), POLL_INTERVAL_MS);
     },
-    [clearTimers, onUploadUnavailable],
+    [clearTimers, onUploadUnavailable]
   );
 
   const cancel = useCallback(async () => {
@@ -125,9 +128,9 @@ export function useDesignerRun(onUploadUnavailable?: () => void) {
       if (!response.ok) throw await readRunError(response);
     } catch (error) {
       if (runGeneration.current !== generation) return;
-      setState((prev) => (prev.phase === 'running'
-        ? { ...prev, cancelling: false, cancelError: (error as Error).message }
-        : prev));
+      setState((prev) =>
+        prev.phase === 'running' ? { ...prev, cancelling: false, cancelError: (error as Error).message } : prev
+      );
     }
   }, [state.snapshot?.jobRunId]);
 

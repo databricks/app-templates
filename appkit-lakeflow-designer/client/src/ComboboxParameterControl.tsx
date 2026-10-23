@@ -92,7 +92,7 @@ export function ComboboxParameterControl({
                     ? event.key === 'ArrowDown'
                       ? 0
                       : count - 1
-                    : (current + (event.key === 'ArrowDown' ? 1 : count - 1)) % count,
+                    : (current + (event.key === 'ArrowDown' ? 1 : count - 1)) % count
                 );
               } else if (event.key === 'Enter') {
                 if (open && activeIndex >= 0 && suggestions[activeIndex] !== undefined) {

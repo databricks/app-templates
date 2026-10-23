@@ -1,3 +1,4 @@
+import { formatCell } from './dataTypes';
 import { chartDomainKey, sortedChartDomain } from './chartSorting';
 import type { PublishedChartDomain, PublishedChartPlan, PublishedChartRow } from './chartTranslation';
 
@@ -31,7 +32,9 @@ function coerce(value: unknown, to: 'number' | 'date'): number | null {
     return null;
   }
   const number =
-    to === 'number' ? Number(value) : new Date(value instanceof Date ? value.getTime() : String(value)).getTime();
+    to === 'number'
+      ? Number(value)
+      : new Date(value instanceof Date ? value.getTime() : (formatCell(value, 'unknown').text ?? '')).getTime();
   return Number.isFinite(number) ? number : null;
 }
 
@@ -41,7 +44,7 @@ function domainRanks(values: readonly unknown[], domain: PublishedChartDomain): 
 
 export function preparePublishedChartData(
   plan: PublishedChartPlan,
-  rows: readonly PublishedChartRow[],
+  rows: readonly PublishedChartRow[]
 ): PublishedChartData {
   const data = rows.map((row) => {
     const next = { ...row };

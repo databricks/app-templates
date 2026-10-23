@@ -36,11 +36,7 @@ export function ActiveRunBanner({ active, declared }: { active: ActiveRun; decla
 
       <p className="text-muted-foreground mt-2 text-xs">{ACTIVE_RUN_ATTRIBUTION}</p>
 
-      <RunParameterList
-        parameters={parameters}
-        parameterDisplayValues={parameterDisplayValues}
-        declared={declared}
-      />
+      <RunParameterList parameters={parameters} parameterDisplayValues={parameterDisplayValues} declared={declared} />
     </div>
   );
 }

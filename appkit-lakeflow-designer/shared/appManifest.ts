@@ -17,12 +17,17 @@ export function isReservedParameter(name: string): boolean {
 }
 
 const chartSpecSchema = z.looseObject({ widgetType: nonEmptyString });
-const provenanceSchema = z.looseObject({ publishedAt: z.number().check(z.positive()) });
+const provenanceSchema = z.object({
+  publishedAt: z.number().check(z.positive()),
+  generatorVersion: z.catch(z.optional(z.union([z.string(), z.number()])), undefined),
+});
 const targetSchema = z.object({ nodeId: nonEmptyString, label: stringOrEmpty });
-const runnerSchema = z.object({
-  revision: z.string().check(z.regex(/^[0-9a-f]{64}$/)),
-  parameters: z.record(z.string(), z.string()),
-}).check(z.refine((runner) => runner.parameters[RUNNER_REVISION_PARAM] === runner.revision));
+const runnerSchema = z
+  .object({
+    revision: z.string().check(z.regex(/^[0-9a-f]{64}$/)),
+    parameters: z.record(z.string(), z.string()),
+  })
+  .check(z.refine((runner) => runner.parameters[RUNNER_REVISION_PARAM] === runner.revision));
 
 const parameterSchema = z.pipe(
   z.object({
@@ -42,11 +47,13 @@ const parameterSchema = z.pipe(
       label: entry.label,
       type,
       defaultValue: type === 'file' ? '' : entry.defaultValue,
-      ...((type === 'dropdown' || type === 'combobox' || type === 'multiselect') && choices !== undefined ? { choices } : {}),
+      ...((type === 'dropdown' || type === 'combobox' || type === 'multiselect') && choices !== undefined
+        ? { choices }
+        : {}),
       ...(type === 'file' && isFileFormats(entry.fileFormats) ? { fileFormats: entry.fileFormats } : {}),
       ...(typeof entry.help === 'string' && entry.help !== '' ? { help: entry.help } : {}),
     };
-  }),
+  })
 );
 
 const markdownBlockSchema = z.pipe(
@@ -61,25 +68,31 @@ const markdownBlockSchema = z.pipe(
     ...(id === undefined ? {} : { id }),
     text,
     ...(hideUntilResults === undefined ? {} : { hideUntilResults }),
-  })),
+  }))
 );
 
 const outputBlockSchema = z.pipe(
-  z.object({
-    type: z.literal('output'),
-    id: nonEmptyString,
-    label: stringOrEmpty,
-    nodeId: stringOrEmpty,
-    port: z.optional(nonEmptyString),
-    kind: z.optional(z.literal('html')),
-    chartSpec: z.catch(z.optional(chartSpecSchema), undefined),
-    hideUntilResults: optionalBoolean,
-    fileOutput: z.transform(parseFileOutput),
-    disabled: optionalBoolean,
-    parentGroupId: z.catch(z.optional(nonEmptyString), undefined),
-  }).check(z.refine((block) => block.kind === 'html'
-    ? block.port === undefined && block.chartSpec === undefined && block.fileOutput === undefined
-    : block.port !== undefined)),
+  z
+    .object({
+      type: z.literal('output'),
+      id: nonEmptyString,
+      label: stringOrEmpty,
+      nodeId: stringOrEmpty,
+      port: z.optional(nonEmptyString),
+      kind: z.optional(z.literal('html')),
+      chartSpec: z.catch(z.optional(chartSpecSchema), undefined),
+      hideUntilResults: optionalBoolean,
+      fileOutput: z.transform(parseFileOutput),
+      disabled: optionalBoolean,
+      parentGroupId: z.catch(z.optional(nonEmptyString), undefined),
+    })
+    .check(
+      z.refine((block) =>
+        block.kind === 'html'
+          ? block.port === undefined && block.chartSpec === undefined && block.fileOutput === undefined
+          : block.port !== undefined
+      )
+    ),
   z.transform(({ chartSpec, fileOutput, hideUntilResults, disabled, parentGroupId, ...block }) => ({
     ...block,
     ...(chartSpec === undefined ? {} : { chartSpec }),
@@ -87,7 +100,7 @@ const outputBlockSchema = z.pipe(
     ...(hideUntilResults === undefined ? {} : { hideUntilResults }),
     ...(disabled === undefined ? {} : { disabled }),
     ...(parentGroupId === undefined ? {} : { parentGroupId }),
-  })),
+  }))
 );
 
 const blockSchema = z.union([markdownBlockSchema, outputBlockSchema]);
@@ -130,9 +143,11 @@ export const appManifestSchema = z.pipe(
       !blocks.some((block) => block.type === 'output') ||
       hasInvalidFileOutputDeclaration(raw.blocks) ||
       (raw.storage !== undefined && !storage) ||
-      entries.some((entry) =>
-        (entry.type === 'file' && (!storage || (entry.fileFormats !== undefined && !isFileFormats(entry.fileFormats)))) ||
-        (entry.type === 'multiselect' && !isValidMultiselectConfig(entry.choices, entry.defaultValue)),
+      entries.some(
+        (entry) =>
+          (entry.type === 'file' &&
+            (!storage || (entry.fileFormats !== undefined && !isFileFormats(entry.fileFormats)))) ||
+          (entry.type === 'multiselect' && !isValidMultiselectConfig(entry.choices, entry.defaultValue))
       )
     ) {
       ctx.issues.push({ code: 'custom', input: raw, message: 'Invalid published app configuration' });
@@ -154,7 +169,7 @@ export const appManifestSchema = z.pipe(
         return parameter ? [parameter] : [];
       }),
     };
-  }),
+  })
 );
 
 export type AppChartSpec = z.output<typeof chartSpecSchema>;

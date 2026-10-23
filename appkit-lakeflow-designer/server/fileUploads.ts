@@ -67,7 +67,10 @@ function isValidFilename(filename: string): boolean {
     filename !== '.' &&
     filename !== '..' &&
     Buffer.byteLength(filename, 'utf8') <= 255 &&
-    !/[/\\\x00-\x1f\x7f]/.test(filename)
+    ![...filename].some(
+      (character) =>
+        character === '/' || character === '\\' || character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127
+    )
   );
 }
 
@@ -96,7 +99,7 @@ export async function resolveUpload(
   config: AppStorage,
   viewer: string,
   parameterName: string,
-  reference: string,
+  reference: string
 ) {
   const id = uploadId(reference);
   const folder = uploadFolder(config, viewer, parameterName);
@@ -116,7 +119,7 @@ export async function saveUploadStream(
   parameterName: string,
   filename: string,
   stream: ReadableStream<Uint8Array>,
-  declaredSize?: number,
+  declaredSize?: number
 ): Promise<StoredUpload> {
   if (!isValidFilename(filename)) throw new UploadError(400, 'Choose a file with a valid filename.');
   if (declaredSize !== undefined && declaredSize > config.maxUploadFileSizeBytes)
@@ -142,7 +145,7 @@ export async function saveUploadStream(
         }
         controller.enqueue(chunk);
       },
-    }),
+    })
   );
   try {
     await store.putStream(path, boundedStream);
@@ -165,7 +168,7 @@ export function saveUpload(
   viewer: string,
   parameterName: string,
   filename: string,
-  bytes: Uint8Array,
+  bytes: Uint8Array
 ): Promise<StoredUpload> {
   return saveUploadStream(
     store,
@@ -179,6 +182,6 @@ export function saveUpload(
         controller.close();
       },
     }),
-    bytes.byteLength,
+    bytes.byteLength
   );
 }

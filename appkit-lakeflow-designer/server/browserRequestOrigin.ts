@@ -13,8 +13,11 @@ export function isSameOriginBrowserRequest({ origin, appUrl, fetchSite }: Browse
   if (origin === 'null' || appUrl === undefined) return false;
   try {
     const url = new URL(origin);
-    return (url.protocol === 'http:' || url.protocol === 'https:') &&
-      url.origin === origin && url.origin === new URL(appUrl).origin;
+    return (
+      (url.protocol === 'http:' || url.protocol === 'https:') &&
+      url.origin === origin &&
+      url.origin === new URL(appUrl).origin
+    );
   } catch {
     return false;
   }

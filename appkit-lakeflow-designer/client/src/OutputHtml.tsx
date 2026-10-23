@@ -2,6 +2,7 @@ import { type SyntheticEvent, useLayoutEffect, useMemo, useRef, useState } from 
 import { createPortal } from 'react-dom';
 
 import { HTML_OUTPUT_WRAPPER_CSP, HTML_OUTPUT_WRAPPER_DOCUMENT, htmlOutputDocument } from './htmlSandbox';
+import { isRecord } from '../../shared/values';
 
 export interface OutputHtmlProps {
   html: string;
@@ -9,6 +10,10 @@ export interface OutputHtmlProps {
 }
 
 export function OutputHtml({ html, title }: OutputHtmlProps) {
+  return <HtmlDocument key={html} html={html} title={title} />;
+}
+
+function HtmlDocument({ html, title }: OutputHtmlProps) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(320);
   const [errors, setErrors] = useState<string[]>([]);
@@ -16,6 +21,8 @@ export function OutputHtml({ html, title }: OutputHtmlProps) {
   const source = useMemo(() => htmlOutputDocument(html), [html]);
 
   const handleWrapperLoad = (event: SyntheticEvent<HTMLIFrameElement>) => {
+    setHeight(320);
+    setErrors([]);
     const document = event.currentTarget.contentDocument;
     const policy = document?.querySelector('meta[http-equiv="Content-Security-Policy"]');
     // An initial blank document or an unexpected reload must never host author content.
@@ -29,19 +36,19 @@ export function OutputHtml({ html, title }: OutputHtmlProps) {
   };
 
   useLayoutEffect(() => {
-    setHeight(320);
-    setErrors([]);
     if (!wrapperDocument?.defaultView) return;
     const wrapperWindow = wrapperDocument.defaultView;
     const reportError = (message: string) => {
-      setErrors((previous) => previous.length >= 5 || previous.includes(message) ? previous : [...previous, message]);
+      setErrors((previous) => (previous.length >= 5 || previous.includes(message) ? previous : [...previous, message]));
     };
-    const receive = (event: MessageEvent) => {
+    const receive = (event: MessageEvent<unknown>) => {
       if (
         event.source !== frame.current?.contentWindow ||
         event.origin !== 'null' ||
-        event.data?.type !== 'designer-html'
-      ) return;
+        !isRecord(event.data) ||
+        event.data.type !== 'designer-html'
+      )
+        return;
       if (typeof event.data.height === 'number' && Number.isFinite(event.data.height)) {
         setHeight(Math.max(160, Math.min(1600, event.data.height)));
       }
@@ -65,22 +72,25 @@ export function OutputHtml({ html, title }: OutputHtmlProps) {
   return (
     <div className="px-6 py-4">
       {errors.length > 0 && (
-        <div role="alert" className="text-destructive mb-3 whitespace-pre-wrap text-sm">{errors.join('\n')}</div>
+        <div role="alert" className="text-destructive mb-3 whitespace-pre-wrap text-sm">
+          {errors.join('\n')}
+        </div>
       )}
       {/* Remove the sandbox before its containing document during unmount. */}
-      {wrapperDocument && createPortal(
-        <iframe
-          key={source}
-          ref={frame}
-          title={`${title} content`}
-          srcDoc={source}
-          sandbox="allow-scripts"
-          allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'; fullscreen 'none'"
-          referrerPolicy="no-referrer"
-          style={{ width: '100%', height: '100%', border: 0, display: 'block' }}
-        />,
-        wrapperDocument.body,
-      )}
+      {wrapperDocument &&
+        createPortal(
+          <iframe
+            key={source}
+            ref={frame}
+            title={`${title} content`}
+            srcDoc={source}
+            sandbox="allow-scripts"
+            allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'; fullscreen 'none'"
+            referrerPolicy="no-referrer"
+            style={{ width: '100%', height: '100%', border: 0, display: 'block' }}
+          />,
+          wrapperDocument.body
+        )}
       <iframe
         title={title}
         srcDoc={HTML_OUTPUT_WRAPPER_DOCUMENT}

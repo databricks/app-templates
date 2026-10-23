@@ -3,10 +3,12 @@ import { test } from 'node:test';
 import { HTML_OUTPUT_CSP, htmlOutputDocument } from '../client/src/htmlSandbox.ts';
 
 test('HTML outputs allow inline interactivity and embedded media with no external resource sources', () => {
-  const directives = Object.fromEntries(HTML_OUTPUT_CSP.split('; ').map((directive) => {
-    const [name, ...sources] = directive.split(' ');
-    return [name, sources];
-  }));
+  const directives = Object.fromEntries(
+    HTML_OUTPUT_CSP.split('; ').map((directive) => {
+      const [name, ...sources] = directive.split(' ');
+      return [name, sources];
+    })
+  );
   assert.deepEqual(directives['default-src'], ["'none'"]);
   assert.deepEqual(directives['script-src'], ["'unsafe-inline'"]);
   assert.deepEqual(directives['style-src'], ["'unsafe-inline'"]);

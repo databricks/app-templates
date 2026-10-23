@@ -45,7 +45,7 @@ export function useFollowedRun(active: ActiveRun | undefined, consumerRunPhase: 
     let cancelled = false;
 
     setState((prev) =>
-      prev.following && prev.active?.run.jobRunId === activeRunId ? prev : { following: true, settled: false, active },
+      prev.following && prev.active?.run.jobRunId === activeRunId ? prev : { following: true, settled: false, active }
     );
 
     const settle = (result: Pick<FollowedRunState, 'snapshot' | 'outcome'>) => {

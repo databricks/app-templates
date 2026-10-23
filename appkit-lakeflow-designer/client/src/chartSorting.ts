@@ -1,3 +1,4 @@
+import { formatCell } from './dataTypes';
 import type { PublishedChartDomain, PublishedChartRow } from './chartTranslation';
 
 function numericValue(value: unknown): number | null {
@@ -14,17 +15,17 @@ export function chartDomainKey(value: unknown, type: PublishedChartDomain['value
     return null;
   }
   if (type === 'quantitative') {
-    return numericValue(value) ?? String(value);
+    return numericValue(value) ?? formatCell(value, 'unknown').text ?? '';
   }
   if (type === 'temporal') {
-    const time = value instanceof Date ? value.getTime() : new Date(String(value)).getTime();
+    const time = value instanceof Date ? value.getTime() : new Date(formatCell(value, 'unknown').text ?? '').getTime();
     // Designer's formatted week labels, for example, aren't parseable dates.
-    return Number.isFinite(time) ? time : String(value);
+    return Number.isFinite(time) ? time : (formatCell(value, 'unknown').text ?? '');
   }
   if (type === 'boolean') {
     return value === true || value === 'true' ? 1 : 0;
   }
-  return typeof value === 'object' ? JSON.stringify(value) : String(value);
+  return typeof value === 'object' ? JSON.stringify(value) : (formatCell(value, 'unknown').text ?? '');
 }
 
 function compareNatural(left: unknown, right: unknown): number {
@@ -36,13 +37,10 @@ function compareNatural(left: unknown, right: unknown): number {
   }
   return typeof left === 'number' && typeof right === 'number'
     ? left - right
-    : String(left).localeCompare(String(right));
+    : (formatCell(left, 'unknown').text ?? '').localeCompare(formatCell(right, 'unknown').text ?? '');
 }
 
-export function sortedChartDomain(
-  rows: readonly PublishedChartRow[],
-  domain: PublishedChartDomain,
-): unknown[] {
+export function sortedChartDomain(rows: readonly PublishedChartRow[], domain: PublishedChartDomain): unknown[] {
   const { field, valueType, sort } = domain;
   const groups = new Map<unknown, { value: unknown; total: number | null }>();
   for (const row of rows) {

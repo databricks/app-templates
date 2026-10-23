@@ -63,11 +63,14 @@ export function shouldFollowActiveRun({ activeRunId, consumerRunPhase, followedS
 export function shouldRetainSettledFollowedRun(
   activeRunId: string | undefined,
   settledRunId: string | undefined,
-  consumerRunPhase: ConsumerRunPhase,
+  consumerRunPhase: ConsumerRunPhase
 ): boolean {
   // /last-run no longer reports this run as active after it terminates.
-  return consumerRunPhase === 'idle' && settledRunId !== undefined &&
-    (activeRunId === undefined || activeRunId === settledRunId);
+  return (
+    consumerRunPhase === 'idle' &&
+    settledRunId !== undefined &&
+    (activeRunId === undefined || activeRunId === settledRunId)
+  );
 }
 
 export function activeRunStageLabel(lifeCycleState: string | undefined): string {
@@ -84,8 +87,7 @@ export function activeRunStageLabel(lifeCycleState: string | undefined): string 
   }
 }
 
-export const ACTIVE_RUN_ATTRIBUTION =
-  'Your run is in progress. Its result will appear here when it finishes.';
+export const ACTIVE_RUN_ATTRIBUTION = 'Your run is in progress. Its result will appear here when it finishes.';
 
 export const FOLLOWED_RESULT_AVAILABLE_OFFER =
   'A run of this app finished while you were looking at an earlier one. Open it to see its outcome; ' +

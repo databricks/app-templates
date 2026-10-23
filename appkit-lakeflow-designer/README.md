@@ -4,6 +4,12 @@ The published Lakeflow Designer app: a Vite + React client and a Node/AppKit ser
 Databricks App is deployed in the selected App Space for each published Designer App document.
 Publishing snapshots this template from a pinned commit in a workspace Git folder.
 
+This template is provisioned through **Publish App in Lakeflow Designer**. It requires the
+matching published runner Job and `designerApp.json`; binding an arbitrary Job is not sufficient.
+It intentionally has no catalog `manifest.yaml`, because the generic Create App wizard cannot
+prepare those Designer artifacts. `databricks.yml` is for testing an existing publication.
+Supply its Job ID with `databricks bundle deploy --var runner_job_id=<published-job-id>`.
+
 Per-app differences are injected at deploy time rather than baked into the source:
 
 - **Runner Job** — supplied through the `DATABRICKS_JOB_ID` environment variable. Designer grants
@@ -80,16 +86,38 @@ run search follows those cursors automatically.
 - `tsconfig.shared.json` / `tsconfig.server.json` / `tsconfig.client.json` — a strict shared base
   with a server (Node) and a client (DOM) project, referenced by the root `tsconfig.json`.
 - `package.json` — `build` (`build:server` then `build:client`) and `start`
-  (`node ./dist/server.js`). Everything the server needs at build and run time is under
-  `dependencies` (Databricks Apps skips `devDependencies` when `NODE_ENV=production`).
+  (`node ./dist/server.js`). Runtime packages are under `dependencies`; TypeScript, Vite and
+  other build/test tools are under `devDependencies`. Install development dependencies before
+  building, even when the resulting server will run with `NODE_ENV=production`.
 
-## Local build
+## Local development and validation
 
-    npm install
-    npm run build   # build:server (tsc -b + tsdown -> dist/server.js) + build:client (vite -> client/dist)
-    npm run typecheck
-    npm run dev    # client-only development; API requests still require the AppKit server
-    npm start       # node ./dist/server.js
+Use Node.js 22.13 or newer and npm. From this template directory:
+
+```bash
+npm ci --include=dev
+cp .env.example .env
+npm run dev
+```
+
+Configure workspace authentication and the published runner Job in `.env`. The AppKit server
+serves both the API and Vite client with hot reload at the URL printed on startup. Remote serving
+is disabled, as it is in `app.yaml`. Run submission still requires the authenticated identity
+supplied by Databricks Apps ingress; use a deployed App to validate that flow.
+
+```bash
+npm run typecheck
+npm run lint
+npm run format
+npm test
+npm run test:browser  # Requires local Chrome; set CHROME_BIN if needed.
+npm run build
+npm start
+```
+
+`lint:fix` and `format:fix` apply automatic fixes. ESLint, Prettier and `tsx` use the same pinned
+tool versions as the other AppKit templates. The Node test runner and Chrome fixtures exercise
+this template without a workspace; they do not replace deployed Jobs, ingress and UC validation.
 
 ## Result previews
 

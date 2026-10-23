@@ -15,9 +15,10 @@ const config = {
   maxUploadFileSizeBytes: 5 * 1024 * 1024 * 1024,
 };
 const originals = Object.fromEntries(
-  ['NODE_ENV', 'DATABRICKS_WORKSPACE_ID', 'DATABRICKS_VOLUME_FILES', 'DISABLE_APPKIT_INTERNAL_TELEMETRY'].map(
-    (key) => [key, process.env[key]],
-  ),
+  ['NODE_ENV', 'DATABRICKS_WORKSPACE_ID', 'DATABRICKS_VOLUME_FILES', 'DISABLE_APPKIT_INTERNAL_TELEMETRY'].map((key) => [
+    key,
+    process.env[key],
+  ])
 );
 let cancelledReads = 0;
 
@@ -66,11 +67,17 @@ before(async () => {
         download: async ({ file_path }) => ({
           contents: new ReadableStream(
             {
-              start(controller) { controller.enqueue(stored(file_path)); },
-              pull(controller) { controller.close(); },
-              cancel() { cancelledReads += 1; },
+              start(controller) {
+                controller.enqueue(stored(file_path));
+              },
+              pull(controller) {
+                controller.close();
+              },
+              cancel() {
+                cancelledReads += 1;
+              },
             },
-            { highWaterMark: 0 },
+            { highWaterMark: 0 }
           ),
         }),
         // HTTP response headers are strings at runtime despite the generated SDK's numeric type.
@@ -102,22 +109,24 @@ before(async () => {
 });
 
 test('native output Files store reads exact original bytes repeatedly across separate volumes', async () => {
-  await Promise.all(['main.default.output_one', 'main.default.output_two'].map(async (volume) => {
-    const store = appKitOutputFileStore(volume);
-    const root = `/Volumes/${volume.replaceAll('.', '/')}`;
-    for (const name of ['result.csv', 'multi sheet.xlsx', 'データ.json', 'data #1?100%.csv']) {
-      const path = `${root}/reports/${name}`;
-      assert.equal(await store.size(path), undefined);
-      contents.set(path, Buffer.from('original bytes'));
-      assert.equal(await store.size(path), 14);
-      assert.equal(await new Response(await store.download(path)).text(), 'original bytes');
-      assert.equal(await new Response(await store.download(path)).text(), 'original bytes');
-      assert.equal(contents.get(path).toString(), 'original bytes');
-    }
-    for (const path of ['/Volumes/main/default/other/report.csv', `${root}/../other/report.csv`, `${root}/code.py`])
-      await assert.rejects(store.download(path));
-    assert.deepEqual(Object.keys(store).sort(), ['download', 'size']);
-  }));
+  await Promise.all(
+    ['main.default.output_one', 'main.default.output_two'].map(async (volume) => {
+      const store = appKitOutputFileStore(volume);
+      const root = `/Volumes/${volume.replaceAll('.', '/')}`;
+      for (const name of ['result.csv', 'multi sheet.xlsx', 'データ.json', 'data #1?100%.csv']) {
+        const path = `${root}/reports/${name}`;
+        assert.equal(await store.size(path), undefined);
+        contents.set(path, Buffer.from('original bytes'));
+        assert.equal(await store.size(path), 14);
+        assert.equal(await new Response(await store.download(path)).text(), 'original bytes');
+        assert.equal(await new Response(await store.download(path)).text(), 'original bytes');
+        assert.equal(contents.get(path).toString(), 'original bytes');
+      }
+      for (const path of ['/Volumes/main/default/other/report.csv', `${root}/../other/report.csv`, `${root}/code.py`])
+        await assert.rejects(store.download(path));
+      assert.deepEqual(Object.keys(store).sort(), ['download', 'size']);
+    })
+  );
 });
 
 after(async () => {
@@ -159,7 +168,7 @@ test('uses the Files plugin for immutable storage, downloads, bounded records, m
         controller.enqueue(Buffer.from('streamed'));
         controller.close();
       },
-    }),
+    })
   );
   assert.equal(contents.get(streamedPath).toString(), 'streamed');
   await store.delete(`${folder}/data.csv`);
@@ -220,10 +229,7 @@ test('switches volumes in one process while overlapping requests keep their own 
   const after = appKitUploadStore(next);
   const beforePath = `${config.path}/uploads/viewer/parameter/old.csv`;
   const afterPath = `${next.path}/uploads/viewer/parameter/new.csv`;
-  await Promise.all([
-    before.put(beforePath, Buffer.from('old file')),
-    after.put(afterPath, Buffer.from('new file')),
-  ]);
+  await Promise.all([before.put(beforePath, Buffer.from('old file')), after.put(afterPath, Buffer.from('new file'))]);
   assert.equal(await before.size(beforePath), 8);
   assert.equal(await after.size(afterPath), 8);
   await assert.rejects(after.read(beforePath), { status: 502 });

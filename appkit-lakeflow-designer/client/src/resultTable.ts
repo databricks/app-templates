@@ -18,9 +18,10 @@ function compareDecimalStrings(left: string, right: string): number | undefined 
   if (aNegative !== bNegative) return aNegative ? -1 : 1;
 
   const fractionLength = Math.max(aFraction.length, bFraction.length);
-  const order = aInteger.length - bInteger.length
-    || aInteger.localeCompare(bInteger)
-    || aFraction.padEnd(fractionLength, '0').localeCompare(bFraction.padEnd(fractionLength, '0'));
+  const order =
+    aInteger.length - bInteger.length ||
+    aInteger.localeCompare(bInteger) ||
+    aFraction.padEnd(fractionLength, '0').localeCompare(bFraction.padEnd(fractionLength, '0'));
   return aNegative ? -order : order;
 }
 
@@ -31,15 +32,15 @@ export function compareResultValues(left: unknown, right: unknown, sparkType: st
   const category = categorize(sparkType);
   if (isNumericCategory(category)) {
     // Jobs carries large integers and decimals as strings; Number would collapse distinct values.
-    const exact = compareDecimalStrings(String(left), String(right));
+    const exact = compareDecimalStrings(formatCell(left, category).text ?? '', formatCell(right, category).text ?? '');
     if (exact !== undefined) return exact;
     const a = Number(left);
     const b = Number(right);
     if (Number.isFinite(a) && Number.isFinite(b)) return a - b;
   }
   if (category === 'date' || category === 'timestamp') {
-    const a = Date.parse(String(left));
-    const b = Date.parse(String(right));
+    const a = Date.parse(formatCell(left, category).text ?? '');
+    const b = Date.parse(formatCell(right, category).text ?? '');
     if (Number.isFinite(a) && Number.isFinite(b) && a !== b) return a - b;
   }
   return (formatCell(left, category).text ?? '').localeCompare(formatCell(right, category).text ?? '');

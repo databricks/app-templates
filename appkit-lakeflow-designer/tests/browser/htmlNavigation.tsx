@@ -29,9 +29,13 @@ function contentFrame() {
 }
 
 function render(html: string, key = 'output') {
-  flushSync(() => root.render(
-    <StrictMode><OutputHtml key={key} html={html} title="Report" /></StrictMode>,
-  ));
+  flushSync(() =>
+    root.render(
+      <StrictMode>
+        <OutputHtml key={key} html={html} title="Report" />
+      </StrictMode>
+    )
+  );
 }
 
 async function runChecks() {
@@ -43,16 +47,21 @@ async function runChecks() {
   checks['author content has an opaque origin'] = contentFrame()?.contentDocument === null;
   checks['content keeps the restrictive sandbox'] = contentFrame()?.getAttribute('sandbox') === 'allow-scripts';
 
-  wrapperFrame().contentWindow?.postMessage({ type: 'designer-html', error: 'forged-message', height: 1600 }, location.origin);
+  wrapperFrame().contentWindow?.postMessage(
+    { type: 'designer-html', error: 'forged-message', height: 1600 },
+    location.origin
+  );
   await new Promise((resolve) => setTimeout(resolve, 50));
-  checks['messages from another window are ignored'] = !output?.textContent?.includes('forged-message') &&
-    Number.parseFloat(wrapperFrame().style.height) < 1600;
+  checks['messages from another window are ignored'] =
+    !output?.textContent?.includes('forged-message') && Number.parseFloat(wrapperFrame().style.height) < 1600;
 
   const target = location.origin + '/navigation-target';
   const navigationCases = [
     ['script navigation is blocked', '<script>location.assign(' + JSON.stringify(target + '?script') + ')</script>'],
-    ['link navigation is blocked', '<a id="link" href="' + target + '?link">Link</a>' +
-      '<script>document.getElementById("link").click()</script>'],
+    [
+      'link navigation is blocked',
+      '<a id="link" href="' + target + '?link">Link</a>' + '<script>document.getElementById("link").click()</script>',
+    ],
     ['meta refresh is blocked', '<meta http-equiv="refresh" content="0;url=' + target + '?refresh">'],
   ];
   for (const [label, html] of navigationCases) {
@@ -62,12 +71,16 @@ async function runChecks() {
   }
 
   render('<img src="' + target + '?image">');
-  await waitFor(() => output?.textContent?.includes('security policy blocked a resource') === true, 'resource restriction');
+  await waitFor(
+    () => output?.textContent?.includes('security policy blocked a resource') === true,
+    'resource restriction'
+  );
   checks['external resources remain blocked'] = true;
 
   render('<script>throw new Error("updated-output-marker")</script>');
   await waitFor(() => output?.textContent?.includes('updated-output-marker') === true, 'updated output');
-  checks['new output clears previous errors'] = !output?.textContent?.includes('blocked navigation') &&
+  checks['new output clears previous errors'] =
+    !output?.textContent?.includes('blocked navigation') &&
     !output?.textContent?.includes('security policy blocked a resource');
 
   render('<script>throw new Error("reload-marker-" + Math.random())</script>');
@@ -75,18 +88,27 @@ async function runChecks() {
   const previousError = output?.textContent;
   const previousDocument = wrapperFrame().contentDocument;
   wrapperFrame().srcdoc = wrapperFrame().srcdoc;
-  await waitFor(() => wrapperFrame().contentDocument !== previousDocument &&
-    output?.textContent?.includes('reload-marker-') === true && output.textContent !== previousError, 'wrapper reload');
+  await waitFor(
+    () =>
+      wrapperFrame().contentDocument !== previousDocument &&
+      output?.textContent?.includes('reload-marker-') === true &&
+      output.textContent !== previousError,
+    'wrapper reload'
+  );
   checks['a valid wrapper reload restores rendering and messaging'] = true;
 
   wrapperFrame().srcdoc = '<!doctype html><p>No navigation policy</p>';
-  await waitFor(() => wrapperFrame().contentDocument?.body.textContent?.includes('No navigation policy') === true &&
-    !contentFrame(), 'wrapper without a policy');
+  await waitFor(
+    () =>
+      wrapperFrame().contentDocument?.body.textContent?.includes('No navigation policy') === true && !contentFrame(),
+    'wrapper without a policy'
+  );
   checks['author content is absent when the wrapper policy is missing'] = true;
 
   render('<script>throw new Error("new-run-marker")</script>', 'new-run');
   await waitFor(() => output?.textContent?.includes('new-run-marker') === true, 'fresh run');
-  checks['a fresh run renders after the previous wrapper is removed'] = !output?.textContent?.includes('reload-marker-');
+  checks['a fresh run renders after the previous wrapper is removed'] =
+    !output?.textContent?.includes('reload-marker-');
 
   flushSync(() => root.unmount());
   checks['unmount removes both frames'] = output?.getElementsByTagName('iframe').length === 0;
@@ -100,5 +122,5 @@ async function reportResult(result: { completed: boolean; checks: Record<string,
 
 runChecks().then(
   () => reportResult({ completed: true, checks }),
-  (error: Error) => reportResult({ completed: false, checks, error: error.message }),
+  (error: Error) => reportResult({ completed: false, checks, error: error.message })
 );

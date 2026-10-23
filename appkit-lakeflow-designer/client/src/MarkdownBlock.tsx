@@ -15,9 +15,7 @@ const remarkPlugins = [remarkGfm];
 // follow rehype-raw) is the XSS gate, tightened to just the editor's output. This mirrors the authoring
 // preview's sanitizer in universe (appMarkdownSanitize.ts) so the app renders what the author saw.
 const IMAGE_MIME_SUFFIXES = ['png', 'jpeg', 'jpg', 'gif', 'webp', 'svg\\+xml'].join('|');
-const IMG_SRC_REGEX = new RegExp(
-  `^(https://[^\\s]+|data:image/(${IMAGE_MIME_SUFFIXES});base64,[A-Za-z0-9+/=\\s]+)$`,
-);
+const IMG_SRC_REGEX = new RegExp(`^(https://[^\\s]+|data:image/(${IMAGE_MIME_SUFFIXES});base64,[A-Za-z0-9+/=\\s]+)$`);
 
 const ALLOWED_SPAN_STYLE_PROPERTIES = new Set([
   'color',
@@ -100,7 +98,7 @@ function MarkdownCode({ children, className }: { children?: React.ReactNode; cla
   const language = /language-(\w+)/.exec(className ?? '')?.[1];
   return (
     <code className="bg-muted rounded px-1 py-0.5 font-mono text-[0.875em]" data-language={language}>
-      {String(children).replace(/\n$/, '')}
+      {typeof children === 'string' ? children.replace(/\n$/, '') : children}
     </code>
   );
 }
@@ -165,7 +163,9 @@ const markdownComponents: Components = {
     </div>
   ),
   tr: ({ children }) => <tr className="border-border border-b last:border-b-0">{children}</tr>,
-  th: ({ children }) => <th className="bg-muted border-border border-r px-3 py-2 font-medium last:border-r-0">{children}</th>,
+  th: ({ children }) => (
+    <th className="bg-muted border-border border-r px-3 py-2 font-medium last:border-r-0">{children}</th>
+  ),
   td: ({ children }) => <td className="border-border border-r px-3 py-2 align-top last:border-r-0">{children}</td>,
   thead: ({ children }) => <thead>{children}</thead>,
   tbody: ({ children }) => <tbody>{children}</tbody>,

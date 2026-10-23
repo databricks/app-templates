@@ -29,7 +29,10 @@ export function OutputFileDownloads({
 }) {
   const [open, setOpen] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string>();
-  const selectedIndex = Math.max(0, files.findIndex((file) => file.path === selectedPath));
+  const selectedIndex = Math.max(
+    0,
+    files.findIndex((file) => file.path === selectedPath)
+  );
   const selectedFile = files[selectedIndex];
   if (selectedFile === undefined) return null;
   const filename = filenameFor(selectedFile);
@@ -37,7 +40,11 @@ export function OutputFileDownloads({
 
   if (files.length === 1) {
     return (
-      <a className="text-foreground break-all underline underline-offset-2" href={href} aria-label={`Download ${filename}`}>
+      <a
+        className="text-foreground break-all underline underline-offset-2"
+        href={href}
+        aria-label={`Download ${filename}`}
+      >
         {filename}
       </a>
     );
@@ -62,7 +69,10 @@ export function OutputFileDownloads({
             </svg>
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-[max(20rem,var(--radix-popover-trigger-width))] max-w-[var(--radix-popover-content-available-width)] p-0">
+        <PopoverContent
+          align="start"
+          className="w-[max(20rem,var(--radix-popover-trigger-width))] max-w-[var(--radix-popover-content-available-width)] p-0"
+        >
           <Command label={`Files for ${outputTitle}`} defaultValue={String(selectedIndex)}>
             <CommandInput placeholder="Search files…" aria-label="Search generated files" />
             <CommandList>
@@ -70,7 +80,7 @@ export function OutputFileDownloads({
               <CommandGroup>
                 {files.map((file, index) => (
                   <CommandItem
-                    key={index}
+                    key={file.path}
                     value={String(index)}
                     keywords={[filenameFor(file)]}
                     onSelect={() => {
@@ -78,8 +88,12 @@ export function OutputFileDownloads({
                       setOpen(false);
                     }}
                   >
-                    <span className="min-w-0 flex-1 truncate" title={filenameFor(file)}>{filenameFor(file)}</span>
-                    {index === selectedIndex ? <span className="text-muted-foreground ml-auto shrink-0 text-xs">Selected</span> : null}
+                    <span className="min-w-0 flex-1 truncate" title={filenameFor(file)}>
+                      {filenameFor(file)}
+                    </span>
+                    {index === selectedIndex ? (
+                      <span className="text-muted-foreground ml-auto shrink-0 text-xs">Selected</span>
+                    ) : null}
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -88,7 +102,9 @@ export function OutputFileDownloads({
         </PopoverContent>
       </Popover>
       <Button variant="secondary" className="shrink-0" asChild>
-        <a href={href} aria-label={`Download ${filename}`}>Download</a>
+        <a href={href} aria-label={`Download ${filename}`}>
+          Download
+        </a>
       </Button>
     </div>
   );

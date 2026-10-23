@@ -13,8 +13,8 @@ export function GuardrailSummary({ diagnostics }: GuardrailSummaryProps) {
       <AlertTitle>Guardrails {failed ? 'failures' : 'warnings'}</AlertTitle>
       <AlertDescription>
         <ul className="grid gap-3">
-          {diagnostics.map((diagnostic, index) => (
-            <li key={`${diagnostic.nodeId}:${diagnostic.checkIndex}:${index}`}>
+          {diagnostics.map((diagnostic) => (
+            <li key={`${diagnostic.nodeId}:${diagnostic.checkIndex}:${diagnostic.message}`}>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">{diagnostic.operatorName}</span>
                 <Badge variant="outline">{diagnostic.severity === 'failure' ? 'Failure' : 'Warning'}</Badge>

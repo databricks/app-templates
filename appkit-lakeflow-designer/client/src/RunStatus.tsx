@@ -73,7 +73,9 @@ export function RunStatus({
               ].join(' ')}
             />
             <div
-              className={index === activeIndex ? 'text-foreground mt-1.5 text-xs' : 'text-muted-foreground mt-1.5 text-xs'}
+              className={
+                index === activeIndex ? 'text-foreground mt-1.5 text-xs' : 'text-muted-foreground mt-1.5 text-xs'
+              }
             >
               {stage.label.replace('…', '')}
             </div>

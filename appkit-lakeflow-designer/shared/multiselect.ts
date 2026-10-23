@@ -14,7 +14,7 @@ export function isValidMultiselectConfig(choices: unknown, defaultValue: unknown
     choices.length > 0 &&
     choices.every(
       (choice): choice is string =>
-        typeof choice === 'string' && choice !== '' && !choice.includes(MULTISELECT_DELIMITER),
+        typeof choice === 'string' && choice !== '' && !choice.includes(MULTISELECT_DELIMITER)
     ) &&
     isValidMultiselectValue(defaultValue === undefined ? '' : defaultValue, choices)
   );

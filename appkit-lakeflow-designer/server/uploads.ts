@@ -14,18 +14,20 @@ export interface UploadDependencies {
   manifest(): Promise<UploadManifest | undefined>;
   viewer(req: Request): string | undefined;
   store(storage: AppStorage): UploadStore;
-  report(error: unknown): void;
+  report: (error: unknown) => void;
 }
 
 const fileParameter = (manifest: UploadManifest | undefined, name: string) =>
   manifest?.parameters.find((parameter) => parameter.name === name && parameter.type === 'file');
 
 function sendUploadError(res: Response, error: unknown, fallback: string) {
-  res.status(error instanceof UploadError ? error.status : 502).json(
-    error instanceof UploadError
-      ? { ...(error.code ? { code: error.code } : {}), error: error.message }
-      : { error: fallback },
-  );
+  res
+    .status(error instanceof UploadError ? error.status : 502)
+    .json(
+      error instanceof UploadError
+        ? { ...(error.code ? { code: error.code } : {}), error: error.message }
+        : { error: fallback }
+    );
 }
 
 export function registerUploadRoutes(app: Pick<Application, 'get' | 'post'>, deps: UploadDependencies) {
@@ -58,7 +60,7 @@ export function registerUploadRoutes(app: Pick<Application, 'get' | 'post'>, dep
         sendUploadError(
           res,
           error,
-          'Could not download the uploaded file. Check the app volume resource and permissions.',
+          'Could not download the uploaded file. Check the app volume resource and permissions.'
         );
       }
     }
@@ -109,7 +111,7 @@ export function registerUploadRoutes(app: Pick<Application, 'get' | 'post'>, dep
           parameter.name,
           filename,
           Readable.toWeb(req) as ReadableStream<Uint8Array>,
-          declaredSize,
+          declaredSize
         ),
       });
     } catch (error) {

@@ -30,8 +30,12 @@ export interface WrittenFiles {
 
 export function parseFileOutput(value: unknown): FileOutputConfig | undefined {
   if (
-    typeof value !== 'object' || value === null || !('volumes' in value) ||
-    !Array.isArray(value.volumes) || value.volumes.length === 0 || value.volumes.length > 50
+    typeof value !== 'object' ||
+    value === null ||
+    !('volumes' in value) ||
+    !Array.isArray(value.volumes) ||
+    value.volumes.length === 0 ||
+    value.volumes.length > 50
   ) {
     return undefined;
   }
@@ -47,18 +51,27 @@ export function hasInvalidFileOutputDeclaration(blocks: unknown): boolean {
   const outputIds = records.filter((block) => block.type === 'output').map((block) => block.id);
   // Preview blocks may be omitted when malformed. File blocks must fail closed instead:
   // dropping one could remove the ownership/policy controls while the runner still writes it.
-  return records.some((block) => block.fileOutput !== undefined && (
-    block.type !== 'output' ||
-    typeof block.id !== 'string' || block.id.trim() === '' ||
-    typeof block.nodeId !== 'string' || block.nodeId.trim() === '' ||
-    outputIds.filter((id) => id === block.id).length !== 1 ||
-    parseFileOutput(block.fileOutput) === undefined
-  ));
+  return records.some(
+    (block) =>
+      block.fileOutput !== undefined &&
+      (block.type !== 'output' ||
+        typeof block.id !== 'string' ||
+        block.id.trim() === '' ||
+        typeof block.nodeId !== 'string' ||
+        block.nodeId.trim() === '' ||
+        outputIds.filter((id) => id === block.id).length !== 1 ||
+        parseFileOutput(block.fileOutput) === undefined)
+  );
 }
 
 // Require literal, canonical paths. Never normalize an untrusted path into the approved scope.
 export function isOutputFilePath(path: unknown, config: FileOutputConfig): path is string {
-  if (typeof path !== 'string' || path.length > 4096 || /[\\\x00-\x1f\x7f]/.test(path)) return false;
+  if (
+    typeof path !== 'string' ||
+    path.length > 4096 ||
+    [...path].some((character) => character === '\\' || character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)
+  )
+    return false;
   const root = config.volumes
     .map((volume) => `/Volumes/${volume.replaceAll('.', '/')}/`)
     .find((root) => path.startsWith(root));

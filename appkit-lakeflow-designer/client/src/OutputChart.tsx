@@ -15,11 +15,15 @@ export interface OutputChartProps {
 export function OutputChart({ plan, rows, fallback }: OutputChartProps) {
   const ui = useChartUITokens();
   const host = useRef<HTMLDivElement>(null);
-  const [failed, setFailed] = useState(false);
+  const [failedInputs, setFailedInputs] = useState<{
+    plan: PublishedChartPlan;
+    rows: readonly PublishedChartRow[];
+    ui: typeof ui;
+  }>();
+  const failed = failedInputs?.plan === plan && failedInputs.rows === rows && failedInputs.ui === ui;
   useEffect(() => {
     const container = host.current;
     if (!container) return;
-    setFailed(false);
     // An embed may finish after cleanup. Its own mount keeps it away from a newer chart.
     const mount = document.createElement('div');
     container.appendChild(mount);
@@ -28,14 +32,14 @@ export function OutputChart({ plan, rows, fallback }: OutputChartProps) {
       preparePublishedChartData(plan, rows),
       DESIGNER_CHART_COLORS,
       ui,
-      getComputedStyle(container).fontFamily,
+      getComputedStyle(container).fontFamily
     );
     let disposed = false;
     let finalize: (() => void) | undefined;
     let observer: ResizeObserver | undefined;
     let width = Math.max(1, container.clientWidth);
     const onError = () => {
-      if (!disposed) setFailed(true);
+      if (!disposed) setFailedInputs({ plan, rows, ui });
     };
     void embed(mount, spec, {
       actions: false,

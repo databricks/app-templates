@@ -22,11 +22,13 @@ export function manifestRevision(manifest: FileOutputManifest): string {
     }))
     .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
   const revision = createHash('sha256')
-    .update(JSON.stringify({
-      storage: manifest.storage && { volume: manifest.storage.volume, path: manifest.storage.path },
-      parameters: manifest.parameters.map((parameter) => parameter.name).sort(),
-      outputs,
-    }))
+    .update(
+      JSON.stringify({
+        storage: manifest.storage && { volume: manifest.storage.volume, path: manifest.storage.path },
+        parameters: manifest.parameters.map((parameter) => parameter.name).sort(),
+        outputs,
+      })
+    )
     .digest('hex');
   return `file-outputs-v1:${revision}`;
 }

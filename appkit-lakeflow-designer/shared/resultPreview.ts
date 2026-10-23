@@ -9,7 +9,7 @@ export interface ResultPreview {
 export function summarizeResultPreview(
   receivedRowCount: number,
   truncated: unknown,
-  totalRowCount?: unknown,
+  totalRowCount?: unknown
 ): ResultPreview {
   const validTotal =
     typeof totalRowCount === 'number' &&

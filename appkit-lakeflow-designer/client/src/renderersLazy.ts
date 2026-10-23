@@ -8,7 +8,7 @@ import type { OutputChart } from './OutputChart';
 const importOutputChart = () => import('./OutputChart');
 
 export const LazyOutputChart: LazyExoticComponent<typeof OutputChart> = lazy(() =>
-  importOutputChart().then((module) => ({ default: module.OutputChart })),
+  importOutputChart().then((module) => ({ default: module.OutputChart }))
 );
 
 export function preloadOutputChart(): void {

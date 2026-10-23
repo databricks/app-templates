@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { App } from '../../client/src/App';
+import { isRecord } from '../../shared/values';
 
 const element = document.getElementById('app');
 if (!element) throw new Error('Missing App mount point.');
@@ -14,23 +15,33 @@ const checksKey = 'startup-recovery-test:checks';
 const stage = sessionStorage.getItem(stageKey) ?? 'run';
 const navigations = Number(sessionStorage.getItem(navigationKey) ?? '0') + 1;
 sessionStorage.setItem(navigationKey, String(navigations));
-const checks: Record<string, boolean> = JSON.parse(sessionStorage.getItem(checksKey) ?? '{}');
+const storedChecks: unknown = JSON.parse(sessionStorage.getItem(checksKey) ?? '{}');
+const checks: Record<string, boolean> = isRecord(storedChecks)
+  ? Object.fromEntries(
+      Object.entries(storedChecks).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean')
+    )
+  : {};
 let configMode: 'ready' | 'starting' | 'invalid' = stage === 'blocked' ? 'starting' : 'ready';
 const manifest = {
-  version: 8, appName: 'Startup recovery', parameters: [],
+  version: 8,
+  appName: 'Startup recovery',
+  parameters: [],
   blocks: [{ type: 'output', id: 'table', label: 'Output', nodeId: 'source', port: 'data' }],
 };
 const json = (body: unknown) => Promise.resolve(Response.json(body));
 
 // Only the network boundary is controlled; App, Run preparation and browser navigation are real.
 window.fetch = (input, init) => {
-  const url = new URL(String(input), location.origin);
+  const url = new URL(input instanceof Request ? input.url : input, location.origin);
   if (!url.pathname.startsWith('/api/designer/')) return originalFetch(input, init);
   if (url.pathname.endsWith('/config')) {
     if (configMode === 'starting') {
-      return Promise.resolve(new Response('<!doctype html><title>App Starting - Databricks</title>', {
-        status: 202, headers: { 'Content-Type': 'text/html; charset=utf-8' },
-      }));
+      return Promise.resolve(
+        new Response('<!doctype html><title>App Starting - Databricks</title>', {
+          status: 202,
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        })
+      );
     }
     return json({ manifest: { ...manifest, version: configMode === 'invalid' ? 7 : 8 }, runnable: true });
   }
@@ -42,7 +53,10 @@ window.fetch = (input, init) => {
   }
   if (url.pathname.endsWith('/run/42')) {
     return json({
-      jobRunId: '42', terminal: true, lifeCycleState: 'TERMINATED', resultState: 'SUCCESS',
+      jobRunId: '42',
+      terminal: true,
+      lifeCycleState: 'TERMINATED',
+      resultState: 'SUCCESS',
       result: { outcome: 'noPayload', reason: 'Finished without a preview.' },
     });
   }
@@ -52,18 +66,26 @@ window.fetch = (input, init) => {
 async function waitFor(predicate: () => boolean, label: string) {
   const deadline = Date.now() + 12000;
   while (!predicate()) {
-    if (Date.now() > deadline) throw new Error('Timed out: ' + label);
+    if (Date.now() > deadline) {
+      throw new Error(`Timed out: ${label}; stage=${stage}; navigations=${navigations}; ${element?.textContent}`);
+    }
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
 }
-const runButton = () => [...document.getElementsByTagName('button')]
-  .find((candidate) => candidate.textContent?.trim() === 'Run');
+const runButton = () =>
+  [...document.getElementsByTagName('button')].find((candidate) => candidate.textContent?.trim() === 'Run');
 const contains = (text: string) => element?.textContent?.includes(text) === true;
 const submissions = () => Number(sessionStorage.getItem(submissionKey) ?? '0');
 const saveChecks = () => sessionStorage.setItem(checksKey, JSON.stringify(checks));
 
 async function runChecks() {
-  flushSync(() => root.render(<StrictMode><App /></StrictMode>));
+  flushSync(() =>
+    root.render(
+      <StrictMode>
+        <App />
+      </StrictMode>
+    )
+  );
   if (stage === 'run') {
     await waitFor(() => runButton()?.disabled === false, 'ready App');
     sessionStorage.setItem(stageKey, 'blocked');
@@ -100,12 +122,19 @@ async function runChecks() {
   window.dispatchEvent(new Event('focus'));
   await waitFor(() => !contains('Could not refresh') && runButton()?.disabled === false, 'configuration recovery');
   runButton()?.click();
-  await waitFor(() => contains('Finished without a preview.') && runButton()?.disabled === false, 'explicit Run after recovery');
+  await waitFor(
+    () => contains('Finished without a preview.') && runButton()?.disabled === false,
+    'explicit Run after recovery'
+  );
   checks['Run works after recovery with exactly one explicit Job submission'] = submissions() === 1;
   flushSync(() => root.unmount());
 }
 
 runChecks().then(
   () => originalFetch('/browser-result', { method: 'POST', body: JSON.stringify({ completed: true, checks }) }),
-  (error: Error) => originalFetch('/browser-result', { method: 'POST', body: JSON.stringify({ completed: false, checks, error: error.message }) }),
+  (error: Error) =>
+    originalFetch('/browser-result', {
+      method: 'POST',
+      body: JSON.stringify({ completed: false, checks, error: error.message }),
+    })
 );

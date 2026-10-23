@@ -1,6 +1,11 @@
 import { isHtmlOutput } from '../shared/htmlOutputs';
 import { DISPLAY_ROW_LIMIT, summarizeResultPreview } from '../shared/resultPreview';
-import { FILE_OUTPUTS_MIME_TYPE, MAX_OUTPUT_FILES, parseFileOutputBehavior, type WrittenFiles } from '../shared/fileOutputs';
+import {
+  FILE_OUTPUTS_MIME_TYPE,
+  MAX_OUTPUT_FILES,
+  parseFileOutputBehavior,
+  type WrittenFiles,
+} from '../shared/fileOutputs';
 import { isRecord } from '../shared/values';
 import type { GuardrailDiagnostic } from '../shared/guardrails';
 import { commandGuardrailDiagnostics, mergeGuardrailDiagnostics } from './guardrails';
@@ -33,7 +38,7 @@ function decodeNotebookModel(exportedHtml: unknown): Record<string, unknown> | u
     return undefined;
   }
   try {
-    const parsed = JSON.parse(decodeURIComponent(Buffer.from(value, 'base64').toString()));
+    const parsed: unknown = JSON.parse(decodeURIComponent(Buffer.from(value, 'base64').toString()));
     return isRecord(parsed) ? parsed : undefined;
   } catch {
     return undefined;
@@ -58,7 +63,7 @@ function simpleType(rawType: unknown): string {
     return 'string';
   }
   try {
-    const parsed = JSON.parse(rawType);
+    const parsed: unknown = JSON.parse(rawType);
     return typeof parsed === 'string' ? parsed : rawType;
   } catch {
     return rawType;
@@ -85,7 +90,16 @@ function toDisplayTable(entry: unknown) {
 }
 
 function resultEntries(results: unknown): unknown[] {
-  if (isRecord(results) && (results.type === 'table' || results.type === 'mimeBundle' || results.type === 'htmlSandbox' || results.type === 'html' || results.type === 'ansi' || results.type === 'text')) return [results];
+  if (
+    isRecord(results) &&
+    (results.type === 'table' ||
+      results.type === 'mimeBundle' ||
+      results.type === 'htmlSandbox' ||
+      results.type === 'html' ||
+      results.type === 'ansi' ||
+      results.type === 'text')
+  )
+    return [results];
   return isRecord(results) && Array.isArray(results.data) ? results.data : [];
 }
 
@@ -96,7 +110,8 @@ function mimePayloads(results: unknown, mimeType: string): unknown[] {
     const payload = entry.data[mimeType];
     if (typeof payload !== 'string') return [payload];
     try {
-      return [JSON.parse(payload)];
+      const parsed: unknown = JSON.parse(payload);
+      return [parsed];
     } catch {
       return [];
     }
@@ -128,7 +143,9 @@ function runtimeNodeStates(results: unknown): Map<string, { disabled: boolean }>
   const states = new Map<string, { disabled: boolean }>();
   for (const payload of mimePayloads(results, RUNTIME_NODE_STATE_MIME_TYPE)) {
     if (
-      isRecord(payload) && typeof payload.nodeId === 'string' && payload.nodeId !== '' &&
+      isRecord(payload) &&
+      typeof payload.nodeId === 'string' &&
+      payload.nodeId !== '' &&
       typeof payload.disabled === 'boolean'
     ) {
       states.set(payload.nodeId, { disabled: payload.disabled });
@@ -140,18 +157,23 @@ function runtimeNodeStates(results: unknown): Map<string, { disabled: boolean }>
 function writtenFiles(results: unknown): WrittenFiles[] {
   return mimePayloads(results, FILE_OUTPUTS_MIME_TYPE).flatMap((receipt) => {
     if (
-      !isRecord(receipt) || typeof receipt.node !== 'string' || receipt.node === '' ||
-      !Array.isArray(receipt.files) || receipt.files.length > MAX_OUTPUT_FILES ||
-      !receipt.files.every((file) => isRecord(file) && typeof file.path === 'string')
+      !isRecord(receipt) ||
+      typeof receipt.node !== 'string' ||
+      receipt.node === '' ||
+      !Array.isArray(receipt.files) ||
+      receipt.files.length > MAX_OUTPUT_FILES ||
+      !receipt.files.every((file): file is { path: string } => isRecord(file) && typeof file.path === 'string')
     ) {
       return [];
     }
     const behavior = parseFileOutputBehavior(receipt.behavior);
-    return [{
-      node: receipt.node,
-      files: receipt.files.map((file) => ({ path: file.path as string })),
-      ...(behavior ? { behavior } : {}),
-    }];
+    return [
+      {
+        node: receipt.node,
+        files: receipt.files.map((file) => ({ path: file.path })),
+        ...(behavior ? { behavior } : {}),
+      },
+    ];
   });
 }
 
@@ -177,16 +199,19 @@ function htmlOutputs(source: unknown, results: unknown): Record<string, unknown>
   if (entries.length === 0) return [];
   const binding = { kind: 'html', target_node: node };
   if (entries.length !== 1 || !isHtmlOutput(entries[0])) {
-    return [{
-      ...binding,
-      status: 'error',
-      error: {
-        type: 'HtmlOutputError',
-        message: entries.length !== 1
-          ? 'The HTML operator must display exactly one HTML page.'
-          : 'The HTML output is invalid or exceeds the 4,194,304-character limit. Reduce the page size or its input data.',
+    return [
+      {
+        ...binding,
+        status: 'error',
+        error: {
+          type: 'HtmlOutputError',
+          message:
+            entries.length !== 1
+              ? 'The HTML operator must display exactly one HTML page.'
+              : 'The HTML output is invalid or exceeds the 4,194,304-character limit. Reduce the page size or its input data.',
+        },
       },
-    }];
+    ];
   }
   return [{ ...binding, status: 'ok', html: entries[0] }];
 }
@@ -234,7 +259,9 @@ export function exportedModelToRunPayload(exportedHtml: unknown, taskErrorTexts:
     });
   }
   return JSON.stringify({
-    version: RUNNER_PAYLOAD_VERSION, outputs, files,
+    version: RUNNER_PAYLOAD_VERSION,
+    outputs,
+    files,
     diagnostics: mergeGuardrailDiagnostics(diagnostics, taskErrorTexts),
     ...(states.size > 0 ? { runtimeNodeStates: Object.fromEntries(states) } : {}),
   });

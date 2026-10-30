@@ -6,16 +6,21 @@ Fires two custom metrics per request: `end-to-end` (send -> [DONE]) and `TTFT`
   locust -f locustfile.py --host https://<app-url>          # web UI at :8089
   LOCUST_AUTORAMP=1 locust -f locustfile.py --host <url> --headless
 
-Auth: set DATABRICKS_HOST + DATABRICKS_CLIENT_ID + DATABRICKS_CLIENT_SECRET for M2M
-OAuth against a deployed app (omit for a local unauthenticated server). Reliability is
-validated separately from the server-side MLflow traces — see validate_with_mlflow.py.
+Auth against a deployed app: set DATABRICKS_HOST, then either
+  - nothing else (U2M, fine for tests under ~1 hour): run `databricks auth login` first;
+    the token comes from `databricks auth token` (set DATABRICKS_PROFILE to pick a profile), or
+  - DATABRICKS_CLIENT_ID + DATABRICKS_CLIENT_SECRET (M2M OAuth, for longer tests).
+Omit DATABRICKS_HOST for a local unauthenticated server. Reliability is validated
+separately from the server-side MLflow traces — see validate_with_mlflow.py.
 """
 
 import json
 import os
 import random
+import subprocess
 import threading
 import time
+from datetime import datetime
 
 import requests
 from locust import HttpUser, LoadTestShape, between, task
@@ -24,7 +29,8 @@ PROMPTS = ["What's the weather in Boston?", "What's the stock price of AAPL?"]
 
 
 class _Token:
-    """M2M OAuth token, cached and refreshed ~60s early. Empty header if unset."""
+    """OAuth token for the app, cached and refreshed ~60s early: M2M when client
+    credentials are set, else U2M from the Databricks CLI. Empty header if no host."""
 
     def __init__(self):
         h = (os.environ.get("DATABRICKS_HOST") or "").strip().rstrip("/")
@@ -32,20 +38,37 @@ class _Token:
         self.host = ("https://" + h) if h and not h.startswith("http") else h
         self.cid = os.environ.get("DATABRICKS_CLIENT_ID")
         self.sec = os.environ.get("DATABRICKS_CLIENT_SECRET")
+        self.profile = os.environ.get("DATABRICKS_PROFILE")
         self.tok, self.exp, self.lock = None, 0.0, threading.Lock()
 
+    def _m2m(self):
+        r = requests.post(f"{self.host}/oidc/v1/token", auth=(self.cid, self.sec),
+                          data={"grant_type": "client_credentials", "scope": "all-apis"},
+                          timeout=30)
+        r.raise_for_status()
+        b = r.json()
+        return b["access_token"], time.time() + int(b.get("expires_in", 3600))
+
+    def _u2m(self):
+        # Token from `databricks auth login`; the CLI refreshes it as needed.
+        cmd = ["databricks", "auth", "token", "--host", self.host]
+        if self.profile:
+            cmd += ["--profile", self.profile]
+        # cmd is a fixed argument list (never shell=True)
+        out = subprocess.run(cmd, capture_output=True, text=True, check=True,  # nosemgrep: dangerous-subprocess-use-audit
+                             timeout=60).stdout
+        b = json.loads(out)
+        expiry = b.get("expiry")
+        exp = (datetime.fromisoformat(expiry.replace("Z", "+00:00")).timestamp()
+               if expiry else time.time() + 1800)
+        return b["access_token"], exp
+
     def header(self):
-        if not (self.host and self.cid and self.sec):
+        if not self.host:
             return {}
         with self.lock:
             if not self.tok or time.time() > self.exp - 60:
-                r = requests.post(f"{self.host}/oidc/v1/token", auth=(self.cid, self.sec),
-                                  data={"grant_type": "client_credentials", "scope": "all-apis"},
-                                  timeout=30)
-                r.raise_for_status()
-                b = r.json()
-                self.tok = b["access_token"]
-                self.exp = time.time() + int(b.get("expires_in", 3600))
+                self.tok, self.exp = self._m2m() if (self.cid and self.sec) else self._u2m()
         return {"Authorization": f"Bearer {self.tok}"}
 
 

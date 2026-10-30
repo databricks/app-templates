@@ -251,7 +251,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     const modelMessages = await convertToModelMessages(uiMessages);
     const requestHeaders = {
       [CONTEXT_HEADER_CONVERSATION_ID]: id,
-      [CONTEXT_HEADER_USER_ID]: session.user.email ?? session.user.id,
+      [CONTEXT_HEADER_USER_ID]: session.user.id,
       // Forward OBO user token to the backend/serving endpoint
       ...(req.headers['x-forwarded-access-token']
         ? { 'x-forwarded-access-token': req.headers['x-forwarded-access-token'] as string }

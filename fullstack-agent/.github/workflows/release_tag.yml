@@ -1,0 +1,38 @@
+name: Release tag
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BRANCH: ${{ github.event.pull_request.head.ref }}
+      MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+    steps:
+      - name: Version from the branch name
+        run: |
+          version="${BRANCH#release/}"
+          if ! [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Expected a branch named release/vX.Y.Z, got $BRANCH. Tag the merge commit by hand, or merge a correctly named branch."
+            exit 1
+          fi
+          echo "VERSION=$version" >>"$GITHUB_ENV"
+      - name: Tag the merge commit and publish the release
+        run: gh release create "$VERSION" --target "$MERGE_SHA" --title "$VERSION" --generate-notes
+      - name: Deploy prod from the tag
+        run: |
+          gh workflow run deploy.yml --ref "$VERSION"
+          echo "Dispatched deploy.yml on $VERSION." >>"$GITHUB_STEP_SUMMARY"

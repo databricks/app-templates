@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Full-stack agent example for Databricks: architecture</title>
+<link rel="stylesheet" href="diagrams.css">
+</head>
+<body>
+<div id="diagram">
+<div id="canvas" style="width:1240px; height:622px;">
+
+  <div class="box zone-external" style="left:0; top:0; width:160px; height:410px;">
+    <div class="head">Users</div>
+    <div class="item" style="position:absolute; left:12px; top:100px;">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>
+      <div class="label">App user</div>
+      <div class="sub">A workspace user</div>
+    </div>
+    <div class="item" style="position:absolute; left:12px; top:222px;">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4"/><path d="M2 8h20"/><path d="M6 4v4"/></svg>
+      <div class="label">Chat UI</div>
+      <div class="sub">In the browser</div>
+    </div>
+  </div>
+
+  <div class="box zone-external" style="left:0; top:444px; width:160px; height:178px;">
+    <div class="head small">Legend</div>
+    <div style="padding:16px 12px; display:flex; flex-direction:column; gap:16px;">
+      <div class="legend-row"><svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke="#143D4A" stroke-width="2"/></svg>Runs on behalf of the user</div>
+      <div class="legend-row"><svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke="#143D4A" stroke-width="2" stroke-dasharray="6 4"/></svg>Runs as the app's service principal</div>
+    </div>
+  </div>
+
+  <div class="box platform" style="left:220px; top:0; width:1020px; height:622px;">
+    <div class="head"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg>Databricks workspace<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg></div>
+  </div>
+
+  <div class="box panel" style="left:242px; top:76px; width:290px; height:334px;">
+    <div class="head">Agent app on Databricks Apps</div>
+    <div class="body" style="padding-bottom:24px;">
+      <div class="items">
+        <div class="item">
+          <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Agent Bricks">
+<g transform="translate(2 2) scale(1)"><rect x="5.5" y="30.25" width="16.5" height="8.25" fill="currentColor"/>
+<rect x="5.5" y="13.75" width="16.5" height="8.25" fill="currentColor"/>
+<rect x="22" y="22" width="16.5" height="8.25" fill="currentColor" opacity="0.45"/>
+<rect x="22" y="5.5" width="16.5" height="8.25" fill="currentColor" opacity="0.45"/></g>
+</svg>
+          <div class="label">Agent Bricks runtime</div>
+          <div class="sub">API routes, a user client per request</div>
+        </div>
+        <div class="item">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+          <div class="label">Agent and tools</div>
+          <div class="sub">OpenAI Agents SDK, fixed queries</div>
+        </div>
+      </div>
+      <div class="caption">User authorization: sql, ai-gateway</div>
+    </div>
+  </div>
+
+  <div class="box panel" style="left:242px; top:444px; width:290px; height:156px;">
+    <div class="head">Lakebase</div>
+    <div class="body">
+      <div class="item">
+        <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Lakebase">
+<g transform="translate(2 2) scale(1)"><path d="M21.9873 26.1678C19.538 25.3353 16.7272 24.8602 13.7305 24.8602C10.734 24.8603 7.92687 25.3354 5.47461 26.1678V17.6639H38.5V26.1678C36.0476 26.9668 33.2399 27.4237 30.2432 27.4237C27.2466 27.4237 24.4365 26.9668 21.9873 26.1678Z" fill="currentColor" opacity="0.45"/>
+<path d="M13.7698 28.4783C16.5661 28.4783 19.1996 28.8587 21.5266 29.531L22.4485 29.8083C24.7755 30.4806 27.409 30.8611 30.2053 30.8611C33.1877 30.861 35.9814 30.4277 38.4221 29.6697H38.5002V38.4939H5.47485V29.6697H5.552C7.99291 28.9116 10.7871 28.4783 13.7698 28.4783Z" fill="currentColor"/>
+<rect x="5.47485" y="5.5" width="33.0252" height="8.82439" fill="currentColor" opacity="0.45"/></g>
+</svg>
+        <div class="label">Session store</div>
+        <div class="sub">Conversation history</div>
+      </div>
+      <div class="item">
+        <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Lakebase">
+<g transform="translate(2 2) scale(1)"><path d="M21.9873 26.1678C19.538 25.3353 16.7272 24.8602 13.7305 24.8602C10.734 24.8603 7.92687 25.3354 5.47461 26.1678V17.6639H38.5V26.1678C36.0476 26.9668 33.2399 27.4237 30.2432 27.4237C27.2466 27.4237 24.4365 26.9668 21.9873 26.1678Z" fill="currentColor" opacity="0.45"/>
+<path d="M13.7698 28.4783C16.5661 28.4783 19.1996 28.8587 21.5266 29.531L22.4485 29.8083C24.7755 30.4806 27.409 30.8611 30.2053 30.8611C33.1877 30.861 35.9814 30.4277 38.4221 29.6697H38.5002V38.4939H5.47485V29.6697H5.552C7.99291 28.9116 10.7871 28.4783 13.7698 28.4783Z" fill="currentColor"/>
+<rect x="5.47485" y="5.5" width="33.0252" height="8.82439" fill="currentColor" opacity="0.45"/></g>
+</svg>
+        <div class="label">Runtime store</div>
+        <div class="sub">Run events</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="box panel" style="left:598px; top:76px; width:260px; height:156px;">
+    <div class="head">Unity Gateway</div>
+    <div class="body">
+      <div class="item wide">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Unity Gateway">
+<g transform="translate(2 2) scale(0.7097)"><path d="M21.5 43V29A9.5 9.5 0 0 1 40.5 29V43Z" fill="currentColor"/>
+<rect x="6" y="25" width="10" height="10" fill="currentColor" opacity="0.45"/>
+<rect x="46" y="25" width="10" height="10" fill="currentColor" opacity="0.45"/>
+<rect x="15.5" y="8" width="10" height="10" transform="rotate(-30 20.5 13)" fill="currentColor" opacity="0.45"/>
+<rect x="36.5" y="8" width="10" height="10" transform="rotate(30 41.5 13)" fill="currentColor" opacity="0.45"/>
+<path d="M16.5 47H45.5L48.5 54.5H13.5Z" fill="currentColor" opacity="0.45"/>
+</g>
+</svg>
+        <div class="label">Model services</div>
+        <div class="sub">Claude Sonnet and Opus, guardrails, rate limits</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="box panel" style="left:598px; top:254px; width:260px; height:156px;">
+    <div class="head">Databricks SQL</div>
+    <div class="body">
+      <div class="item wide">
+        <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="SQL Warehouse">
+<g transform="translate(2 2) scale(2.75)"><path fill-rule="evenodd" clip-rule="evenodd" d="M1 1.75C1 1.33579 1.33579 1 1.75 1L14.25 1C14.6642 1 15 1.33579 15 1.75L15 8.99999H13.5L13.5 7L2.5 7L2.5 13.5H8V15H1.75C1.33579 15 1 14.6642 1 14.25L1 1.75ZM13.5 2.5V5.5L2.5 5.5L2.5 2.5L13.5 2.5Z" fill="currentColor"/>
+<path d="M11.4306 8.01191L8.43056 11.5119C8.23994 11.7343 8.19623 12.0473 8.31862 12.3134C8.441 12.5795 8.7071 12.75 9 12.75H12.3693L10.4306 15.0119L11.5694 15.9881L14.5694 12.4881C14.7601 12.2657 14.8038 11.9527 14.6814 11.6866C14.559 11.4205 14.2929 11.25 14 11.25H10.6307L12.5694 8.98809L11.4306 8.01191Z" fill="currentColor"/></g>
+</svg>
+        <div class="label">Serverless SQL warehouse</div>
+        <div class="sub">Fixed queries and definer procedures</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="box panel" style="left:598px; top:444px; width:260px; height:156px;">
+    <div class="head">MLflow</div>
+    <div class="body">
+      <div class="item wide">
+        <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Managed MLflow">
+<g transform="translate(2 2) scale(0.2933)"><path d="M130.1 46.06L127.45 47.46C131.95 56 134.24 65.27 134.24 75C134.24 107.67 107.66 134.24 75 134.24C42.34 134.24 15.77 107.66 15.77 75C15.77 42.34 42.34 15.77 75 15.77C88.63 15.77 101.69 20.43 112.21 28.93H103.95V31.93H117.77V18.11H114.77V27.13C103.61 17.84 89.62 12.76 75.01 12.76C40.7 12.76 12.78 40.68 12.78 74.99C12.78 109.31 40.7 137.23 75.01 137.23C109.33 137.23 137.25 109.31 137.25 74.99C137.23 64.77 134.83 55.03 130.1 46.06Z" fill="currentColor"></path><path d="M110.18 45.25L77.35 45.26L70.28 52.8C68.73 51.61 66.79 50.89 64.69 50.89C60.14 50.89 56.36 54.22 55.64 58.58L35.18 58.57C41.63 42.98 56.92 32.37 73.85 31.94H74.32C74.43 31.94 74.54 31.93 74.65 31.93L91.26 31.94V28.94H77.65H75.77C75.24 28.92 74.67 28.92 74.26 28.94H73.81C54.9 29.42 37.93 41.73 31.58 59.57L30.87 61.57L55.64 61.5801C56.36 65.93 60.14 69.27 64.69 69.27C69.75 69.27 73.87 65.1501 73.87 60.08C73.87 58.2001 73.3 56.46 72.33 55L78.65 48.27L108.75 48.26C112.15 52.54 114.66 57.33 116.23 62.53L89.62 62.57L74.52 77.6601H56.64C55.92 73.3101 52.14 69.9801 47.59 69.9801C43.04 69.9801 39.26 73.3101 38.54 77.6601H28.98L29.13 79.3001C31.34 103.11 51.05 121.07 74.99 121.07C97.04 121.07 116.06 105.38 120.21 83.77L120.55 81.99H108.27C107.55 77.64 103.77 74.3001 99.22 74.3001C94.16 74.3001 90.04 78.42 90.04 83.49C90.04 85.48 90.68 87.3201 91.77 88.8301L82.59 98H76.59C75.87 93.65 72.09 90.32 67.54 90.32C62.48 90.32 58.36 94.44 58.36 99.5C58.36 104.56 62.48 108.69 67.54 108.69C72.09 108.69 75.87 105.36 76.59 101H83.83L93.9 90.9401C95.41 92.0201 97.25 92.6601 99.24 92.6601C103.79 92.6601 107.57 89.3301 108.29 84.9801H116.9C112.34 104.26 95.01 118.06 75 118.06C53.17 118.06 35.1 102.09 32.31 80.6501H38.55C39.27 85 43.05 88.34 47.6 88.34C52.15 88.34 55.93 85.0101 56.65 80.6501H75.77L90.87 65.56L120.13 65.52L119.66 63.6501C117.99 57.0601 114.95 51.06 110.64 45.8L110.18 45.25ZM64.69 66.2601C61.28 66.2601 58.5 63.49 58.5 60.07C58.5 56.66 61.27 53.89 64.69 53.89C68.1 53.89 70.87 56.66 70.87 60.07C70.88 63.48 68.1 66.2601 64.69 66.2601ZM67.53 105.69C64.12 105.69 61.35 102.92 61.35 99.5C61.35 96.09 64.12 93.32 67.53 93.32C70.94 93.32 73.72 96.09 73.72 99.5C73.72 102.92 70.94 105.69 67.53 105.69ZM99.23 89.6601C95.82 89.6601 93.05 86.8901 93.05 83.4801C93.05 80.0701 95.82 77.2901 99.23 77.2901C102.64 77.2901 105.42 80.0601 105.42 83.4801C105.42 86.8901 102.64 89.6601 99.23 89.6601ZM47.59 85.34C44.18 85.34 41.41 82.5701 41.41 79.1601C41.41 75.7501 44.18 72.9701 47.59 72.9701C51 72.9701 53.78 75.7401 53.78 79.1601C53.78 82.5701 51 85.34 47.59 85.34Z" fill="currentColor"></path></g>
+</svg>
+        <div class="label">Trace experiment</div>
+        <div class="sub">Traces and user ratings</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="box panel" style="left:924px; top:76px; width:294px; height:524px;">
+    <div class="head">Unity Catalog</div>
+    <div class="body" style="display:block;">
+      <div class="row" style="top:10px;">
+        <div class="item">
+          <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Lakehouse Storage (Managed Tables)">
+<g transform="translate(2 2) scale(0.2933)"><path d="M126.77 25.11H23.23C21.2868 25.1126 19.4239 25.8857 18.0498 27.2598C16.6758 28.6339 15.9026 30.4968 15.9 32.44V47H122.45V44H18.9V32.44C18.9 31.2916 19.3562 30.1902 20.1682 29.3782C20.9803 28.5662 22.0816 28.11 23.23 28.11H126.77C127.918 28.11 129.02 28.5662 129.832 29.3782C130.644 30.1902 131.1 31.2916 131.1 32.44V117.56C131.1 118.708 130.644 119.81 129.832 120.622C129.02 121.434 127.918 121.89 126.77 121.89H23.23C22.0816 121.89 20.9803 121.434 20.1682 120.622C19.3562 119.81 18.9 118.708 18.9 117.56V58.26H15.9V117.56C15.9026 119.503 16.6758 121.366 18.0498 122.74C19.4239 124.114 21.2868 124.887 23.23 124.89H126.77C128.713 124.887 130.576 124.114 131.95 122.74C133.324 121.366 134.097 119.503 134.1 117.56V32.44C134.097 30.4968 133.324 28.6339 131.95 27.2598C130.576 25.8857 128.713 25.1126 126.77 25.11Z" fill="currentColor"></path><path d="M25.6 36.18C25.602 36.6364 25.7391 37.0821 25.9942 37.4606C26.2492 37.8392 26.6106 38.1337 27.0329 38.307C27.4552 38.4803 27.9193 38.5246 28.3668 38.4344C28.8142 38.3441 29.2249 38.1233 29.5469 37.7999C29.869 37.4764 30.088 37.0648 30.1763 36.617C30.2646 36.1692 30.2183 35.7052 30.0432 35.2837C29.8681 34.8622 29.572 34.502 29.1923 34.2486C28.8127 33.9952 28.3664 33.86 27.91 33.86C27.6058 33.86 27.3046 33.9201 27.0237 34.0368C26.7428 34.1535 26.4877 34.3245 26.273 34.5401C26.0584 34.7557 25.8885 35.0115 25.773 35.2929C25.6575 35.5743 25.5987 35.8758 25.6 36.18Z" fill="currentColor"></path><path d="M34.51 36.18C34.51 36.6388 34.6461 37.0874 34.901 37.4689C35.1559 37.8504 35.5183 38.1478 35.9422 38.3234C36.3661 38.499 36.8326 38.5449 37.2826 38.4554C37.7327 38.3659 38.146 38.1449 38.4705 37.8205C38.795 37.496 39.0159 37.0826 39.1054 36.6326C39.195 36.1826 39.149 35.7161 38.9734 35.2922C38.7978 34.8682 38.5005 34.5059 38.1189 34.251C37.7374 33.9961 37.2889 33.86 36.83 33.86C36.2147 33.86 35.6246 34.1044 35.1895 34.5395C34.7544 34.9746 34.51 35.5647 34.51 36.18Z" fill="currentColor"></path><path d="M43.43 36.18C43.43 36.6393 43.5663 37.0882 43.8217 37.47C44.0771 37.8517 44.44 38.149 44.8645 38.3243C45.289 38.4996 45.756 38.545 46.2063 38.4547C46.6566 38.3643 47.07 38.1424 47.394 37.8169C47.7181 37.4915 47.9382 37.0771 48.0266 36.6265C48.115 36.1758 48.0676 35.709 47.8905 35.2852C47.7134 34.8615 47.4145 34.4998 47.0316 34.2461C46.6488 33.9924 46.1993 33.858 45.74 33.86C45.1264 33.8627 44.5389 34.1082 44.106 34.543C43.673 34.9778 43.43 35.5664 43.43 36.18Z" fill="currentColor"></path><path d="M122.93 112.58V58.24H27.07V112.58H30.07V96.47H45.64V112.58H48.64V96.47H64.22V112.58H67.22V96.47H82.79V112.58H85.79V96.47H101.36V112.58H104.36V96.47H119.93V112.58H122.93ZM119.93 75.85H104.36V61.24H119.93V75.85ZM67.22 61.24H82.79V75.85H67.22V61.24ZM64.22 75.85H48.64V61.24H64.22V75.85ZM85.79 61.24H101.36V75.85H85.79V61.24ZM45.64 61.24V75.85H30.07V61.24H45.64ZM30.07 93.47V78.85H45.64V93.47H30.07ZM48.64 93.47V78.85H64.22V93.47H48.64ZM67.22 93.47V78.85H82.79V93.47H67.22ZM85.79 93.47V78.85H101.36V93.47H85.79ZM104.36 93.47V78.85H119.93V93.47H104.36Z" fill="currentColor"></path></g>
+</svg>
+          <div class="label">Data schema</div>
+          <div class="sub">Filtered per user</div>
+        </div>
+        <div class="item">
+          <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Lakehouse Storage (Managed Tables)">
+<g transform="translate(2 2) scale(0.2933)"><path d="M126.77 25.11H23.23C21.2868 25.1126 19.4239 25.8857 18.0498 27.2598C16.6758 28.6339 15.9026 30.4968 15.9 32.44V47H122.45V44H18.9V32.44C18.9 31.2916 19.3562 30.1902 20.1682 29.3782C20.9803 28.5662 22.0816 28.11 23.23 28.11H126.77C127.918 28.11 129.02 28.5662 129.832 29.3782C130.644 30.1902 131.1 31.2916 131.1 32.44V117.56C131.1 118.708 130.644 119.81 129.832 120.622C129.02 121.434 127.918 121.89 126.77 121.89H23.23C22.0816 121.89 20.9803 121.434 20.1682 120.622C19.3562 119.81 18.9 118.708 18.9 117.56V58.26H15.9V117.56C15.9026 119.503 16.6758 121.366 18.0498 122.74C19.4239 124.114 21.2868 124.887 23.23 124.89H126.77C128.713 124.887 130.576 124.114 131.95 122.74C133.324 121.366 134.097 119.503 134.1 117.56V32.44C134.097 30.4968 133.324 28.6339 131.95 27.2598C130.576 25.8857 128.713 25.1126 126.77 25.11Z" fill="currentColor"></path><path d="M25.6 36.18C25.602 36.6364 25.7391 37.0821 25.9942 37.4606C26.2492 37.8392 26.6106 38.1337 27.0329 38.307C27.4552 38.4803 27.9193 38.5246 28.3668 38.4344C28.8142 38.3441 29.2249 38.1233 29.5469 37.7999C29.869 37.4764 30.088 37.0648 30.1763 36.617C30.2646 36.1692 30.2183 35.7052 30.0432 35.2837C29.8681 34.8622 29.572 34.502 29.1923 34.2486C28.8127 33.9952 28.3664 33.86 27.91 33.86C27.6058 33.86 27.3046 33.9201 27.0237 34.0368C26.7428 34.1535 26.4877 34.3245 26.273 34.5401C26.0584 34.7557 25.8885 35.0115 25.773 35.2929C25.6575 35.5743 25.5987 35.8758 25.6 36.18Z" fill="currentColor"></path><path d="M34.51 36.18C34.51 36.6388 34.6461 37.0874 34.901 37.4689C35.1559 37.8504 35.5183 38.1478 35.9422 38.3234C36.3661 38.499 36.8326 38.5449 37.2826 38.4554C37.7327 38.3659 38.146 38.1449 38.4705 37.8205C38.795 37.496 39.0159 37.0826 39.1054 36.6326C39.195 36.1826 39.149 35.7161 38.9734 35.2922C38.7978 34.8682 38.5005 34.5059 38.1189 34.251C37.7374 33.9961 37.2889 33.86 36.83 33.86C36.2147 33.86 35.6246 34.1044 35.1895 34.5395C34.7544 34.9746 34.51 35.5647 34.51 36.18Z" fill="currentColor"></path><path d="M43.43 36.18C43.43 36.6393 43.5663 37.0882 43.8217 37.47C44.0771 37.8517 44.44 38.149 44.8645 38.3243C45.289 38.4996 45.756 38.545 46.2063 38.4547C46.6566 38.3643 47.07 38.1424 47.394 37.8169C47.7181 37.4915 47.9382 37.0771 48.0266 36.6265C48.115 36.1758 48.0676 35.709 47.8905 35.2852C47.7134 34.8615 47.4145 34.4998 47.0316 34.2461C46.6488 33.9924 46.1993 33.858 45.74 33.86C45.1264 33.8627 44.5389 34.1082 44.106 34.543C43.673 34.9778 43.43 35.5664 43.43 36.18Z" fill="currentColor"></path><path d="M122.93 112.58V58.24H27.07V112.58H30.07V96.47H45.64V112.58H48.64V96.47H64.22V112.58H67.22V96.47H82.79V112.58H85.79V96.47H101.36V112.58H104.36V96.47H119.93V112.58H122.93ZM119.93 75.85H104.36V61.24H119.93V75.85ZM67.22 61.24H82.79V75.85H67.22V61.24ZM64.22 75.85H48.64V61.24H64.22V75.85ZM85.79 61.24H101.36V75.85H85.79V61.24ZM45.64 61.24V75.85H30.07V61.24H45.64ZM30.07 93.47V78.85H45.64V93.47H30.07ZM48.64 93.47V78.85H64.22V93.47H48.64ZM67.22 93.47V78.85H82.79V93.47H67.22ZM85.79 93.47V78.85H101.36V93.47H85.79ZM104.36 93.47V78.85H119.93V93.47H104.36Z" fill="currentColor"></path></g>
+</svg>
+          <div class="label">Reference schema</div>
+          <div class="sub">Read by the app only</div>
+        </div>
+      </div>
+      <div class="policy" style="top:202px;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Unity Catalog">
+<g transform="translate(2 2) scale(0.7097)"><path d="M30.9246 22.4343L23.5127 26.7172V35.2831L30.9246 39.566L38.3366 35.2831V26.7172L30.9246 22.4343Z" fill="currentColor"/>
+<path d="M46.5527 21.9881H55.0809L50.7945 14.5823L46.5527 21.9881Z" fill="currentColor"/>
+<path d="M46.5527 40.0566L50.8392 47.4625L55.1256 40.0566H46.5527Z" fill="currentColor"/>
+<path d="M26.6387 56.43H35.1669L30.8804 49.0242L26.6387 56.43Z" fill="currentColor"/>
+<path d="M6.72461 40.0566L11.011 47.4625L15.2974 40.0566H6.72461Z" fill="currentColor"/>
+<path d="M6.72461 21.9881H15.2528L10.9664 14.5823L6.72461 21.9881Z" fill="currentColor"/>
+<path d="M26.6387 5.57031L30.9251 12.9762L35.2115 5.57031H26.6387Z" fill="currentColor"/>
+<path d="M39.0509 7.04248L34.0947 15.6083L42.6676 20.5604L47.6237 11.9946L39.0509 7.04248Z" fill="currentColor" opacity="0.45"/>
+<path d="M55.7503 26.0481H45.8379V35.9523H55.7503V26.0481Z" fill="currentColor" opacity="0.45"/>
+<path d="M42.6676 41.4844L34.0947 46.4365L39.0509 55.0023L47.6237 50.0502L42.6676 41.4844Z" fill="currentColor" opacity="0.45"/>
+<path d="M19.1369 41.4844L14.1807 50.0502L22.7535 55.0023L27.7097 46.4365L19.1369 41.4844Z" fill="currentColor" opacity="0.45"/>
+<path d="M15.967 26.0481H6.05469V35.9523H15.967V26.0481Z" fill="currentColor" opacity="0.45"/>
+<path d="M22.7535 7.04248L14.1807 11.9946L19.1369 20.5604L27.7097 15.6083L22.7535 7.04248Z" fill="currentColor" opacity="0.45"/></g>
+</svg>
+        <div><div class="label">Grants, row filters and column masks</div><div class="sub">Checked on every query</div></div>
+      </div>
+      <div class="row" style="top:376px;">
+        <div class="item wide">
+          <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="System Tables">
+<g transform="translate(2 2) scale(2.75)"><g clip-path="url(#system-tables-clip0_2009_1333)">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M8.00007 12.5206C5.0331 12.5206 2.50271 10.6436 1.5351 8.0103C2.50272 5.37708 5.0331 3.5 8.00005 3.5C10.967 3.5 13.4974 5.3771 14.465 8.01035C13.4974 10.6436 10.967 12.5206 8.00007 12.5206ZM8.00005 2C4.27845 2 1.12495 4.42395 0.0284753 7.77721C-0.0210472 7.92866 -0.0210478 8.09194 0.0284738 8.24339C1.12493 11.5967 4.27845 14.0206 8.00007 14.0206C11.7217 14.0206 14.8752 11.5967 15.9716 8.24345C16.0212 8.092 16.0212 7.92871 15.9716 7.77726C14.8752 4.42399 11.7217 2 8.00005 2ZM6.50003 8C6.50003 7.17157 7.1716 6.5 8.00003 6.5C8.82846 6.5 9.50003 7.17157 9.50003 8C9.50003 8.82843 8.82846 9.5 8.00003 9.5C7.1716 9.5 6.50003 8.82843 6.50003 8ZM8.00003 5C6.34318 5 5.00003 6.34315 5.00003 8C5.00003 9.65685 6.34318 11 8.00003 11C9.65689 11 11 9.65685 11 8C11 6.34315 9.65689 5 8.00003 5Z" fill="currentColor"/>
+</g>
+<defs>
+<clipPath id="system-tables-clip0_2009_1333">
+<rect width="16" height="16" fill="white"/>
+</clipPath>
+</defs></g>
+</svg>
+          <div class="label">Ops schema</div>
+          <div class="sub">Procedures, audit, Activity, traces</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <svg id="wires" width="1240" height="622">
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto">
+        <path d="M0,0 L10,5 L0,10 z" fill="#143D4A"/>
+      </marker>
+    </defs>
+    <g stroke="#143D4A" stroke-width="2" fill="none" marker-end="url(#arrow)">
+      <path d="M160,263 H241"/>
+      <path d="M532,174 H597"/>
+      <path d="M532,337 H597"/>
+      <path d="M532,367 H597" stroke-dasharray="6 4"/>
+      <path d="M387,410 V443" stroke-dasharray="6 4"/>
+      <path d="M532,396 H565 V542 H597" stroke-dasharray="6 4"/>
+      <path d="M858,337 H923"/>
+      <path d="M858,367 H923" stroke-dasharray="6 4"/>
+      <path d="M858,542 H923" stroke-dasharray="6 4"/>
+    </g>
+    <g stroke="#A9B8BD" stroke-width="1.5">
+      <path d="M1001,221 V316"/>
+      <path d="M1141,221 V316"/>
+      <path d="M1071,392 V486"/>
+    </g>
+  </svg>
+
+  <div class="badge" style="left:190px; top:263px;">1</div>
+  <div class="badge" style="left:565px; top:174px;">2</div>
+  <div class="badge" style="left:565px; top:337px;">3</div>
+  <div class="badge" style="left:565px; top:367px;">4</div>
+  <div class="badge" style="left:411px; top:427px;">5</div>
+  <div class="badge" style="left:565px; top:470px;">6</div>
+
+</div>
+</div>
+</body>
+</html>

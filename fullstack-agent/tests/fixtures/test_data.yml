@@ -1,0 +1,29 @@
+targets:
+  staging:
+    resources:
+      jobs:
+        reset_data:
+          name: ${var.project}_reset_data
+          description: Restores the test users' rows, the reference rows and the seeded Activity, and clears the audit, Activity and write tables. Staging only.
+          run_as:
+            service_principal_name: ${var.data_owner_application_id}
+          parameters:
+            - name: catalog
+              default: ${var.catalog}
+            - name: project
+              default: ${var.project}
+            - name: test_user_one_id
+              default: ${var.test_user_one_id}
+            - name: test_user_two_id
+              default: ${var.test_user_two_id}
+          tasks:
+            - task_key: clear_audit_tables
+              notebook_task:
+                notebook_path: ./clear_audit_tables.sql
+                warehouse_id: ${var.warehouse_id}
+            - task_key: test_data
+              depends_on:
+                - task_key: clear_audit_tables
+              notebook_task:
+                notebook_path: ./test_data.sql
+                warehouse_id: ${var.warehouse_id}

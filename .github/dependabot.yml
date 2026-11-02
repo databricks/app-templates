@@ -37,6 +37,7 @@ updates:
       - "/appkit-serving"
       - "/e2e-chatbot-app-next"
       - "/e2e-chatbot-model-service"
+      - "/fullstack-agent/frontend"
       - "/inventory-intelligence"
       - "/inventory-intelligence/seed"
       - "/rag-chat"

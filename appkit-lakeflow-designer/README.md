@@ -485,6 +485,10 @@ Author content mounts only after the wrapper policy is verified. The wrapper con
 no author HTML or scripts; resize/error messages still come only from the opaque-origin
 inner frame. A blocked navigation produces a readable error above the output.
 
+HTML outputs resize as their body grows or shrinks, including after interactive content collapses.
+The frame height stays between 160 and 1,600 pixels; taller content scrolls within the frame.
+Author-defined fixed heights and minimum heights still apply to the HTML content.
+
 HTML is passed through unchanged after the policy and display bootstrap; the template
 does not supply libraries, rewrite CDN references, or fetch missing resources. Code
 that relies on external resources can fail. CSP violations and script/resource errors

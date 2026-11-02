@@ -55,6 +55,34 @@ async function runChecks() {
   checks['messages from another window are ignored'] =
     !output?.textContent?.includes('forged-message') && Number.parseFloat(wrapperFrame().style.height) < 1600;
 
+  render(`
+    <style>body { margin: 12px 0 20px; }</style>
+    <div id="content" style="height:720px">Resizable report</div>
+    <script>
+      addEventListener('message', function (event) {
+        if (event.data.type === 'resize-content') {
+          document.getElementById('content').style.height = event.data.height + 'px';
+        }
+      });
+    </script>
+  `);
+  await waitFor(() => Number.parseFloat(wrapperFrame().style.height) === 752, 'expanded report with body margins');
+  const resizeContent = async (height: number, expectedHeight: number) => {
+    contentFrame()?.contentWindow?.postMessage({ type: 'resize-content', height }, '*');
+    await waitFor(
+      () => Number.parseFloat(wrapperFrame().style.height) === expectedHeight,
+      `report height ${expectedHeight}`
+    );
+  };
+  await resizeContent(240, 272);
+  checks['collapsing HTML retracts the frame to the content height including body margins'] = true;
+  await resizeContent(900, 932);
+  await resizeContent(360, 392);
+  checks['repeated expansion and collapse do not retain the previous viewport height'] = true;
+  await resizeContent(2200, 1600);
+  await resizeContent(80, 160);
+  checks['HTML retracts from the maximum height to the minimum after content collapses'] = true;
+
   const target = location.origin + '/navigation-target';
   const navigationCases = [
     ['script navigation is blocked', '<script>location.assign(' + JSON.stringify(target + '?script') + ')</script>'],

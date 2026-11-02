@@ -36,7 +36,13 @@ const FRAME_BOOTSTRAP = `<script>
     error('The HTML output security policy blocked a resource or operation (' + event.effectiveDirective + '). External resources are disabled.');
   });
   addEventListener('load', function () {
-    new ResizeObserver(function () { report({height: document.documentElement.scrollHeight}); }).observe(document.body);
+    new ResizeObserver(function () {
+      var body = document.body;
+      var style = getComputedStyle(body);
+      // The root scrollHeight is at least the current viewport height, preventing collapse.
+      var height = Math.max(body.offsetHeight, body.scrollHeight) + parseFloat(style.marginTop) + parseFloat(style.marginBottom);
+      report({height: Math.ceil(height)});
+    }).observe(document.body);
   });
 }());
 </script>`;

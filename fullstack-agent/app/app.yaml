@@ -1,0 +1,8 @@
+command: ["python", "-m", "uvicorn", "runtime.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+env:
+  - name: APP_WAREHOUSE_ID
+    valueFrom: app_warehouse
+  - name: MLFLOW_TRACING_SQL_WAREHOUSE_ID
+    valueFrom: app_warehouse
+  - name: MLFLOW_ENABLE_OTLP_EXPORTER
+    value: "false"

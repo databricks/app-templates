@@ -1,0 +1,13 @@
+schema_version = 1
+
+[agent]
+framework = "openai"
+server = "agentbricks"
+deployment_name = "agent"
+
+[auth.user]
+required = true
+additional_api_scopes = ["ai-gateway", "sql"]
+
+[session_store]
+name = "agent-sessions"

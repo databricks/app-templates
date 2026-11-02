@@ -1,0 +1,27 @@
+# For local/dev deploys of a single reference instance (databricks bundle deploy / apps run-local).
+# Designer publishes through the Apps API with a pinned template snapshot, a bound runner Job,
+# and a manifest in the per-app workspace folder.
+bundle:
+  name: appkit-lakeflow-designer
+
+variables:
+  runner_job_id:
+    description: Runner job id to bind for local/dev testing
+
+resources:
+  apps:
+    app:
+      name: 'appkit-lakeflow-designer'
+      description: 'Published Lakeflow Designer app'
+      source_code_path: ./
+      lifecycle:
+        started: true
+      resources:
+        - name: job
+          job:
+            id: ${var.runner_job_id}
+            permission: CAN_MANAGE
+
+targets:
+  dev:
+    default: true

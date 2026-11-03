@@ -21,7 +21,7 @@ with gr.Blocks() as gradio_app:
     with gr.Row():
         with gr.Column(scale=3):
             gr.Markdown('# Hello world!')
-            gr.ScatterPlot(value=data, height=400, width=700,
+            gr.ScatterPlot(value=data, height=400,
                            container=False, x='x', y='y',
                            y_title='Fun with data', x_title='Apps')
 

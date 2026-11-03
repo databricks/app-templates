@@ -38,7 +38,7 @@ with gr.Blocks() as demo:  # must call it demo to get Gradio hot reload
     with gr.Row():
         with gr.Column(scale=3):
             gr.Markdown("# Taxi fare distribution")
-            gr.ScatterPlot(value=data, height=400, width=700, container=False,
+            gr.ScatterPlot(value=data, height=400, container=False,
                         y="fare_amount", x="trip_distance", y_title="Fare", x_title="Distance")
         with gr.Column(variant='panel'):
             gr.Markdown("## Predict fare\nFrom (zipcode)")

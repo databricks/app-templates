@@ -31,19 +31,19 @@
     "test:ephemeral": "PLAYWRIGHT=True TEST_MODE=ephemeral npx playwright test"
   },
   "dependencies": {
-    "dotenv": "17.2.3",
+    "dotenv": "17.4.2",
     "drizzle-kit": "0.31.11",
-    "drizzle-orm": "0.45.3",
-    "tsx": "4.21.0"
+    "drizzle-orm": "0.45.4",
+    "tsx": "4.23.15"
   },
   "devDependencies": {
-    "@ai-sdk/provider": "3.0.6",
+    "@ai-sdk/provider": "3.0.19",
     "@biomejs/biome": "1.9.4",
-    "@playwright/test": "1.58.1",
-    "@types/node": "22.19.7",
+    "@playwright/test": "1.64.1",
+    "@types/node": "22.20.5",
     "concurrently": "8.2.2",
-    "msw": "2.12.7",
-    "tsdown": "0.15.9",
+    "msw": "2.15.0",
+    "tsdown": "0.15.12",
     "typescript": "5.9.3"
   }
 }

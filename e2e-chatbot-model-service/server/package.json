@@ -13,18 +13,18 @@
     "@databricks/chatbot-auth": "*",
     "@databricks/chatbot-core": "*",
     "@databricks/chatbot-db": "*",
-    "ai": "^6.0.70",
-    "cors": "^2.8.5",
-    "dotenv": "^17.2.3",
-    "express": "^5.1.0",
-    "zod": "^4.3.5"
+    "ai": "^6.0.317",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.3.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.17",
-    "@types/express": "^5.0.4",
-    "@types/node": "^22.8.6",
-    "tsdown": "^0.16.0",
-    "tsx": "^4.19.1",
-    "typescript": "^5.6.3"
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.5",
+    "tsdown": "^0.16.8",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
   }
 }

@@ -1,6 +1,7 @@
-databricks-sdk~=0.33.0
-databricks-sql-connector~=3.4.0
+-c constraints.txt
+databricks-sdk~=0.157.0
+databricks-sql-connector~=3.7.5
 shiny~=1.8.0
-matplotlib~=3.10.8
+matplotlib~=3.11.2
 numpy~=1.26.4
-websockets~=13.0
+websockets~=13.1

@@ -1,3 +1,4 @@
-gradio==5.23.3
-mlflow>=2.21.2
+-c constraints.txt
+gradio==6.31.0
+mlflow>=3.17.2
 databricks-sdk

@@ -78,7 +78,11 @@ def server(input, output, session):
         # Stream LLM responses into chat when a new message from user arrives
         @chat.on_user_submit
         async def _():
-            messages = chat.messages(format="openai")
+            # shinychat removed messages(format=...); keep just the
+            # OpenAI-style role/content keys the endpoint expects.
+            messages = [
+                {"role": m["role"], "content": m["content"]} for m in chat.messages()
+            ]
             response = query_endpoint(
                 endpoint_name=SERVING_ENDPOINT,
                 messages=messages,

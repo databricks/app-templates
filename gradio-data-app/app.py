@@ -34,7 +34,7 @@ def sqlQuery(query: str) -> pd.DataFrame:
 data = sqlQuery("select * from samples.nyctaxi.trips limit 5000")
 
 # display the data with Gradio
-with gr.Blocks(css="footer {visibility: hidden}") as demo:  # must call it demo to get Gradio hot reload
+with gr.Blocks() as demo:  # must call it demo to get Gradio hot reload
     with gr.Row():
         with gr.Column(scale=3):
             gr.Markdown("# Taxi fare distribution")
@@ -54,4 +54,4 @@ with gr.Blocks(css="footer {visibility: hidden}") as demo:  # must call it demo 
     gr.Dataframe(value=data)
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(css="footer {visibility: hidden}")

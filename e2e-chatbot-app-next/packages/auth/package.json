@@ -30,7 +30,7 @@
   },
   "devDependencies": {
     "typescript": "5.9.3",
-    "@types/node": "22.19.7"
+    "@types/node": "22.20.5"
   },
   "dependencies": {
     "@databricks/chatbot-utils": "*"

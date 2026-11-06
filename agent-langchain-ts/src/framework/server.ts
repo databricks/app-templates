@@ -73,7 +73,7 @@ function setupShutdownHandlers(tracing: MLflowTracing): void {
  */
 export async function createServer(
   agent: AgentInterface,
-  serverConfig: ServerConfig
+  _serverConfig: ServerConfig
 ): Promise<express.Application> {
   const app = express();
 

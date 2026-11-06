@@ -23,7 +23,7 @@
     "test:all": "npm run test:unit && npm run test:integration",
     "quickstart": "tsx scripts/quickstart.ts",
     "discover-tools": "tsx scripts/discover-tools.ts",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src",
     "format": "prettier --write \"src/**/*.ts\""
   },
   "dependencies": {
@@ -48,19 +48,19 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "@types/cors": "2.8.19",
     "@types/express": "5.0.6",
     "@types/jest": "30.0.0",
     "@types/node": "22.20.5",
-    "@typescript-eslint/eslint-plugin": "8.72.1",
-    "@typescript-eslint/parser": "8.72.1",
     "concurrently": "9.2.5",
-    "eslint": "9.39.5",
+    "eslint": "10.14.0",
     "jest": "30.5.2",
     "prettier": "3.9.10",
     "ts-jest": "29.4.15",
     "tsx": "4.23.15",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.1"
   },
   "keywords": [
     "databricks",

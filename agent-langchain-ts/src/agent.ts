@@ -292,7 +292,7 @@ export class StandardAgent implements AgentInterface {
     // Signal end of response.
     yield {
       type: "response.completed",
-      sequence_number: seqNum++,
+      sequence_number: seqNum,
       response: {} as any,
     } as unknown as ResponseStreamEvent;
   }

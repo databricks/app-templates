@@ -46,6 +46,18 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 10
+    # Majors we deliberately hold. `ignore` only affects version updates;
+    # security updates for these packages still open.
+    ignore:
+      # Types must match the Node runtime the templates run on (Node 22),
+      # or they allow APIs the runtime doesn't have.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # @databricks/langchainjs (0.1.x) builds MCP server config for, and
+      # depends on, @langchain/mcp-adapters 1.x. Move to 2.x together with a
+      # langchainjs release that supports it.
+      - dependency-name: "@langchain/mcp-adapters"
+        update-types: ["version-update:semver-major"]
     groups:
       # AppKit and AppKit UI move together, across every AppKit template.
       appkit:

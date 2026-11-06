@@ -50,7 +50,7 @@ def query_llm(message, history):
                 part.get("text", "") for part in content
                 if isinstance(part, dict) and part.get("type") == "text"
             )
-        if isinstance(content, str):
+        if isinstance(content, str) and content:
             message_history.append({"role": msg["role"], "content": content})
 
     # Add the latest user message

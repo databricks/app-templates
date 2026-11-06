@@ -27,6 +27,15 @@ assert SERVING_ENDPOINT, \
 # Check if the endpoint is supported
 endpoint_supported = is_endpoint_supported(SERVING_ENDPOINT)
 
+
+def to_endpoint_messages(chat_messages):
+    """Chat history as the OpenAI-style role/content dicts the endpoint expects.
+
+    shinychat removed messages(format=...); messages() returns dicts that can
+    carry extra keys (html_deps, attachments), so keep only role and content.
+    """
+    return [{"role": m["role"], "content": str(m["content"])} for m in chat_messages]
+
 if not endpoint_supported:
     app_ui = ui.page_fillable(
         ui.panel_title(ui.h1("Databricks LLM Chat")),
@@ -78,11 +87,7 @@ def server(input, output, session):
         # Stream LLM responses into chat when a new message from user arrives
         @chat.on_user_submit
         async def _():
-            # shinychat removed messages(format=...); keep just the
-            # OpenAI-style role/content keys the endpoint expects.
-            messages = [
-                {"role": m["role"], "content": m["content"]} for m in chat.messages()
-            ]
+            messages = to_endpoint_messages(chat.messages())
             response = query_endpoint(
                 endpoint_name=SERVING_ENDPOINT,
                 messages=messages,

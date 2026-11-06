@@ -73,13 +73,15 @@ def run_agent_api(base_url: str, token: str | None) -> None:
 
 
 def openai_serving_sso_walled(probe_endpoint: str = "databricks-claude-sonnet-5-5") -> bool:
-    """True when this workspace SSO-redirects the OpenAI-compat serving path.
+    """True when the OpenAI-compat serving path redirects to the login page.
 
-    On dogfood staging, a local bearer POST to /serving-endpoints/<name>/invocations
-    303-redirects to the login page, which langchain/OpenAI clients receive as HTML
-    and mishandle ('str' object has no attribute 'choices'). The SDK-native query and
-    deployed SP path are unaffected. We detect the wall so model-dependent local rows
-    skip (not fail) here, while still passing on a normal workspace.
+    On a unified-host profile (e.g. dogfood staging's https://dogfood.staging.databricks.com),
+    requests must carry X-Databricks-Org-Id; a local bearer POST to
+    /serving-endpoints/<name>/invocations without it 303-redirects to the login page,
+    which langchain/OpenAI clients receive as HTML and mishandle ('str' object has no
+    attribute 'choices'). The SDK-native query and deployed SP path are unaffected. We
+    detect the redirect so model-dependent local rows skip (not fail); a profile that
+    points at the workspace URL passes.
 
     Conservative: returns True only on a clear login-page signature; any other error
     returns False so genuine test failures are not masked as skips.

@@ -78,3 +78,10 @@ docstring-code-line-length = 88
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.uv]
+# BEGIN synced constraints (.scripts/source/constraints.txt)
+constraint-dependencies = [
+    "certifi>=2026.10.18",
+]
+# END synced constraints

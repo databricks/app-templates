@@ -8,6 +8,9 @@ The source of truth is .scripts/source/. This script copies:
 - GitHub Actions workflows (with `{{BUNDLE_NAME}}` substitution) into
   each template's `.github/workflows/` directory, gated on the
   `has_actions` field in templates.py.
+- Dependency constraints (constraints.txt) into every Python template: a copy
+  plus `-c constraints.txt` for requirements.txt templates, and
+  [tool.uv] constraint-dependencies for pyproject.toml templates.
 
 Usage:
     python .scripts/sync-scripts.py
@@ -132,6 +135,62 @@ def sync_diagnostics() -> list[str]:
     return synced
 
 
+CONSTRAINTS_FILE = "constraints.txt"
+CONSTRAINTS_REQ_LINE = f"-c {CONSTRAINTS_FILE}"
+CONSTRAINTS_BEGIN = "# BEGIN synced constraints (.scripts/source/constraints.txt)"
+CONSTRAINTS_END = "# END synced constraints"
+
+
+def _constraint_specs() -> list[str]:
+    """The requirement specifiers in the source constraints file."""
+    lines = (SOURCE_DIR / CONSTRAINTS_FILE).read_text().splitlines()
+    return [ln.strip() for ln in lines if ln.strip() and not ln.lstrip().startswith("#")]
+
+
+def _with_uv_constraints(text: str, specs: list[str]) -> str:
+    """Return pyproject text with the synced constraint-dependencies block under [tool.uv]."""
+    block = "\n".join(
+        [CONSTRAINTS_BEGIN, "constraint-dependencies = ["]
+        + [f'    "{s}",' for s in specs]
+        + ["]", CONSTRAINTS_END]
+    )
+    lines = text.splitlines()
+    if CONSTRAINTS_BEGIN in lines:
+        start = lines.index(CONSTRAINTS_BEGIN)
+        end = lines.index(CONSTRAINTS_END, start)
+        lines[start : end + 1] = block.splitlines()
+    elif "[tool.uv]" in lines:
+        i = lines.index("[tool.uv]")
+        lines[i + 1 : i + 1] = block.splitlines()
+    else:
+        lines += ["", "[tool.uv]", *block.splitlines()]
+    return "\n".join(lines) + "\n"
+
+
+def sync_constraints() -> list[str]:
+    """Apply .scripts/source/constraints.txt to every Python template.
+
+    requirements.txt templates get a copy of the file plus a leading
+    `-c constraints.txt` line; pyproject.toml templates get the same specifiers
+    as [tool.uv] constraint-dependencies (uv doesn't read pip constraint files).
+    """
+    synced = []
+    specs = _constraint_specs()
+    for req in sorted(REPO_ROOT.glob("*/requirements.txt")):
+        shutil.copy2(SOURCE_DIR / CONSTRAINTS_FILE, req.parent / CONSTRAINTS_FILE)
+        lines = req.read_text().splitlines()
+        if CONSTRAINTS_REQ_LINE not in (ln.strip() for ln in lines):
+            req.write_text("\n".join([CONSTRAINTS_REQ_LINE, *lines]) + "\n")
+        synced.append(req.parent.name)
+    for pyproject in sorted(REPO_ROOT.glob("*/pyproject.toml")):
+        text = pyproject.read_text()
+        new = _with_uv_constraints(text, specs)
+        if new != text:
+            pyproject.write_text(new)
+        synced.append(pyproject.parent.name)
+    return sorted(set(synced))
+
+
 def generate_node_crash_fixture() -> str:
     """Regenerate the node crash fixture's plain-JS diagnostics from diagnostics.ts.
 
@@ -224,6 +283,9 @@ def main():
     diag_synced = sync_diagnostics()
     if diag_synced:
         print(f"Synced diagnostics module to {len(diag_synced)} non-agent templates")
+
+    constraints_synced = sync_constraints()
+    print(f"Synced dependency constraints to {len(constraints_synced)} Python templates")
 
     crash_fixture = generate_node_crash_fixture()
     print(f"Generated node crash fixture: {crash_fixture}")

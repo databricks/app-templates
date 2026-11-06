@@ -1,3 +1,4 @@
-dash>=2.14.0
-psycopg[binary,pool]>=3.1.0
-databricks-sdk>=0.18.0 
+-c constraints.txt
+dash>=4.4.1
+psycopg[binary,pool]>=3.3.6
+databricks-sdk>=0.157.0

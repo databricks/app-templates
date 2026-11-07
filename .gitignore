@@ -183,8 +183,10 @@ mlflow.db
 !.claude/skills/deploy/
 !.claude/skills/add-tools-langgraph/
 !.claude/skills/add-tools-openai/
+!.claude/skills/add-tools-adk/
 !.claude/skills/modify-langgraph-agent/
 !.claude/skills/modify-openai-agent/
+!.claude/skills/modify-adk-agent/
 !.claude/skills/lakebase-setup/
 !.claude/skills/agent-langgraph-memory/
 !.claude/skills/agent-openai-memory/

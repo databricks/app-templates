@@ -7,3 +7,7 @@ resource_specs:
     description: "The experiment that the agent uses to trace the agent's execution."
     experiment_spec:
       permission: "CAN_EDIT"
+  - name: "llm-endpoint"
+    description: "The Databricks Model Serving endpoint hosting the LLM that powers the agent."
+    serving_endpoint_spec:
+      permission: "CAN_QUERY"

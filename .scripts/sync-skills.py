@@ -38,15 +38,11 @@ def copy_skill(src: Path, dest: Path, substitutions: dict = None):
 
 
 LAKEBASE_OPTIONS = (
-    "- `--lakebase-provisioned-name NAME`: Provisioned Lakebase instance name (memory templates)\n"
     "- `--lakebase-autoscaling-endpoint NAME`: Autoscaling Lakebase endpoint — short name or full resource path `projects/<p>/branches/<b>/endpoints/<e>` (memory templates)\n"
     "- `--lakebase-create-new NAME`: Provision a new Lakebase autoscaling project + branch with this name (memory templates)\n"
 )
 
 LAKEBASE_EXAMPLES = (
-    "\n"
-    "# Memory template with provisioned Lakebase\n"
-    "uv run quickstart --lakebase-provisioned-name my-instance\n"
     "\n"
     "# Memory template with autoscaling Lakebase\n"
     "uv run quickstart --lakebase-autoscaling-endpoint projects/my-project/branches/production/endpoints/primary\n"
@@ -56,16 +52,14 @@ LAKEBASE_EXAMPLES = (
 )
 
 LAKEBASE_CONFIGURES_ENV = (
-    "- `LAKEBASE_INSTANCE_NAME` - Provisioned Lakebase instance name (if `--lakebase-provisioned-name` provided)\n"
     "- `LAKEBASE_AUTOSCALING_ENDPOINT` - Autoscaling Lakebase endpoint (if `--lakebase-autoscaling-endpoint` provided)\n"
-    "- `PGHOST`, `PGUSER`, `PGDATABASE` - Postgres connection details (auto-resolved from the instance or endpoint)\n"
+    "- `PGHOST`, `PGUSER`, `PGDATABASE` - Postgres connection details (auto-resolved from the endpoint)\n"
 )
 
 LAKEBASE_CONFIGURES_YML = (
     "\n"
-    "Updates `databricks.yml` (if Lakebase flags provided):\n"
-    "- Keeps only the env vars relevant to the selected Lakebase type (provisioned or autoscaling)\n"
-    "- Rewrites the `postgres` or `database` resource block with concrete branch/database/instance values fetched from the workspace\n"
+    "Updates `databricks.yml` and `app.yaml` (if Lakebase flags provided):\n"
+    "- Sets the autoscaling Lakebase env vars and the `postgres` resource block with concrete branch/database values fetched from the workspace\n"
 )
 
 
@@ -91,7 +85,7 @@ def sync_template(template: str, config: dict):
     copy_skill(SOURCE / "quickstart", dest / "quickstart", quickstart_subs)
 
     # Shared skills (no substitution needed)
-    for skill in ["run-locally", "discover-tools", "create-tools", "migrate-from-model-serving"]:
+    for skill in ["run-locally", "discover-tools", "create-tools", "migrate-from-model-serving", "diagnostics"]:
         copy_skill(SOURCE / skill, dest / skill)
 
     # Load-testing skill (excluded for non-conversational — incompatible input format)

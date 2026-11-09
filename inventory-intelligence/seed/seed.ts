@@ -10,12 +10,11 @@ if (!DATABASE_URL && !hasEnvVars) {
   process.exit(1);
 }
 
+// Lakebase requires TLS. Verify the server certificate (node-postgres already
+// does this for a DATABASE_URL with sslmode=require).
 const client = DATABASE_URL
-  ? new pg.Client({
-      connectionString: DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
-    })
-  : new pg.Client({ ssl: { rejectUnauthorized: false } });
+  ? new pg.Client({ connectionString: DATABASE_URL, ssl: true })
+  : new pg.Client({ ssl: true });
 
 async function query(sql: string, params?: unknown[]) {
   return client.query(sql, params);

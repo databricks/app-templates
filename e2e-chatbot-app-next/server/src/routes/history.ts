@@ -5,8 +5,8 @@ import {
   type Router as RouterType,
 } from 'express';
 import { authMiddleware, requireAuth } from '../middleware/auth';
-import { getChatsByUserId, isDatabaseAvailable } from '@chat-template/db';
-import { ChatSDKError } from '@chat-template/core/errors';
+import { getChatsByUserId, isDatabaseAvailable } from '@databricks/chatbot-db';
+import { ChatSDKError } from '@databricks/chatbot-core/errors';
 
 export const historyRouter: RouterType = Router();
 

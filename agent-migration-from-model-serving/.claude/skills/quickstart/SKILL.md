@@ -55,8 +55,7 @@ Each follow-up depends on the previous step's answer; do not batch questions acr
 Lakebase is required. **[`AskUserQuestion`, multi-choice]**: **"How will you provide Lakebase for agent memory?"**
 - Option 1: `"Use an existing autoscaling endpoint"` (you have the endpoint resource path)
 - Option 2: `"Use an existing autoscaling project + branch"` (more user-friendly — we'll deduce the endpoint)
-- Option 3: `"Use an existing provisioned instance"`
-- Option 4: `"Create a new Lakebase autoscaling project (provision one now)"`
+- Option 3: `"Create a new Lakebase autoscaling project (provision one now)"`
 
 **If "autoscaling endpoint"** → ask in a normal chat message: **"What is the endpoint? Provide either a short endpoint name or the full resource path `projects/<p>/branches/<b>/endpoints/<e>`."** Wait for the user's reply. Record `--lakebase-autoscaling-endpoint <value>` for Step 4.
 
@@ -67,8 +66,6 @@ databricks api get /api/2.0/postgres/projects/<project>/branches/<branch>/endpoi
 ```
 
 Parse the JSON response to find an endpoint (the field is `endpoints[].name`; typical default is `primary`). If there's exactly one, use it. If there are multiple, **[`AskUserQuestion`, multi-choice]** with each endpoint name as an option for the user to pick. Construct the full resource path `projects/<project>/branches/<branch>/endpoints/<endpoint-name>` and record `--lakebase-autoscaling-endpoint <constructed-path>` for Step 4. The script never sees project+branch separately — it gets a fully-formed endpoint resource path.
-
-**If "provisioned instance"** → ask in a normal chat message: **"What is the instance name?"** Wait for reply. Record `--lakebase-provisioned-name <value>` for Step 4.
 
 **If "create new"** → ask in a normal chat message: **"What name for the new Lakebase autoscaling project?"** Wait for reply. Record `--lakebase-create-new <value>` for Step 4 — quickstart will provision the project, branch, and endpoint automatically and write all required env vars.
 
@@ -87,10 +84,10 @@ Build the final command from the recorded flags and execute. Examples:
 uv run quickstart --profile dogfood \
   --lakebase-autoscaling-endpoint projects/my-proj/branches/main/endpoints/primary
 
-# New workspace + provisioned Lakebase + bind to existing app
+# New workspace + autoscaling Lakebase + bind to existing app
 uv run quickstart --profile e2-dogfood \
   --host https://e2-dogfood.staging.cloud.databricks.com \
-  --lakebase-provisioned-name my-instance \
+  --lakebase-autoscaling-endpoint projects/my-proj/branches/main/endpoints/primary \
   --app-name my-existing-app
 
 # Existing profile + provision a brand new Lakebase
@@ -153,15 +150,13 @@ If you don't pass a flag, the script falls back to interactive `input()` prompts
 
 ### Lakebase — memory templates only
 
-These all auto-skip if you pass `--lakebase-provisioned-name <name>`, `--lakebase-autoscaling-endpoint <endpoint>`, or `--lakebase-create-new <name>`.
+These all auto-skip if you pass `--lakebase-autoscaling-endpoint <endpoint>` or `--lakebase-create-new <name>`.
 
 | Prompt | When it fires |
 |---|---|
 | `Enter your choice (1 or 2):` — 1) Create new / 2) Use existing | No `--lakebase-*` flag |
 | `Enter a name for the new Lakebase autoscaling project:` | Picked "Create new" above |
-| `Enter your choice (1 or 2):` — 1) Autoscaling / 2) Provisioned | Picked "Use existing" above |
-| `Enter the autoscaling Lakebase endpoint name:` | Picked "Autoscaling" |
-| `Enter the provisioned Lakebase instance name:` | Picked "Provisioned" |
+| `Enter the autoscaling Lakebase endpoint name:` | Picked "Use existing" above |
 
 ### Lakebase chat history — non-memory templates only
 
@@ -174,7 +169,7 @@ These all auto-skip if you pass `--lakebase-provisioned-name <name>`, `--lakebas
 For Claude / CI to run end-to-end without hanging:
 
 - **Always**: `--profile <name>` (or `--profile <new-name> --host <url>` to create a new profile)
-- **Memory templates**: also pass `--lakebase-provisioned-name <name>` OR `--lakebase-autoscaling-endpoint <endpoint>` OR `--lakebase-create-new <name>` (provisions a new Lakebase)
+- **Memory templates**: also pass `--lakebase-autoscaling-endpoint <endpoint>` OR `--lakebase-create-new <name>` (provisions a new autoscaling Lakebase)
 - **Non-memory templates**: pass `--skip-lakebase` if you don't want the chat-history Lakebase prompt
 
 ## What Quickstart Configures
@@ -205,7 +200,7 @@ databricks bundle deploy
 
 Quickstart also auto-imports the app's resources via `databricks apps get`:
 - If the app has an `experiment` resource, its `experiment_id` is reused instead of creating a new experiment.
-- If the app has a `postgres` (autoscaling) or `database` (provisioned) resource, the Lakebase config is fetched and written into `.env` and `databricks.yml` — `PGHOST` is resolved from the API.
+- If the app has a `postgres` (autoscaling Lakebase) resource, the Lakebase config is fetched and written into `.env` and `databricks.yml` — `PGHOST` is resolved from the API.
 
 This is the recommended path when an app was created via the Databricks UI first.
 
@@ -215,7 +210,7 @@ This avoids the "An app with the same name already exists" error on first deploy
 
 Re-running quickstart is safe:
 - **Experiment**: If `MLFLOW_EXPERIMENT_ID` is already in `.env` and the experiment still exists, it is reused (no duplicate created).
-- **Lakebase**: If Lakebase config is already in `.env` and validates against the current workspace, it is reused; otherwise the interactive flow runs again. Validation calls `databricks database get-database-instance` (provisioned) or the postgres API (autoscaling) before reusing.
+- **Lakebase**: If Lakebase config is already in `.env` and validates against the current workspace, it is reused; otherwise the interactive flow runs again. Validation calls the postgres API before reusing.
 
 ## Optional: Chat-history Lakebase (non-memory templates)
 

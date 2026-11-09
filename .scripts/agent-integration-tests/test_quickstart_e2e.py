@@ -127,8 +127,8 @@ def profile(request):
 
 
 @pytest.fixture
-def lakebase(request):
-    return request.config.getoption("--lakebase")
+def lakebase_autoscaling_endpoint(request):
+    return request.config.getoption("--lakebase-autoscaling-endpoint")
 
 
 @pytest.fixture
@@ -155,7 +155,7 @@ def test_quickstart_e2e(
     tmp_path,
     scenario,
     profile,
-    lakebase,
+    lakebase_autoscaling_endpoint,
     quickstart_only,
     git_ref,
     no_destroy,
@@ -171,7 +171,7 @@ def test_quickstart_e2e(
     elif scenario == "existing-app":
         _run_existing_app(tmp_path, profile, quickstart_only, no_destroy, git_ref)
     elif scenario == "lakebase-idempotent":
-        _run_lakebase_idempotent(tmp_path, profile, lakebase, git_ref)
+        _run_lakebase_idempotent(tmp_path, profile, lakebase_autoscaling_endpoint, git_ref)
     else:
         pytest.fail(f"Unknown scenario: {scenario}")
 
@@ -318,16 +318,16 @@ def _run_existing_app(
 def _run_lakebase_idempotent(
     tmp_path: Path,
     profile: str,
-    lakebase: str,
+    lakebase_autoscaling_endpoint: str,
     git_ref: str | None,
 ):
     """Scenario C: Lakebase idempotency — re-running quickstart reuses existing config.
 
     Steps:
     1. Copy agent-langgraph-advanced via git ls-files
-    2. First quickstart run: configures Lakebase, writes LAKEBASE_INSTANCE_NAME to .env
+    2. First quickstart run: configures Lakebase, writes LAKEBASE_AUTOSCALING_ENDPOINT to .env
     3. Second quickstart run (no --lakebase flag): should reuse config from .env
-    4. Assert same LAKEBASE_INSTANCE_NAME after both runs
+    4. Assert same LAKEBASE_AUTOSCALING_ENDPOINT after both runs
 
     No deployment — this tests quickstart behavior only.
     """
@@ -335,28 +335,33 @@ def _run_lakebase_idempotent(
     app_name = _unique_app_name(template_name)
     workdir = git_copy_template(template_name, tmp_path, git_ref)
 
-    _log(f"[lakebase-idempotent] workdir={workdir}, lakebase={lakebase}")
+    _log(f"[lakebase-idempotent] workdir={workdir}, endpoint={lakebase_autoscaling_endpoint}")
 
     # First run: configure Lakebase
-    _log("[lakebase-idempotent] Step 1: First quickstart run with --lakebase-provisioned-name")
-    run_quickstart(workdir, profile, lakebase=lakebase, app_name=app_name)
+    _log("[lakebase-idempotent] Step 1: First quickstart run with --lakebase-autoscaling-endpoint")
+    run_quickstart(
+        workdir, profile,
+        lakebase_autoscaling_endpoint=lakebase_autoscaling_endpoint,
+        app_name=app_name,
+    )
 
     env_file = workdir / ".env"
     assert env_file.exists(), ".env not created by quickstart"
-    instance_1 = read_env_value(env_file, "LAKEBASE_INSTANCE_NAME")
-    assert instance_1 == lakebase, (
-        f"LAKEBASE_INSTANCE_NAME not set correctly: {instance_1!r} != {lakebase!r}"
+    endpoint_1 = read_env_value(env_file, "LAKEBASE_AUTOSCALING_ENDPOINT")
+    assert endpoint_1 == lakebase_autoscaling_endpoint, (
+        f"LAKEBASE_AUTOSCALING_ENDPOINT not set correctly: "
+        f"{endpoint_1!r} != {lakebase_autoscaling_endpoint!r}"
     )
-    _log(f"[lakebase-idempotent] LAKEBASE_INSTANCE_NAME after first run: {instance_1}")
+    _log(f"[lakebase-idempotent] LAKEBASE_AUTOSCALING_ENDPOINT after first run: {endpoint_1}")
 
     # Second run: no lakebase flag — should reuse from .env
     _log("[lakebase-idempotent] Step 2: Second quickstart run (no --lakebase flag)")
     result = run_quickstart(workdir, profile)
 
-    instance_2 = read_env_value(env_file, "LAKEBASE_INSTANCE_NAME")
-    assert instance_2 == instance_1, (
-        f"Idempotency failure: second run changed LAKEBASE_INSTANCE_NAME "
-        f"{instance_2!r} != {instance_1!r}"
+    endpoint_2 = read_env_value(env_file, "LAKEBASE_AUTOSCALING_ENDPOINT")
+    assert endpoint_2 == endpoint_1, (
+        f"Idempotency failure: second run changed LAKEBASE_AUTOSCALING_ENDPOINT "
+        f"{endpoint_2!r} != {endpoint_1!r}"
     )
     assert "Reusing existing Lakebase config" in result.stdout, (
         "Expected 'Reusing existing Lakebase config' in quickstart output"

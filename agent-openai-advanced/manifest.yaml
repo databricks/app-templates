@@ -11,3 +11,7 @@ resource_specs:
     description: "The Lakebase Autoscaling database the agent uses for session memory and long-running task persistence."
     postgres_spec:
       permission: "CAN_CONNECT_AND_CREATE"
+  - name: "llm-endpoint"
+    description: "The Databricks Model Serving endpoint hosting the LLM that powers the agent."
+    serving_endpoint_spec:
+      permission: "CAN_QUERY"

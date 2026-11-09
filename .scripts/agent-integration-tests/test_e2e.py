@@ -1,7 +1,4 @@
-import copy
 import os
-import re
-import shutil
 import sys
 import threading
 import time
@@ -24,7 +21,6 @@ from helpers import (
     bundle_run_nowait,
     capture_app_logs,
     clean_template,
-    copy_template,
     get_oauth_token,
     grant_lakebase_access,
     query_endpoint,
@@ -161,10 +157,8 @@ def _emit_phase_summary(test_name: str, test_outcome: str, test_duration: float)
 def pytest_generate_tests(metafunc):
     """Build templates from CLI options and parametrize at collection time.
 
-    Lakebase variants are filtered based on available config:
-    - Provisioned variants require --lakebase-provisioned-name
-    - Autoscaling variants require --lakebase-autoscaling-endpoint
-    If neither is provided, all lakebase variants are excluded.
+    Lakebase (autoscaling) variants require --lakebase-autoscaling-endpoint.
+    If it is not provided, lakebase variants are excluded.
     """
     if "template" in metafunc.fixturenames:
         config = metafunc.config
@@ -174,14 +168,11 @@ def pytest_generate_tests(metafunc):
             target_app_name=config.getoption("--target-app-name"),
         )
 
-        has_provisioned = bool(config.getoption("--lakebase-provisioned-name"))
         has_autoscaling = bool(config.getoption("--lakebase-autoscaling-endpoint"))
 
-        # Filter out lakebase variants that can't run with available config
+        # Filter out lakebase variants that can't run without autoscaling config
         filtered = []
         for t in templates:
-            if t.lakebase_type == "provisioned" and not has_provisioned:
-                continue
             if t.lakebase_type == "autoscaling" and not has_autoscaling:
                 continue
             filtered.append(t)
@@ -369,7 +360,6 @@ def _run_deploy(
     template: TemplateConfig,
     template_dir: Path,
     profile: str,
-    lakebase_provisioned_name: str,
     log_file: Path,
     no_destroy: bool = False,
     lakebase_autoscaling_endpoint: str | None = None,
@@ -388,14 +378,11 @@ def _run_deploy(
         server_started_event.wait(timeout=120)
         _log("Local server started, proceeding with deploy")
     bundle_deploy(template_dir, profile, template.app_resource_key, template.dev_app_name)
-    if template.needs_lakebase:
-        _grant_kwargs = {}
-        if template.lakebase_type == "provisioned":
-            _grant_kwargs["instance_name"] = lakebase_provisioned_name
-        elif template.lakebase_type == "autoscaling":
-            _grant_kwargs["autoscaling_endpoint"] = lakebase_autoscaling_endpoint
-        if _grant_kwargs:
-            grant_lakebase_access(template.dev_app_name, profile, **_grant_kwargs)
+    if template.needs_lakebase and lakebase_autoscaling_endpoint:
+        grant_lakebase_access(
+            template.dev_app_name, profile,
+            autoscaling_endpoint=lakebase_autoscaling_endpoint,
+        )
     bundle_run_nowait(template_dir, template.app_resource_key, profile, template.dev_app_name)
     try:
         app_url, token = wait_for_app_ready(template.dev_app_name, profile)
@@ -415,15 +402,12 @@ def _run_deploy(
                 if attempt < 2:
                     # Re-grant lakebase access to cover tables/sequences
                     # created by the app on its first request
-                    if template.needs_lakebase:
-                        _grant_kwargs = {}
-                        if template.lakebase_type == "provisioned":
-                            _grant_kwargs["instance_name"] = lakebase_provisioned_name
-                        elif template.lakebase_type == "autoscaling":
-                            _grant_kwargs["autoscaling_endpoint"] = lakebase_autoscaling_endpoint
-                        if _grant_kwargs:
-                            _log("Re-running lakebase grants to cover newly created objects...")
-                            grant_lakebase_access(template.dev_app_name, profile, **_grant_kwargs)
+                    if template.needs_lakebase and lakebase_autoscaling_endpoint:
+                        _log("Re-running lakebase grants to cover newly created objects...")
+                        grant_lakebase_access(
+                            template.dev_app_name, profile,
+                            autoscaling_endpoint=lakebase_autoscaling_endpoint,
+                        )
                     token = get_oauth_token(profile)  # refresh token on retry
                     time.sleep(30)
         if last_exc is not None:
@@ -441,7 +425,7 @@ def _run_deploy(
             _log("--no-destroy: skipping bundle destroy")
 
 
-def test_e2e(template, repo_root, profile, lakebase_provisioned_name, lakebase_autoscaling_endpoint, request):
+def test_e2e(template, repo_root, profile, lakebase_autoscaling_endpoint, request):
     """Full e2e test: clean -> quickstart -> edits -> (local || deploy) -> revert."""
     os.environ["DATABRICKS_CONFIG_PROFILE"] = profile
 
@@ -455,23 +439,7 @@ def test_e2e(template, repo_root, profile, lakebase_provisioned_name, lakebase_a
     test_label = f"{template.name}" + (f"[{template.lakebase_type}]" if template.lakebase_type else "")
     test_t0 = time.monotonic()
 
-    # Provisioned lakebase variants use a temp copy so they can run in parallel
-    # with the autoscaling variant (which uses the original directory).
-    use_temp_copy = template.lakebase_type == "provisioned"
-    original_dir = repo_root / template.name
-
-    if use_temp_copy:
-        template_dir = copy_template(original_dir)
-        # Re-parse the patched databricks.yml to get the new app name
-        yml_text = (template_dir / "databricks.yml").read_text()
-        app_match = re.search(
-            r'^\s*apps:\s*\n\s*(\w+):\s*\n\s*name:\s*"([^"]+)"', yml_text, re.MULTILINE
-        )
-        assert app_match, f"Could not find app name in patched databricks.yml"
-        template = copy.copy(template)
-        template.dev_app_name = app_match.group(2).replace("${bundle.target}", "dev")
-    else:
-        template_dir = original_dir
+    template_dir = repo_root / template.name
 
     # Determine log file name with lakebase type suffix for memory templates
     log_suffix = f"-{template.lakebase_type}" if template.lakebase_type else ""
@@ -501,14 +469,11 @@ def test_e2e(template, repo_root, profile, lakebase_provisioned_name, lakebase_a
 
         with phase("setup:quickstart"):
             if template.needs_lakebase:
-                if template.lakebase_type == "autoscaling":
-                    run_quickstart(
-                        template_dir,
-                        profile,
-                        lakebase_autoscaling_endpoint=lakebase_autoscaling_endpoint,
-                    )
-                else:
-                    run_quickstart(template_dir, profile, lakebase=lakebase_provisioned_name)
+                run_quickstart(
+                    template_dir,
+                    profile,
+                    lakebase_autoscaling_endpoint=lakebase_autoscaling_endpoint,
+                )
             else:
                 run_quickstart(template_dir, profile, skip_lakebase=True)
 
@@ -520,7 +485,7 @@ def test_e2e(template, repo_root, profile, lakebase_provisioned_name, lakebase_a
             if skip_local:
                 with phase("deploy"):
                     _run_deploy(
-                        template, template_dir, profile, lakebase_provisioned_name,
+                        template, template_dir, profile,
                         log_file, no_destroy, lakebase_autoscaling_endpoint,
                     )
                 return
@@ -543,7 +508,7 @@ def test_e2e(template, repo_root, profile, lakebase_provisioned_name, lakebase_a
                         _run_local, template, template_dir, log_file, server_started,
                     )
                     deploy_future: Future = executor.submit(
-                        _run_deploy, template, template_dir, profile, lakebase_provisioned_name,
+                        _run_deploy, template, template_dir, profile,
                         log_file, no_destroy, lakebase_autoscaling_endpoint, server_started,
                     )
 
@@ -558,19 +523,16 @@ def test_e2e(template, repo_root, profile, lakebase_provisioned_name, lakebase_a
                         raise AssertionError("Failures in parallel phases:\n" + "\n".join(errors))
         finally:
             revert_edits(originals)
-            if not use_temp_copy:
-                # Restore databricks.yml to pre-quickstart state
-                if yml_original is not None:
-                    yml_path.write_text(yml_original)
-                # Restore app.yaml to pre-quickstart state
-                if app_yaml_original is not None:
-                    app_yaml_path.write_text(app_yaml_original)
-                # Remove .env created by quickstart
-                if env_path.exists():
-                    env_path.unlink()
+            # Restore databricks.yml to pre-quickstart state
+            if yml_original is not None:
+                yml_path.write_text(yml_original)
+            # Restore app.yaml to pre-quickstart state
+            if app_yaml_original is not None:
+                app_yaml_path.write_text(app_yaml_original)
+            # Remove .env created by quickstart
+            if env_path.exists():
+                env_path.unlink()
     finally:
-        if use_temp_copy:
-            shutil.rmtree(template_dir.parent, ignore_errors=True)
         # Emit per-phase summary (main-thread phases; parallel workers
         # log their own detail inline). sys.exc_info() tells us whether
         # an exception is propagating — in finally, active exception

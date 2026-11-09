@@ -45,7 +45,7 @@ import {
   updateChatVisiblityById,
   isDatabaseAvailable,
   updateChatTitleById,
-} from '@chat-template/db';
+} from '@databricks/chatbot-db';
 import {
   type ChatMessage,
   checkChatAccess,
@@ -58,8 +58,8 @@ import {
   type VisibilityType,
   CONTEXT_HEADER_CONVERSATION_ID,
   CONTEXT_HEADER_USER_ID,
-} from '@chat-template/core';
-import { ChatSDKError } from '@chat-template/core/errors';
+} from '@databricks/chatbot-core';
+import { ChatSDKError } from '@databricks/chatbot-core/errors';
 import { storeMessageMeta } from '../lib/message-meta-store';
 import { drainStreamToWriter, fallbackToGenerateText } from '../lib/stream-fallback';
 

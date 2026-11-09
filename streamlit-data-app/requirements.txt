@@ -1,4 +1,5 @@
-databricks-sql-connector~=3.4.0
-databricks-sdk~=0.33.0
-streamlit~=1.38.0
+-c constraints.txt
+databricks-sql-connector~=3.7.5
+databricks-sdk~=0.157.0
+streamlit~=1.66.1
 pandas~=2.2.3

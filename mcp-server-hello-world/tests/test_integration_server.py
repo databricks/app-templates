@@ -1,5 +1,4 @@
 import os
-import shlex
 import signal
 import socket
 import subprocess
@@ -27,7 +26,7 @@ def _wait_for_server_startup(url: str, timeout: int = 10):
                 return response
         except Exception as e:
             last_exc = e
-        time.sleep(0.1)
+        time.sleep(0.1)  # nosemgrep: arbitrary-sleep -- intentional poll interval while waiting for server startup
     if last_exc:
         raise last_exc
 
@@ -39,11 +38,10 @@ def run_mcp_server():
     host = "127.0.0.1"
     port = _find_free_port()
     url = f"http://{host}:{port}"
-    cmd = shlex.split(f"uv run custom-mcp-server --port {port}")
 
     # Start the process
     proc = subprocess.Popen(
-        cmd,
+        ["uv", "run", "custom-mcp-server", "--port", str(port)],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,

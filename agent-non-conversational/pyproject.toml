@@ -36,6 +36,13 @@ setup = [
 ]
 
 [tool.uv]
+# BEGIN synced constraints (.scripts/source/constraints.txt)
+constraint-dependencies = [
+    "certifi>=2026.10.18",
+]
+# END synced constraints
+# Dependency cooldown: skip package versions published in the last 7 days (uv >= 0.9.17)
+exclude-newer = "7 days"
 default-groups = ["dev", "setup"]
 
 [project.scripts]

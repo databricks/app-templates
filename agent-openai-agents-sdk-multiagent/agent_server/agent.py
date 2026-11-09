@@ -35,6 +35,7 @@ from mlflow.types.responses import (
     ResponsesAgentStreamEvent,
 )
 
+from agent_server.history import normalize_history_items
 from agent_server.utils import (
     build_mcp_url,
     get_session_id,
@@ -129,7 +130,9 @@ def _make_subagent_tool(subagent: dict):
     model = f"apps/{endpoint}" if subagent["type"] == "app" else endpoint
 
     async def _call(question: str) -> str:
-        response = await _tool_client.responses.create(
+        # Calls a Databricks endpoint/app, not the OpenAI platform, so OpenAI-only
+        # abuse-monitoring params like safety_identifier don't apply.
+        response = await _tool_client.responses.create(  # nosemgrep: openai-missing-safety-identifier-python
             model=model,
             input=[{"role": "user", "content": question}],
         )
@@ -212,7 +215,7 @@ def create_orchestrator_agent(
     return Agent(
         name="Orchestrator",
         instructions=instructions,
-        model="databricks-gpt-5-2",  # TODO: change model if desired
+        model="databricks-claude-sonnet-5-5",  # TODO: change model if desired
         mcp_servers=mcp_servers,
         tools=subagent_tools,
     )
@@ -232,7 +235,7 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
     async with AsyncExitStack() as stack:
         servers, unavailable = await connect_healthy_mcp_servers(stack, build_mcp_servers())
         agent = create_orchestrator_agent(servers, unavailable)
-        messages = [i.model_dump() for i in request.input]
+        messages = normalize_history_items([i.model_dump() for i in request.input])
         result = await Runner.run(agent, messages)
         return ResponsesAgentResponse(output=[item.to_input_item() for item in result.new_items])
 
@@ -246,7 +249,7 @@ async def stream_handler(request: ResponsesAgentRequest) -> AsyncGenerator[Respo
     async with AsyncExitStack() as stack:
         servers, unavailable = await connect_healthy_mcp_servers(stack, build_mcp_servers())
         agent = create_orchestrator_agent(servers, unavailable)
-        messages = [i.model_dump() for i in request.input]
+        messages = normalize_history_items([i.model_dump() for i in request.input])
         result = Runner.run_streamed(agent, input=messages)
 
         async for event in process_agent_stream_events(result.stream_events()):

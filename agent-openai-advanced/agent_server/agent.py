@@ -82,7 +82,7 @@ def create_agent(mcp_servers: list[McpServer] | None = None) -> Agent:
     return Agent(
         name="Agent",
         instructions="You are a helpful assistant.",
-        model="databricks-gpt-5-2",
+        model="databricks-claude-sonnet-5-5",
         tools=[get_current_time],
         mcp_servers=mcp_servers or [],
     )
@@ -97,7 +97,6 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
             mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
         session = AsyncDatabricksSession(
             session_id=session_id,
-            instance_name=lakebase_config.instance_name,
             autoscaling_endpoint=lakebase_config.autoscaling_endpoint,
             project=lakebase_config.autoscaling_project,
             branch=lakebase_config.autoscaling_branch,
@@ -147,7 +146,6 @@ async def stream_handler(
             mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
         session = AsyncDatabricksSession(
             session_id=session_id,
-            instance_name=lakebase_config.instance_name,
             autoscaling_endpoint=lakebase_config.autoscaling_endpoint,
             project=lakebase_config.autoscaling_project,
             branch=lakebase_config.autoscaling_branch,

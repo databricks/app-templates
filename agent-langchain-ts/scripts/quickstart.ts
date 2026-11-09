@@ -125,7 +125,7 @@ async function setupEnvironment(): Promise<Config> {
   console.log("\n📦 Model Configuration");
   const modelOptions = [
     "databricks-claude-sonnet-4-5",
-    "databricks-gpt-5-2",
+    "databricks-claude-sonnet-5-5",
     "databricks-meta-llama-3-3-70b-instruct",
     "custom",
   ];

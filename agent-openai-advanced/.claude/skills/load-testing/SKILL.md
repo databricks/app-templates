@@ -1,11 +1,13 @@
 ---
 name: load-testing
-description: "Load test a Databricks App to find its maximum QPS. Use when: (1) User says 'load test', 'benchmark', 'QPS', 'throughput', or 'performance test', (2) User wants to find how many queries per second their app can handle, (3) User wants to set up load testing scripts for their agent, (4) User wants to view load test results/dashboard."
+description: "Load test a Databricks App to find its maximum QPS. Use when: (1) User says 'load test', 'benchmark', 'QPS', 'throughput', or 'performance test', (2) User wants to find how many queries per second their app can handle, (3) User wants to set up load testing scripts for their agent, (4) User wants to view load test results/dashboard, (5) User wants to validate results or observe latency/error rate with MLflow tracing."
 ---
 
 # Load Testing Your Databricks App
 
 **Goal:** Find the maximum QPS (queries per second) your Databricks App can support.
+
+> **Assumes MLflow AgentServer.** These templates serve the agent with the [MLflow AgentServer](https://mlflow.org/docs/latest/genai/serving/agent-server/) — it exposes the `POST /invocations` endpoint (streaming `@invoke`/`@stream`, SSE terminated by `[DONE]`) the scripts below hit, and emits the per-request MLflow trace used in Step 6. Any app works if it exposes the same `/invocations` streaming contract.
 
 ## Before You Start — Gather Parameters
 
@@ -66,6 +68,8 @@ Create a `load-test-scripts/` directory in the project with the following files.
 - Full results table with peak QPS, users at peak, latency percentiles, failure rate
 - Can be run standalone: `uv run dashboard_template.py ../load-test-runs/<run-name>/`
 
+> **Starter examples:** a minimal [`examples/locustfile.py`](examples/locustfile.py) (streaming, TTFT, M2M OAuth, ramp shape) and [`examples/validate_with_mlflow.py`](examples/validate_with_mlflow.py) (server-side reliability + latency **and a span breakdown that pinpoints the bottleneck tool**) are included to copy from.
+
 ### Install Dependencies
 
 The load testing scripts use their own `pyproject.toml` inside `load-test-scripts/` to avoid polluting the agent's production dependencies.
@@ -80,6 +84,8 @@ dependencies = [
     "locust>=2.32,<2.40",
     "urllib3<2.3",
     "requests",
+    "mlflow>=3.0",   # Step 6 — validate_with_mlflow.py (search_traces, span breakdown)
+    "pandas",        # Step 6 — trace DataFrame reliability/latency stats
 ]
 ```
 
@@ -307,6 +313,31 @@ uv run dashboard_template.py ../load-test-runs/<run-name>/
 
 ---
 
+## Step 6: Validate & Diagnose with MLflow Tracing (server-side truth)
+
+Load-testing an agent needs **two planes**: Locust drives concurrent load and measures the system from the **outside** (throughput, latency, TTFT, failures), while the agent's **MLflow traces** show it from the **inside** (per-request reliability, and where the time goes). On Databricks Apps the templates trace automatically — you get the inside view for free, which turns a QPS number into an *explanation*. Use Locust as ground truth for wall-clock, traces as ground truth for reliability and internal breakdown.
+
+**Reliability (source of truth).** Each request is one trace with a `state` (OK/ERROR) and `execution_duration`. Cross-check against Locust: Locust can report success for a request that streamed an error (e.g. an FM `429`), and can count infra failures (cold starts) that never created a trace.
+
+Getting started — pull the server-side numbers for a run:
+
+```python
+import mlflow
+mlflow.set_tracking_uri("databricks")
+exp = mlflow.get_experiment_by_name("/Shared/<your-experiment>")
+df = mlflow.search_traces(locations=[exp.experiment_id], max_results=2000)
+ok = df[df["state"].astype(str).str.contains("OK")]
+print("error rate:", round(1 - len(ok) / len(df), 3))     # reliability = trace state
+print("median ms:", ok["execution_duration"].median())    # latency over successful only
+# note: request_time is epoch ms — filter df to your run's time window
+```
+
+Report **latency over successful traces** and **error rate from trace `state`**, then confirm they agree with Locust. If they diverge, trust the server for reliability and Locust for wall-clock latency.
+
+**Find bottlenecks (not just totals).** Each trace is a **span waterfall** — child spans nested by `parent_id`, each recording `start_time_ns`/`end_time_ns` — so you can see *where* a request spends time, which a QPS/latency number can't. Open a trace on the experiment's **Traces** page for the waterfall, or filter/aggregate spans by type and name (`span.type`, `span.name`) to quantify the split: compare `CHAT_MODEL` (model) vs `TOOL` span time to see whether the model or the tools dominate, and group `TOOL` spans by name for per-tool p95 to find the slowest tool. A bottleneck that only appears at high concurrency — a tool's p95 climbing, or the model-vs-tool split shifting — is what saturation looks like *inside* the agent. [`examples/validate_with_mlflow.py`](examples/validate_with_mlflow.py) does exactly this: reliability, successful-request latency, and the model-vs-tool split with per-tool p95.
+
+---
+
 ## Troubleshooting
 
 | Issue | Solution |
@@ -317,3 +348,12 @@ uv run dashboard_template.py ../load-test-runs/<run-name>/
 | Low QPS despite high user count | App is saturated — try more workers or larger compute |
 | High failure rate | App is overloaded — reduce `--max-users` or increase workers/compute |
 | Dashboard shows no ramp data | Ensure `results_stats_history.csv` exists in each result subdir |
+
+---
+
+## Resources
+
+- **Locust** — docs: https://docs.locust.io/ · custom load shapes (`LoadTestShape`): https://docs.locust.io/en/stable/custom-load-shape.html · request events (`events.request.fire`): https://docs.locust.io/en/stable/api.html
+- **MLflow Tracing** — https://mlflow.org/docs/latest/genai/tracing/ · search traces: https://mlflow.org/docs/latest/genai/tracing/search-traces/ · `Span`/`TraceData` shapes: https://mlflow.org/docs/latest/api_reference/python_api/mlflow.entities.html
+- **MLflow AgentServer** — https://mlflow.org/docs/latest/genai/serving/agent-server/
+- **Databricks** — load test an agent app: https://docs.databricks.com/aws/en/agents/agent-framework/load-test-agent-app

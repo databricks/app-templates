@@ -1,0 +1,3 @@
+version: 1
+name: "Chat UI (Model Service)"
+description: "Create a chat UI that queries a Unity Catalog model service via the Databricks Unity Gateway."

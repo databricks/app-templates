@@ -1,3 +1,15 @@
+# --- diagnostics bootstrap: install crash/exception logging before app code ---
+import os as _diag_os
+import sys as _diag_sys
+
+_diag_dir = _diag_os.path.dirname(_diag_os.path.abspath(__file__))
+if _diag_dir not in _diag_sys.path:
+    _diag_sys.path.insert(0, _diag_dir)
+import app_diagnostics  # noqa: E402
+
+app_diagnostics.install_diagnostics()
+# --- end diagnostics bootstrap ---
+
 import os
 from databricks import sql
 from databricks.sdk.core import Config
@@ -22,11 +34,11 @@ def sqlQuery(query: str) -> pd.DataFrame:
 data = sqlQuery("select * from samples.nyctaxi.trips limit 5000")
 
 # display the data with Gradio
-with gr.Blocks(css="footer {visibility: hidden}") as demo:  # must call it demo to get Gradio hot reload
+with gr.Blocks() as demo:  # must call it demo to get Gradio hot reload
     with gr.Row():
         with gr.Column(scale=3):
             gr.Markdown("# Taxi fare distribution")
-            gr.ScatterPlot(value=data, height=400, width=700, container=False,
+            gr.ScatterPlot(value=data, height=400, container=False,
                         y="fare_amount", x="trip_distance", y_title="Fare", x_title="Distance")
         with gr.Column(variant='panel'):
             gr.Markdown("## Predict fare\nFrom (zipcode)")
@@ -42,4 +54,4 @@ with gr.Blocks(css="footer {visibility: hidden}") as demo:  # must call it demo 
     gr.Dataframe(value=data)
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(css="footer {visibility: hidden}")

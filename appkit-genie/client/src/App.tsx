@@ -1,5 +1,5 @@
 import { createBrowserRouter, RouterProvider, NavLink, Outlet } from 'react-router';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Button,
   Card,
@@ -48,11 +48,6 @@ function Layout() {
   const isMobile = useIsMobile();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  // Close mobile nav when viewport crosses to desktop
-  useEffect(() => {
-    if (!isMobile) setMobileNavOpen(false);
-  }, [isMobile]);
-
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="border-b px-4 md:px-6 py-3 flex items-center gap-4">
@@ -61,7 +56,9 @@ function Layout() {
         <NavLinks className="hidden md:flex gap-1" linkClass={navLinkClass} />
         {/* Mobile nav — visible below md breakpoint */}
         <div className="ml-auto md:hidden">
-          <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+          {/* Gate on isMobile so the portaled sheet can't linger on desktop
+              (replaces a set-state-in-effect reset). */}
+          <Sheet open={mobileNavOpen && isMobile} onOpenChange={setMobileNavOpen}>
             <Button variant="ghost" size="icon" onClick={() => setMobileNavOpen(true)}>
               <Menu className="h-5 w-5" />
               <span className="sr-only">Open navigation</span>
@@ -128,7 +125,7 @@ function HomePage() {
             </li>
             <li>
               <a
-                href="https://www.databricks.com/devhub/docs/appkit/v0/"
+                href="https://developers.databricks.com/docs/appkit/v0/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary underline underline-offset-4 hover:text-primary/80"

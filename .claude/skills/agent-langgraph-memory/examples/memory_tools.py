@@ -13,11 +13,9 @@ Usage:
 """
 
 import json
-import logging
 import os
 from typing import Optional
 
-from databricks.sdk import WorkspaceClient
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langgraph.store.base import BaseStore
@@ -45,74 +43,17 @@ def get_user_id(request: ResponsesAgentRequest) -> Optional[str]:
     return None
 
 
-def _is_lakebase_hostname(value: str) -> bool:
-    """Check if the value looks like a Lakebase hostname rather than an instance name."""
-    return ".database." in value and value.endswith(".com")
-
-
-def resolve_lakebase_instance_name(
-    instance_name: str, workspace_client: Optional[WorkspaceClient] = None
-) -> str:
-    """Resolve a Lakebase instance name from a hostname if needed.
-
-    If the input is a hostname (e.g., from Databricks Apps value_from resolution),
-    this will resolve it to the actual instance name by listing database instances.
-
-    Args:
-        instance_name: Either an instance name or a hostname
-        workspace_client: Optional WorkspaceClient to use for resolution
-
-    Returns:
-        The resolved instance name
-
-    Raises:
-        ValueError: If the hostname cannot be resolved to an instance name
-    """
-    if not _is_lakebase_hostname(instance_name):
-        return instance_name
-
-    client = workspace_client or WorkspaceClient()
-    hostname = instance_name
-
-    try:
-        instances = list(client.database.list_database_instances())
-    except Exception as exc:
-        raise ValueError(
-            f"Unable to list database instances to resolve hostname '{hostname}'. "
-            "Ensure you have access to database instances."
-        ) from exc
-
-    for instance in instances:
-        rw_dns = getattr(instance, "read_write_dns", None)
-        ro_dns = getattr(instance, "read_only_dns", None)
-
-        if hostname in (rw_dns, ro_dns):
-            resolved_name = getattr(instance, "name", None)
-            if not resolved_name:
-                raise ValueError(
-                    f"Found matching instance for hostname '{hostname}' "
-                    "but instance name is not available."
-                )
-            logging.info(f"Resolved Lakebase hostname '{hostname}' to instance name '{resolved_name}'")
-            return resolved_name
-
-    raise ValueError(
-        f"Unable to find database instance matching hostname '{hostname}'. "
-        "Ensure the hostname is correct and the instance exists."
-    )
-
-
 def _is_databricks_app_env() -> bool:
     """Check if running in a Databricks App environment."""
     return bool(os.getenv("DATABRICKS_APP_NAME"))
 
 
-def get_lakebase_access_error_message(lakebase_instance_name: str) -> str:
+def get_lakebase_access_error_message(lakebase_description: str) -> str:
     """Generate a helpful error message for Lakebase access issues."""
     if _is_databricks_app_env():
         app_name = os.getenv("DATABRICKS_APP_NAME")
         return (
-            f"Failed to connect to Lakebase instance '{lakebase_instance_name}'. "
+            f"Failed to connect to Lakebase '{lakebase_description}'. "
             f"The App Service Principal for '{app_name}' may not have access.\n\n"
             "To fix this:\n"
             "1. Go to the Databricks UI and navigate to your app\n"
@@ -122,9 +63,9 @@ def get_lakebase_access_error_message(lakebase_instance_name: str) -> str:
         )
     else:
         return (
-            f"Failed to connect to Lakebase instance '{lakebase_instance_name}'. "
+            f"Failed to connect to Lakebase '{lakebase_description}'. "
             "Please verify:\n"
-            "1. The instance name is correct\n"
+            "1. The endpoint (or project/branch) is correct\n"
             "2. You have the necessary permissions to access the instance\n"
             "3. Your Databricks authentication is configured correctly"
         )

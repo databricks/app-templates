@@ -3,7 +3,7 @@
 # Covers:
 # 1. Data structures (MEMORY_TYPE_SCHEMAS, NEEDS_SEQUENCES, SHARED_SCHEMAS)
 # 2. Argument parsing and validation (missing args, valid combos)
-# 3. Correct LakebaseClient construction (provisioned vs autoscaling)
+# 3. Correct LakebaseClient construction (autoscaling)
 # 4. Per-memory-type grant calls (correct tables, schemas, sequences)
 # 5. Idempotent role creation ("already exists" handling)
 
@@ -73,19 +73,19 @@ class TestDataStructures:
 # ---------------------------------------------------------------------------
 class TestArgumentParsing:
     def test_missing_sp_client_id_exits(self):
-        with patch("sys.argv", ["grant_lakebase_permissions.py", "--memory-type", "langgraph", "--instance-name", "db"]):
+        with patch("sys.argv", ["grant_lakebase_permissions.py", "--memory-type", "langgraph", "--project", "p", "--branch", "b"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code == 2  # argparse error
 
     def test_missing_memory_type_exits(self):
-        with patch("sys.argv", ["grant_lakebase_permissions.py", "sp-123", "--instance-name", "db"]):
+        with patch("sys.argv", ["grant_lakebase_permissions.py", "sp-123", "--project", "p", "--branch", "b"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code == 2
 
     def test_invalid_memory_type_exits(self):
-        with patch("sys.argv", ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "invalid-type", "--instance-name", "db"]):
+        with patch("sys.argv", ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "invalid-type", "--project", "p", "--branch", "b"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code == 2
@@ -155,22 +155,13 @@ def _run_main(argv, monkeypatch):
 # LakebaseClient construction tests
 # ---------------------------------------------------------------------------
 class TestLakebaseClientConstruction:
-    def test_provisioned_client(self, monkeypatch):
-        mock_client, mock_module = _run_main(
-            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--instance-name", "my-db"],
-            monkeypatch,
-        )
-        mock_module.LakebaseClient.assert_called_once_with(
-            instance_name="my-db", project=None, branch=None
-        )
-
     def test_autoscaling_client(self, monkeypatch):
         mock_client, mock_module = _run_main(
             ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--project", "proj-1", "--branch", "production"],
             monkeypatch,
         )
         mock_module.LakebaseClient.assert_called_once_with(
-            instance_name=None, project="proj-1", branch="production"
+            project="proj-1", branch="production"
         )
 
     def test_autoscaling_endpoint_parses_project_branch(self, monkeypatch):
@@ -180,7 +171,7 @@ class TestLakebaseClientConstruction:
             monkeypatch,
         )
         mock_module.LakebaseClient.assert_called_once_with(
-            instance_name=None, project="my-proj", branch="my-branch"
+            project="my-proj", branch="my-branch"
         )
 
 
@@ -202,7 +193,7 @@ class TestGrantCalls:
 
     def test_langgraph_grants(self, monkeypatch):
         mock_client, _ = _run_main(
-            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--instance-name", "db"],
+            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--project", "p", "--branch", "b"],
             monkeypatch,
         )
         tables = self._get_granted_tables(mock_client)
@@ -232,7 +223,7 @@ class TestGrantCalls:
 
     def test_openai_grants(self, monkeypatch):
         mock_client, _ = _run_main(
-            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "openai", "--instance-name", "db"],
+            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "openai", "--project", "p", "--branch", "b"],
             monkeypatch,
         )
         tables = self._get_granted_tables(mock_client)
@@ -257,7 +248,7 @@ class TestGrantCalls:
     def test_schemas_granted_for_all_types(self, monkeypatch):
         for memory_type in MEMORY_TYPE_SCHEMAS:
             mock_client, _ = _run_main(
-                ["grant_lakebase_permissions.py", "sp-123", "--memory-type", memory_type, "--instance-name", "db"],
+                ["grant_lakebase_permissions.py", "sp-123", "--memory-type", memory_type, "--project", "p", "--branch", "b"],
                 monkeypatch,
             )
             schemas = self._get_granted_schemas(mock_client)
@@ -268,14 +259,14 @@ class TestGrantCalls:
 
     def test_role_created_with_sp_id(self, monkeypatch):
         mock_client, _ = _run_main(
-            ["grant_lakebase_permissions.py", "sp-abc-123", "--memory-type", "langgraph", "--instance-name", "db"],
+            ["grant_lakebase_permissions.py", "sp-abc-123", "--memory-type", "langgraph", "--project", "p", "--branch", "b"],
             monkeypatch,
         )
         mock_client.create_role.assert_called_once_with("sp-abc-123", "SERVICE_PRINCIPAL")
 
     def test_grantee_is_sp_id(self, monkeypatch):
         mock_client, _ = _run_main(
-            ["grant_lakebase_permissions.py", "sp-xyz", "--memory-type", "langgraph", "--instance-name", "db"],
+            ["grant_lakebase_permissions.py", "sp-xyz", "--memory-type", "langgraph", "--project", "p", "--branch", "b"],
             monkeypatch,
         )
         for c in mock_client.grant_schema.call_args_list:
@@ -285,7 +276,7 @@ class TestGrantCalls:
 
     def test_table_privileges(self, monkeypatch):
         mock_client, _ = _run_main(
-            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--instance-name", "db"],
+            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--project", "p", "--branch", "b"],
             monkeypatch,
         )
         for c in mock_client.grant_table.call_args_list:
@@ -297,7 +288,7 @@ class TestGrantCalls:
 
     def test_schema_privileges(self, monkeypatch):
         mock_client, _ = _run_main(
-            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--instance-name", "db"],
+            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--project", "p", "--branch", "b"],
             monkeypatch,
         )
         for c in mock_client.grant_schema.call_args_list:
@@ -312,14 +303,14 @@ class TestGrantCalls:
 class TestErrorHandling:
     def test_role_already_exists_continues(self, monkeypatch):
         mock_client, mock_module = _run_main(
-            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--instance-name", "db"],
+            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--project", "p", "--branch", "b"],
             monkeypatch,
         )
         assert mock_client.grant_schema.called
 
         mock_module.LakebaseClient.return_value.create_role.side_effect = Exception("Role already exists")
         mock_client2, _ = _run_main(
-            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--instance-name", "db"],
+            ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--project", "p", "--branch", "b"],
             monkeypatch,
         )
         assert mock_client2.grant_schema.called
@@ -336,7 +327,7 @@ class TestErrorHandling:
         mock_module = MagicMock()
         mock_module.LakebaseClient.return_value = mock_client
 
-        with patch("sys.argv", ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--instance-name", "db"]):
+        with patch("sys.argv", ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--project", "p", "--branch", "b"]):
             with patch.dict("sys.modules", {"databricks_ai_bridge.lakebase": mock_module}):
                 with pytest.raises(Exception, match="Connection refused"):
                     main()
@@ -354,7 +345,7 @@ class TestErrorHandling:
         mock_module = MagicMock()
         mock_module.LakebaseClient.return_value = mock_client
 
-        with patch("sys.argv", ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--instance-name", "db"]):
+        with patch("sys.argv", ["grant_lakebase_permissions.py", "sp-123", "--memory-type", "langgraph", "--project", "p", "--branch", "b"]):
             with patch.dict("sys.modules", {"databricks_ai_bridge.lakebase": mock_module}):
                 main()
 

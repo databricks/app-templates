@@ -636,8 +636,8 @@ After deploying, the app's service principal needs Postgres-level permissions to
 # 1. Get the SP client ID from your deployed app
 databricks apps get <app-name> --profile <profile> --output json | jq -r '.service_principal_client_id'
 
-# 2. Grant permissions (reads LAKEBASE_INSTANCE_NAME from .env)
-DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permissions.py <sp-client-id>
+# 2. Grant permissions (reads LAKEBASE_AUTOSCALING_ENDPOINT from .env)
+DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type openai
 ```
 
 This grants USAGE + CREATE on the `agent_server`, `ai_chatbot`, and `drizzle` schemas, and SELECT/INSERT/UPDATE/DELETE on all tables within them.

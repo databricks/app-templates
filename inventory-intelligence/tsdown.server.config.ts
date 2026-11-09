@@ -22,10 +22,8 @@ export default defineConfig({
   noExternal: /.*/,
   // Except native/dev-only packages — mark them as truly external so rolldown
   // doesn't try to follow their import chains into native binaries.
-  external: NATIVE_OR_DEV_ONLY.flatMap((pkg) => [
-    pkg,
-    new RegExp(`^${pkg.replace("/", "\\/")}/`),
-  ]),
+  external: (id) =>
+    NATIVE_OR_DEV_ONLY.some((pkg) => id === pkg || id.startsWith(`${pkg}/`)),
   outExtensions: () => ({
     js: ".js",
   }),

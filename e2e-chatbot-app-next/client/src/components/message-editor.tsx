@@ -9,7 +9,7 @@ import {
 import { Textarea } from './ui/textarea';
 import { deleteTrailingMessages } from '@/lib/actions';
 import type { UseChatHelpers } from '@ai-sdk/react';
-import type { ChatMessage } from '@chat-template/core';
+import type { ChatMessage } from '@databricks/chatbot-core';
 import { getTextFromMessage } from '@/lib/utils';
 
 type MessageEditorProps = {

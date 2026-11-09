@@ -38,8 +38,8 @@ After deploying, grant the app's SP Postgres-level permissions to access Lakebas
 # Get SP client ID
 databricks apps get <app-name> --profile <profile> --output json | jq -r '.service_principal_client_id'
 
-# Grant all permissions (reads LAKEBASE_INSTANCE_NAME from .env)
-DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permissions.py <sp-client-id>
+# Grant all permissions (reads LAKEBASE_AUTOSCALING_ENDPOINT from .env)
+DATABRICKS_CONFIG_PROFILE=<profile> uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type openai
 ```
 
 This grants permissions on the `agent_server`, `ai_chatbot`, and `drizzle` schemas and their tables.

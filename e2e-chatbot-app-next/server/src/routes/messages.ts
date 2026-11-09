@@ -15,8 +15,8 @@ import {
   deleteMessagesByChatIdAfterTimestamp,
   getMessagesByChatId,
   isDatabaseAvailable,
-} from '@chat-template/db';
-import { ChatSDKError, checkChatAccess } from '@chat-template/core';
+} from '@databricks/chatbot-db';
+import { ChatSDKError, checkChatAccess } from '@databricks/chatbot-core';
 
 export const messagesRouter: RouterType = Router();
 

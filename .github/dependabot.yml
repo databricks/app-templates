@@ -1,0 +1,62 @@
+version: 2
+updates:
+  # Template deploy workflows pin actions to commit SHAs. The source of truth is
+  # .scripts/source/.github/workflows/deploy.yml, synced into each template by
+  # .scripts/sync-scripts.py; all copies are bumped together in one grouped PR.
+  - package-ecosystem: "github-actions"
+    directories:
+      - "/" # repo-level workflows (.github/workflows), e.g. semgrep.yml
+      - "/.scripts/source"
+      - "/agent-langgraph"
+      - "/agent-langgraph-advanced"
+      - "/agent-openai-advanced"
+      - "/agent-openai-agents-sdk"
+      - "/agent-openai-agents-sdk-multiagent"
+    schedule:
+      interval: "weekly"
+    groups:
+      template-deploy-actions:
+        patterns:
+          - "*"
+
+  # npm templates. Weekly, grouped so reviewers get a few PRs rather than one per
+  # package. `cooldown` mirrors the templates' `.npmrc` min-release-age = 7, so
+  # Dependabot never proposes a version npm would refuse to install. Majors are
+  # left ungrouped: each needs its own testing (deploy-validate with the
+  # validate-templates skill before merging any of these).
+  - package-ecosystem: "npm"
+    directories:
+      - "/agent-langchain-ts"
+      - "/agentic-support-console"
+      - "/agentic-support-console/seed"
+      - "/appkit-all-in-one"
+      - "/appkit-analytics"
+      - "/appkit-files"
+      - "/appkit-genie"
+      - "/appkit-lakebase"
+      - "/appkit-serving"
+      - "/e2e-chatbot-app-next"
+      - "/e2e-chatbot-model-service"
+      - "/inventory-intelligence"
+      - "/inventory-intelligence/seed"
+      - "/rag-chat"
+      - "/vacation-rentals"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 10
+    groups:
+      # AppKit and AppKit UI move together, across every AppKit template.
+      appkit:
+        patterns:
+          - "@databricks/appkit*"
+      npm-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      npm-minor-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"

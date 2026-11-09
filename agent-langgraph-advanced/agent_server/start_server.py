@@ -1,3 +1,9 @@
+# Install crash/hang/exception diagnostics before importing agent code so
+# startup failures and unhandled exceptions land in the Apps log stream.
+from scripts.app_diagnostics import install_diagnostics  # noqa: E402
+
+install_diagnostics()
+
 """Agent server entry point. load_dotenv must run before agent imports (auth config)."""
 
 # ruff: noqa: E402
@@ -37,7 +43,6 @@ class AgentServer(LongRunningAgentServer):
 agent_server = AgentServer(
     "ResponsesAgent",
     enable_chat_proxy=True,
-    db_instance_name=LAKEBASE_CONFIG.instance_name,
     db_autoscaling_endpoint=LAKEBASE_CONFIG.autoscaling_endpoint,
     db_project=LAKEBASE_CONFIG.autoscaling_project,
     db_branch=LAKEBASE_CONFIG.autoscaling_branch,

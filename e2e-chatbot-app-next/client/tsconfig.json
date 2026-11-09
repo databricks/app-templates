@@ -18,13 +18,13 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@chat-template/db": ["../packages/db/src/index.ts"],
-      "@chat-template/ai-sdk-providers": [
+      "@databricks/chatbot-db": ["../packages/db/src/index.ts"],
+      "@databricks/chatbot-ai-sdk-providers": [
         "../packages/ai-sdk-providers/src/index.ts"
       ],
-      "@chat-template/auth": ["../packages/auth/src/index.ts"],
-      "@chat-template/core": ["../packages/core/src/index.ts"],
-      "@chat-template/core/errors": ["../packages/core/src/errors.ts"]
+      "@databricks/chatbot-auth": ["../packages/auth/src/index.ts"],
+      "@databricks/chatbot-core": ["../packages/core/src/index.ts"],
+      "@databricks/chatbot-core/errors": ["../packages/core/src/errors.ts"]
     }
   },
   "include": ["src"],

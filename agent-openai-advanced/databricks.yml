@@ -35,6 +35,15 @@ resources:
           experiment:
             experiment_id: ""
             permission: 'CAN_MANAGE'
+
+        # NOTE: grants the app's service principal CAN_QUERY on the LLM endpoint so
+        # the deployed app (and UI-created apps via manifest.yaml) can call the model
+        # without a manual grant. If you change the model in agent_server/agent.py,
+        # update the name below to match.
+        - name: 'llm-endpoint'
+          serving_endpoint:
+            name: 'databricks-claude-sonnet-5-5'
+            permission: 'CAN_QUERY'
         - name: 'postgres'
           postgres:
             branch: "<your-lakebase-branch>"

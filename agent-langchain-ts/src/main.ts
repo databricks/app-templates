@@ -1,3 +1,5 @@
+// diagnostics bootstrap: install crash/exception logging before any other import
+import './diagnostics.js';
 import { config } from "dotenv";
 config();
 

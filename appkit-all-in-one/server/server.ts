@@ -1,4 +1,4 @@
-import { createApp, analytics, files, genie, lakebase, server } from '@databricks/appkit';
+import { createApp, analytics, files, genie, lakebase, server, serving } from '@databricks/appkit';
 import { setupSampleLakebaseRoutes } from './routes/lakebase/todo-routes';
 
 createApp({
@@ -8,6 +8,7 @@ createApp({
     genie(),
     lakebase(),
     server(),
+    serving(),
   ],
   async onPluginsReady(appkit) {
     await setupSampleLakebaseRoutes(appkit);

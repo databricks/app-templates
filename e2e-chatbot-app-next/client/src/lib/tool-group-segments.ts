@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@chat-template/core';
+import type { ChatMessage } from '@databricks/chatbot-core';
 
 export type ChatPart = ChatMessage['parts'][number];
 export type ToolPart = Extract<ChatPart, { type: 'dynamic-tool' }>;

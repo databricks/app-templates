@@ -38,7 +38,7 @@ This template includes both **short-term memory** (conversation history within a
 - **Long-term memory** uses `AsyncDatabricksStore` with memory tools to persist user preferences and information across multiple interactions.
 
 **Required setup:**
-1. Configure Lakebase — follow the `AskUserQuestion` flow in MANDATORY First Actions above to determine provisioned vs autoscaling and pass the right flags to quickstart
+1. Configure Lakebase — follow the `AskUserQuestion` flow in MANDATORY First Actions above to collect the autoscaling endpoint and pass it to quickstart
 2. Use `thread_id` in requests to maintain conversation context (see **agent-memory** skill)
 3. Use `user_id` in requests to scope long-term memories per user (see **agent-memory** skill)
 

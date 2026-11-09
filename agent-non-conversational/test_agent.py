@@ -18,7 +18,8 @@ def get_databricks_oauth_token(profile: Optional[str] = None) -> Optional[str]:
             cmd.extend(["--profile", profile])
         elif os.getenv("DATABRICKS_CONFIG_PROFILE"):
             cmd.extend(["--profile", os.getenv("DATABRICKS_CONFIG_PROFILE")])
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        # Argument list (no shell) for the Databricks CLI
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)  # nosemgrep: dangerous-subprocess-use-audit
         if result.returncode == 0:
             return json.loads(result.stdout).get("access_token")
     except:

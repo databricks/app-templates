@@ -17,7 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { DbIcon } from '@/components/ui/db-icon';
 import { NewChatIcon, SidebarCollapseIcon, SidebarExpandIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
-import type { ClientSession } from '@chat-template/auth';
+import type { ClientSession } from '@databricks/chatbot-auth';
 import { Button } from './ui/button';
 import { Action } from './elements/actions';
 

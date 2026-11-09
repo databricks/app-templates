@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@chat-template/core';
+import type { ChatMessage } from '@databricks/chatbot-core';
 import { createDatabricksMessageCitationMarkdown } from './databricks-message-citation';
 import type { TextUIPart } from 'ai';
 

@@ -3,7 +3,7 @@ import {
   type LanguageModelUsage,
   type UIMessageStreamWriter,
 } from 'ai';
-import { generateUUID } from '@chat-template/core';
+import { generateUUID } from '@databricks/chatbot-core';
 
 /**
  * Reads all chunks from a UI message stream, forwarding non-error parts to the
@@ -34,7 +34,7 @@ export async function drainStreamToWriter(
           'Mid-stream error, forwarding to client:',
           chunk.value.errorText,
         );
-        writer.write(chunk.value);
+        writer.write({ type: 'data-error', data: chunk.value.errorText ?? chunk.value.message ?? 'Unknown error' });
       } else {
         if (!receivedTextChunk && chunk.value.type.startsWith('text-')) {
           receivedTextChunk = true;

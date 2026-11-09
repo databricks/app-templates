@@ -220,13 +220,13 @@ Configure these in `.env` for local development, and in `databricks.yml` `config
 
 **Lakebase (required for memory and background mode):**
 
-Lakebase powers both memory (short-term and long-term) and background mode persistence. Configure either a provisioned instance OR an autoscaling project/branch — not both.
+Lakebase powers both memory (short-term and long-term) and background mode persistence. Configure an autoscaling Lakebase endpoint (or project/branch).
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LAKEBASE_INSTANCE_NAME` | Provisioned Lakebase instance name | _(option 1)_ |
-| `LAKEBASE_AUTOSCALING_PROJECT` | Autoscaling Lakebase project | _(option 2)_ |
-| `LAKEBASE_AUTOSCALING_BRANCH` | Autoscaling Lakebase branch | _(option 2)_ |
+| `LAKEBASE_AUTOSCALING_ENDPOINT` | Autoscaling Lakebase endpoint (resolved from the `postgres` resource) | _(required)_ |
+| `LAKEBASE_AUTOSCALING_PROJECT` | Autoscaling Lakebase project (alternative to endpoint) | _(optional)_ |
+| `LAKEBASE_AUTOSCALING_BRANCH` | Autoscaling Lakebase branch (alternative to endpoint) | _(optional)_ |
 | `DATABRICKS_EMBEDDING_ENDPOINT` | Embedding model for long-term memory vector search | `databricks-gte-large-en` |
 
 If no Lakebase variables are set, memory features and background mode are both disabled. The server falls back to stateless, standard request handling only.
@@ -462,6 +462,8 @@ Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tool
 5. **Grant Lakebase permissions to your App's Service Principal**
 
    After deploying, you need to ensure your app has access to the necessary Lakebase tables for memory. The Lakebase instance is already configured as a resource in `databricks.yml`, but you'll need to grant Postgres-level permissions on schemas and tables that were created during local testing.
+
+   > **Tip:** `uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type langgraph` grants all the permissions below automatically (it reads the autoscaling endpoint from `.env`). Run the SQL manually only if you prefer to do it by hand.
 
    Run the following SQL commands on your Lakebase instance (replace `app-sp-id` with your app's service principal UUID):
 

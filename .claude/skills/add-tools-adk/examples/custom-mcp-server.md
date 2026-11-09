@@ -11,7 +11,7 @@ Declare the target app as an `app` resource in `databricks.yml` and the bundle w
 ADK's `MCPToolset` needs the `mcp` package:
 
 ```bash
-uv add "google-adk[extensions]"
+uv add "google-adk[mcp]"
 ```
 
 ### 2. Add the MCP toolset in `agent_server/agent.py`

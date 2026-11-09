@@ -47,7 +47,7 @@ All handlers tag traces with: `mlflow.update_current_trace(metadata={"mlflow.tra
 
 - **LangGraph**: `DatabricksMultiServerMCPClient` wrapping `DatabricksMCPServer` objects. Tools fetched once at agent init via `.get_tools()`.
 - **OpenAI SDK**: `McpServer` used as async context manager per-request: `async with await init_mcp_server() as mcp_server:`
-- **ADK**: `MCPToolset` (with `StreamableHTTPConnectionParams`, `Authorization: Bearer` header) added to the agent's `tools` list. Requires the `mcp` extra (`google-adk[extensions]`).
+- **ADK**: `MCPToolset` (with `StreamableHTTPConnectionParams`, `Authorization: Bearer` header) added to the agent's `tools` list. Requires the `mcp` extra (`google-adk[mcp]`).
 
 ### Session/memory patterns
 

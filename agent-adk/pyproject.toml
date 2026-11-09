@@ -14,7 +14,9 @@ dependencies = [
     "databricks-agents>=1.9.3",
     "mlflow>=3.10.0",
     "google-adk>=2.0.0,<3",
-    "litellm>=1.104.0",
+    # litellm 1.106+ imports its proxy MCP catalog (needs mcp>=2.2) on every completion() with
+    # tools, while google-adk[mcp] needs mcp<2. Lift the cap once litellm makes that import lazy.
+    "litellm>=1.104.0,<1.106",
     "nest-asyncio>=1.6.0",
     "python-dotenv>=1.2.1",
     "opentelemetry-exporter-otlp-proto-grpc>=1.25.0",

@@ -14,7 +14,7 @@ description: "Add tools to your agent and grant required permissions in databric
 Without this, you'll get permission errors when the agent tries to use the resource.
 
 This template uses **Google ADK**. Databricks-hosted tools are connected with an ADK
-`MCPToolset`, which needs the `mcp` package — run `uv add "google-adk[extensions]"` once.
+`MCPToolset`, which needs the `mcp` package — run `uv add "google-adk[mcp]"` once.
 
 ## Workflow
 

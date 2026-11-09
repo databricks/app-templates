@@ -67,7 +67,7 @@ def create_agent(workspace_client: WorkspaceClient) -> LlmAgent:
     tools = [get_current_time]
     # To give the agent Databricks-hosted MCP tools (UC functions, Genie, Vector Search, the
     # built-in code interpreter), add an MCPToolset. This needs the `mcp` package —
-    # run `uv add "google-adk[extensions]"` — then:
+    # run `uv add "google-adk[mcp]"` — then:
     #   from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset
     #   from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
     #   host, token = get_databricks_host(workspace_client), get_bearer_token(workspace_client)

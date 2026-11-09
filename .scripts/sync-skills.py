@@ -22,12 +22,12 @@ SOURCE = REPO_ROOT / ".claude" / "skills"
 
 
 def copy_skill(src: Path, dest: Path, substitutions: dict = None):
-    """Copy skill directory, applying substitutions to SKILL.md."""
+    """Copy skill directory, applying substitutions to every .md file (including examples/)."""
     dest.mkdir(parents=True, exist_ok=True)
 
     for item in src.iterdir():
         if item.is_dir():
-            shutil.copytree(item, dest / item.name, dirs_exist_ok=True)
+            copy_skill(item, dest / item.name, substitutions)
         elif item.suffix == ".md" and substitutions:
             content = item.read_text()
             for placeholder, value in substitutions.items():

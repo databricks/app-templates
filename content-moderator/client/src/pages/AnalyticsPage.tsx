@@ -18,6 +18,16 @@ const tabClass = (active: boolean) =>
       : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
   }`;
 
+/** One row of config/queries/content_overview.sql. */
+type ContentOverviewRow = {
+  total_submissions: number | string | null;
+  pending_count: number | string | null;
+  approved_count: number | string | null;
+  rejected_count: number | string | null;
+  revision_count: number | string | null;
+  avg_compliance_score: number | string | null;
+};
+
 function SummaryCard({
   label,
   value,
@@ -46,10 +56,13 @@ function SummaryCard({
 }
 
 function DashboardTab() {
-  const { data: overview, loading: overviewLoading } = useAnalyticsQuery(
+  const { data, loading: overviewLoading } = useAnalyticsQuery(
     "content_overview",
     {},
   );
+  // Typegen runs non-blocking at build time (the tables are created by the app
+  // on first start), so the generated result type can be `unknown`.
+  const overview = data as ContentOverviewRow[] | null | undefined;
   const latest = overview && overview.length > 0 ? overview[0] : null;
 
   return (

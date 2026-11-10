@@ -22,6 +22,12 @@ The template ships with an insecure fallback `SECRET_KEY` for local development.
 
 ## Deploy to Databricks
 
+> **This bundle creates its own Lakebase database.** Unlike the other `*-postgres-app` templates, which bind an existing database, `databricks bundle deploy` creates a new Lakebase Autoscaling project (`django`) with a `development` branch; step 3 below adds the `django_app` database to it. Keep in mind:
+>
+> - The project ID `django` must be unique in the workspace. Change `project_id` in `databricks.yml` if it is already taken.
+> - `databricks bundle destroy` deletes the project, including all of its data.
+> - To use an existing database instead, remove the `postgres_projects` and `postgres_branches` resources from `databricks.yml` and point the app's `postgres` resource (`branch`, `database`) at your existing resource paths. Alternatively, create the app from the Databricks UI, where `manifest.yaml` lets you select an existing database, as with the other templates.
+
 ### 1. Authenticate
 
 ```console

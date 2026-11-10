@@ -77,22 +77,36 @@ databricks bundle run django_app -p <PROFILE> -t dev
 
 Instead of syncing files to a workspace folder, you can deploy directly from a Git repository. The app reads code from a Git reference (branch, tag, or commit) each time you deploy. See the [Databricks docs](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy) for full details.
 
-### 1. Create the app and configure the Git repository
+### 1. Create the app, configure the Git repository, and attach the database
+
+The app needs a Lakebase database resource named `postgres`: `app.yaml` reads `PGENDPOINT` from it (`valueFrom: postgres`). A Git-backed app does not get the resources declared in `databricks.yml`, so attach the database yourself.
 
 In the Databricks UI:
 
 1. Go to **Compute → Apps** and click **Create app**.
 2. In the **Configure Git repository** step, enter your repository URL (e.g. `https://github.com/org/repo`) and select the Git provider.
-3. For private repositories, click **Configure Git credential** on the app details page to give the app's service principal access. Public repositories do not require a credential.
-4. Click **Create app**.
+3. Add a **Database** resource with the resource key `postgres` and the permission **Can connect and create**, pointing at your Lakebase branch and database.
+4. For private repositories, click **Configure Git credential** on the app details page to give the app's service principal access. Public repositories do not require a credential.
+5. Click **Create app**.
 
 Or with the CLI:
 
 ```console
 databricks apps create my-app-name \
   --git-url https://github.com/org/repo \
-  --git-provider github
+  --git-provider github \
+  --profile <PROFILE>
+
+databricks apps create-update my-app-name --profile <PROFILE> --json '{
+  "update_mask": "resources",
+  "app": {"resources": [{"name": "postgres", "postgres": {
+    "branch": "projects/<PROJECT_ID>/branches/<BRANCH_ID>",
+    "database": "projects/<PROJECT_ID>/branches/<BRANCH_ID>/databases/<DATABASE_ID>",
+    "permission": "CAN_CONNECT_AND_CREATE"}}]}
+}'
 ```
+
+`update_mask: resources` replaces the app's whole resource list, so include any other resources the app already has.
 
 ### 2. Deploy from Git
 
@@ -108,30 +122,41 @@ Or with the CLI:
 
 ```console
 databricks apps deploy my-app-name \
-  --git-reference main \
-  --git-reference-type branch
+  --git-branch main \
+  --git-source-code-path django-postgres-app/ \
+  --profile <PROFILE>
 ```
 
-To deploy from a subdirectory, add `--source-code-path django-postgres-app/`.
+Use `--git-tag` or `--git-commit` instead of `--git-branch` to deploy a tag or a specific commit. `--git-source-code-path` is the app's directory within the repository; omit it if the app is at the repository root.
 
 ### 3. Redeploy after changes
 
 Push your changes to the Git repository, then click **Deploy** again (or re-run the CLI deploy command). Databricks pulls the latest commit from the configured reference.
 
-> **Note:** The Lakebase database still needs to be created separately as described in the DABs deployment section above. Git-backed deployment only changes how the app source code is delivered—resource provisioning remains the same.
+> **Note:** Git-backed deployment only changes how the app source code is delivered. The Lakebase project, branch, and database must already exist (for example, created by the bundle steps above), and step 1 attaches them to the app.
 
 ## Run locally
 
-1. Look up the `host` and endpoint `name`:
+The template targets Python 3.11, the Python version of the Databricks Apps runtime.
+
+1. Create a virtual environment and install the dependencies:
+
+```console
+cd django-postgres-app
+uv venv --python 3.11
+source .venv/bin/activate
+uv pip install -r requirements.txt
+```
+
+2. Look up the `host` and endpoint `name`:
 
 ```console
 databricks api get /api/2.0/postgres/projects/django/branches/development/endpoints -p <PROFILE>
 ```
 
-2. Start the app with `run-local`, passing connection details as environment variables.
+3. Start the app with `run-local`, passing connection details as environment variables.
 
 ```console
-# run the app code (assuming you have a virtual environment .venv there)
 PATH=".venv/bin:$PATH" databricks apps run-local -p <PROFILE> \
   --env PGENDPOINT=<ENDPOINT NAME> \
   --env PGHOST=<HOST> \
@@ -146,6 +171,8 @@ PATH=".venv/bin:$PATH" databricks apps run-local -p <PROFILE> \
 `DJANGO_DEV_EMAIL` enables admin access during local development since the `X-Forwarded-Email` header is not present outside Databricks Apps. The authentication middleware falls back to this variable only when `DEBUG` is enabled and the header is missing; in a deployed app (`DEBUG` off) it is ignored.
 
 ## Run tests
+
+With the virtual environment from *Run locally* activated:
 
 ```console
 python manage.py test

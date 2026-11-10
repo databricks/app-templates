@@ -130,7 +130,8 @@ PATH=".venv/bin:$PATH" databricks apps run-local -p <PROFILE> \
   --env PGUSER=<YOUR USER> \
   --env PGDATABASE=django_app \
   --env PGSSLMODE=require \
+  --env DEBUG=true \
   --env DJANGO_DEV_EMAIL=<YOUR EMAIL>
 ```
 
-`DJANGO_DEV_EMAIL` enables admin access during local development since the `X-Forwarded-Email` header is not present outside Databricks Apps. The authentication middleware falls back to this variable when set.
+`DJANGO_DEV_EMAIL` enables admin access during local development since the `X-Forwarded-Email` header is not present outside Databricks Apps. The authentication middleware falls back to this variable only when `DEBUG` is enabled and the header is missing; in a deployed app (`DEBUG` off) it is ignored.

@@ -9,32 +9,36 @@ wires that header into Django's RemoteUser infrastructure so that:
     are granted staff + superuser access on first login.
   - Otherwise, the first user to access the app becomes the superuser.
     Additional superusers can be managed via the admin portal.
+  - The session always follows the forwarded user: if a different
+    Databricks user shows up in the same browser, the previous session is
+    logged out and the new user is logged in. If the header is missing,
+    the session is logged out.
+  - For local development (DEBUG=True only), DJANGO_DEV_EMAIL stands in
+    for the header, which is not present outside Databricks Apps.
 """
 
 import os
 
-from django.contrib.auth import authenticate, login, logout
+from django.conf import settings
 from django.contrib.auth.backends import RemoteUserBackend
+from django.contrib.auth.middleware import RemoteUserMiddleware
 
 
-class DatabricksAppsMiddleware:
-    """Authenticate users via the X-Forwarded-Email header set by Databricks Apps."""
+class DatabricksAppsMiddleware(RemoteUserMiddleware):
+    """Authenticate users via the X-Forwarded-Email header set by Databricks Apps.
 
-    def __init__(self, get_response):
-        self.get_response = get_response
+    Django's RemoteUserMiddleware compares the session user with the header
+    on every request and re-authenticates when they differ.
+    """
+
+    header = "HTTP_X_FORWARDED_EMAIL"
 
     def __call__(self, request):
-        email = request.META.get("HTTP_X_FORWARDED_EMAIL")
-        if not email:
-            email = os.environ.get("DJANGO_DEV_EMAIL")
-        if email and not request.user.is_authenticated:
-            user = authenticate(request, remote_user=email)
-            if user:
-                request.user = user
-                login(request, user)
-        elif not email and request.user.is_authenticated:
-            logout(request)
-        return self.get_response(request)
+        if settings.DEBUG and self.header not in request.META:
+            dev_email = os.environ.get("DJANGO_DEV_EMAIL")
+            if dev_email:
+                request.META[self.header] = dev_email
+        return super().__call__(request)
 
 
 class DatabricksAppsBackend(RemoteUserBackend):

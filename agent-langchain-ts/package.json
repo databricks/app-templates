@@ -4,7 +4,7 @@
   "description": "TypeScript LangChain agent with MLflow tracing on Databricks",
   "type": "module",
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.23.4"
   },
   "scripts": {
     "predev": "bash scripts/setup-ui.sh",

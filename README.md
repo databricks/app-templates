@@ -48,6 +48,7 @@ See [Create an App from a Template](https://docs.databricks.com/aws/en/dev-tools
 | `streamlit-database-app` | A todo app that stores tasks in a Postgres database hosted on Databricks | Database |
 | `dash-database-app` | A todo app that stores tasks in a Postgres database hosted on Databricks | Database |
 | `flask-database-app` | A todo app that stores tasks in a Postgres database hosted on Databricks | Database |
+| `django-postgres-app` | A Django todo app that stores tasks in a Lakebase Autoscaling (Postgres) database hosted on Databricks | Database |
 
 ### AppKit
 

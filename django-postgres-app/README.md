@@ -11,6 +11,7 @@ entrypoint.sh             # Startup script: collectstatic, ensure_schema, migrat
 config/settings.py        # Django settings (database, CSRF, static files)
 config/auth.py            # Databricks Apps user authentication (X-Forwarded-Email)
 config/test_auth.py       # Tests for the authentication logic
+config/test_schema.py     # Tests that search_path and ensure_schema use the same quoted schema
 config/test_settings.py   # Test settings: in-memory SQLite instead of Lakebase
 lakebase/base.py          # Custom DB backend: injects OAuth tokens via Databricks SDK
 todos/                    # Sample Django app (CRUD todo list)

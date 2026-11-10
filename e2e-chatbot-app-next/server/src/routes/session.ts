@@ -5,7 +5,7 @@ import {
   type Router as RouterType,
 } from 'express';
 import { authMiddleware } from '../middleware/auth';
-import type { ClientSession } from '@chat-template/auth';
+import type { ClientSession } from '@databricks/chatbot-auth';
 
 export const sessionRouter: RouterType = Router();
 

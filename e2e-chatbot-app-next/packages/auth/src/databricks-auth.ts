@@ -4,8 +4,8 @@
  * Also handles user session management and SCIM API interactions
  */
 
-import type { User } from '@chat-template/utils';
-import { getHostUrl, getHostDomain } from '@chat-template/utils';
+import type { User } from '@databricks/chatbot-utils';
+import { getHostUrl, getHostDomain } from '@databricks/chatbot-utils';
 
 // ============================================================================
 // Types
@@ -230,7 +230,7 @@ export async function getDatabricksUserIdentity(): Promise<string> {
     return cliUserIdentity;
   }
 
-  const { spawnWithOutput } = await import('@chat-template/utils');
+  const { spawnWithOutput } = await import('@databricks/chatbot-utils');
 
   // Get options from environment
   const configProfile = process.env.DATABRICKS_CONFIG_PROFILE;
@@ -241,7 +241,7 @@ export async function getDatabricksUserIdentity(): Promise<string> {
     // Remove protocol if present and trailing slash
     host = cliHostCache.replace(/^https?:\/\//, '').replace(/\/$/, '');
   } else if (host) {
-    const { getHostDomain } = await import('@chat-template/utils');
+    const { getHostDomain } = await import('@databricks/chatbot-utils');
     host = getHostDomain(host);
   }
 
@@ -300,7 +300,7 @@ export async function getDatabricksCliToken(): Promise<string> {
     return cliToken;
   }
 
-  const { spawnWithOutput } = await import('@chat-template/utils');
+  const { spawnWithOutput } = await import('@databricks/chatbot-utils');
 
   // Get options from environment
   const configProfile = process.env.DATABRICKS_CONFIG_PROFILE;
@@ -311,7 +311,7 @@ export async function getDatabricksCliToken(): Promise<string> {
     // Remove protocol if present and trailing slash
     host = cliHostCache.replace(/^https?:\/\//, '').replace(/\/$/, '');
   } else if (host) {
-    const { getHostDomain } = await import('@chat-template/utils');
+    const { getHostDomain } = await import('@databricks/chatbot-utils');
     host = getHostDomain(host);
   }
 

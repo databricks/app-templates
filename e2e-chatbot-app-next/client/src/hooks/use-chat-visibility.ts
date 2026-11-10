@@ -6,7 +6,7 @@ import {
   getChatHistoryPaginationKey,
   type ChatHistory,
 } from '@/components/sidebar-history';
-import type { VisibilityType } from '@chat-template/core';
+import type { VisibilityType } from '@databricks/chatbot-core';
 
 export function useChatVisibility({
   chatId,

@@ -1,6 +1,8 @@
 import { motion } from 'framer-motion';
+import { useAppConfig } from '@/contexts/AppConfigContext';
 
 export const Greeting = () => {
+  const { greeting } = useAppConfig();
   return (
     <div
       key="overview"
@@ -12,7 +14,7 @@ export const Greeting = () => {
         exit={{ opacity: 0, y: 10 }}
         className="font-semibold text-lg md:text-xl text-center"
       >
-        What would you like to know?
+        {greeting}
       </motion.div>
     </div>
   );

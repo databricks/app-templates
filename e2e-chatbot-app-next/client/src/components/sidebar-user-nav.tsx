@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/sidebar';
 import { useSession } from '@/contexts/SessionContext';
 import { getAiGradientStyle } from './animation-assistant-icon';
-import type { ClientSession } from '@chat-template/auth';
+import type { ClientSession } from '@databricks/chatbot-auth';
 import { cn } from '../lib/utils';
 
 export function SidebarUserNav({

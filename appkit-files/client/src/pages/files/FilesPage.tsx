@@ -288,7 +288,7 @@ export function FilesPage() {
         </p>
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           {volumes.length > 1 && (
             <select
@@ -350,7 +350,7 @@ export function FilesPage() {
         </div>
       </div>
 
-      <div className="flex gap-6">
+      <div className="flex flex-col md:flex-row gap-4 md:gap-6">
         <DirectoryList
           className="flex-2 min-w-0"
           entries={entries}

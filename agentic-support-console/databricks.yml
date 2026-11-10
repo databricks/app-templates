@@ -1,0 +1,48 @@
+bundle:
+  name: support-console
+
+variables:
+  sql_warehouse_id:
+    description: SQL Warehouse ID
+  genie_space_id:
+    description: Genie Space ID for AI/BI natural language queries
+  postgres_branch:
+    description: Full Lakebase Postgres branch resource name. Obtain by running `databricks postgres list-branches projects/{project-id}`, select the desired item from the output array and use its .name value.
+  postgres_database:
+    description: Full Lakebase Postgres database resource name. Obtain by running `databricks postgres list-databases {branch-name}`, select the desired item from the output array and use its .name value. Requires the branch resource name.
+
+resources:
+  apps:
+    app:
+      name: 'support-console'
+      description: 'Internal AI-powered support console for admins'
+      source_code_path: ./
+      user_api_scopes:
+        - dashboards.genie
+      resources:
+        - name: sql-warehouse
+          sql_warehouse:
+            id: ${var.sql_warehouse_id}
+            permission: CAN_USE
+        - name: genie-space
+          genie_space:
+            name: genie-space
+            space_id: ${var.genie_space_id}
+            permission: CAN_RUN
+        - name: postgres
+          postgres:
+            branch: ${var.postgres_branch}
+            database: ${var.postgres_database}
+            permission: CAN_CONNECT_AND_CREATE
+
+targets:
+  default:
+    default: true
+    workspace:
+      host: REPLACE_ME # e.g. https://my-workspace.cloud.databricks.com
+
+    variables:
+      sql_warehouse_id: REPLACE_ME
+      genie_space_id: REPLACE_ME
+      postgres_branch: REPLACE_ME # e.g. projects/my-project/branches/production
+      postgres_database: REPLACE_ME # e.g. projects/my-project/branches/production/databases/my-db

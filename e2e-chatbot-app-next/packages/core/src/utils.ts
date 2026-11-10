@@ -1,5 +1,5 @@
 import type { UIMessagePart } from 'ai';
-import type { DBMessage } from '@chat-template/db';
+import type { DBMessage } from '@databricks/chatbot-db';
 import type { ChatMessage, ChatTools, CustomUIDataTypes } from './types';
 import { formatISO } from 'date-fns';
 

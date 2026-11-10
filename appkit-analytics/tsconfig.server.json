@@ -4,13 +4,8 @@
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.server.tsbuildinfo",
     "target": "ES2020",
     "lib": ["ES2020"],
-
-    /* Emit */
-    "outDir": "./dist",
-    "rootDir": "./",
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true
+    "noEmit": true,
+    "rootDir": "./"
   },
   "include": ["server/**/*", "shared/**/*", "config/**/*"],
   "exclude": ["node_modules", "dist", "client"]

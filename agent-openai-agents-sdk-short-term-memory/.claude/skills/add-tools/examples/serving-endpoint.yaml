@@ -1,7 +1,0 @@
-# Model Serving Endpoint
-# Use for: Model inference endpoints
-
-- name: 'my_endpoint'
-  serving_endpoint:
-    name: 'my_endpoint'
-    permission: 'CAN_QUERY'

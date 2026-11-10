@@ -1,4 +1,4 @@
-import type { Attachment } from '@chat-template/core';
+import type { Attachment } from '@databricks/chatbot-core';
 import { Loader } from './elements/loader';
 import { Button } from './ui/button';
 import { X } from 'lucide-react';

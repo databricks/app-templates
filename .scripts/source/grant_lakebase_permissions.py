@@ -7,13 +7,13 @@ Usage:
     # Get the SP client ID from your deployed app:
     databricks apps get <app-name> --output json | jq -r '.service_principal_client_id'
 
-    # Provisioned instance:
-    uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type <type> --instance-name <name>
+    # Autoscaling instance (endpoint):
+    uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type <type> --autoscaling-endpoint <endpoint>
 
-    # Autoscaling instance:
+    # Autoscaling instance (project + branch):
     uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type <type> --project <project> --branch <branch>
 
-    # Memory types: langgraph-short-term, langgraph-long-term, openai-short-term, long-running-agent
+    # Memory types: langgraph, openai
 """
 
 import argparse
@@ -24,32 +24,33 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Schema for memory tables. Defaults to "public" for backward compatibility.
+# Set LAKEBASE_AGENT_MEMORY_SCHEMA to use a custom schema (e.g. "agent_memory").
+MEMORY_SCHEMA = os.getenv("LAKEBASE_AGENT_MEMORY_SCHEMA", "public")
 
 # Per-memory-type schema -> table definitions.
 MEMORY_TYPE_SCHEMAS: dict[str, dict[str, list[str]]] = {
-    "langgraph-short-term": {
-        "public": [
+    "langgraph": {
+        MEMORY_SCHEMA: [
             "checkpoint_migrations",
             "checkpoint_writes",
             "checkpoints",
             "checkpoint_blobs",
-        ],
-    },
-    "langgraph-long-term": {
-        "public": [
             "store_migrations",
             "store",
             "store_vectors",
             "vector_migrations",
         ],
+        "agent_server": [
+            "responses",
+            "messages",
+        ],
     },
-    "openai-short-term": {
-        "public": [
+    "openai": {
+        MEMORY_SCHEMA: [
             "agent_sessions",
             "agent_messages",
         ],
-    },
-    "long-running-agent": {
         "agent_server": [
             "responses",
             "messages",
@@ -59,8 +60,8 @@ MEMORY_TYPE_SCHEMAS: dict[str, dict[str, list[str]]] = {
 
 # Memory types that need sequence privileges (auto-increment columns)
 NEEDS_SEQUENCES = {
-    "openai-short-term": ["public"],
-    "long-running-agent": ["agent_server"],
+    "openai": [MEMORY_SCHEMA, "agent_server"],
+    "langgraph": ["agent_server"],
 }
 
 # Shared schemas that need sequence privileges for all memory types.
@@ -73,6 +74,72 @@ SHARED_SCHEMAS: dict[str, list[str]] = {
     "ai_chatbot": ["Chat", "Message", "User", "Vote"],
     "drizzle": ["__drizzle_migrations"],
 }
+
+
+def _grant_permissions(client, grantee: str, memory_type: str):
+    """Grant all permissions for the given memory type to the grantee role."""
+    from databricks_ai_bridge.lakebase import (
+        SchemaPrivilege,
+        SequencePrivilege,
+        TablePrivilege,
+    )
+
+    # Build schema -> tables map
+    schema_tables: dict[str, list[str]] = dict(SHARED_SCHEMAS)
+    for schema, tables in MEMORY_TYPE_SCHEMAS[memory_type].items():
+        schema_tables.setdefault(schema, []).extend(tables)
+
+    schema_privileges = [SchemaPrivilege.USAGE, SchemaPrivilege.CREATE]
+    table_privileges = [
+        TablePrivilege.SELECT,
+        TablePrivilege.INSERT,
+        TablePrivilege.UPDATE,
+        TablePrivilege.DELETE,
+    ]
+
+    for schema, tables in schema_tables.items():
+        print(f"Granting schema privileges on '{schema}'...")
+        try:
+            client.grant_schema(
+                grantee=grantee, schemas=[schema], privileges=schema_privileges
+            )
+        except Exception as e:
+            print(f"  Warning: schema grant failed (may not exist yet): {e}")
+
+        qualified_tables = [f"{schema}.{t}" for t in tables]
+        print(f"  Granting table privileges on {qualified_tables}...")
+        try:
+            client.grant_table(
+                grantee=grantee, tables=qualified_tables, privileges=table_privileges
+            )
+        except Exception as e:
+            print(f"  Warning: table grant failed (may not exist yet): {e}")
+
+    # Grant sequence privileges (auto-increment columns).
+    seq_schemas = list(SHARED_SEQUENCE_SCHEMAS)
+    if memory_type in NEEDS_SEQUENCES:
+        seq_schemas.extend(NEEDS_SEQUENCES[memory_type])
+
+    for schema in seq_schemas:
+        print(f"Granting sequence privileges on '{schema}' schema...")
+        try:
+            client.grant_all_sequences_in_schema(
+                grantee=grantee,
+                schemas=[schema],
+                privileges=[
+                    SequencePrivilege.USAGE,
+                    SequencePrivilege.SELECT,
+                    SequencePrivilege.UPDATE,
+                ],
+            )
+        except Exception as e:
+            print(f"  Warning: sequence grant failed (may not exist yet): {e}")
+
+    print(
+        "\nPermission grants complete. If some grants failed because tables don't "
+        "exist yet, that's expected on a fresh branch — they'll be created on first "
+        "agent usage. Re-run this script after the first run to grant remaining permissions."
+    )
 
 
 def main():
@@ -92,9 +159,10 @@ def main():
         help="Memory type to grant permissions for",
     )
     parser.add_argument(
-        "--instance-name",
-        default=os.getenv("LAKEBASE_INSTANCE_NAME"),
-        help="Lakebase instance name for provisioned instances (default: LAKEBASE_INSTANCE_NAME from .env)",
+        "--autoscaling-endpoint",
+        default=os.getenv("LAKEBASE_AUTOSCALING_ENDPOINT"),
+        help="Lakebase autoscaling endpoint path (default: LAKEBASE_AUTOSCALING_ENDPOINT from .env). "
+        "e.g. projects/<project>/branches/<branch>/endpoints/primary",
     )
     parser.add_argument(
         "--project",
@@ -108,112 +176,55 @@ def main():
     )
     args = parser.parse_args()
 
-    has_provisioned = bool(args.instance_name)
     has_autoscaling = bool(args.project and args.branch)
 
-    if not has_provisioned and not has_autoscaling:
+    # Parse project/branch from --autoscaling-endpoint if provided
+    if args.autoscaling_endpoint and not has_autoscaling:
+        import re
+
+        m = re.match(r"projects/([^/]+)/branches/([^/]+)", args.autoscaling_endpoint)
+        if m:
+            args.project = m.group(1)
+            args.branch = m.group(2)
+            has_autoscaling = True
+        else:
+            print(
+                f"Error: Could not parse project/branch from endpoint '{args.autoscaling_endpoint}'.\n"
+                "  Expected format: projects/<project>/branches/<branch>/endpoints/<endpoint>",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    if not has_autoscaling:
         print(
-            "Error: Lakebase connection is required. Provide one of:\n"
-            "  Provisioned:  --instance-name <name>  (or set LAKEBASE_INSTANCE_NAME in .env)\n"
-            "  Autoscaling:  --project <proj> --branch <branch>  (or set LAKEBASE_AUTOSCALING_PROJECT + LAKEBASE_AUTOSCALING_BRANCH in .env)",
+            "Error: Lakebase autoscaling connection is required. Provide one of:\n"
+            "  --autoscaling-endpoint <endpoint>  (or set LAKEBASE_AUTOSCALING_ENDPOINT in .env)\n"
+            "  --project <proj> --branch <branch>  (or set LAKEBASE_AUTOSCALING_PROJECT + LAKEBASE_AUTOSCALING_BRANCH in .env)",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    from databricks_ai_bridge.lakebase import (
-        LakebaseClient,
-        SchemaPrivilege,
-        SequencePrivilege,
-        TablePrivilege,
-    )
+    from databricks_ai_bridge.lakebase import LakebaseClient
 
-    client = LakebaseClient(
-        instance_name=args.instance_name or None,
+    with LakebaseClient(
         project=args.project or None,
         branch=args.branch or None,
-    )
-    sp_id = args.sp_client_id
-    memory_type = args.memory_type
-
-    if has_provisioned:
-        print(f"Using provisioned instance: {args.instance_name}")
-    else:
+    ) as client:
         print(f"Using autoscaling project: {args.project}, branch: {args.branch}")
-    print(f"Memory type: {memory_type}")
+        print(f"Memory type: {args.memory_type}")
 
-    # Build schema -> tables map for the selected memory type
-    schema_tables: dict[str, list[str]] = {
-        **MEMORY_TYPE_SCHEMAS[memory_type],
-        **SHARED_SCHEMAS,
-    }
-
-    # 1. Create role
-    print(f"Creating role for SP {sp_id}...")
-    try:
-        client.create_role(sp_id, "SERVICE_PRINCIPAL")
-        print("  Role created.")
-    except Exception as e:
-        if "already exists" in str(e).lower():
-            print("  Role already exists, skipping.")
-        else:
-            raise
-
-    # 2. Grant schema + table privileges
-    schema_privileges = [SchemaPrivilege.USAGE, SchemaPrivilege.CREATE]
-    table_privileges = [
-        TablePrivilege.SELECT,
-        TablePrivilege.INSERT,
-        TablePrivilege.UPDATE,
-        TablePrivilege.DELETE,
-    ]
-
-    for schema, tables in schema_tables.items():
-        print(f"Granting schema privileges on '{schema}'...")
+        grantee = args.sp_client_id
+        print(f"Creating role for SP {grantee}...")
         try:
-            client.grant_schema(
-                grantee=sp_id, schemas=[schema], privileges=schema_privileges
-            )
+            client.create_role(grantee, "SERVICE_PRINCIPAL")
+            print("  Role created.")
         except Exception as e:
-            print(f"  Warning: schema grant failed (may not exist yet): {e}")
+            if "already exists" in str(e).lower():
+                print("  Role already exists, skipping.")
+            else:
+                raise
 
-        qualified_tables = [f"{schema}.{t}" for t in tables]
-        print(f"  Granting table privileges on {qualified_tables}...")
-        try:
-            client.grant_table(
-                grantee=sp_id, tables=qualified_tables, privileges=table_privileges
-            )
-        except Exception as e:
-            print(f"  Warning: table grant failed (may not exist yet): {e}")
-
-    # 3. Grant sequence privileges (auto-increment columns).
-    # Note: DELETE is not a valid privilege for sequences, so we grant only
-    # USAGE, SELECT, UPDATE.
-    # All memory types need drizzle sequences (Chat UI uses SERIAL PRIMARY KEY).
-    # Some memory types need additional per-type sequences.
-    seq_schemas = list(SHARED_SEQUENCE_SCHEMAS)
-    if memory_type in NEEDS_SEQUENCES:
-        seq_schemas.extend(NEEDS_SEQUENCES[memory_type])
-
-    for schema in seq_schemas:
-        print(f"Granting sequence privileges on '{schema}' schema...")
-        try:
-            client.grant_all_sequences_in_schema(
-                grantee=sp_id,
-                schemas=[schema],
-                privileges=[
-                    SequencePrivilege.USAGE,
-                    SequencePrivilege.SELECT,
-                    SequencePrivilege.UPDATE,
-                ],
-            )
-        except Exception as e:
-            print(f"  Warning: sequence grant failed (may not exist yet): {e}")
-
-    print(
-        "\nPermission grants complete. If some grants failed because tables don't "
-        "exist yet, that's expected on a fresh branch — they'll be created on first "
-        "agent usage. Re-run this script after the first run to grant remaining permissions."
-    )
+        _grant_permissions(client, grantee, args.memory_type)
 
 
 if __name__ == "__main__":

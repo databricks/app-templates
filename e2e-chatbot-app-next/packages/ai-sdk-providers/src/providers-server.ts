@@ -1,13 +1,13 @@
 import type { LanguageModelV3 } from '@ai-sdk/provider';
 
-import { getHostUrl } from '@chat-template/utils';
+import { getHostUrl } from '@databricks/chatbot-utils';
 // Import auth module directly
 import {
   getDatabricksToken,
   getAuthMethod,
   getDatabricksUserIdentity,
   getCachedCliHost,
-} from '@chat-template/auth';
+} from '@databricks/chatbot-auth';
 import { createDatabricksProvider } from '@databricks/ai-sdk-provider';
 import { extractReasoningMiddleware, wrapLanguageModel } from 'ai';
 import { shouldInjectContextForEndpoint } from './request-context';
@@ -194,12 +194,12 @@ export const databricksFetch: typeof fetch = async (input, init) => {
               const data = line.slice(5).trim();
               try {
                 const parsed = JSON.parse(data);
-                console.log(`[SSE #${eventCounter}]`, JSON.stringify(parsed));
+                console.log('[SSE #%d]', eventCounter, JSON.stringify(parsed));
               } catch {
-                console.log(`[SSE #${eventCounter}] (raw)`, data);
+                console.log('[SSE #%d] (raw)', eventCounter, data);
               }
             } else if (line.trim()) {
-              console.log(`[SSE #${eventCounter}] (line)`, line);
+              console.log('[SSE #%d] (line)', eventCounter, line);
             }
           }
 
@@ -325,9 +325,9 @@ const getEndpointDetails = async (servingEndpoint: string) => {
   const userApiScopes = data.auth_policy?.user_auth_policy?.api_scopes ?? [];
   const isOboEnabled = userApiScopes.length > 0 || isSupervisorAgent;
 
-  // serving.serving-endpoints is always needed for OBO (to call the endpoint as the user)
-  if (isOboEnabled && !userApiScopes.includes('serving.serving-endpoints')) {
-    userApiScopes.push('serving.serving-endpoints');
+  // model-serving is always needed for OBO (to call the endpoint as the user)
+  if (isOboEnabled && !userApiScopes.includes('model-serving')) {
+    userApiScopes.push('model-serving');
   }
 
   if (isOboEnabled) {

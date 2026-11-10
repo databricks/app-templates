@@ -1,0 +1,9 @@
+version: 1
+name: "Chat UI (Streamlit)"
+description: "A Streamlit chat UI that queries a remote agent endpoint or foundation model hosted on Databricks Model Serving."
+
+resource_specs:
+  - name: "serving-endpoint"
+    description: "The Databricks Model Serving endpoint hosting the LLM or agent that powers the app's responses."
+    serving_endpoint_spec:
+      permission: "CAN_QUERY"

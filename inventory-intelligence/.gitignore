@@ -1,0 +1,10 @@
+node_modules/
+dist/
+client/dist/
+.env
+*.local
+.DS_Store
+
+# AppKit generated types (regenerated at build)
+shared/appkit-types/analytics.d.ts
+shared/appkit-types/serving.d.ts

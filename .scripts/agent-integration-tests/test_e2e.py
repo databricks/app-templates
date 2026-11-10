@@ -1,4 +1,6 @@
 import os
+import sys
+import threading
 import time
 import traceback
 import uuid
@@ -9,11 +11,14 @@ from pathlib import Path
 
 import pytest
 from helpers import (
+    _fmt_duration,
+    _gh_endgroup,
+    _gh_group,
     _log,
     apply_edits,
     bundle_deploy,
     bundle_destroy,
-    bundle_run,
+    bundle_run_nowait,
     capture_app_logs,
     clean_template,
     get_oauth_token,
@@ -27,6 +32,7 @@ from helpers import (
     set_log_file,
     start_server,
     stop_server,
+    uv_sync,
     wait_for_app_ready,
 )
 from template_config import TemplateConfig, build_templates
@@ -46,7 +52,7 @@ NON_CONVERSATIONAL_PAYLOAD = {
 
 
 def _template_id(t: TemplateConfig) -> str:
-    """Generate a unique test ID like 'agent-langgraph-short-term-memory[autoscaling]'."""
+    """Generate a unique test ID like 'agent-langgraph-advanced[autoscaling]'."""
     if t.lakebase_type:
         return f"{t.name}[{t.lakebase_type}]"
     return t.name
@@ -72,44 +78,101 @@ def _assert_tool_time_in_result(result: dict):
     assert False, f"No function_call_output with ISO datetime found in result: {result}"
 
 
+# Per-thread phase log — each thread entering a phase() appends to its own
+# list, so parallel workers (local + deploy) don't stomp each other's
+# timing records. Main thread aggregates into a summary at end of test.
+_phase_records: dict[int, list[dict]] = {}
+_phase_records_lock = threading.Lock()
+
+
 @contextmanager
 def phase(name: str):
-    """Wrap a test phase so exceptions carry a [phase] prefix."""
-    _log(f"\n--- Phase: {name} ---")
+    """Wrap a test phase with timing, GH Actions grouping, and outcome tracking.
+
+    In CI: emits ``::group::[phase] <name>`` / ``::endgroup::`` so the section
+    is collapsible. Locally and in the per-template log file: emits a plain
+    header line.
+
+    On exit, records ``{name, status, duration, error}`` under the current
+    thread's id in ``_phase_records`` so ``_emit_phase_summary()`` can print
+    a table at end of test.
+
+    Exceptions are re-raised as ``RuntimeError(f"[{name}] {exc}")`` so the
+    phase name is visible in the pytest failure output.
+    """
+    _gh_group(f"[phase] {name}")
+    _log(f"=== {name} ===")
+    tid = threading.get_ident()
+    t0 = time.monotonic()
     try:
         yield
     except Exception as exc:
-        _log(f"Phase {name} FAILED: {exc}")
+        duration = time.monotonic() - t0
+        with _phase_records_lock:
+            _phase_records.setdefault(tid, []).append({
+                "name": name,
+                "status": "FAILED",
+                "duration": duration,
+                "error": str(exc)[:400],
+            })
+        _log(f"✗ [{name}] FAILED in {_fmt_duration(duration)}: {exc}")
+        _gh_endgroup()
         raise RuntimeError(f"[{name}] {exc}") from exc
-    _log(f"Phase {name} completed")
+    duration = time.monotonic() - t0
+    with _phase_records_lock:
+        _phase_records.setdefault(tid, []).append({
+            "name": name,
+            "status": "OK",
+            "duration": duration,
+            "error": None,
+        })
+    _log(f"✓ [{name}] done in {_fmt_duration(duration)}")
+    _gh_endgroup()
+
+
+def _emit_phase_summary(test_name: str, test_outcome: str, test_duration: float) -> None:
+    """Print a per-phase summary table for the current thread's phases.
+
+    Pops the records so subsequent tests in the same process start clean.
+    """
+    tid = threading.get_ident()
+    with _phase_records_lock:
+        phases = _phase_records.pop(tid, [])
+    if not phases:
+        return
+    print("")
+    print("═" * 64)
+    print(f"  {test_outcome}  {test_name}  (total {_fmt_duration(test_duration)})")
+    print("─" * 64)
+    for p in phases:
+        marker = "✗" if p["status"] == "FAILED" else "✓"
+        print(f"  {marker}  {p['name']:<28} {_fmt_duration(p['duration']):>10}")
+        if p["error"]:
+            # Indent the first 200 chars of the error under the phase line
+            print(f"       {p['error'][:200]}")
+    print("═" * 64)
+    print("")
 
 
 def pytest_generate_tests(metafunc):
     """Build templates from CLI options and parametrize at collection time.
 
-    Lakebase variants are filtered based on available config:
-    - Provisioned variants require --lakebase-provisioned-name
-    - Autoscaling variants require --lakebase-autoscaling-project AND --lakebase-autoscaling-branch
-    If neither is provided, all lakebase variants are excluded.
+    Lakebase (autoscaling) variants require --lakebase-autoscaling-endpoint.
+    If it is not provided, lakebase variants are excluded.
     """
     if "template" in metafunc.fixturenames:
         config = metafunc.config
         templates = build_templates(
             genie_space_id=config.getoption("--genie-space-id"),
             serving_endpoint=config.getoption("--serving-endpoint"),
+            target_app_name=config.getoption("--target-app-name"),
         )
 
-        has_provisioned = bool(config.getoption("--lakebase-provisioned-name"))
-        has_autoscaling = bool(
-            config.getoption("--lakebase-autoscaling-project")
-            and config.getoption("--lakebase-autoscaling-branch")
-        )
+        has_autoscaling = bool(config.getoption("--lakebase-autoscaling-endpoint"))
 
-        # Filter out lakebase variants that can't run with available config
+        # Filter out lakebase variants that can't run without autoscaling config
         filtered = []
         for t in templates:
-            if t.lakebase_type == "provisioned" and not has_provisioned:
-                continue
             if t.lakebase_type == "autoscaling" and not has_autoscaling:
                 continue
             filtered.append(t)
@@ -192,80 +255,99 @@ def _test_statefulness(
     base_url: str,
     token: str | None = None,
 ):
-    """Test memory persistence for short-term and long-term memory templates."""
+    """Test session memory persistence for advanced templates."""
     auth_headers = {"Authorization": f"Bearer {token}"} if token else None
-    template_name = template.name
 
-    if "short-term-memory" in template_name:
-        session_id = str(uuid.uuid4())
-        _log(f"Testing short-term memory statefulness with session {session_id}")
+    session_id = str(uuid.uuid4())
+    _log(f"Testing session memory with session {session_id}")
 
-        # Determine custom_inputs key based on SDK
-        if "langgraph" in template_name:
-            id_key = "thread_id"
-        else:
-            id_key = "session_id"
+    # Determine custom_inputs key based on SDK
+    if "langgraph" in template.name:
+        id_key = "thread_id"
+    else:
+        id_key = "session_id"
 
-        # First message: set a fact
-        payload1 = {
-            "input": [{"role": "user", "content": "My favorite color is purple"}],
-            "custom_inputs": {id_key: session_id},
-        }
-        result1 = query_endpoint(base_url, payload1, "/invocations", auth_headers)
-        assert "output" in result1, f"First statefulness query missing 'output': {result1}"
+    # First message: set a fact
+    payload1 = {
+        "input": [{"role": "user", "content": "My favorite color is purple"}],
+        "custom_inputs": {id_key: session_id},
+    }
+    result1 = query_endpoint(base_url, payload1, "/invocations", auth_headers)
+    assert "output" in result1, f"First statefulness query missing 'output': {result1}"
 
-        # Second message: recall the fact
-        payload2 = {
-            "input": [{"role": "user", "content": "What is my favorite color?"}],
-            "custom_inputs": {id_key: session_id},
-        }
-        result2 = query_endpoint(base_url, payload2, "/invocations", auth_headers)
-        assert "output" in result2, f"Second statefulness query missing 'output': {result2}"
+    # Second message: recall the fact
+    payload2 = {
+        "input": [{"role": "user", "content": "What is my favorite color?"}],
+        "custom_inputs": {id_key: session_id},
+    }
+    result2 = query_endpoint(base_url, payload2, "/invocations", auth_headers)
+    assert "output" in result2, f"Second statefulness query missing 'output': {result2}"
 
-        response_text = _extract_response_text(result2)
-        assert "purple" in response_text.lower(), (
-            f"Short-term memory test failed: expected 'purple' in response, got: {response_text}"
-        )
-        _log("Short-term memory statefulness test PASSED")
-
-    elif "long-term-memory" in template_name:
-        _log("Testing long-term memory statefulness")
-
-        # First message: store a fact
-        payload1 = {
-            "input": [{"role": "user", "content": "Remember that my favorite color is purple"}],
-            "context": {"user_id": "test@example.com"},
-        }
-        result1 = query_endpoint(base_url, payload1, "/invocations", auth_headers)
-        assert "output" in result1, f"First statefulness query missing 'output': {result1}"
-
-        # Second message: recall the fact
-        payload2 = {
-            "input": [{"role": "user", "content": "What is my favorite color?"}],
-            "context": {"user_id": "test@example.com"},
-        }
-        result2 = query_endpoint(base_url, payload2, "/invocations", auth_headers)
-        assert "output" in result2, f"Second statefulness query missing 'output': {result2}"
-
-        response_text = _extract_response_text(result2)
-        assert "purple" in response_text.lower(), (
-            f"Long-term memory test failed: expected 'purple' in response, got: {response_text}"
-        )
-        _log("Long-term memory statefulness test PASSED")
+    response_text = _extract_response_text(result2)
+    assert "purple" in response_text.lower(), (
+        f"Session memory test failed: expected 'purple' in response, got: {response_text}"
+    )
+    _log("Session memory test PASSED")
 
 
-def _run_local(template: TemplateConfig, template_dir: Path, log_file: Path):
+def _test_long_term_memory(
+    template: TemplateConfig,
+    base_url: str,
+    token: str | None = None,
+):
+    """Test long-term memory persistence across sessions (langgraph-advanced only)."""
+    auth_headers = {"Authorization": f"Bearer {token}"} if token else None
+    user_id = f"test-ltm-{uuid.uuid4().hex[:8]}@example.com"
+    _log(f"Testing long-term memory with user {user_id}")
+
+    # Session 1: store a fact
+    payload1 = {
+        "input": [{"role": "user", "content": "Remember that my favorite color is purple"}],
+        "custom_inputs": {"thread_id": str(uuid.uuid4()), "user_id": user_id},
+    }
+    result1 = query_endpoint(base_url, payload1, "/invocations", auth_headers)
+    assert "output" in result1, f"First LTM query missing 'output': {result1}"
+
+    # Session 2 (different thread, same user): recall the fact
+    payload2 = {
+        "input": [{"role": "user", "content": "What is my favorite color?"}],
+        "custom_inputs": {"thread_id": str(uuid.uuid4()), "user_id": user_id},
+    }
+    result2 = query_endpoint(base_url, payload2, "/invocations", auth_headers)
+    assert "output" in result2, f"Second LTM query missing 'output': {result2}"
+
+    response_text = _extract_response_text(result2)
+    assert "purple" in response_text.lower(), (
+        f"Long-term memory test failed: expected 'purple' in response, got: {response_text}"
+    )
+    _log("Long-term memory test PASSED")
+
+
+def _run_local(
+    template: TemplateConfig,
+    template_dir: Path,
+    log_file: Path,
+    server_started_event: threading.Event | None = None,
+):
     """Local phase: start server -> curl endpoints -> stop server -> evaluate."""
     set_log_file(log_file)
     _log(f"\n{'=' * 60}")
     _log(f"LOCAL PHASE: {template.name} [{template.lakebase_type or 'no-lakebase'}]")
     _log(f"{'=' * 60}")
-    proc, port = start_server(template_dir)
+    try:
+        proc, port = start_server(template_dir)
+    finally:
+        # Signal deploy thread that server has started (or failed to start),
+        # so it's safe to modify pyproject.toml for deploy.
+        if server_started_event:
+            server_started_event.set()
     base_url = f"http://localhost:{port}"
     try:
         _query_endpoints(template, base_url)
-        if "short-term-memory" in template.name or "long-term-memory" in template.name:
+        if template.is_advanced:
             _test_statefulness(template, base_url)
+            if "langgraph" in template.name:
+                _test_long_term_memory(template, base_url)
         if template.has_evaluate:
             run_evaluate(template_dir)
         elif not template.is_conversational:
@@ -278,33 +360,30 @@ def _run_deploy(
     template: TemplateConfig,
     template_dir: Path,
     profile: str,
-    lakebase_provisioned_name: str,
     log_file: Path,
     no_destroy: bool = False,
-    lakebase_project: str | None = None,
-    lakebase_branch: str | None = None,
+    lakebase_autoscaling_endpoint: str | None = None,
+    server_started_event: threading.Event | None = None,
 ):
     """Deploy phase: bundle deploy -> grant perms -> run -> wait -> query -> destroy."""
     set_log_file(log_file)
     _log(f"\n{'=' * 60}")
     _log(f"DEPLOY PHASE: {template.name} [{template.lakebase_type or 'no-lakebase'}]")
     _log(f"{'=' * 60}")
+    # Wait for local server to start before bundle_deploy, which may strip
+    # [tool.uv.sources] from pyproject.toml — if uv is still resolving deps
+    # in the local thread, the strip would break it.
+    if server_started_event:
+        _log("Waiting for local server to start before deploying...")
+        server_started_event.wait(timeout=120)
+        _log("Local server started, proceeding with deploy")
     bundle_deploy(template_dir, profile, template.app_resource_key, template.dev_app_name)
-    if template.needs_lakebase:
-        if template.lakebase_type == "autoscaling":
-            grant_lakebase_access(
-                template.dev_app_name,
-                profile,
-                lakebase_project=lakebase_project,
-                lakebase_branch=lakebase_branch,
-            )
-        else:
-            grant_lakebase_access(
-                template.dev_app_name,
-                profile,
-                instance_name=lakebase_provisioned_name,
-            )
-    bundle_run(template_dir, template.app_resource_key, profile)
+    if template.needs_lakebase and lakebase_autoscaling_endpoint:
+        grant_lakebase_access(
+            template.dev_app_name, profile,
+            autoscaling_endpoint=lakebase_autoscaling_endpoint,
+        )
+    bundle_run_nowait(template_dir, template.app_resource_key, profile, template.dev_app_name)
     try:
         app_url, token = wait_for_app_ready(template.dev_app_name, profile)
 
@@ -323,21 +402,12 @@ def _run_deploy(
                 if attempt < 2:
                     # Re-grant lakebase access to cover tables/sequences
                     # created by the app on its first request
-                    if template.needs_lakebase:
+                    if template.needs_lakebase and lakebase_autoscaling_endpoint:
                         _log("Re-running lakebase grants to cover newly created objects...")
-                        if template.lakebase_type == "autoscaling":
-                            grant_lakebase_access(
-                                template.dev_app_name,
-                                profile,
-                                lakebase_project=lakebase_project,
-                                lakebase_branch=lakebase_branch,
-                            )
-                        else:
-                            grant_lakebase_access(
-                                template.dev_app_name,
-                                profile,
-                                instance_name=lakebase_provisioned_name,
-                            )
+                        grant_lakebase_access(
+                            template.dev_app_name, profile,
+                            autoscaling_endpoint=lakebase_autoscaling_endpoint,
+                        )
                     token = get_oauth_token(profile)  # refresh token on retry
                     time.sleep(30)
         if last_exc is not None:
@@ -355,7 +425,7 @@ def _run_deploy(
             _log("--no-destroy: skipping bundle destroy")
 
 
-def test_e2e(template, repo_root, profile, lakebase_provisioned_name, lakebase_project, lakebase_branch, request):
+def test_e2e(template, repo_root, profile, lakebase_autoscaling_endpoint, request):
     """Full e2e test: clean -> quickstart -> edits -> (local || deploy) -> revert."""
     os.environ["DATABRICKS_CONFIG_PROFILE"] = profile
 
@@ -365,6 +435,9 @@ def test_e2e(template, repo_root, profile, lakebase_provisioned_name, lakebase_p
 
     if skip_local and skip_deploy:
         pytest.skip("Both --skip-local and --skip-deploy specified")
+
+    test_label = f"{template.name}" + (f"[{template.lakebase_type}]" if template.lakebase_type else "")
+    test_t0 = time.monotonic()
 
     template_dir = repo_root / template.name
 
@@ -376,7 +449,7 @@ def test_e2e(template, repo_root, profile, lakebase_provisioned_name, lakebase_p
     log_file.write_text("")  # clear previous run
     set_log_file(log_file)
 
-    # Snapshot files that quickstart may modify
+    # Snapshot files that setup may modify (only needed for non-temp dirs)
     yml_path = template_dir / "databricks.yml"
     yml_original = yml_path.read_text() if yml_path.exists() else None
 
@@ -385,66 +458,91 @@ def test_e2e(template, repo_root, profile, lakebase_provisioned_name, lakebase_p
 
     env_path = template_dir / ".env"
 
-    with phase("setup:clean"):
-        clean_template(template_dir)
+    try:
+        # Always run setup (clean/quickstart) so experiment IDs and lakebase
+        # config are populated, even when only deploying.
+        with phase("setup:clean"):
+            clean_template(template_dir)
 
-    with phase("setup:quickstart"):
-        if template.needs_lakebase:
-            if template.lakebase_type == "autoscaling":
+        with phase("setup:uv-sync"):
+            uv_sync(template_dir)
+
+        with phase("setup:quickstart"):
+            if template.needs_lakebase:
                 run_quickstart(
                     template_dir,
                     profile,
-                    lakebase_autoscaling_project=lakebase_project,
-                    lakebase_autoscaling_branch=lakebase_branch,
+                    lakebase_autoscaling_endpoint=lakebase_autoscaling_endpoint,
                 )
             else:
-                run_quickstart(template_dir, profile, lakebase=lakebase_provisioned_name)
-        else:
-            run_quickstart(template_dir, profile)
+                run_quickstart(template_dir, profile, skip_lakebase=True)
 
-    with phase("setup:edits"):
-        edits = list(template.pre_test_edits)
-        originals = apply_edits(edits, template_dir)
+        with phase("setup:edits"):
+            edits = list(template.pre_test_edits)
+            originals = apply_edits(edits, template_dir)
 
-    try:
-        if skip_deploy:
-            with phase("local"):
-                _run_local(template, template_dir, log_file)
-            return
+        try:
+            if skip_local:
+                with phase("deploy"):
+                    _run_deploy(
+                        template, template_dir, profile,
+                        log_file, no_destroy, lakebase_autoscaling_endpoint,
+                    )
+                return
 
-        if skip_local:
-            with phase("deploy"):
-                _run_deploy(
-                    template, template_dir, profile, lakebase_provisioned_name,
-                    log_file, no_destroy, lakebase_project, lakebase_branch,
-                )
-            return
+            if skip_deploy:
+                with phase("local"):
+                    _run_local(template, template_dir, log_file)
+                return
 
-        # Run local and deploy in parallel
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            local_future: Future = executor.submit(_run_local, template, template_dir, log_file)
-            deploy_future: Future = executor.submit(
-                _run_deploy, template, template_dir, profile, lakebase_provisioned_name,
-                log_file, no_destroy, lakebase_project, lakebase_branch,
-            )
+            # Run local and deploy in parallel.
+            # Deploy may strip [tool.uv.sources] from pyproject.toml, so it
+            # must wait for the local server to finish starting first.
+            # Wrapped in a single phase so the outer timing + grouping
+            # reflect "the main part of the test took N minutes"; each
+            # worker still logs its own progress via _log() inline.
+            with phase("parallel:local+deploy"):
+                server_started = threading.Event()
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    local_future: Future = executor.submit(
+                        _run_local, template, template_dir, log_file, server_started,
+                    )
+                    deploy_future: Future = executor.submit(
+                        _run_deploy, template, template_dir, profile,
+                        log_file, no_destroy, lakebase_autoscaling_endpoint, server_started,
+                    )
 
-            errors: list[str] = []
-            for name, future in [("local", local_future), ("deploy", deploy_future)]:
-                try:
-                    future.result()
-                except Exception as exc:
-                    errors.append(f"{name}:\n{''.join(traceback.format_exception(exc))}")
+                    errors: list[str] = []
+                    for name, future in [("local", local_future), ("deploy", deploy_future)]:
+                        try:
+                            future.result()
+                        except Exception as exc:
+                            errors.append(f"{name}:\n{''.join(traceback.format_exception(exc))}")
 
-            if errors:
-                raise AssertionError("Failures in parallel phases:\n" + "\n".join(errors))
+                    if errors:
+                        raise AssertionError("Failures in parallel phases:\n" + "\n".join(errors))
+        finally:
+            revert_edits(originals)
+            # Restore databricks.yml to pre-quickstart state
+            if yml_original is not None:
+                yml_path.write_text(yml_original)
+            # Restore app.yaml to pre-quickstart state
+            if app_yaml_original is not None:
+                app_yaml_path.write_text(app_yaml_original)
+            # Remove .env created by quickstart
+            if env_path.exists():
+                env_path.unlink()
     finally:
-        revert_edits(originals)
-        # Restore databricks.yml to pre-quickstart state
-        if yml_original is not None:
-            yml_path.write_text(yml_original)
-        # Restore app.yaml to pre-quickstart state
-        if app_yaml_original is not None:
-            app_yaml_path.write_text(app_yaml_original)
-        # Remove .env created by quickstart
-        if env_path.exists():
-            env_path.unlink()
+        # Emit per-phase summary (main-thread phases; parallel workers
+        # log their own detail inline). sys.exc_info() tells us whether
+        # an exception is propagating — in finally, active exception
+        # means FAILED.
+        if sys.exc_info()[0] is not None:
+            test_outcome = "✗ FAILED"
+        else:
+            test_outcome = "✓ PASSED"
+        _emit_phase_summary(
+            test_name=test_label,
+            test_outcome=test_outcome,
+            test_duration=time.monotonic() - test_t0,
+        )

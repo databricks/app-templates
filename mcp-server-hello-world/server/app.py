@@ -32,8 +32,15 @@ STATIC_DIR = Path(__file__).parent / "../static"
 load_tools(mcp_server)
 
 # Convert the MCP server to a streamable HTTP application
-# This creates a FastAPI app that implements the MCP protocol over HTTP
-mcp_app = mcp_server.http_app()
+# This creates a FastAPI app that implements the MCP protocol over HTTP.
+#
+# stateless_http=True makes each request self-contained instead of requiring a
+# prior session-initialization handshake. Some MCP clients (e.g. the Databricks
+# Assistant) do not send the `mcp-session-id` header, which causes stateful
+# servers to reject follow-up requests with HTTP 400. Stateless mode also plays
+# nicely with horizontally scaled Databricks Apps where requests may land on
+# different replicas.
+mcp_app = mcp_server.http_app(stateless_http=True)
 
 # ============================================================================
 # FastAPI Application Setup

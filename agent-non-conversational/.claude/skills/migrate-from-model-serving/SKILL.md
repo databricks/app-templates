@@ -34,7 +34,7 @@ This guide instructs LLM coding agents how to migrate an MLflow ResponsesAgent f
     │   └── ...
     ├── databricks.yml        # Bundle config with resources
     ├── pyproject.toml
-    ├── requirements.txt
+    ├── uv.lock
     └── ...
 ```
 
@@ -515,12 +515,12 @@ Edit `<app-name>/agent_server/agent.py`:
 
 **If original uses checkpointer (short-term memory):**
 - Add checkpointer with Lakebase integration (use `AsyncCheckpointSaver` if async, or sync equivalent if sync)
-- Configure `LAKEBASE_INSTANCE_NAME` in `.env`
+- Configure `LAKEBASE_AUTOSCALING_ENDPOINT` in `.env`
 - Extract thread_id from `request.custom_inputs` or `request.context.conversation_id`
 
 **If original uses store (long-term memory):**
 - Add store with Lakebase integration (use `AsyncDatabricksStore` if async, or sync equivalent if sync)
-- Configure `LAKEBASE_INSTANCE_NAME` in `.env`
+- Configure `LAKEBASE_AUTOSCALING_ENDPOINT` in `.env`
 - Extract user_id from `request.custom_inputs` or `request.context.user_id`
 
 ---
@@ -549,13 +549,15 @@ cd <app-name>
 uv sync
 ```
 
-### 4.3 Create requirements.txt for Databricks Apps
+### 4.3 Generate uv.lock for Databricks Apps
 
-Databricks Apps requires a `requirements.txt` file with `uv` to install dependencies from `pyproject.toml`:
+Databricks Apps uses `uv.lock` for reproducible dependency installation. Generate it by running:
 
 ```bash
-echo "uv" > requirements.txt
+uv lock
 ```
+
+> **IMPORTANT:** The `uv.lock` file must be committed to version control. Databricks Apps detects `pyproject.toml` + `uv.lock` (with no `requirements.txt`) and uses `uv` to install dependencies. If a `requirements.txt` exists, it takes priority and `uv.lock` is ignored.
 
 ### 4.4 Run Quickstart
 
@@ -588,7 +590,7 @@ DATABRICKS_CONFIG_PROFILE=<your-profile>
 MLFLOW_EXPERIMENT_ID=<experiment-id>
 
 # Example: Lakebase for stateful agents
-LAKEBASE_INSTANCE_NAME=<your-lakebase-instance>
+LAKEBASE_AUTOSCALING_ENDPOINT=<your-endpoint>
 
 # Example: Custom API keys
 MY_API_KEY=<value>
@@ -716,7 +718,7 @@ The scaffold includes a `databricks.yml` with the experiment resource pre-config
 | MLmodel Resource | `databricks.yml` Resource | Key Fields |
 |------------------|--------------------------|------------|
 | `serving_endpoint` | `serving_endpoint` | `name`, `permission` (CAN_QUERY) |
-| `lakebase` | `database` | `database_name: databricks_postgres`, `instance_name`, `permission` (CAN_CONNECT_AND_CREATE) |
+| `lakebase` | `postgres` | `branch`, `database` (full resource paths), `permission` (CAN_CONNECT_AND_CREATE) |
 | `vector_search_index` | `uc_securable` | `securable_full_name`, `securable_type: TABLE`, `permission: SELECT` |
 | `function` | `uc_securable` | `securable_full_name`, `securable_type: FUNCTION`, `permission: EXECUTE` |
 | `table` | `uc_securable` | `securable_full_name`, `securable_type: TABLE`, `permission: SELECT` |
@@ -765,10 +767,10 @@ targets:
 **Example: Adding Lakebase resources (for stateful agents):**
 
 ```yaml
-        - name: 'database'
-          database:
-            database_name: 'databricks_postgres'
-            instance_name: 'lakebase'
+        - name: 'postgres'
+          postgres:
+            branch: "projects/<project-name>/branches/<branch-name>"
+            database: "projects/<project-name>/branches/<branch-name>/databases/<database-id>"
             permission: 'CAN_CONNECT_AND_CREATE'
 ```
 
@@ -851,12 +853,12 @@ If `databricks bundle deploy` fails because the app already exists, refer to the
 │   └── start_app.py      # App startup
 ├── databricks.yml        # Databricks Asset Bundle configuration (resources, config, targets)
 ├── pyproject.toml        # Dependencies (for local dev with uv)
-├── requirements.txt      # REQUIRED: Must contain "uv" for Databricks Apps
+├── uv.lock               # Lock file for reproducible deploys (must be committed)
 ├── .env.example          # Environment template
 └── README.md
 ```
 
-> **IMPORTANT:** The `requirements.txt` file must exist and contain `uv` so that Databricks Apps can install dependencies using the `pyproject.toml`. Without this file, the app will fail to start.
+> **IMPORTANT:** The `uv.lock` file must be committed to version control. Databricks Apps detects `pyproject.toml` + `uv.lock` (with no `requirements.txt`) and uses `uv` for fully reproducible installs.
 
 ---
 

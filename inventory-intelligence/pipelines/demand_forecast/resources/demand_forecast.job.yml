@@ -1,0 +1,35 @@
+resources:
+  jobs:
+    demand_forecast_job:
+      name: inventory_demand_forecast
+
+      max_concurrent_runs: 1
+      queue:
+        enabled: false
+
+      schedule:
+        quartz_cron_expression: "0 0 4 * * ?"
+        timezone_id: UTC
+
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: forecast_model
+          default: ${var.forecast_model}
+        - name: model_serving_endpoint
+          default: ${var.model_serving_endpoint}
+
+      tasks:
+        - task_key: generate_forecasts
+          notebook_task:
+            notebook_path: ../src/generate_forecasts.py
+
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - statsmodels
+              # Uncomment if using the prophet model:
+              # - prophet
+              # - cmdstanpy

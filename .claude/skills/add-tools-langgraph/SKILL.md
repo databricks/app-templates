@@ -7,6 +7,8 @@ description: "Add tools to your agent and grant required permissions in databric
 
 > **Profile reminder:** All `databricks` CLI commands must include the profile from `.env`: `databricks <command> --profile <profile>`
 
+> Don't have the resource yet? See **create-tools** skill first.
+
 **After adding any MCP server to your agent, you MUST grant the app access in `databricks.yml`.**
 
 Without this, you'll get permission errors when the agent tries to use the resource.
@@ -59,27 +61,27 @@ See the `examples/` directory for complete YAML snippets:
 | `sql-warehouse.yaml` | SQL warehouse | SQL execution |
 | `serving-endpoint.yaml` | Model serving endpoint | Model inference |
 | `genie-space.yaml` | Genie space | Natural language data |
-| `lakebase.yaml` | Lakebase database | Agent memory storage (provisioned) |
-| `lakebase-autoscaling.yaml` | Lakebase autoscaling postgres | Agent memory storage (autoscaling) |
+| `lakebase-autoscaling.yaml` | Lakebase autoscaling postgres | Agent memory storage |
 | `experiment.yaml` | MLflow experiment | Tracing (already configured) |
+| `app.yaml` | Databricks App (app-to-app) | Custom MCP servers hosted as Apps |
 | `custom-mcp-server.md` | Custom MCP apps | Apps starting with `mcp-*` |
 
 ## Custom MCP Servers (Databricks Apps)
 
-Apps are **not yet supported** as resource dependencies in `databricks.yml`. Manual permission grant required:
+Declare the target app as an `app` resource in `databricks.yml` — the bundle grants `CAN_USE` on deploy. Requires Databricks CLI **v0.298.0+**.
 
-**Step 1:** Get your agent app's service principal:
-```bash
-databricks apps get <your-agent-app-name> --output json | jq -r '.service_principal_name'
+```yaml
+resources:
+  apps:
+    agent_langgraph:
+      resources:
+        - name: 'mcp_server'
+          app:
+            name: 'mcp-my-server'
+            permission: CAN_USE
 ```
 
-**Step 2:** Grant permission on the MCP server app:
-```bash
-databricks apps update-permissions <mcp-server-app-name> \
-  --json '{"access_control_list": [{"service_principal_name": "<agent-app-service-principal>", "permission_level": "CAN_USE"}]}'
-```
-
-See `examples/custom-mcp-server.md` for detailed steps.
+See `examples/custom-mcp-server.md` for the full flow (agent code + YAML + deploy).
 
 ## value_from Pattern
 
@@ -91,16 +93,31 @@ Some resources need environment variables in your app. Use `value_from` in `data
 env:
   - name: MLFLOW_EXPERIMENT_ID
     value_from: "experiment"        # References resources.apps.<app>.resources[name='experiment']
-  - name: LAKEBASE_INSTANCE_NAME
-    value_from: "database"   # References resources.apps.<app>.resources[name='database']
+  - name: LAKEBASE_AUTOSCALING_ENDPOINT
+    value_from: "postgres"   # References resources.apps.<app>.resources[name='postgres']
 ```
 
 **Critical:** Every `value_from` value must match a `name` field in `databricks.yml` resources.
+
+## MCP Error Handling
+
+MCP tool calls can fail (network issues, permission errors, timeouts). Use `handle_tool_error` on MCP servers to catch errors and return them to the LLM instead of crashing the agent:
+
+```python
+DatabricksMCPServer(
+    name="genie",
+    url=f"{host}/api/2.0/mcp/genie/{space_id}",
+    handle_tool_error=True,   # Return error messages to LLM instead of raising
+    timeout=60.0,             # Increase timeout for slow tools like Genie
+)
+```
+
+For local function tools defined with `@tool`, see `create-tools` skill > `examples/local-python-tools.md` for the `ToolException` + `handle_tool_error` pattern.
 
 ## Important Notes
 
 - **MLflow experiment**: Already configured in template, no action needed
 - **Multiple resources**: Add multiple entries under `resources:` list
 - **Permission types vary**: Each resource type has specific permission values
-- **Deploy + Run after changes**: Run both `databricks bundle deploy` AND `databricks bundle run agent_langgraph`
+- **Deploy + Run after changes**: Run both `databricks bundle deploy` AND `databricks bundle run {{BUNDLE_NAME}}`
 - **value_from matching**: Ensure `config.env` `value_from` values match `databricks.yml` resource `name` values

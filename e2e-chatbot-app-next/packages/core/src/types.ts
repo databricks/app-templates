@@ -22,7 +22,7 @@ export interface Attachment {
   contentType: string;
 }
 
-export type { VisibilityType } from '@chat-template/utils';
+export type { VisibilityType } from '@databricks/chatbot-utils';
 
 export interface Feedback {
   messageId: string;

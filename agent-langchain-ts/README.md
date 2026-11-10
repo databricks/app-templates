@@ -11,6 +11,8 @@ A production-ready TypeScript agent template using [@databricks/langchainjs](htt
 - 📦 **TypeScript**: Full type safety with modern ES modules
 - ☁️ **Databricks Deployment**: Ready for Databricks Apps platform
 
+> **Note**: This template uses a standalone Express.js server with OpenTelemetry tracing, rather than the MLflow AgentServer / ResponsesAgent pattern used by the other agent templates. It does not include the built-in chat UI proxy or the `/invocations`/`/responses` endpoints. See the [official agent authoring docs](https://docs.databricks.com/aws/en/generative-ai/agent-framework/author-agent) for the standard Apps-based agent pattern.
+
 ## Quick Start
 
 ### Prerequisites
@@ -320,7 +322,7 @@ npm run format
 
 Available Databricks foundation models:
 - `databricks-claude-sonnet-4-5`
-- `databricks-gpt-5-2`
+- `databricks-claude-sonnet-5-5`
 - `databricks-meta-llama-3-3-70b-instruct`
 
 Or use your own custom model serving endpoint.

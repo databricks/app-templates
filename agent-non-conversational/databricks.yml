@@ -4,9 +4,8 @@ bundle:
 resources:
   apps:
     agent_non_conversational:
-      name: "agent-dhruv-offsite-demo"
+      name: "agent-non-conversational"
       description: "Non-conversational agent application"
-      budget_policy_id: "7da2ca5b-25b8-3e87-9a2c-f86eb19d101c"
       source_code_path: ./
       config:
         command: ["uv", "run", "start-server"]
@@ -22,8 +21,17 @@ resources:
       resources:
         - name: 'experiment'
           experiment:
-            experiment_id: "2333333030218702"
+            experiment_id: ""
             permission: 'CAN_MANAGE'
+
+        # NOTE: grants the app's service principal CAN_QUERY on the LLM endpoint so
+        # the deployed app (and UI-created apps via manifest.yaml) can call the model
+        # without a manual grant. If you change the model in agent_server/agent.py,
+        # update the name below to match.
+        - name: 'llm-endpoint'
+          serving_endpoint:
+            name: 'databricks-claude-sonnet-5-5'
+            permission: 'CAN_QUERY'
 
 targets:
   dev:

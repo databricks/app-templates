@@ -28,7 +28,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowDown, StopCircleIcon } from 'lucide-react';
 import { useScrollToBottom } from '@/hooks/use-scroll-to-bottom';
 import type { VisibilityType } from './visibility-selector';
-import type { Attachment, ChatMessage } from '@chat-template/core';
+import type { Attachment, ChatMessage } from '@databricks/chatbot-core';
 import { softNavigateToChatId } from '@/lib/navigation';
 import { useAppConfig } from '@/contexts/AppConfigContext';
 import { DbIcon } from './ui/db-icon';

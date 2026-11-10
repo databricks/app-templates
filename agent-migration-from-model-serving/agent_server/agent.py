@@ -7,7 +7,6 @@ the actual agent initialization, tool setup, and streaming logic from the
 original Model Serving agent.
 """
 
-import litellm
 import logging
 from typing import AsyncGenerator
 
@@ -39,7 +38,6 @@ from agent_server.utils import get_session_id
 # ──────────────────────────────────────────────
 
 logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
-litellm.suppress_debug_info = True
 
 
 # ──────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
-import { getAuthSession, type AuthSession } from '@chat-template/auth';
-import { checkChatAccess } from '@chat-template/core';
-import { ChatSDKError } from '@chat-template/core/errors';
+import { getAuthSession, type AuthSession } from '@databricks/chatbot-auth';
+import { checkChatAccess } from '@databricks/chatbot-core';
+import { ChatSDKError } from '@databricks/chatbot-core/errors';
 
 // Extend Express Request type to include session
 declare global {

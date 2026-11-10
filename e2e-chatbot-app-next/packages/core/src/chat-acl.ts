@@ -1,5 +1,5 @@
-import { getChatById } from '@chat-template/db';
-import type { Chat } from '@chat-template/db';
+import { getChatById } from '@databricks/chatbot-db';
+import type { Chat } from '@databricks/chatbot-db';
 
 interface ChatAccessResult {
   allowed: boolean;

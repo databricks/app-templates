@@ -5,5 +5,4 @@ createApp({
     genie(),
     server(),
   ],
-})
-  .catch(console.error);
+}).catch(console.error);

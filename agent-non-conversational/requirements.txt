@@ -1,2 +1,0 @@
-# We only need `uv` in our requirements if deploying via apps CLI
-uv

@@ -2,7 +2,6 @@ import logging
 from datetime import datetime
 from typing import AsyncGenerator, Optional
 
-import litellm
 import mlflow
 from databricks.sdk import WorkspaceClient
 from databricks_langchain import ChatDatabricks, DatabricksMCPServer, DatabricksMultiServerMCPClient
@@ -26,7 +25,6 @@ from agent_server.utils import (
 logger = logging.getLogger(__name__)
 mlflow.langchain.autolog()
 logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
-litellm.suppress_debug_info = True
 sp_workspace_client = WorkspaceClient()
 
 
@@ -57,7 +55,7 @@ async def init_agent(workspace_client: Optional[WorkspaceClient] = None):
     #       tools.extend(await mcp_client.get_tools())
     #   except Exception:
     #       logger.warning("Failed to fetch MCP tools. Continuing without MCP tools.", exc_info=True)
-    return create_agent(tools=tools, model=ChatDatabricks(endpoint="databricks-gpt-5-2"))
+    return create_agent(tools=tools, model=ChatDatabricks(endpoint="databricks-claude-sonnet-5-5"))
 
 
 @invoke()

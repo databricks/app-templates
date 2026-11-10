@@ -1,0 +1,29 @@
+bundle:
+  name: support_analytics
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: The Unity Catalog catalog for all pipeline output
+  schema:
+    description: The default schema (silver tables land here; gold uses fully-qualified names)
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: REPLACE_ME # e.g. https://my-workspace.cloud.databricks.com
+    variables:
+      catalog: REPLACE_ME # your Unity Catalog catalog name
+      schema: silver
+
+  prod:
+    mode: production
+    workspace:
+      host: REPLACE_ME
+    variables:
+      catalog: REPLACE_ME
+      schema: silver

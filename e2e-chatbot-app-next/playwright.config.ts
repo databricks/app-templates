@@ -52,7 +52,10 @@ if (TEST_MODE === 'with-db') {
 
 // Use default port 3000
 const PORT = process.env.PORT || 3000;
-const baseURL = `http://localhost:${PORT}`;
+// The functional-e2e orchestrator (and local/CI runs against an already
+// running app) point tests at an arbitrary host via PLAYWRIGHT_BASE_URL.
+// Fall back to the locally-managed dev server when it isn't set.
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://localhost:${PORT}`;
 
 /**
  * See https://playwright.dev/docs/test-configuration.
@@ -87,7 +90,7 @@ export default defineConfig({
   projects: [
     {
       name: 'unit',
-      testMatch: /ai-sdk-provider\/.*.test.ts/,
+      testMatch: /(ai-sdk-provider|unit)\/.*.test.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
     {

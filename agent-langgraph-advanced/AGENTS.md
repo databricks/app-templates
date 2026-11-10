@@ -1,0 +1,168 @@
+# Agent Development Guide
+
+## MANDATORY First Actions
+
+For first-time environment setup, invoke the **quickstart** skill at `.claude/skills/quickstart/SKILL.md` — its "Setup Flow (for Claude)" section walks through the `AskUserQuestion` calls needed to collect the workspace, app target, and Lakebase configuration, then runs `uv run quickstart` with the right flags.
+
+If `.env` already exists, the environment is already configured — read it to find `DATABRICKS_CONFIG_PROFILE` and skip to verifying auth with `databricks auth profiles`.
+
+**CRITICAL: All `databricks` CLI commands must include the profile from `.env`.** Either use `--profile` or set the env var:
+
+```bash
+databricks <command> --profile <profile>
+# or
+DATABRICKS_CONFIG_PROFILE=<profile> databricks <command>
+```
+
+> **Why this matters:** Without the profile, the CLI may target the wrong workspace, causing "not found" errors for experiments, apps, or other resources.
+
+## Understanding User Goals
+
+**Ask the user questions to understand what they're building:**
+
+1. **What is the agent's purpose?** (e.g., data analyst assistant, customer support, code helper)
+2. **What data or tools does it need access to?**
+   - Databases/tables (Unity Catalog)
+   - Documents for RAG (Vector Search)
+   - Natural language data queries (Genie Spaces)
+   - External APIs or services
+3. **Any specific Databricks resources they want to connect?**
+
+Use `uv run discover-tools` to show them available resources in their workspace, then help them select the right ones for their use case. **See the `add-tools` skill for how to connect tools and grant permissions.**
+
+## Memory Template Note
+
+This template includes both **short-term memory** (conversation history within a session) and **long-term memory** (facts that persist across conversation sessions).
+
+- **Short-term memory** uses `AsyncCheckpointSaver` to maintain conversation history within a thread. The agent remembers what was said earlier in the same conversation.
+- **Long-term memory** uses `AsyncDatabricksStore` with memory tools to persist user preferences and information across multiple interactions.
+
+**Required setup:**
+1. Configure Lakebase — follow the `AskUserQuestion` flow in MANDATORY First Actions above to collect the autoscaling endpoint and pass it to quickstart
+2. Use `thread_id` in requests to maintain conversation context (see **agent-memory** skill)
+3. Use `user_id` in requests to scope long-term memories per user (see **agent-memory** skill)
+
+## Handling Deployment Errors
+
+**If `databricks bundle deploy` fails with "An app with the same name already exists":**
+
+Ask the user: "I see there's an existing app with the same name. Would you like me to bind it to this bundle so we can manage it, or delete it and create a new one?"
+
+- **If they want to bind**: See the **deploy** skill for binding steps
+- **If they want to delete**: Run `databricks apps delete <app-name>` then deploy again
+
+## Supervisor API (Offloading the Agent Loop)
+
+The **Supervisor API** lets Databricks run the tool-selection and agent loop server-side. Declare hosted tools (Genie spaces, UC functions, Knowledge Assistants, UC connection MCP servers, Databricks App endpoints) and call `responses.create()` — Databricks handles the rest.
+
+**Use when the user wants to** connect Genie spaces, UC functions, or other Databricks-hosted tools without managing the agent loop themselves.
+
+**Limitations:**
+- Tools run as the app's service principal (no user token forwarding) — grant permissions in `databricks.yml`
+- Cannot mix hosted tools with client-side function tools in the same request
+- Inference parameters (`temperature`, `top_p`, etc.) are not supported when tools are passed
+- `stream` and `background` cannot both be `true` in the same request
+- Background mode has a maximum execution time of 30 minutes
+
+**Skills:**
+- Use **supervisor-api** to set up the Supervisor API with hosted tools
+- Use **supervisor-api-background-mode** for tasks that may exceed HTTP timeout limits (complex multi-tool workflows, large data analysis)
+
+## Long-Term Memory: Managed (Governed) Alternative
+
+> **Beta.** Managed memory uses the Databricks memory-store APIs, which are in beta — APIs and behavior may change.
+
+This template **defaults to Lakebase** for long-term memory (`AsyncDatabricksStore` — see the Memory Template Note above). **Managed memory** is a governed, zero-ops alternative: long-term memories live in a **Unity Catalog memory store** (`catalog.schema.name`, type `MEMORY_STORE`) with no database for you to provision or run. Databricks manages the underlying quality logic — deduplication, scope isolation, and fact reconciliation. The agent gets tools to store, retrieve, and modify memories, scoped per end user through code.
+
+> **Which to use.** Both persist facts across sessions. Stick with the default **Lakebase** store when you need direct SQL access, embedding-based semantic search, or it's already part of your stack. Choose **managed memory** when you'd rather not run any infrastructure and want UC governance out of the box.
+
+**Skills:**
+- Use **managed-memory** to add (or swap in) the UC memory-store tools.
+
+## Agent Evaluation
+
+When the user asks about evaluating their agent (quality, metrics, scorers, datasets, or tracing), suggest installing the **MLflow Skills** from https://github.com/mlflow/skills. These provide expert guidance for evaluation workflows using MLflow's native APIs.
+
+**Relevant skills:**
+- **agent-evaluation** — end-to-end evaluation: dataset creation, scorer selection, execution, result analysis
+- **instrumenting-with-mlflow-tracing** — set up automatic tracing for debugging and observability
+- **analyze-mlflow-trace** — examine span data and assessments to identify issues
+
+**Install command:**
+```bash
+npx skills add mlflow/skills
+```
+
+After installation, the skills will be available as slash commands (e.g., `/agent-evaluation`). This template also includes a built-in `evaluate_agent.py` script — run it with `uv run agent-evaluate` after starting the local server.
+
+---
+
+## Available Skills
+
+**Before executing any task, read the relevant skill file in `.claude/skills/`** - they contain tested commands, patterns, and troubleshooting steps.
+
+| Task | Skill | Path |
+|------|-------|------|
+| Setup, auth, first-time | **quickstart** | `.claude/skills/quickstart/SKILL.md` |
+| Lakebase configuration | **lakebase-setup** | `.claude/skills/lakebase-setup/SKILL.md` |
+| Memory patterns (short-term + long-term, Lakebase) | **agent-memory** | `.claude/skills/agent-memory/SKILL.md` |
+| Long-term memory — managed/governed alternative | **managed-memory** | `.claude/skills/managed-memory/SKILL.md` |
+| Find tools/resources | **discover-tools** | `.claude/skills/discover-tools/SKILL.md` |
+| Create tool resources | **create-tools** | `.claude/skills/create-tools/SKILL.md` |
+| Deploy to Databricks | **deploy** | `.claude/skills/deploy/SKILL.md` |
+| Add tools & permissions | **add-tools** | `.claude/skills/add-tools/SKILL.md` |
+| Run/test locally | **run-locally** | `.claude/skills/run-locally/SKILL.md` |
+| Modify agent code | **modify-agent** | `.claude/skills/modify-agent/SKILL.md` |
+| Offload agent loop to Databricks | **supervisor-api** | `.claude/skills/supervisor-api/SKILL.md` |
+| Long-running background tasks | **supervisor-api-background-mode** | `.claude/skills/supervisor-api-background-mode/SKILL.md` |
+
+**Note:** All agent skills are located in `.claude/skills/` directory.
+
+---
+
+## Quick Commands
+
+| Task | Command |
+|------|---------|
+| Setup | `uv run quickstart` |
+| Discover tools | `uv run discover-tools` |
+| Run locally | `uv run start-app` |
+| Deploy | `databricks bundle deploy && databricks bundle run agent_langgraph_advanced` |
+| View logs | `databricks apps logs <app-name> --follow` |
+
+---
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `agent_server/agent.py` | Agent logic, model, instructions, MCP servers, memory setup |
+| `agent_server/utils_memory.py` | Long-term memory tools (get, save, delete) |
+| `agent_server/start_server.py` | FastAPI server + MLflow setup |
+| `agent_server/evaluate_agent.py` | Agent evaluation with MLflow scorers |
+| `databricks.yml` | Bundle config & resource permissions |
+| `.github/workflows/deploy.yml` | GitHub Actions workflow to deploy this app (synced from `.scripts/source/.github/workflows/`) |
+| `scripts/quickstart.py` | One-command setup script |
+| `scripts/discover_tools.py` | Discovers available workspace resources |
+
+---
+
+## Agent Framework Capabilities
+
+> **IMPORTANT:** When adding any tool to the agent, you MUST also grant permissions in `databricks.yml`. See the **add-tools** skill for required steps and examples.
+
+**Tool Types:**
+1. **Unity Catalog Function Tools** - SQL UDFs managed in UC with built-in governance
+2. **Agent Code Tools** - Defined directly in agent code for REST APIs and low-latency operations
+3. **MCP Tools** - Interoperable tools via Model Context Protocol (Databricks-managed, external, or self-hosted)
+
+**Built-in Tools:**
+- **system.ai.python_exec** - Execute Python code dynamically within agent queries (code interpreter)
+
+**Common Patterns:**
+- **Structured data retrieval** - Query SQL tables/databases
+- **Unstructured data retrieval** - Document search and RAG via Vector Search
+- **Code interpreter** - Python execution for analysis via system.ai.python_exec
+- **External connections** - Integrate services like Slack via HTTP connections
+
+Reference: https://docs.databricks.com/aws/en/generative-ai/agent-framework/

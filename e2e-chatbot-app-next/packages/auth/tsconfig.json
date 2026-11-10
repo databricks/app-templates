@@ -5,8 +5,8 @@
     "outDir": "./dist",
     "baseUrl": "../..",
     "paths": {
-      "@chat-template/utils": ["./packages/utils/src/index.ts"],
-      "@chat-template/db": ["./packages/db/src/index.ts"]
+      "@databricks/chatbot-utils": ["./packages/utils/src/index.ts"],
+      "@databricks/chatbot-db": ["./packages/db/src/index.ts"]
     }
   },
   "include": ["src"],

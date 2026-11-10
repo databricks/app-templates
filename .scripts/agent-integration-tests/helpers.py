@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import select
 import shutil
 import signal
@@ -15,22 +16,44 @@ import requests
 from databricks_ai_bridge.lakebase import LakebaseClient
 from template_config import FileEdit
 
+# Strip runner-specific uv config so template-side `uv run` / `uv sync`
+# don't bake `excluded-newer` (global + per-package) into the template's
+# `uv.lock`, which would then be rejected by Apps runtime's
+# `uv sync --locked`. See databricks/app-templates#206 for full rationale.
+os.environ.pop("UV_EXCLUDE_NEWER", None)
+os.environ.pop("UV_CONFIG_FILE", None)
+os.environ["UV_NO_CONFIG"] = "1"
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 POLL_INTERVAL = 30  # seconds between polls
-MAX_POLLS = 10  # max number of polls before giving up
+MAX_POLLS = 20  # max number of polls before giving up (10 min for cold starts)
 QUERY_TIMEOUT = 120  # seconds for HTTP requests
-BUNDLE_TIMEOUT = 300  # seconds for bundle deploy/run/destroy commands
-QUICKSTART_TIMEOUT = 300  # seconds for quickstart command
+BUNDLE_TIMEOUT = 600  # seconds for bundle deploy/run/destroy commands (10 min for parallel runs)
+QUICKSTART_TIMEOUT = 600  # seconds for quickstart command (10 min for parallel runs)
 EVALUATE_TIMEOUT = 900  # seconds for agent-evaluate
-SERVER_START_TIMEOUT = 60  # seconds to wait for local server to start
+SERVER_START_TIMEOUT = 600  # seconds to wait for local server to start (accommodates cold CI runners + heavy template imports)
 
 # ---------------------------------------------------------------------------
 # Logging & subprocess
 # ---------------------------------------------------------------------------
+# Design: stdout is the human-readable stream (timestamps, ✓/✗ markers,
+# collapsible GH Actions groups, short summaries on subprocess success).
+# The per-thread log file (logs/{template}.log) gets the full unstructured
+# text — including every subprocess's stdout/stderr — so post-mortem grep
+# and paste-into-playbook workflows keep working unchanged.
+#
+# Two rules of thumb:
+#   * _log()    prints to both stdout (with timestamp) and log file (raw).
+#   * _run_cmd: terse on stdout when successful, full detail on failure;
+#     always writes full detail to the log file.
 _thread_local = threading.local()
 _log_lock = threading.Lock()
+
+# Only emit GH Actions log-grouping directives when running under Actions.
+# Outside CI they'd just be noise in developer terminals.
+_IN_CI = os.environ.get("GITHUB_ACTIONS") == "true"
 
 
 def set_log_file(log_file: Path | None):
@@ -38,26 +61,105 @@ def set_log_file(log_file: Path | None):
     _thread_local.log_file = log_file
 
 
-def _log(msg: str):
-    """Write to the current thread's log file and stdout."""
-    print(msg)
+def _ts() -> str:
+    """Short HH:MM:SS timestamp for stdout log-line prefixes."""
+    return time.strftime("%H:%M:%S")
+
+
+def _fmt_duration(seconds: float) -> str:
+    """Human-friendly duration: '0.4s', '12.1s', '1m 23s', '1h 2m 3s'."""
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    m, s = divmod(int(seconds), 60)
+    if m < 60:
+        return f"{m}m {s}s"
+    h, m = divmod(m, 60)
+    return f"{h}h {m}m {s}s"
+
+
+def _write_to_log_file(msg: str) -> None:
+    """Append raw text (no timestamp) to the current thread's log file."""
     log_file = getattr(_thread_local, "log_file", None)
-    if log_file:
-        with _log_lock, open(log_file, "a") as f:
-            f.write(msg + "\n")
+    if log_file is None:
+        return
+    with _log_lock, open(log_file, "a") as f:
+        f.write(msg + "\n")
 
 
-def _run_cmd(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
-    """Run a subprocess, log its output, and return the result."""
+def _log(msg: str) -> None:
+    """Log to stdout (with timestamp) and log file (raw).
+
+    Multi-line messages: timestamp only on the first line so continuation
+    lines stay aligned and the file copy is byte-identical to the message.
+    """
+    if msg == "":
+        print("")
+    else:
+        lines = msg.split("\n")
+        print(f"[{_ts()}] {lines[0]}")
+        for line in lines[1:]:
+            print(line)
+    _write_to_log_file(msg)
+
+
+def _gh_group(title: str) -> None:
+    """Open a collapsible GH Actions log group (no-op outside CI)."""
+    if _IN_CI:
+        print(f"::group::{title}")
+
+
+def _gh_endgroup() -> None:
+    """Close the current GH Actions log group (no-op outside CI)."""
+    if _IN_CI:
+        print("::endgroup::")
+
+
+def _run_cmd(cmd: list[str], *, verbose: bool = False, **kwargs) -> subprocess.CompletedProcess:
+    """Run a subprocess and return the result.
+
+    Logging behaviour:
+      * Full command + exit + stdout + stderr always go to the log file.
+      * Stdout (the CI log stream) gets a one-line summary on success
+        — ``✓ <cmd>  (<duration>)`` — and full detail on failure.
+      * Pass ``verbose=True`` to force full output on both paths (useful
+        when the command's output is itself the test signal).
+    """
     kwargs.setdefault("capture_output", True)
     kwargs.setdefault("text", True)
-    _log(f"$ {' '.join(cmd)}")
-    result = subprocess.run(cmd, **kwargs)
-    _log(f"  exit={result.returncode}")
+    cmd_str = " ".join(cmd)
+    short_cmd = " ".join(cmd[:3]) + ("..." if len(cmd) > 3 else "")
+    t0 = time.monotonic()
+
+    _write_to_log_file(f"$ {cmd_str}")
+
+    try:
+        result = subprocess.run(cmd, **kwargs)
+    except subprocess.TimeoutExpired:
+        duration = time.monotonic() - t0
+        # Make timeouts loud on stdout; the file gets the same line plus
+        # any partial output captured by the caller.
+        print(f"[{_ts()}] ✗ timeout: {cmd_str}  (after {_fmt_duration(duration)})")
+        _write_to_log_file(f"  TIMEOUT after {_fmt_duration(duration)}")
+        raise
+
+    duration = time.monotonic() - t0
+
+    _write_to_log_file(f"  exit={result.returncode}  ({_fmt_duration(duration)})")
     if result.stdout:
-        _log(f"  stdout:\n{result.stdout.rstrip()}")
+        _write_to_log_file(f"  stdout:\n{result.stdout.rstrip()}")
     if result.stderr:
-        _log(f"  stderr:\n{result.stderr.rstrip()}")
+        _write_to_log_file(f"  stderr:\n{result.stderr.rstrip()}")
+
+    if result.returncode == 0 and not verbose:
+        print(f"[{_ts()}] ✓ {short_cmd}  ({_fmt_duration(duration)})")
+    else:
+        marker = "✓" if result.returncode == 0 else "✗"
+        print(f"[{_ts()}] {marker} {cmd_str}  (exit {result.returncode}, {_fmt_duration(duration)})")
+        if result.stdout:
+            print(f"  stdout:\n{result.stdout.rstrip()}")
+        if result.stderr:
+            print(f"  stderr:\n{result.stderr.rstrip()}")
+
     return result
 
 
@@ -76,7 +178,13 @@ def _run_with_retries(
     True to retry or False to give up.
     """
     for attempt in range(1, max_attempts + 1):
-        result = _run_cmd(cmd, cwd=cwd, timeout=timeout)
+        try:
+            result = _run_cmd(cmd, cwd=cwd, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _log(f"  timed out after {timeout}s")
+            if attempt < max_attempts and recover and recover(f"timed out after {timeout}s", attempt, max_attempts):
+                continue
+            raise
         if result.returncode == 0:
             return result
         if attempt < max_attempts and recover and recover(result.stderr, attempt, max_attempts):
@@ -92,33 +200,145 @@ def _run_with_retries(
 # ---------------------------------------------------------------------------
 
 
+def copy_template(template_dir: Path, app_name_suffix: str = "-p") -> Path:
+    """Copy a template directory to a temporary location for isolated parallel runs.
+
+    After copying, patches both the bundle name and app name in databricks.yml
+    with the given suffix so the copy deploys to a different workspace path and
+    app than the original (avoiding terraform state races).
+    Returns the path to the temporary copy.
+    """
+    import tempfile
+
+    tmp_parent = Path(tempfile.mkdtemp(prefix=f"{template_dir.name}-"))
+    tmp_dir = tmp_parent / template_dir.name
+    shutil.copytree(
+        template_dir,
+        tmp_dir,
+        ignore=shutil.ignore_patterns(".venv", ".bundle", ".databricks", ".env", "__pycache__", "*.pyc"),
+    )
+
+    yml_path = tmp_dir / "databricks.yml"
+    if yml_path.exists():
+        text = yml_path.read_text()
+        # Patch bundle.name (the first top-level `name:` in the file —
+        # unquoted identifier like `agent_langgraph_advanced`) so the
+        # copy gets its own workspace path .bundle/<name>/ and its own
+        # terraform state. Previously the regex required quoted values
+        # and silently no-op'd on unquoted bundle.name, meaning the
+        # "isolated" copy actually shared state with the original —
+        # terraform state races and source-upload collisions ensued.
+        # e.g. `  name: agent_langgraph_advanced` ->
+        #      `  name: agent_langgraph_advanced_p`
+        suffix_underscore = app_name_suffix.replace("-", "_")
+        patched = re.sub(
+            r"^(\s*name:\s*)(\w+)(\s*)$",
+            lambda m: m.group(1) + m.group(2) + suffix_underscore + m.group(3),
+            text,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        # Patch the app name under resources.apps.<key>:
+        #   name: "some-app-name"  or  name: "${bundle.target}-some-suffix"
+        patched = re.sub(
+            r'(^\s*apps:\s*\n\s*\w+:\s*\n\s*name:\s*")(.*?)(")',
+            lambda m: m.group(1) + m.group(2) + app_name_suffix + m.group(3),
+            patched,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        yml_path.write_text(patched)
+
+    return tmp_dir
+
+
 def clean_template(template_dir: Path):
-    """Remove local dev artifacts (.venv/, uv.lock, .env) and bundle state."""
-    for name in [".venv", "uv.lock", ".env", ".bundle", ".databricks"]:
+    """Remove local dev artifacts (.env, uv.lock) and bundle state.
+
+    Keeps .venv/ intact to avoid full reinstalls — uv will sync it on next run.
+    """
+    for name in [".env", ".bundle", ".databricks"]:
         target = template_dir / name
-        if target.is_dir():
-            shutil.rmtree(target)
-        elif target.is_file():
-            target.unlink()
+        try:
+            if target.is_dir():
+                shutil.rmtree(target)
+            elif target.is_file():
+                target.unlink()
+        except FileNotFoundError:
+            pass  # Already removed by another parallel worker
+
+
+def uv_sync(template_dir: Path, max_attempts: int = 3):
+    """Run `uv sync` to create/update the venv before quickstart.
+
+    Retries up to ``max_attempts`` times with a short backoff to absorb
+    transient PyPI / proxy hiccups, then falls back to UV_OFFLINE=true
+    one more time as a last resort.
+    """
+    for attempt in range(1, max_attempts + 1):
+        result = _run_cmd(["uv", "sync"], cwd=template_dir, timeout=QUICKSTART_TIMEOUT)
+        if result.returncode == 0:
+            return
+        if attempt < max_attempts:
+            _log(f"  uv sync attempt {attempt}/{max_attempts} failed, retrying in 10s...")
+            time.sleep(10)
+
+    _log(f"  uv sync failed online; falling back to UV_OFFLINE=true (cache-only)...")
+    env = os.environ.copy()
+    env["UV_OFFLINE"] = "true"
+    result = _run_cmd(["uv", "sync"], cwd=template_dir, timeout=QUICKSTART_TIMEOUT, env=env)
+    assert result.returncode == 0, (
+        f"uv sync failed in {template_dir.name}:\n"
+        f"stdout: {result.stdout}\n"
+        f"stderr: {result.stderr}"
+    )
+
+
+def _strip_uv_sources(template_dir: Path) -> str | None:
+    """Temporarily strip [tool.uv.sources] for deploy.
+
+    Returns the original content so it can be restored, or None if no change.
+    Also deletes uv.lock since it may contain local paths.
+    """
+    pyproject = template_dir / "pyproject.toml"
+    if not pyproject.exists():
+        return None
+    original = pyproject.read_text()
+    stripped = re.sub(
+        r"\n\[tool\.uv\.sources\]\n(?:.*\n)*?(?=\n\[|\Z)",
+        "\n",
+        original,
+    )
+    if stripped == original:
+        return None
+    pyproject.write_text(stripped)
+    lock = template_dir / "uv.lock"
+    if lock.exists():
+        lock.unlink()
+    _log(f"Stripped [tool.uv.sources] from {pyproject.name} for deploy")
+    return original
+
+
+def _restore_uv_sources(template_dir: Path, original: str | None):
+    """Restore pyproject.toml after deploy."""
+    if original is None:
+        return
+    pyproject = template_dir / "pyproject.toml"
+    pyproject.write_text(original)
+    _log(f"Restored [tool.uv.sources] in {pyproject.name}")
 
 
 def run_quickstart(
     template_dir: Path,
     profile: str,
-    lakebase: str | None = None,
-    lakebase_autoscaling_project: str | None = None,
-    lakebase_autoscaling_branch: str | None = None,
+    lakebase_autoscaling_endpoint: str | None = None,
     app_name: str | None = None,
     skip_lakebase: bool = False,
 ) -> subprocess.CompletedProcess:
     """Run `uv run quickstart --profile <profile>`. Returns the completed process."""
     cmd = ["uv", "run", "quickstart", "--profile", profile]
-    if lakebase:
-        cmd.extend(["--lakebase-provisioned-name", lakebase])
-    if lakebase_autoscaling_project:
-        cmd.extend(["--lakebase-autoscaling-project", lakebase_autoscaling_project])
-    if lakebase_autoscaling_branch:
-        cmd.extend(["--lakebase-autoscaling-branch", lakebase_autoscaling_branch])
+    if lakebase_autoscaling_endpoint:
+        cmd.extend(["--lakebase-autoscaling-endpoint", lakebase_autoscaling_endpoint])
     if app_name:
         cmd.extend(["--app-name", app_name])
     if skip_lakebase:
@@ -130,6 +350,7 @@ def run_quickstart(
         f"stderr: {result.stderr}"
     )
     return result
+
 
 
 def git_copy_template(template_name: str, dest: Path, git_ref: str | None = None) -> Path:
@@ -264,16 +485,8 @@ def find_free_port() -> int:
         return s.getsockname()[1]
 
 
-def start_server(template_dir: Path, port: int = 0) -> tuple[subprocess.Popen, int]:
-    """Start `uv run start-server` as background process.
-
-    If port is 0 (default), dynamically allocates a free port.
-    Waits for 'Uvicorn running on' in stderr (timeout 60s).
-    Returns (process handle, port).
-    """
-    if port == 0:
-        port = find_free_port()
-
+def _start_server_once(template_dir: Path, port: int) -> tuple[subprocess.Popen, int]:
+    """Single attempt at starting `uv run start-server`. See start_server."""
     _log(f"Starting server on port {port} in {template_dir.name}")
     proc = subprocess.Popen(
         ["uv", "run", "start-server", "--port", str(port)],
@@ -296,11 +509,46 @@ def start_server(template_dir: Path, port: int = 0) -> tuple[subprocess.Popen, i
         ready = select.select([proc.stderr], [], [], 1.0)[0]
         if ready:
             line = proc.stderr.readline()
+            if line.strip():
+                _log(f"  server: {line.rstrip()}")
             if "Uvicorn running on" in line or "Application startup complete" in line:
                 _log(f"Server started on port {port}")
                 return proc, port
     stop_server(proc)
     raise TimeoutError(f"Server did not start within {SERVER_START_TIMEOUT} seconds")
+
+
+def start_server(template_dir: Path, port: int = 0, max_attempts: int = 2) -> tuple[subprocess.Popen, int]:
+    """Start `uv run start-server` as a background process, with one retry.
+
+    If port is 0, dynamically allocates a free port. Watches stderr for
+    ``Uvicorn running on`` or ``Application startup complete`` (timeout
+    SERVER_START_TIMEOUT per attempt).
+
+    Retries once on timeout: we've observed uvicorn hanging between
+    "Started server process" and "Waiting for application startup" on GH
+    Actions runners for some templates (not deterministic — same template
+    passes on one run, hangs on the next). A second attempt from a fresh
+    process typically succeeds.
+
+    Raises TimeoutError if all attempts time out; RuntimeError if the
+    server process exits early. Returns (process handle, port) on success.
+    """
+    for attempt in range(1, max_attempts + 1):
+        allocated_port = port or find_free_port()
+        try:
+            return _start_server_once(template_dir, allocated_port)
+        except TimeoutError as exc:
+            if attempt >= max_attempts:
+                raise
+            _log(
+                f"start_server attempt {attempt}/{max_attempts} timed out; "
+                f"killing and retrying with a fresh process. "
+                f"({exc})"
+            )
+            # fall through to next iteration — allocates a new port,
+            # spawns a new subprocess.
+    raise RuntimeError("start_server exited the retry loop without a result")  # unreachable
 
 
 def stop_server(proc: subprocess.Popen):
@@ -483,10 +731,14 @@ def bundle_deploy(
     - Terraform init failures (e.g. GitHub 502): wait and retry
     - "already exists" (app): unbind stale state + bind existing app, retry
     - "does not exist or is deleted": unbind stale reference, retry
+    - "lineage mismatch in state files": a prior run left stale terraform
+      state on the same bundle path. Unbind and wipe local state, retry.
     """
 
     def recover(stderr: str, attempt: int, max_attempts: int) -> bool:
-        if "terraform init" in stderr:
+        # Normalize newlines for multi-line error messages
+        stderr_flat = " ".join(stderr.split())
+        if "terraform init" in stderr_flat:
             _log(
                 f"bundle deploy attempt {attempt}/{max_attempts} failed in "
                 f"{template_dir.name} (terraform init error), retrying in {POLL_INTERVAL}s..."
@@ -494,7 +746,7 @@ def bundle_deploy(
             time.sleep(POLL_INTERVAL)
             return True
 
-        if "already exists" in stderr:
+        if "already exists" in stderr_flat:
             _log(
                 f"bundle deploy attempt {attempt}/{max_attempts} failed in "
                 f"{template_dir.name} (app already exists), unbinding and binding..."
@@ -519,7 +771,7 @@ def bundle_deploy(
             )
             return True
 
-        if "does not exist or is deleted" in stderr:
+        if "does not exist" in stderr_flat:
             _log(
                 f"bundle deploy attempt {attempt}/{max_attempts} failed in "
                 f"{template_dir.name} (stale state), unbinding and retrying..."
@@ -528,7 +780,21 @@ def bundle_deploy(
             time.sleep(POLL_INTERVAL)
             return True
 
-        if "is not terminal" in stderr or "not terminal with state" in stderr:
+        if "lineage mismatch" in stderr_flat:
+            _log(
+                f"bundle deploy attempt {attempt}/{max_attempts} failed in "
+                f"{template_dir.name} (tf state lineage mismatch), unbinding "
+                f"and wiping local state..."
+            )
+            _bundle_unbind(template_dir, app_resource_key, profile)
+            # Remove local terraform state copy; a fresh deploy will repopulate.
+            databricks_state = template_dir / ".databricks"
+            if databricks_state.is_dir():
+                shutil.rmtree(databricks_state, ignore_errors=True)
+            time.sleep(POLL_INTERVAL)
+            return True
+
+        if "is not terminal" in stderr_flat or "not terminal with state" in stderr_flat:
             _log(
                 f"bundle deploy attempt {attempt}/{max_attempts} failed in "
                 f"{template_dir.name} (app transitioning), waiting {POLL_INTERVAL}s..."
@@ -536,47 +802,91 @@ def bundle_deploy(
             time.sleep(POLL_INTERVAL)
             return True
 
+        # "Cannot update app <x> as its compute is in <STATE> state. App
+        # compute needs to be ACTIVE or STOPPED to update." — the app's
+        # compute is mid-transition (STARTING / DELETING / DEPLOYING /
+        # UPDATING) and can't accept a bundle update. Wait it out and
+        # retry. Match on the stable part of the error so it covers
+        # every transient state the API can emit.
+        if "ACTIVE or STOPPED to update" in stderr_flat:
+            _log(
+                f"bundle deploy attempt {attempt}/{max_attempts} failed in "
+                f"{template_dir.name} (app compute mid-transition), "
+                f"waiting {POLL_INTERVAL}s..."
+            )
+            time.sleep(POLL_INTERVAL)
+            return True
+
         return False
 
-    _run_with_retries(
-        ["databricks", "bundle", "deploy", "--target", "dev", "-p", profile],
-        cwd=template_dir,
-        label="bundle deploy",
-        recover=recover,
-    )
+    # Strip [tool.uv.sources] so deploy doesn't upload uv.lock with local paths
+    pyproject_backup = _strip_uv_sources(template_dir)
+    try:
+        _run_with_retries(
+            ["databricks", "bundle", "deploy", "--target", "dev", "-p", profile],
+            cwd=template_dir,
+            label="bundle deploy",
+            recover=recover,
+        )
+    finally:
+        _restore_uv_sources(template_dir, pyproject_backup)
 
 
-def bundle_run_nowait(template_dir: Path, resource_key: str, profile: str):
+def bundle_run_nowait(
+    template_dir: Path,
+    resource_key: str,
+    profile: str,
+    app_name: str | None = None,
+):
     """Trigger `databricks bundle run` to start the app, then return quickly.
 
     Despite --no-wait, the CLI may still poll briefly for startup. We cap
     the wait at 90s and swallow timeout errors — the app start was initiated
     on the server side and will continue even if the CLI process is killed.
     Use wait_for_app_ready() after this to poll until RUNNING.
+
+    Recovery: if bundle run fails with "Invalid source code path ... does
+    not exist", the prior `bundle deploy` didn't fully upload the bundle
+    source (known failure mode when a previous run's cleanup left the app
+    definition bound but wiped its source dir). Re-run bundle_deploy to
+    force a fresh upload, then retry bundle_run once. ``app_name`` must be
+    provided to enable this recovery.
     """
     import subprocess as _subprocess
 
-    try:
-        _run_cmd(
-            [
-                "databricks",
-                "bundle",
-                "run",
-                resource_key,
-                "--no-wait",
-                "--target",
-                "dev",
-                "-p",
-                profile,
-            ],
-            cwd=template_dir,
-            timeout=90,
-        )
-    except _subprocess.TimeoutExpired:
+    cmd = [
+        "databricks", "bundle", "run", resource_key,
+        "--no-wait", "--target", "dev", "-p", profile,
+    ]
+    for attempt in range(1, 3):
+        try:
+            result = _run_cmd(cmd, cwd=template_dir, timeout=BUNDLE_TIMEOUT)
+        except _subprocess.TimeoutExpired:
+            _log(
+                f"bundle run --no-wait for {resource_key} timed out after {BUNDLE_TIMEOUT}s "
+                f"— app start was initiated, polling via wait_for_app_ready()"
+            )
+            return
+
+        if result.returncode == 0:
+            return
+
+        stderr_flat = " ".join(result.stderr.split())
+        if "Invalid source code path" in stderr_flat and app_name and attempt == 1:
+            _log(
+                f"bundle run failed: source_code_path missing on workspace "
+                f"(likely stale state from prior run); re-deploying to "
+                f"re-upload source, then retrying..."
+            )
+            bundle_deploy(template_dir, profile, resource_key, app_name)
+            continue
+
+        # Other failure mode — log and let wait_for_app_ready surface it.
         _log(
-            f"bundle run --no-wait for {resource_key} timed out after 90s "
-            f"— app start was initiated, polling via wait_for_app_ready()"
+            f"bundle run --no-wait for {resource_key} exited {result.returncode}; "
+            f"proceeding to wait_for_app_ready (may time out)"
         )
+        return
 
 
 def bundle_run(template_dir: Path, resource_key: str, profile: str):
@@ -634,15 +944,19 @@ def bundle_destroy(template_dir: Path, profile: str):
 
 
 def get_oauth_token(profile: str) -> str:
-    """Get token from `databricks auth token -p <profile>`."""
-    result = _run_cmd(
-        ["databricks", "auth", "token", "-p", profile],
-        timeout=60,
-    )
-    assert result.returncode == 0, f"Failed to get auth token: {result.stderr}"
-    data = json.loads(result.stdout)
-    token = data.get("access_token", "")
-    assert token, "No access_token in auth response"
+    """Get an OAuth bearer token for the given Databricks CLI profile.
+
+    Uses the Databricks SDK so this works for both U2M (personal OAuth) and
+    M2M (service-principal client_id/client_secret) profiles. The CLI's
+    `databricks auth token` subcommand only supports U2M, which breaks
+    CI runs against an SP profile.
+    """
+    from databricks.sdk import WorkspaceClient
+
+    w = WorkspaceClient(profile=profile)
+    auth_header = w.config.authenticate()
+    token = auth_header.get("Authorization", "").removeprefix("Bearer ").strip()
+    assert token, f"No OAuth token returned for profile {profile!r}"
     return token
 
 
@@ -710,7 +1024,7 @@ def capture_app_logs(app_name: str, profile: str) -> str:
 # Lakebase
 # ---------------------------------------------------------------------------
 
-_MANAGED_SCHEMAS = ["public", "drizzle", "ai_chatbot", "agent_server"]
+_MANAGED_SCHEMAS = ["public", "drizzle", "ai_chatbot", "agent_server", "agent_langgraph_memory"]
 
 
 def _try_sql(client, sql: str):
@@ -724,17 +1038,14 @@ def _try_sql(client, sql: str):
 def grant_lakebase_access(
     app_name: str,
     profile: str,
-    instance_name: str | None = None,
-    lakebase_project: str | None = None,
-    lakebase_branch: str | None = None,
+    autoscaling_endpoint: str | None = None,
 ):
     """Grant the app's service principal Lakebase access.
 
-    Assumes the SP's postgres role already exists (created by the ``database``
+    Assumes the SP's postgres role already exists (created by the ``postgres``
     resource in databricks.yml at deploy time).
 
-    Pass either ``instance_name`` (provisioned) or both
-    ``lakebase_project`` and ``lakebase_branch`` (autoscaling).
+    Pass the autoscaling ``autoscaling_endpoint``.
     """
     from databricks_ai_bridge.lakebase import SchemaPrivilege, TablePrivilege
 
@@ -748,12 +1059,9 @@ def grant_lakebase_access(
         sp_client_id = data.get("service_principal_client_id", "")
         assert sp_client_id, f"No service_principal_client_id found for app {app_name}"
 
-        if instance_name:
-            client_ctx = LakebaseClient(instance_name=instance_name)
-        elif lakebase_project and lakebase_branch:
-            client_ctx = LakebaseClient(project=lakebase_project, branch=lakebase_branch)
-        else:
-            raise ValueError("Either lakebase instance name or autoscaling project/branch required")
+        if not autoscaling_endpoint:
+            raise ValueError("autoscaling_endpoint required")
+        client_ctx = LakebaseClient(autoscaling_endpoint=autoscaling_endpoint)
 
         with client_ctx as client:
             _log(f"Granting lakebase access to SP {sp_client_id}...")
@@ -781,17 +1089,24 @@ def grant_lakebase_access(
             _log(f"  Existing managed schemas: {existing_schemas}")
 
             if existing_schemas:
-                # SDK-level grants (schema + tables)
-                client.grant_schema(
-                    grantee=sp_client_id,
-                    privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE],
-                    schemas=existing_schemas,
-                )
-                client.grant_all_tables_in_schema(
-                    grantee=sp_client_id,
-                    privileges=[TablePrivilege.ALL],
-                    schemas=existing_schemas,
-                )
+                # SDK-level grants (schema + tables) — best-effort, may fail
+                # on autoscaling if tables are owned by other users
+                try:
+                    client.grant_schema(
+                        grantee=sp_client_id,
+                        privileges=[SchemaPrivilege.USAGE, SchemaPrivilege.CREATE],
+                        schemas=existing_schemas,
+                    )
+                except Exception as exc:
+                    _log(f"  Schema grant warning: {exc}")
+                try:
+                    client.grant_all_tables_in_schema(
+                        grantee=sp_client_id,
+                        privileges=[TablePrivilege.ALL],
+                        schemas=existing_schemas,
+                    )
+                except Exception as exc:
+                    _log(f"  Table grant warning: {exc}")
 
                 # Raw SQL grants for tables and sequences.
                 # Note: GRANT ALL on sequences includes DELETE which is invalid

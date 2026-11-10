@@ -5,9 +5,8 @@ description: "Add memory capabilities to your agent. Use when: (1) User asks abo
 
 # Adding Memory to Your Agent
 
-> **Note:** This template does not include memory by default. Use this skill to **add memory capabilities**. For pre-configured memory templates, see:
-> - [agent-langgraph-short-term-memory](https://github.com/databricks/app-templates/tree/main/agent-langgraph-short-term-memory) - Conversation history within a session
-> - [agent-langgraph-long-term-memory](https://github.com/databricks/app-templates/tree/main/agent-langgraph-long-term-memory) - User facts that persist across sessions
+> **Note:** This template does not include memory by default. Use this skill to **add memory capabilities**. For a pre-configured memory template, see:
+> - [agent-langgraph-advanced](https://github.com/databricks/app-templates/tree/main/agent-langgraph-advanced) - Short-term and long-term memory with long-running background tasks
 
 ## Memory Types
 
@@ -138,13 +137,13 @@ For implementations in the pre-built templates:
 
 | File | Description |
 |------|-------------|
-| [`agent-langgraph-long-term-memory/agent_server/utils_memory.py`](https://github.com/databricks/app-templates/tree/main/agent-langgraph-long-term-memory/agent_server/utils_memory.py) | Memory tools factory, helpers, error handling |
-| [`agent-langgraph-long-term-memory/agent_server/agent.py`](https://github.com/databricks/app-templates/tree/main/agent-langgraph-long-term-memory/agent_server/agent.py) | Integration with agent, store initialization |
+| [`agent-langgraph-advanced/agent_server/utils_memory.py`](https://github.com/databricks/app-templates/tree/main/agent-langgraph-advanced/agent_server/utils_memory.py) | Memory tools factory, helpers, error handling |
+| [`agent-langgraph-advanced/agent_server/agent.py`](https://github.com/databricks/app-templates/tree/main/agent-langgraph-advanced/agent_server/agent.py) | Integration with agent, store initialization |
 
 Key functions:
 - `memory_tools()` - Factory returning get/save/delete tools
 - `get_user_id()` - Extract user_id from request
-- `resolve_lakebase_instance_name()` - Handle hostname vs instance name
+- `init_lakebase_config()` - Read autoscaling Lakebase env vars into a `LakebaseConfig`
 - `get_lakebase_access_error_message()` - Helpful error messages
 
 ---
@@ -165,15 +164,15 @@ resources:
       resources:
         # ... other resources (experiment, UC functions, etc.) ...
 
-        # Lakebase instance for long-term memory
-        - name: 'database'
-          database:
-            instance_name: '<your-lakebase-instance-name>'
-            database_name: 'databricks_postgres'
+        # Autoscaling Lakebase instance for long-term memory
+        - name: 'postgres'
+          postgres:
+            branch: "projects/<project-name>/branches/<branch-name>"
+            database: "projects/<project-name>/branches/<branch-name>/databases/<database-id>"
             permission: 'CAN_CONNECT_AND_CREATE'
 ```
 
-**Important:** The `name: 'database'` must match the `value_from` reference in the `databricks.yml` `config.env` block.
+**Important:** The `name: 'postgres'` must match the `value_from` reference in the `databricks.yml` `config.env` block.
 
 ### Step 2: databricks.yml config block (Environment Variables)
 
@@ -185,9 +184,9 @@ Add the Lakebase environment variables to your app's `config.env` in `databricks
         env:
           # ... other env vars ...
 
-          # Lakebase instance name (resolved from database resource)
-          - name: LAKEBASE_INSTANCE_NAME
-            value_from: "database"
+          # Autoscaling Lakebase endpoint (resolved from postgres resource)
+          - name: LAKEBASE_AUTOSCALING_ENDPOINT
+            value_from: "postgres"
 
           # Embedding configuration
           - name: EMBEDDING_ENDPOINT
@@ -196,13 +195,13 @@ Add the Lakebase environment variables to your app's `config.env` in `databricks
             value: "1024"
 ```
 
-**Important:** `LAKEBASE_INSTANCE_NAME` uses `value_from: "database"` to resolve from the database resource at deploy time.
+**Important:** `LAKEBASE_AUTOSCALING_ENDPOINT` uses `value_from: "postgres"` to resolve from the postgres resource at deploy time.
 
 ### Step 3: .env (Local Development)
 
 ```bash
 # Lakebase configuration for long-term memory
-LAKEBASE_INSTANCE_NAME=<your-instance-name>
+LAKEBASE_AUTOSCALING_ENDPOINT=<your-endpoint>
 EMBEDDING_ENDPOINT=databricks-gte-large-en
 EMBEDDING_DIMS=1024
 ```
@@ -221,7 +220,7 @@ async def streaming(request: ResponsesAgentRequest):
     user_id = get_user_id(request)
 
     async with AsyncDatabricksStore(
-        instance_name=LAKEBASE_INSTANCE_NAME,
+        autoscaling_endpoint=LAKEBASE_AUTOSCALING_ENDPOINT,
         embedding_endpoint=EMBEDDING_ENDPOINT,
         embedding_dims=EMBEDDING_DIMS,
     ) as store:
@@ -250,7 +249,7 @@ from databricks_langchain import AsyncDatabricksStore
 
 async def setup():
     async with AsyncDatabricksStore(
-        instance_name="<your-instance-name>",
+        autoscaling_endpoint="<your-endpoint>",
         embedding_endpoint="databricks-gte-large-en",
         embedding_dims=1024,
     ) as store:
@@ -275,7 +274,7 @@ For conversation history within a session, use `AsyncCheckpointSaver`:
 ```python
 from databricks_langchain import AsyncCheckpointSaver
 
-async with AsyncCheckpointSaver(instance_name=LAKEBASE_INSTANCE_NAME) as checkpointer:
+async with AsyncCheckpointSaver(autoscaling_endpoint=LAKEBASE_AUTOSCALING_ENDPOINT) as checkpointer:
     agent = create_react_agent(
         model=model,
         tools=tools,
@@ -287,7 +286,7 @@ async with AsyncCheckpointSaver(instance_name=LAKEBASE_INSTANCE_NAME) as checkpo
         yield event
 ```
 
-See the [agent-langgraph-short-term-memory](https://github.com/databricks/app-templates/tree/main/agent-langgraph-short-term-memory) template for a complete implementation.
+See the [agent-langgraph-advanced](https://github.com/databricks/app-templates/tree/main/agent-langgraph-advanced) template for a complete implementation.
 
 ---
 
@@ -348,8 +347,8 @@ curl -X POST https://<app-url>/invocations \
 - [ ] Run `uv sync` to install dependencies
 - [ ] Created or identified Lakebase instance
 - [ ] Added Lakebase env vars to `.env` (for local dev)
-- [ ] Added `database` resource to `databricks.yml`
-- [ ] Added `LAKEBASE_INSTANCE_NAME` to `databricks.yml` `config.env`
+- [ ] Added `postgres` resource to `databricks.yml`
+- [ ] Added `LAKEBASE_AUTOSCALING_ENDPOINT` to `databricks.yml` `config.env`
 - [ ] **Initialized tables locally** by running `await store.setup()`
 - [ ] Deployed with `databricks bundle deploy && databricks bundle run`
 
@@ -361,8 +360,8 @@ curl -X POST https://<app-url>/invocations \
 |-------|-------|----------|
 | **"embedding_dims is required"** | Missing parameter | Add `embedding_dims=1024` to AsyncDatabricksStore |
 | **"relation 'store' does not exist"** | Tables not created | Run `await store.setup()` locally first |
-| **"Unable to resolve Lakebase instance 'None'"** | Missing env var | Check `LAKEBASE_INSTANCE_NAME` in databricks.yml `config.env` |
-| **"permission denied for table store"** | Missing grants | Add `database` resource to databricks.yml |
+| **"Unable to resolve Lakebase endpoint 'None'"** | Missing env var | Check `LAKEBASE_AUTOSCALING_ENDPOINT` in databricks.yml `config.env` |
+| **"permission denied for table store"** | Missing grants | Add `postgres` resource to databricks.yml |
 | **"Memory not available - no user_id"** | Missing user_id | Pass `custom_inputs.user_id` in request |
 | **Memory not persisting** | Different user_ids | Use consistent user_id across requests |
 | **App not updated after deploy** | Forgot to run bundle | Run `databricks bundle run agent_langgraph` after deploy |
@@ -375,8 +374,7 @@ For fully configured implementations without manual setup:
 
 | Template | Memory Type | Key Features |
 |----------|-------------|--------------|
-| [agent-langgraph-short-term-memory](https://github.com/databricks/app-templates/tree/main/agent-langgraph-short-term-memory) | Short-term | AsyncCheckpointSaver, thread_id |
-| [agent-langgraph-long-term-memory](https://github.com/databricks/app-templates/tree/main/agent-langgraph-long-term-memory) | Long-term | AsyncDatabricksStore, memory tools |
+| [agent-langgraph-advanced](https://github.com/databricks/app-templates/tree/main/agent-langgraph-advanced) | Short-term + Long-term | AsyncCheckpointSaver, AsyncDatabricksStore, memory tools |
 
 ---
 

@@ -12,6 +12,26 @@ has_brew() {
     command_exists brew
 }
 
+# Helper function to download a pinned installer script, verify its SHA-256
+# checksum, and print the path of the verified local copy. Avoids piping remote
+# content straight into a shell.
+download_verified_installer() {
+    local url="$1" expected_sha256="$2" dest actual_sha256
+    dest="$(mktemp)"
+    curl -fsSL -o "$dest" "$url"
+    if command_exists sha256sum; then
+        actual_sha256="$(sha256sum "$dest" | awk '{print $1}')"
+    else
+        actual_sha256="$(shasum -a 256 "$dest" | awk '{print $1}')"
+    fi
+    if [ "$actual_sha256" != "$expected_sha256" ]; then
+        echo "Error: checksum mismatch for $url" >&2
+        rm -f "$dest"
+        return 1
+    fi
+    echo "$dest"
+}
+
 # Helper function to extract bundle name from databricks.yml
 get_current_bundle_name() {
     if [ -f "databricks.yml" ]; then
@@ -152,7 +172,11 @@ else
         [ -s "/usr/local/opt/nvm/nvm.sh" ] && \. "/usr/local/opt/nvm/nvm.sh"
     else
         echo "Using curl to install nvm..."
-        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+        NVM_INSTALLER="$(download_verified_installer \
+            https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh \
+            8e45fa547f428e9196a5613efad3bfa4d4608b74ca870f930090598f5af5f643)"
+        bash "$NVM_INSTALLER"
+        rm -f "$NVM_INSTALLER"
         export NVM_DIR="$HOME/.nvm"
         [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
     fi
@@ -180,12 +204,16 @@ else
         brew install databricks
     else
         echo "Using curl to install Databricks CLI..."
-        if curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh; then
+        CLI_INSTALLER="$(download_verified_installer \
+            https://raw.githubusercontent.com/databricks/setup-cli/v1.18.0/install.sh \
+            33be5976d44b7c98822030b5e62813bcb046e5feba387e663b5f0f9030dd7926)"
+        if sh "$CLI_INSTALLER"; then
             echo "✓ Databricks CLI installed successfully"
         else
             echo "Installation failed, trying with sudo..."
-            curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sudo sh
+            sudo sh "$CLI_INSTALLER"
         fi
+        rm -f "$CLI_INSTALLER"
     fi
     echo "✓ Databricks CLI installed successfully"
 fi
@@ -311,7 +339,7 @@ else
 
     echo "Authenticating with Databricks..."
     set +e
-    databricks auth login --host "$DATABRICKS_HOST"
+    databricks auth login --host="$DATABRICKS_HOST"
     AUTH_EXIT_CODE=$?
     set -e
 

@@ -1,5 +1,5 @@
 import { expect, test } from '../fixtures';
-import { generateUUID } from '@chat-template/core';
+import { generateUUID } from '@databricks/chatbot-core';
 import { TEST_PROMPTS } from '../prompts/routes';
 import {
   sendChatAndGetMessageId,

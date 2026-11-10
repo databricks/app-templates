@@ -1,12 +1,12 @@
 import { config } from 'dotenv';
 import postgres from 'postgres';
 import * as readline from 'node:readline';
-import { getDatabricksToken } from '@chat-template/auth';
+import { getDatabricksToken } from '@databricks/chatbot-auth';
 import {
   getPostgresUrlFromEnv,
   getDatabaseConfigFromEnv,
   buildConnectionUrl,
-} from '@chat-template/db';
+} from '@databricks/chatbot-db';
 
 config({ path: '.env' });
 

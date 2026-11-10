@@ -1,3 +1,15 @@
+# --- diagnostics bootstrap: install crash/exception logging before app code ---
+import os as _diag_os
+import sys as _diag_sys
+
+_diag_dir = _diag_os.path.dirname(_diag_os.path.abspath(__file__))
+if _diag_dir not in _diag_sys.path:
+    _diag_sys.path.insert(0, _diag_dir)
+import app_diagnostics  # noqa: E402
+
+app_diagnostics.install_diagnostics()
+# --- end diagnostics bootstrap ---
+
 import gradio as gr
 import logging
 import os
@@ -28,11 +40,18 @@ def query_llm(message, history):
     if not message.strip():
         return "ERROR: The question should not be empty"
 
-    # Convert from Gradio-style history to OpenAI-style messages
+    # Gradio passes history as OpenAI-style messages; content is a string or a
+    # list of content parts. Keep only the text the endpoint can use.
     message_history = []
-    for user_msg, assistant_msg in history:
-        message_history.append({"role": "user", "content": user_msg})
-        message_history.append({"role": "assistant", "content": assistant_msg})
+    for msg in history:
+        content = msg["content"]
+        if isinstance(content, list):
+            content = "".join(
+                part.get("text", "") for part in content
+                if isinstance(part, dict) and part.get("type") == "text"
+            )
+        if isinstance(content, str) and content:
+            message_history.append({"role": msg["role"], "content": content})
 
     # Add the latest user message
     message_history.append({"role": "user", "content": message})

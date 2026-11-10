@@ -9,6 +9,9 @@ databricks.yml            # Databricks Asset Bundle: Lakebase project, branch, a
 app.yaml                  # Databricks Apps runtime configuration
 entrypoint.sh             # Startup script: collectstatic, ensure_schema, migrate, gunicorn
 config/settings.py        # Django settings (database, CSRF, static files)
+config/auth.py            # Databricks Apps user authentication (X-Forwarded-Email)
+config/test_auth.py       # Tests for the authentication logic
+config/test_settings.py   # Test settings: in-memory SQLite instead of Lakebase
 lakebase/base.py          # Custom DB backend: injects OAuth tokens via Databricks SDK
 todos/                    # Sample Django app (CRUD todo list)
 ```
@@ -135,3 +138,11 @@ PATH=".venv/bin:$PATH" databricks apps run-local -p <PROFILE> \
 ```
 
 `DJANGO_DEV_EMAIL` enables admin access during local development since the `X-Forwarded-Email` header is not present outside Databricks Apps. The authentication middleware falls back to this variable only when `DEBUG` is enabled and the header is missing; in a deployed app (`DEBUG` off) it is ignored.
+
+## Run tests
+
+```console
+python manage.py test
+```
+
+Tests run against an in-memory SQLite database (`config/test_settings.py`), so they need no Lakebase connection or environment variables.

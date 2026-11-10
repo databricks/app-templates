@@ -19,7 +19,11 @@ import sys
 
 def main():
     """Run administrative tasks."""
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+    # `manage.py test` runs against in-memory SQLite (config/test_settings.py),
+    # so it needs no Lakebase connection. An explicit setting still wins.
+    is_test = sys.argv[1:2] == ["test"]
+    default_settings = "config.test_settings" if is_test else "config.settings"
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", default_settings)
     try:
         from django.core.management import execute_from_command_line
     except ImportError as exc:

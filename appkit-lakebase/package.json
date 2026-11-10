@@ -75,6 +75,9 @@
   "overrides": {
     "vite": "npm:rolldown-vite@7.1.14",
     "@opentelemetry/core": "2.12.0",
-    "systeminformation": "5.33.16"
+    "systeminformation": "5.33.16",
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.3"
+    }
   }
 }

@@ -78,6 +78,9 @@
     "vitest": "4.1.12"
   },
   "overrides": {
-    "vite": "npm:rolldown-vite@7.1.14"
+    "vite": "npm:rolldown-vite@7.1.14",
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.3"
+    }
   }
 }

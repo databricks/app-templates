@@ -9,6 +9,8 @@ Everything else is standard Django.
 import os
 from pathlib import Path
 
+from psycopg.sql import Identifier
+
 from utils import get_schema_name
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -123,7 +125,9 @@ DATABASES = {
         "PORT": os.environ.get("PGPORT", ""),
         "OPTIONS": {
             "sslmode": os.environ.get("PGSSLMODE", "require"),
-            "options": f"-c search_path={get_schema_name()}",
+            # Quote the schema like ensure_schema does: an unquoted name is
+            # lowercased by Postgres and would not match (e.g. an email PGUSER).
+            "options": f"-c search_path={Identifier(get_schema_name()).as_string()}",
         },
     }
 }

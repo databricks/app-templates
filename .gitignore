@@ -134,7 +134,6 @@ dmypy.json
 
 # uv
 **/uv.lock
-!django-postgres-app/uv.lock
 
 # Visual Studio Code
 .vscode/

@@ -54,13 +54,11 @@ coverage.xml
 *.mo
 *.pot
 
-# Django
-staticfiles/
+# Django stuff:
 *.log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
-*.sqlite3
 
 # Flask stuff:
 instance/
@@ -104,9 +102,6 @@ celerybeat.pid
 
 # Environments
 .env
-.env.*
-!.env.example
-!.env.sample
 .venv
 env/
 venv/
@@ -145,7 +140,7 @@ ml-models.iml
 ml-models.ipr
 
 .DS_Store
-.databricks/
+.databricks
 .gradio
 
 # Node.js / Next.js / Web development

@@ -11,15 +11,22 @@ app_diagnostics.install_diagnostics()
 # --- end diagnostics bootstrap ---
 
 import os
+import re
 from databricks import sql
 from databricks.sdk.core import Config
 import gradio as gr
 import pandas as pd
+from starlette.middleware import Middleware
+
+from security import SecurityMiddleware
 
 # Ensure environment variable is set correctly
 assert os.getenv('DATABRICKS_WAREHOUSE_ID'), "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
 
-def sqlQuery(query: str) -> pd.DataFrame:
+ZIP_CODE = re.compile(r"[0-9]{5}")
+
+def sqlQuery(query: str, params: dict | None = None) -> pd.DataFrame:
+    """Run a query. Pass user values in `params` and reference them as :name markers."""
     cfg = Config() # Pull environment variables for auth
     with sql.connect(
         server_hostname=cfg.host,
@@ -27,7 +34,7 @@ def sqlQuery(query: str) -> pd.DataFrame:
         credentials_provider=lambda: cfg.authenticate
     ) as connection:
         with connection.cursor() as cursor:
-            cursor.execute(query)
+            cursor.execute(query, params)
             return cursor.fetchall_arrow().to_pandas()
 
 # This example query depends on the nyctaxi data set in Unity Catalog, see https://docs.databricks.com/en/discover/databricks-datasets.html for details
@@ -42,16 +49,22 @@ with gr.Blocks() as demo:  # must call it demo to get Gradio hot reload
                         y="fare_amount", x="trip_distance", y_title="Fare", x_title="Distance")
         with gr.Column(variant='panel'):
             gr.Markdown("## Predict fare\nFrom (zipcode)")
-            fromZip = gr.Textbox(value='10003', interactive=True, container=False)
+            fromZip = gr.Textbox(value='10003', interactive=True, container=False, max_length=5)
             gr.Markdown("To (zipcode)")
-            toZip = gr.Textbox(value='11238', interactive=True, container=False)
+            toZip = gr.Textbox(value='11238', interactive=True, container=False, max_length=5)
 
             @gr.render(inputs=[fromZip, toZip])
             def render_count(pickup, dropoff):
+                if not all(isinstance(z, str) and ZIP_CODE.fullmatch(z) for z in (pickup, dropoff)):
+                    gr.Markdown("Enter 5-digit zip codes.")
+                    return
                 d = data[(data['pickup_zip'] == int(pickup)) & (data['dropoff_zip'] == int(dropoff))]
                 gr.Markdown(f"# **${d['fare_amount'].mean() if len(d) > 0 else 99:.2f}**")
 
     gr.Dataframe(value=data)
 
 if __name__ == "__main__":
-    demo.launch(css="footer {visibility: hidden}")
+    demo.launch(
+        css="footer {visibility: hidden}",
+        app_kwargs={"middleware": [Middleware(SecurityMiddleware)]},
+    )

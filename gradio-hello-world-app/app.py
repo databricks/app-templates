@@ -14,6 +14,9 @@ import os
 
 import gradio as gr
 import pandas as pd
+from starlette.middleware import Middleware
+
+from security import SecurityMiddleware
 
 data = pd.DataFrame({'x': [x for x in range(30)],
                      'y': [2 ** x for x in range(30)]})
@@ -31,4 +34,5 @@ if __name__ == '__main__':
     gradio_app.launch(
         css='footer {visibility: hidden}',
         server_name=os.getenv('GRADIO_SERVER_NAME', '0.0.0.0'),
+        app_kwargs={"middleware": [Middleware(SecurityMiddleware)]},
     )

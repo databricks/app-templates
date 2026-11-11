@@ -15,6 +15,8 @@ from dash import Dash, dcc, html
 import plotly.express as px
 import dash_bootstrap_components as dbc
 
+import security
+
 # Initialize the Dash app with Bootstrap styling
 dash_app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
@@ -32,6 +34,8 @@ dash_app.layout = dbc.Container([
         style={'height': '500px', 'width': f'{min(100 + 50 * 30, 1000)}px'}
     )
 ], fluid=True)
+
+security.init_app(dash_app.server, extra_script_sources=dash_app.csp_hashes())
 
 if __name__ == '__main__':
     dash_app.run(debug=True)

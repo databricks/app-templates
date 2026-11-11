@@ -40,6 +40,7 @@ from agent_server.utils import (
     build_mcp_url,
     get_session_id,
     get_user_workspace_client,
+    get_validated_input,
     process_agent_stream_events,
 )
 
@@ -118,6 +119,7 @@ logger = logging.getLogger(__name__)
 
 # Async client used inside tool functions to query other agents / endpoints
 _tool_client = AsyncDatabricksOpenAI()
+MAX_SUBAGENT_QUESTION_CHARS = 10_000
 
 # ---------------------------------------------------------------------------
 # Subagent tools — one tool per non-genie SUBAGENTS entry
@@ -130,6 +132,8 @@ def _make_subagent_tool(subagent: dict):
     model = f"apps/{endpoint}" if subagent["type"] == "app" else endpoint
 
     async def _call(question: str) -> str:
+        if len(question) > MAX_SUBAGENT_QUESTION_CHARS:
+            return f"Question too long (limit {MAX_SUBAGENT_QUESTION_CHARS} characters); shorten it and retry."
         # Calls a Databricks endpoint/app, not the OpenAI platform, so OpenAI-only
         # abuse-monitoring params like safety_identifier don't apply.
         response = await _tool_client.responses.create(  # nosemgrep: openai-missing-safety-identifier-python
@@ -230,12 +234,12 @@ def create_orchestrator_agent(
 async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
     if session_id := get_session_id(request):
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
+    messages = normalize_history_items(get_validated_input(request))
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
     async with AsyncExitStack() as stack:
         servers, unavailable = await connect_healthy_mcp_servers(stack, build_mcp_servers())
         agent = create_orchestrator_agent(servers, unavailable)
-        messages = normalize_history_items([i.model_dump() for i in request.input])
         result = await Runner.run(agent, messages)
         return ResponsesAgentResponse(output=[item.to_input_item() for item in result.new_items])
 
@@ -244,12 +248,12 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
 async def stream_handler(request: ResponsesAgentRequest) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
     if session_id := get_session_id(request):
         mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
+    messages = normalize_history_items(get_validated_input(request))
     # Optionally use the user's workspace client for on-behalf-of authentication
     # user_workspace_client = get_user_workspace_client()
     async with AsyncExitStack() as stack:
         servers, unavailable = await connect_healthy_mcp_servers(stack, build_mcp_servers())
         agent = create_orchestrator_agent(servers, unavailable)
-        messages = normalize_history_items([i.model_dump() for i in request.input])
         result = Runner.run_streamed(agent, input=messages)
 
         async for event in process_agent_stream_events(result.stream_events()):

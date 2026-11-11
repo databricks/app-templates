@@ -12,6 +12,9 @@ app_diagnostics.install_diagnostics()
 
 import gradio as gr
 import pandas as pd
+from starlette.middleware import Middleware
+
+from security import SecurityMiddleware
 
 data = pd.DataFrame({'x': [x for x in range(30)],
                      'y': [2 ** x for x in range(30)]})
@@ -26,4 +29,7 @@ with gr.Blocks() as gradio_app:
                            y_title='Fun with data', x_title='Apps')
 
 if __name__ == '__main__':
-    gradio_app.launch(css='footer {visibility: hidden}')
+    gradio_app.launch(
+        css='footer {visibility: hidden}',
+        app_kwargs={"middleware": [Middleware(SecurityMiddleware)]},
+    )

@@ -28,8 +28,8 @@
   "license": "Unlicensed",
   "description": "Node.js app with Databricks Model Serving endpoint integration",
   "dependencies": {
-    "@databricks/appkit": "0.87.0",
-    "@databricks/appkit-ui": "0.87.0",
+    "@databricks/appkit": "0.91.3",
+    "@databricks/appkit-ui": "0.91.3",
     "@databricks/sdk-experimental": "0.17.0",
     "clsx": "2.1.1",
     "embla-carousel-react": "8.6.0",
@@ -74,11 +74,7 @@
   },
   "overrides": {
     "vite": "npm:rolldown-vite@7.1.14",
-    "@opentelemetry/core": "2.8.0",
-    "systeminformation": "5.33.16",
-    "dompurify": "3.4.17",
-    "zod": "4.6.7",
-    "js-yaml": "4.3.2",
-    "@opentelemetry/propagator-jaeger": "2.9.0"
+    "@opentelemetry/core": "2.12.0",
+    "systeminformation": "5.33.16"
   }
 }

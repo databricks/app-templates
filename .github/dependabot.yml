@@ -35,11 +35,13 @@ updates:
       - "/appkit-genie"
       - "/appkit-lakebase"
       - "/appkit-serving"
+      - "/content-moderator"
       - "/e2e-chatbot-app-next"
       - "/e2e-chatbot-model-service"
       - "/inventory-intelligence"
       - "/inventory-intelligence/seed"
       - "/rag-chat"
+      - "/saas-tracker"
       - "/vacation-rentals"
     schedule:
       interval: "weekly"

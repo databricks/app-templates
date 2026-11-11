@@ -16,6 +16,7 @@ import dash_bootstrap_components as dbc
 from dash import html
 from DatabricksChatbot import DatabricksChatbot
 from model_serving_utils import is_endpoint_supported
+import security
 
 # Ensure environment variable is set correctly
 serving_endpoint = os.getenv('SERVING_ENDPOINT')
@@ -68,6 +69,8 @@ else:
             dbc.Col(chatbot.layout, width={'size': 8, 'offset': 2})
         ])
     ], fluid=True)
+
+security.init_app(app.server, extra_script_sources=app.csp_hashes())
 
 if __name__ == '__main__':
     app.run(debug=True)

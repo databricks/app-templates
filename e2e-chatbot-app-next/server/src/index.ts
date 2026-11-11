@@ -24,6 +24,7 @@ import { messagesRouter } from './routes/messages';
 import { configRouter } from './routes/config';
 import { feedbackRouter } from './routes/feedback';
 import { ChatSDKError } from '@databricks/chatbot-core/errors';
+import { securityHeadersMiddleware } from './middleware/security-headers';
 
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -38,13 +39,22 @@ const PORT =
   process.env.PORT ||
   (isDevelopment ? 3001 : 3000);
 
-// CORS configuration
-app.use(
-  cors({
-    origin: isDevelopment ? 'http://localhost:3000' : true,
-    credentials: true,
-  }),
-);
+app.disable('x-powered-by');
+app.use(securityHeadersMiddleware);
+
+// CORS: the UI is served from the same origin in production, so cross-origin
+// access is off unless explicitly allowed via ALLOWED_ORIGINS (comma-separated).
+// Never reflect arbitrary origins: requests carry the user's credentials.
+const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+if (isDevelopment) {
+  allowedOrigins.push('http://localhost:3000');
+}
+if (allowedOrigins.length > 0) {
+  app.use(cors({ origin: allowedOrigins, credentials: true }));
+}
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));

@@ -24,6 +24,8 @@ import {
   type MLflowTracing,
 } from "./tracing.js";
 import { createInvocationsRouter } from "./routes/invocations.js";
+import { createCsrfMiddleware } from "./middleware/csrf.js";
+import { SECURITY_HEADERS, securityHeadersMiddleware } from "./middleware/security-headers.js";
 import { closeMCPClient } from "../tools.js";
 import type { AgentInterface } from "./agent-interface.js";
 
@@ -45,6 +47,27 @@ const SERVICE_INFO = {
     invocations: "POST /invocations (Responses API)",
   },
 };
+
+const SKIPPED_UPSTREAM_HEADERS = new Set([
+  ...Object.keys(SECURITY_HEADERS).map((name) => name.toLowerCase()),
+  "access-control-allow-origin",
+  "access-control-allow-credentials",
+  "access-control-allow-methods",
+  "access-control-allow-headers",
+  "access-control-expose-headers",
+  "access-control-max-age",
+  "x-powered-by",
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+  "content-encoding",
+  "content-length",
+]);
 
 /**
  * Register SIGINT/SIGTERM handlers that flush tracing and close MCP connections.
@@ -78,7 +101,20 @@ export async function createServer(
   const app = express();
 
   // Middleware
-  app.use(cors());
+  app.disable("x-powered-by");
+  app.use(securityHeadersMiddleware);
+
+  // CORS: the UI is served from the same origin, so cross-origin access is off
+  // unless explicitly allowed via ALLOWED_ORIGINS (comma-separated).
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  if (allowedOrigins.length > 0) {
+    app.use(cors({ origin: allowedOrigins, credentials: true }));
+  }
+
+  app.use(createCsrfMiddleware());
   app.use(express.json({ limit: '10mb' })); // Protect against large payload DoS
 
   // Initialize MLflow tracing
@@ -122,9 +158,12 @@ export async function createServer(
           body: req.method !== "GET" && req.method !== "HEAD" ? JSON.stringify(req.body) : undefined,
         });
 
-        // Copy response headers
+        // Copy response headers, keeping this server's security headers and
+        // dropping hop-by-hop and encoding headers (fetch already decoded the body).
         response.headers.forEach((value, key) => {
-          res.setHeader(key, value);
+          if (!SKIPPED_UPSTREAM_HEADERS.has(key.toLowerCase())) {
+            res.setHeader(key, value);
+          }
         });
 
         res.status(response.status);

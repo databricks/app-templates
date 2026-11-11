@@ -102,15 +102,15 @@ describe("Error Handling Tests", () => {
     }, 30000);
 
     test("should accept payloads under 10MB limit", async () => {
-      // Create a payload just under 10MB
-      const acceptableMessage = "A".repeat(1024 * 1024); // 1MB
-
+      // 1MB of tool output in history plus a message at the text length cap
       const response = await fetch(`${AGENT_URL}/invocations`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           input: [
-            { role: "user", content: acceptableMessage }
+            { type: "function_call", call_id: "c1", name: "lookup", arguments: "{}" },
+            { type: "function_call_output", call_id: "c1", output: "A".repeat(1_000_000) },
+            { role: "user", content: "A".repeat(100_000) },
           ],
           stream: true,
         }),
@@ -118,6 +118,85 @@ describe("Error Handling Tests", () => {
 
       // Should accept and process
       expect(response.ok).toBe(true);
+    }, 30000);
+  });
+
+  describe("Input Validation", () => {
+    const post = (body: unknown) =>
+      fetch(`${AGENT_URL}/invocations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stream: false, ...(body as object) }),
+      });
+
+    test("should reject message text over the length cap", async () => {
+      const response = await post({
+        input: [{ role: "user", content: "A".repeat(100_001) }],
+      });
+      expect(response.status).toBe(400);
+    }, 30000);
+
+    test("should reject unknown input item types", async () => {
+      const response = await post({
+        input: [
+          { type: "custom_item", payload: "x" },
+          { role: "user", content: "hi" },
+        ],
+      });
+      expect(response.status).toBe(400);
+    }, 30000);
+
+    test("should reject unknown roles", async () => {
+      const response = await post({
+        input: [{ role: "tool", content: "x" }, { role: "user", content: "hi" }],
+      });
+      expect(response.status).toBe(400);
+    }, 30000);
+
+    test("should reject too many input items", async () => {
+      const response = await post({
+        input: Array.from({ length: 501 }, () => ({ role: "user", content: "hi" })),
+      });
+      expect(response.status).toBe(400);
+    }, 30000);
+
+    test("should accept history with system, reasoning and approval items", async () => {
+      const response = await post({
+        input: [
+          { role: "system", content: "Generate a short title" },
+          { type: "reasoning", id: "r1", summary: [{ type: "summary_text", text: "thinking" }] },
+          { type: "mcp_approval_request", id: "a1", name: "tool", arguments: "{}", server_label: "s" },
+          { type: "mcp_approval_response", approval_request_id: "a1", approve: true },
+          { role: "assistant", content: [{ type: "output_text", text: "ok" }] },
+          { role: "user", content: [{ type: "input_text", text: "hi" }] },
+        ],
+      });
+      expect(response.ok).toBe(true);
+      const body = (await response.json()) as { output: unknown };
+      expect(JSON.stringify(body.output)).toContain("Echo: hi");
+    }, 30000);
+  });
+
+  describe("Origin and CORS", () => {
+    test("should reject cross-site POSTs", async () => {
+      for (const origin of ["https://evil.example", "null"]) {
+        const response = await fetch(`${AGENT_URL}/invocations`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Origin: origin },
+          body: JSON.stringify({ input: "hi", stream: false }),
+        });
+        expect(response.status).toBe(403);
+      }
+    }, 30000);
+
+    test("should not send CORS headers to foreign origins", async () => {
+      const response = await fetch(`${AGENT_URL}/health`, {
+        headers: { Origin: "https://evil.example" },
+      });
+      expect(response.headers.get("access-control-allow-origin")).toBeNull();
+      expect(response.headers.get("content-security-policy")).toContain(
+        "frame-ancestors 'none'"
+      );
     }, 30000);
   });
 

@@ -14,6 +14,73 @@ import { Router, type Request, type Response } from "express";
 import type { AgentInterface } from "../agent-interface.js";
 import { z } from "zod";
 
+const MAX_TEXT_LENGTH = 100_000;
+// Tool arguments and results (e.g. query results) can be larger than chat text.
+const MAX_TOOL_DATA_LENGTH = 1_000_000;
+const MAX_CONTENT_PARTS = 50;
+const MAX_INPUT_ITEMS = 500;
+const MAX_ID_LENGTH = 256;
+
+const text = z.string().max(MAX_TEXT_LENGTH);
+const toolData = z.string().max(MAX_TOOL_DATA_LENGTH);
+const id = z.string().max(MAX_ID_LENGTH);
+
+const contentPartSchema = z.union([
+  z.object({ type: z.enum(["input_text", "output_text", "text"]), text }),
+  z.object({
+    type: z.literal("function_call"),
+    name: id,
+    arguments: z.union([toolData, z.record(z.string(), z.unknown())]),
+  }),
+  z.object({ type: z.literal("function_call_output"), output: toolData }),
+]);
+
+const messageItemSchema = z.object({
+  type: z.literal("message").optional(),
+  id: id.optional(),
+  // "system" is accepted for compatibility (the chat UI sends its title prompt
+  // as one) but is never passed to the agent as a system message; see below.
+  role: z.enum(["user", "assistant", "system"]),
+  content: z.union([text, z.array(contentPartSchema).max(MAX_CONTENT_PARTS)]),
+});
+
+const inputItemSchema = z.union([
+  messageItemSchema,
+  z.object({
+    type: z.literal("function_call"),
+    id: id.optional(),
+    call_id: id.optional(),
+    name: id,
+    arguments: toolData,
+  }),
+  z.object({
+    type: z.literal("function_call_output"),
+    call_id: id.optional(),
+    output: toolData,
+  }),
+  z.object({
+    type: z.literal("reasoning"),
+    id: id.optional(),
+    summary: z
+      .array(z.object({ type: z.literal("summary_text"), text }))
+      .max(MAX_CONTENT_PARTS),
+  }),
+  z.object({
+    type: z.literal("mcp_approval_request"),
+    id,
+    name: id,
+    arguments: toolData,
+    server_label: id.optional(),
+  }),
+  z.object({
+    type: z.literal("mcp_approval_response"),
+    id: id.optional(),
+    approval_request_id: id,
+    approve: z.boolean(),
+    reason: text.optional(),
+  }),
+]);
+
 /**
  * Responses API request schema.
  *
@@ -21,26 +88,7 @@ import { z } from "zod";
  * OpenAI SDK wire format (input as string or array, optional model field).
  */
 const responsesRequestSchema = z.object({
-  input: z.union([
-    z.string(),
-    z.array(
-      z.union([
-        z.object({
-          role: z.enum(["user", "assistant", "system"]),
-          content: z.union([
-            z.string(),
-            z.array(
-              z.union([
-                z.object({ type: z.string(), text: z.string() }).passthrough(),
-                z.object({ type: z.string() }).passthrough(),
-              ])
-            ),
-          ]),
-        }),
-        z.object({ type: z.string() }).passthrough(),
-      ])
-    ),
-  ]),
+  input: z.union([text, z.array(inputItemSchema).max(MAX_INPUT_ITEMS)]),
   stream: z.boolean().optional().default(true),
   // Accept (and ignore) model field sent by the OpenAI SDK
   model: z.string().optional(),
@@ -73,7 +121,10 @@ export function createInvocationsRouter(agent: AgentInterface): ReturnType<typeo
           : parsed.data.input;
 
       // Extract the latest user message
-      const userMessages = input.filter((msg: any) => msg.role === "user");
+      const userMessages = input.filter(
+        (msg): msg is z.infer<typeof messageItemSchema> =>
+          "role" in msg && msg.role === "user"
+      );
       if (userMessages.length === 0) {
         return res.status(400).json({
           error: "No user message found in input",
@@ -96,6 +147,12 @@ export function createInvocationsRouter(agent: AgentInterface): ReturnType<typeo
       // Convert Responses API input to simple chat history for the agent.
       // Preserve tool call context for followup questions.
       const chatHistory = input.slice(0, -1).map((item: any) => {
+        // The agent's system prompt is set server-side; caller-supplied system
+        // messages are treated as user turns so they can't override it.
+        if (item.role === "system") {
+          item = { ...item, role: "user" };
+        }
+
         if (item.type === "function_call") {
           return {
             role: "assistant",

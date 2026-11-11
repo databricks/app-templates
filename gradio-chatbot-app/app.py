@@ -13,7 +13,9 @@ app_diagnostics.install_diagnostics()
 import gradio as gr
 import logging
 import os
+from starlette.middleware import Middleware
 from model_serving_utils import query_endpoint, is_endpoint_supported
+from security import SecurityMiddleware
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -31,27 +33,37 @@ assert SERVING_ENDPOINT,\
 # Check if the endpoint is supported
 endpoint_supported = is_endpoint_supported(SERVING_ENDPOINT)
 
+MAX_MESSAGE_LENGTH = 4000
+MAX_HISTORY_MESSAGES = 20
+ALLOWED_HISTORY_ROLES = {"user", "assistant"}
+
 def query_llm(message, history):
     """
     Query the LLM with the given message and chat history.
     `message`: str - the latest user input.
     `history`: list of dicts - OpenAI-style messages.
     """
-    if not message.strip():
+    if not isinstance(message, str) or not message.strip():
         return "ERROR: The question should not be empty"
+    if len(message) > MAX_MESSAGE_LENGTH:
+        return f"ERROR: The question must be at most {MAX_MESSAGE_LENGTH} characters"
 
     # Gradio passes history as OpenAI-style messages; content is a string or a
-    # list of content parts. Keep only the text the endpoint can use.
+    # list of content parts. Keep only the text the endpoint can use. History is
+    # sent by the browser, so drop any role other than user/assistant (e.g. a
+    # forged "system" turn) and cap each turn's length and the number of turns.
     message_history = []
-    for msg in history:
-        content = msg["content"]
+    for msg in history[-MAX_HISTORY_MESSAGES:]:
+        if not isinstance(msg, dict) or msg.get("role") not in ALLOWED_HISTORY_ROLES:
+            continue
+        content = msg.get("content")
         if isinstance(content, list):
             content = "".join(
                 part.get("text", "") for part in content
                 if isinstance(part, dict) and part.get("type") == "text"
             )
         if isinstance(content, str) and content:
-            message_history.append({"role": msg["role"], "content": content})
+            message_history.append({"role": msg["role"], "content": content[:MAX_MESSAGE_LENGTH]})
 
     # Add the latest user message
     message_history.append({"role": "user", "content": message})
@@ -99,7 +111,13 @@ else:
             "What are Large Language Models?",
             "What is Databricks?"
         ],
+        textbox=gr.Textbox(
+            show_label=False,
+            placeholder="Type a message...",
+            scale=7,
+            max_length=MAX_MESSAGE_LENGTH,
+        ),
     )
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(app_kwargs={"middleware": [Middleware(SecurityMiddleware)]})

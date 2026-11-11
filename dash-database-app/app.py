@@ -12,12 +12,20 @@ app_diagnostics.install_diagnostics()
 
 import dash
 from dash import html, dcc, Input, Output, State, callback_context
+import json
+import logging
 import psycopg
 import os
 import time
 from databricks import sdk
 from psycopg import sql
 from psycopg_pool import ConnectionPool
+
+import security
+
+logger = logging.getLogger(__name__)
+
+MAX_TASK_LENGTH = 500
 
 # Database connection setup
 workspace_client = sdk.WorkspaceClient()
@@ -162,6 +170,7 @@ app.layout = html.Div([
             id='new-todo-input',
             type='text',
             placeholder='What do you need to do?',
+            maxLength=MAX_TASK_LENGTH,
             style={'width': '70%', 'padding': '10px', 'marginRight': '10px'}
         ),
         html.Button(
@@ -185,6 +194,13 @@ app.layout = html.Div([
     dcc.Store(id='todos-store')
 ], style={'maxWidth': '800px', 'margin': '0 auto', 'padding': '20px'})
 
+def parse_todo_id(component_id):
+    """Return the integer todo id from a pattern-matching component id sent by the client."""
+    todo_id = json.loads(component_id)['index']
+    if isinstance(todo_id, bool) or not isinstance(todo_id, int):
+        raise TypeError(f"todo id must be an integer, got {type(todo_id).__name__}")
+    return todo_id
+
 @app.callback(
     Output('todos-store', 'data'),
     [Input('add-todo-button', 'n_clicks'),
@@ -205,31 +221,27 @@ def manage_todos_store(add_clicks, submit_clicks, checkbox_values, delete_clicks
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
     
     # Handle adding new todo (both button click and Enter key)
-    if (triggered_id == 'add-todo-button' or triggered_id == 'new-todo-input') and new_todo and new_todo.strip():
-        if add_todo(new_todo.strip()):
+    if (triggered_id == 'add-todo-button' or triggered_id == 'new-todo-input') and isinstance(new_todo, str) and new_todo.strip():
+        if len(new_todo.strip()) <= MAX_TASK_LENGTH and add_todo(new_todo.strip()):
             return get_todos()
     
     # Handle checkbox toggle
     elif 'todo-checkbox' in triggered_id:
-        import json
         try:
-            id_dict = json.loads(triggered_id)
-            todo_id = id_dict['index']
+            todo_id = parse_todo_id(triggered_id)
             if toggle_todo(todo_id):
                 return get_todos()
-        except:
-            pass
+        except (ValueError, KeyError, TypeError):
+            logger.exception("Ignoring toggle for invalid component id %r", triggered_id)
     
     # Handle delete
     elif 'delete-button' in triggered_id:
-        import json
         try:
-            id_dict = json.loads(triggered_id)
-            todo_id = id_dict['index']
+            todo_id = parse_todo_id(triggered_id)
             if delete_todo(todo_id):
                 return get_todos()
-        except:
-            pass
+        except (ValueError, KeyError, TypeError):
+            logger.exception("Ignoring delete for invalid component id %r", triggered_id)
     
     return dash.no_update
 
@@ -248,7 +260,9 @@ def update_todos_display(todos_data, add_clicks, submit_clicks, new_todo):
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
     
     # Handle adding new todo message and clear input (both button click and Enter key)
-    if (triggered_id == 'add-todo-button' or triggered_id == 'new-todo-input') and new_todo and new_todo.strip():
+    if (triggered_id == 'add-todo-button' or triggered_id == 'new-todo-input') and isinstance(new_todo, str) and len(new_todo.strip()) > MAX_TASK_LENGTH:
+        return display_todos(todos_data), f"Todos can be at most {MAX_TASK_LENGTH} characters.", dash.no_update
+    if (triggered_id == 'add-todo-button' or triggered_id == 'new-todo-input') and isinstance(new_todo, str) and new_todo.strip():
         # Clear the input field after adding
         return display_todos(todos_data), "", ""
     
@@ -297,6 +311,8 @@ def display_todos(todos_data):
         todo_items.append(todo_item)
     
     return todo_items
+
+security.init_app(app.server, extra_script_sources=app.csp_hashes())
 
 if __name__ == '__main__':
     app.run(debug=True)

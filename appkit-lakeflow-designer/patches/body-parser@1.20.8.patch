@@ -1,0 +1,59 @@
+diff --git a/lib/read.js b/lib/read.js
+index fce6283f50961e68c2f576031ed5e3d4fdc39984..5252e293e4bf994e114b6d671324f7001e9d17e3 100644
+--- a/lib/read.js
++++ b/lib/read.js
+@@ -51,6 +51,15 @@ function read (req, res, next, parse, debug, options) {
+     : null
+   var verify = opts.verify
+ 
++  // assert charset is supported before creating the decompression stream, so a
++  // 415 cannot leave a decoder piped with no error listener
++  if (verify && encoding !== null && !iconv.encodingExists(encoding)) {
++    return next(createError(415, 'unsupported charset "' + encoding.toUpperCase() + '"', {
++      charset: encoding.toLowerCase(),
++      type: 'charset.unsupported'
++    }))
++  }
++
+   try {
+     // get the content stream
+     stream = contentstream(req, debug, opts.inflate)
+@@ -66,14 +75,6 @@ function read (req, res, next, parse, debug, options) {
+     ? null
+     : encoding
+ 
+-  // assert charset is supported
+-  if (opts.encoding === null && encoding !== null && !iconv.encodingExists(encoding)) {
+-    return next(createError(415, 'unsupported charset "' + encoding.toUpperCase() + '"', {
+-      charset: encoding.toLowerCase(),
+-      type: 'charset.unsupported'
+-    }))
+-  }
+-
+   // read body
+   debug('read body')
+   getBody(stream, opts, function (error, body) {
+@@ -104,6 +105,23 @@ function read (req, res, next, parse, debug, options) {
+       return
+     }
+ 
++    // detach and destroy the decompression stream to avoid
++    // decompression errors on the finished stream
++    if (stream !== req) {
++      // only detach the decompression stream, keep other consumers piped
++      if (typeof req.unpipe === 'function') {
++        req.unpipe(stream)
++      } else {
++        // Node.js 0.8 streams have no unpipe(dest)
++        unpipe(req)
++      }
++      stream.on('error', function () {})
++      destroy(stream, true)
++
++      // consume any remaining bytes so the HTTP request can finish
++      req.resume()
++    }
++
+     // verify
+     if (verify) {
+       try {

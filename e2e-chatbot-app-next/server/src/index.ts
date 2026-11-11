@@ -25,6 +25,7 @@ import { configRouter } from './routes/config';
 import { feedbackRouter } from './routes/feedback';
 import { ChatSDKError } from '@databricks/chatbot-core/errors';
 import { securityHeadersMiddleware } from './middleware/security-headers';
+import { createCsrfMiddleware } from './middleware/csrf';
 
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -56,6 +57,8 @@ if (allowedOrigins.length > 0) {
   app.use(cors({ origin: allowedOrigins, credentials: true }));
 }
 
+app.use(createCsrfMiddleware({ isDevelopment }));
+
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -78,7 +81,7 @@ app.use('/api/feedback', feedbackRouter);
 const agentBackendUrl = process.env.API_PROXY;
 if (agentBackendUrl) {
   console.log(`✅ Proxying /invocations to ${agentBackendUrl}`);
-  app.all('/invocations', async (req: Request, res: Response) => {
+  app.post('/invocations', async (req: Request, res: Response) => {
     try {
       const forwardHeaders = { ...req.headers } as Record<string, string>;
       forwardHeaders['content-length'] = undefined;

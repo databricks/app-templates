@@ -3,6 +3,7 @@
 # COMMAND ----------
 
 import json
+import re
 from datetime import datetime
 
 import mlflow.deployments
@@ -20,6 +21,10 @@ from pyspark.sql.types import (
 
 catalog = dbutils.widgets.get("catalog")
 endpoint = dbutils.widgets.get("endpoint")
+
+# The catalog is interpolated into SQL as an identifier, so only allow plain names.
+if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", catalog):
+    raise ValueError(f"Invalid catalog name: {catalog!r}")
 
 client = mlflow.deployments.get_deploy_client("databricks")
 
@@ -95,14 +100,17 @@ def build_prompt(case_row):
     case_id_hex = case_row["case_id_hex"]
     user_id = case_row["user_id"]
 
-    context_df = spark.sql(f"""
+    context_df = spark.sql(
+        f"""
         SELECT user_name, user_email, user_region, subject, status,
                message_count, has_admin_reply, first_response_minutes,
                linked_refund_cents, linked_credit_cents,
                user_lifetime_spend_cents, user_cases_90d
         FROM `{catalog}`.gold.support_case_context
-        WHERE case_id = UNHEX('{case_id_hex}')
-    """).collect()
+        WHERE case_id = UNHEX(:case_id_hex)
+    """,
+        args={"case_id_hex": case_id_hex},
+    ).collect()
 
     profile_df = spark.sql(
         f"""
@@ -115,15 +123,18 @@ def build_prompt(case_row):
         args={"user_id": user_id},
     ).collect()
 
-    messages_df = spark.sql(f"""
+    messages_df = spark.sql(
+        f"""
         SELECT
             CASE WHEN admin_id IS NOT NULL THEN 'admin' ELSE 'customer' END AS role,
             content,
             created_at
         FROM `{catalog}`.silver.support_messages
-        WHERE case_id = UNHEX('{case_id_hex}')
+        WHERE case_id = UNHEX(:case_id_hex)
         ORDER BY created_at ASC
-    """).collect()
+    """,
+        args={"case_id_hex": case_id_hex},
+    ).collect()
 
     orders_df = spark.sql(
         f"""

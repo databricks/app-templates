@@ -37,7 +37,7 @@ Long-term memory persists user preferences and information across conversation s
 - **save_user_memory** — store important facts, preferences, or details
 - **delete_user_memory** — forget specific information when asked
 
-Pass a `user_id` in `custom_inputs` to scope memories per user. Without a `user_id`, memory tools are disabled.
+Memories are scoped per user. When deployed, the user is the signed-in caller from the Databricks Apps `X-Forwarded-Email` header, and any `user_id` in the request body is ignored. In local development (or for requests from the bundled chat UI server), pass a `user_id` in `custom_inputs`. Without a user, memory tools are disabled. Conversations (`thread_id`) are also stored per user, so one user can't resume another user's thread.
 
 ### Long-running background tasks
 
@@ -88,7 +88,7 @@ Response: SSE stream ending with `[DONE]`.
 
 #### With memory
 
-Pass `thread_id` for short-term memory (conversation continuity) and `user_id` for long-term memory (cross-session facts):
+Pass `thread_id` for short-term memory (conversation continuity) and `user_id` for long-term memory (cross-session facts). On a deployed app, `user_id` is replaced by the caller's identity:
 
 ```bash
 curl -X POST <base_url>/responses \

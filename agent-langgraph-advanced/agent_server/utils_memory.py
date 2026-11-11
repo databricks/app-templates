@@ -1,6 +1,8 @@
+import hashlib
 import json
 import logging
 import os
+import re
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Optional, Tuple
@@ -9,11 +11,19 @@ from databricks_langchain import AsyncCheckpointSaver, AsyncDatabricksStore
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langgraph.store.base import BaseStore
+from mlflow.genai.agent_server import get_request_headers
 from mlflow.types.responses import ResponsesAgentRequest
 
 from agent_server.utils import _is_databricks_app_env
 
 logger = logging.getLogger(__name__)
+
+# Set by the Databricks Apps proxy on every request it forwards; callers can't override them.
+PROXY_HEADERS = ("x-forwarded-email", "x-forwarded-user", "x-forwarded-for", "x-real-ip")
+
+MEMORY_KEY_PATTERN = re.compile(r"^[\w\-.]{1,128}$")
+MAX_MEMORY_VALUE_CHARS = 4_000
+MAX_MEMORY_QUERY_CHARS = 1_000
 
 # Long-lived Lakebase resources, opened once at app startup in start_server.py's
 # lifespan and reused across all requests.
@@ -82,12 +92,33 @@ async def run_lakebase_setup(config: LakebaseConfig) -> None:
 
 
 def get_user_id(request: ResponsesAgentRequest) -> Optional[str]:
+    """Return the user that owns this request's memories.
+
+    Requests that come through the Databricks Apps proxy are identified only by the
+    headers it sets; a ``user_id`` in the body is ignored. Requests without proxy headers
+    were sent from inside the app (the bundled chat UI server, which passes its signed-in
+    user as ``context.user_id``) or are local development, and use the body value.
+    """
+    headers = get_request_headers()
+    if any(name in headers for name in PROXY_HEADERS):
+        return headers.get("x-forwarded-email") or headers.get("x-forwarded-user") or None
+    # Background-mode resume replays a stored request with no headers at all.
+    if not headers and os.getenv("DATABRICKS_APP_URL"):
+        return None
     custom_inputs = dict(request.custom_inputs or {})
-    if "user_id" in custom_inputs:
-        return custom_inputs["user_id"]
+    if custom_inputs.get("user_id"):
+        return str(custom_inputs["user_id"])
     if request.context and getattr(request.context, "user_id", None):
         return request.context.user_id
     return None
+
+
+def scope_thread_id(thread_id: str, user_id: Optional[str]) -> str:
+    """Key a conversation by its owner so one user can't load another user's thread."""
+    if not user_id:
+        return thread_id
+    owner = hashlib.sha256(user_id.lower().encode()).hexdigest()[:32]
+    return f"{owner}:{thread_id}"
 
 
 def get_lakebase_access_error_message(lakebase_description: str) -> str:
@@ -161,7 +192,7 @@ def memory_tools():
             return "Memory not available - store not configured."
 
         namespace = ("user_memories", user_id.replace(".", "-"))
-        results = await store.asearch(namespace, query=query, limit=5)
+        results = await store.asearch(namespace, query=query[:MAX_MEMORY_QUERY_CHARS], limit=5)
 
         if not results:
             return "No memories found for this user."
@@ -179,6 +210,11 @@ def memory_tools():
         store: Optional[BaseStore] = config.get("configurable", {}).get("store")
         if not store:
             return "Cannot save memory - store not configured."
+
+        if not MEMORY_KEY_PATTERN.match(memory_key):
+            return "Failed: memory_key must be 1-128 letters, digits, '_', '-' or '.'"
+        if len(memory_data_json) > MAX_MEMORY_VALUE_CHARS:
+            return f"Failed: memory_data_json is longer than {MAX_MEMORY_VALUE_CHARS} characters"
 
         namespace = ("user_memories", user_id.replace(".", "-"))
 
@@ -201,6 +237,9 @@ def memory_tools():
         store: Optional[BaseStore] = config.get("configurable", {}).get("store")
         if not store:
             return "Cannot delete memory - store not configured."
+
+        if not memory_key or len(memory_key) > 1_000:
+            return "Failed: invalid memory_key"
 
         namespace = ("user_memories", user_id.replace(".", "-"))
         await store.adelete(namespace, memory_key)

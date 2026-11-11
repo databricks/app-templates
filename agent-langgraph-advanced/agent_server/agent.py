@@ -24,6 +24,7 @@ from agent_server.prompts import SYSTEM_PROMPT
 from agent_server.utils import (
     _get_or_create_thread_id,
     get_user_workspace_client,
+    get_validated_input,
     init_mcp_client,
     process_agent_astream_events,
 )
@@ -33,6 +34,7 @@ from agent_server.utils_memory import (
     get_user_id,
     init_lakebase_config,
     memory_tools,
+    scope_thread_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -99,6 +101,7 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
 async def stream_handler(
     request: ResponsesAgentRequest,
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
+    messages = get_validated_input(request)
     thread_id = _get_or_create_thread_id(request)
     mlflow.update_current_trace(metadata={"mlflow.trace.session": thread_id})
 
@@ -106,12 +109,12 @@ async def stream_handler(
     if not user_id:
         logger.warning("No user_id provided - memory features will not be available")
 
-    config: dict[str, Any] = {"configurable": {"thread_id": thread_id}}
+    config: dict[str, Any] = {"configurable": {"thread_id": scope_thread_id(thread_id, user_id)}}
     if user_id:
         config["configurable"]["user_id"] = user_id
 
     input_state: dict[str, Any] = {
-        "messages": to_chat_completions_input([i.model_dump() for i in request.input]),
+        "messages": to_chat_completions_input(messages),
         "custom_inputs": dict(request.custom_inputs or {}),
     }
 

@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 import agent_server.agent  # noqa: F401
 
 from agent_server.agent import LAKEBASE_CONFIG
+from agent_server.security import SecurityMiddleware
 from agent_server.utils import replace_fake_id
 from agent_server.utils_memory import (
     get_lakebase_access_error_message,
@@ -52,6 +53,7 @@ agent_server = AgentServer(
 
 # Define the app as a module level variable to enable multiple workers
 app = agent_server.app  # noqa: F841
+app.add_middleware(SecurityMiddleware)
 setup_mlflow_git_based_version_tracking()
 
 _original_lifespan = app.router.lifespan_context

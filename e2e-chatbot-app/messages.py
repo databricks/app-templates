@@ -71,7 +71,8 @@ def render_message(msg):
             for call in msg["tool_calls"]:
                 fn_name = call["function"]["name"]
                 args = call["function"]["arguments"]
-                st.markdown(f"🛠️ Calling **`{fn_name}`** with:\n```json\n{args}\n```")
+                st.text(f"🛠️ Calling {fn_name} with:")
+                st.code(args, language="json")
     elif msg["role"] == "tool":
         st.markdown("🧰 Tool Response:")
         st.code(msg["content"], language="json")

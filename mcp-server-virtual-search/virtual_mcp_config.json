@@ -1,0 +1,8 @@
+{
+  "services": [
+    { "name": "system.ai.web_search" },
+    { "name": "system.ai.genie_one_mcp", "alias": "genie" },
+    { "name": "system.ai.github", "include_regex": "^(get|list|search)_" },
+    { "name": "system.ai.slack", "include_tools": ["slack_search_channels", "slack_read_channel", "slack_send_message"] }
+  ]
+}

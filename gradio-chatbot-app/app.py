@@ -116,6 +116,8 @@ else:
             placeholder="Type a message...",
             scale=7,
             max_length=MAX_MESSAGE_LENGTH,
+            submit_btn=True,
+            autofocus=True,
         ),
     )
 

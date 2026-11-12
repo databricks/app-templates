@@ -14,6 +14,7 @@ import logging
 import os
 import streamlit as st
 from model_serving_utils import query_endpoint, is_endpoint_supported
+from safe_markdown import unlink_markdown
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -83,7 +84,10 @@ else:
     # Display chat messages from history on app rerun
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+            if message["role"] == "assistant":
+                st.markdown(unlink_markdown(message["content"]))
+            else:
+                st.markdown(message["content"])
 
     # Accept user input
     prompt = st.chat_input("What is up?", max_chars=MAX_PROMPT_CHARS)
@@ -104,7 +108,7 @@ else:
                 messages=recent_history(st.session_state.messages),
                 max_tokens=400,
             )["content"]
-            st.markdown(assistant_response)
+            st.markdown(unlink_markdown(assistant_response))
 
 
         # Add assistant response to chat history

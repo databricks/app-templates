@@ -26,9 +26,12 @@ const SCHEMA_EXISTS_SQL = `
 `;
 
 const ApproveReplenishmentBody = z.object({
-  quantity_ordered: z.number().int().min(1),
-  notes: z.string().optional(),
+  quantity_ordered: z.number().int().min(1).max(100_000),
+  notes: z.string().max(1000).optional(),
 });
+
+const EntityId = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
+const OrderId = z.guid();
 
 export const genieEnabled =
   !!process.env.DATABRICKS_GENIE_SPACE_ID &&
@@ -50,6 +53,20 @@ export async function setupInventoryRoutes(appkit: AppKitWithLakebase) {
   }
 
   appkit.server.extend((app) => {
+    for (const [name, schema] of [
+      ["storeId", EntityId],
+      ["productId", EntityId],
+      ["orderId", OrderId],
+    ] as const) {
+      app.param(name, (_req, res, next, value: string) => {
+        if (!schema.safeParse(value).success) {
+          res.status(400).json({ error: `Invalid ${name}` });
+          return;
+        }
+        next();
+      });
+    }
+
     // GET /api/config — feature flags for the client
     app.get("/api/config", (_req, res) => {
       res.json({ genieEnabled });
@@ -366,16 +383,26 @@ export async function setupInventoryRoutes(appkit: AppKitWithLakebase) {
           return;
         }
 
+        // "received" is terminal: the row-level check makes a repeated (or
+        // concurrent) "received" update a no-op, so stock is only added once.
         const orderResult = await appkit.lakebase.query(
           `UPDATE inventory.replenishment_orders
            SET status = $1
-           WHERE id = $2::uuid
+           WHERE id = $2::uuid AND status <> 'received'
            RETURNING id::text, store_id, product_id, quantity_ordered, status`,
           [parsed.data.status, req.params.orderId],
         );
 
         if (orderResult.rows.length === 0) {
-          res.status(404).json({ error: "Order not found" });
+          const existing = await appkit.lakebase.query(
+            `SELECT 1 FROM inventory.replenishment_orders WHERE id = $1::uuid`,
+            [req.params.orderId],
+          );
+          if (existing.rows.length > 0) {
+            res.status(409).json({ error: "Order has already been received" });
+          } else {
+            res.status(404).json({ error: "Order not found" });
+          }
           return;
         }
 

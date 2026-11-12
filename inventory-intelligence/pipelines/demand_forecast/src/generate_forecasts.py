@@ -2,6 +2,7 @@
 
 # COMMAND ----------
 
+import re
 import sys
 from datetime import datetime
 
@@ -20,6 +21,10 @@ from delta.tables import DeltaTable
 catalog = dbutils.widgets.get("catalog")
 forecast_model = dbutils.widgets.get("forecast_model")
 model_serving_endpoint = dbutils.widgets.get("model_serving_endpoint")
+
+# The catalog is interpolated into SQL as an identifier, so only allow plain names.
+if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", catalog):
+    raise ValueError(f"Invalid catalog name: {catalog!r}")
 
 print(f"Catalog: {catalog}")
 print(f"Forecast model: {forecast_model}")

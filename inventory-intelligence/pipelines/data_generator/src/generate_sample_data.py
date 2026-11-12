@@ -15,6 +15,7 @@
 
 import random
 import math
+import re
 from datetime import datetime, timedelta, date, timezone
 
 dbutils.widgets.text("catalog", "", "Unity Catalog catalog name")
@@ -25,6 +26,11 @@ lakebase_schema = dbutils.widgets.get("lakebase_schema")
 
 if not catalog or catalog == "REPLACE_ME":
     raise ValueError("Set the 'catalog' widget to your Unity Catalog catalog name.")
+
+# Both names are interpolated into SQL as identifiers, so only allow plain names.
+for name in (catalog, lakebase_schema):
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+        raise ValueError(f"Invalid catalog or schema name: {name!r}")
 
 print(f"Generating sample data in {catalog}.{lakebase_schema}.*")
 

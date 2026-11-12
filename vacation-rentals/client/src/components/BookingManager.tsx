@@ -39,7 +39,6 @@ export function BookingManager() {
   const [flag, setFlag] = useState<FlagState>({ flagged: false, flag: null });
   const [notes, setNotes] = useState<Note[]>([]);
   const [flagReason, setFlagReason] = useState('');
-  const [agentEmail, setAgentEmail] = useState('agent@databricks.com');
   const [noteText, setNoteText] = useState('');
   const [opError, setOpError] = useState<string | null>(null);
 
@@ -91,12 +90,12 @@ export function BookingManager() {
 
   const addNote = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!noteText.trim() || !agentEmail.trim()) return;
+    if (!noteText.trim()) return;
     try {
       const res = await fetch(`/api/bookings/${bookingId}/notes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent_email: agentEmail.trim(), note: noteText.trim() }),
+        body: JSON.stringify({ note: noteText.trim() }),
       });
       if (!res.ok) throw new Error(`Add note failed: ${res.statusText}`);
       const created = (await res.json()) as Note;
@@ -158,6 +157,7 @@ export function BookingManager() {
               <div className="flex gap-2">
                 <Input
                   placeholder="Reason for flagging"
+                  maxLength={500}
                   value={flagReason}
                   onChange={(e) => setFlagReason(e.target.value)}
                   className="flex-1"
@@ -172,14 +172,14 @@ export function BookingManager() {
           <div className="border rounded-md p-3 space-y-3">
             <div className="text-sm font-semibold">Notes</div>
             <form onSubmit={(e) => void addNote(e)} className="space-y-2">
-              <Input placeholder="agent@email" value={agentEmail} onChange={(e) => setAgentEmail(e.target.value)} />
               <Textarea
                 placeholder="Add a note about this booking..."
                 value={noteText}
                 onChange={(e) => setNoteText(e.target.value)}
+                maxLength={2000}
                 rows={2}
               />
-              <Button type="submit" size="sm" disabled={!noteText.trim() || !agentEmail.trim()}>
+              <Button type="submit" size="sm" disabled={!noteText.trim()}>
                 Add note
               </Button>
             </form>

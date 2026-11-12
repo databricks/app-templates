@@ -4,7 +4,7 @@ FastAPI application configuration for the MCP server.
 This module sets up the core application by:
 1. Creating and configuring the FastMCP server instance
 2. Loading and registering all MCP tools
-3. Setting up CORS middleware for cross-origin requests
+3. Adding security headers and a cross-origin (CSRF) check on state-changing requests
 4. Combining MCP routes with standard FastAPI routes
 5. Optionally serving static files for a web frontend
 
@@ -20,6 +20,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastmcp import FastMCP
 
+from .security import SecurityMiddleware
 from .tools import load_tools
 from .utils import header_store
 
@@ -53,6 +54,9 @@ app = FastAPI(
     description="Custom MCP Server for the app",
     version="0.1.0",
     lifespan=mcp_app.lifespan,  # Share the lifespan context with MCP app
+    # Swagger UI and ReDoc pages rely on inline scripts that the CSP blocks
+    docs_url=None,
+    redoc_url=None,
 )
 
 
@@ -65,6 +69,12 @@ async def serve_index():
         return {"message": "Custom Open API Spec MCP Server is running", "status": "healthy"}
 
 
+@app.get("/index.js", include_in_schema=False)
+async def serve_index_script():
+    """Serve the index page script (kept out of index.html so the CSP can block inline scripts)"""
+    return FileResponse(STATIC_DIR / "index.js", media_type="text/javascript")
+
+
 # Create the final application by combining MCP routes with custom API routes
 # This is the application that uvicorn will serve
 combined_app = FastAPI(
@@ -74,7 +84,14 @@ combined_app = FastAPI(
         *app.routes,  # Your custom API routes (if any)
     ],
     lifespan=mcp_app.lifespan,  # Use MCP's lifespan for proper startup/shutdown
+    # Swagger UI and ReDoc pages rely on inline scripts that the CSP blocks
+    docs_url=None,
+    redoc_url=None,
 )
+
+# Security headers on every response, and an Origin check on state-changing
+# requests. MCP clients don't send an Origin header, so they're unaffected.
+combined_app.add_middleware(SecurityMiddleware)
 
 # Export the combined_app for uvicorn to import
 # Usage: uvicorn server.app:combined_app

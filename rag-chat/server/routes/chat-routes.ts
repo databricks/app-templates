@@ -20,19 +20,22 @@ interface RagSource {
   metadata: Record<string, unknown>;
 }
 
+const MAX_HISTORY_MESSAGES = 200;
+const MAX_TEXT_LENGTH = 20000;
+
 // Clients may only send user/assistant turns; system prompts are added server-side.
 // Assistant messages echo back non-text parts (data-sources, step-start), so parts stay loose.
+// History is trimmed rather than rejected so long chats can continue.
 const ChatRequest = z.object({
   chatId: z.guid(),
   messages: z
     .array(
       z.looseObject({
         role: z.enum(['user', 'assistant']),
-        parts: z.array(z.looseObject({ type: z.string().max(100), text: z.string().max(20000).optional() })).max(100),
+        parts: z.array(z.looseObject({ type: z.string().max(100), text: z.string().optional() })).max(100),
       })
     )
-    .min(1)
-    .max(200),
+    .min(1),
 });
 
 async function getDatabricksToken() {
@@ -73,7 +76,13 @@ export function setupChatRoutes(appkit: AppKitWithLakebase) {
         res.status(400).json({ error: 'Invalid chat request' });
         return;
       }
-      const { messages, chatId } = parsed.data;
+      const { chatId } = parsed.data;
+      const latest = parsed.data.messages[parsed.data.messages.length - 1];
+      if (latest.role === 'user' && latest.parts.some((p) => (p.text?.length ?? 0) > MAX_TEXT_LENGTH)) {
+        res.status(400).json({ error: 'Message too long' });
+        return;
+      }
+      const messages = parsed.data.messages.slice(-MAX_HISTORY_MESSAGES);
 
       const chat = await getChatForUser(appkit, chatId, userId);
       if (!chat) {
@@ -85,7 +94,7 @@ export function setupChatRoutes(appkit: AppKitWithLakebase) {
         role: m.role,
         content: m.parts
           .filter((p) => p.type === 'text')
-          .map((p) => p.text ?? '')
+          .map((p) => (p.text ?? '').slice(0, MAX_TEXT_LENGTH))
           .join(''),
       }));
 

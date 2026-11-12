@@ -12,6 +12,7 @@ import { MessageSquarePlus, MessageSquare, ChevronDown, ChevronRight, Trash2 } f
 import { Button, ScrollArea, Separator, Textarea } from '@databricks/appkit-ui/react';
 
 const MAX_INPUT_LENGTH = 10000;
+const MAX_HISTORY_MESSAGES = 200;
 
 // Retrieved context can carry prompt-injected markdown, and an off-site image is
 // fetched as soon as it renders (leaking whatever the model put in its URL), so
@@ -64,6 +65,17 @@ function createTransport(chatIdRef: React.RefObject<string | null>) {
     api: '/api/chat',
     body: () => (chatIdRef.current ? { chatId: chatIdRef.current } : {}),
     headers: { 'Content-Type': 'application/json' },
+    // The server only reads text parts of the last MAX_HISTORY_MESSAGES turns; sending
+    // less keeps long chats under the server's JSON body limit.
+    prepareSendMessagesRequest: ({ messages, body }) => ({
+      body: {
+        ...body,
+        messages: messages.slice(-MAX_HISTORY_MESSAGES).map((m) => ({
+          ...m,
+          parts: m.parts.filter((p) => p.type === 'text'),
+        })),
+      },
+    }),
   });
 }
 

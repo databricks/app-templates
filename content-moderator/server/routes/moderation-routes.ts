@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Application } from "express";
+import type { Application, Response } from "express";
 import { Config } from "@databricks/sdk-experimental";
 import { seedModerationData } from "../lib/seed-data";
 
@@ -90,35 +90,45 @@ const REVIEW_DECISIONS = [
   "revision_requested",
 ] as const;
 
+const Email = z.string().email().max(254);
+const Name = z.string().min(1).max(200);
+
 const CreateGuidelineBody = z.object({
   target: z.enum(CONTENT_TARGETS),
-  title: z.string().min(1),
-  description: z.string().optional(),
-  rules: z.string().min(1),
-  created_by: z.string().email(),
+  title: z.string().min(1).max(200),
+  description: z.string().max(2000).optional(),
+  rules: z.string().min(1).max(10000),
+  created_by: Email,
 });
 
 const UpdateGuidelineBody = z.object({
-  title: z.string().min(1).optional(),
-  description: z.string().optional(),
-  rules: z.string().min(1).optional(),
+  title: z.string().min(1).max(200).optional(),
+  description: z.string().max(2000).optional(),
+  rules: z.string().min(1).max(10000).optional(),
   is_active: z.boolean().optional(),
-  updated_by: z.string().email(),
+  updated_by: Email,
 });
 
 const CreateSubmissionBody = z.object({
-  title: z.string().min(1),
-  body: z.string().min(1),
+  title: z.string().min(1).max(300),
+  body: z.string().min(1).max(20000),
   target: z.enum(CONTENT_TARGETS),
-  author_name: z.string().min(1),
-  author_email: z.string().email(),
+  author_name: Name,
+  author_email: Email,
 });
 
 const CreateReviewBody = z.object({
-  reviewer_name: z.string().min(1),
-  reviewer_email: z.string().email(),
+  reviewer_name: Name,
+  reviewer_email: Email,
   decision: z.enum(REVIEW_DECISIONS),
-  feedback: z.string().optional(),
+  feedback: z.string().max(5000).optional(),
+});
+
+// Model output is untrusted: only store the expected shape, with bounded sizes.
+const AiAnalysisResponse = z.object({
+  compliance_score: z.number().finite(),
+  issues: z.array(z.string().max(1000)).max(50),
+  suggestions: z.string().max(5000),
 });
 
 const SERVING_ENDPOINT = process.env.SERVING_ENDPOINT;
@@ -139,15 +149,21 @@ async function getDatabricksToken(): Promise<string | null> {
   return authHeader ? authHeader.replace("Bearer ", "") : null;
 }
 
-// The audit columns (created_by / updated_by / reviewer_email) must reflect the
-// authenticated end user, not a client-supplied value. Databricks Apps inject a
-// trustworthy x-forwarded-email at the gateway; prefer it and fall back to the
-// request-body value only for local dev where the header is absent.
+// The identity columns (created_by / updated_by / author_email / reviewer_email)
+// must reflect the authenticated end user, not a client-supplied value.
+// Databricks Apps inject a trustworthy x-forwarded-email at the gateway; the
+// request-body value is only used in local development, where the header is absent.
 function actorEmail(
   req: { header(name: string): string | undefined },
   fallback: string,
-): string {
-  return req.header("x-forwarded-email") || fallback;
+): string | null {
+  const email = req.header("x-forwarded-email");
+  if (email) return email;
+  return process.env.NODE_ENV === "development" ? fallback : null;
+}
+
+function rejectMissingIdentity(res: Response) {
+  res.status(401).json({ error: "Missing user identity" });
 }
 
 async function analyzeContent(
@@ -255,11 +271,16 @@ Evaluate the content against ALL guidelines above. Respond with ONLY valid JSON 
       return;
     }
 
-    const analysis = JSON.parse(jsonMatch[0]) as {
-      compliance_score: number;
-      issues: string[];
-      suggestions: string;
-    };
+    const parsedAnalysis = AiAnalysisResponse.safeParse(
+      JSON.parse(jsonMatch[0]),
+    );
+    if (!parsedAnalysis.success) {
+      console.error(
+        "[moderation] AI response did not match the expected schema",
+      );
+      return;
+    }
+    const analysis = parsedAnalysis.data;
 
     await appkit.lakebase.query(
       `INSERT INTO content_moderation.ai_analyses
@@ -302,6 +323,14 @@ export async function setupModerationRoutes(appkit: AppKitWithLakebase) {
   }
 
   appkit.server.extend((app) => {
+    app.param("id", (_req, res, next, id: string) => {
+      if (!z.guid().safeParse(id).success) {
+        res.status(400).json({ error: "Invalid id" });
+        return;
+      }
+      next();
+    });
+
     // --- Guidelines ---
 
     app.get("/api/guidelines", async (_req, res) => {
@@ -352,12 +381,17 @@ export async function setupModerationRoutes(appkit: AppKitWithLakebase) {
           return;
         }
         const d = parsed.data;
+        const actor = actorEmail(req, d.created_by);
+        if (!actor) {
+          rejectMissingIdentity(res);
+          return;
+        }
         const result = await appkit.lakebase.query(
           `INSERT INTO content_moderation.guidelines
             (target, title, description, rules, created_by, updated_by)
            VALUES ($1, $2, $3, $4, $5, $5)
            RETURNING id::text, target, title, created_at`,
-          [d.target, d.title, d.description ?? null, d.rules, actorEmail(req, d.created_by)],
+          [d.target, d.title, d.description ?? null, d.rules, actor],
         );
         res.status(201).json(result.rows[0]);
       } catch (err) {
@@ -377,6 +411,11 @@ export async function setupModerationRoutes(appkit: AppKitWithLakebase) {
           return;
         }
         const d = parsed.data;
+        const actor = actorEmail(req, d.updated_by);
+        if (!actor) {
+          rejectMissingIdentity(res);
+          return;
+        }
         const setClauses: string[] = [];
         const values: unknown[] = [];
         let paramIdx = 1;
@@ -397,7 +436,7 @@ export async function setupModerationRoutes(appkit: AppKitWithLakebase) {
         }
 
         setClauses.push(`updated_by = $${paramIdx}`);
-        values.push(actorEmail(req, d.updated_by));
+        values.push(actor);
         paramIdx++;
 
         setClauses.push("updated_at = NOW()");
@@ -540,12 +579,17 @@ export async function setupModerationRoutes(appkit: AppKitWithLakebase) {
           return;
         }
         const d = parsed.data;
+        const authorEmail = actorEmail(req, d.author_email);
+        if (!authorEmail) {
+          rejectMissingIdentity(res);
+          return;
+        }
         const result = await appkit.lakebase.query(
           `INSERT INTO content_moderation.submissions
             (title, body, target, author_name, author_email)
            VALUES ($1, $2, $3, $4, $5)
            RETURNING id::text, title, target, status, created_at`,
-          [d.title, d.body, d.target, d.author_name, d.author_email],
+          [d.title, d.body, d.target, d.author_name, authorEmail],
         );
 
         const submission = result.rows[0];
@@ -608,6 +652,11 @@ export async function setupModerationRoutes(appkit: AppKitWithLakebase) {
           return;
         }
         const d = parsed.data;
+        const reviewerEmail = actorEmail(req, d.reviewer_email);
+        if (!reviewerEmail) {
+          rejectMissingIdentity(res);
+          return;
+        }
 
         const statusMap: Record<string, string> = {
           approved: "approved",
@@ -636,7 +685,7 @@ export async function setupModerationRoutes(appkit: AppKitWithLakebase) {
           [
             req.params.id,
             d.reviewer_name,
-            actorEmail(req, d.reviewer_email),
+            reviewerEmail,
             d.decision,
             d.feedback ?? null,
             statusMap[d.decision],

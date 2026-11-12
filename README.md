@@ -50,6 +50,7 @@ To contribute a template or a fix, see [CONTRIBUTING.md](CONTRIBUTING.md). It co
 | `streamlit-database-app` | A todo app that stores tasks in a Postgres database hosted on Databricks | Database |
 | `dash-database-app` | A todo app that stores tasks in a Postgres database hosted on Databricks | Database |
 | `flask-database-app` | A todo app that stores tasks in a Postgres database hosted on Databricks | Database |
+| `django-postgres-app` | A Django todo app that stores tasks in a Lakebase Autoscaling (Postgres) database hosted on Databricks | Database |
 
 ### AppKit
 

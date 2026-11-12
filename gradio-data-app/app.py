@@ -54,4 +54,7 @@ with gr.Blocks() as demo:  # must call it demo to get Gradio hot reload
     gr.Dataframe(value=data)
 
 if __name__ == "__main__":
-    demo.launch(css="footer {visibility: hidden}")
+    demo.launch(
+        css="footer {visibility: hidden}",
+        server_name=os.getenv("GRADIO_SERVER_NAME", "0.0.0.0"),
+    )

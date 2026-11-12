@@ -102,4 +102,4 @@ else:
     )
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(server_name=os.getenv("GRADIO_SERVER_NAME", "0.0.0.0"))

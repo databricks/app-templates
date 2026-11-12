@@ -297,4 +297,7 @@ def display_todos(todos_data):
     return todo_items
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Databricks Apps sets PORT for Dash but not a host, and Dash defaults to
+    # 127.0.0.1, so bind all interfaces. Debug mode stays off (it exposes the
+    # Werkzeug debugger); set DASH_DEBUG=true to enable it for local development.
+    app.run(host=os.getenv("HOST", "0.0.0.0"))

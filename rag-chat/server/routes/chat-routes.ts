@@ -1,7 +1,8 @@
 import { createOpenAI } from '@ai-sdk/openai';
-import { streamText, createUIMessageStream, pipeUIMessageStreamToResponse, type UIMessage } from 'ai';
+import { streamText, createUIMessageStream, pipeUIMessageStreamToResponse } from 'ai';
 import { Config } from '@databricks/sdk-experimental';
 import type { Application } from 'express';
+import { z } from 'zod';
 import { generateEmbedding } from '../lib/embeddings';
 import { retrieveSimilar } from '../lib/rag-store';
 import { getChatForUser, appendMessage } from '../lib/chat-store';
@@ -18,6 +19,21 @@ interface RagSource {
   similarity: number;
   metadata: Record<string, unknown>;
 }
+
+// Clients may only send user/assistant turns; system prompts are added server-side.
+// Assistant messages echo back non-text parts (data-sources, step-start), so parts stay loose.
+const ChatRequest = z.object({
+  chatId: z.guid(),
+  messages: z
+    .array(
+      z.looseObject({
+        role: z.enum(['user', 'assistant']),
+        parts: z.array(z.looseObject({ type: z.string().max(100), text: z.string().max(20000).optional() })).max(100),
+      })
+    )
+    .min(1)
+    .max(200),
+});
 
 async function getDatabricksToken() {
   if (process.env.DATABRICKS_TOKEN) return process.env.DATABRICKS_TOKEN;
@@ -52,12 +68,13 @@ export function setupChatRoutes(appkit: AppKitWithLakebase) {
       const userId = authenticateUser(req, res);
       if (!userId) return;
 
-      const { messages, chatId } = req.body as { messages: UIMessage[]; chatId?: string };
-
-      if (!chatId) {
-        res.status(400).json({ error: 'chatId is required' });
+      const parsed = ChatRequest.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: 'Invalid chat request' });
         return;
       }
+      const { messages, chatId } = parsed.data;
+
       const chat = await getChatForUser(appkit, chatId, userId);
       if (!chat) {
         res.status(404).json({ error: 'Chat not found' });
@@ -65,12 +82,11 @@ export function setupChatRoutes(appkit: AppKitWithLakebase) {
       }
 
       const coreMessages = messages.map((m) => ({
-        role: m.role as 'user' | 'assistant' | 'system',
-        content:
-          m.parts
-            ?.filter((p): p is Extract<typeof p, { type: 'text' }> => p.type === 'text')
-            .map((p) => p.text)
-            .join('') ?? '',
+        role: m.role,
+        content: m.parts
+          .filter((p) => p.type === 'text')
+          .map((p) => p.text ?? '')
+          .join(''),
       }));
 
       try {

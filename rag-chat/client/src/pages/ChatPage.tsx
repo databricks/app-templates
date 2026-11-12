@@ -1,9 +1,41 @@
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
-import { Streamdown } from 'streamdown';
+import {
+  Streamdown,
+  defaultRehypePlugins,
+  defaultUrlTransform,
+  type StreamdownProps,
+  type UrlTransform,
+} from 'streamdown';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { MessageSquarePlus, MessageSquare, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import { Button, ScrollArea, Separator, Textarea } from '@databricks/appkit-ui/react';
+
+const MAX_INPUT_LENGTH = 10000;
+
+// Retrieved context can carry prompt-injected markdown, and an off-site image is
+// fetched as soon as it renders (leaking whatever the model put in its URL), so
+// only same-origin images are allowed. The server CSP img-src enforces the same.
+type RehypePluggable = NonNullable<StreamdownProps['rehypePlugins']>[number];
+const [harden] = defaultRehypePlugins.harden as Extract<RehypePluggable, unknown[]>;
+const markdownRehypePlugins: StreamdownProps['rehypePlugins'] = [
+  defaultRehypePlugins.raw,
+  defaultRehypePlugins.sanitize,
+  [
+    harden,
+    {
+      defaultOrigin: window.location.origin,
+      allowedImagePrefixes: [`${window.location.origin}/`],
+      allowedLinkPrefixes: ['*'],
+      allowDataImages: false,
+    },
+  ],
+];
+
+const markdownUrlTransform: UrlTransform = (url, key, node) => {
+  if (key === 'href' && !/^(https?:|\/|#)/i.test(url)) return null;
+  return defaultUrlTransform(url, key, node);
+};
 
 interface ChatSession {
   id: string;
@@ -313,7 +345,13 @@ export function ChatPage() {
                 {message.parts.map((part, index) =>
                   part.type === 'text' ? (
                     message.role === 'assistant' ? (
-                      <Streamdown key={`${message.id}-${index}`} animated={false} className="text-sm">
+                      <Streamdown
+                        key={`${message.id}-${index}`}
+                        animated={false}
+                        className="text-sm"
+                        rehypePlugins={markdownRehypePlugins}
+                        urlTransform={markdownUrlTransform}
+                      >
                         {part.text}
                       </Streamdown>
                     ) : (
@@ -333,6 +371,7 @@ export function ChatPage() {
             <Textarea
               ref={inputRef}
               value={input}
+              maxLength={MAX_INPUT_LENGTH}
               onChange={(e) => {
                 setInput(e.target.value);
                 autosize();

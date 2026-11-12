@@ -11,10 +11,13 @@ app_diagnostics.install_diagnostics()
 # --- end diagnostics bootstrap ---
 
 import asyncio
-from shiny import App, ui, render, reactive
+import re
+from shiny import App, ui, render, reactive, run_app
 from databricks.sdk import config
 from databricks import sql
 import os
+
+from security import SecurityMiddleware
 
 # Defined in `app.yaml`
 SQL_WAREHOUSE_ID = os.getenv("DATABRICKS_WAREHOUSE_ID")
@@ -26,6 +29,32 @@ SELECT
 FROM
   samples.nyctaxi.trips
 """
+
+MAX_QUERY_CHARS = 10000
+_SQL_COMMENTS = re.compile(r"--[^\n]*|/\*.*?\*/", re.DOTALL)
+_READ_ONLY_START = re.compile(r"(select|with)\b", re.IGNORECASE)
+# A WITH clause can also prefix INSERT, UPDATE, DELETE or MERGE.
+_WRITE_KEYWORDS = re.compile(r"\b(insert|update|delete|merge)\b", re.IGNORECASE)
+
+
+def validate_query(statement):
+    """
+    Returns an error message unless `statement` is a single read-only SELECT/WITH query.
+
+    Queries run as the app's service principal, so this keeps the playground
+    read-only. It is a guard, not a SQL parser: the service principal's Unity
+    Catalog grants remain the real limit on what can be read.
+    """
+    if len(statement) > MAX_QUERY_CHARS:
+        return f"Queries are limited to {MAX_QUERY_CHARS} characters."
+    # Semicolons and write keywords are checked on the raw text, so a string
+    # literal such as '--' can't hide a second statement from the check.
+    if ";" in statement.strip().rstrip(";"):
+        return "Only a single statement can be run."
+    body = _SQL_COMMENTS.sub(" ", statement).strip()
+    if not _READ_ONLY_START.match(body) or _WRITE_KEYWORDS.search(statement):
+        return "Only read-only queries starting with SELECT or WITH can be run."
+    return None
 
 
 def execute_query(connection, statement, max_rows=10000):
@@ -52,8 +81,9 @@ app_ui = ui.page_navbar(
         # text input formatted to use monospace font
         ui.tags.head(ui.tags.style("#sql_query {font-family: monospace;}")),
         ui.p(
-            "Queries are run with your permissions, a maximum of 10k rows will be returned. "
-            "A timeout of 60s is set."
+            "Queries run with the app's service principal identity, not your own permissions, "
+            "so you can read any data the app can read. Only a single read-only SELECT or WITH "
+            "query is allowed, a maximum of 10k rows will be returned and a timeout of 60s is set."
         ),
         ui.input_text_area(
             "sql_query", label="", rows=6, value=_INITIAL_QUERY, width="100%"
@@ -79,7 +109,7 @@ app_ui = ui.page_navbar(
 
 
 def server(input, output, session):
-    # Authenticate as the user
+    # Authenticate as the app's service principal
     cfg = config.Config()
 
     # Define the extended task to execute the query asynchronously
@@ -106,10 +136,16 @@ def server(input, output, session):
     def handle_query():
         ui.update_action_button("cancel_query", disabled=False)
         # Don't attempt execution for empty queries
-        if not input.sql_query().strip():
+        query = input.sql_query()
+        if not query.strip():
             ui.notification_show("Please enter a SQL query.", type="warning")
             return
-        run_query_task(input.sql_query())
+        error = validate_query(query)
+        if error:
+            ui.update_action_button("cancel_query", disabled=True)
+            ui.notification_show(error, type="warning")
+            return
+        run_query_task(query)
 
     # Handle the 'Cancel Query' button
     @reactive.effect
@@ -136,7 +172,7 @@ def server(input, output, session):
             return None
 
 
-app = App(app_ui, server)
+app = SecurityMiddleware(App(app_ui, server))
 
 if __name__ == "__main__":
-    app.run()
+    run_app("app:app")

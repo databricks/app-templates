@@ -1,8 +1,10 @@
 import asyncio
-from shiny import App, ui, render, reactive
+from shiny import App, ui, render, reactive, run_app
 from databricks.sdk import config
 from databricks import sql
 import os
+
+from security import SecurityMiddleware
 
 # Defined in `app.yaml`
 assert os.getenv("DATABRICKS_WAREHOUSE_ID"), "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
@@ -13,6 +15,9 @@ SELECT
 FROM
   samples.nyctaxi.trips
 """
+
+MAX_QUERY_CHARS = 10000
+STATEMENT_TIMEOUT_SECONDS = "60"
 
 
 def execute_query(connection, statement, max_rows=10000):
@@ -80,12 +85,14 @@ def server(input, output, session):
                 server_hostname=cfg.host,
                 http_path=f"/sql/1.0/warehouses/{cfg.warehouse_id}",
                 access_token=user_token,
+                session_configuration={"STATEMENT_TIMEOUT": STATEMENT_TIMEOUT_SECONDS},
             )
             # Create a connection with the service principal credentials
             connection_with_service_principal_creds = sql.connect(
                 server_hostname=cfg.host,
                 http_path=f"/sql/1.0/warehouses/{cfg.warehouse_id}",
-                credentials_provider=lambda: cfg.authenticate  # Uses SP credentials from the environment variables
+                credentials_provider=lambda: cfg.authenticate,  # Uses SP credentials from the environment variables
+                session_configuration={"STATEMENT_TIMEOUT": STATEMENT_TIMEOUT_SECONDS},
             )
 
             # Query the SQL data with the user credentials
@@ -104,10 +111,17 @@ def server(input, output, session):
     def handle_query():
         ui.update_action_button("cancel_query", disabled=False)
         # Don't attempt execution for empty queries
-        if not input.sql_query().strip():
+        query = input.sql_query()
+        if not query.strip():
             ui.notification_show("Please enter a SQL query.", type="warning")
             return
-        run_query_task(input.sql_query())
+        if len(query) > MAX_QUERY_CHARS:
+            ui.update_action_button("cancel_query", disabled=True)
+            ui.notification_show(
+                f"Queries are limited to {MAX_QUERY_CHARS} characters.", type="warning"
+            )
+            return
+        run_query_task(query)
 
     # Handle the 'Cancel Query' button
     @reactive.effect
@@ -134,7 +148,7 @@ def server(input, output, session):
             return None
 
 
-app = App(app_ui, server)
+app = SecurityMiddleware(App(app_ui, server))
 
 if __name__ == "__main__":
-    app.run()
+    run_app("app:app")

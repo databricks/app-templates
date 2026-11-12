@@ -111,14 +111,15 @@ def server(input, output, session):
                     f"Your message is too long. Please keep it under {MAX_MESSAGE_CHARS} characters."
                 )
                 return
-            history.append({"role": "user", "content": user_input})
+            user_turn = {"role": "user", "content": user_input}
             response = query_endpoint(
                 endpoint_name=SERVING_ENDPOINT,
-                messages=to_endpoint_messages(history),
+                messages=to_endpoint_messages(history + [user_turn]),
                 max_tokens=400
             )
             content = str(response.get("content") or "")
-            history.append({"role": "assistant", "content": content})
+            # Only saved once the endpoint replies, so a failed call doesn't leave two user turns in a row.
+            history.extend([user_turn, {"role": "assistant", "content": content}])
             await chat.append_message(ui.HTML(model_markdown.render(content)))
 
 app = SecurityMiddleware(App(app_ui, server))

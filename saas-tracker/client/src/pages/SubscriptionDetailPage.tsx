@@ -36,6 +36,11 @@ interface Subscription {
   updated_at: string;
 }
 
+// Rows saved before the server-side check may still hold javascript: or data: URLs.
+function isWebUrl(value: string) {
+  return /^https?:\/\//i.test(value);
+}
+
 function DetailRow({ label, value }: { label: string; value: string | null }) {
   return (
     <div className="flex justify-between py-2 border-b border-border/30 last:border-0">
@@ -204,7 +209,7 @@ export function SubscriptionDetailPage() {
                 value={formatDate(sub.cancellation_date)}
               />
             )}
-            {sub.url && (
+            {sub.url && isWebUrl(sub.url) && (
               <div className="flex justify-between py-2 border-b border-border/30">
                 <span className="text-sm text-muted-foreground">Admin URL</span>
                 <a

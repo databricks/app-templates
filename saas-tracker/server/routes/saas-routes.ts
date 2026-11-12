@@ -65,23 +65,40 @@ const STATUSES = [
   "pending_cancellation",
 ] as const;
 
+// The edit form sends back dates as returned by the API (DATE columns
+// serialize as ISO timestamps), so accept either form.
+const IsoDate = z.union([z.iso.date(), z.iso.datetime({ offset: true })]);
+
+// The URL is rendered as a link for every user, so only allow web URLs.
+const WebUrl = z
+  .url()
+  .max(2048)
+  .refine((value) => /^https?:$/.test(new URL(value).protocol), {
+    message: "URL must use http or https",
+  });
+
+// owner_email is display data (who owns the subscription), not the caller's
+// identity; nothing authorizes on it.
 const CreateSubscriptionBody = z.object({
-  name: z.string().min(1),
-  vendor: z.string().min(1),
-  description: z.string().optional(),
+  name: z.string().min(1).max(200),
+  vendor: z.string().min(1).max(200),
+  description: z.string().max(2000).optional(),
   category: z.enum(CATEGORIES),
-  cost_cents: z.number().int().min(0),
+  cost_cents: z.number().int().min(0).max(1_000_000_000),
   billing_cycle: z.enum(BILLING_CYCLES),
-  currency: z.string().default("USD"),
-  owner_name: z.string().min(1),
-  owner_email: z.string().email(),
-  department: z.string().optional(),
-  license_count: z.number().int().min(1).optional(),
+  currency: z
+    .string()
+    .regex(/^[A-Z]{3}$/)
+    .default("USD"),
+  owner_name: z.string().min(1).max(200),
+  owner_email: z.string().email().max(254),
+  department: z.string().max(200).optional(),
+  license_count: z.number().int().min(1).max(1_000_000).optional(),
   status: z.enum(STATUSES).default("active"),
-  start_date: z.string().min(1),
-  renewal_date: z.string().optional(),
-  url: z.string().url().optional(),
-  notes: z.string().optional(),
+  start_date: IsoDate,
+  renewal_date: IsoDate.optional(),
+  url: WebUrl.optional(),
+  notes: z.string().max(5000).optional(),
 });
 
 const UpdateSubscriptionBody = CreateSubscriptionBody.partial();
@@ -108,6 +125,14 @@ export async function setupSaasRoutes(appkit: AppKitWithLakebase) {
   }
 
   appkit.server.extend((app) => {
+    app.param("id", (_req, res, next, id: string) => {
+      if (!z.guid().safeParse(id).success) {
+        res.status(400).json({ error: "Invalid id" });
+        return;
+      }
+      next();
+    });
+
     app.get("/api/subscriptions", async (_req, res) => {
       try {
         const result = await appkit.lakebase.query(`

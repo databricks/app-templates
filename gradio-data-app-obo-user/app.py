@@ -63,4 +63,4 @@ with gr.Blocks() as demo:
 
         gr.Dataframe(value=data)
 
-demo.launch()
+demo.launch(server_name=os.getenv("GRADIO_SERVER_NAME", "0.0.0.0"))

@@ -119,5 +119,7 @@ def render_prediction(n_clicks, pickup, dropoff):
     return calculate_fare_prediction(data, pickup, dropoff)
 
 if __name__ == "__main__":
-    # Debug mode is off by default; set DASH_DEBUG=true to enable it for local development.
-    app.run()
+    # Databricks Apps sets PORT for Dash but not a host, and Dash defaults to
+    # 127.0.0.1, so bind all interfaces. Debug mode stays off (it exposes the
+    # Werkzeug debugger); set DASH_DEBUG=true to enable it for local development.
+    app.run(host=os.getenv("HOST", "0.0.0.0"))

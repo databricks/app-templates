@@ -10,6 +10,8 @@ import app_diagnostics  # noqa: E402
 app_diagnostics.install_diagnostics()
 # --- end diagnostics bootstrap ---
 
+import os
+
 import gradio as gr
 import pandas as pd
 
@@ -26,4 +28,7 @@ with gr.Blocks() as gradio_app:
                            y_title='Fun with data', x_title='Apps')
 
 if __name__ == '__main__':
-    gradio_app.launch(css='footer {visibility: hidden}')
+    gradio_app.launch(
+        css='footer {visibility: hidden}',
+        server_name=os.getenv('GRADIO_SERVER_NAME', '0.0.0.0'),
+    )

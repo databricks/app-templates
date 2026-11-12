@@ -21,6 +21,7 @@ from model_serving_utils import (
 )
 from collections import OrderedDict
 from messages import UserMessage, AssistantResponse, render_message
+from safe_markdown import unlink_markdown
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -157,7 +158,7 @@ def query_chat_completions_endpoint_and_render(input_messages):
                     content = delta.get("content", "")
                     if content:
                         accumulated_content += content
-                        response_area.markdown(accumulated_content)
+                        response_area.markdown(unlink_markdown(accumulated_content))
                 
                 if "databricks_output" in chunk:
                     req_id = chunk["databricks_output"].get("databricks_request_id")

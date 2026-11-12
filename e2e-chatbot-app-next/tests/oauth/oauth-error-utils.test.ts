@@ -3,6 +3,7 @@ import {
   isCredentialErrorMessage,
   findLoginURLFromCredentialErrorMessage,
   findConnectionNameFromCredentialErrorMessage,
+  isTrustedLoginURL,
 } from '../../client/src/lib/oauth-error-utils';
 
 /**
@@ -172,6 +173,65 @@ test.describe('OAuth Error Utils', () => {
       const connectionName =
         findConnectionNameFromCredentialErrorMessage(spaceError);
       expect(connectionName).toBe('Connection Name');
+    });
+  });
+
+  test.describe('isTrustedLoginURL', () => {
+    const workspaceHost = 'example.databricks.com';
+    const appHost = 'chat-123.databricksapps.com';
+
+    test('allows https links to the workspace or the app itself', () => {
+      expect(
+        isTrustedLoginURL(
+          'https://example.databricks.com/oauth/connect',
+          workspaceHost,
+          appHost,
+        ),
+      ).toBe(true);
+      expect(
+        isTrustedLoginURL(
+          'https://EXAMPLE.databricks.com/oauth/connect',
+          workspaceHost,
+          appHost,
+        ),
+      ).toBe(true);
+      expect(
+        isTrustedLoginURL(
+          'https://chat-123.databricksapps.com/login',
+          workspaceHost,
+          appHost,
+        ),
+      ).toBe(true);
+    });
+
+    test('rejects other hosts and non-https links', () => {
+      expect(
+        isTrustedLoginURL('https://evil.example/login', workspaceHost, appHost),
+      ).toBe(false);
+      expect(
+        isTrustedLoginURL(
+          'https://example.databricks.com.evil.example/login',
+          workspaceHost,
+          appHost,
+        ),
+      ).toBe(false);
+      expect(
+        isTrustedLoginURL(
+          'http://example.databricks.com/oauth/connect',
+          workspaceHost,
+          appHost,
+        ),
+      ).toBe(false);
+      expect(
+        isTrustedLoginURL(
+          'https://other.databricks.com/login',
+          undefined,
+          appHost,
+        ),
+      ).toBe(false);
+      expect(isTrustedLoginURL('not a url', workspaceHost, appHost)).toBe(
+        false,
+      );
     });
   });
 

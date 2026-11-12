@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastmcp import FastMCP
 
+from .security import SecurityMiddleware
 from .tools import load_tools
 from .utils import app_setup_complete, header_store
 
@@ -33,6 +34,9 @@ app = FastAPI(
     title="Open API Spec MCP Server",
     description="MCP server for interacting with APIs using OpenAPI specifications",
     lifespan=mcp_app.lifespan,
+    # Swagger UI and ReDoc pages rely on inline scripts that the CSP blocks
+    docs_url=None,
+    redoc_url=None,
 )
 
 
@@ -54,6 +58,12 @@ async def serve_index():
             }
 
 
+@app.get("/index.js", include_in_schema=False)
+async def serve_index_script():
+    """Serve the index page script (kept out of index.html so the CSP can block inline scripts)"""
+    return FileResponse(STATIC_DIR / "index.js", media_type="text/javascript")
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
@@ -69,7 +79,13 @@ combined_app = FastAPI(
         *app.routes,  # Your custom API routes (if any)
     ],
     lifespan=mcp_app.lifespan,  # Use MCP's lifespan for proper startup/shutdown
+    docs_url=None,
+    redoc_url=None,
 )
+
+# Security headers on every response, and an Origin check on state-changing
+# requests. MCP clients don't send an Origin header, so they're unaffected.
+combined_app.add_middleware(SecurityMiddleware)
 
 
 @combined_app.middleware("http")

@@ -18,6 +18,49 @@ from mlflow.types.responses import (
     create_text_output_item,
 )
 
+MAX_INPUT_ITEMS = 500
+MAX_INPUT_ITEM_CHARS = 100_000
+MAX_CUSTOM_INPUTS_CHARS = 10_000
+MAX_THREAD_ID_CHARS = 256
+DISALLOWED_INPUT_ROLES = {"system", "developer"}
+
+
+def _check_input_limits(request: ResponsesAgentRequest, items: list[dict]) -> None:
+    if len(items) > MAX_INPUT_ITEMS:
+        raise ValueError(f"Too many input items (limit {MAX_INPUT_ITEMS}).")
+    if any(len(json.dumps(item, default=str)) > MAX_INPUT_ITEM_CHARS for item in items):
+        raise ValueError(f"Input item too large (limit {MAX_INPUT_ITEM_CHARS} characters).")
+    if len(json.dumps(request.custom_inputs or {}, default=str)) > MAX_CUSTOM_INPUTS_CHARS:
+        raise ValueError(f"custom_inputs too large (limit {MAX_CUSTOM_INPUTS_CHARS} characters).")
+
+
+def check_request_limits(body: dict) -> None:
+    """Raise ``ValueError`` if a POST /invocations or /responses body is over the input limits."""
+    try:
+        request = ResponsesAgentRequest(**body)
+    except Exception:
+        # AgentServer rejects bodies that aren't a valid request with its own 400.
+        return
+    _check_input_limits(request, [i.model_dump() for i in request.input])
+    _get_or_create_thread_id(request)
+
+
+def get_validated_input(request: ResponsesAgentRequest) -> list[dict]:
+    """Return ``request.input`` as dicts after enforcing size limits.
+
+    ``system`` and ``developer`` items are dropped so callers can't replace the agent's
+    own instructions; user, assistant and tool-call items pass through unchanged.
+    """
+    items = [i.model_dump() for i in request.input]
+    # Requests the server replays itself (background-mode resume, agent-evaluate) have no
+    # HTTP headers; a resume adds a recovery message that can exceed the per-item limit.
+    if get_request_headers():
+        _check_input_limits(request, items)
+    allowed = [item for item in items if item.get("role") not in DISALLOWED_INPUT_ROLES]
+    if len(allowed) < len(items):
+        logging.warning("Dropped %d system/developer input item(s)", len(items) - len(allowed))
+    return allowed
+
 
 def _get_or_create_thread_id(request: ResponsesAgentRequest) -> str:
     # priority of getting thread id:
@@ -27,12 +70,15 @@ def _get_or_create_thread_id(request: ResponsesAgentRequest) -> str:
     ci = dict(request.custom_inputs or {})
 
     if "thread_id" in ci and ci["thread_id"]:
-        return str(ci["thread_id"])
+        thread_id = str(ci["thread_id"])
+    elif request.context and getattr(request.context, "conversation_id", None):
+        thread_id = str(request.context.conversation_id)
+    else:
+        return str(uuid_utils.uuid7())
 
-    if request.context and getattr(request.context, "conversation_id", None):
-        return str(request.context.conversation_id)
-
-    return str(uuid_utils.uuid7())
+    if len(thread_id) > MAX_THREAD_ID_CHARS:
+        raise ValueError(f"thread_id too long (limit {MAX_THREAD_ID_CHARS} characters).")
+    return thread_id
 
 
 def _is_databricks_app_env() -> bool:

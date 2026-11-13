@@ -38,7 +38,7 @@ npm run dev
 ```
 
 - Frontend: http://localhost:5173 (with API proxy)
-- Backend API docs: http://localhost:8000/docs
+- Backend OpenAPI schema: http://localhost:8000/openapi.json
 
 ## Production
 
@@ -55,4 +55,4 @@ Configured for Databricks Apps with `app.yaml`. Uses `DATABRICKS_APP_PORT` envir
 ## API
 
 - `GET /api/hello` - Hello world message
-- `GET /docs` - FastAPI interactive documentation
+- `GET /openapi.json` - OpenAPI schema (the Swagger UI at `/docs` is disabled because its inline scripts are blocked by the app's Content-Security-Policy)

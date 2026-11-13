@@ -34,7 +34,6 @@ from agent_server.utils_memory import (
     get_user_id,
     init_lakebase_config,
     memory_tools,
-    scope_thread_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -109,7 +108,7 @@ async def stream_handler(
     if not user_id:
         logger.warning("No user_id provided - memory features will not be available")
 
-    config: dict[str, Any] = {"configurable": {"thread_id": scope_thread_id(thread_id, user_id)}}
+    config: dict[str, Any] = {"configurable": {"thread_id": thread_id}}
     if user_id:
         config["configurable"]["user_id"] = user_id
 

@@ -28,19 +28,17 @@ _QUERY = "SELECT * FROM IDENTIFIER(:table_name) LIMIT :row_limit"
 MAX_ROWS = 10000
 
 
-def execute_query(connection, table_name, row_limit):
+def execute_query(connection, table_name):
     """
-    Reads up to `row_limit` rows from `table_name`.
+    Reads up to `MAX_ROWS` rows from `table_name`.
 
     The table name is bound with IDENTIFIER(:table_name) and the limit with a
     :row_limit parameter marker, so neither value becomes SQL text.
     """
     try:
         with connection.cursor() as cursor:
-            cursor.execute(
-                _QUERY, {"table_name": table_name, "row_limit": row_limit}
-            )
-            return cursor.fetchmany_arrow(row_limit)
+            cursor.execute(_QUERY, {"table_name": table_name, "row_limit": MAX_ROWS})
+            return cursor.fetchmany_arrow(MAX_ROWS)
     except Exception as e:
         print(f"Error executing query: {e}")
         return e
@@ -57,9 +55,6 @@ app_ui = ui.page_navbar(
             "and a timeout of 60s is set."
         ),
         ui.input_text("table_name", label="Table", value=_INITIAL_TABLE, width="100%"),
-        ui.input_numeric(
-            "row_limit", label="Rows", value=1000, min=1, max=MAX_ROWS, width="200px"
-        ),
         ui.span(
             ui.input_task_button(
                 "submit_query", label="Run Query", width="79%", class_="btn-primary"
@@ -87,7 +82,7 @@ def server(input, output, session):
     # Define the extended task to execute the query asynchronously
     @ui.bind_task_button(button_id="submit_query")
     @reactive.extended_task
-    async def run_query_task(table_name: str, row_limit: int):
+    async def run_query_task(table_name: str):
         try:
             # Connect to SQL warehouse inside the task to ensure thread safety
             connection = sql.connect(
@@ -96,9 +91,7 @@ def server(input, output, session):
                 credentials_provider=lambda: cfg.authenticate,
                 session_configuration={"STATEMENT_TIMEOUT": "60"},
             )
-            res = await asyncio.to_thread(
-                execute_query, connection, table_name, row_limit
-            )
+            res = await asyncio.to_thread(execute_query, connection, table_name)
             ui.update_action_button("cancel_query", disabled=True)
             return res
         except Exception as e:
@@ -112,13 +105,8 @@ def server(input, output, session):
         if not table_name:
             ui.notification_show("Please enter a table name.", type="warning")
             return
-        requested_rows = input.row_limit()
-        if requested_rows is None:
-            ui.notification_show("Please enter a number of rows.", type="warning")
-            return
-        row_limit = max(1, min(int(requested_rows), MAX_ROWS))
         ui.update_action_button("cancel_query", disabled=False)
-        run_query_task(table_name, row_limit)
+        run_query_task(table_name)
 
     # Handle the 'Cancel Query' button
     @reactive.effect

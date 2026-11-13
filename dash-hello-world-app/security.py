@@ -77,7 +77,7 @@ def init_app(server: Flask, extra_script_sources=()) -> None:
         if request.method in STATE_CHANGING_METHODS:
             origin = request.headers.get("Origin")
             if not is_origin_allowed(origin):
-                logger.warning("Rejected cross-origin %s %s from %s", request.method, request.path, origin)
+                logger.warning("Rejected cross-origin %s %r from %r", request.method, request.path, origin)
                 return Response("Forbidden", status=403, mimetype="text/plain")
         return None
 

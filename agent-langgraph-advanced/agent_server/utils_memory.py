@@ -185,7 +185,7 @@ def memory_tools():
         if not store:
             return "Cannot save memory - store not configured."
 
-        if not MEMORY_KEY_PATTERN.match(memory_key):
+        if not MEMORY_KEY_PATTERN.fullmatch(memory_key):
             return "Failed: memory_key must be 1-128 letters, digits, '_', '-' or '.'"
         if len(memory_data_json) > MAX_MEMORY_VALUE_CHARS:
             return f"Failed: memory_data_json is longer than {MAX_MEMORY_VALUE_CHARS} characters"

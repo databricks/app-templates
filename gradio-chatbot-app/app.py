@@ -13,6 +13,8 @@ app_diagnostics.install_diagnostics()
 import gradio as gr
 import logging
 import os
+import uvicorn
+from fastapi import FastAPI
 from starlette.middleware import Middleware
 from model_serving_utils import query_endpoint, is_endpoint_supported
 from security import SecurityMiddleware
@@ -122,4 +124,13 @@ else:
     )
 
 if __name__ == "__main__":
-    demo.launch(app_kwargs={"middleware": [Middleware(SecurityMiddleware)]})
+    # Gradio adds its own CORS middleware outside any launch(app_kwargs=...)
+    # middleware, so SecurityMiddleware goes on a parent app that wraps it.
+    app = gr.mount_gradio_app(
+        FastAPI(middleware=[Middleware(SecurityMiddleware)]), demo, path="/"
+    )
+    uvicorn.run(
+        app,
+        host=os.getenv("GRADIO_SERVER_NAME", "127.0.0.1"),
+        port=int(os.getenv("GRADIO_SERVER_PORT", "7860")),
+    )

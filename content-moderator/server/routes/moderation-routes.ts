@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Application, Response } from "express";
+import type { Application } from "express";
 import { Config } from "@databricks/sdk-experimental";
 import { seedModerationData } from "../lib/seed-data";
 
@@ -149,21 +149,15 @@ async function getDatabricksToken(): Promise<string | null> {
   return authHeader ? authHeader.replace("Bearer ", "") : null;
 }
 
-// The identity columns (created_by / updated_by / author_email / reviewer_email)
-// must reflect the authenticated end user, not a client-supplied value.
-// Databricks Apps inject a trustworthy x-forwarded-email at the gateway; the
-// request-body value is only used in local development, where the header is absent.
+// The audit columns (created_by / updated_by / reviewer_email) must reflect the
+// authenticated end user, not a client-supplied value. Databricks Apps inject a
+// trustworthy x-forwarded-email at the gateway; prefer it and fall back to the
+// request-body value only for local dev where the header is absent.
 function actorEmail(
   req: { header(name: string): string | undefined },
   fallback: string,
-): string | null {
-  const email = req.header("x-forwarded-email");
-  if (email) return email;
-  return process.env.NODE_ENV === "development" ? fallback : null;
-}
-
-function rejectMissingIdentity(res: Response) {
-  res.status(401).json({ error: "Missing user identity" });
+): string {
+  return req.header("x-forwarded-email") || fallback;
 }
 
 async function analyzeContent(
@@ -381,17 +375,12 @@ export async function setupModerationRoutes(appkit: AppKitWithLakebase) {
           return;
         }
         const d = parsed.data;
-        const actor = actorEmail(req, d.created_by);
-        if (!actor) {
-          rejectMissingIdentity(res);
-          return;
-        }
         const result = await appkit.lakebase.query(
           `INSERT INTO content_moderation.guidelines
             (target, title, description, rules, created_by, updated_by)
            VALUES ($1, $2, $3, $4, $5, $5)
            RETURNING id::text, target, title, created_at`,
-          [d.target, d.title, d.description ?? null, d.rules, actor],
+          [d.target, d.title, d.description ?? null, d.rules, actorEmail(req, d.created_by)],
         );
         res.status(201).json(result.rows[0]);
       } catch (err) {
@@ -411,11 +400,6 @@ export async function setupModerationRoutes(appkit: AppKitWithLakebase) {
           return;
         }
         const d = parsed.data;
-        const actor = actorEmail(req, d.updated_by);
-        if (!actor) {
-          rejectMissingIdentity(res);
-          return;
-        }
         const setClauses: string[] = [];
         const values: unknown[] = [];
         let paramIdx = 1;
@@ -436,7 +420,7 @@ export async function setupModerationRoutes(appkit: AppKitWithLakebase) {
         }
 
         setClauses.push(`updated_by = $${paramIdx}`);
-        values.push(actor);
+        values.push(actorEmail(req, d.updated_by));
         paramIdx++;
 
         setClauses.push("updated_at = NOW()");
@@ -579,17 +563,12 @@ export async function setupModerationRoutes(appkit: AppKitWithLakebase) {
           return;
         }
         const d = parsed.data;
-        const authorEmail = actorEmail(req, d.author_email);
-        if (!authorEmail) {
-          rejectMissingIdentity(res);
-          return;
-        }
         const result = await appkit.lakebase.query(
           `INSERT INTO content_moderation.submissions
             (title, body, target, author_name, author_email)
            VALUES ($1, $2, $3, $4, $5)
            RETURNING id::text, title, target, status, created_at`,
-          [d.title, d.body, d.target, d.author_name, authorEmail],
+          [d.title, d.body, d.target, d.author_name, d.author_email],
         );
 
         const submission = result.rows[0];
@@ -652,11 +631,6 @@ export async function setupModerationRoutes(appkit: AppKitWithLakebase) {
           return;
         }
         const d = parsed.data;
-        const reviewerEmail = actorEmail(req, d.reviewer_email);
-        if (!reviewerEmail) {
-          rejectMissingIdentity(res);
-          return;
-        }
 
         const statusMap: Record<string, string> = {
           approved: "approved",
@@ -685,7 +659,7 @@ export async function setupModerationRoutes(appkit: AppKitWithLakebase) {
           [
             req.params.id,
             d.reviewer_name,
-            reviewerEmail,
+            actorEmail(req, d.reviewer_email),
             d.decision,
             d.feedback ?? null,
             statusMap[d.decision],

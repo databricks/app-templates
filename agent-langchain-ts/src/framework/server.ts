@@ -12,6 +12,7 @@
 
 import express, { Request, Response } from "express";
 import cors from "cors";
+import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { config } from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -24,6 +25,8 @@ import {
   type MLflowTracing,
 } from "./tracing.js";
 import { createInvocationsRouter } from "./routes/invocations.js";
+import { createCsrfMiddleware } from "./middleware/csrf.js";
+import { SECURITY_HEADERS, securityHeadersMiddleware } from "./middleware/security-headers.js";
 import { closeMCPClient } from "../tools.js";
 import type { AgentInterface } from "./agent-interface.js";
 
@@ -45,6 +48,29 @@ const SERVICE_INFO = {
     invocations: "POST /invocations (Responses API)",
   },
 };
+
+const SKIPPED_UPSTREAM_HEADERS = new Set([
+  ...Object.keys(SECURITY_HEADERS).map((name) => name.toLowerCase()),
+  "access-control-allow-origin",
+  "access-control-allow-credentials",
+  "access-control-allow-methods",
+  "access-control-allow-headers",
+  "access-control-expose-headers",
+  "access-control-max-age",
+  "x-powered-by",
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+  "content-encoding",
+  "content-length",
+]);
+
+const LOOPBACK_ADDRESSES = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 
 /**
  * Register SIGINT/SIGTERM handlers that flush tracing and close MCP connections.
@@ -78,7 +104,20 @@ export async function createServer(
   const app = express();
 
   // Middleware
-  app.use(cors());
+  app.disable("x-powered-by");
+  app.use(securityHeadersMiddleware);
+
+  // CORS: the UI is served from the same origin, so cross-origin access is off
+  // unless explicitly allowed via ALLOWED_ORIGINS (comma-separated).
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  if (allowedOrigins.length > 0) {
+    app.use(cors({ origin: allowedOrigins, credentials: true }));
+  }
+
+  app.use(createCsrfMiddleware());
   app.use(express.json({ limit: '10mb' })); // Protect against large payload DoS
 
   // Initialize MLflow tracing
@@ -99,6 +138,24 @@ export async function createServer(
       service: "langchain-agent-ts",
     });
   });
+
+  // Rate limit agent calls per user (x-forwarded-email), else per IP. Loopback
+  // calls without a forwarded email come from the bundled UI server, which
+  // relays every user's chat, so they are not counted against one shared bucket.
+  const invocationsRateLimit = rateLimit({
+    windowMs: 60_000,
+    limit: Number(process.env.RATE_LIMIT_PER_MINUTE) || 60,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    keyGenerator: (req) =>
+      req.get("x-forwarded-email") ?? ipKeyGenerator(req.ip ?? ""),
+    skip: (req) =>
+      !req.get("x-forwarded-email") &&
+      LOOPBACK_ADDRESSES.has(req.socket.remoteAddress ?? ""),
+    message: { error: "Too many requests" },
+    validate: { xForwardedForHeader: false },
+  });
+  app.post(["/invocations", "/responses"], invocationsRateLimit);
 
   // Mount handler at /invocations (MLflow) and /responses (OpenAI SDK compatibility)
   const invocationsRouter = createInvocationsRouter(agent);
@@ -122,9 +179,12 @@ export async function createServer(
           body: req.method !== "GET" && req.method !== "HEAD" ? JSON.stringify(req.body) : undefined,
         });
 
-        // Copy response headers
+        // Copy response headers, keeping this server's security headers and
+        // dropping hop-by-hop and encoding headers (fetch already decoded the body).
         response.headers.forEach((value, key) => {
-          res.setHeader(key, value);
+          if (!SKIPPED_UPSTREAM_HEADERS.has(key.toLowerCase())) {
+            res.setHeader(key, value);
+          }
         });
 
         res.status(response.status);

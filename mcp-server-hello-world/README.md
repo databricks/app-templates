@@ -171,6 +171,20 @@ python scripts/dev/query_remote.py \
 
 The `scripts/dev/query_remote.py` script connects to your deployed MCP server with OAuth authentication and tests both the health check and user authorization functionality.
 
+#### Browser-based MCP clients
+
+To block cross-site requests, the server rejects POST and DELETE requests whose `Origin` header isn't the app's own URL. Command-line and server-side clients (`query_remote.py`, AI Playground, agents) send no `Origin` and aren't affected. A client that runs in a browser and connects directly, such as MCP Inspector in direct-connection mode, sends its page's origin and gets `403 Forbidden` from the deployed server unless that origin is listed in `ALLOWED_ORIGINS` (comma-separated) in `app.yaml`:
+
+```yaml
+command: ["uv", "run", "custom-mcp-server"]
+
+env:
+  - name: "ALLOWED_ORIGINS"
+    value: "https://mcp-client.example.com"
+```
+
+Only `https://` origins can be allowed on a deployed app. For a client served from `http://localhost`, connect through MCP Inspector's proxy instead of directly.
+
 ## Adding New Tools
 
 To add a new tool to your MCP server:

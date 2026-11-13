@@ -19,6 +19,7 @@ from agent_server.utils import (
     get_databricks_host_from_env,
     get_session_id,
     get_user_workspace_client,
+    get_validated_input,
     process_agent_astream_events,
 )
 
@@ -79,7 +80,7 @@ async def stream_handler(
     # For on-behalf-of user authentication, use get_user_workspace_client() instead:
     #   agent = await init_agent(workspace_client=get_user_workspace_client())
     agent = await init_agent()
-    messages = {"messages": to_chat_completions_input([i.model_dump() for i in request.input])}
+    messages = {"messages": to_chat_completions_input(get_validated_input(request))}
 
     async for event in process_agent_astream_events(
         agent.astream(input=messages, stream_mode=["updates", "messages"])

@@ -22,7 +22,11 @@ import { configRouter } from './routes/config';
 import { feedbackRouter } from './routes/feedback';
 import { ChatSDKError } from '@databricks/chatbot-core/errors';
 import { securityHeadersMiddleware } from './middleware/security-headers';
-import { createCsrfMiddleware } from './middleware/csrf';
+import {
+  createCsrfMiddleware,
+  matchesOrigin,
+  parseOrigins,
+} from './middleware/csrf';
 
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -41,17 +45,23 @@ app.disable('x-powered-by');
 app.use(securityHeadersMiddleware);
 
 // CORS: the UI is served from the same origin in production, so cross-origin
-// access is off unless explicitly allowed via ALLOWED_ORIGINS (comma-separated).
+// access is off unless explicitly allowed via ALLOWED_ORIGINS (comma-separated
+// https origins, matched like the CSRF check).
 // Never reflect arbitrary origins: requests carry the user's credentials.
-const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? '')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
-if (isDevelopment) {
-  allowedOrigins.push('http://localhost:3000');
-}
-if (allowedOrigins.length > 0) {
-  app.use(cors({ origin: allowedOrigins, credentials: true }));
+const corsOrigins = new Set(parseOrigins(process.env.ALLOWED_ORIGINS));
+if (corsOrigins.size > 0 || isDevelopment) {
+  app.use(
+    cors({
+      origin: (origin, callback) =>
+        callback(
+          null,
+          origin !== undefined &&
+            (matchesOrigin(origin, corsOrigins) ||
+              (isDevelopment && origin === 'http://localhost:3000')),
+        ),
+      credentials: true,
+    }),
+  );
 }
 
 app.use(createCsrfMiddleware({ isDevelopment }));

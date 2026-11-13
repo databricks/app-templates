@@ -1,11 +1,16 @@
+import logging
+
 import dash
 from dash import html, Input, Output, State, dcc
 import dash_bootstrap_components as dbc
 from model_serving_utils import query_endpoint
 
+logger = logging.getLogger(__name__)
+
 MAX_MESSAGE_CHARS = 4000
 MAX_HISTORY_MESSAGES = 40
 ALLOWED_ROLES = {'user', 'assistant'}
+MODEL_ERROR_MESSAGE = 'Sorry, the model could not answer. Please try again.'
 
 
 def sanitize_chat_history(chat_history):
@@ -113,11 +118,10 @@ class DatabricksChatbot:
                 'content': assistant_response
             })
         except Exception as e:
-            error_message = f'Error: {str(e)}'
-            print(error_message)  # Log the error for debugging
+            logger.exception('Error calling model endpoint: %r', e)
             chat_history.append({
                 'role': 'assistant',
-                'content': error_message
+                'content': MODEL_ERROR_MESSAGE
             })
 
         chat_display = self._format_chat_display(chat_history)
@@ -130,12 +134,8 @@ class DatabricksChatbot:
         return dash.no_update, dash.no_update
 
     def _call_model_endpoint(self, messages, max_tokens=128):
-        try:
-            print('Calling model endpoint...')
-            return query_endpoint(self.endpoint_name, messages, max_tokens)["content"]
-        except Exception as e:
-            print(f'Error calling model endpoint: {str(e)}')
-            raise
+        print('Calling model endpoint...')
+        return query_endpoint(self.endpoint_name, messages, max_tokens)["content"]
 
     def _format_chat_display(self, chat_history):
         return [

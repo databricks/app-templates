@@ -1,9 +1,44 @@
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
-import { Streamdown } from 'streamdown';
+import {
+  Streamdown,
+  defaultRehypePlugins,
+  defaultUrlTransform,
+  type StreamdownProps,
+  type UrlTransform,
+} from 'streamdown';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { MessageSquarePlus, MessageSquare, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import { Button, ScrollArea, Separator, Textarea } from '@databricks/appkit-ui/react';
+
+const MAX_INPUT_LENGTH = 10000;
+const MAX_HISTORY_MESSAGES = 200;
+
+// Retrieved context can carry prompt-injected markdown. An off-site image is
+// fetched as soon as it renders and an off-site link leaks data when clicked
+// (both carry whatever the model put in the URL), so only same-origin images and
+// links are kept; others render as plain text with the URL in the tooltip. The
+// server CSP img-src enforces the image rule as well.
+type RehypePluggable = NonNullable<StreamdownProps['rehypePlugins']>[number];
+const [harden] = defaultRehypePlugins.harden as Extract<RehypePluggable, unknown[]>;
+const markdownRehypePlugins: StreamdownProps['rehypePlugins'] = [
+  defaultRehypePlugins.raw,
+  defaultRehypePlugins.sanitize,
+  [
+    harden,
+    {
+      defaultOrigin: window.location.origin,
+      allowedImagePrefixes: [`${window.location.origin}/`],
+      allowedLinkPrefixes: [`${window.location.origin}/`],
+      allowDataImages: false,
+    },
+  ],
+];
+
+const markdownUrlTransform: UrlTransform = (url, key, node) => {
+  if (key === 'href' && !/^(https?:|\/|#)/i.test(url)) return null;
+  return defaultUrlTransform(url, key, node);
+};
 
 interface ChatSession {
   id: string;
@@ -32,6 +67,17 @@ function createTransport(chatIdRef: React.RefObject<string | null>) {
     api: '/api/chat',
     body: () => (chatIdRef.current ? { chatId: chatIdRef.current } : {}),
     headers: { 'Content-Type': 'application/json' },
+    // The server only reads text parts of the last MAX_HISTORY_MESSAGES turns; sending
+    // less keeps long chats under the server's JSON body limit.
+    prepareSendMessagesRequest: ({ messages, body }) => ({
+      body: {
+        ...body,
+        messages: messages.slice(-MAX_HISTORY_MESSAGES).map((m) => ({
+          ...m,
+          parts: m.parts.filter((p) => p.type === 'text'),
+        })),
+      },
+    }),
   });
 }
 
@@ -313,7 +359,13 @@ export function ChatPage() {
                 {message.parts.map((part, index) =>
                   part.type === 'text' ? (
                     message.role === 'assistant' ? (
-                      <Streamdown key={`${message.id}-${index}`} animated={false} className="text-sm">
+                      <Streamdown
+                        key={`${message.id}-${index}`}
+                        animated={false}
+                        className="text-sm"
+                        rehypePlugins={markdownRehypePlugins}
+                        urlTransform={markdownUrlTransform}
+                      >
                         {part.text}
                       </Streamdown>
                     ) : (
@@ -333,6 +385,7 @@ export function ChatPage() {
             <Textarea
               ref={inputRef}
               value={input}
+              maxLength={MAX_INPUT_LENGTH}
               onChange={(e) => {
                 setInput(e.target.value);
                 autosize();

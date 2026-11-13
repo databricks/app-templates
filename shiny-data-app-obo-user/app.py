@@ -9,30 +9,25 @@ from security import SecurityMiddleware
 # Defined in `app.yaml`
 assert os.getenv("DATABRICKS_WAREHOUSE_ID"), "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
 
-_INITIAL_QUERY = """
-SELECT
-  *
-FROM
-  samples.nyctaxi.trips
-"""
-
-MAX_QUERY_CHARS = 10000
+_INITIAL_TABLE = "samples.nyctaxi.trips"
+_QUERY = "SELECT * FROM IDENTIFIER(:table_name) LIMIT :row_limit"
+MAX_ROWS = 10000
 STATEMENT_TIMEOUT_SECONDS = "60"
 
 
-def execute_query(connection, statement, max_rows=10000):
+def execute_query(connection, table_name, row_limit):
     """
-    Executes an SQL statement and fetches up to `max_rows` results.
+    Reads up to `row_limit` rows from `table_name`.
+
+    The table name is bound with IDENTIFIER(:table_name) and the limit with a
+    :row_limit parameter marker, so neither value becomes SQL text.
     """
     try:
         with connection.cursor() as cursor:
-            cursor.execute(statement)
-            res = (
-                cursor.fetchmany_arrow(max_rows)
-                if max_rows
-                else cursor.fetchall_arrow()
+            cursor.execute(
+                _QUERY, {"table_name": table_name, "row_limit": row_limit}
             )
-        return res
+            return cursor.fetchmany_arrow(row_limit)
     except Exception as e:
         print(f"Error executing query: {e}")
         return e
@@ -41,14 +36,15 @@ def execute_query(connection, statement, max_rows=10000):
 app_ui = ui.page_navbar(
     ui.nav_panel(
         "Query",
-        # text input formatted to use monospace font
-        ui.tags.head(ui.tags.style("#sql_query {font-family: monospace;}")),
+        ui.tags.head(ui.tags.style("#table_name {font-family: monospace;}")),
         ui.p(
-            "Queries are run with your permissions, a maximum of 10k rows will be returned. "
-            "A timeout of 60s is set."
+            "Rows are read with your permissions. Enter a table name such as "
+            f"catalog.schema.table; a maximum of {MAX_ROWS // 1000}k rows will be returned "
+            "and a timeout of 60s is set."
         ),
-        ui.input_text_area(
-            "sql_query", label="", rows=6, value=_INITIAL_QUERY, width="100%"
+        ui.input_text("table_name", label="Table", value=_INITIAL_TABLE, width="100%"),
+        ui.input_numeric(
+            "row_limit", label="Rows", value=1000, min=1, max=MAX_ROWS, width="200px"
         ),
         ui.span(
             ui.input_task_button(
@@ -76,7 +72,7 @@ def server(input, output, session):
     # Define the extended task to execute the query asynchronously
     @ui.bind_task_button(button_id="submit_query")
     @reactive.extended_task
-    async def run_query_task(query: str):
+    async def run_query_task(table_name: str, row_limit: int):
         try:
             # Get the user access token from the session request header
             user_token = session.http_conn.headers.get('X-Forwarded-Access-Token', None)
@@ -96,9 +92,13 @@ def server(input, output, session):
             )
 
             # Query the SQL data with the user credentials
-            res = await asyncio.to_thread(execute_query, connection_with_user_creds, query)
+            res = await asyncio.to_thread(
+                execute_query, connection_with_user_creds, table_name, row_limit
+            )
             # In order to query with Service Principal credentials, comment the above line and uncomment the below line
-            # res = await asyncio.to_thread(execute_query, connection_with_service_principal_creds, query)
+            # res = await asyncio.to_thread(
+            #     execute_query, connection_with_service_principal_creds, table_name, row_limit
+            # )
             ui.update_action_button("cancel_query", disabled=True)
             return res
         except Exception as e:
@@ -109,19 +109,17 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.submit_query)
     def handle_query():
+        table_name = (input.table_name() or "").strip()
+        if not table_name:
+            ui.notification_show("Please enter a table name.", type="warning")
+            return
+        requested_rows = input.row_limit()
+        if requested_rows is None:
+            ui.notification_show("Please enter a number of rows.", type="warning")
+            return
+        row_limit = max(1, min(int(requested_rows), MAX_ROWS))
         ui.update_action_button("cancel_query", disabled=False)
-        # Don't attempt execution for empty queries
-        query = input.sql_query()
-        if not query.strip():
-            ui.notification_show("Please enter a SQL query.", type="warning")
-            return
-        if len(query) > MAX_QUERY_CHARS:
-            ui.update_action_button("cancel_query", disabled=True)
-            ui.notification_show(
-                f"Queries are limited to {MAX_QUERY_CHARS} characters.", type="warning"
-            )
-            return
-        run_query_task(query)
+        run_query_task(table_name, row_limit)
 
     # Handle the 'Cancel Query' button
     @reactive.effect

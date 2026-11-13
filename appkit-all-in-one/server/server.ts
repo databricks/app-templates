@@ -1,24 +1,29 @@
 import { createApp, analytics, files, genie, lakebase, server, serving } from '@databricks/appkit';
 import { setupSampleLakebaseRoutes } from './routes/lakebase/todo-routes';
-import { csrfMiddleware, securityHeadersMiddleware } from './security';
+import { withinVolume } from './files-policy';
+import { protectServer } from './security';
 
 createApp({
   plugins: [
     analytics(),
-    files(),
+    files({
+      volumes: {
+        // publicRead() is AppKit's default policy, which denies upload, mkdir and delete;
+        // use files.policy.all(withinVolume, files.policy.allowAll()) to enable them.
+        files: { policy: files.policy.all(withinVolume, files.policy.publicRead()) },
+      },
+    }),
     genie(),
     lakebase(),
     server(),
     serving(),
   ],
   async onPluginsReady(appkit) {
-    // Runs after AppKit's own plugin routes (/api/<plugin>) are mounted, so it
-    // covers the routes registered below and the frontend, not the plugin routes.
     appkit.server.extend((app) => {
       app.disable('x-powered-by');
-      app.use(securityHeadersMiddleware);
-      app.use(csrfMiddleware);
     });
     await setupSampleLakebaseRoutes(appkit);
   },
-}).catch(console.error);
+})
+  .then((appkit) => protectServer(appkit.server.getServer()))
+  .catch(console.error);

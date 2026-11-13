@@ -100,7 +100,8 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.submit_query)
     def handle_query():
-        table_name = (input.table_name() or "").strip()
+        table_name = input.table_name()
+        table_name = table_name.strip() if isinstance(table_name, str) else ""
         if not table_name:
             ui.notification_show("Please enter a table name.", type="warning")
             return

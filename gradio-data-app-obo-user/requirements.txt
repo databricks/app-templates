@@ -2,3 +2,5 @@
 databricks-sdk~=0.157.0
 databricks-sql-connector~=3.7.5
 gradio~=6.31.0
+fastapi
+uvicorn

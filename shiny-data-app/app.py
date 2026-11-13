@@ -11,11 +11,13 @@ app_diagnostics.install_diagnostics()
 # --- end diagnostics bootstrap ---
 
 import asyncio
-import re
-from shiny import App, ui, render, reactive, run_app
+import os
+
+import sqlglot
+from sqlglot import exp
 from databricks.sdk import config
 from databricks import sql
-import os
+from shiny import App, ui, render, reactive, run_app
 
 from security import SecurityMiddleware
 
@@ -31,29 +33,146 @@ FROM
 """
 
 MAX_QUERY_CHARS = 10000
-_SQL_COMMENTS = re.compile(r"--[^\n]*|/\*.*?\*/", re.DOTALL)
-_READ_ONLY_START = re.compile(r"(select|with)\b", re.IGNORECASE)
-# A WITH clause can also prefix INSERT, UPDATE, DELETE or MERGE.
-_WRITE_KEYWORDS = re.compile(r"\b(insert|update|delete|merge)\b", re.IGNORECASE)
+_ALLOWED_COMMANDS = frozenset({"SHOW", "DESCRIBE", "DESC", "EXPLAIN"})
+# Write / DDL / session nodes. sqlglot has no Optimize class; OPTIMIZE parses as Command.
+_DISALLOWED_NODES = (
+    exp.Insert,
+    exp.Update,
+    exp.Delete,
+    exp.Merge,
+    exp.Create,
+    exp.Drop,
+    exp.Alter,
+    exp.TruncateTable,
+    exp.Command,
+    exp.Set,
+    exp.Use,
+    exp.Copy,
+    exp.Cache,
+    exp.Refresh,
+    exp.Analyze,
+    exp.Uncache,
+    exp.Grant,
+    exp.Revoke,
+    exp.Comment,
+    exp.Pragma,
+    exp.Transaction,
+    exp.Commit,
+    exp.Rollback,
+    exp.Kill,
+    exp.LoadData,
+    exp.Clone,
+    exp.Attach,
+    exp.Detach,
+    exp.Export,
+    exp.Install,
+)
+_DISALLOWED_TYPE_NAMES = frozenset({"Optimize", "Vacuum"})
+_READ_ONLY_ERROR = (
+    "Only a single read-only query can be run "
+    "(SELECT/WITH, SHOW, DESCRIBE, or EXPLAIN of a SELECT)."
+)
+
+
+def _is_read_query(node):
+    """SELECT, UNION/INTERSECT/EXCEPT of those, or WITH whose body is a SELECT."""
+    if node is None:
+        return False
+    if isinstance(node, exp.Subquery):
+        return _is_read_query(node.this)
+    if isinstance(node, exp.Paren):
+        return _is_read_query(node.this)
+    if isinstance(node, exp.Select):
+        return True
+    if isinstance(node, (exp.Union, exp.Intersect, exp.Except)):
+        return _is_read_query(node.this) and _is_read_query(node.expression)
+    if isinstance(node, exp.With):
+        return _is_read_query(node.this)
+    return False
+
+
+def _contains_disallowed(tree, skip=None):
+    for node in tree.walk():
+        if skip is not None and node is skip:
+            continue
+        if isinstance(node, _DISALLOWED_NODES):
+            return True
+        if type(node).__name__ in _DISALLOWED_TYPE_NAMES:
+            return True
+    return False
+
+
+def _command_payload(node):
+    expr = node.expression
+    if expr is None:
+        return ""
+    if isinstance(expr, exp.Literal):
+        return str(expr.this or "")
+    return expr.sql() if hasattr(expr, "sql") else str(expr)
+
+
+def _parse_statements(sql):
+    try:
+        trees = sqlglot.parse(sql, read="databricks")
+    except sqlglot.errors.SqlglotError:
+        return None
+    except Exception:
+        return None
+    return [tree for tree in trees if tree is not None]
+
+
+def _allow_command(root):
+    # sqlglot returns SHOW / EXPLAIN (and sometimes DESCRIBE) as exp.Command.
+    keyword = str(root.this or "").strip()
+    if keyword.upper() not in _ALLOWED_COMMANDS:
+        return _READ_ONLY_ERROR
+    if _contains_disallowed(root, skip=root):
+        return _READ_ONLY_ERROR
+    if keyword.upper() != "EXPLAIN":
+        return None
+    wrapped = _command_payload(root).strip()
+    if not wrapped:
+        return "EXPLAIN is only allowed for a SELECT statement."
+    inner = _parse_statements(wrapped)
+    if inner is None:
+        # Options such as EXPLAIN EXTENDED/FORMATTED/COST are not classified.
+        return "EXPLAIN is only allowed for a SELECT statement."
+    if len(inner) != 1 or not _is_read_query(inner[0]) or _contains_disallowed(inner[0]):
+        return "EXPLAIN is only allowed for a SELECT statement."
+    return None
 
 
 def validate_query(statement):
     """
-    Returns an error message unless `statement` is a single read-only SELECT/WITH query.
+    Returns an error message unless `statement` is a single read-only query.
 
     Queries run as the app's service principal, so this keeps the playground
-    read-only. It is a guard, not a SQL parser: the service principal's Unity
-    Catalog grants remain the real limit on what can be read.
+    read-only. Unity Catalog grants remain the real limit on what can be read;
+    SELECTs that call side-effecting functions (for example ai_query) are not
+    blocked.
     """
     if len(statement) > MAX_QUERY_CHARS:
         return f"Queries are limited to {MAX_QUERY_CHARS} characters."
-    # Semicolons and write keywords are checked on the raw text, so a string
-    # literal such as '--' can't hide a second statement from the check.
-    if ";" in statement.strip().rstrip(";"):
+    trees = _parse_statements(statement)
+    if trees is None:
+        return "The SQL could not be parsed."
+    if len(trees) == 0:
+        return "A SQL statement is required."
+    if len(trees) != 1:
         return "Only a single statement can be run."
-    body = _SQL_COMMENTS.sub(" ", statement).strip()
-    if not _READ_ONLY_START.match(body) or _WRITE_KEYWORDS.search(statement):
-        return "Only read-only queries starting with SELECT or WITH can be run."
+    root = trees[0]
+    if isinstance(root, exp.Command):
+        return _allow_command(root)
+    if isinstance(root, exp.Describe):
+        if _contains_disallowed(root):
+            return _READ_ONLY_ERROR
+        inner = root.this
+        if inner is not None and not isinstance(inner, (exp.Table, exp.Column, exp.Identifier)):
+            if not _is_read_query(inner):
+                return _READ_ONLY_ERROR
+        return None
+    if not _is_read_query(root) or _contains_disallowed(root):
+        return _READ_ONLY_ERROR
     return None
 
 
@@ -82,8 +201,9 @@ app_ui = ui.page_navbar(
         ui.tags.head(ui.tags.style("#sql_query {font-family: monospace;}")),
         ui.p(
             "Queries run with the app's service principal identity, not your own permissions, "
-            "so you can read any data the app can read. Only a single read-only SELECT or WITH "
-            "query is allowed, a maximum of 10k rows will be returned and a timeout of 60s is set."
+            "so you can read any data the app can read. Only a single read-only query is allowed "
+            "(SELECT/WITH, SHOW, DESCRIBE, or EXPLAIN of a SELECT); a maximum of 10k rows will be "
+            "returned and a timeout of 60s is set."
         ),
         ui.input_text_area(
             "sql_query", label="", rows=6, value=_INITIAL_QUERY, width="100%"

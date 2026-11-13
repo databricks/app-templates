@@ -5,3 +5,4 @@ shiny~=1.8.0
 matplotlib~=3.11.2
 numpy~=1.26.4
 websockets~=13.1
+sqlglot~=30.31.0

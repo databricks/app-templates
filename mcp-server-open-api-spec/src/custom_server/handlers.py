@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import re
-from urllib.parse import urlencode
+from urllib.parse import unquote, urlencode
 
 from databricks.sdk.service.serving import ExternalFunctionRequestHttpMethod
 
@@ -47,6 +47,22 @@ def _path_template_pattern(template: str) -> re.Pattern:
     return re.compile("^" + "[^/]+".join(re.escape(part) for part in parts) + "$")
 
 
+def _is_unsafe_path(path: str) -> bool:
+    return (
+        not path.startswith("/")
+        or path.startswith("//")
+        or "://" in path
+        or "\\" in path
+        or "@" in path
+        or "?" in path
+        or "#" in path
+        or ".." in path
+        or "." in path.split("/")
+        or _ENCODED_SEPARATORS.search(path) is not None
+        or any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in path)
+    )
+
+
 def _validate_endpoint_path(endpoint_path: str, http_method: str) -> None:
     """Allow only relative paths that match a path template and method in the spec."""
     if len(endpoint_path) > MAX_PATH_LENGTH:
@@ -55,33 +71,27 @@ def _validate_endpoint_path(endpoint_path: str, http_method: str) -> None:
         raise ValueError(
             "endpoint_path must not contain a query string; pass query values in parameters"
         )
-    if (
-        not endpoint_path.startswith("/")
-        or endpoint_path.startswith("//")
-        or "://" in endpoint_path
-        or "\\" in endpoint_path
-        or "@" in endpoint_path
-        or ".." in endpoint_path
-        or "." in endpoint_path.split("/")
-        or _ENCODED_SEPARATORS.search(endpoint_path)
-        or any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in endpoint_path)
-    ):
+    # A server or proxy may decode the path before routing it, so the decoded path is
+    # checked too. No "%" may remain after one decode, so decoding again changes nothing.
+    decoded_path = unquote(endpoint_path)
+    if _is_unsafe_path(endpoint_path) or _is_unsafe_path(decoded_path) or "%" in decoded_path:
         raise ValueError(f"endpoint_path {endpoint_path!r} is not a valid relative API path")
 
     paths = load_openapi_spec().get("paths", {})
-    matches = [
-        path_item
-        for template, path_item in paths.items()
-        if isinstance(path_item, dict) and _path_template_pattern(template).match(endpoint_path)
-    ]
-    if not matches:
-        raise ValueError(
-            f"endpoint_path {endpoint_path!r} does not match any path in the API specification"
-        )
-    if not any(http_method.lower() in path_item for path_item in matches):
-        raise ValueError(
-            f"Method {http_method} is not defined for {endpoint_path!r} in the API specification"
-        )
+    for path in (endpoint_path, decoded_path):
+        matches = [
+            path_item
+            for template, path_item in paths.items()
+            if isinstance(path_item, dict) and _path_template_pattern(template).match(path)
+        ]
+        if not matches:
+            raise ValueError(
+                f"endpoint_path {endpoint_path!r} does not match any path in the API specification"
+            )
+        if not any(http_method.lower() in path_item for path_item in matches):
+            raise ValueError(
+                f"Method {http_method} is not defined for {endpoint_path!r} in the API specification"
+            )
 
 
 def _validate_headers(headers: dict) -> dict:
@@ -92,7 +102,9 @@ def _validate_headers(headers: dict) -> dict:
         if name.lower() not in ALLOWED_FORWARD_HEADERS:
             allowed = ", ".join(sorted(ALLOWED_FORWARD_HEADERS))
             raise ValueError(f"Header {name!r} is not allowed; allowed headers: {allowed}")
-        if len(value) > MAX_HEADER_VALUE_LENGTH or "\r" in value or "\n" in value:
+        if len(value) > MAX_HEADER_VALUE_LENGTH or any(
+            (ord(ch) < 0x20 and ch != "\t") or ord(ch) == 0x7F for ch in value
+        ):
             raise ValueError(f"Header {name!r} has an invalid value")
     return headers
 

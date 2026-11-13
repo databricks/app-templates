@@ -84,8 +84,10 @@ combined_app = FastAPI(
 )
 
 # Security headers on every response, and an Origin check on state-changing
-# requests. MCP clients don't send an Origin header, so they're unaffected.
-combined_app.add_middleware(SecurityMiddleware)
+# requests and on every request to /mcp (the MCP spec requires servers to
+# validate Origin on all connections). MCP clients don't send an Origin header,
+# so they're unaffected.
+combined_app.add_middleware(SecurityMiddleware, origin_checked_paths={"/mcp"})
 
 
 @combined_app.middleware("http")

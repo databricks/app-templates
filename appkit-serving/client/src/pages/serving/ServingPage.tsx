@@ -16,6 +16,8 @@ function extractContent(data: unknown): string {
   return resp?.choices?.[0]?.message?.content ?? JSON.stringify(data);
 }
 
+const MAX_MESSAGE_LENGTH = 4000;
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -107,6 +109,7 @@ export function ServingPage() {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            maxLength={MAX_MESSAGE_LENGTH}
             placeholder="Send a message..."
             className="flex-1 rounded-md border px-3 py-2 text-sm bg-background"
             disabled={loading}

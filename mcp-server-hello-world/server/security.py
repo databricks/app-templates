@@ -5,10 +5,11 @@ headers or check where requests come from, so this ASGI middleware does both:
 
 - Adds a Content-Security-Policy (including ``frame-ancestors 'none'``) and
   related headers to every HTTP response.
-- Rejects state-changing requests (POST, PUT, PATCH, DELETE) and WebSocket
-  connections whose ``Origin`` is not this app's URL (``DATABRICKS_APP_URL``)
-  or listed in ``ALLOWED_ORIGINS`` (comma-separated). A missing Origin is
-  allowed (non-browser clients); ``Origin: null`` is always rejected.
+- Rejects state-changing requests (POST, PUT, PATCH, DELETE), WebSocket
+  connections and any request to a path in ``origin_checked_paths`` whose
+  ``Origin`` is not this app's URL (``DATABRICKS_APP_URL``) or listed in
+  ``ALLOWED_ORIGINS`` (comma-separated). A missing Origin is allowed
+  (non-browser clients); ``Origin: null`` is always rejected.
 """
 
 import logging
@@ -68,26 +69,38 @@ def is_origin_allowed(origin: str | None) -> bool:
 
 
 class SecurityMiddleware:
-    def __init__(self, app):
+    def __init__(self, app, origin_checked_paths=()):
         self.app = app
+        self.origin_checked_paths = frozenset(origin_checked_paths)
 
     async def __call__(self, scope, receive, send):
         if scope["type"] not in ("http", "websocket"):
             return await self.app(scope, receive, send)
 
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                for name, value in SECURITY_HEADERS.items():
+                    headers.setdefault(name, value)
+            await send(message)
+
         is_websocket = scope["type"] == "websocket"
-        if is_websocket or scope["method"] in STATE_CHANGING_METHODS:
+        if (
+            is_websocket
+            or scope["method"] in STATE_CHANGING_METHODS
+            or scope["path"] in self.origin_checked_paths
+        ):
             origin = next(
                 (value.decode("latin-1") for key, value in scope["headers"] if key == b"origin"),
                 None,
             )
             if not is_origin_allowed(origin):
-                logger.warning("Rejected cross-origin request to %s from %s", scope["path"], origin)
+                logger.warning("Rejected cross-origin request to %r from %r", scope["path"], origin)
                 if is_websocket:
                     await receive()
                     await send({"type": "websocket.close", "code": 1008})
                 else:
-                    await send(
+                    await send_with_headers(
                         {
                             "type": "http.response.start",
                             "status": 403,
@@ -99,12 +112,5 @@ class SecurityMiddleware:
 
         if is_websocket:
             return await self.app(scope, receive, send)
-
-        async def send_with_headers(message):
-            if message["type"] == "http.response.start":
-                headers = MutableHeaders(scope=message)
-                for name, value in SECURITY_HEADERS.items():
-                    headers.setdefault(name, value)
-            await send(message)
 
         await self.app(scope, receive, send_with_headers)

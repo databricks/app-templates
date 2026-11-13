@@ -5,6 +5,7 @@ This module sets up the core application by:
 1. Creating and configuring the FastMCP server instance
 2. Loading and registering all MCP tools
 3. Adding security headers and a cross-origin (CSRF) check on state-changing requests
+   and on the MCP endpoint
 4. Combining MCP routes with standard FastAPI routes
 5. Optionally serving static files for a web frontend
 
@@ -90,8 +91,10 @@ combined_app = FastAPI(
 )
 
 # Security headers on every response, and an Origin check on state-changing
-# requests. MCP clients don't send an Origin header, so they're unaffected.
-combined_app.add_middleware(SecurityMiddleware)
+# requests and on every request to /mcp (the MCP spec requires servers to
+# validate Origin on all connections). MCP clients don't send an Origin header,
+# so they're unaffected.
+combined_app.add_middleware(SecurityMiddleware, origin_checked_paths={"/mcp"})
 
 # Export the combined_app for uvicorn to import
 # Usage: uvicorn server.app:combined_app

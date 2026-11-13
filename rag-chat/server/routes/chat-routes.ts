@@ -77,18 +77,16 @@ export function setupChatRoutes(appkit: AppKitWithLakebase) {
         return;
       }
       const { chatId } = parsed.data;
-      const latest = parsed.data.messages[parsed.data.messages.length - 1];
-      if (latest.role === 'user' && latest.parts.some((p) => (p.text?.length ?? 0) > MAX_TEXT_LENGTH)) {
+      // The last user message is stored, so its text parts together must fit the limit.
+      const lastUserRequestMsg = parsed.data.messages.filter((m) => m.role === 'user').pop();
+      const lastUserTextLength = (lastUserRequestMsg?.parts ?? [])
+        .filter((p) => p.type === 'text')
+        .reduce((total, p) => total + (p.text?.length ?? 0), 0);
+      if (lastUserTextLength > MAX_TEXT_LENGTH) {
         res.status(400).json({ error: 'Message too long' });
         return;
       }
       const messages = parsed.data.messages.slice(-MAX_HISTORY_MESSAGES);
-
-      const chat = await getChatForUser(appkit, chatId, userId);
-      if (!chat) {
-        res.status(404).json({ error: 'Chat not found' });
-        return;
-      }
 
       const coreMessages = messages.map((m) => ({
         role: m.role,
@@ -99,6 +97,12 @@ export function setupChatRoutes(appkit: AppKitWithLakebase) {
       }));
 
       try {
+        const chat = await getChatForUser(appkit, chatId, userId);
+        if (!chat) {
+          res.status(404).json({ error: 'Chat not found' });
+          return;
+        }
+
         const lastUserMsg = coreMessages.filter((m) => m.role === 'user').pop();
         if (lastUserMsg) {
           await appendMessage(appkit, { chatId, userId, role: 'user', content: lastUserMsg.content });

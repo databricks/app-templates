@@ -22,11 +22,9 @@ from agent_server.utils import (
     get_databricks_host_from_env,
     get_lakebase_access_error_message,
     get_session_id,
-    get_user_identity,
     get_user_workspace_client,
     lakebase_config,
     process_agent_stream_events,
-    scope_session_id,
 )
 
 
@@ -98,7 +96,7 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
         if session_id:
             mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
         session = AsyncDatabricksSession(
-            session_id=scope_session_id(session_id, get_user_identity(request)),
+            session_id=session_id,
             autoscaling_endpoint=lakebase_config.autoscaling_endpoint,
             project=lakebase_config.autoscaling_project,
             branch=lakebase_config.autoscaling_branch,
@@ -121,7 +119,7 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
             result = await Runner.run(agent, messages, session=session)
         return ResponsesAgentResponse(
             output=[item.to_input_item() for item in result.new_items],
-            custom_outputs={"session_id": session_id},
+            custom_outputs={"session_id": session.session_id},
         )
     except Exception as e:
         error_msg = str(e).lower()
@@ -147,7 +145,7 @@ async def stream_handler(
         if session_id:
             mlflow.update_current_trace(metadata={"mlflow.trace.session": session_id})
         session = AsyncDatabricksSession(
-            session_id=scope_session_id(session_id, get_user_identity(request)),
+            session_id=session_id,
             autoscaling_endpoint=lakebase_config.autoscaling_endpoint,
             project=lakebase_config.autoscaling_project,
             branch=lakebase_config.autoscaling_branch,

@@ -1,4 +1,3 @@
-import hashlib
 import json
 import logging
 import os
@@ -30,8 +29,6 @@ DISALLOWED_INPUT_ROLES = {"system", "developer"}
 SESSION_ID_PATTERN = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(::attempt-[0-9]{1,4})?$"
 )
-# Set by the Databricks Apps proxy on every request it forwards; callers can't override them.
-PROXY_HEADERS = ("x-forwarded-email", "x-forwarded-user", "x-forwarded-for", "x-real-ip")
 
 
 def _is_databricks_app_env() -> bool:
@@ -128,33 +125,6 @@ def get_session_id(request: ResponsesAgentRequest) -> str:
     if not SESSION_ID_PATTERN.match(session_id):
         raise ValueError("session_id must be a UUID.")
     return session_id
-
-
-def get_user_identity(request: ResponsesAgentRequest) -> Optional[str]:
-    """Return the user that owns this request's session.
-
-    Requests that come through the Databricks Apps proxy are identified only by the
-    headers it sets. Requests without proxy headers were sent from inside the app (the
-    bundled chat UI server, which passes its signed-in user as ``context.user_id``) or
-    are local development, and use the body value.
-    """
-    headers = get_request_headers()
-    if any(name in headers for name in PROXY_HEADERS):
-        return headers.get("x-forwarded-email") or headers.get("x-forwarded-user") or None
-    # Background-mode resume replays a stored request with no headers at all.
-    if not headers and os.getenv("DATABRICKS_APP_URL"):
-        return None
-    if request.context and getattr(request.context, "user_id", None):
-        return request.context.user_id
-    return None
-
-
-def scope_session_id(session_id: str, identity: Optional[str]) -> str:
-    """Key stored sessions by their owner so one user can't load another user's history."""
-    if not identity:
-        return session_id
-    owner = hashlib.sha256(identity.lower().encode()).hexdigest()[:32]
-    return f"{owner}:{session_id}"
 
 
 def _check_input_limits(request: ResponsesAgentRequest, items: list[dict]) -> None:

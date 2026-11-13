@@ -2,6 +2,7 @@
 
 import json
 import os
+from typing import Annotated, Literal
 
 from databricks.sdk import WorkspaceClient
 from mlflow.genai.agent_server import invoke
@@ -10,15 +11,25 @@ from pydantic import BaseModel, Field
 w = WorkspaceClient()
 openai_client = w.serving_endpoints.get_open_ai_client()
 
+# Each question is a separate LLM call over the whole document.
+MAX_DOCUMENT_CHARS = 200_000
+MAX_QUESTIONS = 20
+MAX_QUESTION_CHARS = 1_000
+MAX_REASONING_CHARS = 2_000
+
 
 class AgentInput(BaseModel):
-    document_text: str = Field(..., description="The document text to analyze")
-    questions: list[str] = Field(..., description="List of yes/no questions")
+    document_text: str = Field(
+        ..., max_length=MAX_DOCUMENT_CHARS, description="The document text to analyze"
+    )
+    questions: list[Annotated[str, Field(max_length=MAX_QUESTION_CHARS)]] = Field(
+        ..., max_length=MAX_QUESTIONS, description="List of yes/no questions"
+    )
 
 
 class AnalysisResult(BaseModel):
     question_text: str = Field(..., description="Original question text")
-    answer: str = Field(..., description="Yes or No answer")
+    answer: Literal["Yes", "No"] = Field(..., description="Yes or No answer")
     reasoning: str = Field(..., description="Step-by-step reasoning for the answer")
 
 
@@ -93,8 +104,11 @@ async def invoke_handler(data: dict) -> dict:
         else:
             try:
                 response_data: dict = json.loads(llm_response.choices[0].message.content)
-                answer = response_data.get("answer", "No")
-                reasoning = response_data.get("reasoning", "")
+                answer = str(response_data.get("answer", "No")).strip().capitalize()
+                reasoning = str(response_data.get("reasoning", ""))
+                if answer not in ("Yes", "No"):
+                    answer = "No"
+                    reasoning = "The model did not return a Yes or No answer."
             except Exception as e:
                 answer = "No"
                 reasoning = f"Unable to process the question due to parsing error: {e}"
@@ -103,7 +117,7 @@ async def invoke_handler(data: dict) -> dict:
             AnalysisResult(
                 question_text=question,
                 answer=answer,
-                reasoning=reasoning,
+                reasoning=reasoning[:MAX_REASONING_CHARS],
             )
         )
 

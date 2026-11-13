@@ -15,10 +15,14 @@ load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env", override=True)
 # Need to import the agent to register the functions with the server
 # Set the env vars before importing the agent for proper auth
 import agent_server.agent  # noqa: E402
+from agent_server.agent import AgentInput  # noqa: E402
+from agent_server.security import RequestValidationMiddleware, SecurityMiddleware  # noqa: E402
 
 agent_server = AgentServer()
 # Define the app as a module level variable to enable multiple workers
 app = agent_server.app  # noqa: F841
+app.add_middleware(RequestValidationMiddleware, validate=AgentInput.model_validate)
+app.add_middleware(SecurityMiddleware)
 setup_mlflow_git_based_version_tracking()
 
 

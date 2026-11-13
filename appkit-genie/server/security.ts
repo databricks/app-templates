@@ -1,4 +1,5 @@
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
+import type { Duplex } from 'node:stream';
 
 const isDevelopment = process.env.NODE_ENV === 'development';
 
@@ -7,14 +8,16 @@ const isDevelopment = process.env.NODE_ENV === 'development';
 // @databricks/appkit version changes that script.
 const APPKIT_BOOTSTRAP_SCRIPT_HASH = "'sha256-yVrk4LyjmPl8qTBbtBYK/+wmplRptpNXKEcL/TXUIlM='";
 
-// `img-src` is limited to the app's own origin so rendered markdown (e.g. Genie
-// answers) can't load, and leak data to, images on arbitrary hosts.
+// `style-src`, `img-src`, `media-src` and `font-src` are limited to the app's own
+// origin so rendered markdown (e.g. Genie answers) can't load, and leak data to,
+// stylesheets, images, audio/video or fonts on arbitrary hosts.
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self' https: wss:",
   `script-src 'self' https: ${APPKIT_BOOTSTRAP_SCRIPT_HASH}`,
-  "style-src 'self' https: 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
-  "font-src 'self' https: data:",
+  "media-src 'self'",
+  "font-src 'self' data:",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -51,16 +54,15 @@ function setSecurityHeaders(res: ServerResponse) {
 }
 
 /**
- * A state-changing request is cross-site unless its Origin is the app's own URL
- * (DATABRICKS_APP_URL) or in ALLOWED_ORIGINS (plus http://localhost and
- * http://127.0.0.1 when running locally).
+ * An Origin is cross-site unless it is the app's own URL (DATABRICKS_APP_URL) or
+ * in ALLOWED_ORIGINS (plus http://localhost and http://127.0.0.1 when running
+ * locally).
  *
  * A missing Origin is allowed (same-origin navigation or non-browser clients);
  * `Origin: null` (sandboxed iframes, data: and file: pages) is always rejected.
  */
-function isCrossSiteRequest(req: IncomingMessage) {
-  const origin = req.headers.origin;
-  if (!STATE_CHANGING_METHODS.has(req.method ?? '') || !origin) {
+function isCrossSiteOrigin(origin: string | undefined) {
+  if (!origin) {
     return false;
   }
   const isAllowed =
@@ -70,6 +72,10 @@ function isCrossSiteRequest(req: IncomingMessage) {
   return !isAllowed;
 }
 
+function isCrossSiteRequest(req: IncomingMessage) {
+  return STATE_CHANGING_METHODS.has(req.method ?? '') && isCrossSiteOrigin(req.headers.origin);
+}
+
 /**
  * Sets security headers (CSP, clickjacking and MIME-sniffing protection) on every
  * response and rejects cross-site state-changing requests with 403.
@@ -77,6 +83,11 @@ function isCrossSiteRequest(req: IncomingMessage) {
  * AppKit mounts /health and the /api/<plugin> routes before any
  * `appkit.server.extend()` middleware, so this runs in front of the HTTP server's
  * existing 'request' listener (the Express app) to cover every route.
+ *
+ * WebSocket upgrades get the same Origin check. AppKit's Remote Bridge adds its
+ * 'upgrade' listener (/dev-tunnel, /dev-hmr) on the first `?dev` request, so the
+ * check wraps `server.emit` to run before every 'upgrade' listener, including
+ * listeners added later.
  */
 export function protectServer(server: Server) {
   const listeners = server.listeners('request') as Array<(req: IncomingMessage, res: ServerResponse) => void>;
@@ -93,4 +104,18 @@ export function protectServer(server: Server) {
       listener.call(server, req, res);
     }
   });
+
+  const emit = server.emit.bind(server) as (event: string | symbol, ...args: unknown[]) => boolean;
+  server.emit = (event: string | symbol, ...args: unknown[]) => {
+    if (event === 'upgrade') {
+      const [req, socket] = args as [IncomingMessage, Duplex];
+      if (isCrossSiteOrigin(req.headers.origin)) {
+        console.warn(`[CSRF] Rejected WebSocket upgrade ${req.url?.split('?')[0]} from origin ${req.headers.origin}`);
+        socket.on('error', () => socket.destroy());
+        socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n', () => socket.destroy());
+        return true;
+      }
+    }
+    return emit(event, ...args);
+  };
 }

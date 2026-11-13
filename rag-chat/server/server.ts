@@ -7,17 +7,13 @@ import { setupChatPersistenceRoutes } from './routes/chat-persistence-routes';
 import { setupChatTables } from './lib/chat-store';
 import { seedFromWikipedia } from './lib/seed-data';
 import { generateEmbedding } from './lib/embeddings';
-import { csrfMiddleware, securityHeadersMiddleware } from './security';
+import { protectServer } from './security';
 
 createApp({
   plugins: [lakebase(), server()],
   async onPluginsReady(appkit) {
-    // Runs after AppKit's own plugin routes (/api/<plugin>) are mounted, so it
-    // covers the routes registered below and the frontend, not the plugin routes.
     appkit.server.extend((app) => {
       app.disable('x-powered-by');
-      app.use(securityHeadersMiddleware);
-      app.use(csrfMiddleware);
     });
     await setupRagTables(appkit);
     await setupChatTables(appkit);
@@ -27,4 +23,6 @@ createApp({
       console.warn('[rag] seed failed:', (e as Error).message)
     );
   },
-}).catch(console.error);
+})
+  .then((appkit) => protectServer(appkit.server.getServer()))
+  .catch(console.error);

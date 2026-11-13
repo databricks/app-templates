@@ -12,6 +12,7 @@
 
 import express, { Request, Response } from "express";
 import cors from "cors";
+import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { config } from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -68,6 +69,8 @@ const SKIPPED_UPSTREAM_HEADERS = new Set([
   "content-encoding",
   "content-length",
 ]);
+
+const LOOPBACK_ADDRESSES = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 
 /**
  * Register SIGINT/SIGTERM handlers that flush tracing and close MCP connections.
@@ -135,6 +138,24 @@ export async function createServer(
       service: "langchain-agent-ts",
     });
   });
+
+  // Rate limit agent calls per user (x-forwarded-email), else per IP. Loopback
+  // calls without a forwarded email come from the bundled UI server, which
+  // relays every user's chat, so they are not counted against one shared bucket.
+  const invocationsRateLimit = rateLimit({
+    windowMs: 60_000,
+    limit: Number(process.env.RATE_LIMIT_PER_MINUTE) || 60,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    keyGenerator: (req) =>
+      req.get("x-forwarded-email") ?? ipKeyGenerator(req.ip ?? ""),
+    skip: (req) =>
+      !req.get("x-forwarded-email") &&
+      LOOPBACK_ADDRESSES.has(req.socket.remoteAddress ?? ""),
+    message: { error: "Too many requests" },
+    validate: { xForwardedForHeader: false },
+  });
+  app.post(["/invocations", "/responses"], invocationsRateLimit);
 
   // Mount handler at /invocations (MLflow) and /responses (OpenAI SDK compatibility)
   const invocationsRouter = createInvocationsRouter(agent);

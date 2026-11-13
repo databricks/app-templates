@@ -12,14 +12,29 @@ app_diagnostics.install_diagnostics()
 
 import matplotlib.pyplot as plt
 import numpy as np
-from shiny.express import ui, input, render
+from shiny import App, render, ui
 
-with ui.sidebar():
-  ui.tags.h1("Hello World!")
-  ui.input_slider("n", "Number of bins", 0, 100, 20)
+from security import SecurityMiddleware
 
-@render.plot(alt="A histogram")
-def histogram():
-  np.random.seed(12345)
-  x = 100 + 15 * np.random.randn(500)
-  plt.hist(x, input.n(), density=True)
+MIN_BINS, MAX_BINS = 1, 100
+
+app_ui = ui.page_sidebar(
+  ui.sidebar(
+    ui.tags.h1("Hello World!"),
+    ui.input_slider("n", "Number of bins", MIN_BINS, MAX_BINS, 20),
+  ),
+  ui.output_plot("histogram"),
+)
+
+
+def server(input, output, session):
+  @render.plot(alt="A histogram")
+  def histogram():
+    # The slider range is only enforced in the browser; clamp it here too.
+    bins = min(max(int(input.n()), MIN_BINS), MAX_BINS)
+    np.random.seed(12345)
+    x = 100 + 15 * np.random.randn(500)
+    plt.hist(x, bins, density=True)
+
+
+app = SecurityMiddleware(App(app_ui, server))

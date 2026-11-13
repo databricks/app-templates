@@ -11,6 +11,7 @@ app_diagnostics.install_diagnostics()
 # --- end diagnostics bootstrap ---
 
 import os
+import re
 from databricks import sql
 from databricks.sdk.core import Config
 import streamlit as st
@@ -19,7 +20,8 @@ import pandas as pd
 # Ensure environment variable is set correctly
 assert os.getenv('DATABRICKS_WAREHOUSE_ID'), "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
 
-def sqlQuery(query: str) -> pd.DataFrame:
+def sqlQuery(query: str, params: dict | None = None) -> pd.DataFrame:
+    """Run a query. Pass user-supplied values in `params` and reference them as :name markers."""
     cfg = Config() # Pull environment variables for auth
     with sql.connect(
         server_hostname=cfg.host,
@@ -27,7 +29,7 @@ def sqlQuery(query: str) -> pd.DataFrame:
         credentials_provider=lambda: cfg.authenticate
     ) as connection:
         with connection.cursor() as cursor:
-            cursor.execute(query)
+            cursor.execute(query, params)
             return cursor.fetchall_arrow().to_pandas()
 
 st.set_page_config(layout="wide")
@@ -45,9 +47,12 @@ with col1:
     st.scatter_chart(data=data, height=400, width=700, y="fare_amount", x="trip_distance")
 with col2:
     st.subheader("Predict fare")
-    pickup = st.text_input("From (zipcode)", value="10003")
-    dropoff = st.text_input("To (zipcode)", value="11238")
-    d = data[(data['pickup_zip'] == int(pickup)) & (data['dropoff_zip'] == int(dropoff))]
-    st.write(f"# **${d['fare_amount'].mean() if len(d) > 0 else 99:.2f}**")
+    pickup = st.text_input("From (zipcode)", value="10003", max_chars=5)
+    dropoff = st.text_input("To (zipcode)", value="11238", max_chars=5)
+    if re.fullmatch(r"\d{5}", pickup) and re.fullmatch(r"\d{5}", dropoff):
+        d = data[(data['pickup_zip'] == int(pickup)) & (data['dropoff_zip'] == int(dropoff))]
+        st.write(f"# **${d['fare_amount'].mean() if len(d) > 0 else 99:.2f}**")
+    else:
+        st.error("Enter 5-digit zip codes.")
 
 st.dataframe(data=data, height=600, width="stretch")

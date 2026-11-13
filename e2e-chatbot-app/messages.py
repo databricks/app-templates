@@ -7,6 +7,7 @@ Streamlit app reruns, avoiding isinstance comparison issues.
 """
 import streamlit as st
 from abc import ABC, abstractmethod
+from safe_markdown import unlink_markdown
 
 
 class Message(ABC):
@@ -64,14 +65,15 @@ def render_message(msg):
     if msg["role"] == "assistant":
         # Render content first if it exists
         if msg.get("content"):
-            st.markdown(msg["content"])
+            st.markdown(unlink_markdown(msg["content"]))
         
         # Then render tool calls if they exist
         if "tool_calls" in msg and msg["tool_calls"]:
             for call in msg["tool_calls"]:
                 fn_name = call["function"]["name"]
                 args = call["function"]["arguments"]
-                st.markdown(f"🛠️ Calling **`{fn_name}`** with:\n```json\n{args}\n```")
+                st.text(f"🛠️ Calling {fn_name} with:")
+                st.code(args, language="json")
     elif msg["role"] == "tool":
         st.markdown("🧰 Tool Response:")
         st.code(msg["content"], language="json")

@@ -21,6 +21,7 @@ from model_serving_utils import (
 )
 from collections import OrderedDict
 from messages import UserMessage, AssistantResponse, render_message
+from safe_markdown import unlink_markdown
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -34,6 +35,19 @@ assert SERVING_ENDPOINT, \
      "https://docs.databricks.com/aws/en/generative-ai/agent-framework/chat-app#deploy-the-databricks-app")
 
 ENDPOINT_SUPPORTS_FEEDBACK = endpoint_supports_feedback(SERVING_ENDPOINT)
+
+MAX_PROMPT_CHARS = 8000
+# Only the most recent turns (user messages and assistant responses, including tool calls and
+# outputs) are sent to the endpoint, so a long chat can't grow the request without bound.
+MAX_HISTORY_ENTRIES = 20
+
+
+def recent_history(history):
+    """Return the last MAX_HISTORY_ENTRIES history entries, starting at a user message."""
+    recent = history[-MAX_HISTORY_ENTRIES:]
+    while recent and not isinstance(recent[0], UserMessage):
+        recent = recent[1:]
+    return recent
 
 def reduce_chat_agent_chunks(chunks):
     """
@@ -144,7 +158,7 @@ def query_chat_completions_endpoint_and_render(input_messages):
                     content = delta.get("content", "")
                     if content:
                         accumulated_content += content
-                        response_area.markdown(accumulated_content)
+                        response_area.markdown(unlink_markdown(accumulated_content))
                 
                 if "databricks_output" in chunk:
                     req_id = chunk["databricks_output"].get("databricks_request_id")
@@ -328,8 +342,10 @@ def query_responses_endpoint_and_render(input_messages):
 
 
 # --- Chat input (must run BEFORE rendering messages) ---
-prompt = st.chat_input("Ask a question")
-if prompt:
+prompt = st.chat_input("Ask a question", max_chars=MAX_PROMPT_CHARS)
+if prompt and len(prompt) > MAX_PROMPT_CHARS:
+    st.error(f"Messages can be at most {MAX_PROMPT_CHARS} characters.")
+elif prompt:
     # Get the task type for this endpoint
     task_type = _get_endpoint_task_type(SERVING_ENDPOINT)
     
@@ -339,7 +355,7 @@ if prompt:
     user_msg.render(len(st.session_state.history) - 1)
 
     # Convert history to standard chat message format for the query methods
-    input_messages = [msg for elem in st.session_state.history for msg in elem.to_input_messages()]
+    input_messages = [msg for elem in recent_history(st.session_state.history) for msg in elem.to_input_messages()]
     
     # Handle the response using the appropriate handler
     assistant_response = query_endpoint_and_render(task_type, input_messages)

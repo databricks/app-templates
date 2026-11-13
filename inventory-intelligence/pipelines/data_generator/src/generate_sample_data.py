@@ -15,7 +15,6 @@
 
 import random
 import math
-import re
 from datetime import datetime, timedelta, date, timezone
 
 dbutils.widgets.text("catalog", "", "Unity Catalog catalog name")
@@ -27,10 +26,12 @@ lakebase_schema = dbutils.widgets.get("lakebase_schema")
 if not catalog or catalog == "REPLACE_ME":
     raise ValueError("Set the 'catalog' widget to your Unity Catalog catalog name.")
 
-# Both names are interpolated into SQL as identifiers, so only allow plain names.
-for name in (catalog, lakebase_schema):
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
-        raise ValueError(f"Invalid catalog or schema name: {name!r}")
+def quote_ident(name):
+    return "`" + name.replace("`", "``") + "`"
+
+
+catalog_ident = quote_ident(catalog)
+mirror_schema = f"{catalog_ident}.{quote_ident(lakebase_schema)}"
 
 print(f"Generating sample data in {catalog}.{lakebase_schema}.*")
 
@@ -38,7 +39,10 @@ print(f"Generating sample data in {catalog}.{lakebase_schema}.*")
 
 # Ensure schemas exist
 for schema in [lakebase_schema, "silver", "gold"]:
-    spark.sql(f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`")
+    spark.sql(
+        "CREATE SCHEMA IF NOT EXISTS IDENTIFIER(:catalog || '.' || :schema)",
+        args={"catalog": catalog_ident, "schema": quote_ident(schema)},
+    )
 
 print("Schemas ready.")
 
@@ -147,7 +151,7 @@ stores_df = spark.createDataFrame(stores_rows)
     .format("delta")
     .mode("overwrite")
     .option("overwriteSchema", "true")
-    .saveAsTable(f"`{catalog}`.`{lakebase_schema}`.lb_stores_history")
+    .saveAsTable(f"{mirror_schema}.lb_stores_history")
 )
 print(f"Written {len(stores_rows)} stores to {catalog}.{lakebase_schema}.lb_stores_history")
 
@@ -166,7 +170,7 @@ products_df = spark.createDataFrame(products_rows)
     .format("delta")
     .mode("overwrite")
     .option("overwriteSchema", "true")
-    .saveAsTable(f"`{catalog}`.`{lakebase_schema}`.lb_products_history")
+    .saveAsTable(f"{mirror_schema}.lb_products_history")
 )
 print(f"Written {len(products_rows)} products to {catalog}.{lakebase_schema}.lb_products_history")
 
@@ -212,7 +216,7 @@ stock_df = spark.createDataFrame(stock_rows)
     .format("delta")
     .mode("overwrite")
     .option("overwriteSchema", "true")
-    .saveAsTable(f"`{catalog}`.`{lakebase_schema}`.lb_stock_levels_history")
+    .saveAsTable(f"{mirror_schema}.lb_stock_levels_history")
 )
 print(f"Written {len(stock_rows)} stock level rows to {catalog}.{lakebase_schema}.lb_stock_levels_history")
 
@@ -259,7 +263,7 @@ sales_df = spark.createDataFrame(sales_rows)
     .format("delta")
     .mode("overwrite")
     .option("overwriteSchema", "true")
-    .saveAsTable(f"`{catalog}`.`{lakebase_schema}`.lb_sales_transactions_history")
+    .saveAsTable(f"{mirror_schema}.lb_sales_transactions_history")
 )
 print(f"Written {len(sales_rows)} sales transactions to {catalog}.{lakebase_schema}.lb_sales_transactions_history")
 

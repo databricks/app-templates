@@ -35,7 +35,10 @@ historyRouter.get('/', requireAuth, async (req: Request, res: Response) => {
     return res.status(response.status).json(response.json);
   }
 
-  const limit = Number.parseInt((req.query.limit as string) || '10');
+  const requestedLimit = Number.parseInt((req.query.limit as string) || '10');
+  const limit = Number.isNaN(requestedLimit)
+    ? 10
+    : Math.min(Math.max(requestedLimit, 1), 100);
   const startingAfter = req.query.starting_after as string | undefined;
   const endingBefore = req.query.ending_before as string | undefined;
 

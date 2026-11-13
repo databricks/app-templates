@@ -55,6 +55,7 @@ import {
   postRequestBodySchema,
   type PostRequestBody,
   StreamCache,
+  titleRequestBodySchema,
   type VisibilityType,
   CONTEXT_HEADER_CONVERSATION_ID,
   CONTEXT_HEADER_USER_ID,
@@ -523,8 +524,15 @@ chatRouter.get(
  * POST /api/chat/title - Generate title from message
  */
 chatRouter.post('/title', requireAuth, async (req: Request, res: Response) => {
+  const parsed = titleRequestBodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    const error = new ChatSDKError('bad_request:api');
+    const response = error.toResponse();
+    return res.status(response.status).json(response.json);
+  }
+
   try {
-    const { message } = req.body;
+    const message: ChatMessage = parsed.data.message;
     const title = await generateTitleFromUserMessage({ message });
     res.json({ title });
   } catch (error) {

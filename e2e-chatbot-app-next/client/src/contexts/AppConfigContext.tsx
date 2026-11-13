@@ -10,6 +10,7 @@ interface ConfigResponse {
     feedback: boolean;
   };
   greeting?: string;
+  workspaceHost?: string;
   obo?: {
     missingScopes: string[];
   };
@@ -22,6 +23,7 @@ interface AppConfigContextType {
   chatHistoryEnabled: boolean;
   feedbackEnabled: boolean;
   greeting: string;
+  workspaceHost: string | undefined;
   oboMissingScopes: string[];
 }
 
@@ -49,6 +51,7 @@ export function AppConfigProvider({ children }: { children: ReactNode }) {
     chatHistoryEnabled: data?.features.chatHistory ?? true,
     feedbackEnabled: data?.features.feedback ?? false,
     greeting: data?.greeting ?? DEFAULT_GREETING,
+    workspaceHost: data?.workspaceHost,
     oboMissingScopes: data?.obo?.missingScopes ?? [],
   };
 

@@ -21,6 +21,7 @@ import { MessageActions } from './message-actions';
 import { PreviewAttachment } from './preview-attachment';
 import equal from 'fast-deep-equal';
 import { cn, sanitizeText } from '@/lib/utils';
+import { sanitizeHref } from './databricks-message-citation';
 import { MessageEditor } from './message-editor';
 import { MessageReasoning } from './message-reasoning';
 import { Shimmer } from './ui/shimmer';
@@ -255,7 +256,7 @@ const PurePreviewMessage = ({
               return (
                 <a
                   key={key}
-                  href={part.url}
+                  href={sanitizeHref(part.url)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-baseline text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"

@@ -1,4 +1,4 @@
-import type { NextFunction, Request, Response } from 'express';
+import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 
 const isDevelopment = process.env.NODE_ENV === 'development';
 
@@ -38,10 +38,7 @@ const allowedOrigins = new Set(
 // The platform always sets DATABRICKS_APP_URL, so it is only unset when running locally.
 const allowLocalhost = isDevelopment || !process.env.DATABRICKS_APP_URL;
 
-/**
- * Sets security headers (CSP, clickjacking and MIME-sniffing protection) on every response.
- */
-export function securityHeadersMiddleware(_req: Request, res: Response, next: NextFunction) {
+function setSecurityHeaders(res: ServerResponse) {
   // In development the Vite dev server injects inline scripts and an HMR
   // websocket, so the CSP is only sent in production.
   if (!isDevelopment) {
@@ -51,39 +48,49 @@ export function securityHeadersMiddleware(_req: Request, res: Response, next: Ne
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-  next();
 }
 
 /**
- * Rejects cross-site state-changing requests by validating the Origin header
- * against the app's own URL (DATABRICKS_APP_URL) and ALLOWED_ORIGINS
- * (plus http://localhost and http://127.0.0.1 when running locally).
+ * A state-changing request is cross-site unless its Origin is the app's own URL
+ * (DATABRICKS_APP_URL) or in ALLOWED_ORIGINS (plus http://localhost and
+ * http://127.0.0.1 when running locally).
  *
  * A missing Origin is allowed (same-origin navigation or non-browser clients);
  * `Origin: null` (sandboxed iframes, data: and file: pages) is always rejected.
  */
-export function csrfMiddleware(req: Request, res: Response, next: NextFunction) {
-  if (!STATE_CHANGING_METHODS.has(req.method)) {
-    next();
-    return;
-  }
-
+function isCrossSiteRequest(req: IncomingMessage) {
   const origin = req.headers.origin;
-  if (!origin) {
-    next();
-    return;
+  if (!STATE_CHANGING_METHODS.has(req.method ?? '') || !origin) {
+    return false;
   }
-
   const isAllowed =
     origin !== 'null' &&
     ((ORIGIN_FORMAT.test(origin) && allowedOrigins.has(normalize(origin))) ||
       (allowLocalhost && LOCALHOST_ORIGIN.test(origin)));
+  return !isAllowed;
+}
 
-  if (!isAllowed) {
-    console.warn(`[CSRF] Rejected ${req.method} ${req.path} from origin ${origin}`);
-    res.status(403).json({ error: 'Forbidden' });
-    return;
-  }
-
-  next();
+/**
+ * Sets security headers (CSP, clickjacking and MIME-sniffing protection) on every
+ * response and rejects cross-site state-changing requests with 403.
+ *
+ * AppKit mounts /health and the /api/<plugin> routes before any
+ * `appkit.server.extend()` middleware, so this runs in front of the HTTP server's
+ * existing 'request' listener (the Express app) to cover every route.
+ */
+export function protectServer(server: Server) {
+  const listeners = server.listeners('request') as Array<(req: IncomingMessage, res: ServerResponse) => void>;
+  server.removeAllListeners('request');
+  server.on('request', (req: IncomingMessage, res: ServerResponse) => {
+    setSecurityHeaders(res);
+    if (isCrossSiteRequest(req)) {
+      console.warn(`[CSRF] Rejected ${req.method} ${req.url?.split('?')[0]} from origin ${req.headers.origin}`);
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Forbidden' }));
+      return;
+    }
+    for (const listener of listeners) {
+      listener.call(server, req, res);
+    }
+  });
 }

@@ -99,14 +99,25 @@ class SecurityMiddleware:
             and scope["method"] == "OPTIONS"
             and any(key == b"access-control-request-method" for key, _ in scope["headers"])
         )
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                for name, value in SECURITY_HEADERS.items():
+                    headers.setdefault(name, value)
+                if not origin_allowed:
+                    for name in CORS_HEADERS:
+                        del headers[name]
+            await send(message)
+
         if is_websocket or is_preflight or scope["method"] in STATE_CHANGING_METHODS:
             if not origin_allowed:
-                logger.warning("Rejected cross-origin request to %s from %s", scope["path"], origin)
+                logger.warning("Rejected cross-origin request to %r from %r", scope["path"], origin)
                 if is_websocket:
                     await receive()
                     await send({"type": "websocket.close", "code": 1008})
                 else:
-                    await send(
+                    await send_with_headers(
                         {
                             "type": "http.response.start",
                             "status": 403,
@@ -118,15 +129,5 @@ class SecurityMiddleware:
 
         if is_websocket:
             return await self.app(scope, receive, send)
-
-        async def send_with_headers(message):
-            if message["type"] == "http.response.start":
-                headers = MutableHeaders(scope=message)
-                for name, value in SECURITY_HEADERS.items():
-                    headers.setdefault(name, value)
-                if not origin_allowed:
-                    for name in CORS_HEADERS:
-                        del headers[name]
-            await send(message)
 
         await self.app(scope, receive, send_with_headers)

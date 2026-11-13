@@ -11,6 +11,7 @@ app_diagnostics.install_diagnostics()
 # --- end diagnostics bootstrap ---
 
 import os
+import re
 from databricks import sql
 import pandas as pd
 import dash
@@ -20,11 +21,17 @@ import dash_bootstrap_components as dbc
 import dash_ag_grid as dag
 from databricks.sdk.core import Config
 
+import security
+
 # Ensure environment variable is set correctly
 assert os.getenv('DATABRICKS_WAREHOUSE_ID'), "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
 
-def sqlQuery(query: str) -> pd.DataFrame:
-    """Execute a SQL query and return the result as a pandas DataFrame."""
+def sqlQuery(query: str, params: dict | None = None) -> pd.DataFrame:
+    """Execute a SQL query and return the result as a pandas DataFrame.
+
+    Pass user-supplied values through ``params`` with named markers, e.g.
+    ``sqlQuery("SELECT * FROM t WHERE pickup_zip = :zip", {"zip": 10003})``.
+    """
     cfg = Config()  # Pull environment variables for auth
     with sql.connect(
         server_hostname=cfg.host,
@@ -32,7 +39,7 @@ def sqlQuery(query: str) -> pd.DataFrame:
         credentials_provider=lambda: cfg.authenticate
     ) as connection:
         with connection.cursor() as cursor:
-            cursor.execute(query)
+            cursor.execute(query, params)
             return cursor.fetchall_arrow().to_pandas()
 
 # Fetch the data
@@ -45,9 +52,18 @@ except Exception as e:
     print(f"An error occurred in querying data: {str(e)}")
     data = pd.DataFrame()
 
+def parse_zipcode(value):
+    """Return the zipcode as an int, or None if it isn't exactly five digits."""
+    if isinstance(value, str) and re.fullmatch(r"\d{5}", value.strip()):
+        return int(value)
+    return None
+
 def calculate_fare_prediction(pickup, dropoff):
     """Calculate the predicted fare based on pickup and dropoff zipcodes."""
-    d = data[(data['pickup_zip'] == int(pickup)) & (data['dropoff_zip'] == int(dropoff))]
+    pickup_zip, dropoff_zip = parse_zipcode(pickup), parse_zipcode(dropoff)
+    if pickup_zip is None or dropoff_zip is None:
+        return "Please enter 5-digit zipcodes."
+    d = data[(data['pickup_zip'] == pickup_zip) & (data['dropoff_zip'] == dropoff_zip)]
     fare_prediction = d['fare_amount'].mean() if len(d) > 0 else 99
     return f"Predicted Fare: ${fare_prediction:.2f}"
 
@@ -73,9 +89,9 @@ app.layout = dbc.Container([
         dbc.Col([
             html.H3("Predict Fare"),
             dbc.Label("From (zipcode)"),
-            dbc.Input(id='from-zipcode', type='text', value='10003'),
+            dbc.Input(id='from-zipcode', type='text', value='10003', maxLength=5),
             dbc.Label("To (zipcode)"),
-            dbc.Input(id='to-zipcode', type='text', value='11238'),
+            dbc.Input(id='to-zipcode', type='text', value='11238', maxLength=5),
             dbc.Button("Predict", id='submit-button', n_clicks=0, color='primary', className='mt-3'),
             html.Div(
                 id='prediction-output',
@@ -105,6 +121,8 @@ app.layout = dbc.Container([
 )
 def render_prediction(n_clicks, pickup, dropoff):
     return calculate_fare_prediction(pickup, dropoff)
+
+security.init_app(app.server, extra_script_sources=app.csp_hashes())
 
 if __name__ == "__main__":
     # Calculate initial prediction

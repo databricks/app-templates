@@ -71,11 +71,8 @@ const IsoDate = z.union([z.iso.date(), z.iso.datetime({ offset: true })]);
 
 // The URL is rendered as a link for every user, so only allow web URLs.
 const WebUrl = z
-  .url()
-  .max(2048)
-  .refine((value) => /^https?:$/.test(new URL(value).protocol), {
-    message: "URL must use http or https",
-  });
+  .url({ protocol: /^https?$/, message: "URL must be an http or https URL" })
+  .max(2048);
 
 // owner_email is display data (who owns the subscription), not the caller's
 // identity; nothing authorizes on it.

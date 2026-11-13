@@ -5,6 +5,9 @@ const MAX_TEXT_LENGTH = 100_000;
 const MAX_PARTS = 50;
 const MAX_PREVIOUS_MESSAGES = 200;
 const MAX_PART_TYPE_LENGTH = 100;
+// The AI SDK fetches any other file URL server-side, so file parts must carry
+// the image inline.
+const IMAGE_DATA_URL = /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/]*={0,2}$/;
 
 const textPartSchema = z.object({
   type: z.enum(['text']),
@@ -15,18 +18,25 @@ const filePartSchema = z.object({
   type: z.enum(['file']),
   mediaType: z.enum(['image/jpeg', 'image/png']),
   name: z.string().min(1),
-  url: z.string().url(),
+  url: z.string().regex(IMAGE_DATA_URL),
 });
 
 const partSchema = z.union([textPartSchema, filePartSchema]);
 
 // Any UI message part the client may echo back (text, reasoning, tool-*,
 // dynamic-tool, source-*, file, step-start, data-*); other fields pass through.
-const previousMessagePartSchema = z.looseObject({
-  type: z.string().min(1).max(MAX_PART_TYPE_LENGTH),
-  text: z.string().max(MAX_TEXT_LENGTH).optional(),
-  errorText: z.string().max(MAX_TEXT_LENGTH).optional(),
-});
+const previousMessagePartSchema = z
+  .looseObject({
+    type: z.string().min(1).max(MAX_PART_TYPE_LENGTH),
+    text: z.string().max(MAX_TEXT_LENGTH).optional(),
+    errorText: z.string().max(MAX_TEXT_LENGTH).optional(),
+  })
+  .refine(
+    (part) =>
+      part.type !== 'file' ||
+      (typeof part.url === 'string' && IMAGE_DATA_URL.test(part.url)),
+    { error: 'File parts must use an image data URL', path: ['url'] },
+  );
 
 // Schema for previous messages in ephemeral mode
 // More permissive to handle various message types (user, assistant, tool calls, etc.)

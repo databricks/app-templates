@@ -24,8 +24,15 @@ import { messagesRouter } from './routes/messages';
 import { configRouter } from './routes/config';
 import { feedbackRouter } from './routes/feedback';
 import { ChatSDKError } from '@databricks/chatbot-core/errors';
-import { securityHeadersMiddleware } from './middleware/security-headers';
-import { createCsrfMiddleware } from './middleware/csrf';
+import {
+  SECURITY_HEADERS,
+  securityHeadersMiddleware,
+} from './middleware/security-headers';
+import {
+  createCsrfMiddleware,
+  matchesOrigin,
+  parseOrigins,
+} from './middleware/csrf';
 
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -44,17 +51,23 @@ app.disable('x-powered-by');
 app.use(securityHeadersMiddleware);
 
 // CORS: the UI is served from the same origin in production, so cross-origin
-// access is off unless explicitly allowed via ALLOWED_ORIGINS (comma-separated).
+// access is off unless explicitly allowed via ALLOWED_ORIGINS (comma-separated
+// https origins, matched like the CSRF check).
 // Never reflect arbitrary origins: requests carry the user's credentials.
-const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? '')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
-if (isDevelopment) {
-  allowedOrigins.push('http://localhost:3000');
-}
-if (allowedOrigins.length > 0) {
-  app.use(cors({ origin: allowedOrigins, credentials: true }));
+const corsOrigins = new Set(parseOrigins(process.env.ALLOWED_ORIGINS));
+if (corsOrigins.size > 0 || isDevelopment) {
+  app.use(
+    cors({
+      origin: (origin, callback) =>
+        callback(
+          null,
+          origin !== undefined &&
+            (matchesOrigin(origin, corsOrigins) ||
+              (isDevelopment && origin === 'http://localhost:3000')),
+        ),
+      credentials: true,
+    }),
+  );
 }
 
 app.use(createCsrfMiddleware({ isDevelopment }));
@@ -81,6 +94,9 @@ app.use('/api/feedback', feedbackRouter);
 const agentBackendUrl = process.env.API_PROXY;
 if (agentBackendUrl) {
   console.log(`✅ Proxying /invocations to ${agentBackendUrl}`);
+  const skippedUpstreamHeaders = new Set(
+    Object.keys(SECURITY_HEADERS).map((name) => name.toLowerCase()),
+  );
   app.post('/invocations', async (req: Request, res: Response) => {
     try {
       const forwardHeaders = { ...req.headers } as Record<string, string>;
@@ -95,10 +111,15 @@ if (agentBackendUrl) {
             : undefined,
       });
 
-      // Copy status and headers
+      // Copy status and headers, keeping this server's security and CORS headers
       res.status(response.status);
       response.headers.forEach((value, key) => {
-        res.setHeader(key, value);
+        if (
+          !skippedUpstreamHeaders.has(key) &&
+          !key.startsWith('access-control-')
+        ) {
+          res.setHeader(key, value);
+        }
       });
 
       // Stream the response body

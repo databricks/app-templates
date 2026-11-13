@@ -2,3 +2,4 @@
 mlflow~=3.17.2
 streamlit~=1.66.1
 databricks-sdk~=0.157.0
+markdown-it-py~=4.2.0

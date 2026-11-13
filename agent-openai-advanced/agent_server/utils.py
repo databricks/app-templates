@@ -1,5 +1,8 @@
+import hashlib
+import json
 import logging
 import os
+import re
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator, AsyncIterator, Optional
 from uuid import uuid4
@@ -18,6 +21,17 @@ from uuid_utils import uuid7
 from agent_server.history import normalize_history_items
 
 logger = logging.getLogger(__name__)
+
+MAX_INPUT_ITEMS = 500
+MAX_INPUT_ITEM_CHARS = 100_000
+MAX_CUSTOM_INPUTS_CHARS = 10_000
+DISALLOWED_INPUT_ROLES = {"system", "developer"}
+# Background-mode resume appends "::attempt-N" to the original session id.
+SESSION_ID_PATTERN = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(::attempt-[0-9]{1,4})?$"
+)
+# Set by the Databricks Apps proxy on every request it forwards; callers can't override them.
+PROXY_HEADERS = ("x-forwarded-email", "x-forwarded-user", "x-forwarded-for", "x-real-ip")
 
 
 def _is_databricks_app_env() -> bool:
@@ -105,12 +119,79 @@ def get_session_id(request: ResponsesAgentRequest) -> str:
     ci = dict(request.custom_inputs or {})
 
     if "session_id" in ci and ci["session_id"]:
-        return str(ci["session_id"])
+        session_id = str(ci["session_id"])
+    elif request.context and getattr(request.context, "conversation_id", None):
+        session_id = str(request.context.conversation_id)
+    else:
+        return str(uuid7())
 
-    if request.context and getattr(request.context, "conversation_id", None):
-        return str(request.context.conversation_id)
+    if not SESSION_ID_PATTERN.match(session_id):
+        raise ValueError("session_id must be a UUID.")
+    return session_id
 
-    return str(uuid7())
+
+def get_user_identity(request: ResponsesAgentRequest) -> Optional[str]:
+    """Return the user that owns this request's session.
+
+    Requests that come through the Databricks Apps proxy are identified only by the
+    headers it sets. Requests without proxy headers were sent from inside the app (the
+    bundled chat UI server, which passes its signed-in user as ``context.user_id``) or
+    are local development, and use the body value.
+    """
+    headers = get_request_headers()
+    if any(name in headers for name in PROXY_HEADERS):
+        return headers.get("x-forwarded-email") or headers.get("x-forwarded-user") or None
+    # Background-mode resume replays a stored request with no headers at all.
+    if not headers and os.getenv("DATABRICKS_APP_URL"):
+        return None
+    if request.context and getattr(request.context, "user_id", None):
+        return request.context.user_id
+    return None
+
+
+def scope_session_id(session_id: str, identity: Optional[str]) -> str:
+    """Key stored sessions by their owner so one user can't load another user's history."""
+    if not identity:
+        return session_id
+    owner = hashlib.sha256(identity.lower().encode()).hexdigest()[:32]
+    return f"{owner}:{session_id}"
+
+
+def _check_input_limits(request: ResponsesAgentRequest, items: list[dict]) -> None:
+    if len(items) > MAX_INPUT_ITEMS:
+        raise ValueError(f"Too many input items (limit {MAX_INPUT_ITEMS}).")
+    if any(len(json.dumps(item, default=str)) > MAX_INPUT_ITEM_CHARS for item in items):
+        raise ValueError(f"Input item too large (limit {MAX_INPUT_ITEM_CHARS} characters).")
+    if len(json.dumps(request.custom_inputs or {}, default=str)) > MAX_CUSTOM_INPUTS_CHARS:
+        raise ValueError(f"custom_inputs too large (limit {MAX_CUSTOM_INPUTS_CHARS} characters).")
+
+
+def check_request_limits(body: dict) -> None:
+    """Raise ``ValueError`` if a POST /invocations or /responses body is over the input limits."""
+    try:
+        request = ResponsesAgentRequest(**body)
+    except Exception:
+        # AgentServer rejects bodies that aren't a valid request with its own 400.
+        return
+    _check_input_limits(request, [i.model_dump() for i in request.input])
+    get_session_id(request)
+
+
+def get_validated_input(request: ResponsesAgentRequest) -> list[dict]:
+    """Return ``request.input`` as dicts after enforcing size limits.
+
+    ``system`` and ``developer`` items are dropped so callers can't replace the agent's
+    own instructions; user, assistant and tool-call items pass through unchanged.
+    """
+    items = [i.model_dump() for i in request.input]
+    # Requests the server replays itself (background-mode resume, agent-evaluate) have no
+    # HTTP headers; a resume adds a recovery message that can exceed the per-item limit.
+    if get_request_headers():
+        _check_input_limits(request, items)
+    allowed = [item for item in items if item.get("role") not in DISALLOWED_INPUT_ROLES]
+    if len(allowed) < len(items):
+        logger.warning("Dropped %d system/developer input item(s)", len(items) - len(allowed))
+    return allowed
 
 
 def get_databricks_host_from_env() -> str | None:
@@ -149,7 +230,7 @@ async def deduplicate_input(request: ResponsesAgentRequest, session: AsyncDatabr
     # Replayed assistant turns arrive id-less (chat UI sends output_text lists,
     # MLflow evaluation sends plain strings); collapse them to the easy-input
     # form every openai-agents version accepts. See agent_server/history.py.
-    messages = normalize_history_items([i.model_dump() for i in request.input])
+    messages = normalize_history_items(get_validated_input(request))
     session_items = await session.get_items()
     if len(session_items) >= len(messages) - 1:
         return [messages[-1]]

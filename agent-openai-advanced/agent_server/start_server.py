@@ -22,7 +22,13 @@ from databricks_ai_bridge.long_running import LongRunningAgentServer
 from databricks_openai.agents import AsyncDatabricksSession
 from mlflow.genai.agent_server import setup_mlflow_git_based_version_tracking
 
-from agent_server.utils import get_lakebase_access_error_message, lakebase_config, replace_fake_id
+from agent_server.security import RequestValidationMiddleware, SecurityMiddleware
+from agent_server.utils import (
+    check_request_limits,
+    get_lakebase_access_error_message,
+    lakebase_config,
+    replace_fake_id,
+)
 
 # Need to import the agent to register the functions with the server
 import agent_server.agent  # noqa: F401
@@ -97,6 +103,8 @@ agent_server.app.router.lifespan_context = _lifespan
 
 # Define the app as a module level variable to enable multiple workers
 app = agent_server.app  # noqa: F841
+app.add_middleware(RequestValidationMiddleware, validate=check_request_limits)
+app.add_middleware(SecurityMiddleware)
 setup_mlflow_git_based_version_tracking()
 
 

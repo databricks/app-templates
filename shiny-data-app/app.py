@@ -26,8 +26,6 @@ assert SQL_WAREHOUSE_ID, "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
 _INITIAL_TABLE = "samples.nyctaxi.trips"
 _QUERY = "SELECT * FROM IDENTIFIER(:table_name) LIMIT :row_limit"
 MAX_ROWS = 10000
-# Three 255-character name parts plus two dots.
-MAX_TABLE_NAME_CHARS = 767
 
 
 def execute_query(connection, table_name, row_limit):
@@ -113,12 +111,6 @@ def server(input, output, session):
         table_name = (input.table_name() or "").strip()
         if not table_name:
             ui.notification_show("Please enter a table name.", type="warning")
-            return
-        if len(table_name) > MAX_TABLE_NAME_CHARS:
-            ui.notification_show(
-                f"Table names are limited to {MAX_TABLE_NAME_CHARS} characters.",
-                type="warning",
-            )
             return
         requested_rows = input.row_limit()
         if requested_rows is None:

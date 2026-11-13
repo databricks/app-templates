@@ -110,6 +110,17 @@ To build and deploy agents on Databricks that connect to your MCP server to disc
 #### Connect from external MCP clients
 You can also connect to the MCP server using standard clients like the MCP inspector, following [this documentation](https://docs.databricks.com/aws/en/generative-ai/mcp/connect-external-services)
 
+To block cross-site requests, the server rejects POST and DELETE requests whose `Origin` header isn't the app's own URL. Command-line and server-side clients (AI Playground, agents, the scripts in `scripts/dev/`) send no `Origin` and aren't affected. A client that runs in a browser and connects directly, such as MCP Inspector in direct-connection mode, sends its page's origin and gets `403 Forbidden` from the deployed server unless that origin is listed in `ALLOWED_ORIGINS` (comma-separated) in `app.yaml`:
+
+```yaml
+env:
+  # ...existing entries...
+  - name: "ALLOWED_ORIGINS"
+    value: "https://mcp-client.example.com"
+```
+
+Only `https://` origins can be allowed on a deployed app. For a client served from `http://localhost`, connect through MCP Inspector's proxy instead of directly.
+
 ## Running the MCP Server Locally
 You can also run the MCP server in this app template locally, for ease of debugging.
 

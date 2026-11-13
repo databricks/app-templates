@@ -4,10 +4,11 @@ import type { FileAction, FilePolicy } from '@databricks/appkit';
 // The last path segment of these actions becomes a new file or folder name.
 const CREATE_ACTIONS: ReadonlySet<FileAction> = new Set(['upload', 'mkdir']);
 
+// Unicode category Cc (C0 controls, DEL and C1 controls), as the client checks with \p{Cc}.
 function hasControlCharacter(value: string) {
   for (let i = 0; i < value.length; i++) {
     const code = value.charCodeAt(i);
-    if (code < 0x20 || code === 0x7f) return true;
+    if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) return true;
   }
   return false;
 }

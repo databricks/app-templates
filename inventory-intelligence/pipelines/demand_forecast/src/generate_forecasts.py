@@ -21,13 +21,18 @@ catalog = dbutils.widgets.get("catalog")
 forecast_model = dbutils.widgets.get("forecast_model")
 model_serving_endpoint = dbutils.widgets.get("model_serving_endpoint")
 
+# Queries reference tables as IDENTIFIER(:catalog || '.schema.table'). Passing the
+# catalog backtick-quoted lets IDENTIFIER accept names that need quoting.
+catalog_ident = "`" + catalog.replace("`", "``") + "`"
+
 print(f"Catalog: {catalog}")
 print(f"Forecast model: {forecast_model}")
 
 # COMMAND ----------
 
 # Load sales history + current stock levels for all (store, product) pairs
-history_df = spark.sql(f"""
+history_df = spark.sql(
+    """
     SELECT
         ds.store_id,
         ds.product_id,
@@ -37,12 +42,14 @@ history_df = spark.sql(f"""
         COALESCE(p.lead_time_days, 7) AS lead_time_days,
         COALESCE(sl.quantity_on_hand, 0) AS quantity_on_hand,
         COALESCE(sl.quantity_on_order, 0) AS quantity_on_order
-    FROM `{catalog}`.silver.daily_sales ds
-    JOIN `{catalog}`.silver.products p ON ds.product_id = p.id
-    LEFT JOIN `{catalog}`.silver.stock_levels sl
+    FROM IDENTIFIER(:catalog || '.silver.daily_sales') ds
+    JOIN IDENTIFIER(:catalog || '.silver.products') p ON ds.product_id = p.id
+    LEFT JOIN IDENTIFIER(:catalog || '.silver.stock_levels') sl
         ON ds.store_id = sl.store_id AND ds.product_id = sl.product_id
     WHERE ds.sale_date >= DATE_SUB(CURRENT_DATE(), 90)
-""")
+""",
+    args={"catalog": catalog_ident},
+)
 
 history_pd = history_df.toPandas()
 history_pd["sale_date"] = history_pd["sale_date"].apply(
@@ -108,10 +115,13 @@ print(forecasts_pd.head())
 stock_snapshot = history_pd[["store_id", "product_id", "quantity_on_hand", "quantity_on_order", "reorder_point", "lead_time_days"]].drop_duplicates(subset=["store_id", "product_id"])
 
 # Merge in reorder_quantity (not in base history — fetch it)
-rq_df = spark.sql(f"""
+rq_df = spark.sql(
+    """
     SELECT id AS product_id, reorder_quantity
-    FROM `{catalog}`.silver.products
-""").toPandas()
+    FROM IDENTIFIER(:catalog || '.silver.products')
+""",
+    args={"catalog": catalog_ident},
+).toPandas()
 
 recommendations_pd = forecasts_pd.merge(stock_snapshot, on=["store_id", "product_id"], how="left")
 recommendations_pd = recommendations_pd.merge(rq_df, on="product_id", how="left")
@@ -142,11 +152,12 @@ schema = StructType([
 output_cols = ["store_id", "product_id", "forecast_30d_units", "confidence", "recommended_order_qty", "model_used", "generated_at"]
 output_df = spark.createDataFrame(recommendations_pd[output_cols], schema=schema)
 
-table_name = f"`{catalog}`.gold.replenishment_recommendations"
+table_name = f"{catalog_ident}.gold.replenishment_recommendations"
 
 # Create table if it doesn't exist, then merge
-spark.sql(f"""
-    CREATE TABLE IF NOT EXISTS {table_name} (
+spark.sql(
+    """
+    CREATE TABLE IF NOT EXISTS IDENTIFIER(:catalog || '.gold.replenishment_recommendations') (
         store_id STRING NOT NULL,
         product_id STRING NOT NULL,
         forecast_30d_units DOUBLE,
@@ -157,9 +168,11 @@ spark.sql(f"""
     )
     USING DELTA
     TBLPROPERTIES ('delta.feature.timestampNtz' = 'supported')
-""")
+""",
+    args={"catalog": catalog_ident},
+)
 
-target = DeltaTable.forName(spark, f"{catalog}.gold.replenishment_recommendations")
+target = DeltaTable.forName(spark, table_name)
 (
     target.alias("t")
     .merge(output_df.alias("s"), "t.store_id = s.store_id AND t.product_id = s.product_id")
@@ -173,14 +186,17 @@ print(f"Merged {output_df.count()} recommendations into {table_name}")
 # COMMAND ----------
 
 print("\nSummary:")
-summary = spark.sql(f"""
+summary = spark.sql(
+    """
     SELECT
         confidence,
         COUNT(*) AS count,
         ROUND(AVG(forecast_30d_units), 1) AS avg_forecast_30d,
         ROUND(AVG(recommended_order_qty), 0) AS avg_recommended_qty
-    FROM {table_name}
+    FROM IDENTIFIER(:catalog || '.gold.replenishment_recommendations')
     GROUP BY confidence
     ORDER BY confidence
-""")
+""",
+    args={"catalog": catalog_ident},
+)
 summary.show()

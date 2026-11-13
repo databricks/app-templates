@@ -6,6 +6,7 @@ import {
   server,
 } from "@databricks/appkit";
 import { setupInventoryRoutes, genieEnabled } from "./routes/inventory-routes";
+import { protectServer } from "./security";
 
 createApp({
   plugins: [
@@ -15,6 +16,11 @@ createApp({
     server(),
   ],
   async onPluginsReady(appkit) {
+    appkit.server.extend((app) => {
+      app.disable("x-powered-by");
+    });
     await setupInventoryRoutes(appkit);
   },
-}).catch(console.error);
+})
+  .then((appkit) => protectServer(appkit.server.getServer()))
+  .catch(console.error);

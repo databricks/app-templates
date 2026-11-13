@@ -9,6 +9,9 @@ headers or check where requests come from, so this ASGI middleware does both:
   connections whose ``Origin`` is not this app's URL (``DATABRICKS_APP_URL``)
   or listed in ``ALLOWED_ORIGINS`` (comma-separated). A missing Origin is
   allowed (non-browser clients); ``Origin: null`` is always rejected.
+- Answers CORS preflights from any other origin with 403 and strips CORS
+  headers from responses to them, so other sites can't read this app's
+  responses with the user's cookies.
 """
 
 import logging
@@ -42,6 +45,13 @@ SECURITY_HEADERS = {
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Cross-Origin-Opener-Policy": "same-origin",
 }
+
+CORS_HEADERS = (
+    "Access-Control-Allow-Origin",
+    "Access-Control-Allow-Credentials",
+    "Access-Control-Allow-Methods",
+    "Access-Control-Allow-Headers",
+)
 
 STATE_CHANGING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 ORIGIN_FORMAT = re.compile(r"^https://[a-zA-Z0-9\-.]+(:[0-9]{1,5})?$")
@@ -78,12 +88,18 @@ class SecurityMiddleware:
             return await self.app(scope, receive, send)
 
         is_websocket = scope["type"] == "websocket"
-        if is_websocket or scope["method"] in STATE_CHANGING_METHODS:
-            origin = next(
-                (value.decode("latin-1") for key, value in scope["headers"] if key == b"origin"),
-                None,
-            )
-            if not is_origin_allowed(origin):
+        origin = next(
+            (value.decode("latin-1") for key, value in scope["headers"] if key == b"origin"),
+            None,
+        )
+        origin_allowed = is_origin_allowed(origin)
+        is_preflight = (
+            not is_websocket
+            and scope["method"] == "OPTIONS"
+            and any(key == b"access-control-request-method" for key, _ in scope["headers"])
+        )
+        if is_websocket or is_preflight or scope["method"] in STATE_CHANGING_METHODS:
+            if not origin_allowed:
                 logger.warning("Rejected cross-origin request to %s from %s", scope["path"], origin)
                 if is_websocket:
                     await receive()
@@ -107,6 +123,9 @@ class SecurityMiddleware:
                 headers = MutableHeaders(scope=message)
                 for name, value in SECURITY_HEADERS.items():
                     headers.setdefault(name, value)
+                if not origin_allowed:
+                    for name in CORS_HEADERS:
+                        del headers[name]
             await send(message)
 
         await self.app(scope, receive, send_with_headers)

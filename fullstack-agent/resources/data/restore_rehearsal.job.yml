@@ -1,0 +1,17 @@
+resources:
+  jobs:
+    restore_rehearsal:
+      name: ${var.project}_restore_rehearsal
+      description: Rehearses the restore in docs/runbook.md#restore-a-table as the data owner, on copies only. For each table the data owner owns in the data, ops and reference schemas, it creates <table>_restore_rehearsal next to it with CREATE TABLE LIKE, sets the table's row filter and column masks on it, copies the rows in, notes the version, and writes every row a second time as the bad change. Time travel isn't supported on a table with a row filter or column masks, so it drops them from the copy, restores the copy to that version, and sets them again. It fails unless the filter and masks are back and the row count and checksum match. It drops each copy, also after a failure, and only reads the tables themselves. A copy left by a run that was cut off stops the next run until you drop it. Runs on demand.
+      run_as:
+        service_principal_name: ${var.data_owner_application_id}
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: project
+          default: ${var.project}
+      tasks:
+        - task_key: rehearse
+          notebook_task:
+            notebook_path: ../../sql/data/restore_rehearsal.sql
+            warehouse_id: ${var.warehouse_id}

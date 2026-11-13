@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Read a user's data</title>
+<link rel="stylesheet" href="diagrams.css">
+</head>
+<body>
+<div id="diagram">
+<div class="seq" style="--cols:6; width:1240px;">
+
+  <div class="actors">
+    <div class="band head" style="grid-column: 2 / -1;">Databricks workspace</div>
+    <div class="actor external" style="grid-column:1;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg><div class="bar">User</div></div>
+    <div class="actor" style="grid-column:2;"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Databricks Apps">
+<g transform="translate(3.2941 2) scale(2.5882)"><path d="M2.75 1.01074C1.7835 1.01074 1 1.79424 1 2.76074C1 3.72724 1.7835 4.51074 2.75 4.51074C3.7165 4.51074 4.5 3.72724 4.5 2.76074C4.5 1.79424 3.7165 1.01074 2.75 1.01074Z" fill="currentColor"/>
+<path d="M8 1.01074C7.0335 1.01074 6.25 1.79424 6.25 2.76074C6.25 3.72724 7.0335 4.51074 8 4.51074C8.9665 4.51074 9.75 3.72724 9.75 2.76074C9.75 1.79424 8.9665 1.01074 8 1.01074Z" fill="currentColor"/>
+<path d="M13.25 1.01074C12.2835 1.01074 11.5 1.79424 11.5 2.76074C11.5 3.72724 12.2835 4.51074 13.25 4.51074C14.2165 4.51074 15 3.72724 15 2.76074C15 1.79424 14.2165 1.01074 13.25 1.01074Z" fill="currentColor"/>
+<path d="M2.75 6.26074C1.7835 6.26074 1 7.04424 1 8.01074C1 8.97724 1.7835 9.76074 2.75 9.76074C3.7165 9.76074 4.5 8.97724 4.5 8.01074C4.5 7.04424 3.7165 6.26074 2.75 6.26074Z" fill="currentColor"/>
+<path d="M8 6.26074C7.0335 6.26074 6.25 7.04424 6.25 8.01074C6.25 8.97724 7.0335 9.76074 8 9.76074C8.9665 9.76074 9.75 8.97724 9.75 8.01074C9.75 7.04424 8.9665 6.26074 8 6.26074Z" fill="currentColor"/>
+<path d="M13.25 6.26074C12.2835 6.26074 11.5 7.04424 11.5 8.01074C11.5 8.97724 12.2835 9.76074 13.25 9.76074C14.2165 9.76074 15 8.97724 15 8.01074C15 7.04424 14.2165 6.26074 13.25 6.26074Z" fill="currentColor"/>
+<path d="M2.75 11.5107C1.7835 11.5107 1 12.2942 1 13.2607C1 14.2272 1.7835 15.0107 2.75 15.0107C3.7165 15.0107 4.5 14.2272 4.5 13.2607C4.5 12.2942 3.7165 11.5107 2.75 11.5107Z" fill="currentColor"/>
+<path d="M8 11.5107C7.0335 11.5107 6.25 12.2942 6.25 13.2607C6.25 14.2272 7.0335 15.0107 8 15.0107C8.9665 15.0107 9.75 14.2272 9.75 13.2607C9.75 12.2942 8.9665 11.5107 8 11.5107Z" fill="currentColor"/>
+<path d="M13.25 11.5107C12.2835 11.5107 11.5 12.2942 11.5 13.2607C11.5 14.2272 12.2835 15.0107 13.25 15.0107C14.2165 15.0107 15 14.2272 15 13.2607C15 12.2942 14.2165 11.5107 13.25 11.5107Z" fill="currentColor"/></g>
+</svg><div class="bar">Databricks Apps</div></div>
+    <div class="actor" style="grid-column:3;"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Agent Bricks">
+<g transform="translate(2 2) scale(1)"><rect x="5.5" y="30.25" width="16.5" height="8.25" fill="currentColor"/>
+<rect x="5.5" y="13.75" width="16.5" height="8.25" fill="currentColor"/>
+<rect x="22" y="22" width="16.5" height="8.25" fill="currentColor" opacity="0.45"/>
+<rect x="22" y="5.5" width="16.5" height="8.25" fill="currentColor" opacity="0.45"/></g>
+</svg><div class="bar">Agent app</div></div>
+    <div class="actor" style="grid-column:4;"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Lakebase">
+<g transform="translate(2 2) scale(1)"><path d="M21.9873 26.1678C19.538 25.3353 16.7272 24.8602 13.7305 24.8602C10.734 24.8603 7.92687 25.3354 5.47461 26.1678V17.6639H38.5V26.1678C36.0476 26.9668 33.2399 27.4237 30.2432 27.4237C27.2466 27.4237 24.4365 26.9668 21.9873 26.1678Z" fill="currentColor" opacity="0.45"/>
+<path d="M13.7698 28.4783C16.5661 28.4783 19.1996 28.8587 21.5266 29.531L22.4485 29.8083C24.7755 30.4806 27.409 30.8611 30.2053 30.8611C33.1877 30.861 35.9814 30.4277 38.4221 29.6697H38.5002V38.4939H5.47485V29.6697H5.552C7.99291 28.9116 10.7871 28.4783 13.7698 28.4783Z" fill="currentColor"/>
+<rect x="5.47485" y="5.5" width="33.0252" height="8.82439" fill="currentColor" opacity="0.45"/></g>
+</svg><div class="bar">Agent Bricks stores</div></div>
+    <div class="actor" style="grid-column:5;"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Unity Gateway">
+<g transform="translate(2 2) scale(0.7097)"><path d="M21.5 43V29A9.5 9.5 0 0 1 40.5 29V43Z" fill="currentColor"/>
+<rect x="6" y="25" width="10" height="10" fill="currentColor" opacity="0.45"/>
+<rect x="46" y="25" width="10" height="10" fill="currentColor" opacity="0.45"/>
+<rect x="15.5" y="8" width="10" height="10" transform="rotate(-30 20.5 13)" fill="currentColor" opacity="0.45"/>
+<rect x="36.5" y="8" width="10" height="10" transform="rotate(30 41.5 13)" fill="currentColor" opacity="0.45"/>
+<path d="M16.5 47H45.5L48.5 54.5H13.5Z" fill="currentColor" opacity="0.45"/>
+</g>
+</svg><div class="bar">Model service</div></div>
+    <div class="actor" style="grid-column:6;"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="SQL Warehouse">
+<g transform="translate(2 2) scale(2.75)"><path fill-rule="evenodd" clip-rule="evenodd" d="M1 1.75C1 1.33579 1.33579 1 1.75 1L14.25 1C14.6642 1 15 1.33579 15 1.75L15 8.99999H13.5L13.5 7L2.5 7L2.5 13.5H8V15H1.75C1.33579 15 1 14.6642 1 14.25L1 1.75ZM13.5 2.5V5.5L2.5 5.5L2.5 2.5L13.5 2.5Z" fill="currentColor"/>
+<path d="M11.4306 8.01191L8.43056 11.5119C8.23994 11.7343 8.19623 12.0473 8.31862 12.3134C8.441 12.5795 8.7071 12.75 9 12.75H12.3693L10.4306 15.0119L11.5694 15.9881L14.5694 12.4881C14.7601 12.2657 14.8038 11.9527 14.6814 11.6866C14.559 11.4205 14.2929 11.25 14 11.25H10.6307L12.5694 8.98809L11.4306 8.01191Z" fill="currentColor"/></g>
+</svg><div class="bar">SQL warehouse and Unity Catalog</div></div>
+  </div>
+
+  <div class="lanes">
+    <div class="life" style="--i:1;"></div>
+    <div class="life" style="--i:2;"></div>
+    <div class="life" style="--i:3;"></div>
+    <div class="life" style="--i:4;"></div>
+    <div class="life" style="--i:5;"></div>
+    <div class="life" style="--i:6;"></div>
+
+    <div class="msg" style="--a:1; --b:2;"><div class="text"><span>Question to POST /api/invocations</span></div></div>
+    <div class="msg" style="--a:2; --b:3;"><div class="text"><span>Request with the user's token and email</span></div></div>
+    <div class="msg app" style="--a:3; --b:4;"><div class="text"><span>Read the recent history</span></div></div>
+    <div class="msg" style="--a:3; --b:5;"><div class="text"><span>The question and the history</span></div></div>
+    <div class="msg reply rtl" style="--a:3; --b:5;"><div class="text"><span>Call a read tool</span></div></div>
+    <div class="msg" style="--a:3; --b:6;"><div class="text"><span>The tool's fixed query</span></div></div>
+    <div class="note" style="--a:6; --b:6;">Row filters and column masks apply for session_user()</div>
+    <div class="msg reply rtl" style="--a:3; --b:6;"><div class="text"><span>Only the user's rows</span></div></div>
+    <div class="msg" style="--a:3; --b:5;"><div class="text"><span>The tool output</span></div></div>
+    <div class="msg reply rtl" style="--a:3; --b:5;"><div class="text"><span>The answer</span></div></div>
+    <div class="msg app" style="--a:3; --b:4;"><div class="text"><span>Each event and the new history items</span></div></div>
+    <div class="msg reply rtl" style="--a:1; --b:3;"><div class="text"><span>Server-sent events: status, display, message, usage</span></div></div>
+    <div class="msg app" style="--a:3; --b:6;"><div class="text"><span>Append the run's Activity rows</span></div></div>
+  </div>
+
+  <div class="seq-legend">
+    <div class="legend-row"><svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke="#143D4A" stroke-width="2"/></svg>Runs on behalf of the user</div>
+    <div class="legend-row"><svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke="#143D4A" stroke-width="2" stroke-dasharray="6 4"/></svg>Runs as the app's service principal</div>
+    <div class="legend-row"><svg width="34" height="10"><line x1="0" y1="5" x2="32" y2="5" stroke="#618794" stroke-width="1.5"/><path d="M28,1.5 L32,5 L28,8.5" stroke="#618794" stroke-width="1.5" fill="none"/></svg>A reply, as the caller</div>
+  </div>
+
+</div>
+</div>
+</body>
+</html>

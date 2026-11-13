@@ -1,0 +1,33 @@
+exclude: (^|/)app/static/
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.10
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--unsafe]
+      - id: check-added-large-files
+      - id: detect-private-key
+  - repo: local
+    hooks:
+      - id: public-package-hosts
+        name: shipped lockfiles name only pypi.org, files.pythonhosted.org and registry.npmjs.org (see docs/development.md#dependency-changes to rewrite them)
+        entry: '(registry = "|url = "|"resolved": "|index-url[ =])https?://(?!(pypi\.org|files\.pythonhosted\.org|registry\.npmjs\.org)/)'
+        language: pygrep
+        files: (^|/)(uv\.lock|frontend/package-lock\.json|app/requirements\.txt)$
+      - id: uv-export
+        name: app/requirements.txt matches uv.lock
+        entry: bash -c 'cd "$(dirname "$1")" && uv export --package app --frozen --no-dev --no-emit-workspace --quiet -o app/requirements.txt' --
+        language: system
+        files: (^|/)uv\.lock$

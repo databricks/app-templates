@@ -1,0 +1,38 @@
+version: 2
+
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 7
+      exclude:
+        - "databricks*"
+    groups:
+      uv-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 7
+      exclude:
+        - "databricks*"
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+      exclude:
+        - "databricks*"
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]

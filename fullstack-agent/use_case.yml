@@ -1,0 +1,7 @@
+variables:
+  project:
+    description: Prefix of every workspace name, lowercase letters and digits. Keep it equal to the agent.toml deployment name, so the app is agent-bricks-<project>.
+    default: agent
+  display_name:
+    description: The name the alerts, the operations dashboard and the model services show.
+    default: Bank

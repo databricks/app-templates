@@ -25,7 +25,7 @@ import {
   type MLflowTracing,
 } from "./tracing.js";
 import { createInvocationsRouter } from "./routes/invocations.js";
-import { createCsrfMiddleware } from "./middleware/csrf.js";
+import { createCsrfMiddleware, matchesOrigin, parseOrigins } from "./middleware/csrf.js";
 import { SECURITY_HEADERS, securityHeadersMiddleware } from "./middleware/security-headers.js";
 import { closeMCPClient } from "../tools.js";
 import type { AgentInterface } from "./agent-interface.js";
@@ -108,13 +108,17 @@ export async function createServer(
   app.use(securityHeadersMiddleware);
 
   // CORS: the UI is served from the same origin, so cross-origin access is off
-  // unless explicitly allowed via ALLOWED_ORIGINS (comma-separated).
-  const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-  if (allowedOrigins.length > 0) {
-    app.use(cors({ origin: allowedOrigins, credentials: true }));
+  // unless explicitly allowed via ALLOWED_ORIGINS (comma-separated https
+  // origins, matched like the CSRF check).
+  const corsOrigins = new Set(parseOrigins(process.env.ALLOWED_ORIGINS));
+  if (corsOrigins.size > 0) {
+    app.use(
+      cors({
+        origin: (origin, callback) =>
+          callback(null, origin !== undefined && matchesOrigin(origin, corsOrigins)),
+        credentials: true,
+      }),
+    );
   }
 
   app.use(createCsrfMiddleware());

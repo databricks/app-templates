@@ -12,8 +12,19 @@ app_diagnostics.install_diagnostics()
 # --- end diagnostics bootstrap ---
 
 import os
-from shiny import App, ui, reactive
+from markdown_it import MarkdownIt
+from shiny import App, ui, reactive, run_app
 from model_serving_utils import query_endpoint, is_endpoint_supported
+from security import SecurityMiddleware
+
+MAX_MESSAGE_CHARS = 4000
+MAX_HISTORY_MESSAGES = 20
+ALLOWED_ROLES = {"user", "assistant"}
+
+# shinychat's client-side markdown renderer passes raw HTML through (including
+# <iframe srcdoc>), so model output is rendered here with raw HTML escaped and
+# unsafe link schemes (javascript:, data:, ...) dropped.
+model_markdown = MarkdownIt("commonmark", {"html": False}).enable(["table", "strikethrough"])
 
 # Ensure environment variable is set correctly
 SERVING_ENDPOINT = os.getenv("SERVING_ENDPOINT")
@@ -28,13 +39,18 @@ assert SERVING_ENDPOINT, \
 endpoint_supported = is_endpoint_supported(SERVING_ENDPOINT)
 
 
-def to_endpoint_messages(chat_messages):
+def to_endpoint_messages(history):
     """Chat history as the OpenAI-style role/content dicts the endpoint expects.
 
-    shinychat removed messages(format=...); messages() returns dicts that can
-    carry extra keys (html_deps, attachments), so keep only role and content.
+    Only user/assistant roles are forwarded, each message is truncated and
+    only the most recent turns are kept.
     """
-    return [{"role": m["role"], "content": str(m["content"])} for m in chat_messages]
+    messages = [
+        {"role": m["role"], "content": str(m["content"])[:MAX_MESSAGE_CHARS]}
+        for m in history
+        if m["role"] in ALLOWED_ROLES
+    ]
+    return messages[-MAX_HISTORY_MESSAGES:]
 
 if not endpoint_supported:
     app_ui = ui.page_fillable(
@@ -77,25 +93,36 @@ else:
 def server(input, output, session):
     if endpoint_supported:
         chat = ui.Chat(id="chat", messages=[])
+        # Raw markdown turns sent to the endpoint; the chat UI holds rendered HTML.
+        history = []
 
         # Clear the chat when user clicks button
         @reactive.Effect
         @reactive.event(input.clear_chat)
         async def _():
+            history.clear()
             return await chat.clear_messages()
 
         # Stream LLM responses into chat when a new message from user arrives
         @chat.on_user_submit
-        async def _():
-            messages = to_endpoint_messages(chat.messages())
+        async def _(user_input: str):
+            if len(user_input) > MAX_MESSAGE_CHARS:
+                await chat.append_message(
+                    f"Your message is too long. Please keep it under {MAX_MESSAGE_CHARS} characters."
+                )
+                return
+            user_turn = {"role": "user", "content": user_input}
             response = query_endpoint(
                 endpoint_name=SERVING_ENDPOINT,
-                messages=messages,
+                messages=to_endpoint_messages(history + [user_turn]),
                 max_tokens=400
             )
-            await chat.append_message(response)
+            content = str(response.get("content") or "")
+            # Only saved once the endpoint replies, so a failed call doesn't leave two user turns in a row.
+            history.extend([user_turn, {"role": "assistant", "content": content}])
+            await chat.append_message(ui.HTML(model_markdown.render(content)))
 
-app = App(app_ui, server)
+app = SecurityMiddleware(App(app_ui, server))
 
 if __name__ == "__main__":
-    app.run()
+    run_app("app:app")

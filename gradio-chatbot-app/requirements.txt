@@ -2,3 +2,5 @@
 gradio==6.31.0
 mlflow>=3.17.2
 databricks-sdk
+fastapi
+uvicorn

@@ -3,6 +3,8 @@
 import json
 import logging
 import os
+import re
+from urllib.parse import urlencode
 
 from databricks.sdk.service.serving import ExternalFunctionRequestHttpMethod
 
@@ -18,6 +20,81 @@ from .schemas import (
 from .utils import get_user_authenticated_workspace_client, load_openapi_spec
 
 logger = logging.getLogger(__name__)
+
+# endpoint_path, parameters and headers for invoke_api_endpoint come from the LLM,
+# so they are constrained to what the OpenAPI spec defines before any request is sent
+# through the UC connection.
+MAX_PATH_LENGTH = 2048
+MAX_PARAMETERS_LENGTH = 100_000
+MAX_HEADERS = 20
+MAX_HEADER_VALUE_LENGTH = 1024
+ALLOWED_FORWARD_HEADERS = {
+    "accept",
+    "accept-language",
+    "content-type",
+    "if-match",
+    "if-none-match",
+    "if-modified-since",
+    "prefer",
+}
+_ENCODED_SEPARATORS = re.compile(r"%(2e|2f|5c|40|00)", re.IGNORECASE)
+_PATH_PARAM = re.compile(r"\{[^/{}]+\}")
+
+
+def _path_template_pattern(template: str) -> re.Pattern:
+    """Regex for an OpenAPI path template; each {param} matches one path segment."""
+    parts = _PATH_PARAM.split(template)
+    return re.compile("^" + "[^/]+".join(re.escape(part) for part in parts) + "$")
+
+
+def _validate_endpoint_path(endpoint_path: str, http_method: str) -> None:
+    """Allow only relative paths that match a path template and method in the spec."""
+    if len(endpoint_path) > MAX_PATH_LENGTH:
+        raise ValueError(f"endpoint_path is longer than {MAX_PATH_LENGTH} characters")
+    if "?" in endpoint_path or "#" in endpoint_path:
+        raise ValueError(
+            "endpoint_path must not contain a query string; pass query values in parameters"
+        )
+    if (
+        not endpoint_path.startswith("/")
+        or endpoint_path.startswith("//")
+        or "://" in endpoint_path
+        or "\\" in endpoint_path
+        or "@" in endpoint_path
+        or ".." in endpoint_path
+        or "." in endpoint_path.split("/")
+        or _ENCODED_SEPARATORS.search(endpoint_path)
+        or any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in endpoint_path)
+    ):
+        raise ValueError(f"endpoint_path {endpoint_path!r} is not a valid relative API path")
+
+    paths = load_openapi_spec().get("paths", {})
+    matches = [
+        path_item
+        for template, path_item in paths.items()
+        if isinstance(path_item, dict) and _path_template_pattern(template).match(endpoint_path)
+    ]
+    if not matches:
+        raise ValueError(
+            f"endpoint_path {endpoint_path!r} does not match any path in the API specification"
+        )
+    if not any(http_method.lower() in path_item for path_item in matches):
+        raise ValueError(
+            f"Method {http_method} is not defined for {endpoint_path!r} in the API specification"
+        )
+
+
+def _validate_headers(headers: dict) -> dict:
+    """Forward only allowlisted headers; auth and routing headers come from the UC connection."""
+    if len(headers) > MAX_HEADERS:
+        raise ValueError(f"At most {MAX_HEADERS} headers can be sent")
+    for name, value in headers.items():
+        if name.lower() not in ALLOWED_FORWARD_HEADERS:
+            allowed = ", ".join(sorted(ALLOWED_FORWARD_HEADERS))
+            raise ValueError(f"Header {name!r} is not allowed; allowed headers: {allowed}")
+        if len(value) > MAX_HEADER_VALUE_LENGTH or "\r" in value or "\n" in value:
+            raise ValueError(f"Header {name!r} has an invalid value")
+    return headers
 
 
 def list_api_endpoints(args: ListApiEndpointsRequest) -> ListApiEndpointsResponse:
@@ -137,10 +214,17 @@ def invoke_api_endpoint(args: InvokeApiEndpointRequest) -> InvokeApiEndpointResp
         if not method_enum:
             raise ValueError(f"Unsupported HTTP method: {args.http_method}")
 
-        client = get_user_authenticated_workspace_client()
+        _validate_endpoint_path(args.endpoint_path, args.http_method)
+        headers = _validate_headers(args.headers or {})
 
         # Handle parameters - can be dict, string, or None
         parameters = args.parameters
+        size = len(parameters) if isinstance(parameters, str) else len(json.dumps(parameters))
+        if size > MAX_PARAMETERS_LENGTH:
+            raise ValueError(f"parameters are larger than {MAX_PARAMETERS_LENGTH} characters")
+
+        client = get_user_authenticated_workspace_client()
+
         if isinstance(parameters, str):
             # If it's a string, try to parse as JSON
             try:
@@ -156,23 +240,18 @@ def invoke_api_endpoint(args: InvokeApiEndpointRequest) -> InvokeApiEndpointResp
         if args.http_method.upper() in ["GET", "DELETE"]:
             # For GET/DELETE requests, add parameters as query params
             if parameters and isinstance(parameters, dict):
-                query_params = []
-                for key, value in parameters.items():
-                    if value is not None:
-                        query_params.append(f"{key}={value}")
-
-                if query_params:
-                    query_string = "&".join(query_params)
-                    if "?" in endpoint_path:
-                        endpoint_path = f"{endpoint_path}&{query_string}"
-                    else:
-                        endpoint_path = f"{endpoint_path}?{query_string}"
+                query_string = urlencode(
+                    {key: value for key, value in parameters.items() if value is not None},
+                    doseq=True,
+                )
+                if query_string:
+                    endpoint_path = f"{endpoint_path}?{query_string}"
 
             response = client.serving_endpoints.http_request(
                 conn=connection_name,
                 method=method_enum,
                 path=endpoint_path,
-                headers=args.headers or {},
+                headers=headers,
             )
         else:
             # For POST/PUT/PATCH, send parameters as JSON body
@@ -181,7 +260,7 @@ def invoke_api_endpoint(args: InvokeApiEndpointRequest) -> InvokeApiEndpointResp
                 method=method_enum,
                 path=endpoint_path,
                 json=parameters if parameters else None,
-                headers=args.headers or {},
+                headers=headers,
             )
 
         # Parse the response

@@ -1,8 +1,10 @@
 import { z } from 'zod';
+import type { ChatMessage } from '../types';
 
 const MAX_TEXT_LENGTH = 100_000;
 const MAX_PARTS = 50;
 const MAX_PREVIOUS_MESSAGES = 200;
+const MAX_PART_TYPE_LENGTH = 100;
 
 const textPartSchema = z.object({
   type: z.enum(['text']),
@@ -18,6 +20,14 @@ const filePartSchema = z.object({
 
 const partSchema = z.union([textPartSchema, filePartSchema]);
 
+// Any UI message part the client may echo back (text, reasoning, tool-*,
+// dynamic-tool, source-*, file, step-start, data-*); other fields pass through.
+const previousMessagePartSchema = z.looseObject({
+  type: z.string().min(1).max(MAX_PART_TYPE_LENGTH),
+  text: z.string().max(MAX_TEXT_LENGTH).optional(),
+  errorText: z.string().max(MAX_TEXT_LENGTH).optional(),
+});
+
 // Schema for previous messages in ephemeral mode
 // More permissive to handle various message types (user, assistant, tool calls, etc.)
 const previousMessageSchema = z.object({
@@ -26,8 +36,9 @@ const previousMessageSchema = z.object({
   id: z.string(),
   // System prompts are set server-side; clients may not inject them.
   role: z.enum(['user', 'assistant']),
-  // Permissive to handle text, tool calls, tool results
-  parts: z.array(z.any()).max(MAX_PARTS),
+  parts: z
+    .array(previousMessagePartSchema)
+    .max(MAX_PARTS) as unknown as z.ZodType<ChatMessage['parts']>,
 });
 
 export const postRequestBodySchema = z.object({

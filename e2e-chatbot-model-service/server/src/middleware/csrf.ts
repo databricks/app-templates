@@ -12,19 +12,20 @@ const normalize = (origin: string) => origin.toLowerCase().replace(/\/+$/, '');
  *
  * A missing Origin is allowed (same-origin navigation or non-browser clients);
  * `Origin: null` (sandboxed iframes, data: and file: pages) is always rejected.
+ * Localhost origins are also allowed in development or when DATABRICKS_APP_URL
+ * is unset (local runs).
  */
 export function createCsrfMiddleware({
   isDevelopment,
 }: { isDevelopment: boolean }) {
+  const appUrl = process.env.DATABRICKS_APP_URL;
   const allowedOrigins = new Set(
-    [
-      process.env.DATABRICKS_APP_URL,
-      ...(process.env.ALLOWED_ORIGINS ?? '').split(','),
-    ]
+    [appUrl, ...(process.env.ALLOWED_ORIGINS ?? '').split(',')]
       .map((origin) => origin?.trim())
       .filter((origin): origin is string => Boolean(origin))
       .map(normalize),
   );
+  const allowLocalhost = isDevelopment || !appUrl;
 
   return (req: Request, res: Response, next: NextFunction) => {
     if (!STATE_CHANGING_METHODS.has(req.method)) {
@@ -39,7 +40,7 @@ export function createCsrfMiddleware({
     const isAllowed =
       origin !== 'null' &&
       ((ORIGIN_FORMAT.test(origin) && allowedOrigins.has(normalize(origin))) ||
-        (isDevelopment && LOCALHOST_ORIGIN.test(origin)));
+        (allowLocalhost && LOCALHOST_ORIGIN.test(origin)));
 
     if (!isAllowed) {
       console.warn(

@@ -69,10 +69,18 @@ if __name__ == "__main__":
     # Gradio adds its own CORS middleware outside any launch(app_kwargs=...)
     # middleware, so SecurityMiddleware goes on a parent app that wraps it.
     app = gr.mount_gradio_app(
-        FastAPI(middleware=[Middleware(SecurityMiddleware)]),
+        FastAPI(
+            docs_url=None,
+            redoc_url=None,
+            openapi_url=None,
+            middleware=[Middleware(SecurityMiddleware)],
+        ),
         demo,
         path="/",
         css="footer {visibility: hidden}",
+        show_error=False,
+        # The mounted Gradio app also serves /openapi.json unless this turns it off.
+        app_kwargs={"openapi_url": None},
     )
     uvicorn.run(
         app,

@@ -9,8 +9,11 @@ headers or check where requests come from, so this ASGI middleware does both:
   connections whose ``Origin`` is not this app's URL (``DATABRICKS_APP_URL``)
   or listed in ``ALLOWED_ORIGINS`` (comma-separated). A missing Origin is
   allowed (non-browser clients); ``Origin: null`` is always rejected.
+- Removes ``Access-Control-*`` response headers unless the request's Origin is
+  allowed, so a proxied app (the chat UI) can't grant CORS access to other sites.
 
-``RequestValidationMiddleware`` rejects oversized agent requests with a 400.
+``RequestValidationMiddleware`` rejects agent request bodies that are larger than
+``MAX_BODY_BYTES`` (413), are not a JSON object, or are over the input limits (400).
 """
 
 import json
@@ -89,19 +92,36 @@ class SecurityMiddleware:
         if scope["type"] not in ("http", "websocket"):
             return await self.app(scope, receive, send)
 
+        origin = next(
+            (value.decode("latin-1") for key, value in scope["headers"] if key == b"origin"),
+            None,
+        )
+        keep_cors_headers = bool(origin) and is_origin_allowed(origin)
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                if not keep_cors_headers:
+                    message["headers"] = [
+                        (name, value)
+                        for name, value in message.get("headers", [])
+                        if not name.lower().startswith(b"access-control-")
+                    ]
+                headers = MutableHeaders(scope=message)
+                if scope["path"] in DOCS_PATHS:
+                    headers.setdefault("Content-Security-Policy", DOCS_CONTENT_SECURITY_POLICY)
+                for name, value in SECURITY_HEADERS.items():
+                    headers.setdefault(name, value)
+            await send(message)
+
         is_websocket = scope["type"] == "websocket"
         if is_websocket or scope["method"] in STATE_CHANGING_METHODS:
-            origin = next(
-                (value.decode("latin-1") for key, value in scope["headers"] if key == b"origin"),
-                None,
-            )
             if not is_origin_allowed(origin):
-                logger.warning("Rejected cross-origin request to %s from %s", scope["path"], origin)
+                logger.warning("Rejected cross-origin request to %r from %r", scope["path"], origin)
                 if is_websocket:
                     await receive()
                     await send({"type": "websocket.close", "code": 1008})
                 else:
-                    await send(
+                    await send_with_headers(
                         {
                             "type": "http.response.start",
                             "status": 403,
@@ -114,19 +134,11 @@ class SecurityMiddleware:
         if is_websocket:
             return await self.app(scope, receive, send)
 
-        async def send_with_headers(message):
-            if message["type"] == "http.response.start":
-                headers = MutableHeaders(scope=message)
-                if scope["path"] in DOCS_PATHS:
-                    headers.setdefault("Content-Security-Policy", DOCS_CONTENT_SECURITY_POLICY)
-                for name, value in SECURITY_HEADERS.items():
-                    headers.setdefault(name, value)
-            await send(message)
-
         await self.app(scope, receive, send_with_headers)
 
 
 VALIDATED_PATHS = {"/invocations", "/responses"}
+MAX_BODY_BYTES = 10 * 1024 * 1024
 
 
 class RequestValidationMiddleware:
@@ -134,6 +146,8 @@ class RequestValidationMiddleware:
 
     AgentServer turns any exception raised in an invoke or stream handler into a 500 or
     an SSE error event, so client errors have to be caught before the request reaches it.
+    Bodies over ``MAX_BODY_BYTES`` get a 413 before they are fully read, and bodies that
+    aren't a JSON object (including JSON nested too deeply to parse) get a 400.
     ``validate`` receives the parsed JSON body and raises ``ValueError`` to reject it.
     """
 
@@ -149,27 +163,40 @@ class RequestValidationMiddleware:
         ):
             return await self.app(scope, receive, send)
 
+        too_large = JSONResponse(
+            {"detail": f"Request body too large (limit {MAX_BODY_BYTES} bytes)."}, status_code=413
+        )
+        content_length = dict(scope["headers"]).get(b"content-length", b"")
+        if content_length.isdigit() and int(content_length) > MAX_BODY_BYTES:
+            return await too_large(scope, receive, send)
+
         chunks = []
+        size = 0
         while True:
             message = await receive()
             if message["type"] != "http.request":
                 return
-            chunks.append(message.get("body", b""))
+            chunk = message.get("body", b"")
+            size += len(chunk)
+            if size > MAX_BODY_BYTES:
+                return await too_large(scope, receive, send)
+            chunks.append(chunk)
             if not message.get("more_body", False):
                 break
         body = b"".join(chunks)
 
         try:
             data = json.loads(body)
-        except ValueError:
-            # AgentServer answers malformed JSON with its own 400.
+        except (ValueError, RecursionError):
             data = None
-        if isinstance(data, dict):
-            try:
-                self.validate(data)
-            except ValueError as e:
-                response = JSONResponse({"detail": str(e)}, status_code=400)
-                return await response(scope, receive, send)
+        if not isinstance(data, dict):
+            response = JSONResponse({"detail": "Request body must be a JSON object."}, status_code=400)
+            return await response(scope, receive, send)
+        try:
+            self.validate(data)
+        except (ValueError, RecursionError) as e:
+            response = JSONResponse({"detail": str(e)}, status_code=400)
+            return await response(scope, receive, send)
 
         body_sent = False
 

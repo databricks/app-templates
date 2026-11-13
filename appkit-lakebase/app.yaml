@@ -2,3 +2,6 @@ command: ['npm', 'run', 'start']
 env:
   - name: LAKEBASE_ENDPOINT
     valueFrom: postgres
+  # AppKit enables its Remote Bridge dev tunnel on deployed apps for any app user unless this is set.
+  - name: DISABLE_REMOTE_SERVING
+    value: 'true'

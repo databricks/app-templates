@@ -1,8 +1,14 @@
 import { z } from 'zod';
+import type { ChatMessage } from '../types';
+
+const MAX_TEXT_LENGTH = 100_000;
+const MAX_PARTS = 50;
+const MAX_PREVIOUS_MESSAGES = 200;
+const MAX_PART_TYPE_LENGTH = 100;
 
 const textPartSchema = z.object({
   type: z.enum(['text']),
-  text: z.string().min(1),
+  text: z.string().min(1).max(MAX_TEXT_LENGTH),
 });
 
 const filePartSchema = z.object({
@@ -14,14 +20,25 @@ const filePartSchema = z.object({
 
 const partSchema = z.union([textPartSchema, filePartSchema]);
 
+// Any UI message part the client may echo back (text, reasoning, tool-*,
+// dynamic-tool, source-*, file, step-start, data-*); other fields pass through.
+const previousMessagePartSchema = z.looseObject({
+  type: z.string().min(1).max(MAX_PART_TYPE_LENGTH),
+  text: z.string().max(MAX_TEXT_LENGTH).optional(),
+  errorText: z.string().max(MAX_TEXT_LENGTH).optional(),
+});
+
 // Schema for previous messages in ephemeral mode
 // More permissive to handle various message types (user, assistant, tool calls, etc.)
 const previousMessageSchema = z.object({
   // Accept any string ID: user messages have UUIDs, but assistant messages
   // from the AI SDK use nanoid (16-char alphanumeric), not UUIDs.
   id: z.string(),
-  role: z.enum(['user', 'assistant', 'system']),
-  parts: z.array(z.any()), // Permissive to handle text, tool calls, tool results
+  // System prompts are set server-side; clients may not inject them.
+  role: z.enum(['user', 'assistant']),
+  parts: z
+    .array(previousMessagePartSchema)
+    .max(MAX_PARTS) as unknown as z.ZodType<ChatMessage['parts']>,
 });
 
 export const postRequestBodySchema = z.object({
@@ -31,13 +48,24 @@ export const postRequestBodySchema = z.object({
     .object({
       id: z.string().uuid(),
       role: z.enum(['user']),
-      parts: z.array(partSchema),
+      parts: z.array(partSchema).max(MAX_PARTS),
     })
     .optional(),
   selectedChatModel: z.enum(['chat-model', 'chat-model-reasoning']),
   selectedVisibilityType: z.enum(['public', 'private']),
   // Optional field for ephemeral mode: frontend sends previous conversation history
-  previousMessages: z.array(previousMessageSchema).optional(),
+  previousMessages: z
+    .array(previousMessageSchema)
+    .max(MAX_PREVIOUS_MESSAGES)
+    .optional(),
 });
 
 export type PostRequestBody = z.infer<typeof postRequestBodySchema>;
+
+export const titleRequestBodySchema = z.object({
+  message: z.object({
+    id: z.string().uuid(),
+    role: z.enum(['user']),
+    parts: z.array(partSchema).min(1).max(MAX_PARTS),
+  }),
+});

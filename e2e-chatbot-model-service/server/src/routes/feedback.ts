@@ -35,7 +35,7 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const { messageId, feedbackType } = req.body;
 
-    if (!messageId || !feedbackType) {
+    if (typeof messageId !== 'string' || !messageId || !feedbackType) {
       const error = new ChatSDKError('bad_request:api');
       const response = error.toResponse();
       return res.status(response.status).json(response.json);
@@ -92,7 +92,7 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
         if (existingAssessmentId) {
           // PATCH to update the existing assessment
           mlflowResponse = await fetch(
-            `${hostUrl}/api/3.0/mlflow/traces/${traceId}/assessments/${existingAssessmentId}`,
+            `${hostUrl}/api/3.0/mlflow/traces/${encodeURIComponent(traceId)}/assessments/${encodeURIComponent(existingAssessmentId)}`,
             {
               method: 'PATCH',
               headers: {
@@ -113,7 +113,7 @@ feedbackRouter.post('/', requireAuth, async (req: Request, res: Response) => {
           );
         } else {
           mlflowResponse = await fetch(
-            `${hostUrl}/api/3.0/mlflow/traces/${traceId}/assessments`,
+            `${hostUrl}/api/3.0/mlflow/traces/${encodeURIComponent(traceId)}/assessments`,
             {
               method: 'POST',
               headers: {

@@ -29,7 +29,13 @@ const CREATE_TABLE_SQL = `
   )
 `;
 
-const CreateTodoBody = z.object({ title: z.string().min(1) });
+const CreateTodoBody = z.object({ title: z.string().trim().min(1).max(500) });
+
+function parseTodoId(raw: string): number | null {
+  if (!/^\d+$/.test(raw)) return null;
+  const id = Number(raw);
+  return id > 0 && Number.isSafeInteger(id) ? id : null;
+}
 
 export async function setupSampleLakebaseRoutes(appkit: AppKitWithLakebase) {
   try {
@@ -64,12 +70,12 @@ export async function setupSampleLakebaseRoutes(appkit: AppKitWithLakebase) {
       try {
         const parsed = CreateTodoBody.safeParse(req.body);
         if (!parsed.success) {
-          res.status(400).json({ error: 'title is required' });
+          res.status(400).json({ error: 'title is required (max 500 characters)' });
           return;
         }
         const result = await appkit.lakebase.query(
           'INSERT INTO app.todos (title) VALUES ($1) RETURNING id, title, completed, created_at',
-          [parsed.data.title.trim()],
+          [parsed.data.title],
         );
         res.status(201).json(result.rows[0]);
       } catch (err) {
@@ -80,8 +86,8 @@ export async function setupSampleLakebaseRoutes(appkit: AppKitWithLakebase) {
 
     app.patch('/api/lakebase/todos/:id', async (req, res) => {
       try {
-        const id = parseInt(req.params.id, 10);
-        if (isNaN(id)) {
+        const id = parseTodoId(req.params.id);
+        if (id === null) {
           res.status(400).json({ error: 'Invalid id' });
           return;
         }
@@ -102,8 +108,8 @@ export async function setupSampleLakebaseRoutes(appkit: AppKitWithLakebase) {
 
     app.delete('/api/lakebase/todos/:id', async (req, res) => {
       try {
-        const id = parseInt(req.params.id, 10);
-        if (isNaN(id)) {
+        const id = parseTodoId(req.params.id);
+        if (id === null) {
           res.status(400).json({ error: 'Invalid id' });
           return;
         }

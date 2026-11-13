@@ -26,6 +26,11 @@ function nextSignal(ref: RefObject<AbortController | null>): AbortSignal {
   return ref.current.signal;
 }
 
+// Upload and folder names are joined onto the current path, so each must stay a single segment.
+function isValidEntryName(name: string): boolean {
+  return name.length <= 255 && name !== '.' && name !== '..' && !/[/\\\p{Cc}]/u.test(name);
+}
+
 export function FilesPage() {
   const [volumes, setVolumes] = useState<string[]>([]);
   const [volumeKey, setVolumeKey] = useState<string>(
@@ -52,7 +57,7 @@ export function FilesPage() {
 
   const apiUrl = useCallback(
     (action: string, params?: Record<string, string>) => {
-      const base = `/api/files/${volumeKey}/${action}`;
+      const base = `/api/files/${encodeURIComponent(volumeKey)}/${action}`;
       if (!params) return base;
       const qs = new URLSearchParams(params).toString();
       return `${base}?${qs}`;
@@ -195,6 +200,12 @@ export function FilesPage() {
       return;
     }
 
+    if (!isValidEntryName(file.name)) {
+      setError(`File name "${file.name}" is not allowed.`);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
     setUploading(true);
     try {
       const uploadPath = currentPath
@@ -230,7 +241,7 @@ export function FilesPage() {
     setDeleting(true);
     try {
       const response = await fetch(
-        `/api/files/${volumeKey}?path=${encodeURIComponent(selectedFile)}`,
+        `/api/files/${encodeURIComponent(volumeKey)}?path=${encodeURIComponent(selectedFile)}`,
         { method: 'DELETE' },
       );
 
@@ -252,6 +263,10 @@ export function FilesPage() {
   const handleCreateDirectory = async () => {
     const name = newDirName.trim();
     if (!name) return;
+    if (!isValidEntryName(name)) {
+      setError(`Folder name "${name}" is not allowed.`);
+      return;
+    }
 
     setCreatingDir(true);
     try {

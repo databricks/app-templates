@@ -59,7 +59,13 @@ export function AnalyticsPage() {
             <div className="max-w-md">
               <div className="space-y-2">
                 <Label htmlFor="max-month">Show data up to month</Label>
-                <Select value={maxMonthNum.toString()} onValueChange={(value) => setMaxMonthNum(parseInt(value))}>
+                <Select
+                  value={maxMonthNum.toString()}
+                  onValueChange={(value) => {
+                    const month = Number(value);
+                    if (Number.isInteger(month) && month >= 1 && month <= 12) setMaxMonthNum(month);
+                  }}
+                >
                   <SelectTrigger id="max-month">
                     <SelectValue placeholder="All months" />
                   </SelectTrigger>

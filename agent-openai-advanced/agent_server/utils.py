@@ -122,7 +122,7 @@ def get_session_id(request: ResponsesAgentRequest) -> str:
     else:
         return str(uuid7())
 
-    if not SESSION_ID_PATTERN.match(session_id):
+    if not SESSION_ID_PATTERN.fullmatch(session_id):
         raise ValueError("session_id must be a UUID.")
     return session_id
 

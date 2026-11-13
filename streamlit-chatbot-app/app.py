@@ -14,6 +14,7 @@ import logging
 import os
 import streamlit as st
 from model_serving_utils import query_endpoint, is_endpoint_supported
+from safe_markdown import unlink_markdown
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -30,6 +31,18 @@ assert SERVING_ENDPOINT, \
 
 # Check if the endpoint is supported
 endpoint_supported = is_endpoint_supported(SERVING_ENDPOINT)
+
+MAX_PROMPT_CHARS = 8000
+# Only the most recent messages are sent to the endpoint, so a long chat can't grow the request without bound.
+MAX_HISTORY_MESSAGES = 20
+
+
+def recent_history(messages):
+    """Return the last MAX_HISTORY_MESSAGES messages, starting at a user message."""
+    recent = messages[-MAX_HISTORY_MESSAGES:]
+    while recent and recent[0]["role"] != "user":
+        recent = recent[1:]
+    return recent
 
 def get_user_info():
     headers = st.context.headers
@@ -71,10 +84,16 @@ else:
     # Display chat messages from history on app rerun
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+            if message["role"] == "assistant":
+                st.markdown(unlink_markdown(message["content"]))
+            else:
+                st.markdown(message["content"])
 
     # Accept user input
-    if prompt := st.chat_input("What is up?"):
+    prompt = st.chat_input("What is up?", max_chars=MAX_PROMPT_CHARS)
+    if prompt and len(prompt) > MAX_PROMPT_CHARS:
+        st.error(f"Messages can be at most {MAX_PROMPT_CHARS} characters.")
+    elif prompt:
         # Add user message to chat history
         st.session_state.messages.append({"role": "user", "content": prompt})
         # Display user message in chat message container
@@ -86,10 +105,10 @@ else:
             # Query the Databricks serving endpoint
             assistant_response = query_endpoint(
                 endpoint_name=SERVING_ENDPOINT,
-                messages=st.session_state.messages,
+                messages=recent_history(st.session_state.messages),
                 max_tokens=400,
             )["content"]
-            st.markdown(assistant_response)
+            st.markdown(unlink_markdown(assistant_response))
 
 
         # Add assistant response to chat history

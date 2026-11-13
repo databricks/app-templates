@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Application } from 'express';
+import { Application, Request, Response } from 'express';
 
 interface AppKitWithLakebase {
   lakebase: {
@@ -28,11 +28,16 @@ const CREATE_DECISIONS_TABLE_SQL = `
   )
 `;
 
+// Upper bound for a single refund or credit; refunds and credits are also capped at the most recent order total.
+const MAX_AMOUNT_CENTS = 1_000_000;
+
+const CaseId = z.guid();
+
 const SubmitDecisionBody = z.object({
-  case_id: z.string().min(1),
+  case_id: CaseId,
   admin_action: z.enum(['refund', 'credit', 'no_action', 'escalate', 'resolve']),
-  admin_amount_cents: z.number().int().min(0),
-  admin_response: z.string().min(1),
+  admin_amount_cents: z.number().int().min(0).max(MAX_AMOUNT_CENTS),
+  admin_response: z.string().min(1).max(5000),
 });
 
 const UpdateStatusBody = z.object({
@@ -41,6 +46,15 @@ const UpdateStatusBody = z.object({
 
 function uuidToBytes(uuid: string): Buffer {
   return Buffer.from(uuid.replace(/-/g, ''), 'hex');
+}
+
+function parseCaseId(req: Request, res: Response): string | null {
+  const parsed = CaseId.safeParse(req.params.caseId);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid case id' });
+    return null;
+  }
+  return parsed.data;
 }
 
 export async function setupSupportRoutes(appkit: AppKitWithLakebase) {
@@ -104,7 +118,8 @@ export async function setupSupportRoutes(appkit: AppKitWithLakebase) {
 
     app.get('/api/cases/:caseId', async (req, res) => {
       try {
-        const caseId = req.params.caseId;
+        const caseId = parseCaseId(req, res);
+        if (!caseId) return;
         const caseIdHex = caseId.replace(/-/g, '');
 
         const caseResult = await appkit.lakebase.query(
@@ -228,10 +243,15 @@ export async function setupSupportRoutes(appkit: AppKitWithLakebase) {
 
     app.post('/api/cases/:caseId/decision', async (req, res) => {
       try {
-        const caseId = req.params.caseId;
+        const caseId = parseCaseId(req, res);
+        if (!caseId) return;
         const parsed = SubmitDecisionBody.safeParse(req.body);
         if (!parsed.success) {
           res.status(400).json({ error: 'Invalid request body', details: parsed.error.issues });
+          return;
+        }
+        if (parsed.data.case_id.toLowerCase() !== caseId.toLowerCase()) {
+          res.status(400).json({ error: 'case_id does not match the URL' });
           return;
         }
 
@@ -306,10 +326,18 @@ export async function setupSupportRoutes(appkit: AppKitWithLakebase) {
             );
           }
         } else if (userId && parsed.data.admin_action === 'credit' && parsed.data.admin_amount_cents > 0) {
+          const orderRow = await appkit.lakebase.query(
+            `SELECT total_in_cents FROM public.orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+            [userId]
+          );
+          const order = orderRow.rows[0];
+          const creditAmount = order
+            ? Math.min(parsed.data.admin_amount_cents, order.total_in_cents as number)
+            : parsed.data.admin_amount_cents;
           await appkit.lakebase.query(
             `INSERT INTO public.credits (user_id, support_case_id, amount_in_cents, reason)
              VALUES ($1, $2::uuid, $3, $4)`,
-            [userId, caseId, parsed.data.admin_amount_cents, parsed.data.admin_response]
+            [userId, caseId, creditAmount, parsed.data.admin_response]
           );
         }
 
@@ -325,7 +353,8 @@ export async function setupSupportRoutes(appkit: AppKitWithLakebase) {
 
     app.get('/api/cases/:caseId/decisions', async (req, res) => {
       try {
-        const caseId = req.params.caseId;
+        const caseId = parseCaseId(req, res);
+        if (!caseId) return;
         const caseIdBytes = uuidToBytes(caseId);
 
         const result = await appkit.lakebase.query(
@@ -345,7 +374,8 @@ export async function setupSupportRoutes(appkit: AppKitWithLakebase) {
 
     app.patch('/api/cases/:caseId/status', async (req, res) => {
       try {
-        const caseId = req.params.caseId;
+        const caseId = parseCaseId(req, res);
+        if (!caseId) return;
         const parsed = UpdateStatusBody.safeParse(req.body);
         if (!parsed.success) {
           res.status(400).json({ error: 'Invalid request body', details: parsed.error.issues });

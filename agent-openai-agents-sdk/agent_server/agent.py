@@ -21,6 +21,7 @@ from agent_server.utils import (
     build_mcp_url,
     get_session_id,
     get_user_workspace_client,
+    get_validated_input,
     process_agent_stream_events,
 )
 
@@ -100,7 +101,7 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
     # for on-behalf-of user authentication.
     async with AsyncExitStack() as stack:
         agent = create_agent()
-        messages = normalize_history_items([i.model_dump() for i in request.input])
+        messages = normalize_history_items(get_validated_input(request))
         result = await Runner.run(agent, messages)
         return ResponsesAgentResponse(output=[item.to_input_item() for item in result.new_items])
 
@@ -122,7 +123,7 @@ async def stream_handler(
     # for on-behalf-of user authentication.
     async with AsyncExitStack() as stack:
         agent = create_agent()
-        messages = normalize_history_items([i.model_dump() for i in request.input])
+        messages = normalize_history_items(get_validated_input(request))
         result = Runner.run_streamed(agent, input=messages)
 
         async for event in process_agent_stream_events(result.stream_events()):

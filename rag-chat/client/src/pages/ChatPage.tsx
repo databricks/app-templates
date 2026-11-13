@@ -14,9 +14,11 @@ import { Button, ScrollArea, Separator, Textarea } from '@databricks/appkit-ui/r
 const MAX_INPUT_LENGTH = 10000;
 const MAX_HISTORY_MESSAGES = 200;
 
-// Retrieved context can carry prompt-injected markdown, and an off-site image is
-// fetched as soon as it renders (leaking whatever the model put in its URL), so
-// only same-origin images are allowed. The server CSP img-src enforces the same.
+// Retrieved context can carry prompt-injected markdown. An off-site image is
+// fetched as soon as it renders and an off-site link leaks data when clicked
+// (both carry whatever the model put in the URL), so only same-origin images and
+// links are kept; others render as plain text with the URL in the tooltip. The
+// server CSP img-src enforces the image rule as well.
 type RehypePluggable = NonNullable<StreamdownProps['rehypePlugins']>[number];
 const [harden] = defaultRehypePlugins.harden as Extract<RehypePluggable, unknown[]>;
 const markdownRehypePlugins: StreamdownProps['rehypePlugins'] = [
@@ -27,7 +29,7 @@ const markdownRehypePlugins: StreamdownProps['rehypePlugins'] = [
     {
       defaultOrigin: window.location.origin,
       allowedImagePrefixes: [`${window.location.origin}/`],
-      allowedLinkPrefixes: ['*'],
+      allowedLinkPrefixes: [`${window.location.origin}/`],
       allowDataImages: false,
     },
   ],

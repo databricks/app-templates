@@ -4,9 +4,10 @@ Human review of AI document-processing output. A reviewer sees each value the mo
 produced, the page region it came from, and a confidence badge, then corrects what
 is wrong and approves the document.
 
-The form is generated from the data **at runtime**: no field name appears anywhere
-in the code, so pointing the app at a different table reshapes the UI with no code
-change. Built with [AppKit](https://developers.databricks.com/docs/appkit/v0/)
+The form is generated from the data **at runtime**: no field name appears in the
+application code, so pointing the app at a different table reshapes the UI with no
+code change. (Field names appear only in the test fixtures, which exist to prove
+exactly that.) Built with [AppKit](https://developers.databricks.com/docs/appkit/v0/)
 (Node/TypeScript + React), plugins `analytics` + `files` + `server`, on-behalf-of-user auth.
 
 ## What it can review

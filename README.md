@@ -24,6 +24,7 @@ To contribute a template or a fix, see [CONTRIBUTING.md](CONTRIBUTING.md). It co
 | Template | Description | Dependencies |
 |----------|-------------|--------------|
 | `agent-langgraph` | A conversational agent using LangGraph and MLflow AgentServer | MLflow experiment |
+| `agent-adk` | A conversational agent using Google's Agent Development Kit (ADK) and MLflow AgentServer | MLflow experiment |
 | `agent-langgraph-advanced` | LangGraph agent with short-term memory, long-term memory, and long-running background tasks | MLflow experiment, Database |
 | `agent-openai-agents-sdk` | A conversational agent using OpenAI Agents SDK and MLflow AgentServer | MLflow experiment |
 | `agent-openai-advanced` | OpenAI Agents SDK agent with short-term memory and long-running background tasks | MLflow experiment, Database |

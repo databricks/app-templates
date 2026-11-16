@@ -1,0 +1,54 @@
+bundle:
+  name: agent_adk
+
+resources:
+  apps:
+    agent_adk:
+      name: "agent-adk"
+      description: "Google ADK agent application"
+      source_code_path: ./
+      config:
+        command: ["uv", "run", "start-app"]
+        env:
+          - name: MLFLOW_TRACKING_URI
+            value: "databricks"
+          - name: MLFLOW_REGISTRY_URI
+            value: "databricks-uc"
+          - name: API_PROXY
+            value: "http://localhost:8000/invocations"
+          - name: CHAT_APP_PORT
+            value: "3000"
+          - name: CHAT_PROXY_TIMEOUT_SECONDS
+            value: "300"
+          - name: MLFLOW_EXPERIMENT_ID
+            value_from: "experiment"
+
+      # Resources which this app has access to
+      resources:
+        - name: 'experiment'
+          experiment:
+            experiment_id: ""
+            permission: 'CAN_MANAGE'
+        # Foundation Model endpoints (e.g. databricks-claude-sonnet-4-5) are queryable by the
+        # app service principal by default, so no grant is needed for the shipped model. If you
+        # point LLM_ENDPOINT at a custom/provisioned serving endpoint, grant access here:
+        # - name: 'serving-endpoint'
+        #   serving_endpoint:
+        #     name: 'your-endpoint-name'
+        #     permission: 'CAN_QUERY'
+
+targets:
+  dev:
+    mode: development
+    default: true
+    # workspace:
+    #   host: https://...
+
+  prod:
+    mode: production
+    # workspace:
+    #   host: https://...
+    resources:
+      apps:
+        agent_adk:
+          name: agent-adk

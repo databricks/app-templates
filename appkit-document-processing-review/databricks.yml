@@ -1,0 +1,23 @@
+bundle:
+  name: appkit-document-processing-review
+
+resources:
+  apps:
+    app:
+      name: "appkit-document-processing-review"
+      description: "Human review of AI document-processing output, with evidence on the page"
+      source_code_path: ./
+
+      # Start the app automatically on deploy.
+      lifecycle:
+        started: true
+      user_api_scopes:
+        - sql
+        - files.files
+
+targets:
+  default:
+    default: true
+    workspace:
+      # Your workspace URL, or omit and use DATABRICKS_CONFIG_PROFILE.
+      host: https://<your-workspace>.cloud.databricks.com

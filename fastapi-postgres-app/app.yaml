@@ -1,0 +1,15 @@
+command:
+  - uvicorn
+  - main:app
+  - --host
+  - 0.0.0.0
+  - --port
+  - "8000"
+
+env:
+  # Pulls the Lakebase Autoscale endpoint resource name from the bound resource
+  # (set the resource's "Resource key" in the Apps UI to `postgres`).
+  # PGHOST, PGPORT, PGDATABASE, PGUSER, PGSSLMODE, PGAPPNAME are all auto-injected
+  # by the platform when the Lakebase resource is bound — no manual config needed.
+  - name: PGENDPOINT
+    valueFrom: postgres

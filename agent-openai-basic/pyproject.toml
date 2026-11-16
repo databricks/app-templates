@@ -1,0 +1,51 @@
+[project]
+name = "agent-openai-basic"
+version = "0.1.0"
+description = "Lean OpenAI Agents SDK agent backend for Databricks Apps — local-first, optional Lakebase durability"
+readme = "README.md"
+authors = [
+    { name = "Agent Developer", email = "developer@example.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.129.0",
+    "uvicorn>=0.41.0",
+    "mlflow>=3.10.1",
+    "openai-agents>=0.4.1",
+    "python-dotenv>=1.2.1",
+    "uuid-utils>=0.10.0",
+    "databricks-openai[memory]>=0.15.0",
+    # Pin below mcp 2.0: databricks-openai imports GetSessionIdCallback from
+    # mcp.client.streamable_http, which mcp 2.0 removed. Remove once databricks-openai is
+    # compatible with mcp>=2.
+    "mcp<2",
+    "databricks-sdk>=0.79.0",
+    "databricks-agents>=1.9.3",
+    "databricks-ai-bridge[agent-server]>=0.19.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.25.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["agent", "server"]
+
+
+[dependency-groups]
+dev = [
+    "hatchling>=1.28.0",
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[project.scripts]
+start-server = "server.start_server:main"

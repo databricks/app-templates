@@ -28,16 +28,29 @@ MAX_PATH_LENGTH = 2048
 MAX_PARAMETERS_LENGTH = 100_000
 MAX_HEADERS = 20
 MAX_HEADER_VALUE_LENGTH = 1024
-ALLOWED_FORWARD_HEADERS = {
-    "accept",
-    "accept-language",
-    "content-type",
-    "if-match",
-    "if-none-match",
-    "if-modified-since",
-    "prefer",
+# Hop-by-hop, framing and routing headers are set by the HTTP client and the UC connection.
+BLOCKED_FORWARD_HEADERS = {
+    "host",
+    "connection",
+    "keep-alive",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "content-length",
+    "expect",
+    "forwarded",
+    "via",
+    "x-real-ip",
 }
-_ENCODED_SEPARATORS = re.compile(r"%(2e|2f|5c|40|00)", re.IGNORECASE)
+BLOCKED_FORWARD_HEADER_PREFIXES = ("proxy-", "x-forwarded-", "x-databricks-")
+# Credentials come from the UC connection; a model-supplied one could make the call
+# run as a different account.
+_CREDENTIAL_HEADER = re.compile(
+    r"authorization|cookie|token|secret|password|api-?key|subscription-key", re.IGNORECASE
+)
+_HEADER_NAME = re.compile(r"[A-Za-z0-9!#$%&'*+.^_`|~-]+")
+_ENCODED_SEPARATORS = re.compile(r"%(2e|2f|5c|00)", re.IGNORECASE)
 _PATH_PARAM = re.compile(r"\{[^/{}]+\}")
 
 
@@ -47,19 +60,21 @@ def _path_template_pattern(template: str) -> re.Pattern:
     return re.compile("^" + "[^/]+".join(re.escape(part) for part in parts) + "$")
 
 
-def _is_unsafe_path(path: str) -> bool:
+def _is_unsafe_path(path: str, allow_spaces: bool = False) -> bool:
     return (
         not path.startswith("/")
         or path.startswith("//")
         or "://" in path
         or "\\" in path
-        or "@" in path
         or "?" in path
         or "#" in path
         or ".." in path
         or "." in path.split("/")
         or _ENCODED_SEPARATORS.search(path) is not None
-        or any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in path)
+        or any(
+            (ch.isspace() and not (allow_spaces and ch == " ")) or ord(ch) < 0x20 or ord(ch) == 0x7F
+            for ch in path
+        )
     )
 
 
@@ -74,7 +89,12 @@ def _validate_endpoint_path(endpoint_path: str, http_method: str) -> None:
     # A server or proxy may decode the path before routing it, so the decoded path is
     # checked too. No "%" may remain after one decode, so decoding again changes nothing.
     decoded_path = unquote(endpoint_path)
-    if _is_unsafe_path(endpoint_path) or _is_unsafe_path(decoded_path) or "%" in decoded_path:
+    # A path parameter may carry an encoded space (%20), so spaces are allowed once decoded.
+    if (
+        _is_unsafe_path(endpoint_path)
+        or _is_unsafe_path(decoded_path, allow_spaces=True)
+        or "%" in decoded_path
+    ):
         raise ValueError(f"endpoint_path {endpoint_path!r} is not a valid relative API path")
 
     paths = load_openapi_spec().get("paths", {})
@@ -95,13 +115,21 @@ def _validate_endpoint_path(endpoint_path: str, http_method: str) -> None:
 
 
 def _validate_headers(headers: dict) -> dict:
-    """Forward only allowlisted headers; auth and routing headers come from the UC connection."""
+    """Refuse credential and routing headers; those come from the UC connection."""
     if len(headers) > MAX_HEADERS:
         raise ValueError(f"At most {MAX_HEADERS} headers can be sent")
     for name, value in headers.items():
-        if name.lower() not in ALLOWED_FORWARD_HEADERS:
-            allowed = ", ".join(sorted(ALLOWED_FORWARD_HEADERS))
-            raise ValueError(f"Header {name!r} is not allowed; allowed headers: {allowed}")
+        if not _HEADER_NAME.fullmatch(name):
+            raise ValueError(f"Header name {name!r} is not valid")
+        lower = name.lower()
+        if (
+            lower in BLOCKED_FORWARD_HEADERS
+            or lower.startswith(BLOCKED_FORWARD_HEADER_PREFIXES)
+            or _CREDENTIAL_HEADER.search(lower)
+        ):
+            raise ValueError(
+                f"Header {name!r} can't be sent; credential and routing headers come from the UC connection"
+            )
         if len(value) > MAX_HEADER_VALUE_LENGTH or any(
             (ord(ch) < 0x20 and ch != "\t") or ord(ch) == 0x7F for ch in value
         ):

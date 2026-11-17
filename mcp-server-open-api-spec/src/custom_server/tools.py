@@ -85,8 +85,9 @@ def load_tools(mcp_server):
                 specification (path parameters filled in) and must not include a query string
             http_method: HTTP method for the request; must be defined for the path in the spec
             parameters: Request parameters (for GET/DELETE: query params, for POST/PUT/PATCH: JSON body)
-            headers: Additional HTTP headers as key-value pairs (Accept, Accept-Language,
-                Content-Type, If-Match, If-None-Match, If-Modified-Since, Prefer)
+            headers: Additional HTTP headers as key-value pairs. Credential, cookie and routing
+                headers (Authorization, Cookie, API keys, Host, Proxy-*, X-Forwarded-*) are
+                refused; the UC connection supplies them
 
         Returns:
             Dictionary containing the API response

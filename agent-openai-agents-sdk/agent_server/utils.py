@@ -11,7 +11,6 @@ from mlflow.types.responses import ResponsesAgentRequest, ResponsesAgentStreamEv
 MAX_INPUT_ITEMS = 500
 MAX_INPUT_ITEM_CHARS = 100_000
 MAX_CUSTOM_INPUTS_CHARS = 10_000
-DISALLOWED_INPUT_ROLES = {"system", "developer"}
 
 
 def _check_input_limits(request: ResponsesAgentRequest, items: list[dict]) -> None:
@@ -34,19 +33,12 @@ def check_request_limits(body: dict) -> None:
 
 
 def get_validated_input(request: ResponsesAgentRequest) -> list[dict]:
-    """Return ``request.input`` as dicts after enforcing size limits.
-
-    ``system`` and ``developer`` items are dropped so callers can't replace the agent's
-    own instructions; user, assistant and tool-call items pass through unchanged.
-    """
+    """Return ``request.input`` as dicts after enforcing size limits."""
     # The agent is stateless and the client owns the history: prior assistant and tool
     # turns are not verified, so nothing in them can be trusted for authorization.
     items = [i.model_dump() for i in request.input]
     _check_input_limits(request, items)
-    allowed = [item for item in items if item.get("role") not in DISALLOWED_INPUT_ROLES]
-    if len(allowed) < len(items):
-        logging.warning("Dropped %d system/developer input item(s)", len(items) - len(allowed))
-    return allowed
+    return items
 
 
 def get_session_id(request: ResponsesAgentRequest) -> str | None:

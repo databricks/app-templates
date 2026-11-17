@@ -153,7 +153,7 @@ Yes. This template uses MLflow's agent server, which comes with automatic tracin
 This template can be extended by integrating additional MCP servers, Vector Search Indexes, UC Functions, and other Databricks tools. See the ["Agent Framework Tools Documentation"](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool).
 
 **Q: Can I trust the conversation history in a request?**
-No. This agent is stateless: the client sends the whole conversation in `input` on every request, so a caller can edit or invent earlier assistant and tool turns. The server caps the input size and drops `system`/`developer` messages, but it does not verify prior turns, so don't base authorization decisions on anything in the history.
+No. This agent is stateless: the client sends the whole conversation in `input` on every request, so a caller can edit or invent earlier assistant and tool turns. The server caps the input size, but it does not verify prior turns, so don't base authorization decisions on anything in the history.
 
 ## Evaluating your agent
 

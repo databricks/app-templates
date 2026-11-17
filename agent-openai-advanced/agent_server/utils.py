@@ -24,7 +24,6 @@ logger = logging.getLogger(__name__)
 MAX_INPUT_ITEMS = 500
 MAX_INPUT_ITEM_CHARS = 100_000
 MAX_CUSTOM_INPUTS_CHARS = 10_000
-DISALLOWED_INPUT_ROLES = {"system", "developer"}
 # Background-mode resume appends "::attempt-N" to the original session id, or to the
 # server-generated response id ("resp_" + 24 hex) when the client sent no session id.
 SESSION_ID_PATTERN = re.compile(
@@ -150,20 +149,13 @@ def check_request_limits(body: dict) -> None:
 
 
 def get_validated_input(request: ResponsesAgentRequest) -> list[dict]:
-    """Return ``request.input`` as dicts after enforcing size limits.
-
-    ``system`` and ``developer`` items are dropped so callers can't replace the agent's
-    own instructions; user, assistant and tool-call items pass through unchanged.
-    """
+    """Return ``request.input`` as dicts after enforcing size limits."""
     items = [i.model_dump() for i in request.input]
     # Requests the server replays itself (background-mode resume, agent-evaluate) have no
     # HTTP headers; a resume adds a recovery message that can exceed the per-item limit.
     if get_request_headers():
         _check_input_limits(request, items)
-    allowed = [item for item in items if item.get("role") not in DISALLOWED_INPUT_ROLES]
-    if len(allowed) < len(items):
-        logger.warning("Dropped %d system/developer input item(s)", len(items) - len(allowed))
-    return allowed
+    return items
 
 
 def get_databricks_host_from_env() -> str | None:

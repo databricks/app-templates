@@ -113,11 +113,13 @@ app.layout = dbc.Container([
 )
 def update_visuals(n_clicks):
     data = load_data()
+    # SVG: Plotly's WebGL renderer needs 'unsafe-eval', which the CSP doesn't allow.
     fig = px.scatter(
         data,
         x='trip_distance',
         y='fare_amount',
-        labels={'fare_amount': 'Fare', 'trip_distance': 'Distance'}
+        labels={'fare_amount': 'Fare', 'trip_distance': 'Distance'},
+        render_mode='svg',
     )
     return (
         fig,

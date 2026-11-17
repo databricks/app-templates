@@ -77,11 +77,13 @@ app.layout = dbc.Container([
         dbc.Col([
             dcc.Graph(
                 id='fare-scatter',
+                # SVG: Plotly's WebGL renderer needs 'unsafe-eval', which the CSP doesn't allow.
                 figure=px.scatter(
                     data,
                     x='trip_distance',
                     y='fare_amount',
-                    labels={'fare_amount': 'Fare', 'trip_distance': 'Distance'}
+                    labels={'fare_amount': 'Fare', 'trip_distance': 'Distance'},
+                    render_mode='svg',
                 ),
                 style={'height': '400px', 'width': '100%'}
             )

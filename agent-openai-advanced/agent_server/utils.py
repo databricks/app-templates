@@ -25,9 +25,11 @@ MAX_INPUT_ITEMS = 500
 MAX_INPUT_ITEM_CHARS = 100_000
 MAX_CUSTOM_INPUTS_CHARS = 10_000
 DISALLOWED_INPUT_ROLES = {"system", "developer"}
-# Background-mode resume appends "::attempt-N" to the original session id.
+# Background-mode resume appends "::attempt-N" to the original session id, or to the
+# server-generated response id ("resp_" + 24 hex) when the client sent no session id.
 SESSION_ID_PATTERN = re.compile(
-    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(::attempt-[0-9]{1,4})?$"
+    r"^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|resp_[0-9a-f]{24})"
+    r"(::attempt-[0-9]{1,4})?$"
 )
 
 

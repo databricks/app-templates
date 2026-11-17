@@ -12,6 +12,7 @@ app_diagnostics.install_diagnostics()
 # --- end diagnostics bootstrap ---
 
 import os
+import re
 from markdown_it import MarkdownIt
 from shiny import App, ui, reactive, run_app
 from model_serving_utils import query_endpoint, is_endpoint_supported
@@ -25,6 +26,29 @@ ALLOWED_ROLES = {"user", "assistant"}
 # <iframe srcdoc>), so model output is rendered here with raw HTML escaped and
 # unsafe link schemes (javascript:, data:, ...) dropped.
 model_markdown = MarkdownIt("commonmark", {"html": False}).enable(["table", "strikethrough"])
+
+# HTML messages skip shinychat's own markdown pipeline, so add the attributes it would:
+# shinychat's click handler only opens a[data-shinychat-link] in a new tab, and its
+# table styling comes from Bootstrap classes.
+_NON_HTTP_SCHEME = re.compile(r"^(?!https?:)[a-z][a-z0-9+.-]*:", re.IGNORECASE)
+
+
+def _render_link_open(self, tokens, idx, options, env):
+    href = tokens[idx].attrGet("href") or ""
+    if not href.startswith("#") and not _NON_HTTP_SCHEME.match(href):
+        tokens[idx].attrSet("data-shinychat-link", "")
+        tokens[idx].attrSet("target", "_blank")
+        tokens[idx].attrSet("rel", "noopener noreferrer")
+    return self.renderToken(tokens, idx, options, env)
+
+
+def _render_table_open(self, tokens, idx, options, env):
+    tokens[idx].attrSet("class", "table table-striped table-bordered")
+    return self.renderToken(tokens, idx, options, env)
+
+
+model_markdown.add_render_rule("link_open", _render_link_open)
+model_markdown.add_render_rule("table_open", _render_table_open)
 
 # Ensure environment variable is set correctly
 SERVING_ENDPOINT = os.getenv("SERVING_ENDPOINT")

@@ -22,8 +22,9 @@ logger = logging.getLogger(__name__)
 CONTENT_SECURITY_POLICY = "; ".join(
     [
         "default-src 'self' https: wss:",
-        # Streamlit's index.html runs one inline script: window.prerenderReady = false
-        "script-src 'self' https: 'sha256-THxz9J9+wf7rhwR2YkXJoSZ13UCmYyC+3lNDv2+8ugA='",
+        # Streamlit's index.html runs one inline script: window.prerenderReady = false.
+        # Its protobuf runtime compiles a small WebAssembly helper for 64-bit integers.
+        "script-src 'self' https: 'wasm-unsafe-eval' 'sha256-THxz9J9+wf7rhwR2YkXJoSZ13UCmYyC+3lNDv2+8ugA='",
         "style-src 'self' https: 'unsafe-inline'",
         # No external images, so model-written markdown images can't send chat data to another host.
         "img-src 'self' data: blob:",

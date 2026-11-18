@@ -12,6 +12,7 @@ app_diagnostics.install_diagnostics()
 
 import logging
 import os
+import time
 import streamlit as st
 from model_serving_utils import (
     endpoint_supports_feedback, 
@@ -37,9 +38,12 @@ assert SERVING_ENDPOINT, \
 ENDPOINT_SUPPORTS_FEEDBACK = endpoint_supports_feedback(SERVING_ENDPOINT)
 
 MAX_PROMPT_CHARS = 8000
-# Only the most recent turns (user messages and assistant responses, including tool calls and
-# outputs) are sent to the endpoint, so a long chat can't grow the request without bound.
+# Only the most recent history entries (user messages and whole assistant responses, including tool
+# calls and outputs) are sent to the endpoint. This limits the number of turns in a request, not its
+# size: a long response or tool output still counts as one entry.
 MAX_HISTORY_ENTRIES = 20
+# Each render re-parses the whole reply, so a streamed reply is re-rendered at most this often (seconds).
+STREAM_RENDER_INTERVAL = 0.15
 
 
 def recent_history(history):
@@ -146,6 +150,7 @@ def query_chat_completions_endpoint_and_render(input_messages):
         
         accumulated_content = ""
         request_id = None
+        last_render = 0.0
         
         try:
             for chunk in query_endpoint_stream(
@@ -158,13 +163,17 @@ def query_chat_completions_endpoint_and_render(input_messages):
                     content = delta.get("content", "")
                     if content:
                         accumulated_content += content
-                        response_area.markdown(unlink_markdown(accumulated_content))
+                        if time.monotonic() - last_render >= STREAM_RENDER_INTERVAL:
+                            response_area.markdown(unlink_markdown(accumulated_content))
+                            last_render = time.monotonic()
                 
                 if "databricks_output" in chunk:
                     req_id = chunk["databricks_output"].get("databricks_request_id")
                     if req_id:
                         request_id = req_id
             
+            if accumulated_content:
+                response_area.markdown(unlink_markdown(accumulated_content))
             return AssistantResponse(
                 messages=[{"role": "assistant", "content": accumulated_content}],
                 request_id=request_id
@@ -253,6 +262,7 @@ def query_responses_endpoint_and_render(input_messages):
         
         # Track all the messages that need to be rendered in order
         all_messages = []
+        rendered_count = 0
         request_id = None
 
         try:
@@ -319,10 +329,11 @@ def query_responses_endpoint_and_render(input_messages):
                             })
                 
                 # Update the display by rendering all accumulated messages
-                if all_messages:
+                if len(all_messages) > rendered_count:
                     with response_area.container():
                         for msg in all_messages:
                             render_message(msg)
+                    rendered_count = len(all_messages)
 
             return AssistantResponse(messages=all_messages, request_id=request_id)
         except Exception:

@@ -11,22 +11,146 @@
         "required": [],
         "optional": [
           {
-            "type": "serving_endpoint",
+            "type": "model_service",
             "alias": "Default LLM for agents",
-            "resourceKey": "agents-serving-endpoint",
-            "description": "Default streaming-capable LLM endpoint for agents that don't pin their own model",
-            "permission": "CAN_QUERY",
+            "resourceKey": "agents-model-service",
+            "description": "Default Unity Catalog model service, called through AI Gateway, for agents that don't pin their own model",
+            "permission": "EXECUTE",
             "fields": {
               "name": {
-                "env": "DATABRICKS_SERVING_ENDPOINT_NAME",
-                "description": "Default LLM serving endpoint name",
+                "env": "DATABRICKS_MODEL_SERVICE_NAME",
+                "description": "Default model service full name (catalog.schema.name)",
                 "origin": "user"
               }
+            },
+            "binding": {
+              "yamlKey": "uc_securable",
+              "varFields": [
+                [
+                  "name",
+                  "securable_full_name"
+                ]
+              ],
+              "staticFields": [
+                [
+                  "securable_type",
+                  "MODEL_SERVICE"
+                ]
+              ]
+            }
+          },
+          {
+            "type": "experiment",
+            "alias": "MLflow experiment for agent traces",
+            "resourceKey": "agents-mlflow-experiment",
+            "description": "When bound, agent turns and tool calls are traced to this MLflow experiment via OpenTelemetry. Tracing is a no-op when unset.",
+            "permission": "CAN_EDIT",
+            "fields": {
+              "experimentId": {
+                "env": "MLFLOW_EXPERIMENT_ID",
+                "description": "MLflow experiment id traces are logged to",
+                "origin": "user"
+              }
+            },
+            "binding": {
+              "yamlKey": "experiment",
+              "varFields": [
+                [
+                  "experimentId",
+                  "experiment_id"
+                ]
+              ]
+            }
+          },
+          {
+            "type": "volume",
+            "alias": "Agent skills",
+            "resourceKey": "agents-skills",
+            "description": "Optional Unity Catalog Volume providing catalog-sourced agent skills (read-only)",
+            "permission": "READ_VOLUME",
+            "fields": {
+              "path": {
+                "env": "DATABRICKS_VOLUME_AGENT_SKILLS",
+                "description": "Volume path for agent skills (e.g. /Volumes/catalog/schema/skills)",
+                "discovery": {
+                  "type": "kind",
+                  "resourceKind": "volume",
+                  "select": "full_name"
+                },
+                "origin": "user"
+              }
+            },
+            "scope": "files",
+            "binding": {
+              "yamlKey": "uc_securable",
+              "varFields": [
+                [
+                  "path",
+                  "securable_full_name"
+                ]
+              ],
+              "staticFields": [
+                [
+                  "securable_type",
+                  "VOLUME"
+                ]
+              ]
             }
           }
         ]
       },
       "stability": "beta"
+    },
+    "aiSearch": {
+      "name": "aiSearch",
+      "displayName": "AI Search Plugin",
+      "description": "Query Databricks Vector Search indexes with built-in hybrid search, reranking, and pagination",
+      "package": "@databricks/appkit",
+      "resources": {
+        "required": [
+          {
+            "type": "vector_search_index",
+            "alias": "Vector Search Index",
+            "resourceKey": "vector-search-index",
+            "description": "A Databricks Vector Search index to query. Index names configured via plugin config.",
+            "permission": "SELECT",
+            "fields": {
+              "id": {
+                "env": "DATABRICKS_VS_INDEX_NAME",
+                "description": "Three-level UC name of the default index (catalog.schema.index_name)",
+                "origin": "user"
+              }
+            },
+            "scope": "vector-search",
+            "binding": {
+              "yamlKey": "uc_securable",
+              "varFields": [
+                [
+                  "id",
+                  "securable_full_name"
+                ]
+              ],
+              "staticFields": [
+                [
+                  "securable_type",
+                  "TABLE"
+                ]
+              ]
+            }
+          }
+        ],
+        "optional": []
+      },
+      "stability": "beta",
+      "scaffolding": {
+        "rules": {
+          "must": [
+            "List the vector search index's source-table columns (unity-catalog tables API) so the user can pick which to return",
+            "Ask the user which of those columns the search should return",
+            "Write aiSearch({ indexes: { default: { columns: [...] } } }) in the server file; the client queries the 'default' alias"
+          ]
+        }
+      }
     },
     "analytics": {
       "name": "analytics",
@@ -51,6 +175,16 @@
                 },
                 "origin": "user"
               }
+            },
+            "scope": "sql",
+            "binding": {
+              "yamlKey": "sql_warehouse",
+              "varFields": [
+                [
+                  "id",
+                  "id"
+                ]
+              ]
             }
           }
         ],
@@ -66,6 +200,17 @@
           ]
         }
       }
+    },
+    "design": {
+      "name": "design",
+      "displayName": "Design Plugin",
+      "description": "Dev-only design pages: /design renders client/src/design/index.tsx and /design/<name> renders client/src/design/pages/<name>.tsx, with a readiness signal for an embedding app builder; 404 in production",
+      "package": "@databricks/appkit",
+      "resources": {
+        "required": [],
+        "optional": []
+      },
+      "stability": "beta"
     },
     "files": {
       "name": "files",
@@ -91,6 +236,22 @@
                 },
                 "origin": "user"
               }
+            },
+            "scope": "files",
+            "binding": {
+              "yamlKey": "uc_securable",
+              "varFields": [
+                [
+                  "path",
+                  "securable_full_name"
+                ]
+              ],
+              "staticFields": [
+                [
+                  "securable_type",
+                  "VOLUME"
+                ]
+              ]
             }
           }
         ],
@@ -131,11 +292,28 @@
                 "description": "Genie Space display name",
                 "origin": "user"
               }
+            },
+            "scope": "genie",
+            "binding": {
+              "yamlKey": "genie_space",
+              "varFields": [
+                [
+                  "name",
+                  "name"
+                ],
+                [
+                  "id",
+                  "space_id"
+                ]
+              ]
             }
           }
         ],
         "optional": []
       },
+      "scopes": [
+        "genie"
+      ],
       "scaffolding": {
         "rules": {
           "must": [
@@ -163,6 +341,15 @@
                 "description": "Numeric Databricks job ID. Find it in the Jobs UI or via `databricks jobs list`.",
                 "origin": "user"
               }
+            },
+            "binding": {
+              "yamlKey": "job",
+              "varFields": [
+                [
+                  "id",
+                  "id"
+                ]
+              ]
             }
           }
         ],
@@ -185,6 +372,7 @@
             "fields": {
               "project": {
                 "description": "Full Lakebase Postgres project resource name. Obtain by running `databricks postgres list-projects`, select the desired item from the output array and use its .name value.",
+                "bundleIgnore": true,
                 "examples": [
                   "projects/{project-id}"
                 ],
@@ -259,6 +447,20 @@
                 "value": "require",
                 "origin": "platform"
               }
+            },
+            "appOnly": true,
+            "binding": {
+              "yamlKey": "postgres",
+              "varFields": [
+                [
+                  "branch",
+                  "branch"
+                ],
+                [
+                  "database",
+                  "database"
+                ]
+              ]
             }
           }
         ],
@@ -287,8 +489,8 @@
     },
     "serving": {
       "name": "serving",
-      "displayName": "Model Serving Plugin",
-      "description": "Authenticated proxy to Databricks Model Serving endpoints",
+      "displayName": "Model Serving Plugin (deprecated)",
+      "description": "DEPRECATED: use the agents plugin instead. Authenticated proxy to Databricks Model Serving endpoints",
       "package": "@databricks/appkit",
       "resources": {
         "required": [
@@ -304,11 +506,25 @@
                 "description": "Serving endpoint name",
                 "origin": "user"
               }
+            },
+            "scope": "model-serving",
+            "binding": {
+              "yamlKey": "serving_endpoint",
+              "varFields": [
+                [
+                  "name",
+                  "name"
+                ]
+              ]
             }
           }
         ],
         "optional": []
-      }
+      },
+      "scopes": [
+        "model-serving"
+      ],
+      "deprecated": true
     }
   },
   "scaffolding": {
@@ -359,6 +575,7 @@
     },
     "rules": {
       "must": [
+        "Treat `databricks apps init` output as starter code, not requirements; adapt or replace it to match the requested app",
         "Keep all secrets and credentials only in app.yaml, databricks.yml, and/or .env"
       ],
       "should": [

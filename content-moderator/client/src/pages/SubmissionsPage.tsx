@@ -63,7 +63,7 @@ export function SubmissionsPage() {
   }, [submissions, search, statusFilter, targetFilter]);
 
   const pendingCount = submissions.filter(
-    (s) => s.status === "pending_review",
+    (s) => s.status === "pending_review" || s.status === "analysis_failed",
   ).length;
 
   return (
@@ -86,6 +86,7 @@ export function SubmissionsPage() {
           >
             <option value="all">All statuses</option>
             <option value="pending_review">Pending review</option>
+            <option value="analysis_failed">Analysis failed</option>
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
             <option value="revision_requested">Revision requested</option>

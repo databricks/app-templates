@@ -5,6 +5,7 @@ const STATUS_VARIANTS: Record<
   "default" | "secondary" | "destructive" | "outline"
 > = {
   pending_review: "secondary",
+  analysis_failed: "destructive",
   approved: "default",
   rejected: "destructive",
   revision_requested: "outline",

@@ -74,6 +74,13 @@ const WebUrl = z
   .url({ protocol: /^https?$/, message: "URL must be an http or https URL" })
   .max(2048);
 
+// Rows saved before WebUrl was enforced may hold other URLs (javascript:,
+// data:). They are returned as null, so they are never linked and the edit
+// form, which sends back what it loaded, can still save the row.
+function withWebUrl(row: Record<string, unknown>) {
+  return { ...row, url: WebUrl.safeParse(row.url).success ? row.url : null };
+}
+
 // owner_email is display data (who owns the subscription), not the caller's
 // identity; nothing authorizes on it.
 const CreateSubscriptionBody = z.object({
@@ -151,7 +158,7 @@ export async function setupSaasRoutes(appkit: AppKitWithLakebase) {
             renewal_date ASC NULLS LAST,
             name ASC
         `);
-        res.json(result.rows);
+        res.json(result.rows.map(withWebUrl));
       } catch (err) {
         console.error("Failed to list subscriptions:", err);
         res.status(500).json({ error: "Failed to list subscriptions" });
@@ -181,7 +188,7 @@ export async function setupSaasRoutes(appkit: AppKitWithLakebase) {
           return;
         }
 
-        res.json(result.rows[0]);
+        res.json(withWebUrl(result.rows[0]));
       } catch (err) {
         console.error("Failed to get subscription:", err);
         res.status(500).json({ error: "Failed to get subscription" });

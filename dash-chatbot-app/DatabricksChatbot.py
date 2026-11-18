@@ -14,21 +14,21 @@ MODEL_ERROR_MESSAGE = 'Sorry, the model could not answer. Please try again.'
 
 
 def sanitize_chat_history(chat_history):
-    """Rebuild the client-held chat history before it is sent to the model.
+    """Rebuild the client-held chat history from its user and assistant messages.
 
     The history lives in a browser-side dcc.Store, so callers can send any
     roles, content types and sizes.
     """
     if not isinstance(chat_history, list):
         return []
-    messages = [
+    return [
         {'role': msg['role'], 'content': msg['content'][:MAX_MESSAGE_CHARS]}
         for msg in chat_history
         if isinstance(msg, dict)
-        and msg.get('role') in ALLOWED_ROLES
+        and isinstance(msg.get('role'), str)
+        and msg['role'] in ALLOWED_ROLES
         and isinstance(msg.get('content'), str)
     ]
-    return messages[-MAX_HISTORY_MESSAGES:]
 
 
 class DatabricksChatbot:
@@ -112,7 +112,7 @@ class DatabricksChatbot:
             return dash.no_update, dash.no_update
 
         try:
-            assistant_response = self._call_model_endpoint(chat_history)
+            assistant_response = self._call_model_endpoint(chat_history[-MAX_HISTORY_MESSAGES:])
             chat_history.append({
                 'role': 'assistant',
                 'content': assistant_response

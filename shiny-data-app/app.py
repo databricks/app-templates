@@ -12,6 +12,7 @@ app_diagnostics.install_diagnostics()
 
 import asyncio
 import os
+import re
 
 from databricks.sdk import config
 from databricks import sql
@@ -26,6 +27,9 @@ assert SQL_WAREHOUSE_ID, "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
 _INITIAL_TABLE = "samples.nyctaxi.trips"
 _QUERY = "SELECT * FROM IDENTIFIER(:table_name) LIMIT :row_limit"
 MAX_ROWS = 10000
+# IDENTIFIER() also resolves path references such as parquet.`/Volumes/...`,
+# so only unquoted one- to three-part names are passed to it.
+_TABLE_NAME = re.compile(r"[A-Za-z0-9_]+(\.[A-Za-z0-9_]+){0,2}")
 
 
 def execute_query(connection, table_name):
@@ -105,6 +109,14 @@ def server(input, output, session):
         table_name = table_name.strip() if isinstance(table_name, str) else ""
         if not table_name:
             ui.notification_show("Please enter a table name.", type="warning")
+            return
+        if not _TABLE_NAME.fullmatch(table_name):
+            ui.notification_show(
+                "Invalid table name. Use catalog.schema.table with only letters, "
+                "digits and underscores.",
+                type="error",
+                duration=12,
+            )
             return
         ui.update_action_button("cancel_query", disabled=False)
         run_query_task(table_name)

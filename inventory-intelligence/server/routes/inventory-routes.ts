@@ -383,13 +383,25 @@ export async function setupInventoryRoutes(appkit: AppKitWithLakebase) {
           return;
         }
 
+        // Atomic: update the status and, on receipt, add the stock in one CTE.
         // "received" is terminal: the row-level check makes a repeated (or
         // concurrent) "received" update a no-op, so stock is only added once.
         const orderResult = await appkit.lakebase.query(
-          `UPDATE inventory.replenishment_orders
-           SET status = $1
-           WHERE id = $2::uuid AND status <> 'received'
-           RETURNING id::text, store_id, product_id, quantity_ordered, status`,
+          `WITH updated AS (
+             UPDATE inventory.replenishment_orders
+             SET status = $1
+             WHERE id = $2::uuid AND status <> 'received'
+             RETURNING id::text, store_id, product_id, quantity_ordered, status
+           ), _stock AS (
+             UPDATE inventory.stock_levels sl
+             SET quantity_on_hand = sl.quantity_on_hand + u.quantity_ordered,
+                 quantity_on_order = GREATEST(0, sl.quantity_on_order - u.quantity_ordered),
+                 last_counted_at = NOW()
+             FROM updated u
+             WHERE u.status = 'received'
+               AND sl.store_id = u.store_id AND sl.product_id = u.product_id
+           )
+           SELECT * FROM updated`,
           [parsed.data.status, req.params.orderId],
         );
 
@@ -404,20 +416,6 @@ export async function setupInventoryRoutes(appkit: AppKitWithLakebase) {
             res.status(404).json({ error: "Order not found" });
           }
           return;
-        }
-
-        // When order is received, add to stock and zero out on_order
-        if (parsed.data.status === "received") {
-          const { store_id, product_id, quantity_ordered } =
-            orderResult.rows[0];
-          await appkit.lakebase.query(
-            `UPDATE inventory.stock_levels
-             SET quantity_on_hand = quantity_on_hand + $1,
-                 quantity_on_order = GREATEST(0, quantity_on_order - $1),
-                 last_counted_at = NOW()
-             WHERE store_id = $2 AND product_id = $3`,
-            [quantity_ordered, store_id, product_id],
-          );
         }
 
         res.json(orderResult.rows[0]);

@@ -28,7 +28,7 @@ const CREATE_DECISIONS_TABLE_SQL = `
   )
 `;
 
-// Upper bound for a single refund or credit; refunds and credits are also capped at the most recent order total.
+// Upper bound for a single refund or credit; each is also limited to the customer's most recent order total.
 const MAX_AMOUNT_CENTS = 1_000_000;
 
 const CaseId = z.guid();
@@ -55,6 +55,27 @@ function parseCaseId(req: Request, res: Response): string | null {
     return null;
   }
   return parsed.data;
+}
+
+function compensationError(
+  action: string,
+  amountCents: number,
+  latestOrder: Record<string, unknown> | undefined
+): { error: string; max_amount_cents?: number } | null {
+  if (!latestOrder) {
+    return action === 'refund' ? { error: 'The customer has no order to refund' } : null;
+  }
+  if (latestOrder.total_in_cents == null) {
+    return { error: "The customer's most recent order has no total to check the amount against" };
+  }
+  const totalCents = Number(latestOrder.total_in_cents);
+  if (amountCents > totalCents) {
+    return {
+      error: `Amount exceeds the customer's most recent order total (${totalCents} cents)`,
+      max_amount_cents: totalCents,
+    };
+  }
+  return null;
 }
 
 export async function setupSupportRoutes(appkit: AppKitWithLakebase) {
@@ -257,6 +278,29 @@ export async function setupSupportRoutes(appkit: AppKitWithLakebase) {
 
         const caseIdBytes = uuidToBytes(caseId);
 
+        const caseRow = await appkit.lakebase.query(`SELECT user_id FROM public.support_cases WHERE id = $1::uuid`, [
+          caseId,
+        ]);
+        const userId = caseRow.rows[0]?.user_id as string | undefined;
+
+        let latestOrder: Record<string, unknown> | undefined;
+        if (
+          userId &&
+          (parsed.data.admin_action === 'refund' || parsed.data.admin_action === 'credit') &&
+          parsed.data.admin_amount_cents > 0
+        ) {
+          const orderRow = await appkit.lakebase.query(
+            `SELECT id::text AS id, total_in_cents FROM public.orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+            [userId]
+          );
+          latestOrder = orderRow.rows[0];
+          const amountError = compensationError(parsed.data.admin_action, parsed.data.admin_amount_cents, latestOrder);
+          if (amountError) {
+            res.status(422).json(amountError);
+            return;
+          }
+        }
+
         const adminResult = await appkit.lakebase.query(`SELECT id FROM public.admins LIMIT 1`);
         const adminId = adminResult.rows.length > 0 ? (adminResult.rows[0].id as string) : null;
 
@@ -306,38 +350,17 @@ export async function setupSupportRoutes(appkit: AppKitWithLakebase) {
         const messageRow = decisionResult.rows[0]?.message as Record<string, unknown> | null;
         const message = messageRow ? { ...messageRow, role: 'admin' } : null;
 
-        const caseRow = await appkit.lakebase.query(`SELECT user_id FROM public.support_cases WHERE id = $1::uuid`, [
-          caseId,
-        ]);
-        const userId = caseRow.rows[0]?.user_id as string | undefined;
-
-        if (userId && parsed.data.admin_action === 'refund' && parsed.data.admin_amount_cents > 0) {
-          const orderRow = await appkit.lakebase.query(
-            `SELECT id::text AS id, total_in_cents FROM public.orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
-            [userId]
+        if (latestOrder && parsed.data.admin_action === 'refund') {
+          await appkit.lakebase.query(
+            `INSERT INTO public.refunds (user_id, order_id, support_case_id, amount_in_cents, reason)
+             VALUES ($1, $2::uuid, $3::uuid, $4, $5)`,
+            [userId, latestOrder.id, caseId, parsed.data.admin_amount_cents, parsed.data.admin_response]
           );
-          const order = orderRow.rows[0];
-          if (order) {
-            const refundAmount = Math.min(parsed.data.admin_amount_cents, order.total_in_cents as number);
-            await appkit.lakebase.query(
-              `INSERT INTO public.refunds (user_id, order_id, support_case_id, amount_in_cents, reason)
-               VALUES ($1, $2::uuid, $3::uuid, $4, $5)`,
-              [userId, order.id, caseId, refundAmount, parsed.data.admin_response]
-            );
-          }
         } else if (userId && parsed.data.admin_action === 'credit' && parsed.data.admin_amount_cents > 0) {
-          const orderRow = await appkit.lakebase.query(
-            `SELECT total_in_cents FROM public.orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
-            [userId]
-          );
-          const order = orderRow.rows[0];
-          const creditAmount = order
-            ? Math.min(parsed.data.admin_amount_cents, order.total_in_cents as number)
-            : parsed.data.admin_amount_cents;
           await appkit.lakebase.query(
             `INSERT INTO public.credits (user_id, support_case_id, amount_in_cents, reason)
              VALUES ($1, $2::uuid, $3, $4)`,
-            [userId, caseId, creditAmount, parsed.data.admin_response]
+            [userId, caseId, parsed.data.admin_amount_cents, parsed.data.admin_response]
           );
         }
 

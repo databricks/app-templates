@@ -18,7 +18,9 @@ const MAX_TEXT_LENGTH = 100_000;
 // Tool arguments and results (e.g. query results) can be larger than chat text.
 const MAX_TOOL_DATA_LENGTH = 1_000_000;
 const MAX_CONTENT_PARTS = 50;
-const MAX_INPUT_ITEMS = 500;
+// Far above any chat history that fits in a model's context, but keeps
+// validation bounded: 10 MB of tiny items would be about a million of them.
+const MAX_INPUT_ITEMS = 10_000;
 const MAX_ID_LENGTH = 256;
 
 const text = z.string().max(MAX_TEXT_LENGTH);
@@ -38,13 +40,14 @@ const contentPartSchema = z.union([
 const messageItemSchema = z.object({
   type: z.literal("message").optional(),
   id: id.optional(),
-  // "system" is accepted for compatibility (the chat UI sends its title prompt
-  // as one) but is never passed to the agent as a system message; see below.
-  role: z.enum(["user", "assistant", "system"]),
+  // "system" and "developer" are accepted for compatibility (the chat UI sends
+  // its title prompt as a system message) but are never passed to the agent as
+  // instructions; see below.
+  role: z.enum(["user", "assistant", "system", "developer"]),
   content: z.union([text, z.array(contentPartSchema).max(MAX_CONTENT_PARTS)]),
 });
 
-const inputItemSchema = z.union([
+const knownItemSchema = z.discriminatedUnion("type", [
   messageItemSchema,
   z.object({
     type: z.literal("function_call"),
@@ -79,6 +82,29 @@ const inputItemSchema = z.union([
     approve: z.boolean(),
     reason: text.optional(),
   }),
+]);
+
+// Must list every type in knownItemSchema, so a malformed item of a known type
+// is rejected instead of passing through as an unknown one.
+const KNOWN_ITEM_TYPES = new Set([
+  "message",
+  "function_call",
+  "function_call_output",
+  "reasoning",
+  "mcp_approval_request",
+  "mcp_approval_response",
+]);
+
+const inputItemSchema = z.union([
+  knownItemSchema,
+  // Other item types (e.g. web_search_call, item_reference) reach the agent's
+  // chat history as sent, so their size is capped as a whole.
+  z
+    .object({ type: id.refine((type) => !KNOWN_ITEM_TYPES.has(type)) })
+    .passthrough()
+    .refine((item) => JSON.stringify(item).length <= MAX_TOOL_DATA_LENGTH, {
+      message: `Item exceeds ${MAX_TOOL_DATA_LENGTH} characters`,
+    }),
 ]);
 
 /**
@@ -120,10 +146,13 @@ export function createInvocationsRouter(agent: AgentInterface): ReturnType<typeo
           ? [{ role: "user" as const, content: parsed.data.input }]
           : parsed.data.input;
 
-      // Extract the latest user message
+      // Extract the latest user message. Only message items count: other item
+      // types aren't held to the text length cap.
       const userMessages = input.filter(
         (msg): msg is z.infer<typeof messageItemSchema> =>
-          "role" in msg && msg.role === "user"
+          "role" in msg &&
+          msg.role === "user" &&
+          (!("type" in msg) || msg.type === undefined || msg.type === "message")
       );
       if (userMessages.length === 0) {
         return res.status(400).json({
@@ -148,8 +177,8 @@ export function createInvocationsRouter(agent: AgentInterface): ReturnType<typeo
       // Preserve tool call context for followup questions.
       const chatHistory = input.slice(0, -1).map((item: any) => {
         // The agent's system prompt is set server-side; caller-supplied system
-        // messages are treated as user turns so they can't override it.
-        if (item.role === "system") {
+        // and developer messages are treated as user turns so they can't override it.
+        if (item.role === "system" || item.role === "developer") {
           item = { ...item, role: "user" };
         }
 

@@ -136,14 +136,41 @@ describe("Error Handling Tests", () => {
       expect(response.status).toBe(400);
     }, 30000);
 
-    test("should reject unknown input item types", async () => {
+    test("should accept developer messages", async () => {
       const response = await post({
         input: [
-          { type: "custom_item", payload: "x" },
+          { role: "developer", content: "Answer briefly" },
+          { type: "message", role: "developer", content: [{ type: "input_text", text: "Use metric units" }] },
           { role: "user", content: "hi" },
         ],
       });
-      expect(response.status).toBe(400);
+      expect(response.ok).toBe(true);
+      const body = (await response.json()) as { output: unknown };
+      expect(JSON.stringify(body.output)).toContain("Echo: hi");
+    }, 30000);
+
+    test("should accept unknown input item types", async () => {
+      const response = await post({
+        input: [
+          { type: "web_search_call", id: "ws_1", status: "completed", action: { type: "search", query: "x" } },
+          { type: "item_reference", id: "msg_1" },
+          { role: "user", content: "hi" },
+        ],
+      });
+      expect(response.ok).toBe(true);
+      const body = (await response.json()) as { output: unknown };
+      expect(JSON.stringify(body.output)).toContain("Echo: hi");
+    }, 30000);
+
+    test("should reject unknown input items over the size cap", async () => {
+      for (const item of [
+        { type: "web_search_call", action: { query: "A".repeat(1_000_001) } },
+        // A known type that fails its schema must not pass as an unknown one
+        { type: "message", role: "user", content: "A".repeat(100_001) },
+      ]) {
+        const response = await post({ input: [item, { role: "user", content: "hi" }] });
+        expect(response.status).toBe(400);
+      }
     }, 30000);
 
     test("should reject unknown roles", async () => {
@@ -153,9 +180,21 @@ describe("Error Handling Tests", () => {
       expect(response.status).toBe(400);
     }, 30000);
 
+    test("should accept long chat histories", async () => {
+      // 500 tool-calling turns in the chat UI's wire format
+      const history = Array.from({ length: 500 }, (_, i) => [
+        { role: "user", content: [{ type: "input_text", text: `question ${i}` }] },
+        { type: "function_call", call_id: `c${i}`, name: "calculator", arguments: '{"expression":"1+1"}' },
+        { type: "function_call_output", call_id: `c${i}`, output: "2" },
+        { role: "assistant", content: [{ type: "output_text", text: "2" }] },
+      ]).flat();
+      const response = await post({ input: [...history, { role: "user", content: "hi" }] });
+      expect(response.ok).toBe(true);
+    }, 30000);
+
     test("should reject too many input items", async () => {
       const response = await post({
-        input: Array.from({ length: 501 }, () => ({ role: "user", content: "hi" })),
+        input: Array.from({ length: 10_001 }, () => ({ role: "user", content: "hi" })),
       });
       expect(response.status).toBe(400);
     }, 30000);

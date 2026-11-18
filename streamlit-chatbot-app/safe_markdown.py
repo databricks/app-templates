@@ -24,8 +24,14 @@ _PUNCTUATION = frozenset(string.punctuation)
 _SOURCE = re.compile(
     r"\\[!-/:-@\[-`{-~\n]|&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});|.", re.S
 )
-# Text that GFM turns into a link on its own.
-_URL = re.compile(r"(?P<url>(?:https?://|www\.)[^\s<>]*)|(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+", re.I)
+# Text that GFM turns into a link on its own. GFM also links an email domain that starts with a dot. An email
+# address that directly follows another one after `.` or `+` is matched together with it, because the lookbehind
+# keeps it from matching on its own.
+_EMAIL_DOMAIN = r"(?:\.[\w-]+|[\w-]+\.[\w-]+)(?:\.[\w-]+)*"
+_URL = re.compile(
+    rf"(?P<url>(?:https?://|www\.)[^\s<>]*)|(?<![\w.+-])[\w.+-]+@{_EMAIL_DOMAIN}(?:[.+][\w.+-]*@{_EMAIL_DOMAIN})*",
+    re.I,
+)
 # Streamlit's renderer also has math (`$`, `$$`) and directives (`:name{...}`, `:::`), which markdown-it doesn't
 # parse. If one of those opened where markdown-it saw text, it could swallow the start of a code span or block
 # and end inside it, leaving the rest of the code as markdown.

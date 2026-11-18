@@ -85,7 +85,7 @@ else:
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             if message["role"] == "assistant":
-                st.markdown(unlink_markdown(message["content"]))
+                st.markdown(unlink_markdown(message["content"] or ""))
             else:
                 st.markdown(message["content"])
 
@@ -108,7 +108,7 @@ else:
                 messages=recent_history(st.session_state.messages),
                 max_tokens=400,
             )["content"]
-            st.markdown(unlink_markdown(assistant_response))
+            st.markdown(unlink_markdown(assistant_response or ""))
 
 
         # Add assistant response to chat history

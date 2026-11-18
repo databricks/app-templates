@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 from typing import Annotated, Literal
 
 from databricks.sdk import WorkspaceClient
@@ -16,6 +17,9 @@ MAX_DOCUMENT_CHARS = 200_000
 MAX_QUESTIONS = 20
 MAX_QUESTION_CHARS = 1_000
 MAX_REASONING_CHARS = 2_000
+
+# The model's output isn't schema-constrained, so it may answer "Yes." or "No, because ...".
+YES_NO_ANSWER = re.compile(r"^(yes|no)\b", re.IGNORECASE)
 
 
 class AgentInput(BaseModel):
@@ -104,9 +108,11 @@ async def invoke_handler(data: dict) -> dict:
         else:
             try:
                 response_data: dict = json.loads(llm_response.choices[0].message.content)
-                answer = str(response_data.get("answer", "No")).strip().capitalize()
+                match = YES_NO_ANSWER.match(str(response_data.get("answer", "No")).strip())
                 reasoning = str(response_data.get("reasoning", ""))
-                if answer not in ("Yes", "No"):
+                if match:
+                    answer = match.group(1).capitalize()
+                else:
                     answer = "No"
                     reasoning = "The model did not return a Yes or No answer."
             except Exception as e:

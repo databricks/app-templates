@@ -1,6 +1,9 @@
 /* set base path to root directory to include utility classes from app, components, pages, etc. */
 @import "tailwindcss";
 
+/* Tailwind doesn't scan node_modules, so pick up the list, table and code classes Streamdown renders markdown with. */
+@source "../../node_modules/streamdown/dist/*.js";
+
 /* include plugins */
 @plugin "tailwindcss-animate";
 @plugin "@tailwindcss/typography";

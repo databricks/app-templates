@@ -99,8 +99,14 @@ if (agentBackendUrl) {
   );
   app.post('/invocations', async (req: Request, res: Response) => {
     try {
-      const forwardHeaders = { ...req.headers } as Record<string, string>;
-      forwardHeaders['content-length'] = undefined;
+      // The body is re-serialized, so drop the client's framing headers. Not
+      // with `delete`: `npm run lint` rewrites that to `= undefined`, which
+      // fetch rejects.
+      const {
+        'content-length': _contentLength,
+        'transfer-encoding': _transferEncoding,
+        ...forwardHeaders
+      } = req.headers as Record<string, string>;
 
       const response = await fetch(agentBackendUrl, {
         method: req.method,

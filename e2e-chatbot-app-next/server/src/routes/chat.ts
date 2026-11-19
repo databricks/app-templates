@@ -5,7 +5,6 @@ import {
   type Router as RouterType,
 } from 'express';
 import {
-  convertToModelMessages,
   createUIMessageStream,
   streamText,
   generateText,
@@ -62,6 +61,7 @@ import {
 import { ChatSDKError } from '@databricks/chatbot-core/errors';
 import { storeMessageMeta } from '../lib/message-meta-store';
 import { drainStreamToWriter, fallbackToGenerateText } from '../lib/stream-fallback';
+import { toModelMessages } from '../lib/model-messages';
 
 export const chatRouter: RouterType = Router();
 
@@ -248,7 +248,7 @@ chatRouter.post('/', requireAuth, async (req: Request, res: Response) => {
     const streamId = generateUUID();
 
     const model = await myProvider.languageModel(selectedChatModel);
-    const modelMessages = await convertToModelMessages(uiMessages);
+    const modelMessages = await toModelMessages(uiMessages);
     const requestHeaders = {
       [CONTEXT_HEADER_CONVERSATION_ID]: id,
       [CONTEXT_HEADER_USER_ID]: session.user.email ?? session.user.id,

@@ -24,7 +24,11 @@ CREATE TABLE IF NOT EXISTS <INPUT_TABLE>_approved_log (
   approved_response VARIANT            COMMENT 'The approved document, in the SAME schema as <INPUT_TABLE>.response. Changed values are replaced. Confidence scores and citations are carried over untouched.',
   CONSTRAINT <INPUT_LEAF>_approved_log_pk PRIMARY KEY (id, approver, approved_at) RELY
 )
-CLUSTER BY (id);
+CLUSTER BY (id)
+-- Append-only for real, not by convention: reviewers need MODIFY to INSERT, and
+-- MODIFY also allows UPDATE and DELETE. This property refuses both at the table,
+-- so an approval can only ever be added.
+TBLPROPERTIES ('delta.appendOnly' = 'true');
 
 -- 2. Input plus approval state: one row per document in <INPUT_TABLE>, always.
 -- A document that has never been approved still appears, with a NULL
@@ -47,11 +51,16 @@ SELECT
   coalesce(a.approval_count, 0) AS approval_count
 FROM <INPUT_TABLE> i
 LEFT JOIN (
+  -- Each max_by orders by (approved_at, approver), not approved_at alone. With
+  -- id that pair is the primary key, so it is unique within a group and all
+  -- three columns are guaranteed to come from the same approval. Ordering by
+  -- approved_at alone can mix rows when two approvals share a timestamp, which
+  -- is reachable here because approvals are independent and concurrent.
   SELECT id,
-         max_by(approved_response, approved_at) AS latest_approved_response,
-         max(approved_at)                       AS latest_approved_at,
-         max_by(approver, approved_at)          AS latest_approver,
-         count(*)                               AS approval_count
+         max_by(approved_response, struct(approved_at, approver)) AS latest_approved_response,
+         max_by(approved_at, struct(approved_at, approver))       AS latest_approved_at,
+         max_by(approver, struct(approved_at, approver))          AS latest_approver,
+         count(*)                                                 AS approval_count
   FROM <INPUT_TABLE>_approved_log
   GROUP BY id
 ) a ON a.id = i.id;

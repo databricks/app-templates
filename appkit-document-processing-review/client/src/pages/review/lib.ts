@@ -18,7 +18,7 @@ export type Field = {
   /** Set only for leaves inside an array. */
   group_name: string | null;
   item_index: number | null;
-  /** The agreed value: this reviewer's correction if any, else the model's. */
+  /** What this reviewer is reviewing: always the model's own value. */
   value: string | null;
   /** What the model produced, kept so a correction can show what it replaced. */
   model_value: string | null;
@@ -82,7 +82,7 @@ export const BANDS: Band[] = BAND_DEFS.map((b, i) => {
   const label =
     b.label ??
     (next === null || next === undefined
-      ? `${pct(b.min as number)}+`
+      ? `${pct(b.min)}+`
       : b.min === 0
         ? `below ${pct(next)}`
         : `${Math.round((b.min as number) * 100)}-${pct(next)}`);
@@ -141,7 +141,8 @@ const SEPARATORS = ['_', '-', ' ', '.'];
 
 /** Strip the prefix and suffix shared by every name, aligned to token boundaries. */
 function stripSharedAffixes(names: string[]): string[] {
-  const shortest = Math.min(...names.map((n) => n.length));
+  // reduce, not Math.min(...spread): one argument per name overflows the call stack.
+  const shortest = names.reduce((m, n) => Math.min(m, n.length), Infinity);
 
   let prefix = 0;
   while (prefix < shortest && new Set(names.map((n) => n[prefix])).size === 1) prefix++;

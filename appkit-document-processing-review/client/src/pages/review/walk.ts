@@ -43,8 +43,7 @@ export type WalkResult = {
   pageImages: Map<number, string>;
 };
 
-const isObj = (v: unknown): v is Record<string, unknown> =>
-  typeof v === 'object' && v !== null && !Array.isArray(v);
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 const NUMERIC = /^-?\d+(\.\d+)?$/;
 
@@ -57,8 +56,13 @@ const kindOf = (v: unknown): 'number' | 'text' => {
 const asText = (v: unknown): string | null => {
   if (v === null || v === undefined) return null;
   if (typeof v === 'object') return JSON.stringify(v, null, 1);
-  // Narrowed: objects are handled above, so this is a primitive.
-  return String(v as string | number | boolean);
+  // Objects are handled above; render the remaining primitives without
+  // relying on Object's default stringification.
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') {
+    return String(v);
+  }
+  return JSON.stringify(v, null, 1) ?? null;
 };
 
 const stripIndices = (path: string) => path.replace(/\[\d+\]/g, '');
@@ -169,8 +173,7 @@ function emit(node: unknown, path: string, group: string | null, index: number |
   ];
 }
 
-const basename = (uri: unknown): string | null =>
-  typeof uri === 'string' ? (uri.split('/').pop() ?? null) : null;
+const basename = (uri: unknown): string | null => (typeof uri === 'string' ? (uri.split('/').pop() ?? null) : null);
 
 export function walk(doc: unknown): WalkResult {
   const citations = new Map<number, Evidence>();

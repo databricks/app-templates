@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { Application, Request } from 'express';
-import { sql } from '@databricks/appkit';
+import { AuthenticationError, sql } from '@databricks/appkit';
+import { applyEdit, MAX_EDITS, MAX_PATH_LENGTH, MAX_VALUE_LENGTH } from '../apply-edit';
 
 /**
  * Every SQL statement the app runs.
@@ -25,6 +26,13 @@ import { sql } from '@databricks/appkit';
 /** Table names are identifiers, so they cannot be bound as parameters. */
 const QUALIFIED_NAME = /^[A-Za-z0-9_]+\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+$/;
 
+/**
+ * The queue is a flat list, not a paginated one, so it is bounded here rather
+ * than left to scan the whole table. For a larger corpus, point INPUT_TABLE at
+ * a view that filters to the slice a reviewer should work through.
+ */
+const QUEUE_LIMIT = 1000;
+
 /** One env var names the input; the two outputs follow by convention. */
 function tables() {
   const input = process.env.INPUT_TABLE;
@@ -33,9 +41,17 @@ function tables() {
 }
 
 const ApproveBody = z.object({
-  id: z.string().min(1),
-  /** Only the values the approver changed, keyed by the path the walker emits. */
-  edits: z.record(z.string(), z.string()),
+  id: z.string().min(1).max(MAX_PATH_LENGTH),
+  /**
+   * Only the values the approver changed, keyed by the path the walker emits.
+   * Bounded here and then checked against the server's own copy of the
+   * document in `applyEdit`, because the client is the only source of a path.
+   */
+  edits: z
+    .record(z.string().max(MAX_PATH_LENGTH), z.string().max(MAX_VALUE_LENGTH))
+    .refine((e) => Object.keys(e).length <= MAX_EDITS, {
+      message: `At most ${MAX_EDITS} edits per approval`,
+    }),
 });
 
 /**
@@ -43,18 +59,55 @@ const ApproveBody = z.object({
  * common: `INPUT_TABLE` still holds the placeholder from app.yaml, or the input
  * table exists but `npm run setup` has not created the two output objects.
  */
-function explain(err: unknown, t: { input: string; log: string; approved: string }): string {
+function explain(err: unknown, t: { input: string; log: string; approved: string }): { status: number; error: string } {
   const message = err instanceof Error ? err.message : String(err);
+
+  if (err instanceof AuthenticationError || /x-forwarded-access-token|missing token/i.test(message)) {
+    return {
+      status: 401,
+      error: 'Your session has no forwarded user token. Reload the app to sign in again.',
+    };
+  }
+
   if (/TABLE_OR_VIEW_NOT_FOUND|cannot be found|does not exist/i.test(message)) {
-    if (message.includes(`${t.input}_approved`)) {
-      return `${t.approved} does not exist. Run \`npm run setup\` to create the approval log and view for ${t.input}.`;
+    // Name the object the error is actually about: the log and the view are
+    // created together by setup, the input table is the user's own.
+    if (message.includes(t.log)) {
+      return {
+        status: 500,
+        error: `${t.log} does not exist. Run \`npm run setup\` to create the approval log and view for ${t.input}.`,
+      };
     }
-    return `${t.input} does not exist. Point INPUT_TABLE at a table with an id column and a VARIANT response column.`;
+    if (message.includes(t.approved)) {
+      return {
+        status: 500,
+        error: `${t.approved} does not exist. Run \`npm run setup\` to create the approval log and view for ${t.input}.`,
+      };
+    }
+    return {
+      status: 500,
+      error: `${t.input} does not exist. Point INPUT_TABLE at a table with an id column and a VARIANT response column.`,
+    };
   }
+
   if (/PERMISSION_DENIED|does not have permission|INSUFFICIENT_PERMISSIONS/i.test(message)) {
-    return `You do not have access to ${t.input}. Queries run as the signed-in user, so Unity Catalog grants apply to you, not to the app.`;
+    // Which grant is missing depends on the statement that failed, so name the
+    // object in the error rather than always blaming INPUT_TABLE.
+    const object = [t.log, t.approved, t.input].find((name) => message.includes(name));
+    const needed =
+      object === t.log
+        ? `MODIFY and SELECT on ${t.log}`
+        : object
+          ? `SELECT on ${object}`
+          : `CAN USE on the SQL warehouse, and SELECT on ${t.input}`;
+    return {
+      status: 403,
+      error: `You are missing ${needed}. Queries run as the signed-in user, so Unity Catalog grants apply to you, not to the app.`,
+    };
   }
-  return message;
+
+  // Anything else: the detail is in the server log, not in the response.
+  return { status: 500, error: 'The query failed. Check the app logs for the details.' };
 }
 
 interface AppKitWithAnalytics {
@@ -101,44 +154,6 @@ function approverOf(req: Request): string | null {
   return process.env.NODE_ENV === 'development' ? 'local-dev@localhost' : null;
 }
 
-/**
- * Set a value inside a copy of the model's response, at a path the walker
- * produced ("response.line_items[0].amount" or "document.elements[3].content").
- * The surrounding structure, including confidence scores and citations, is left
- * exactly as the model wrote it, which is what keeps `approved_response` in the
- * same schema as `response`.
- */
-function setAtPath(root: unknown, path: string, value: string): void {
-  const steps = path
-    .replace(/\[(\d+)\]/g, '.$1')
-    .split('.')
-    .filter(Boolean);
-  let node = root as Record<string, unknown> | unknown[];
-  for (let i = 0; i < steps.length - 1; i++) {
-    const step = steps[i];
-    const next = Array.isArray(node)
-      ? (node)[Number(step)]
-      : (node)[step];
-    if (next === undefined || next === null || typeof next !== 'object') return;
-    node = next as Record<string, unknown> | unknown[];
-  }
-  const last = steps[steps.length - 1];
-  const target = Array.isArray(node)
-    ? (node)[Number(last)]
-    : (node)[last];
-
-  // A wrapped leaf keeps its wrapper: only `value` changes.
-  if (target && typeof target === 'object' && 'value' in (target as Record<string, unknown>)) {
-    (target as Record<string, unknown>).value = value;
-  } else if (target && typeof target === 'object' && 'content' in (target as Record<string, unknown>)) {
-    (target as Record<string, unknown>).content = value;
-  } else if (Array.isArray(node)) {
-    (node)[Number(last)] = value;
-  } else {
-    (node)[last] = value;
-  }
-}
-
 export function setupReviewRoutes(appkit: AppKitWithAnalytics) {
   appkit.server.extend((app) => {
     /** Review queue: every document, pending first. */
@@ -157,11 +172,13 @@ export function setupReviewRoutes(appkit: AppKitWithAnalytics) {
                  approval_count
           FROM ${t.approved}
           ORDER BY approved ASC, id ASC
+          LIMIT ${QUEUE_LIMIT}
         `);
         res.json(rows(result));
       } catch (err) {
         console.error('Failed to list documents:', err);
-        res.status(500).json({ error: explain(err, t) });
+        const { status, error } = explain(err, t);
+        res.status(status).json({ error });
       }
     });
 
@@ -191,7 +208,7 @@ export function setupReviewRoutes(appkit: AppKitWithAnalytics) {
           FROM ${t.approved} v
           WHERE v.id = :id
         `,
-          { id: sql.string(id) },
+          { id: sql.string(id) }
         );
         const row = rows(result)[0];
         if (!row) {
@@ -201,7 +218,8 @@ export function setupReviewRoutes(appkit: AppKitWithAnalytics) {
         res.json(row);
       } catch (err) {
         console.error('Failed to load document:', err);
-        res.status(500).json({ error: explain(err, t) });
+        const { status, error } = explain(err, t);
+        res.status(status).json({ error });
       }
     });
 
@@ -230,22 +248,31 @@ export function setupReviewRoutes(appkit: AppKitWithAnalytics) {
 
       try {
         const user = appkit.asUser(req);
-        // Start from the latest approved document if there is one, so a second
-        // approval builds on the first rather than reverting it.
+        // Every approval is an independent review of the model's own output, so
+        // the base is always `response`, never a previous approval. Two
+        // reviewers of one document produce two comparable opinions rather than
+        // one building on the other; the log keeps both.
         const current = await user.analytics.query(
           `
-          SELECT coalesce(to_json(latest_approved_response), to_json(response)) AS base
+          SELECT to_json(response) AS base
           FROM ${t.approved}
           WHERE id = :id
         `,
-          { id: sql.string(documentId) },
+          { id: sql.string(documentId) }
         );
         const approved = asObject(rows(current)[0]?.base);
         if (approved === null || typeof approved !== 'object') {
           res.status(404).json({ error: 'Document not found' });
           return;
         }
-        for (const [path, value] of Object.entries(edits)) setAtPath(approved, path, value);
+        for (const [path, value] of Object.entries(edits)) {
+          if (!applyEdit(approved, path, value)) {
+            res.status(400).json({
+              error: `"${path}" is not an editable value in this document`,
+            });
+            return;
+          }
+        }
 
         await user.analytics.query(
           `
@@ -256,12 +283,13 @@ export function setupReviewRoutes(appkit: AppKitWithAnalytics) {
             id: sql.string(documentId),
             approver: sql.string(approver),
             approved_response: sql.string(JSON.stringify(approved)),
-          },
+          }
         );
         res.json({ id: documentId, approver, changed: Object.keys(edits).length });
       } catch (err) {
         console.error('Failed to approve:', err);
-        res.status(500).json({ error: explain(err, t) });
+        const { status, error } = explain(err, t);
+        res.status(status).json({ error });
       }
     });
   });

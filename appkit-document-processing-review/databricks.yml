@@ -1,11 +1,17 @@
 bundle:
   name: appkit-document-processing-review
 
+variables:
+  sql_warehouse_id:
+    description: SQL Warehouse ID
+  volume_files_id:
+    description: Volume holding the page images (catalog.schema.volume)
+
 resources:
   apps:
     app:
-      name: "appkit-document-processing-review"
-      description: "Human review of AI document-processing output, with evidence on the page"
+      name: 'appkit-document-processing-review'
+      description: 'Human review of AI document-processing output, with evidence on the page'
       source_code_path: ./
 
       # Start the app automatically on deploy.
@@ -15,9 +21,31 @@ resources:
         - sql
         - files.files
 
+      # The resources which this app has access to. These names are what the
+      # `valueFrom` entries in app.yaml resolve against, so a bundle deploy
+      # binds the same two resources the app installer would.
+      #
+      # Both are read as the signed-in user, so each reviewer needs their own
+      # grants (see the README). The service principal still needs the
+      # bindings themselves to start the app.
+      resources:
+        - name: sql-warehouse
+          sql_warehouse:
+            id: ${var.sql_warehouse_id}
+            permission: CAN_USE
+        - name: files
+          uc_securable:
+            securable_full_name: ${var.volume_files_id}
+            securable_type: VOLUME
+            permission: READ_VOLUME
+
 targets:
   default:
     default: true
     workspace:
       # Your workspace URL, or omit and use DATABRICKS_CONFIG_PROFILE.
       host: https://<your-workspace>.cloud.databricks.com
+
+    variables:
+      sql_warehouse_id: placeholder
+      volume_files_id: placeholder

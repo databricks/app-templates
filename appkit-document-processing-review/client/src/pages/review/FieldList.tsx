@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Badge, Input, Button } from '@databricks/appkit-ui/react';
 import { confidenceVariant, labelFor, widgetFor, type FieldMeta, type Field } from './lib';
 
@@ -29,10 +30,22 @@ export function FieldList({
   reviewedAt,
   error,
 }: Props) {
-  const widgetOf = (field: Field) => {
-    const meta = schema.find((s) => s.field_name === field.type_key);
-    return meta ? widgetFor(meta) : 'text';
-  };
+  // Both of these are built once per document instead of once per row: with a
+  // scan per row, a document with many fields costs O(N^2) on every keystroke.
+  const widgetByType = useMemo(() => new Map(schema.map((s) => [s.field_name, widgetFor(s)])), [schema]);
+  const widgetOf = (field: Field) => widgetByType.get(field.type_key) ?? 'text';
+
+  /** Array group name -> how many items it holds. */
+  const groupSizes = useMemo(() => {
+    const seen = new Map<string, Set<number | null>>();
+    for (const f of fields) {
+      if (!f.group_name) continue;
+      const items = seen.get(f.group_name) ?? new Set<number | null>();
+      items.add(f.item_index);
+      seen.set(f.group_name, items);
+    }
+    return new Map([...seen].map(([name, items]) => [name, items.size]));
+  }, [fields]);
 
   const valueOf = (field: Field) => edits[field.path] ?? field.value ?? '';
 
@@ -85,9 +98,7 @@ export function FieldList({
 
           // Array leaves arrive grouped and ordered; emit a heading at each change.
           const startsGroup = field.group_name && field.group_name !== fields[i - 1]?.group_name;
-          const groupSize = field.group_name
-            ? new Set(fields.filter((f) => f.group_name === field.group_name).map((f) => f.item_index)).size
-            : 0;
+          const groupSize = field.group_name ? (groupSizes.get(field.group_name) ?? 0) : 0;
 
           return (
             <div key={field.path}>

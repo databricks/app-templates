@@ -75,26 +75,33 @@ export function ReviewPage() {
     setDocId(documents[0].id);
   }, [docId, loadingQueue, documents]);
 
+  /**
+   * Load one document. Also called after an approval, so the badges showing who
+   * approved and when reflect the row that was just written instead of going
+   * stale until the document is reselected.
+   */
+  const loadDetail = useCallback(async (id: string, isCancelled: () => boolean = () => false) => {
+    setLoadingDetail(true);
+    try {
+      const res = await fetch(`/api/document?id=${encodeURIComponent(id)}`);
+      const body = (await res.json()) as DetailRow | { error?: string };
+      if (!res.ok) throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+      if (!isCancelled()) setDetail(body as DetailRow);
+    } catch (err) {
+      if (!isCancelled()) setApproveError(err instanceof Error ? err.message : 'Failed to load');
+    } finally {
+      if (!isCancelled()) setLoadingDetail(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!docId) return;
     let cancelled = false;
-    setLoadingDetail(true);
-    void (async () => {
-      try {
-        const res = await fetch(`/api/document?id=${encodeURIComponent(docId)}`);
-        const body = (await res.json()) as DetailRow | { error?: string };
-        if (!res.ok) throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
-        if (!cancelled) setDetail(body as DetailRow);
-      } catch (err) {
-        if (!cancelled) setApproveError(err instanceof Error ? err.message : 'Failed to load');
-      } finally {
-        if (!cancelled) setLoadingDetail(false);
-      }
-    })();
+    void loadDetail(docId, () => cancelled);
     return () => {
       cancelled = true;
     };
-  }, [docId]);
+  }, [docId, loadDetail]);
 
   /* ---- shape discovery: everything below comes from the walker ---- */
 
@@ -132,7 +139,9 @@ export function ReviewPage() {
       type_key: leaf.typeKey,
       group_name: leaf.groupName,
       item_index: leaf.itemIndex,
-      value: approvedValue ?? leaf.value,
+      // The reviewer always reviews the model's own value. A previous approval
+      // shows up as the `human_changed` badge, not as the starting value.
+      value: leaf.value,
       model_value: leaf.value,
       confidence: leaf.confidence,
       approver: approvedDoc ? (detail?.approver ?? null) : null,
@@ -185,7 +194,7 @@ export function ReviewPage() {
       }
       setApprovedAt((prev) => ({ ...prev, [docId]: new Date().toISOString() }));
       setEdits({});
-      await loadQueue();
+      await Promise.all([loadQueue(), loadDetail(docId)]);
     } catch (err) {
       setApproveError(err instanceof Error ? err.message : 'Failed to approve');
     } finally {

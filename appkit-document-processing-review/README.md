@@ -46,6 +46,12 @@ flowchart LR
 confidence scores and citations ride along untouched. So `response` vs
 `latest_approved_response` is a ready-made model-vs-human evaluation pair.
 
+Each approval is an **independent review of the model's own output**: the form always starts
+from `response`, never from an earlier approval. Two reviewers of one document therefore
+produce two comparable opinions rather than one editing the other's, and the log keeps both.
+`approval_count` tells you which case you have: `1` is a clean evaluation pair, and `> 1`
+means read the log, where the rows are a disagreement set you can measure agreement on.
+
 ## Identity: user vs service principal
 
 | Hop                         | Runs as                            | Why                                                                 |
@@ -80,10 +86,10 @@ SELECT id, ai_extract(...) AS response FROM my.schema.parsed;
 
 **Grants.** Two different roles:
 
-| Role                     | Needs                                                                                                                                                 |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| whoever runs setup, once | `CREATE TABLE` on the schema (this covers views - there is no `CREATE VIEW` privilege), plus `USE CATALOG` and `USE SCHEMA`                           |
-| every reviewer           | `SELECT` on `INPUT_TABLE` and `INPUT_TABLE_approved`; `MODIFY` **and** `SELECT` on `INPUT_TABLE_approved_log`; `READ VOLUME` on the page-image volume |
+| Role                     | Needs                                                                                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| whoever runs setup, once | `CREATE TABLE` on the schema (this covers views - there is no `CREATE VIEW` privilege), plus `USE CATALOG` and `USE SCHEMA`                                                           |
+| every reviewer           | `CAN USE` on the SQL warehouse; `SELECT` on `INPUT_TABLE` and `INPUT_TABLE_approved`; `MODIFY` **and** `SELECT` on `INPUT_TABLE_approved_log`; `READ VOLUME` on the page-image volume |
 
 **App.** Node 22+, Databricks CLI, and the app created with user authorization scopes
 `sql` and `files.files` - **scopes are fixed at creation and cannot be added later**.
@@ -94,12 +100,16 @@ SELECT id, ai_extract(...) AS response FROM my.schema.parsed;
    `sql-warehouse`, page-image volume as `files`.
 2. Set `INPUT_TABLE` in `app.yaml` to your `catalog.schema.table`. The two output
    objects are derived from it by name, so there is nothing else to configure.
-3. Create them: `INPUT_TABLE=… npm run setup`, or run the two statements in
-   [`setup/setup.sql`](setup/setup.sql) yourself.
+3. Create them: `npm run setup`, which reads `INPUT_TABLE`,
+   `DATABRICKS_WAREHOUSE_ID` and `DATABRICKS_CONFIG_PROFILE` from `.env` (or the
+   environment), or run the two statements in
+   [`setup/setup.sql`](setup/setup.sql) yourself. It runs as **you**, not as the
+   app, so the app never needs `CREATE` on your schema.
 
 ```bash
 npm install
-cp .env.example .env     # DATABRICKS_CONFIG_PROFILE, WAREHOUSE_ID, VOLUME_FILES, INPUT_TABLE
+cp .env.example .env     # DATABRICKS_CONFIG_PROFILE, DATABRICKS_WAREHOUSE_ID,
+                         # DATABRICKS_VOLUME_FILES, INPUT_TABLE
 npm run dev              # http://localhost:8000
 ```
 
@@ -108,11 +118,24 @@ has no proxy to supply.
 
 ## Implementation notes
 
+- **Page images are read on behalf of the reviewer**, and only from the bound volume.
+  The files plugin defaults to the service principal and resolves any absolute
+  `/Volumes/...` path as given, which together would let any user read whatever the SP
+  can. `server/server.ts` sets `auth: 'on-behalf-of-user'` and composes the shared
+  `withinVolume` policy (`server/files-policy.ts`) with `publicRead()`, so a read runs as
+  the reviewer, stays inside the page-image volume, and writes are refused.
+- **Edits are re-checked against the server's own copy** (`server/apply-edit.ts`). A path
+  from the client has to resolve to a leaf the model itself wrote; new keys, whole-object
+  replacement, confidence and citation forgery, and prototype-reaching segments are all
+  refused, and the payload is capped. The approver still comes from the request header.
+- **CSP, security headers and an Origin check on state-changing requests** live in
+  `server/security.ts`, the same baseline as the other AppKit templates.
 - **`to_json(...)` arrives already parsed** from AppKit in some cases. Both client and
   server accept a string or an object; asserting either one fails silently.
 - **Shape discovery runs in TypeScript** (`client/src/pages/review/walk.ts`), not SQL -
   recursion over arbitrary VARIANT is awkward in SQL, and payloads are small (20 KB for
-  a page of parse output). 19 unit tests pin the three shapes.
+  a page of parse output). Unit tests pin the three shapes, the volume policy and the
+  edit validation.
 - **Numbers use `type="text"`**: a native number input coerces DECIMAL to float, turning
   `109303.32` into `109303.3203125`.
 - **Bbox colours are fixed hex, not theme tokens** - they sit on an always-white page image.
@@ -124,8 +147,13 @@ has no proxy to supply.
 
 ## Known gaps
 
-- No claim or lock on a document: two reviewers can approve the same one, and the view
-  resolves by recency (`approval_count` shows how many).
+- No claim or lock on a document: two reviewers can approve the same one. That is why an
+  approval reviews the original rather than a previous approval, so neither pass can revert
+  the other; the view then resolves to the most recent of them (`approval_count` shows how
+  many, and the log holds every one). What it does not give you is a way to _assign_ a
+  document, so duplicate review happens by coincidence rather than on purpose.
+- The queue is not paginated: it loads the first 1000 documents. For a larger corpus, point
+  `INPUT_TABLE` at a view that filters to the slice a reviewer should work through.
 - Cross-page citation resolution is implemented but untested - no field in the sample
   corpora cites page 2.
-- Pinned to AppKit 0.84.0, the version `databricks apps init` scaffolds today.
+- Pinned to AppKit 0.98.0, matching the other AppKit templates.

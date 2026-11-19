@@ -80,10 +80,9 @@ async def stream_handler(
     raise NotImplementedError(
         "Replace this with your migrated agent's streaming implementation."
     )
-    # Example (LangGraph). Build the model input with get_validated_input (agent_server.utils):
-    # it caps input size.
+    # Example (LangGraph):
     #   agent = await init_agent()
-    #   messages = {"messages": to_chat_completions_input(get_validated_input(request))}
+    #   messages = {"messages": to_chat_completions_input([i.model_dump() for i in request.input])}
     #   async for event in process_agent_astream_events(
     #       agent.astream(input=messages, stream_mode=["updates", "messages"])
     #   ):

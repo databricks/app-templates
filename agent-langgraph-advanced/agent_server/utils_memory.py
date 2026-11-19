@@ -212,6 +212,7 @@ def memory_tools():
         if not store:
             return "Cannot delete memory - store not configured."
 
+        # Not MEMORY_KEY_PATTERN: keys saved before that check existed must stay deletable.
         if not memory_key or len(memory_key) > 1_000:
             return "Failed: invalid memory_key"
 

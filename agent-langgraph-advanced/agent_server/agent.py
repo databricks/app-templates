@@ -24,7 +24,6 @@ from agent_server.prompts import SYSTEM_PROMPT
 from agent_server.utils import (
     _get_or_create_thread_id,
     get_user_workspace_client,
-    get_validated_input,
     init_mcp_client,
     process_agent_astream_events,
 )
@@ -100,7 +99,6 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
 async def stream_handler(
     request: ResponsesAgentRequest,
 ) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
-    messages = get_validated_input(request)
     thread_id = _get_or_create_thread_id(request)
     mlflow.update_current_trace(metadata={"mlflow.trace.session": thread_id})
 
@@ -113,7 +111,7 @@ async def stream_handler(
         config["configurable"]["user_id"] = user_id
 
     input_state: dict[str, Any] = {
-        "messages": to_chat_completions_input(messages),
+        "messages": to_chat_completions_input([i.model_dump() for i in request.input]),
         "custom_inputs": dict(request.custom_inputs or {}),
     }
 

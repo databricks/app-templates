@@ -13,7 +13,8 @@ headers or check where requests come from, so this ASGI middleware does both:
   allowed, so a proxied app (the chat UI) can't grant CORS access to other sites.
 
 ``RequestValidationMiddleware`` rejects agent request bodies that are larger than
-``MAX_BODY_BYTES`` (413), are not a JSON object, or are over the input limits (400).
+``MAX_BODY_BYTES`` (413), are not a JSON object, hold more than ``MAX_JSON_VALUES``
+values, or are over the input limits (400).
 """
 
 import json
@@ -140,7 +141,26 @@ class SecurityMiddleware:
 
 
 VALIDATED_PATHS = {"/invocations", "/responses"}
-MAX_BODY_BYTES = 10 * 1024 * 1024
+# A request with base64 images can pass 20 MiB, and clients resend it on every later turn,
+# so a lower limit would refuse every later request in that thread.
+MAX_BODY_BYTES = 32 * 1024 * 1024
+# Request validation builds an error for every invalid element, which for a body of tiny
+# elements takes seconds and gigabytes, so values are counted before validation.
+# A text conversation that fills a 1-million-token context window has about 100,000 values.
+MAX_JSON_VALUES = 300_000
+
+
+def _count_json_values(data, limit: int) -> int:
+    """Count the values in parsed JSON, stopping once the count passes ``limit``."""
+    count, stack = 0, [data]
+    while stack and count <= limit:
+        value = stack.pop()
+        count += 1
+        if isinstance(value, dict):
+            stack.extend(value.values())
+        elif isinstance(value, list):
+            stack.extend(value)
+    return count
 
 
 class RequestValidationMiddleware:
@@ -149,7 +169,8 @@ class RequestValidationMiddleware:
     AgentServer turns any exception raised in an invoke or stream handler into a 500 or
     an SSE error event, so client errors have to be caught before the request reaches it.
     Bodies over ``MAX_BODY_BYTES`` get a 413 before they are fully read, and bodies that
-    aren't a JSON object (including JSON nested too deeply to parse) get a 400.
+    aren't a JSON object (including JSON nested too deeply to parse) or hold more than
+    ``MAX_JSON_VALUES`` values get a 400.
     ``validate`` receives the parsed JSON body and raises ``ValueError`` to reject it.
     """
 
@@ -193,6 +214,12 @@ class RequestValidationMiddleware:
             data = None
         if not isinstance(data, dict):
             response = JSONResponse({"detail": "Request body must be a JSON object."}, status_code=400)
+            return await response(scope, receive, send)
+        if _count_json_values(data, MAX_JSON_VALUES) > MAX_JSON_VALUES:
+            response = JSONResponse(
+                {"detail": f"Request body has too many JSON values (limit {MAX_JSON_VALUES})."},
+                status_code=400,
+            )
             return await response(scope, receive, send)
         try:
             self.validate(data)

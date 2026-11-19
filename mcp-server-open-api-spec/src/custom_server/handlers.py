@@ -28,28 +28,19 @@ MAX_PATH_LENGTH = 2048
 MAX_PARAMETERS_LENGTH = 100_000
 MAX_HEADERS = 20
 MAX_HEADER_VALUE_LENGTH = 1024
-# Hop-by-hop, framing and routing headers are set by the HTTP client and the UC connection.
-BLOCKED_FORWARD_HEADERS = {
-    "host",
-    "connection",
-    "keep-alive",
-    "te",
-    "trailer",
-    "transfer-encoding",
-    "upgrade",
-    "content-length",
-    "expect",
-    "forwarded",
-    "via",
-    "x-real-ip",
+# Only these headers, plus any listed (comma-separated) in ALLOWED_FORWARD_HEADERS, are
+# forwarded. Credentials come from the UC connection, and other headers can change the
+# account, method or path a call runs with (X-Auth-Key, X-HTTP-Method-Override,
+# X-Original-URL), so the set of risky names is open-ended.
+DEFAULT_FORWARD_HEADERS = {
+    "accept",
+    "accept-language",
+    "content-type",
+    "if-match",
+    "if-none-match",
+    "if-modified-since",
+    "prefer",
 }
-BLOCKED_FORWARD_HEADER_PREFIXES = ("proxy-", "x-forwarded-", "x-databricks-")
-# Credentials come from the UC connection; a model-supplied one could make the call
-# run as a different account.
-_CREDENTIAL_HEADER = re.compile(
-    r"authorization|cookie|token|secret|password|api-?key|subscription-key", re.IGNORECASE
-)
-_HEADER_NAME = re.compile(r"[A-Za-z0-9!#$%&'*+.^_`|~-]+")
 _ENCODED_SEPARATORS = re.compile(r"%(2e|2f|5c|00)", re.IGNORECASE)
 _PATH_PARAM = re.compile(r"\{[^/{}]+\}")
 
@@ -114,21 +105,20 @@ def _validate_endpoint_path(endpoint_path: str, http_method: str) -> None:
             )
 
 
+def _allowed_forward_headers() -> set[str]:
+    extra = os.environ.get("ALLOWED_FORWARD_HEADERS", "").split(",")
+    return DEFAULT_FORWARD_HEADERS | {name.strip().lower() for name in extra if name.strip()}
+
+
 def _validate_headers(headers: dict) -> dict:
-    """Refuse credential and routing headers; those come from the UC connection."""
+    """Forward only allowed headers; credentials come from the UC connection."""
     if len(headers) > MAX_HEADERS:
         raise ValueError(f"At most {MAX_HEADERS} headers can be sent")
+    allowed = _allowed_forward_headers()
     for name, value in headers.items():
-        if not _HEADER_NAME.fullmatch(name):
-            raise ValueError(f"Header name {name!r} is not valid")
-        lower = name.lower()
-        if (
-            lower in BLOCKED_FORWARD_HEADERS
-            or lower.startswith(BLOCKED_FORWARD_HEADER_PREFIXES)
-            or _CREDENTIAL_HEADER.search(lower)
-        ):
+        if name.lower() not in allowed:
             raise ValueError(
-                f"Header {name!r} can't be sent; credential and routing headers come from the UC connection"
+                f"Header {name!r} is not allowed; allowed headers: {', '.join(sorted(allowed))}"
             )
         if len(value) > MAX_HEADER_VALUE_LENGTH or any(
             (ord(ch) < 0x20 and ch != "\t") or ord(ch) == 0x7F for ch in value

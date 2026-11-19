@@ -73,6 +73,16 @@ Update the connection name environment variable in `app.yaml`.
     value: "" # TODO: Specify your connection name here
 ```
 
+### Allow extra request headers (optional)
+The model chooses the headers `invoke_api_endpoint` sends, so only `Accept`, `Accept-Language`, `Content-Type`, `If-Match`, `If-None-Match`, `If-Modified-Since` and `Prefer` are forwarded. Other headers are refused: a credential header could make a call run as another account, and headers such as `X-HTTP-Method-Override` or `X-Original-URL` could change the method or path the server checked. The UC connection supplies authentication. If your API needs another header, such as a version header, add it (comma-separated) to `ALLOWED_FORWARD_HEADERS` in `app.yaml`:
+
+```yaml
+env:
+  # ...existing entries...
+  - name: "ALLOWED_FORWARD_HEADERS"
+    value: "Notion-Version,X-Api-Version"
+```
+
 ### Create the Databricks App
 **Note: You can skip this step if you deployed this MCP Server via the app template UI on Databricks**
 

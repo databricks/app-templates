@@ -11,25 +11,30 @@
         "required": [],
         "optional": [
           {
-            "type": "serving_endpoint",
+            "type": "model_service",
             "alias": "Default LLM for agents",
-            "resourceKey": "agents-serving-endpoint",
-            "description": "Default streaming-capable LLM endpoint for agents that don't pin their own model",
-            "permission": "CAN_QUERY",
+            "resourceKey": "agents-model-service",
+            "description": "Default Unity Catalog model service, called through AI Gateway, for agents that don't pin their own model",
+            "permission": "EXECUTE",
             "fields": {
               "name": {
-                "env": "DATABRICKS_SERVING_ENDPOINT_NAME",
-                "description": "Default LLM serving endpoint name",
+                "env": "DATABRICKS_MODEL_SERVICE_NAME",
+                "description": "Default model service full name (catalog.schema.name)",
                 "origin": "user"
               }
             },
-            "scope": "model-serving",
             "binding": {
-              "yamlKey": "serving_endpoint",
+              "yamlKey": "uc_securable",
               "varFields": [
                 [
                   "name",
-                  "name"
+                  "securable_full_name"
+                ]
+              ],
+              "staticFields": [
+                [
+                  "securable_type",
+                  "MODEL_SERVICE"
                 ]
               ]
             }
@@ -196,6 +201,17 @@
         }
       },
       "requiredByTemplate": true
+    },
+    "design": {
+      "name": "design",
+      "displayName": "Design Plugin",
+      "description": "Dev-only design pages: /design renders client/src/design/index.tsx and /design/<name> renders client/src/design/pages/<name>.tsx, with a readiness signal for an embedding app builder; 404 in production",
+      "package": "@databricks/appkit",
+      "resources": {
+        "required": [],
+        "optional": []
+      },
+      "stability": "beta"
     },
     "files": {
       "name": "files",

@@ -1,6 +1,7 @@
 # AI Assistant Instructions
 
 <!-- appkit-instructions-start -->
+
 ## Databricks AppKit
 
 This project uses Databricks AppKit packages. For AI assistant guidance on using these packages, refer to:
@@ -15,4 +16,5 @@ For enhanced AI assistance with Databricks CLI operations, authentication, data 
 ```bash
 databricks aitools install
 ```
+
 <!-- appkit-instructions-end -->

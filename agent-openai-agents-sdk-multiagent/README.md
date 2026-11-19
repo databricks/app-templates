@@ -181,6 +181,27 @@ Yes. This template uses MLflow's agent server, which comes with automatic tracin
 **Q: How can I extend this example with additional tools and capabilities?**
 This template can be extended by integrating additional MCP servers, Vector Search Indexes, UC Functions, and other Databricks tools. See the ["Agent Framework Tools Documentation"](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool).
 
+## What's yours, what's shared
+
+Once you've copied this template, the project is yours to change. It's made of three parts:
+
+| Part | Where | Owned by |
+|---|---|---|
+| Your agent | `agent_server/` (except `evaluate_agent.py`), `pyproject.toml`, `databricks.yml`, `app.yaml`, `AGENTS.md` | You. Change anything. |
+| Shared helpers | `scripts/`, `agent_server/evaluate_agent.py`, `.claude/skills/`, and `.github/workflows/deploy.yml` where present | Copied from shared sources in [databricks/app-templates](https://github.com/databricks/app-templates) (`.scripts/source/`). Your copy is yours to edit; there's no link back. |
+| Chat UI | `e2e-chatbot-app-next/` | Not part of this project. `scripts/start_app.py` clones it from databricks/app-templates when the app starts, at the commit in `CHAT_UI_REF` (in `scripts/start_app.py`), so every start uses the same UI. The startup logs show the commit, as `Chat UI: e2e-chatbot-app-next at <commit>`. |
+
+**Customizing the chat UI**
+
+- **Greeting:** set `CHAT_GREETING` in the app's environment (`env` in `app.yaml` and `databricks.yml`). The UI reads it at runtime.
+- **A different version:** set `CHAT_UI_REF` in the app's environment to a branch, tag or commit of databricks/app-templates. For example, `main` follows the latest UI on every start.
+- **Your own changes:** put your own copy of the UI at `./e2e-chatbot-app-next` and commit it. When that directory exists, `start_app.py` uses it as-is and doesn't clone, so the UI is fully yours to edit, and also yours to keep up to date. A good starting point is the template's UI at the pinned commit: `https://github.com/databricks/app-templates/tree/<commit>/e2e-chatbot-app-next`.
+- **After a local run:** running the app locally clones the UI into `./e2e-chatbot-app-next` too. From then on that copy is used instead of cloning, including in a deploy from the same directory, so delete it if you want `CHAT_UI_REF` to apply.
+
+**Upgrading**
+
+There's no automatic upgrade. To move to a newer chat UI, change `CHAT_UI_REF`. To pick up later changes to the helper scripts or the agent code, compare your project with the latest version of this template in databricks/app-templates and bring over what you want.
+
 ## Evaluating your agent
 
 Evaluate your agent by calling the invoke function you defined for the agent locally.

@@ -7,6 +7,7 @@ import type { ChatMessage, FeedbackMap } from '@databricks/chatbot-core';
 import { useDataStream } from './data-stream-provider';
 import { Conversation, ConversationContent } from './elements/conversation';
 import { ArrowDownIcon } from 'lucide-react';
+import { useStickToBottomContext } from 'use-stick-to-bottom';
 
 interface MessagesProps {
   status: UseChatHelpers<ChatMessage>['status'];
@@ -20,6 +21,39 @@ interface MessagesProps {
   feedback?: FeedbackMap;
 }
 
+/**
+ * Scroll behaviour for the conversation, using use-stick-to-bottom's own state:
+ * follow a reply while it streams (the library stops following once the user
+ * scrolls up), jump to the bottom when a message is sent, and offer a button to
+ * get back to the bottom.
+ */
+function ScrollControls({
+  status,
+}: {
+  status: UseChatHelpers<ChatMessage>['status'];
+}) {
+  const { isAtBottom, scrollToBottom } = useStickToBottomContext();
+
+  useEffect(() => {
+    if (status === 'submitted') {
+      scrollToBottom('smooth');
+    }
+  }, [status, scrollToBottom]);
+
+  if (isAtBottom) return null;
+  return (
+    <button
+      className="-translate-x-1/2 absolute bottom-4 left-1/2 z-10 rounded-full border bg-background p-2 shadow-lg transition-colors hover:bg-muted"
+      onClick={() => scrollToBottom('smooth')}
+      type="button"
+      aria-label="Scroll to bottom"
+      data-testid="scroll-to-bottom-button"
+    >
+      <ArrowDownIcon className="size-4" />
+    </button>
+  );
+}
+
 function PureMessages({
   status,
   messages,
@@ -31,85 +65,43 @@ function PureMessages({
   selectedModelId,
   feedback = {},
 }: MessagesProps) {
-  const {
-    containerRef: messagesContainerRef,
-    endRef: messagesEndRef,
-    isAtBottom,
-    scrollToBottom,
-    hasSentMessage,
-  } = useMessages({
-    status,
-  });
+  const { hasSentMessage } = useMessages({ status });
 
   useDataStream();
 
-  useEffect(() => {
-    if (status === 'submitted') {
-      requestAnimationFrame(() => {
-        const container = messagesContainerRef.current;
-        if (container) {
-          container.scrollTo({
-            top: container.scrollHeight,
-            behavior: 'smooth',
-          });
-        }
-      });
-    }
-  }, [status, messagesContainerRef]);
-
   return (
-    <div
-      ref={messagesContainerRef}
-      className="overscroll-behavior-contain -webkit-overflow-scrolling-touch flex-1 touch-pan-y overflow-y-scroll"
-      style={{ overflowAnchor: 'none' }}
-    >
-      <Conversation className="mx-auto flex min-w-0 max-w-4xl flex-col gap-4 md:gap-6">
-        <ConversationContent className="flex flex-col gap-4 px-4 py-4 md:gap-6">
-          {messages.map((message, index) => (
-            <PreviewMessage
-              key={message.id}
-              message={message}
-              allMessages={messages}
-              isLoading={
-                status === 'streaming' && messages.length - 1 === index
-              }
-              setMessages={setMessages}
-              addToolApprovalResponse={addToolApprovalResponse}
-              sendMessage={sendMessage}
-              regenerate={regenerate}
-              isReadonly={isReadonly}
-              requiresScrollPadding={
-                hasSentMessage && index === messages.length - 1
-              }
-              initialFeedback={feedback[message.id]}
-            />
-          ))}
-
-          {status === 'submitted' &&
-            messages.length > 0 &&
-            messages[messages.length - 1].role === 'user' &&
-            selectedModelId !== 'chat-model-reasoning' && (
-              <AwaitingResponseMessage />
-            )}
-
-          <div
-            ref={messagesEndRef}
-            className="min-h-[24px] min-w-[24px] shrink-0"
+    <Conversation>
+      <ConversationContent className="mx-auto flex min-w-0 max-w-4xl flex-col gap-4 px-4 py-4 md:gap-6">
+        {messages.map((message, index) => (
+          <PreviewMessage
+            key={message.id}
+            message={message}
+            allMessages={messages}
+            isLoading={status === 'streaming' && messages.length - 1 === index}
+            setMessages={setMessages}
+            addToolApprovalResponse={addToolApprovalResponse}
+            sendMessage={sendMessage}
+            regenerate={regenerate}
+            isReadonly={isReadonly}
+            requiresScrollPadding={
+              hasSentMessage && index === messages.length - 1
+            }
+            initialFeedback={feedback[message.id]}
           />
-        </ConversationContent>
-      </Conversation>
+        ))}
 
-      {!isAtBottom && (
-        <button
-          className="-translate-x-1/2 absolute bottom-40 left-1/2 z-10 rounded-full border bg-background p-2 shadow-lg transition-colors hover:bg-muted"
-          onClick={() => scrollToBottom('smooth')}
-          type="button"
-          aria-label="Scroll to bottom"
-        >
-          <ArrowDownIcon className="size-4" />
-        </button>
-      )}
-    </div>
+        {status === 'submitted' &&
+          messages.length > 0 &&
+          messages[messages.length - 1].role === 'user' &&
+          selectedModelId !== 'chat-model-reasoning' && (
+            <AwaitingResponseMessage />
+          )}
+
+        <div className="min-h-[24px] min-w-[24px] shrink-0" />
+      </ConversationContent>
+
+      <ScrollControls status={status} />
+    </Conversation>
   );
 }
 

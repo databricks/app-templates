@@ -12,18 +12,10 @@ from mlflow.types.responses import (
     output_to_responses_items_stream,
 )
 
-MAX_INPUT_ITEMS = 500
-MAX_INPUT_ITEM_CHARS = 100_000
+# Clients resend the whole conversation in ``input``, so the conversation is bounded only
+# by the body limits in security.py; a per-item or item-count cap would reject every
+# later request in a thread once it was reached.
 MAX_CUSTOM_INPUTS_CHARS = 10_000
-
-
-def _check_input_limits(request: ResponsesAgentRequest, items: list[dict]) -> None:
-    if len(items) > MAX_INPUT_ITEMS:
-        raise ValueError(f"Too many input items (limit {MAX_INPUT_ITEMS}).")
-    if any(len(json.dumps(item, default=str)) > MAX_INPUT_ITEM_CHARS for item in items):
-        raise ValueError(f"Input item too large (limit {MAX_INPUT_ITEM_CHARS} characters).")
-    if len(json.dumps(request.custom_inputs or {}, default=str)) > MAX_CUSTOM_INPUTS_CHARS:
-        raise ValueError(f"custom_inputs too large (limit {MAX_CUSTOM_INPUTS_CHARS} characters).")
 
 
 def check_request_limits(body: dict) -> None:
@@ -33,14 +25,8 @@ def check_request_limits(body: dict) -> None:
     except Exception:
         # AgentServer rejects bodies that aren't a valid request with its own 400.
         return
-    _check_input_limits(request, [i.model_dump() for i in request.input])
-
-
-def get_validated_input(request: ResponsesAgentRequest) -> list[dict]:
-    """Return ``request.input`` as dicts after enforcing size limits."""
-    items = [i.model_dump() for i in request.input]
-    _check_input_limits(request, items)
-    return items
+    if len(json.dumps(request.custom_inputs or {}, default=str)) > MAX_CUSTOM_INPUTS_CHARS:
+        raise ValueError(f"custom_inputs too large (limit {MAX_CUSTOM_INPUTS_CHARS} characters).")
 
 
 def get_session_id(request: ResponsesAgentRequest) -> str | None:

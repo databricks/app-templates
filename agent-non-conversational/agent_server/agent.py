@@ -7,6 +7,13 @@ from databricks.sdk import WorkspaceClient
 from mlflow.genai.agent_server import invoke
 from pydantic import BaseModel, Field
 
+# The model comes from the app's `llm-endpoint` serving-endpoint resource:
+# databricks.yml and app.yaml set LLM_MODEL from it, so changing the endpoint
+# there changes both the model and the app's permission to query it. The default
+# is used when LLM_MODEL isn't set, for example in local runs.
+LLM_MODEL = os.getenv("LLM_MODEL", "databricks-claude-sonnet-5-5")
+print(f"Agent model: {LLM_MODEL} (from {'LLM_MODEL' if os.getenv('LLM_MODEL') else 'default'})", flush=True)
+
 w = WorkspaceClient()
 openai_client = w.serving_endpoints.get_open_ai_client()
 
@@ -77,7 +84,7 @@ async def invoke_handler(data: dict) -> dict:
         # reasoning models) are intentionally not used.
         try:
             llm_response = openai_client.chat.completions.create(  # nosemgrep: openai-missing-max-tokens-python, openai-missing-user-parameter-python, openai-missing-moderation
-                model=os.getenv("LLM_MODEL", "databricks-claude-sonnet-5-5"),
+                model=LLM_MODEL,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},

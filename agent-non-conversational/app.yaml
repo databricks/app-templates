@@ -8,3 +8,5 @@ env:
     value: "databricks-uc"
   - name: MLFLOW_EXPERIMENT_ID
     valueFrom: "experiment"
+  - name: LLM_MODEL
+    valueFrom: "llm-endpoint"

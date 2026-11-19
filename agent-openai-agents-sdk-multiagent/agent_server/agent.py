@@ -20,6 +20,7 @@ with this template as-is.
 """
 
 import logging
+import os
 from contextlib import AsyncExitStack
 from typing import AsyncGenerator
 
@@ -42,6 +43,13 @@ from agent_server.utils import (
     get_user_workspace_client,
     process_agent_stream_events,
 )
+
+# The model comes from the app's `llm-endpoint` serving-endpoint resource:
+# databricks.yml and app.yaml set LLM_MODEL from it, so changing the endpoint
+# there changes both the model and the app's permission to query it. The default
+# is used when LLM_MODEL isn't set, for example in local runs.
+LLM_MODEL = os.getenv("LLM_MODEL", "databricks-claude-sonnet-5-5")
+print(f"Agent model: {LLM_MODEL} (from {'LLM_MODEL' if os.getenv('LLM_MODEL') else 'default'})", flush=True)
 
 # ---------------------------------------------------------------------------
 # TODO: Configure the subagents for your environment.
@@ -215,7 +223,7 @@ def create_orchestrator_agent(
     return Agent(
         name="Orchestrator",
         instructions=instructions,
-        model="databricks-claude-sonnet-5-5",  # TODO: change model if desired
+        model=LLM_MODEL,
         mcp_servers=mcp_servers,
         tools=subagent_tools,
     )

@@ -21,8 +21,9 @@ from agent_server.history import normalize_history_items
 
 logger = logging.getLogger(__name__)
 
-MAX_INPUT_ITEMS = 500
-MAX_INPUT_ITEM_CHARS = 100_000
+# Clients resend the whole conversation in ``input``, so the conversation is bounded only
+# by the body limits in security.py; a per-item or item-count cap would reject every
+# later request in a thread once it was reached.
 MAX_CUSTOM_INPUTS_CHARS = 10_000
 # Background-mode resume appends "::attempt-N" to the original session id, or to the
 # server-generated response id ("resp_" + 24 hex) when the client sent no session id.
@@ -128,15 +129,6 @@ def get_session_id(request: ResponsesAgentRequest) -> str:
     return session_id
 
 
-def _check_input_limits(request: ResponsesAgentRequest, items: list[dict]) -> None:
-    if len(items) > MAX_INPUT_ITEMS:
-        raise ValueError(f"Too many input items (limit {MAX_INPUT_ITEMS}).")
-    if any(len(json.dumps(item, default=str)) > MAX_INPUT_ITEM_CHARS for item in items):
-        raise ValueError(f"Input item too large (limit {MAX_INPUT_ITEM_CHARS} characters).")
-    if len(json.dumps(request.custom_inputs or {}, default=str)) > MAX_CUSTOM_INPUTS_CHARS:
-        raise ValueError(f"custom_inputs too large (limit {MAX_CUSTOM_INPUTS_CHARS} characters).")
-
-
 def check_request_limits(body: dict) -> None:
     """Raise ``ValueError`` if a POST /invocations or /responses body is over the input limits."""
     try:
@@ -144,18 +136,14 @@ def check_request_limits(body: dict) -> None:
     except Exception:
         # AgentServer rejects bodies that aren't a valid request with its own 400.
         return
-    _check_input_limits(request, [i.model_dump() for i in request.input])
+    if len(json.dumps(request.custom_inputs or {}, default=str)) > MAX_CUSTOM_INPUTS_CHARS:
+        raise ValueError(f"custom_inputs too large (limit {MAX_CUSTOM_INPUTS_CHARS} characters).")
     get_session_id(request)
-
-
-def get_validated_input(request: ResponsesAgentRequest) -> list[dict]:
-    """Return ``request.input`` as dicts after enforcing size limits."""
-    items = [i.model_dump() for i in request.input]
-    # Requests the server replays itself (background-mode resume, agent-evaluate) have no
-    # HTTP headers; a resume adds a recovery message that can exceed the per-item limit.
-    if get_request_headers():
-        _check_input_limits(request, items)
-    return items
+    # A background request that is resumed after a crash gets a new session id built from
+    # thread_id before session_id. Other requests ignore thread_id, as on main.
+    thread_id = (request.custom_inputs or {}).get("thread_id")
+    if body.get("background") and thread_id and not SESSION_ID_PATTERN.fullmatch(str(thread_id)):
+        raise ValueError("thread_id must be a UUID in background mode.")
 
 
 def get_databricks_host_from_env() -> str | None:
@@ -194,7 +182,7 @@ async def deduplicate_input(request: ResponsesAgentRequest, session: AsyncDatabr
     # Replayed assistant turns arrive id-less (chat UI sends output_text lists,
     # MLflow evaluation sends plain strings); collapse them to the easy-input
     # form every openai-agents version accepts. See agent_server/history.py.
-    messages = normalize_history_items(get_validated_input(request))
+    messages = normalize_history_items([i.model_dump() for i in request.input])
     session_items = await session.get_items()
     if len(session_items) >= len(messages) - 1:
         return [messages[-1]]

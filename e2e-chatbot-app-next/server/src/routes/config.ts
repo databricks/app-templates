@@ -9,6 +9,20 @@ import { getEndpointOboInfo } from '@databricks/chatbot-ai-sdk-providers';
 
 export const configRouter: RouterType = Router();
 
+// Host of the Databricks workspace (e.g. "dbc-123.cloud.databricks.com"),
+// used by the client to decide which login links it may open.
+function getWorkspaceHost(): string | undefined {
+  const host = process.env.DATABRICKS_HOST;
+  if (!host) return undefined;
+  try {
+    return new URL(
+      /^https?:\/\//.test(host) ? host : `https://${host}`,
+    ).host.toLowerCase();
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Extract OAuth scopes from a JWT token (without verification).
  * Databricks tokens use 'scope' (space-separated string) or 'scp' (array).
@@ -56,6 +70,7 @@ configRouter.get('/', async (req: Request, res: Response) => {
       feedback: !!process.env.MLFLOW_EXPERIMENT_ID,
     },
     greeting: process.env.CHAT_GREETING || undefined,
+    workspaceHost: getWorkspaceHost(),
     obo: {
       missingScopes,
     },

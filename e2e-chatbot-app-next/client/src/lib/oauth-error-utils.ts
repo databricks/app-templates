@@ -34,6 +34,29 @@ export function findLoginURLFromCredentialErrorMessage(
 }
 
 /**
+ * The login URL is parsed from error text that may contain model or tool
+ * output, so only https links to the Databricks workspace (or this app's own
+ * origin) may be opened.
+ */
+export function isTrustedLoginURL(
+  url: string,
+  workspaceHost: string | undefined,
+  appHost: string = window.location.host,
+): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') return false;
+    const host = parsed.host.toLowerCase();
+    return (
+      host === appHost.toLowerCase() ||
+      (!!workspaceHost && host === workspaceHost.toLowerCase())
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Extracts the connection name from a credential error message.
  * Pattern: "for the connection 'connection_name'"
  * @returns The connection name or undefined if not found

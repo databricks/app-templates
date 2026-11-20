@@ -8,3 +8,6 @@ env:
     value: 'databricks-gte-large-en'
   - name: RAG_RESEED
     value: 'false'
+  # AppKit enables its Remote Bridge dev tunnel on deployed apps for any app user unless this is set.
+  - name: DISABLE_REMOTE_SERVING
+    value: 'true'

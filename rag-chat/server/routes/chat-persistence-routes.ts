@@ -1,4 +1,5 @@
 import type { Application } from 'express';
+import { z } from 'zod';
 import { listChats, createChat, getChatForUser, getChatMessages, appendMessage, deleteChat } from '../lib/chat-store';
 import { authenticateUser } from '../lib/auth';
 
@@ -11,8 +12,23 @@ interface AppKitWithLakebase {
   };
 }
 
+const ChatId = z.guid();
+const CreateChatBody = z.object({ title: z.string().max(200).optional() });
+const AppendMessageBody = z.object({
+  role: z.enum(['user', 'assistant']),
+  content: z.string().max(20000),
+});
+
 export function setupChatPersistenceRoutes(appkit: AppKitWithLakebase) {
   appkit.server.extend((app) => {
+    app.param('id', (_req, res, next, id) => {
+      if (!ChatId.safeParse(id).success) {
+        res.status(400).json({ error: 'Invalid chat id' });
+        return;
+      }
+      next();
+    });
+
     app.get('/api/chats', async (req, res) => {
       const userId = authenticateUser(req, res);
       if (!userId) return;
@@ -28,8 +44,13 @@ export function setupChatPersistenceRoutes(appkit: AppKitWithLakebase) {
     app.post('/api/chats', async (req, res) => {
       const userId = authenticateUser(req, res);
       if (!userId) return;
+      const parsed = CreateChatBody.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        res.status(400).json({ error: 'Invalid chat' });
+        return;
+      }
       try {
-        const { title } = req.body as { title?: string };
+        const { title } = parsed.data;
         const chat = await createChat(appkit, { userId, title: title || 'New Chat' });
         res.status(201).json(chat);
       } catch (err) {
@@ -74,13 +95,18 @@ export function setupChatPersistenceRoutes(appkit: AppKitWithLakebase) {
     app.post('/api/chats/:id/messages', async (req, res) => {
       const userId = authenticateUser(req, res);
       if (!userId) return;
+      const parsed = AppendMessageBody.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: 'Invalid message' });
+        return;
+      }
       try {
         const chat = await getChatForUser(appkit, req.params.id, userId);
         if (!chat) {
           res.status(404).json({ error: 'Chat not found' });
           return;
         }
-        const { role, content } = req.body as { role: string; content: string };
+        const { role, content } = parsed.data;
         const message = await appendMessage(appkit, { chatId: req.params.id, userId, role, content });
         res.status(201).json(message);
       } catch (err) {

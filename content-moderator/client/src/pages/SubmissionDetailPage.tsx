@@ -433,6 +433,30 @@ export function SubmissionDetailPage() {
                 </Card>
               )}
             </>
+          ) : submission.status === "analysis_failed" ? (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <p className="text-sm text-muted-foreground">
+                  AI analysis failed.
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  The model's reply could not be used.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={handleReanalyze}
+                  disabled={reanalyzing}
+                  title="Re-analyze with current guidelines"
+                >
+                  <RotateCcw
+                    className={`h-3.5 w-3.5 mr-1.5 ${reanalyzing ? "animate-spin" : ""}`}
+                  />
+                  Re-analyze
+                </Button>
+              </CardContent>
+            </Card>
           ) : (
             <Card>
               <CardContent className="py-8 text-center">

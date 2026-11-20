@@ -443,6 +443,75 @@ test.describe
       expect(secondText.toLowerCase()).toContain('blue');
     });
 
+    test('Ada can continue a long chat with a many-part tool turn', async ({
+      adaContext,
+    }) => {
+      skipInWithDatabaseMode(test);
+
+      // A tool-approval continuation has no new message: previousMessages holds
+      // the whole chat, ending with the in-progress multi-step assistant message.
+      const history = Array.from({ length: 300 }, (_, i) => ({
+        id: generateUUID(),
+        role: i % 2 === 0 ? 'user' : 'assistant',
+        parts: [{ type: 'text', text: `Message ${i}` }],
+      }));
+      const toolTurn = {
+        id: generateUUID(),
+        role: 'assistant',
+        parts: Array.from({ length: 40 }, (_, i) => [
+          { type: 'step-start' },
+          {
+            type: 'dynamic-tool',
+            toolName: 'search',
+            toolCallId: `call-${i}`,
+            state: 'output-available',
+            input: { query: `query ${i}` },
+            output: { result: `result ${i}` },
+          },
+        ]).flat(),
+      };
+
+      const response = await adaContext.request.post('/api/chat', {
+        data: {
+          id: generateUUID(),
+          selectedChatModel: 'chat-model',
+          selectedVisibilityType: 'private',
+          previousMessages: [...history, toolTurn],
+        },
+      });
+      expect(response.status()).toBe(200);
+      expect(await response.text()).toContain('"type":"text-delta"');
+    });
+
+    test('Ada cannot send over 10,000 previous messages or 50,000 parts', async ({
+      adaContext,
+    }) => {
+      const post = (previousMessages: unknown[]) =>
+        adaContext.request.post('/api/chat', {
+          data: {
+            id: generateUUID(),
+            selectedChatModel: 'chat-model',
+            selectedVisibilityType: 'private',
+            previousMessages,
+          },
+        });
+
+      const tooManyMessages = Array.from({ length: 10_001 }, (_, i) => ({
+        id: `m${i}`,
+        role: 'user',
+        parts: [],
+      }));
+      const tooManyParts = [
+        {
+          id: 'm',
+          role: 'assistant',
+          parts: Array.from({ length: 50_001 }, () => ({ type: 'step-start' })),
+        },
+      ];
+      expect((await post(tooManyMessages)).status()).toBe(400);
+      expect((await post(tooManyParts)).status()).toBe(400);
+    });
+
     test('Ada can send message without previousMessages in ephemeral mode', async ({
       adaContext,
     }) => {

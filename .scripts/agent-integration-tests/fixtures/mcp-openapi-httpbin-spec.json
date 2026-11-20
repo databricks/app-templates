@@ -1,0 +1,41 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "httpbin (app-templates e2e fixture)",
+    "version": "1.0.0",
+    "description": "A tiny OpenAPI spec for deploy-validating mcp-server-open-api-spec. httpbin echoes the request back, so the harness can see exactly which headers and parameters reached the external API through the UC connection."
+  },
+  "servers": [{ "url": "https://httpbin.org" }],
+  "paths": {
+    "/get": {
+      "get": {
+        "operationId": "echoGet",
+        "summary": "Echo a GET request",
+        "description": "Returns the query parameters and headers httpbin received.",
+        "parameters": [
+          { "name": "probe", "in": "query", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "The echoed request" } }
+      }
+    },
+    "/headers": {
+      "get": {
+        "operationId": "echoHeaders",
+        "summary": "Echo request headers",
+        "description": "Returns the headers httpbin received.",
+        "responses": { "200": { "description": "The echoed headers" } }
+      }
+    },
+    "/anything": {
+      "post": {
+        "operationId": "echoPost",
+        "summary": "Echo a POST request",
+        "description": "Returns the JSON body and headers httpbin received.",
+        "requestBody": {
+          "content": { "application/json": { "schema": { "type": "object" } } }
+        },
+        "responses": { "200": { "description": "The echoed request" } }
+      }
+    }
+  }
+}

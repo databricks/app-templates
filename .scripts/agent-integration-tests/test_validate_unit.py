@@ -7,7 +7,13 @@ from validation_config import (
     ValidationTemplate,
     load_validation_config,
 )
-from validate_transforms import neutralize_app_yaml, parse_spa_assets
+from validate_transforms import (
+    app_yaml_from_bundle,
+    mcp_result_text,
+    neutralize_app_yaml,
+    parse_mcp_response,
+    parse_spa_assets,
+)
 
 
 def test_load_config_parses_all_templates():
@@ -41,6 +47,7 @@ def test_obo_wiring_expect_and_click():
         "dash-data-app-obo-user",
         "gradio-data-app-obo-user",
         "shiny-data-app-obo-user",
+        "mcp-server-open-api-spec",
     }
     # Interaction-gated apps carry an obo_click control; on-load apps don't.
     assert obo["gradio-data-app-obo-user"].obo_click == "Run Query"
@@ -449,3 +456,92 @@ def test_config_parses_replace_mapping(tmp_path):
     )
     cfg = load_validation_config(cfg_path, resolve_workspace_root=False)
     assert cfg.templates[0].replace == (("A.", "B."),)
+
+
+def test_mcp_openapi_spec_wiring():
+    cfg = load_validation_config(DEFAULT_CONFIG_PATH, resolve_workspace_root=False)
+    t = next(t for t in cfg.templates if t.name == "mcp-server-open-api-spec")
+    assert t.verify == "obo" and t.expect
+    tools = [c.tool for c in t.mcp_calls]
+    assert tools == ["list_api_endpoints", "invoke_api_endpoint", "invoke_api_endpoint"]
+    # One call proves an allowed header reaches the API; one proves an override is refused.
+    assert t.mcp_calls[1].arguments["headers"] == {"Accept": "application/json"}
+    assert "X-HTTP-Method-Override" in t.mcp_calls[2].arguments["headers"]
+    # The replacements must match the harness-rewritten (unquoted) app.yaml.
+    from validate_transforms import resource_aware_app_yaml
+    from template_config import REPO_ROOT
+
+    text = resource_aware_app_yaml((REPO_ROOT / t.name / "app.yaml").read_text())
+    for old, _new in t.replace:
+        assert old in text, f"replace key not found in rewritten app.yaml: {old!r}"
+    # The spec fixture the skill uploads exists and declares the paths the calls use.
+    import json as _json
+
+    spec = _json.loads((Path(__file__).parent / "fixtures" / "mcp-openapi-httpbin-spec.json").read_text())
+    assert {"/headers", "/anything", "/get"} <= set(spec["paths"])
+
+
+def test_mcp_calls_validation(tmp_path):
+    import pytest as _pytest
+
+    def load(entry: str):
+        c = tmp_path / "c.yaml"
+        c.write_text("profile: p\nshared_app_name: a\nworkspace_source_root: ''\n"
+                     f"templates:\n  x: {entry}\n")
+        return load_validation_config(c, resolve_workspace_root=False)
+
+    with _pytest.raises(AssertionError, match="only valid for verify: obo or mcp"):
+        load("{ verify: html, expect: Hi, mcp_calls: [{ tool: t, expect: [x] }] }")
+    with _pytest.raises(AssertionError, match="needs a non-empty `expect`"):
+        load("{ verify: mcp, mcp_calls: [{ tool: t }] }")
+    with _pytest.raises(AssertionError, match="needs a `tool`"):
+        load("{ verify: mcp, mcp_calls: [{ expect: [x] }] }")
+    cfg = load("{ verify: mcp, mcp_calls: [{ tool: t, arguments: { a: 1 }, expect: ok }] }")
+    (call,) = cfg.templates[0].mcp_calls
+    assert call.tool == "t" and call.arguments == {"a": 1} and call.expect == ("ok",)
+
+
+def test_parse_mcp_response_json_and_sse():
+    assert parse_mcp_response('{"jsonrpc":"2.0","id":1,"result":{}}')["id"] == 1
+    sse = (
+        'event: message\ndata: {"jsonrpc":"2.0","method":"notifications/message","params":{}}\n\n'
+        'event: message\ndata: {"jsonrpc":"2.0","id":2,"result":{"isError":false}}\n\n'
+    )
+    assert parse_mcp_response(sse) == {"jsonrpc": "2.0", "id": 2, "result": {"isError": False}}
+    import pytest as _pytest
+
+    with _pytest.raises(ValueError, match="no JSON-RPC reply"):
+        parse_mcp_response("event: ping\n\n")
+
+
+def test_mcp_result_text_normalizes_json_spacing():
+    import json as _json
+
+    reply = {"result": {"content": [{"type": "text", "text": '{"ok":true,"status_code":200,'
+                                                             '"response_json":{"headers":{"Accept":"application/json"}}}'}],
+                        "isError": False}}
+    text = mcp_result_text(reply)
+    assert '"ok": true' in text and '"status_code": 200' in text
+    assert '"Accept": "application/json"' in text
+    # An HTTP-calling tool may return the API's body as a JSON string inside its own JSON.
+    nested = {"result": {"content": [{"type": "text", "text": _json.dumps(
+        {"ok": True, "text": '{\n  "headers": {\n    "Accept": "application/json"\n  }\n}\n'})}]}}
+    assert '"Accept": "application/json"' in mcp_result_text(nested)
+    # Non-JSON text (e.g. a tool error message) is kept as-is.
+    err = {"result": {"content": [{"type": "text", "text": "Header 'X' is not allowed"}], "isError": True}}
+    assert "is not allowed" in mcp_result_text(err)
+
+
+def test_app_yaml_from_bundle():
+    import yaml as _y
+
+    from template_config import REPO_ROOT
+
+    text = app_yaml_from_bundle((REPO_ROOT / "agent-migration-from-model-serving" / "databricks.yml").read_text())
+    out = _y.safe_load(text)
+    assert out["command"][:2] == ["uv", "run"]
+    # value_from becomes app.yaml's valueFrom, so it resolves against the shared app's keys.
+    exp = next(e for e in out["env"] if e["name"] == "MLFLOW_EXPERIMENT_ID")
+    assert exp == {"name": "MLFLOW_EXPERIMENT_ID", "valueFrom": "experiment"}
+    assert app_yaml_from_bundle("bundle: {name: x}\n") is None
+    assert app_yaml_from_bundle("resources: {apps: {a: {config: {env: []}}}}\n") is None

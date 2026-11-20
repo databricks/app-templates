@@ -80,6 +80,11 @@ async def stream_handler(
     raise NotImplementedError(
         "Replace this with your migrated agent's streaming implementation."
     )
+    # Unreachable until the raise above is replaced, but it makes this an async
+    # generator, which @stream and invoke_handler's `async for` require. Without it
+    # the scaffold's error surfaces as "'async for' requires an object with
+    # __aiter__ method, got coroutine" instead of the NotImplementedError above.
+    yield  # pragma: no cover
     # Example (LangGraph):
     #   agent = await init_agent()
     #   messages = {"messages": to_chat_completions_input([i.model_dump() for i in request.input])}

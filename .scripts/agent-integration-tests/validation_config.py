@@ -1,6 +1,7 @@
 """Config + registry for non-agent template deploy validation."""
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -8,6 +9,20 @@ import yaml
 
 _VALID_VERIFY = {"html", "spa", "mcp", "api", "build", "obo"}
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "validation-config.yaml"
+
+
+@dataclass(frozen=True)
+class McpCall:
+    """One MCP `tools/call` made through the deployed app as the signed-in user."""
+    tool: str
+    # JSON-encoded tool arguments (a string, so the dataclass stays hashable).
+    arguments_json: str
+    # Substrings that must ALL appear in the JSON-encoded tool result.
+    expect: tuple[str, ...]
+
+    @property
+    def arguments(self) -> dict:
+        return json.loads(self.arguments_json)
 
 
 @dataclass(frozen=True)
@@ -29,6 +44,11 @@ class ValidationTemplate:
     # standing in for the placeholder edits a user makes (e.g. REPLACE_ME catalog
     # names in SQL queries) so the template can run against the shared app.
     replace: tuple[tuple[str, str], ...] = field(default=())
+    # For verify == "obo" / "mcp": MCP tool calls made after the page loads, through
+    # the app's /mcp endpoint with the signed-in browser session, so the Apps proxy
+    # forwards the user's token. Each call's result must contain its `expect`
+    # strings — the success signal for an MCP server whose page renders regardless.
+    mcp_calls: tuple[McpCall, ...] = field(default=())
 
 
 @dataclass(frozen=True)
@@ -67,6 +87,23 @@ def _coerce_expect(name: str, verify: str, raw) -> tuple[str, ...]:
     return expect
 
 
+def _coerce_mcp_calls(name: str, verify: str, raw) -> tuple[McpCall, ...]:
+    if not raw:
+        return ()
+    assert verify in ("obo", "mcp"), f"{name}: mcp_calls is only valid for verify: obo or mcp"
+    assert isinstance(raw, list), f"{name}: `mcp_calls` must be a list"
+    calls = []
+    for i, c in enumerate(raw):
+        assert isinstance(c, dict) and c.get("tool"), f"{name}: mcp_calls[{i}] needs a `tool`"
+        args = c.get("arguments") or {}
+        assert isinstance(args, dict), f"{name}: mcp_calls[{i}].arguments must be a mapping"
+        exp = _coerce_expect(f"{name}: mcp_calls[{i}]", "mcp", c.get("expect"))
+        assert exp, f"{name}: mcp_calls[{i}] needs a non-empty `expect`"
+        calls.append(McpCall(tool=str(c["tool"]), arguments_json=json.dumps(args, sort_keys=True),
+                             expect=exp))
+    return tuple(calls)
+
+
 def load_validation_config(
     path: Path = DEFAULT_CONFIG_PATH,
     *,
@@ -86,9 +123,10 @@ def load_validation_config(
         raw_replace = entry.get("replace") or {}
         assert isinstance(raw_replace, dict), f"{name}: `replace` must be a mapping"
         replace = tuple((str(k), str(v)) for k, v in raw_replace.items())
+        mcp_calls = _coerce_mcp_calls(name, verify, entry.get("mcp_calls"))
         templates.append(
             ValidationTemplate(name=name, verify=verify, expect=expect,
-                               obo_click=obo_click, replace=replace)
+                               obo_click=obo_click, replace=replace, mcp_calls=mcp_calls)
         )
 
     root = data.get("workspace_source_root") or ""

@@ -55,10 +55,26 @@ See `.scripts/agent-integration-tests/AGENTS.md` for module-level detail.
    after redeploy, stop/start, or a fresh consent (verified on dogfood). Create the
    app with `--forward-user-access-token` and the OBO scope union:
    `sql`, `dashboards.genie`, `files.files`, `serving.serving-endpoints`,
-   `catalog.connections` (plus the resource bindings above; `catalog.connections`
-   also needs a UC connection resource, which `mcp-server-open-api-spec` requires).
+   `catalog.connections` (plus the resource bindings above).
    After (re)creating the app, refresh the storageState (step 3) so its session
    carries the new consent.
+5. **`mcp-server-open-api-spec` fixtures** (one-time, shared). The app loads an
+   OpenAPI spec from the bound `uc-volume` and calls the API through a UC HTTP
+   connection with the signed-in user's token, so the user who ran `auth_setup.py`
+   needs `USE CONNECTION` on it (the owner has it):
+   ```bash
+   # httpbin echoes each request, so the harness can see which headers reached the API.
+   # The token is a dummy; httpbin needs no auth.
+   databricks connections create -p dogfood --json '{"name": "apps-e2e-httpbin",
+     "connection_type": "HTTP", "options": {"host": "https://httpbin.org", "port": "443",
+     "base_path": "/", "bearer_token": "e2e-dummy-not-a-secret"}}'
+   databricks fs cp -p dogfood \
+     .scripts/agent-integration-tests/fixtures/mcp-openapi-httpbin-spec.json \
+     "dbfs:/Volumes/<uc-volume catalog>/<schema>/<volume>/mcp-openapi-e2e/httpbin-spec.json"
+   ```
+   `validation-config.yaml` points the template at both (`replace`) and makes three
+   MCP tool calls as the user (`mcp_calls`): list the endpoints, forward `Accept`
+   to httpbin, and confirm `X-HTTP-Method-Override` is refused.
 
 ## Running
 
@@ -104,8 +120,11 @@ stdout).
 `logs/validation-report.md` groups templates by outcome. Expected non-pass buckets
 that are **not** template bugs:
 
-- **OBO** (`verify: obo`) — on-behalf-of-user templates (forward the end user's
-  token). Not testable here (no user-token forwarding/consent); reported skipped.
+- **OBO not yet wired** (`verify: obo` with no `expect`) — on-behalf-of-user
+  templates are testable on the shared app (prerequisite 4), but an entry runs only
+  once it declares a success-signal `expect` (plus `mcp_calls` for an MCP server);
+  until then it's reported skipped. Wire it up rather than treating the skip as
+  coverage.
 - **DAB-only** — templates with no `app.yaml` (databricks.yml only) are skipped:
   the shared-app source deploy can't set their run command. Validate them with
   `databricks bundle deploy` instead.

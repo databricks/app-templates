@@ -28,7 +28,13 @@ from helpers import (
     git_copy_template,
     set_log_file,
 )
-from validate_transforms import resource_aware_app_yaml, parse_spa_assets
+from validate_transforms import (
+    app_yaml_from_bundle,
+    mcp_result_text,
+    parse_mcp_response,
+    parse_spa_assets,
+    resource_aware_app_yaml,
+)
 from validation_config import DEFAULT_CONFIG_PATH, load_validation_config
 from functional_runners import looks_like_login_page, assert_browser_installed
 
@@ -86,6 +92,14 @@ def chatbot_ui_dir(template_name: str, src: Path) -> str | None:
 def prepare_source(template_name: str, dest: Path, bundle_chatbot_ui: bool = False) -> Path:
     src = git_copy_template(template_name, dest)
     app_yaml = src / "app.yaml"
+    bundle = src / "databricks.yml"
+    if not app_yaml.exists() and bundle.exists():
+        # Bundle-only template: the source deploy reads the command and env from
+        # app.yaml, so generate one from the bundle's app config (copy only).
+        generated = app_yaml_from_bundle(bundle.read_text())
+        if generated:
+            app_yaml.write_text(generated)
+            _log(f"[{template_name}] generated app.yaml from databricks.yml for this deploy")
     if app_yaml.exists():
         # Keep valueFrom refs intact so they resolve against the shared app's
         # bound resources; only strip a source-level resources block.
@@ -375,6 +389,59 @@ def verify_serving(verify: str, app_url: str, storage_state: str, expect=(), cli
     # mcp/api: not-login + non-5xx already asserted above
 
 
+def run_mcp_calls(app_url: str, storage_state: str, calls) -> None:
+    """Make each configured MCP tool call through the deployed app as the signed-in user.
+
+    Uses the saved browser session (not a bearer token), so the request goes through
+    the Apps proxy the way a user's does and the proxy forwards the user's token
+    (X-Forwarded-Access-Token) to the app. That proves the OBO path end to end: the
+    app received the token, and the downstream call made with it succeeded. Each
+    call's JSON-encoded result must contain all of its `expect` strings.
+    """
+    if not calls:
+        return
+    from playwright.sync_api import sync_playwright
+
+    hdrs = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
+    with sync_playwright() as p:
+        req = p.request.new_context(storage_state=storage_state, base_url=app_url)
+        try:
+            def rpc(payload: dict, extra: dict) -> tuple[int, str, dict]:
+                r = req.post("/mcp", data=json.dumps(payload), headers={**hdrs, **extra},
+                             timeout=QUERY_TIMEOUT * 1000)
+                return r.status, r.text(), r.headers
+
+            status, body, rh = rpc({
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {"protocolVersion": "2025-03-26", "capabilities": {},
+                           "clientInfo": {"name": "app-templates-e2e", "version": "1"}},
+            }, {})
+            if looks_like_login_page(body, ""):
+                raise RuntimeError("MCP initialize got the SSO login page — re-run auth_setup.py")
+            assert status < 400, f"MCP initialize returned {status}: {body[:300]}"
+            parse_mcp_response(body)
+            session = {"mcp-session-id": rh["mcp-session-id"]} if rh.get("mcp-session-id") else {}
+            rpc({"jsonrpc": "2.0", "method": "notifications/initialized"}, session)
+
+            for i, call in enumerate(calls, start=2):
+                status, body, _ = rpc({
+                    "jsonrpc": "2.0", "id": i, "method": "tools/call",
+                    "params": {"name": call.tool, "arguments": call.arguments},
+                }, session)
+                assert status < 400, f"MCP {call.tool} returned {status}: {body[:300]}"
+                result = mcp_result_text(parse_mcp_response(body))
+                missing = [e for e in call.expect if e not in result]
+                # An echo API (e.g. httpbin) returns the connection's credential; keep it out of logs.
+                logged = re.sub(r"(?i)(bearer|basic)\s+[^\s\"\\]+", r"\1 <redacted>", result)
+                _log(f"  mcp {call.tool}({call.arguments_json}) -> {logged[:400]}")
+                assert not missing, (
+                    f"MCP {call.tool}({call.arguments_json}): expected {missing} in the result; "
+                    f"got: {logged[:600]}"
+                )
+        finally:
+            req.dispose()
+
+
 def _load_cfg(config):
     path = Path(config.getoption("--config") or DEFAULT_CONFIG_PATH)
     return load_validation_config(path, resolve_workspace_root=False)
@@ -459,12 +526,17 @@ def test_validate_template(val_template, val_cfg, request):
             build_template(val_template.name, Path(tmp))
         return
 
-    # Deploy path requires an app.yaml (command + env). Templates without one are
-    # DAB-only (databricks.yml) and can't be exercised via the shared-app source
-    # deploy — a source-level deploy would leave the previous template's command.
+    # Deploy path requires an app.yaml (command + env); a source-level deploy
+    # without one would keep the previous template's command. Bundle-only
+    # templates get one generated from databricks.yml (prepare_source), so skip
+    # only when there's neither.
     from template_config import REPO_ROOT
-    if not (REPO_ROOT / val_template.name / "app.yaml").exists():
-        pytest.skip("no app.yaml — DAB-only, not deployable via the shared app")
+    tdir = REPO_ROOT / val_template.name
+    if not (tdir / "app.yaml").exists() and not (
+        (tdir / "databricks.yml").exists()
+        and app_yaml_from_bundle((tdir / "databricks.yml").read_text())
+    ):
+        pytest.skip("no app.yaml and no bundle app config — not deployable via the shared app")
 
     # Deploy + browser-serve path (html / spa / mcp / api / obo).
     shared_app = request.getfixturevalue("shared_app")
@@ -492,6 +564,7 @@ def test_validate_template(val_template, val_cfg, request):
                 verify, app_url, str(storage_state),
                 val_template.expect, val_template.obo_click,
             )
+            run_mcp_calls(app_url, str(storage_state), val_template.mcp_calls)
         except Exception:
             _log_build_failure(shared_app, val_cfg.profile)
             raise

@@ -33,14 +33,18 @@ const CREATE_NOTES_TABLE_SQL = `
 `;
 
 const FlagBody = z.object({
-  flag_reason: z.string().min(1),
-  flagged_by: z.string().min(1).optional(),
+  flag_reason: z.string().min(1).max(500),
+  flagged_by: z.string().min(1).max(254).optional(),
 });
 
 const NoteBody = z.object({
-  agent_email: z.string().min(1),
-  note: z.string().min(1),
+  agent_email: z.string().email().max(254),
+  note: z.string().min(1).max(2000),
 });
+
+function parseBookingId(raw: string): number | null {
+  return /^[1-9][0-9]{0,14}$/.test(raw) ? Number(raw) : null;
+}
 
 export async function setupWanderbricksRoutes(appkit: AppKitWithLakebase) {
   try {
@@ -54,8 +58,8 @@ export async function setupWanderbricksRoutes(appkit: AppKitWithLakebase) {
 
   appkit.server.extend((app) => {
     app.get('/api/bookings/:id/flag', async (req, res) => {
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id)) {
+      const id = parseBookingId(req.params.id);
+      if (id === null) {
         res.status(400).json({ error: 'Invalid booking id' });
         return;
       }
@@ -72,14 +76,14 @@ export async function setupWanderbricksRoutes(appkit: AppKitWithLakebase) {
     });
 
     app.post('/api/bookings/:id/flag', async (req, res) => {
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id)) {
+      const id = parseBookingId(req.params.id);
+      if (id === null) {
         res.status(400).json({ error: 'Invalid booking id' });
         return;
       }
       const parsed = FlagBody.safeParse(req.body);
       if (!parsed.success) {
-        res.status(400).json({ error: 'flag_reason is required' });
+        res.status(400).json({ error: 'flag_reason is required (max 500 characters)' });
         return;
       }
       try {
@@ -99,8 +103,8 @@ export async function setupWanderbricksRoutes(appkit: AppKitWithLakebase) {
     });
 
     app.delete('/api/bookings/:id/flag', async (req, res) => {
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id)) {
+      const id = parseBookingId(req.params.id);
+      if (id === null) {
         res.status(400).json({ error: 'Invalid booking id' });
         return;
       }
@@ -121,8 +125,8 @@ export async function setupWanderbricksRoutes(appkit: AppKitWithLakebase) {
     });
 
     app.get('/api/bookings/:id/notes', async (req, res) => {
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id)) {
+      const id = parseBookingId(req.params.id);
+      if (id === null) {
         res.status(400).json({ error: 'Invalid booking id' });
         return;
       }
@@ -139,14 +143,14 @@ export async function setupWanderbricksRoutes(appkit: AppKitWithLakebase) {
     });
 
     app.post('/api/bookings/:id/notes', async (req, res) => {
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id)) {
+      const id = parseBookingId(req.params.id);
+      if (id === null) {
         res.status(400).json({ error: 'Invalid booking id' });
         return;
       }
       const parsed = NoteBody.safeParse(req.body);
       if (!parsed.success) {
-        res.status(400).json({ error: 'agent_email and note are required' });
+        res.status(400).json({ error: 'agent_email (a valid email) and note (max 2000 characters) are required' });
         return;
       }
       try {

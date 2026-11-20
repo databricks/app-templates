@@ -158,6 +158,7 @@ export function BookingManager() {
               <div className="flex gap-2">
                 <Input
                   placeholder="Reason for flagging"
+                  maxLength={500}
                   value={flagReason}
                   onChange={(e) => setFlagReason(e.target.value)}
                   className="flex-1"
@@ -172,11 +173,17 @@ export function BookingManager() {
           <div className="border rounded-md p-3 space-y-3">
             <div className="text-sm font-semibold">Notes</div>
             <form onSubmit={(e) => void addNote(e)} className="space-y-2">
-              <Input placeholder="agent@email" value={agentEmail} onChange={(e) => setAgentEmail(e.target.value)} />
+              <Input
+                placeholder="agent@email"
+                maxLength={254}
+                value={agentEmail}
+                onChange={(e) => setAgentEmail(e.target.value)}
+              />
               <Textarea
                 placeholder="Add a note about this booking..."
                 value={noteText}
                 onChange={(e) => setNoteText(e.target.value)}
+                maxLength={2000}
                 rows={2}
               />
               <Button type="submit" size="sm" disabled={!noteText.trim() || !agentEmail.trim()}>

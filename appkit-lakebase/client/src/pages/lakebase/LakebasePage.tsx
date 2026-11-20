@@ -97,6 +97,7 @@ export function LakebasePage() {
               placeholder="What needs to be done?"
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
+              maxLength={500}
               disabled={submitting}
               className="flex-1"
             />

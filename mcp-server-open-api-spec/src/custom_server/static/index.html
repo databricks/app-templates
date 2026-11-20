@@ -14,22 +14,7 @@
         integrity="sha384-F/bZzf7p3Joyp5psL90p/p89AZJsndkSoGwRpXcZhleCWhd8SnRuoYo4d0yirjJp" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/languages/python.min.js"
         integrity="sha384-FWJTgPmIGm1+zpNhubuHRC/ulS1UK7hAZ7qiUUmKD8yGfPcn5ZXYBd2qRgi6L8Tu" crossorigin="anonymous"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const fullHost = `https://${window.location.hostname}/mcp`;
-            // Update all elements with class "app-host"
-            document.querySelectorAll('.app-host').forEach(el => {
-                el.textContent = fullHost;
-            });
-
-            const pyCode = document.querySelector('pre code.language-python');
-            if (pyCode) {
-                pyCode.textContent = pyCode.textContent.replace('databricks-app-url', fullHost);
-            }
-
-            hljs.highlightAll();
-        });
-    </script>
+    <script src="/index.js"></script>
 </head>
 
 <body class="bg-gray-900 text-gray-100 font-sans">

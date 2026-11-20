@@ -73,6 +73,16 @@ Update the connection name environment variable in `app.yaml`.
     value: "" # TODO: Specify your connection name here
 ```
 
+### Allow extra request headers (optional)
+The model chooses the headers `invoke_api_endpoint` sends, so only `Accept`, `Accept-Language`, `Content-Type`, `If-Match`, `If-None-Match`, `If-Modified-Since` and `Prefer` are forwarded. Other headers are refused: a credential header could make a call run as another account, and headers such as `X-HTTP-Method-Override` or `X-Original-URL` could change the method or path the server checked. The UC connection supplies authentication. If your API needs another header, such as a version header, add it (comma-separated) to `ALLOWED_FORWARD_HEADERS` in `app.yaml`:
+
+```yaml
+env:
+  # ...existing entries...
+  - name: "ALLOWED_FORWARD_HEADERS"
+    value: "Notion-Version,X-Api-Version"
+```
+
 ### Create the Databricks App
 **Note: You can skip this step if you deployed this MCP Server via the app template UI on Databricks**
 
@@ -109,6 +119,17 @@ To build and deploy agents on Databricks that connect to your MCP server to disc
 
 #### Connect from external MCP clients
 You can also connect to the MCP server using standard clients like the MCP inspector, following [this documentation](https://docs.databricks.com/aws/en/generative-ai/mcp/connect-external-services)
+
+To block cross-site requests, the server rejects every request to `/mcp` (any method), and any other POST, PUT, PATCH or DELETE request, whose `Origin` header isn't the app's own URL. Command-line and server-side clients (AI Playground, agents, the scripts in `scripts/dev/`) send no `Origin` and aren't affected. A client that runs in a browser and connects directly, such as MCP Inspector in direct-connection mode, sends its page's origin and gets `403 Forbidden` from the deployed server unless that origin is listed in `ALLOWED_ORIGINS` (comma-separated) in `app.yaml`:
+
+```yaml
+env:
+  # ...existing entries...
+  - name: "ALLOWED_ORIGINS"
+    value: "https://mcp-client.example.com"
+```
+
+Only `https://` origins can be allowed on a deployed app. For a client served from `http://localhost`, connect through MCP Inspector's proxy instead of directly.
 
 ## Running the MCP Server Locally
 You can also run the MCP server in this app template locally, for ease of debugging.

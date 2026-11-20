@@ -14,11 +14,15 @@ load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env", override=True)
 
 # Need to import the agent to register the functions with the server
 import agent_server.agent  # noqa: E402
+from agent_server.security import RequestValidationMiddleware, SecurityMiddleware  # noqa: E402
+from agent_server.utils import check_request_limits  # noqa: E402
 
 agent_server = AgentServer("ResponsesAgent", enable_chat_proxy=True)
 
 # Define the app as a module level variable to enable multiple workers
 app = agent_server.app  # noqa: F841
+app.add_middleware(RequestValidationMiddleware, validate=check_request_limits)
+app.add_middleware(SecurityMiddleware)
 setup_mlflow_git_based_version_tracking()
 
 

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Application } from 'express';
+import { Application, Request, Response } from 'express';
 
 interface AppKitWithLakebase {
   lakebase: {
@@ -28,11 +28,16 @@ const CREATE_DECISIONS_TABLE_SQL = `
   )
 `;
 
+// Upper bound for a single refund or credit; each is also limited to the customer's most recent order total.
+const MAX_AMOUNT_CENTS = 1_000_000;
+
+const CaseId = z.guid();
+
 const SubmitDecisionBody = z.object({
-  case_id: z.string().min(1),
+  case_id: CaseId,
   admin_action: z.enum(['refund', 'credit', 'no_action', 'escalate', 'resolve']),
-  admin_amount_cents: z.number().int().min(0),
-  admin_response: z.string().min(1),
+  admin_amount_cents: z.number().int().min(0).max(MAX_AMOUNT_CENTS),
+  admin_response: z.string().min(1).max(5000),
 });
 
 const UpdateStatusBody = z.object({
@@ -41,6 +46,36 @@ const UpdateStatusBody = z.object({
 
 function uuidToBytes(uuid: string): Buffer {
   return Buffer.from(uuid.replace(/-/g, ''), 'hex');
+}
+
+function parseCaseId(req: Request, res: Response): string | null {
+  const parsed = CaseId.safeParse(req.params.caseId);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid case id' });
+    return null;
+  }
+  return parsed.data;
+}
+
+function compensationError(
+  action: string,
+  amountCents: number,
+  latestOrder: Record<string, unknown> | undefined
+): { error: string; max_amount_cents?: number } | null {
+  if (!latestOrder) {
+    return action === 'refund' ? { error: 'The customer has no order to refund' } : null;
+  }
+  if (latestOrder.total_in_cents == null) {
+    return { error: "The customer's most recent order has no total to check the amount against" };
+  }
+  const totalCents = Number(latestOrder.total_in_cents);
+  if (amountCents > totalCents) {
+    return {
+      error: `Amount exceeds the customer's most recent order total (${totalCents} cents)`,
+      max_amount_cents: totalCents,
+    };
+  }
+  return null;
 }
 
 export async function setupSupportRoutes(appkit: AppKitWithLakebase) {
@@ -104,7 +139,8 @@ export async function setupSupportRoutes(appkit: AppKitWithLakebase) {
 
     app.get('/api/cases/:caseId', async (req, res) => {
       try {
-        const caseId = req.params.caseId;
+        const caseId = parseCaseId(req, res);
+        if (!caseId) return;
         const caseIdHex = caseId.replace(/-/g, '');
 
         const caseResult = await appkit.lakebase.query(
@@ -228,14 +264,42 @@ export async function setupSupportRoutes(appkit: AppKitWithLakebase) {
 
     app.post('/api/cases/:caseId/decision', async (req, res) => {
       try {
-        const caseId = req.params.caseId;
+        const caseId = parseCaseId(req, res);
+        if (!caseId) return;
         const parsed = SubmitDecisionBody.safeParse(req.body);
         if (!parsed.success) {
           res.status(400).json({ error: 'Invalid request body', details: parsed.error.issues });
           return;
         }
+        if (parsed.data.case_id.toLowerCase() !== caseId.toLowerCase()) {
+          res.status(400).json({ error: 'case_id does not match the URL' });
+          return;
+        }
 
         const caseIdBytes = uuidToBytes(caseId);
+
+        const caseRow = await appkit.lakebase.query(`SELECT user_id FROM public.support_cases WHERE id = $1::uuid`, [
+          caseId,
+        ]);
+        const userId = caseRow.rows[0]?.user_id as string | undefined;
+
+        let latestOrder: Record<string, unknown> | undefined;
+        if (
+          userId &&
+          (parsed.data.admin_action === 'refund' || parsed.data.admin_action === 'credit') &&
+          parsed.data.admin_amount_cents > 0
+        ) {
+          const orderRow = await appkit.lakebase.query(
+            `SELECT id::text AS id, total_in_cents FROM public.orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+            [userId]
+          );
+          latestOrder = orderRow.rows[0];
+          const amountError = compensationError(parsed.data.admin_action, parsed.data.admin_amount_cents, latestOrder);
+          if (amountError) {
+            res.status(422).json(amountError);
+            return;
+          }
+        }
 
         const adminResult = await appkit.lakebase.query(`SELECT id FROM public.admins LIMIT 1`);
         const adminId = adminResult.rows.length > 0 ? (adminResult.rows[0].id as string) : null;
@@ -286,25 +350,12 @@ export async function setupSupportRoutes(appkit: AppKitWithLakebase) {
         const messageRow = decisionResult.rows[0]?.message as Record<string, unknown> | null;
         const message = messageRow ? { ...messageRow, role: 'admin' } : null;
 
-        const caseRow = await appkit.lakebase.query(`SELECT user_id FROM public.support_cases WHERE id = $1::uuid`, [
-          caseId,
-        ]);
-        const userId = caseRow.rows[0]?.user_id as string | undefined;
-
-        if (userId && parsed.data.admin_action === 'refund' && parsed.data.admin_amount_cents > 0) {
-          const orderRow = await appkit.lakebase.query(
-            `SELECT id::text AS id, total_in_cents FROM public.orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
-            [userId]
+        if (latestOrder && parsed.data.admin_action === 'refund') {
+          await appkit.lakebase.query(
+            `INSERT INTO public.refunds (user_id, order_id, support_case_id, amount_in_cents, reason)
+             VALUES ($1, $2::uuid, $3::uuid, $4, $5)`,
+            [userId, latestOrder.id, caseId, parsed.data.admin_amount_cents, parsed.data.admin_response]
           );
-          const order = orderRow.rows[0];
-          if (order) {
-            const refundAmount = Math.min(parsed.data.admin_amount_cents, order.total_in_cents as number);
-            await appkit.lakebase.query(
-              `INSERT INTO public.refunds (user_id, order_id, support_case_id, amount_in_cents, reason)
-               VALUES ($1, $2::uuid, $3::uuid, $4, $5)`,
-              [userId, order.id, caseId, refundAmount, parsed.data.admin_response]
-            );
-          }
         } else if (userId && parsed.data.admin_action === 'credit' && parsed.data.admin_amount_cents > 0) {
           await appkit.lakebase.query(
             `INSERT INTO public.credits (user_id, support_case_id, amount_in_cents, reason)
@@ -325,7 +376,8 @@ export async function setupSupportRoutes(appkit: AppKitWithLakebase) {
 
     app.get('/api/cases/:caseId/decisions', async (req, res) => {
       try {
-        const caseId = req.params.caseId;
+        const caseId = parseCaseId(req, res);
+        if (!caseId) return;
         const caseIdBytes = uuidToBytes(caseId);
 
         const result = await appkit.lakebase.query(
@@ -345,7 +397,8 @@ export async function setupSupportRoutes(appkit: AppKitWithLakebase) {
 
     app.patch('/api/cases/:caseId/status', async (req, res) => {
       try {
-        const caseId = req.params.caseId;
+        const caseId = parseCaseId(req, res);
+        if (!caseId) return;
         const parsed = UpdateStatusBody.safeParse(req.body);
         if (!parsed.success) {
           res.status(400).json({ error: 'Invalid request body', details: parsed.error.issues });

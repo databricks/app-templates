@@ -151,6 +151,7 @@ export function CaseDetailPage() {
   const [draftAmount, setDraftAmount] = useState('0');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const [caseStatus, setCaseStatus] = useState('');
   const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -188,6 +189,7 @@ export function CaseDetailPage() {
   async function handleSubmit() {
     if (!caseId || !draftResponse.trim()) return;
     setSubmitting(true);
+    setSubmitError(null);
     try {
       const res = await fetch(`/api/cases/${caseId}/decision`, {
         method: 'POST',
@@ -199,11 +201,14 @@ export function CaseDetailPage() {
           admin_response: draftResponse.trim(),
         }),
       });
-      if (!res.ok) throw new Error('Failed to submit');
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? 'Failed to submit');
+      }
       setSubmitted(true);
       await refetch();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Submit failed');
+      setSubmitError(err instanceof Error ? err.message : 'Submit failed');
     } finally {
       setSubmitting(false);
     }
@@ -410,6 +415,7 @@ export function CaseDetailPage() {
                     </>
                   )}
                 </Button>
+                {submitError && <p className="text-sm text-destructive">{submitError}</p>}
               </CardContent>
             </Card>
           ) : (

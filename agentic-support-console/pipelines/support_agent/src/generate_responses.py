@@ -21,6 +21,10 @@ from pyspark.sql.types import (
 catalog = dbutils.widgets.get("catalog")
 endpoint = dbutils.widgets.get("endpoint")
 
+# Queries reference tables as IDENTIFIER(:catalog || '.schema.table'). Passing the
+# catalog backtick-quoted lets IDENTIFIER accept names that need quoting.
+catalog_ident = "`" + catalog.replace("`", "``") + "`"
+
 client = mlflow.deployments.get_deploy_client("databricks")
 
 # COMMAND ----------
@@ -69,14 +73,15 @@ Respond with valid JSON only, no markdown formatting:
 
 # COMMAND ----------
 
-unanswered_messages = spark.sql(f"""
+unanswered_messages = spark.sql(
+    """
     WITH ranked AS (
         SELECT sm.id AS message_id, sm.case_id, HEX(sm.case_id) AS case_id_hex,
                sc.user_id, sc.subject, sc.status,
                ROW_NUMBER() OVER (PARTITION BY sm.case_id ORDER BY sm.created_at DESC) AS rn
-        FROM `{catalog}`.silver.support_messages sm
-        JOIN `{catalog}`.silver.support_cases sc ON sm.case_id = sc.id
-        LEFT JOIN `{catalog}`.gold.support_agent_responses ar ON sm.id = ar.message_id
+        FROM IDENTIFIER(:catalog || '.silver.support_messages') sm
+        JOIN IDENTIFIER(:catalog || '.silver.support_cases') sc ON sm.case_id = sc.id
+        LEFT JOIN IDENTIFIER(:catalog || '.gold.support_agent_responses') ar ON sm.id = ar.message_id
         WHERE sc.status IN ('open', 'in_progress')
           AND sm.admin_id IS NULL
           AND ar.message_id IS NULL
@@ -84,7 +89,9 @@ unanswered_messages = spark.sql(f"""
     SELECT message_id, case_id, case_id_hex, user_id, subject, status
     FROM ranked
     WHERE rn = 1
-""").collect()
+""",
+    args={"catalog": catalog_ident},
+).collect()
 
 print(f"Found {len(unanswered_messages)} unanswered user messages to process")
 
@@ -95,45 +102,51 @@ def build_prompt(case_row):
     case_id_hex = case_row["case_id_hex"]
     user_id = case_row["user_id"]
 
-    context_df = spark.sql(f"""
+    context_df = spark.sql(
+        """
         SELECT user_name, user_email, user_region, subject, status,
                message_count, has_admin_reply, first_response_minutes,
                linked_refund_cents, linked_credit_cents,
                user_lifetime_spend_cents, user_cases_90d
-        FROM `{catalog}`.gold.support_case_context
-        WHERE case_id = UNHEX('{case_id_hex}')
-    """).collect()
+        FROM IDENTIFIER(:catalog || '.gold.support_case_context')
+        WHERE case_id = UNHEX(:case_id_hex)
+    """,
+        args={"catalog": catalog_ident, "case_id_hex": case_id_hex},
+    ).collect()
 
     profile_df = spark.sql(
-        f"""
+        """
         SELECT total_orders_90d, total_spend_90d_cents,
                lifetime_order_count, lifetime_spend_cents,
                support_cases_90d, total_refunds_90d_cents, total_credits_90d_cents
-        FROM `{catalog}`.gold.user_support_profile
+        FROM IDENTIFIER(:catalog || '.gold.user_support_profile')
         WHERE user_id = :user_id
     """,
-        args={"user_id": user_id},
+        args={"catalog": catalog_ident, "user_id": user_id},
     ).collect()
 
-    messages_df = spark.sql(f"""
+    messages_df = spark.sql(
+        """
         SELECT
             CASE WHEN admin_id IS NOT NULL THEN 'admin' ELSE 'customer' END AS role,
             content,
             created_at
-        FROM `{catalog}`.silver.support_messages
-        WHERE case_id = UNHEX('{case_id_hex}')
+        FROM IDENTIFIER(:catalog || '.silver.support_messages')
+        WHERE case_id = UNHEX(:case_id_hex)
         ORDER BY created_at ASC
-    """).collect()
+    """,
+        args={"catalog": catalog_ident, "case_id_hex": case_id_hex},
+    ).collect()
 
     orders_df = spark.sql(
-        f"""
+        """
         SELECT HEX(id) AS order_id, status, total_in_cents, created_at
-        FROM `{catalog}`.silver.orders
+        FROM IDENTIFIER(:catalog || '.silver.orders')
         WHERE user_id = :user_id
         ORDER BY created_at DESC
         LIMIT 5
     """,
-        args={"user_id": user_id},
+        args={"catalog": catalog_ident, "user_id": user_id},
     ).collect()
 
     ctx = context_df[0] if context_df else None
@@ -268,7 +281,7 @@ if results:
     ])
 
     df = spark.createDataFrame(results, schema=schema)
-    table_name = f"`{catalog}`.gold.support_agent_responses"
+    table_name = f"{catalog_ident}.gold.support_agent_responses"
 
     target = DeltaTable.forName(spark, table_name)
     target.alias("t").merge(

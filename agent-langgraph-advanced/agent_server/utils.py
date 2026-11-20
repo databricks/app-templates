@@ -18,6 +18,24 @@ from mlflow.types.responses import (
     create_text_output_item,
 )
 
+# Clients resend the whole conversation in ``input``, so the conversation is bounded only
+# by the body limits in security.py; a per-item or item-count cap would reject every
+# later request in a thread once it was reached.
+MAX_CUSTOM_INPUTS_CHARS = 10_000
+MAX_THREAD_ID_CHARS = 256
+
+
+def check_request_limits(body: dict) -> None:
+    """Raise ``ValueError`` if a POST /invocations or /responses body is over the input limits."""
+    try:
+        request = ResponsesAgentRequest(**body)
+    except Exception:
+        # AgentServer rejects bodies that aren't a valid request with its own 400.
+        return
+    if len(json.dumps(request.custom_inputs or {}, default=str)) > MAX_CUSTOM_INPUTS_CHARS:
+        raise ValueError(f"custom_inputs too large (limit {MAX_CUSTOM_INPUTS_CHARS} characters).")
+    _get_or_create_thread_id(request)
+
 
 def _get_or_create_thread_id(request: ResponsesAgentRequest) -> str:
     # priority of getting thread id:
@@ -27,12 +45,15 @@ def _get_or_create_thread_id(request: ResponsesAgentRequest) -> str:
     ci = dict(request.custom_inputs or {})
 
     if "thread_id" in ci and ci["thread_id"]:
-        return str(ci["thread_id"])
+        thread_id = str(ci["thread_id"])
+    elif request.context and getattr(request.context, "conversation_id", None):
+        thread_id = str(request.context.conversation_id)
+    else:
+        return str(uuid_utils.uuid7())
 
-    if request.context and getattr(request.context, "conversation_id", None):
-        return str(request.context.conversation_id)
-
-    return str(uuid_utils.uuid7())
+    if len(thread_id) > MAX_THREAD_ID_CHARS:
+        raise ValueError(f"thread_id too long (limit {MAX_THREAD_ID_CHARS} characters).")
+    return thread_id
 
 
 def _is_databricks_app_env() -> bool:

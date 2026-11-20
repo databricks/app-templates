@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Optional, Tuple
@@ -14,6 +15,10 @@ from mlflow.types.responses import ResponsesAgentRequest
 from agent_server.utils import _is_databricks_app_env
 
 logger = logging.getLogger(__name__)
+
+MEMORY_KEY_PATTERN = re.compile(r"^[\w\-.]{1,128}$")
+MAX_MEMORY_VALUE_CHARS = 4_000
+MAX_MEMORY_QUERY_CHARS = 1_000
 
 # Long-lived Lakebase resources, opened once at app startup in start_server.py's
 # lifespan and reused across all requests.
@@ -161,7 +166,7 @@ def memory_tools():
             return "Memory not available - store not configured."
 
         namespace = ("user_memories", user_id.replace(".", "-"))
-        results = await store.asearch(namespace, query=query, limit=5)
+        results = await store.asearch(namespace, query=query[:MAX_MEMORY_QUERY_CHARS], limit=5)
 
         if not results:
             return "No memories found for this user."
@@ -179,6 +184,11 @@ def memory_tools():
         store: Optional[BaseStore] = config.get("configurable", {}).get("store")
         if not store:
             return "Cannot save memory - store not configured."
+
+        if not MEMORY_KEY_PATTERN.fullmatch(memory_key):
+            return "Failed: memory_key must be 1-128 letters, digits, '_', '-' or '.'"
+        if len(memory_data_json) > MAX_MEMORY_VALUE_CHARS:
+            return f"Failed: memory_data_json is longer than {MAX_MEMORY_VALUE_CHARS} characters"
 
         namespace = ("user_memories", user_id.replace(".", "-"))
 
@@ -201,6 +211,10 @@ def memory_tools():
         store: Optional[BaseStore] = config.get("configurable", {}).get("store")
         if not store:
             return "Cannot delete memory - store not configured."
+
+        # Not MEMORY_KEY_PATTERN: keys saved before that check existed must stay deletable.
+        if not memory_key or len(memory_key) > 1_000:
+            return "Failed: invalid memory_key"
 
         namespace = ("user_memories", user_id.replace(".", "-"))
         await store.adelete(namespace, memory_key)

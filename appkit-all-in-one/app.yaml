@@ -10,3 +10,6 @@ env:
     valueFrom: postgres
   - name: DATABRICKS_SERVING_ENDPOINT_NAME
     valueFrom: serving-endpoint
+  # AppKit enables its Remote Bridge dev tunnel on deployed apps for any app user unless this is set.
+  - name: DISABLE_REMOTE_SERVING
+    value: 'true'

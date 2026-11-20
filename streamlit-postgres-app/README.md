@@ -45,14 +45,14 @@ When deployed on Databricks Apps, these are populated automatically from the bou
 
 Run the Streamlit app locally:
 ```bash
-streamlit run app.py
+streamlit run server.py
 ```
 
-This starts the app at http://localhost:8501. You will need the `PG*` environment variables above pointing at a reachable Lakebase Postgres instance and valid Databricks authentication configured for the SDK.
+`server.py` wraps `app.py` with the security-headers and origin-check middleware in `security.py`. This starts the app at http://localhost:8501. You will need the `PG*` environment variables above pointing at a reachable Lakebase Postgres instance and valid Databricks authentication configured for the SDK.
 
 ## Databricks Apps Deployment
 
-Configured for Databricks Apps via `app.yaml`, which runs `streamlit run app.py` and binds the `postgres` resource to the `PGENDPOINT` environment variable.
+Configured for Databricks Apps via `app.yaml`, which runs `streamlit run server.py` and binds the `postgres` resource to the `PGENDPOINT` environment variable.
 
 The `manifest.yaml` declares a Postgres resource spec with `CAN_CONNECT_AND_CREATE` permission so the app can create its own schema and table on first run.
 

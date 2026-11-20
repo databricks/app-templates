@@ -155,6 +155,17 @@ This simplified example can be easily extended by integrating additional capabil
 
 See the ["Agent Framework Tools Documentation"](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool).
 
+## What's yours, what's shared
+
+Once you've copied this template, the project is yours to change:
+
+| Part | Where | Owned by |
+|---|---|---|
+| Your agent | `agent_server/` (except `evaluate_agent.py`), `pyproject.toml`, `databricks.yml`, `app.yaml`, `AGENTS.md` | You. Change anything. |
+| Shared helpers | `scripts/`, `agent_server/evaluate_agent.py`, `.claude/skills/`, and `.github/workflows/deploy.yml` where present | Copied from shared sources in [databricks/app-templates](https://github.com/databricks/app-templates) (`.scripts/source/`). Your copy is yours to edit; there's no link back. |
+
+There's no automatic upgrade. To pick up later changes to the helper scripts or the agent code, compare your project with the latest version of this template in databricks/app-templates and bring over what you want.
+
 ## Evaluating your agent
 
 Evaluate your agent by calling the invoke function you defined for the agent locally.

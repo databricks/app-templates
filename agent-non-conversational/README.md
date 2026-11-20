@@ -125,6 +125,8 @@ uv run start-server
      }'
    ```
 
+   Each request can have up to 20 questions of up to 1,000 characters each, and a `document_text` of up to 200,000 characters. Larger requests get a 400 response. The limits are `MAX_QUESTIONS`, `MAX_QUESTION_CHARS` and `MAX_DOCUMENT_CHARS` in `agent_server/agent.py`.
+
 ## Modifying your agent
 
 Required files for hosting with MLflow `AgentServer`:
@@ -158,7 +160,7 @@ See the ["Agent Framework Tools Documentation"](https://docs.databricks.com/aws/
 Evaluate your agent by calling the invoke function you defined for the agent locally.
 
 - Update your `evaluate_agent.py` file with the preferred evaluation dataset and scorers.
-- Your evaluation dataset must match the predict function signature. The wrapper takes a single argument named `data`, so each row should use `{"inputs": {"data": {...}}}` and the inner dict must match `AgentInput` (ex `document_text`, `questions: [{"text": str}]`).
+- Your evaluation dataset must match the predict function signature. The wrapper takes a single argument named `data`, so each row should use `{"inputs": {"data": {...}}}` and the inner dict must match `AgentInput` (`document_text: str`, `questions: list[str]`, within the limits above).
 
 Run the evaluation using the evaluation script:
 

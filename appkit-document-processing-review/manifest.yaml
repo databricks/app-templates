@@ -1,0 +1,23 @@
+version: 1
+name: "AppKit - Document Processing Review"
+description: "A Node.js human-in-the-loop review app for AI document-processing
+  output. The review form is generated from the data at runtime, so it works for
+  ai_extract, ai_parse_document and wrapped scalar functions such as ai_classify
+  without code changes. Shows each value's citation as a box on the page image,
+  triages by confidence where the function reports it, and appends approvals to a
+  Unity Catalog audit log. Built with AppKit."
+
+resource_specs:
+  - name: "sql-warehouse"
+    description: "The SQL warehouse the app uses to read the AI function output and append approvals."
+    sql_warehouse_spec:
+      permission: "CAN_USE"
+  - name: "files"
+    description: "The Unity Catalog volume holding the page images written by ai_parse_document's imageOutputPath."
+    uc_securable_spec:
+      securable_type: "VOLUME"
+      permission: "READ_VOLUME"
+
+user_api_scopes:
+  - "sql"
+  - "files.files"

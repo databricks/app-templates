@@ -118,6 +118,7 @@ logger = logging.getLogger(__name__)
 
 # Async client used inside tool functions to query other agents / endpoints
 _tool_client = AsyncDatabricksOpenAI()
+MAX_SUBAGENT_QUESTION_CHARS = 10_000
 
 # ---------------------------------------------------------------------------
 # Subagent tools — one tool per non-genie SUBAGENTS entry
@@ -130,6 +131,8 @@ def _make_subagent_tool(subagent: dict):
     model = f"apps/{endpoint}" if subagent["type"] == "app" else endpoint
 
     async def _call(question: str) -> str:
+        if len(question) > MAX_SUBAGENT_QUESTION_CHARS:
+            return f"Question too long (limit {MAX_SUBAGENT_QUESTION_CHARS} characters); shorten it and retry."
         # Calls a Databricks endpoint/app, not the OpenAI platform, so OpenAI-only
         # abuse-monitoring params like safety_identifier don't apply.
         response = await _tool_client.responses.create(  # nosemgrep: openai-missing-safety-identifier-python

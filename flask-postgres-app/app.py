@@ -18,6 +18,8 @@ from databricks import sdk
 from psycopg import sql
 from psycopg_pool import ConnectionPool
 
+import security
+
 # Database connection setup
 workspace_client = sdk.WorkspaceClient()
 endpoint = os.getenv("PGENDPOINT", "")
@@ -145,6 +147,10 @@ def delete_todo(todo_id):
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY') or secrets.token_hex(32)
+app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024
+security.init_app(app)
+
+MAX_TASK_LENGTH = 500
 
 @app.before_request
 def csrf_protect():
@@ -161,13 +167,15 @@ if not init_database():
 def index():
     """Main page showing all todos."""
     todos = get_todos()
-    return render_template('index.html', todos=todos)
+    return render_template('index.html', todos=todos, max_task_length=MAX_TASK_LENGTH)
 
 @app.route('/add', methods=['POST'])
 def add_todo_route():
     """Add a new todo item."""
     task = request.form.get('task', '').strip()
-    if task:
+    if len(task) > MAX_TASK_LENGTH:
+        flash(f'Tasks can be at most {MAX_TASK_LENGTH} characters.', 'error')
+    elif task:
         if add_todo(task):
             flash('Todo added successfully!', 'success')
         else:

@@ -53,6 +53,7 @@ templates:
   streamlit-postgres-app: { verify: html, expect: "Todo List App" }
   dash-postgres-app: { verify: html, expect: "Todo List App" }
   flask-postgres-app: { verify: html, expect: "Todo List App" }
+  django-postgres-app: { verify: html, expect: "Todo List App" }
 
   # ---- Tier 3b: database (Lakebase Provisioned) — may need a `database`-type binding ----
   streamlit-database-app: { verify: html, expect: "Todo List App" }

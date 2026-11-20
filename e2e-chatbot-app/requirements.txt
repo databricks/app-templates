@@ -1,3 +1,4 @@
 -c constraints.txt
 mlflow>=3.17.2
 streamlit==1.66.1
+markdown-it-py~=4.2.0

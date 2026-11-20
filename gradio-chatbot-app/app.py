@@ -13,7 +13,11 @@ app_diagnostics.install_diagnostics()
 import gradio as gr
 import logging
 import os
+import uvicorn
+from fastapi import FastAPI
+from starlette.middleware import Middleware
 from model_serving_utils import query_endpoint, is_endpoint_supported
+from security import SecurityMiddleware
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -31,27 +35,37 @@ assert SERVING_ENDPOINT,\
 # Check if the endpoint is supported
 endpoint_supported = is_endpoint_supported(SERVING_ENDPOINT)
 
+MAX_MESSAGE_LENGTH = 4000
+MAX_HISTORY_MESSAGES = 20
+ALLOWED_HISTORY_ROLES = {"user", "assistant"}
+
 def query_llm(message, history):
     """
     Query the LLM with the given message and chat history.
     `message`: str - the latest user input.
     `history`: list of dicts - OpenAI-style messages.
     """
-    if not message.strip():
+    if not isinstance(message, str) or not message.strip():
         return "ERROR: The question should not be empty"
+    if len(message) > MAX_MESSAGE_LENGTH:
+        return f"ERROR: The question must be at most {MAX_MESSAGE_LENGTH} characters"
 
     # Gradio passes history as OpenAI-style messages; content is a string or a
-    # list of content parts. Keep only the text the endpoint can use.
+    # list of content parts. Keep only the text the endpoint can use. History is
+    # sent by the browser, so drop any role other than user/assistant (e.g. a
+    # forged "system" turn) and cap each turn's length and the number of turns.
     message_history = []
-    for msg in history:
-        content = msg["content"]
+    for msg in history[-MAX_HISTORY_MESSAGES:]:
+        if not isinstance(msg, dict) or msg.get("role") not in ALLOWED_HISTORY_ROLES:
+            continue
+        content = msg.get("content")
         if isinstance(content, list):
             content = "".join(
                 part.get("text", "") for part in content
                 if isinstance(part, dict) and part.get("type") == "text"
             )
         if isinstance(content, str) and content:
-            message_history.append({"role": msg["role"], "content": content})
+            message_history.append({"role": msg["role"], "content": content[:MAX_MESSAGE_LENGTH]})
 
     # Add the latest user message
     message_history.append({"role": "user", "content": message})
@@ -66,7 +80,7 @@ def query_llm(message, history):
         return response["content"]
     except Exception as e:
         logger.error(f"Error querying model: {str(e)}", exc_info=True)
-        return f"Error: {str(e)}"
+        return "Sorry, something went wrong. Please try again."
 
 # Create Gradio interface based on endpoint support
 if not endpoint_supported:
@@ -99,7 +113,34 @@ else:
             "What are Large Language Models?",
             "What is Databricks?"
         ],
+        textbox=gr.Textbox(
+            show_label=False,
+            placeholder="Type a message...",
+            scale=7,
+            max_length=MAX_MESSAGE_LENGTH,
+            submit_btn=True,
+            autofocus=True,
+        ),
     )
 
 if __name__ == "__main__":
-    demo.launch(server_name=os.getenv("GRADIO_SERVER_NAME", "0.0.0.0"))
+    # Gradio adds its own CORS middleware outside any launch(app_kwargs=...)
+    # middleware, so SecurityMiddleware goes on a parent app that wraps it.
+    app = gr.mount_gradio_app(
+        FastAPI(
+            docs_url=None,
+            redoc_url=None,
+            openapi_url=None,
+            middleware=[Middleware(SecurityMiddleware)],
+        ),
+        demo,
+        path="/",
+        show_error=False,
+        # The mounted Gradio app also serves /openapi.json unless this turns it off.
+        app_kwargs={"openapi_url": None},
+    )
+    uvicorn.run(
+        app,
+        host=os.getenv("GRADIO_SERVER_NAME", "0.0.0.0"),
+        port=int(os.getenv("GRADIO_SERVER_PORT", "7860")),
+    )

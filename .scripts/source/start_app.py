@@ -39,6 +39,17 @@ from dotenv import load_dotenv
 BACKEND_READY = [r"Uvicorn running on", r"Application startup complete", r"Started server process"]
 FRONTEND_READY = [r"Server is running on http://localhost"]
 
+# The chat UI (e2e-chatbot-app-next) is cloned from databricks/app-templates at this
+# commit, so an app gets the same UI on every start instead of whatever is on main.
+# Set CHAT_UI_REF to a branch, tag or commit to use a different one (CHAT_UI_REF=main
+# follows the default branch). A local ./e2e-chatbot-app-next directory, if present,
+# is used as-is and CHAT_UI_REF is ignored.
+CHAT_UI_REF = "5fff6241fac047c7687ab2c5e7b769f4f692bfe1"
+CHAT_UI_REPO_URLS = (
+    "https://github.com/databricks/app-templates.git",
+    "git@github.com:databricks/app-templates.git",
+)
+
 
 def check_port_available(port: int) -> bool:
     """Check if a port is available (nothing is actively listening on it)."""
@@ -144,38 +155,51 @@ class ProcessManager:
             print(f"Error monitoring {name}: {e}")
             self.failed.set()
 
-    def clone_frontend_if_needed(self):
+    def clone_frontend_if_needed(self, urls=CHAT_UI_REPO_URLS, ref=None):
         if Path("e2e-chatbot-app-next").exists():
+            print("Chat UI: using the local ./e2e-chatbot-app-next directory (CHAT_UI_REF ignored)")
             return True
 
-        print("Cloning e2e-chatbot-app-next...")
-        for url in [
-            "https://github.com/databricks/app-templates.git",
-            "git@github.com:databricks/app-templates.git",
-        ]:
+        ref = ref or os.environ.get("CHAT_UI_REF") or CHAT_UI_REF
+        print(f"Cloning e2e-chatbot-app-next at {ref}...")
+        for url in urls:
             try:
                 subprocess.run(
-                    ["git", "clone", "--filter=blob:none", "--sparse", url, "temp-app-templates"],
+                    ["git", "clone", "--filter=blob:none", "--sparse", "--no-checkout", url, "temp-app-templates"],
                     check=True,
                     capture_output=True,
                 )
                 break
             except subprocess.CalledProcessError:
+                shutil.rmtree("temp-app-templates", ignore_errors=True)
                 continue
         else:
             print("ERROR: Failed to clone repository.")
             print(
-                "Manually download from: https://download-directory.github.io/?url=https://github.com/databricks/app-templates/tree/main/e2e-chatbot-app-next"
+                f"Manually download from: https://download-directory.github.io/?url=https://github.com/databricks/app-templates/tree/{ref}/e2e-chatbot-app-next"
             )
             return False
 
-        subprocess.run(
-            ["git", "sparse-checkout", "set", "e2e-chatbot-app-next"],
-            cwd="temp-app-templates",
-            check=True,
-        )
+        try:
+            subprocess.run(
+                ["git", "sparse-checkout", "set", "e2e-chatbot-app-next"],
+                cwd="temp-app-templates",
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(["git", "checkout", "--quiet", ref], cwd="temp-app-templates", check=True, capture_output=True)
+            commit = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd="temp-app-templates", check=True, capture_output=True, text=True
+            ).stdout.strip()
+        except subprocess.CalledProcessError as e:
+            err = e.stderr.decode(errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
+            print(f"ERROR: Could not check out CHAT_UI_REF={ref!r}: {err.strip()}")
+            shutil.rmtree("temp-app-templates", ignore_errors=True)
+            return False
+
         Path("temp-app-templates/e2e-chatbot-app-next").rename("e2e-chatbot-app-next")
         shutil.rmtree("temp-app-templates", ignore_errors=True)
+        print(f"Chat UI: e2e-chatbot-app-next at {commit} (CHAT_UI_REF={ref})")
         return True
 
     def start_process(self, cmd, name, log_file, patterns, cwd=None):

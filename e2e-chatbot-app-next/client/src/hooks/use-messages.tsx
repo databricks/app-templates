@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useScrollToBottom } from './use-scroll-to-bottom';
 import type { UseChatHelpers } from '@ai-sdk/react';
 import type { ChatMessage } from '@databricks/chatbot-core';
 
@@ -8,15 +7,6 @@ export function useMessages({
 }: {
   status: UseChatHelpers<ChatMessage>['status'];
 }) {
-  const {
-    containerRef,
-    endRef,
-    isAtBottom,
-    scrollToBottom,
-    onViewportEnter,
-    onViewportLeave,
-  } = useScrollToBottom();
-
   const [hasSentMessage, setHasSentMessage] = useState(false);
 
   useEffect(() => {
@@ -25,13 +15,5 @@ export function useMessages({
     }
   }, [status]);
 
-  return {
-    containerRef,
-    endRef,
-    isAtBottom,
-    scrollToBottom,
-    onViewportEnter,
-    onViewportLeave,
-    hasSentMessage,
-  };
+  return { hasSentMessage };
 }

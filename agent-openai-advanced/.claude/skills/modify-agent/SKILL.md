@@ -72,21 +72,16 @@ agent = Agent(
 
 ## Changing the Model
 
-Available models (check workspace for current list):
+The agent's model comes from the `llm-endpoint` serving-endpoint resource in `databricks.yml` (and `app.yaml`), which sets the `LLM_MODEL` environment variable that `agent_server/agent.py` reads. To change the model, change that resource's `name`:
 
-- `databricks-claude-3-7-sonnet`
-- `databricks-claude-3-5-sonnet`
-- `databricks-meta-llama-3-3-70b-instruct`
-
-```python
-agent = Agent(
-    name="my agent",
-    model="databricks-claude-3-7-sonnet",  # Change here
-    ...
-)
+```yaml
+- name: 'llm-endpoint'
+  serving_endpoint:
+    name: 'databricks-claude-sonnet-5-5'  # change here
+    permission: 'CAN_QUERY'
 ```
 
-**Note:** Some workspaces require granting the app access to the serving endpoint in `databricks.yml`. See the **add-tools** skill and `examples/serving-endpoint.yaml`.
+This also grants the app's service principal permission to query the new endpoint, so there's nothing else to keep in sync. Check your workspace's **Serving** page for the endpoints available to you. For local runs, `agent.py` falls back to its default model; set `LLM_MODEL` in `.env` to try a different one. When creating the app in the Databricks UI, pick the endpoint for the `llm-endpoint` resource there.
 
 ## Changing Instructions
 

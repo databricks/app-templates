@@ -23,6 +23,8 @@ resources:
             value: "300"
           - name: MLFLOW_EXPERIMENT_ID
             value_from: "experiment"
+          - name: LLM_MODEL
+            value_from: "llm-endpoint"
           - name: LAKEBASE_AUTOSCALING_ENDPOINT
             value_from: "postgres"
           - name: LAKEBASE_AGENT_MEMORY_SCHEMA
@@ -38,8 +40,8 @@ resources:
 
         # NOTE: grants the app's service principal CAN_QUERY on the LLM endpoint so
         # the deployed app (and UI-created apps via manifest.yaml) can call the model
-        # without a manual grant. If you change the model in agent_server/agent.py,
-        # update the name below to match.
+        # without a manual grant. The agent reads its model from this resource
+        # (LLM_MODEL), so to change the model, change the name below.
         - name: 'llm-endpoint'
           serving_endpoint:
             name: 'databricks-claude-sonnet-5-5'

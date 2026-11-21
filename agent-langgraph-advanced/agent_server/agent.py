@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime
 from typing import Any, AsyncGenerator, Optional, Sequence, TypedDict
 
@@ -35,12 +36,18 @@ from agent_server.utils_memory import (
     memory_tools,
 )
 
+# The model comes from the app's `llm-endpoint` serving-endpoint resource:
+# databricks.yml and app.yaml set LLM_MODEL from it, so changing the endpoint
+# there changes both the model and the app's permission to query it. The default
+# is used when LLM_MODEL isn't set, for example in local runs.
+LLM_MODEL = os.getenv("LLM_MODEL", "databricks-claude-sonnet-5-5")
+print(f"Agent model: {LLM_MODEL} (from {'LLM_MODEL' if os.getenv('LLM_MODEL') else 'default'})", flush=True)
+
 logger = logging.getLogger(__name__)
 mlflow.langchain.autolog()
 logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
 sp_workspace_client = WorkspaceClient()
 
-LLM_ENDPOINT_NAME = "databricks-claude-sonnet-5-5"
 LAKEBASE_CONFIG = init_lakebase_config()
 
 
@@ -69,7 +76,7 @@ async def init_agent(
     # except Exception:
     #     logger.warning("Failed to fetch MCP tools. Continuing without MCP tools.", exc_info=True)
 
-    model = ChatDatabricks(endpoint=LLM_ENDPOINT_NAME)
+    model = ChatDatabricks(endpoint=LLM_MODEL)
 
     return create_agent(
         model=model,

@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "main": "dist/server.js",
   "type": "module",
+  "engines": {
+    "node": ">=22.23.4"
+  },
   "scripts": {
     "start": "NODE_ENV=production node --env-file-if-exists=./.env ./dist/server.js",
     "dev": "NODE_ENV=development tsx watch --tsconfig ./tsconfig.server.json --env-file-if-exists=./.env ./server/server.ts",

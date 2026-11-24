@@ -7,7 +7,7 @@ description: "Set up TypeScript LangChain agent development environment. Use whe
 
 ## Prerequisites
 
-- **Node.js 18+**
+- **Node.js 22.23.4+**
 - **npm** (comes with Node.js)
 - **Databricks CLI v0.283.0+**
 

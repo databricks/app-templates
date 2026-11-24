@@ -1,0 +1,25 @@
+{
+  "$schema": "https://databricks.github.io/appkit/schemas/plugin-manifest.schema.json",
+  "name": "designer",
+  "displayName": "Lakeflow Designer",
+  "stability": "beta",
+  "description": "Serve published Lakeflow Designer Apps with viewer-scoped runs, results, and file transfers.",
+  "resources": {
+    "required": [],
+    "optional": [
+      {
+        "type": "job",
+        "alias": "Designer runner",
+        "resourceKey": "job",
+        "description": "Publisher-owned Designer runner Job",
+        "permission": "CAN_MANAGE",
+        "fields": {
+          "id": {
+            "env": "DATABRICKS_JOB_ID",
+            "description": "Job bound by the Designer publisher"
+          }
+        }
+      }
+    ]
+  }
+}

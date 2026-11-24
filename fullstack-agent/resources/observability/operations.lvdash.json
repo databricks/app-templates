@@ -1,0 +1,497 @@
+{
+  "datasets": [
+    {
+      "name": "runs",
+      "displayName": "Runs per hour",
+      "queryLines": [
+        "SELECT date_trunc('HOUR', request_time) AS hour, ",
+        "count(*) AS runs, ",
+        "count_if(state = 'ERROR') AS failed_runs, ",
+        "percentile(CASE WHEN coalesce(tags['mlflow.traceName'], '') <> 'confirm' THEN execution_duration_ms / 1e3 END, 0.95) AS p95_answer_seconds ",
+        "FROM agent_traces_trace_unified ",
+        "WHERE request_time >= date_sub(current_date(), 7) ",
+        "GROUP BY 1 ORDER BY 1 "
+      ]
+    },
+    {
+      "name": "app_logs",
+      "displayName": "App warnings and errors per hour, by status",
+      "queryLines": [
+        "SELECT date_trunc('HOUR', time) AS hour, ",
+        "coalesce(attributes:status::string, attributes:code::string, severity_text) AS status, ",
+        "count(*) AS records ",
+        "FROM agent_app_otel_logs ",
+        "WHERE severity_text IN ('WARN', 'ERROR') AND instrumentation_scope.name IS NOT NULL AND time >= date_sub(current_date(), 7) ",
+        "GROUP BY 1, 2 ORDER BY 1 "
+      ]
+    },
+    {
+      "name": "model_calls",
+      "displayName": "Model calls per hour",
+      "queryLines": [
+        "SELECT date_trunc('HOUR', event_time) AS hour, ",
+        "count(*) AS calls, ",
+        "count_if(status_code = 429) AS rate_limited, ",
+        "count_if(status_code = 403) AS refused ",
+        "FROM system.ai_gateway.usage ",
+        "WHERE endpoint_name IN (concat(current_catalog(), '.', current_schema(), '.sonnet_llm'), concat(current_catalog(), '.', current_schema(), '.opus_llm')) AND event_time >= date_sub(current_date(), 7) ",
+        "GROUP BY 1 ORDER BY 1 "
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "operations",
+      "displayName": "Operations",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "title",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Assistant operations\n",
+                "\n",
+                "Runs from the trace view, app warnings and errors by status from the Apps telemetry tables, model calls from Unity Gateway usage. Times in UTC. The SLOs are in docs/runbook.md#slos and the alerts in docs/runbook.md#alerts."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "runs_total",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "runs",
+                  "fields": [
+                    {
+                      "name": "sum(runs)",
+                      "expression": "SUM(`runs`)"
+                    },
+                    {
+                      "name": "daily(hour)",
+                      "expression": "DATE_TRUNC(\"DAY\", `hour`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(runs)",
+                  "displayName": "Runs"
+                },
+                "period": {
+                  "fieldName": "daily(hour)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Runs",
+                "showDescription": true,
+                "description": "Last 7 days"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "failed_runs_total",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "runs",
+                  "fields": [
+                    {
+                      "name": "sum(failed_runs)",
+                      "expression": "SUM(`failed_runs`)"
+                    },
+                    {
+                      "name": "daily(hour)",
+                      "expression": "DATE_TRUNC(\"DAY\", `hour`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(failed_runs)",
+                  "displayName": "Failed runs"
+                },
+                "period": {
+                  "fieldName": "daily(hour)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Failed runs",
+                "showDescription": true,
+                "description": "Last 7 days"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 2,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "rate_limited_total",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "model_calls",
+                  "fields": [
+                    {
+                      "name": "sum(rate_limited)",
+                      "expression": "SUM(`rate_limited`)"
+                    },
+                    {
+                      "name": "daily(hour)",
+                      "expression": "DATE_TRUNC(\"DAY\", `hour`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(rate_limited)",
+                  "displayName": "Model calls over the rate limit"
+                },
+                "period": {
+                  "fieldName": "daily(hour)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Model calls over the rate limit",
+                "showDescription": true,
+                "description": "Last 7 days"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 2,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "runs_per_hour",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "runs",
+                  "fields": [
+                    {
+                      "name": "hour",
+                      "expression": "`hour`"
+                    },
+                    {
+                      "name": "runs",
+                      "expression": "`runs`"
+                    },
+                    {
+                      "name": "failed_runs",
+                      "expression": "`failed_runs`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "hour",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Hour (UTC)"
+                },
+                "y": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "runs",
+                      "displayName": "Runs"
+                    },
+                    {
+                      "fieldName": "failed_runs",
+                      "displayName": "Failed runs"
+                    }
+                  ]
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Runs per hour"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "answer_latency",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "runs",
+                  "fields": [
+                    {
+                      "name": "hour",
+                      "expression": "`hour`"
+                    },
+                    {
+                      "name": "p95_answer_seconds",
+                      "expression": "`p95_answer_seconds`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "hour",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Hour (UTC)"
+                },
+                "y": {
+                  "fieldName": "p95_answer_seconds",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "p95 answer time (s)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "p95 answer time per hour (seconds)"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 5,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "app_records",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "app_logs",
+                  "fields": [
+                    {
+                      "name": "hour",
+                      "expression": "`hour`"
+                    },
+                    {
+                      "name": "records",
+                      "expression": "`records`"
+                    },
+                    {
+                      "name": "status",
+                      "expression": "`status`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "hour",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Hour (UTC)"
+                },
+                "y": {
+                  "fieldName": "records",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Records"
+                },
+                "color": {
+                  "fieldName": "status",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Status"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "App warnings and errors per hour, by status"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "model_refusals",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "model_calls",
+                  "fields": [
+                    {
+                      "name": "hour",
+                      "expression": "`hour`"
+                    },
+                    {
+                      "name": "rate_limited",
+                      "expression": "`rate_limited`"
+                    },
+                    {
+                      "name": "refused",
+                      "expression": "`refused`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "hour",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Hour (UTC)"
+                },
+                "y": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "rate_limited",
+                      "displayName": "Over the rate limit (429)"
+                    },
+                    {
+                      "fieldName": "refused",
+                      "displayName": "Refused (403)"
+                    }
+                  ]
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Model calls refused per hour"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 10,
+            "width": 6,
+            "height": 5
+          }
+        }
+      ]
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "canvasBackgroundColor": {
+        "light": "#FCFCFC",
+        "dark": "#1F272D"
+      },
+      "widgetBackgroundColor": {
+        "light": "#FFFFFF",
+        "dark": "#11171C"
+      },
+      "fontColor": {
+        "light": "#11171C",
+        "dark": "#E8ECF0"
+      },
+      "selectionColor": {
+        "light": "#2272B4",
+        "dark": "#8ACAFF"
+      },
+      "visualizationColors": [
+        "#0072B2",
+        "#E69F00",
+        "#009E73",
+        "#CC79A7",
+        "#D55E00",
+        "#56B4E9"
+      ],
+      "widgetHeaderAlignment": "LEFT"
+    }
+  }
+}

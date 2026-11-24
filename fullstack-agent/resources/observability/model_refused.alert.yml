@@ -1,0 +1,24 @@
+resources:
+  alerts:
+    model_refused:
+      display_name: "${var.display_name}: model calls refused"
+      custom_description: See docs/runbook.md#alerts for what to do.
+      warehouse_id: ${var.warehouse_id}
+      query_text: "SELECT count(*) AS refused FROM system.ai_gateway.usage WHERE endpoint_name IN ('${var.catalog}.${var.project}_ops.sonnet_llm', '${var.catalog}.${var.project}_ops.opus_llm') AND status_code = 403 AND event_time > current_timestamp() - INTERVAL 2 HOURS"
+      schedule:
+        quartz_cron_schedule: "0 0 * * * ?"
+        timezone_id: UTC
+      evaluation:
+        source:
+          name: refused
+        comparison_operator: GREATER_THAN
+        threshold:
+          value:
+            double_value: 0
+        empty_result_state: OK
+        notification:
+          notify_on_ok: true
+          subscriptions: ${var.alert_subscriptions}
+      permissions:
+        - group_name: ${var.ops_group}
+          level: CAN_READ

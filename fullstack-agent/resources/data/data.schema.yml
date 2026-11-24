@@ -1,0 +1,16 @@
+resources:
+  schemas:
+    data:
+      catalog_name: ${var.catalog}
+      name: ${var.project}_data
+      comment: The users' data. Row filters and column masks apply per caller.
+      grants:
+        - principal: ${var.data_owner_application_id}
+          privileges:
+            - USE_SCHEMA
+            - CREATE_TABLE
+        - principal: ${var.app_users_group}
+          privileges:
+            - USE_SCHEMA
+      lifecycle:
+        prevent_destroy: true

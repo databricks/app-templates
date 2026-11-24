@@ -1,0 +1,16 @@
+resources:
+  schemas:
+    reference:
+      catalog_name: ${var.catalog}
+      name: ${var.project}_reference
+      comment: Shared reference data. Only the agent app identity is granted access.
+      grants:
+        - principal: ${var.data_owner_application_id}
+          privileges:
+            - USE_SCHEMA
+            - CREATE_TABLE
+        - principal: ${var.agent_apps_group}
+          privileges:
+            - USE_SCHEMA
+      lifecycle:
+        prevent_destroy: true

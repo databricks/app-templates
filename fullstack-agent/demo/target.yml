@@ -1,0 +1,81 @@
+# Adds the demo target, the bundle's default, with the demo users' variables and the jobs that load the demo data.
+sync:
+  paths:
+    - .
+
+variables:
+  demo_user_one_email:
+    description: Workspace user who is demo user C001.
+  demo_user_one_name:
+    description: Name the bank shows for demo user C001.
+  demo_user_two_email:
+    description: Workspace user who is demo user C002.
+  demo_user_two_name:
+    description: Name the bank shows for demo user C002.
+
+targets:
+  demo:
+    default: true
+    variables:
+      maintainer_group: ""
+    permissions:
+      - user_name: ${workspace.current_user.userName}
+        level: CAN_MANAGE
+    resources:
+      jobs:
+        sample_data:
+          name: ${var.project}_sample_data
+          description: Populates the test data, then the demo users' and other personas' rows. Demo only.
+          run_as:
+            service_principal_name: ${var.data_owner_application_id}
+          parameters: &data_parameters
+            - name: catalog
+              default: ${var.catalog}
+            - name: project
+              default: ${var.project}
+            - name: test_user_one_id
+              default: ${var.test_user_one_id}
+            - name: test_user_two_id
+              default: ${var.test_user_two_id}
+            - name: demo_user_one_email
+              default: ${var.demo_user_one_email}
+            - name: demo_user_one_name
+              default: ${var.demo_user_one_name}
+            - name: demo_user_two_email
+              default: ${var.demo_user_two_email}
+            - name: demo_user_two_name
+              default: ${var.demo_user_two_name}
+          tasks: &data_tasks
+            - task_key: clear_audit_tables
+              notebook_task:
+                notebook_path: ../tests/fixtures/clear_audit_tables.sql
+                warehouse_id: ${var.warehouse_id}
+            - task_key: test_data
+              depends_on:
+                - task_key: clear_audit_tables
+              notebook_task:
+                notebook_path: ../tests/fixtures/test_data.sql
+                warehouse_id: ${var.warehouse_id}
+            - task_key: sample_data
+              depends_on:
+                - task_key: test_data
+              notebook_task:
+                notebook_path: ./sample_data.sql
+                warehouse_id: ${var.warehouse_id}
+        reset_data:
+          name: ${var.project}_reset_data
+          description: Restores the test data, then the demo users' and other personas' rows, and clears the audit, Activity and write tables. Demo only.
+          run_as:
+            service_principal_name: ${var.data_owner_application_id}
+          parameters: *data_parameters
+          tasks: *data_tasks
+  dev:
+    variables: &no_demo_users
+      demo_user_one_email: ""
+      demo_user_one_name: ""
+      demo_user_two_email: ""
+      demo_user_two_name: ""
+  staging:
+    variables: *no_demo_users
+  prod:
+    variables: *no_demo_users

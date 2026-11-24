@@ -1,0 +1,13 @@
+[[models]]
+id = "sonnet_llm"
+name = "Claude Sonnet 5.5"
+images = false
+reasoning = "between_tools"
+context_window = 1_000_000
+
+[[models]]
+id = "opus_llm"
+name = "Claude Opus 5.5"
+images = true
+reasoning = "adaptive"
+context_window = 1_000_000

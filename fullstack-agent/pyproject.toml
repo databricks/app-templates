@@ -1,0 +1,47 @@
+[project]
+name = "fullstack-agent-example"
+version = "0.1.0"
+description = "Full-stack agent example for Databricks."
+requires-python = ">=3.11,<3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "databricks-sdk==0.150.0",
+    "httpx>=0.27",
+    "pre-commit>=4",
+    "pytest>=8",
+    "ruff>=0.8",
+]
+
+[tool.uv]
+exclude-newer = "7 days"
+
+[tool.uv.workspace]
+members = ["app"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+src = [".", "app"]
+
+[tool.ruff.lint]
+select = ["ANN", "E", "W", "F", "I", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN"]
+"app/tests/**" = ["ANN"]
+"evals/tests/**" = ["ANN"]
+"app/runtime/adapter.py" = ["ANN401"]
+"app/runtime/schemas.py" = ["ANN401"]
+"app/runtime/stores.py" = ["ANN401"]
+"app/runtime/streaming.py" = ["ANN401"]
+"app/agent/context.py" = ["ANN401"]
+"app/agent/gateway.py" = ["ANN401"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "user_scope: runs as the signed-in user against the deployed app",
+    "app_scope: checks what only the app identity can reach",
+]

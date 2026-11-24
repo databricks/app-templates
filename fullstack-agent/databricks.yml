@@ -1,0 +1,131 @@
+bundle:
+  name: agent
+  databricks_cli_version: ">= 1.20.0"
+
+include:
+  - use_case.yml
+  - resources/*/*.yml
+  - tests/fixtures/*.yml
+  - demo/*.yml
+
+sync:
+  paths:
+    - sql
+    - tests/fixtures
+
+variables:
+  catalog:
+    description: Catalog that holds every schema of the app.
+  warehouse_id:
+    description: SQL warehouse for the jobs and the apps.
+  data_owner_application_id:
+    description: Application ID of the service principal that owns the data. Until scripts/setup_identities.sh creates it and writes the ID to the overrides file, it holds the display name, so the schemas' grants name a principal and the bundle validates.
+    default: ${var.data_owner_name}
+  data_owner_name:
+    description: Display name of that service principal. The setup script creates it under this name.
+    default: ${var.project}_data_owner
+  maintainer_group:
+    description: Account group that gets CAN_VIEW, read-only, on the bundle's resources in staging and prod. Changes go through CI deploys; developers read traces and telemetry through ops_group.
+  backoffice_group:
+    description: Account group whose members see every user's rows unmasked.
+    default: ${var.project}_backoffice
+  app_users_group:
+    description: Account group of the app's users; it holds every user grant.
+    default: ${var.project}_app_users
+  ops_group:
+    description: Account group of the operators and developers who read the agent's traces, the app telemetry and the evaluation datasets on the app warehouse, and view the operations dashboard and alerts. The only readers of the trace tables besides the agent app, the data owner and the evaluation group's production scorers.
+    default: ${var.project}_ops_readers
+  agent_apps_group:
+    description: Account group that holds the agent app's identity, so bundle-declared permissions keep the app's access across deploys.
+    default: ${var.project}_agent_apps
+  eval_group:
+    description: Account group that runs the evals. It alone writes the evaluation datasets and registered prompts in <project>_eval, and registers the production scorers.
+    default: ${var.project}_eval_writers
+  test_user_one_name:
+    description: Display name for the first test service principal. Empty in prod only.
+    default: ${var.project}_test_user_one
+  test_user_one_id:
+    description: Application ID of the first test service principal. The setup script creates it and writes the ID to the overrides file. Empty in prod only.
+    default: ""
+  test_user_two_name:
+    description: Display name for the second test service principal. Empty in prod only.
+    default: ${var.project}_test_user_two
+  test_user_two_id:
+    description: Application ID of the second test service principal. The setup script creates it and writes the ID to the overrides file. Empty in prod only.
+    default: ""
+  test_user_eval_name:
+    description: Display name for the eval runner's service principal, the only member of the evaluation group. Empty in prod only.
+    default: ${var.project}_test_user_eval
+  test_user_eval_id:
+    description: Application ID of the eval runner's service principal. The setup script creates it and writes the ID to the overrides file. Empty in prod only.
+    default: ""
+  agent_app_name:
+    description: Databricks App that serves the assistant, created by agentbricks deploy from the agent.toml deployment name.
+    default: agent-bricks-${var.project}
+  sonnet_model:
+    description: "Foundation model for the assistant, the default for a run. Must accept the agent's settings (thinking: between_tools). Keep its traits in app/agent/models.toml in step."
+    default: models/system.ai.databricks-claude-sonnet-5-5
+  opus_model:
+    description: "Foundation model a user may choose for a run instead, with images. Must accept adaptive thinking with output_config.effort. Keep its traits in app/agent/models.toml in step."
+    default: models/system.ai.databricks-claude-opus-5-5
+  cost_tags:
+    description: Cost attribution tags for the app warehouse, which the setup script copies onto the model services. Your account's tag policies may govern the keys and their values.
+    type: complex
+    default:
+      - key: project
+        value: ${var.project}
+      - key: environment
+        value: ${bundle.target}
+  app_usage_policy_id:
+    description: Serverless usage policy for the agent app's spend attribution. Empty leaves the app's policy as it is.
+    default: ""
+  pip_index_url:
+    description: "Base URL of the Python Package Index for app dependency installation. Empty defaults to the workspace repository."
+    default: ""
+  trace_retention_days:
+    description: Days the trace and app telemetry tables keep a row. The trace retention job deletes older rows every day.
+    default: 30
+  alert_subscriptions:
+    description: "Who the operational alerts notify: a list of {user_email: ...} or {destination_id: ...} entries. Empty notifies no one; the alerts still change state."
+    type: complex
+    default: []
+  app_telemetry_table_prefix:
+    description: Prefix of the agent app's telemetry tables (<prefix>_otel_logs, _metrics, _spans, _annotations) in the <project>_ops schema. Apps telemetry export creates them.
+    default: agent_app
+
+permissions:
+  - service_principal_name: ${var.data_owner_application_id}
+    level: CAN_VIEW
+
+targets:
+  dev:
+    variables:
+      maintainer_group: ""
+    permissions:
+      - user_name: ${workspace.current_user.userName}
+        level: CAN_MANAGE
+  staging:
+    mode: production
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    permissions:
+      - service_principal_name: ${workspace.current_user.userName}
+        level: CAN_MANAGE
+      - group_name: ${var.maintainer_group}
+        level: CAN_VIEW
+  prod:
+    mode: production
+    variables:
+      test_user_one_name: ""
+      test_user_one_id: ""
+      test_user_two_name: ""
+      test_user_two_id: ""
+      test_user_eval_name: ""
+      test_user_eval_id: ""
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    permissions:
+      - service_principal_name: ${workspace.current_user.userName}
+        level: CAN_MANAGE
+      - group_name: ${var.maintainer_group}
+        level: CAN_VIEW

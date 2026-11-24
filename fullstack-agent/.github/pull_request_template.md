@@ -1,0 +1,5 @@
+- [ ] `make check` passes.
+- [ ] `make test` passes.
+- [ ] A frontend change commits the rebuilt `app/static/` on its own, after `make build`.
+- [ ] A change to SQL, procedures, grants or auth passes the workspace suites (`docs/development.md#workspace-suites`), then `make reset`.
+- [ ] A prompt or tool change passes the evals on the `dev` split (`docs/evaluation.md#run`).

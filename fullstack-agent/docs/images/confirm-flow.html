@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Confirm a change</title>
+<link rel="stylesheet" href="diagrams.css">
+</head>
+<body>
+<div id="diagram">
+<div class="seq" style="--cols:6; width:1240px;">
+
+  <div class="actors">
+    <div class="band head" style="grid-column: 2 / -1;">Databricks workspace</div>
+    <div class="actor external" style="grid-column:1;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg><div class="bar">User</div></div>
+    <div class="actor" style="grid-column:2;"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Agent Bricks">
+<g transform="translate(2 2) scale(1)"><rect x="5.5" y="30.25" width="16.5" height="8.25" fill="currentColor"/>
+<rect x="5.5" y="13.75" width="16.5" height="8.25" fill="currentColor"/>
+<rect x="22" y="22" width="16.5" height="8.25" fill="currentColor" opacity="0.45"/>
+<rect x="22" y="5.5" width="16.5" height="8.25" fill="currentColor" opacity="0.45"/></g>
+</svg><div class="bar">Agent app</div></div>
+    <div class="actor" style="grid-column:3;"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Unity Gateway">
+<g transform="translate(2 2) scale(0.7097)"><path d="M21.5 43V29A9.5 9.5 0 0 1 40.5 29V43Z" fill="currentColor"/>
+<rect x="6" y="25" width="10" height="10" fill="currentColor" opacity="0.45"/>
+<rect x="46" y="25" width="10" height="10" fill="currentColor" opacity="0.45"/>
+<rect x="15.5" y="8" width="10" height="10" transform="rotate(-30 20.5 13)" fill="currentColor" opacity="0.45"/>
+<rect x="36.5" y="8" width="10" height="10" transform="rotate(30 41.5 13)" fill="currentColor" opacity="0.45"/>
+<path d="M16.5 47H45.5L48.5 54.5H13.5Z" fill="currentColor" opacity="0.45"/>
+</g>
+</svg><div class="bar">Model service</div></div>
+    <div class="actor" style="grid-column:4;"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Lakebase">
+<g transform="translate(2 2) scale(1)"><path d="M21.9873 26.1678C19.538 25.3353 16.7272 24.8602 13.7305 24.8602C10.734 24.8603 7.92687 25.3354 5.47461 26.1678V17.6639H38.5V26.1678C36.0476 26.9668 33.2399 27.4237 30.2432 27.4237C27.2466 27.4237 24.4365 26.9668 21.9873 26.1678Z" fill="currentColor" opacity="0.45"/>
+<path d="M13.7698 28.4783C16.5661 28.4783 19.1996 28.8587 21.5266 29.531L22.4485 29.8083C24.7755 30.4806 27.409 30.8611 30.2053 30.8611C33.1877 30.861 35.9814 30.4277 38.4221 29.6697H38.5002V38.4939H5.47485V29.6697H5.552C7.99291 28.9116 10.7871 28.4783 13.7698 28.4783Z" fill="currentColor"/>
+<rect x="5.47485" y="5.5" width="33.0252" height="8.82439" fill="currentColor" opacity="0.45"/></g>
+</svg><div class="bar">Runtime store</div></div>
+    <div class="actor" style="grid-column:5;"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="SQL Warehouse">
+<g transform="translate(2 2) scale(2.75)"><path fill-rule="evenodd" clip-rule="evenodd" d="M1 1.75C1 1.33579 1.33579 1 1.75 1L14.25 1C14.6642 1 15 1.33579 15 1.75L15 8.99999H13.5L13.5 7L2.5 7L2.5 13.5H8V15H1.75C1.33579 15 1 14.6642 1 14.25L1 1.75ZM13.5 2.5V5.5L2.5 5.5L2.5 2.5L13.5 2.5Z" fill="currentColor"/>
+<path d="M11.4306 8.01191L8.43056 11.5119C8.23994 11.7343 8.19623 12.0473 8.31862 12.3134C8.441 12.5795 8.7071 12.75 9 12.75H12.3693L10.4306 15.0119L11.5694 15.9881L14.5694 12.4881C14.7601 12.2657 14.8038 11.9527 14.6814 11.6866C14.559 11.4205 14.2929 11.25 14 11.25H10.6307L12.5694 8.98809L11.4306 8.01191Z" fill="currentColor"/></g>
+</svg><div class="bar">SQL warehouse</div></div>
+    <div class="actor" style="grid-column:6;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><path d="M9 17c2 0 2.8-1 2.8-2.8V10c0-2 1-3.3 3.2-3"/><path d="M9 11.2h5.7"/></svg><div class="bar">Definer procedure</div></div>
+  </div>
+
+  <div class="lanes">
+    <div class="life" style="--i:1;"></div>
+    <div class="life" style="--i:2;"></div>
+    <div class="life" style="--i:3;"></div>
+    <div class="life" style="--i:4;"></div>
+    <div class="life" style="--i:5;"></div>
+    <div class="life" style="--i:6;"></div>
+
+    <div class="msg" style="--a:1; --b:2;"><div class="text"><span>Question that asks for a change</span></div></div>
+    <div class="msg" style="--a:2; --b:3;"><div class="text"><span>The question</span></div></div>
+    <div class="msg reply rtl" style="--a:2; --b:3;"><div class="text"><span>Call a propose tool with the arguments</span></div></div>
+    <div class="msg app" style="--a:2; --b:4;"><div class="text"><span>confirmation_required with a new proposal_id</span></div></div>
+    <div class="msg reply rtl" style="--a:1; --b:2;"><div class="text"><span>Approval card, nothing changed yet</span></div></div>
+    <div class="msg" style="--a:1; --b:2;"><div class="text"><span>New run on the same session: confirm, proposal_id, approve</span></div></div>
+    <div class="msg app" style="--a:2; --b:4;"><div class="text"><span>Read the proposal back from the stored events</span></div></div>
+    <div class="msg" style="--a:2; --b:5;"><div class="text"><span>CALL with the idempotency key</span></div></div>
+    <div class="note" style="--a:2; --b:5;">A Delta write conflict is retried at most twice, with the same key, within 45 seconds</div>
+    <div class="msg owner" style="--a:5; --b:6;"><div class="text"><span>The body runs with the owner's rights; session_user() is still the user</span></div></div>
+    <div class="frame" style="--a:5; --b:6;">
+      <div class="guard"><span>The key already ran</span></div>
+      <div class="msg reply rtl" style="--a:5; --b:6;"><div class="text"><span>OK_REPLAYED and the first reference, nothing written</span></div></div>
+      <div class="guard split"><span>The rules pass</span></div>
+      <div class="msg reply rtl" style="--a:5; --b:6;"><div class="text"><span>Change and audit row written, OK and a reference</span></div></div>
+      <div class="guard split"><span>A rule fails</span></div>
+      <div class="msg reply rtl" style="--a:5; --b:6;"><div class="text"><span>Audit row written, REJECTED and the reason</span></div></div>
+    </div>
+    <div class="msg reply rtl" style="--a:2; --b:5;"><div class="text"><span>status, reference, acted_as, message</span></div></div>
+    <div class="msg reply rtl" style="--a:1; --b:2;"><div class="text"><span>Done text with the reference</span></div></div>
+    <div class="msg app" style="--a:2; --b:5;"><div class="text"><span>Append the Activity rows</span></div></div>
+  </div>
+
+  <div class="seq-legend">
+    <div class="legend-row"><svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke="#143D4A" stroke-width="2"/></svg>Runs on behalf of the user</div>
+    <div class="legend-row"><svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke="#143D4A" stroke-width="2" stroke-dasharray="6 4"/></svg>Runs as the app's service principal</div>
+    <div class="legend-row"><svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke="#143D4A" stroke-width="2" stroke-dasharray="2 3"/></svg>Runs with the data owner's rights</div>
+    <div class="legend-row"><svg width="34" height="10"><line x1="0" y1="5" x2="32" y2="5" stroke="#618794" stroke-width="1.5"/><path d="M28,1.5 L32,5 L28,8.5" stroke="#618794" stroke-width="1.5" fill="none"/></svg>A reply, as the caller</div>
+  </div>
+
+</div>
+</div>
+</body>
+</html>

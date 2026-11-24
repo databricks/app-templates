@@ -1,0 +1,20 @@
+resources:
+  schemas:
+    eval:
+      catalog_name: ${var.catalog}
+      name: ${var.project}_eval
+      comment: The evals' evaluation datasets and the registered agent prompts. Only the evaluation group writes here.
+      grants:
+        - principal: ${var.eval_group}
+          privileges:
+            - USE_SCHEMA
+            - CREATE_TABLE
+            - CREATE_FUNCTION
+            - EXECUTE
+            - MANAGE
+        - principal: ${var.ops_group}
+          privileges:
+            - USE_SCHEMA
+            - SELECT
+      lifecycle:
+        prevent_destroy: true

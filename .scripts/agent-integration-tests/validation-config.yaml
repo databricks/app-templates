@@ -92,6 +92,7 @@ templates:
     # Delta tables with the gold schema, owned by the shared-app maintainer).
     replace: { "REPLACE_ME.gold.": "main.`apps-e2e-template-schema`." }
   content-moderator: { verify: obo }
+  fullstack-agent: { verify: obo }
   inventory-intelligence: { verify: obo }
   saas-tracker: { verify: obo }
   vacation-rentals: { verify: obo }

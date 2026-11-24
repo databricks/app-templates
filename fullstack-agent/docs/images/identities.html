@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Identities a request uses</title>
+<link rel="stylesheet" href="diagrams.css">
+</head>
+<body>
+<div id="diagram">
+<div id="canvas" style="width:1240px; height:652px;">
+
+  <div class="box zone-external" style="left:0; top:0; width:160px; height:336px;">
+    <div class="head">Users</div>
+    <div class="item" style="position:absolute; left:12px; top:66px;">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>
+      <div class="label">App user</div>
+      <div class="sub">In app_users_group</div>
+    </div>
+    <div class="item" style="position:absolute; left:12px; top:182px;">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/></svg>
+      <div class="label">Identity provider</div>
+      <div class="sub">Signs the user in</div>
+    </div>
+  </div>
+
+  <div class="box zone-external" style="left:0; top:370px; width:160px; height:282px;">
+    <div class="head small">Legend</div>
+    <div style="padding:16px 12px; display:flex; flex-direction:column; gap:16px;">
+      <div class="legend-row"><svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke="#143D4A" stroke-width="2"/></svg>Runs on behalf of the user</div>
+      <div class="legend-row"><svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke="#143D4A" stroke-width="2" stroke-dasharray="6 4"/></svg>Runs as the app's service principal</div>
+      <div class="legend-row"><svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke="#143D4A" stroke-width="2" stroke-dasharray="2 3"/></svg>Runs with the data owner's rights</div>
+    </div>
+  </div>
+
+  <div class="box platform" style="left:220px; top:0; width:1020px; height:652px;">
+    <div class="head"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg>Databricks workspace<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg></div>
+  </div>
+
+  <div class="box panel" style="left:242px; top:76px; width:150px; height:260px;">
+    <div class="head">Databricks Apps</div>
+    <div class="body">
+      <div class="item">
+        <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Databricks Apps">
+<g transform="translate(3.2941 2) scale(2.5882)"><path d="M2.75 1.01074C1.7835 1.01074 1 1.79424 1 2.76074C1 3.72724 1.7835 4.51074 2.75 4.51074C3.7165 4.51074 4.5 3.72724 4.5 2.76074C4.5 1.79424 3.7165 1.01074 2.75 1.01074Z" fill="currentColor"/>
+<path d="M8 1.01074C7.0335 1.01074 6.25 1.79424 6.25 2.76074C6.25 3.72724 7.0335 4.51074 8 4.51074C8.9665 4.51074 9.75 3.72724 9.75 2.76074C9.75 1.79424 8.9665 1.01074 8 1.01074Z" fill="currentColor"/>
+<path d="M13.25 1.01074C12.2835 1.01074 11.5 1.79424 11.5 2.76074C11.5 3.72724 12.2835 4.51074 13.25 4.51074C14.2165 4.51074 15 3.72724 15 2.76074C15 1.79424 14.2165 1.01074 13.25 1.01074Z" fill="currentColor"/>
+<path d="M2.75 6.26074C1.7835 6.26074 1 7.04424 1 8.01074C1 8.97724 1.7835 9.76074 2.75 9.76074C3.7165 9.76074 4.5 8.97724 4.5 8.01074C4.5 7.04424 3.7165 6.26074 2.75 6.26074Z" fill="currentColor"/>
+<path d="M8 6.26074C7.0335 6.26074 6.25 7.04424 6.25 8.01074C6.25 8.97724 7.0335 9.76074 8 9.76074C8.9665 9.76074 9.75 8.97724 9.75 8.01074C9.75 7.04424 8.9665 6.26074 8 6.26074Z" fill="currentColor"/>
+<path d="M13.25 6.26074C12.2835 6.26074 11.5 7.04424 11.5 8.01074C11.5 8.97724 12.2835 9.76074 13.25 9.76074C14.2165 9.76074 15 8.97724 15 8.01074C15 7.04424 14.2165 6.26074 13.25 6.26074Z" fill="currentColor"/>
+<path d="M2.75 11.5107C1.7835 11.5107 1 12.2942 1 13.2607C1 14.2272 1.7835 15.0107 2.75 15.0107C3.7165 15.0107 4.5 14.2272 4.5 13.2607C4.5 12.2942 3.7165 11.5107 2.75 11.5107Z" fill="currentColor"/>
+<path d="M8 11.5107C7.0335 11.5107 6.25 12.2942 6.25 13.2607C6.25 14.2272 7.0335 15.0107 8 15.0107C8.9665 15.0107 9.75 14.2272 9.75 13.2607C9.75 12.2942 8.9665 11.5107 8 11.5107Z" fill="currentColor"/>
+<path d="M13.25 11.5107C12.2835 11.5107 11.5 12.2942 11.5 13.2607C11.5 14.2272 12.2835 15.0107 13.25 15.0107C14.2165 15.0107 15 14.2272 15 13.2607C15 12.2942 14.2165 11.5107 13.25 11.5107Z" fill="currentColor"/></g>
+</svg>
+        <div class="label">Apps proxy</div>
+        <div class="sub">Forwards the user's token and email</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="box panel" style="left:448px; top:76px; width:190px; height:554px;">
+    <div class="head">Agent app</div>
+    <div class="body" style="display:block;">
+      <div class="row" style="top:58px;">
+        <div class="item wide">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 11v6"/><path d="M19 13h2"/><path d="M2 21a8 8 0 0 1 12.868-6.349"/><circle cx="10" cy="8" r="5"/><circle cx="19" cy="19" r="2"/></svg>
+          <div class="label">User client</div>
+          <div class="sub">Built per request, never cached</div>
+        </div>
+      </div>
+      <div class="row" style="top:352px;">
+        <div class="item wide">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg>
+          <div class="label">App client</div>
+          <div class="sub">The app's service principal, one per process</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="box panel" style="left:724px; top:76px; width:250px; height:260px;">
+    <div class="head">On behalf of the user</div>
+    <div class="body" style="display:block;">
+      <div class="card" style="top:14px; height:56px;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Unity Gateway">
+<g transform="translate(2 2) scale(0.7097)"><path d="M21.5 43V29A9.5 9.5 0 0 1 40.5 29V43Z" fill="currentColor"/>
+<rect x="6" y="25" width="10" height="10" fill="currentColor" opacity="0.45"/>
+<rect x="46" y="25" width="10" height="10" fill="currentColor" opacity="0.45"/>
+<rect x="15.5" y="8" width="10" height="10" transform="rotate(-30 20.5 13)" fill="currentColor" opacity="0.45"/>
+<rect x="36.5" y="8" width="10" height="10" transform="rotate(30 41.5 13)" fill="currentColor" opacity="0.45"/>
+<path d="M16.5 47H45.5L48.5 54.5H13.5Z" fill="currentColor" opacity="0.45"/>
+</g>
+</svg>
+        <div><div class="label">Model services</div><div class="sub">EXECUTE</div></div>
+      </div>
+      <div class="card" style="top:82px; height:56px;">
+        <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Lakehouse Storage (Managed Tables)">
+<g transform="translate(2 2) scale(0.2933)"><path d="M126.77 25.11H23.23C21.2868 25.1126 19.4239 25.8857 18.0498 27.2598C16.6758 28.6339 15.9026 30.4968 15.9 32.44V47H122.45V44H18.9V32.44C18.9 31.2916 19.3562 30.1902 20.1682 29.3782C20.9803 28.5662 22.0816 28.11 23.23 28.11H126.77C127.918 28.11 129.02 28.5662 129.832 29.3782C130.644 30.1902 131.1 31.2916 131.1 32.44V117.56C131.1 118.708 130.644 119.81 129.832 120.622C129.02 121.434 127.918 121.89 126.77 121.89H23.23C22.0816 121.89 20.9803 121.434 20.1682 120.622C19.3562 119.81 18.9 118.708 18.9 117.56V58.26H15.9V117.56C15.9026 119.503 16.6758 121.366 18.0498 122.74C19.4239 124.114 21.2868 124.887 23.23 124.89H126.77C128.713 124.887 130.576 124.114 131.95 122.74C133.324 121.366 134.097 119.503 134.1 117.56V32.44C134.097 30.4968 133.324 28.6339 131.95 27.2598C130.576 25.8857 128.713 25.1126 126.77 25.11Z" fill="currentColor"></path><path d="M25.6 36.18C25.602 36.6364 25.7391 37.0821 25.9942 37.4606C26.2492 37.8392 26.6106 38.1337 27.0329 38.307C27.4552 38.4803 27.9193 38.5246 28.3668 38.4344C28.8142 38.3441 29.2249 38.1233 29.5469 37.7999C29.869 37.4764 30.088 37.0648 30.1763 36.617C30.2646 36.1692 30.2183 35.7052 30.0432 35.2837C29.8681 34.8622 29.572 34.502 29.1923 34.2486C28.8127 33.9952 28.3664 33.86 27.91 33.86C27.6058 33.86 27.3046 33.9201 27.0237 34.0368C26.7428 34.1535 26.4877 34.3245 26.273 34.5401C26.0584 34.7557 25.8885 35.0115 25.773 35.2929C25.6575 35.5743 25.5987 35.8758 25.6 36.18Z" fill="currentColor"></path><path d="M34.51 36.18C34.51 36.6388 34.6461 37.0874 34.901 37.4689C35.1559 37.8504 35.5183 38.1478 35.9422 38.3234C36.3661 38.499 36.8326 38.5449 37.2826 38.4554C37.7327 38.3659 38.146 38.1449 38.4705 37.8205C38.795 37.496 39.0159 37.0826 39.1054 36.6326C39.195 36.1826 39.149 35.7161 38.9734 35.2922C38.7978 34.8682 38.5005 34.5059 38.1189 34.251C37.7374 33.9961 37.2889 33.86 36.83 33.86C36.2147 33.86 35.6246 34.1044 35.1895 34.5395C34.7544 34.9746 34.51 35.5647 34.51 36.18Z" fill="currentColor"></path><path d="M43.43 36.18C43.43 36.6393 43.5663 37.0882 43.8217 37.47C44.0771 37.8517 44.44 38.149 44.8645 38.3243C45.289 38.4996 45.756 38.545 46.2063 38.4547C46.6566 38.3643 47.07 38.1424 47.394 37.8169C47.7181 37.4915 47.9382 37.0771 48.0266 36.6265C48.115 36.1758 48.0676 35.709 47.8905 35.2852C47.7134 34.8615 47.4145 34.4998 47.0316 34.2461C46.6488 33.9924 46.1993 33.858 45.74 33.86C45.1264 33.8627 44.5389 34.1082 44.106 34.543C43.673 34.9778 43.43 35.5664 43.43 36.18Z" fill="currentColor"></path><path d="M122.93 112.58V58.24H27.07V112.58H30.07V96.47H45.64V112.58H48.64V96.47H64.22V112.58H67.22V96.47H82.79V112.58H85.79V96.47H101.36V112.58H104.36V96.47H119.93V112.58H122.93ZM119.93 75.85H104.36V61.24H119.93V75.85ZM67.22 61.24H82.79V75.85H67.22V61.24ZM64.22 75.85H48.64V61.24H64.22V75.85ZM85.79 61.24H101.36V75.85H85.79V61.24ZM45.64 61.24V75.85H30.07V61.24H45.64ZM30.07 93.47V78.85H45.64V93.47H30.07ZM48.64 93.47V78.85H64.22V93.47H48.64ZM67.22 93.47V78.85H82.79V93.47H67.22ZM85.79 93.47V78.85H101.36V93.47H85.79ZM104.36 93.47V78.85H119.93V93.47H104.36Z" fill="currentColor"></path></g>
+</svg>
+        <div><div class="label">Use-case, audit and Activity tables</div><div class="sub">SELECT, filtered and masked</div></div>
+      </div>
+      <div class="card" style="top:150px; height:56px;">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><path d="M9 17c2 0 2.8-1 2.8-2.8V10c0-2 1-3.3 3.2-3"/><path d="M9 11.2h5.7"/></svg>
+        <div><div class="label">Definer write procedures</div><div class="sub">EXECUTE, never MODIFY</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="box panel" style="left:724px; top:370px; width:250px; height:260px;">
+    <div class="head">As the app's service principal</div>
+    <div class="body" style="display:block;">
+      <div class="card" style="top:14px; height:56px;">
+        <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Lakehouse Storage (Managed Tables)">
+<g transform="translate(2 2) scale(0.2933)"><path d="M126.77 25.11H23.23C21.2868 25.1126 19.4239 25.8857 18.0498 27.2598C16.6758 28.6339 15.9026 30.4968 15.9 32.44V47H122.45V44H18.9V32.44C18.9 31.2916 19.3562 30.1902 20.1682 29.3782C20.9803 28.5662 22.0816 28.11 23.23 28.11H126.77C127.918 28.11 129.02 28.5662 129.832 29.3782C130.644 30.1902 131.1 31.2916 131.1 32.44V117.56C131.1 118.708 130.644 119.81 129.832 120.622C129.02 121.434 127.918 121.89 126.77 121.89H23.23C22.0816 121.89 20.9803 121.434 20.1682 120.622C19.3562 119.81 18.9 118.708 18.9 117.56V58.26H15.9V117.56C15.9026 119.503 16.6758 121.366 18.0498 122.74C19.4239 124.114 21.2868 124.887 23.23 124.89H126.77C128.713 124.887 130.576 124.114 131.95 122.74C133.324 121.366 134.097 119.503 134.1 117.56V32.44C134.097 30.4968 133.324 28.6339 131.95 27.2598C130.576 25.8857 128.713 25.1126 126.77 25.11Z" fill="currentColor"></path><path d="M25.6 36.18C25.602 36.6364 25.7391 37.0821 25.9942 37.4606C26.2492 37.8392 26.6106 38.1337 27.0329 38.307C27.4552 38.4803 27.9193 38.5246 28.3668 38.4344C28.8142 38.3441 29.2249 38.1233 29.5469 37.7999C29.869 37.4764 30.088 37.0648 30.1763 36.617C30.2646 36.1692 30.2183 35.7052 30.0432 35.2837C29.8681 34.8622 29.572 34.502 29.1923 34.2486C28.8127 33.9952 28.3664 33.86 27.91 33.86C27.6058 33.86 27.3046 33.9201 27.0237 34.0368C26.7428 34.1535 26.4877 34.3245 26.273 34.5401C26.0584 34.7557 25.8885 35.0115 25.773 35.2929C25.6575 35.5743 25.5987 35.8758 25.6 36.18Z" fill="currentColor"></path><path d="M34.51 36.18C34.51 36.6388 34.6461 37.0874 34.901 37.4689C35.1559 37.8504 35.5183 38.1478 35.9422 38.3234C36.3661 38.499 36.8326 38.5449 37.2826 38.4554C37.7327 38.3659 38.146 38.1449 38.4705 37.8205C38.795 37.496 39.0159 37.0826 39.1054 36.6326C39.195 36.1826 39.149 35.7161 38.9734 35.2922C38.7978 34.8682 38.5005 34.5059 38.1189 34.251C37.7374 33.9961 37.2889 33.86 36.83 33.86C36.2147 33.86 35.6246 34.1044 35.1895 34.5395C34.7544 34.9746 34.51 35.5647 34.51 36.18Z" fill="currentColor"></path><path d="M43.43 36.18C43.43 36.6393 43.5663 37.0882 43.8217 37.47C44.0771 37.8517 44.44 38.149 44.8645 38.3243C45.289 38.4996 45.756 38.545 46.2063 38.4547C46.6566 38.3643 47.07 38.1424 47.394 37.8169C47.7181 37.4915 47.9382 37.0771 48.0266 36.6265C48.115 36.1758 48.0676 35.709 47.8905 35.2852C47.7134 34.8615 47.4145 34.4998 47.0316 34.2461C46.6488 33.9924 46.1993 33.858 45.74 33.86C45.1264 33.8627 44.5389 34.1082 44.106 34.543C43.673 34.9778 43.43 35.5664 43.43 36.18Z" fill="currentColor"></path><path d="M122.93 112.58V58.24H27.07V112.58H30.07V96.47H45.64V112.58H48.64V96.47H64.22V112.58H67.22V96.47H82.79V112.58H85.79V96.47H101.36V112.58H104.36V96.47H119.93V112.58H122.93ZM119.93 75.85H104.36V61.24H119.93V75.85ZM67.22 61.24H82.79V75.85H67.22V61.24ZM64.22 75.85H48.64V61.24H64.22V75.85ZM85.79 61.24H101.36V75.85H85.79V61.24ZM45.64 61.24V75.85H30.07V61.24H45.64ZM30.07 93.47V78.85H45.64V93.47H30.07ZM48.64 93.47V78.85H64.22V93.47H48.64ZM67.22 93.47V78.85H82.79V93.47H67.22ZM85.79 93.47V78.85H101.36V93.47H85.79ZM104.36 93.47V78.85H119.93V93.47H104.36Z" fill="currentColor"></path></g>
+</svg>
+        <div><div class="label">Reference tables</div><div class="sub">SELECT</div></div>
+      </div>
+      <div class="card" style="top:82px; height:56px;">
+        <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Lakehouse Storage (Managed Tables)">
+<g transform="translate(2 2) scale(0.2933)"><path d="M126.77 25.11H23.23C21.2868 25.1126 19.4239 25.8857 18.0498 27.2598C16.6758 28.6339 15.9026 30.4968 15.9 32.44V47H122.45V44H18.9V32.44C18.9 31.2916 19.3562 30.1902 20.1682 29.3782C20.9803 28.5662 22.0816 28.11 23.23 28.11H126.77C127.918 28.11 129.02 28.5662 129.832 29.3782C130.644 30.1902 131.1 31.2916 131.1 32.44V117.56C131.1 118.708 130.644 119.81 129.832 120.622C129.02 121.434 127.918 121.89 126.77 121.89H23.23C22.0816 121.89 20.9803 121.434 20.1682 120.622C19.3562 119.81 18.9 118.708 18.9 117.56V58.26H15.9V117.56C15.9026 119.503 16.6758 121.366 18.0498 122.74C19.4239 124.114 21.2868 124.887 23.23 124.89H126.77C128.713 124.887 130.576 124.114 131.95 122.74C133.324 121.366 134.097 119.503 134.1 117.56V32.44C134.097 30.4968 133.324 28.6339 131.95 27.2598C130.576 25.8857 128.713 25.1126 126.77 25.11Z" fill="currentColor"></path><path d="M25.6 36.18C25.602 36.6364 25.7391 37.0821 25.9942 37.4606C26.2492 37.8392 26.6106 38.1337 27.0329 38.307C27.4552 38.4803 27.9193 38.5246 28.3668 38.4344C28.8142 38.3441 29.2249 38.1233 29.5469 37.7999C29.869 37.4764 30.088 37.0648 30.1763 36.617C30.2646 36.1692 30.2183 35.7052 30.0432 35.2837C29.8681 34.8622 29.572 34.502 29.1923 34.2486C28.8127 33.9952 28.3664 33.86 27.91 33.86C27.6058 33.86 27.3046 33.9201 27.0237 34.0368C26.7428 34.1535 26.4877 34.3245 26.273 34.5401C26.0584 34.7557 25.8885 35.0115 25.773 35.2929C25.6575 35.5743 25.5987 35.8758 25.6 36.18Z" fill="currentColor"></path><path d="M34.51 36.18C34.51 36.6388 34.6461 37.0874 34.901 37.4689C35.1559 37.8504 35.5183 38.1478 35.9422 38.3234C36.3661 38.499 36.8326 38.5449 37.2826 38.4554C37.7327 38.3659 38.146 38.1449 38.4705 37.8205C38.795 37.496 39.0159 37.0826 39.1054 36.6326C39.195 36.1826 39.149 35.7161 38.9734 35.2922C38.7978 34.8682 38.5005 34.5059 38.1189 34.251C37.7374 33.9961 37.2889 33.86 36.83 33.86C36.2147 33.86 35.6246 34.1044 35.1895 34.5395C34.7544 34.9746 34.51 35.5647 34.51 36.18Z" fill="currentColor"></path><path d="M43.43 36.18C43.43 36.6393 43.5663 37.0882 43.8217 37.47C44.0771 37.8517 44.44 38.149 44.8645 38.3243C45.289 38.4996 45.756 38.545 46.2063 38.4547C46.6566 38.3643 47.07 38.1424 47.394 37.8169C47.7181 37.4915 47.9382 37.0771 48.0266 36.6265C48.115 36.1758 48.0676 35.709 47.8905 35.2852C47.7134 34.8615 47.4145 34.4998 47.0316 34.2461C46.6488 33.9924 46.1993 33.858 45.74 33.86C45.1264 33.8627 44.5389 34.1082 44.106 34.543C43.673 34.9778 43.43 35.5664 43.43 36.18Z" fill="currentColor"></path><path d="M122.93 112.58V58.24H27.07V112.58H30.07V96.47H45.64V112.58H48.64V96.47H64.22V112.58H67.22V96.47H82.79V112.58H85.79V96.47H101.36V112.58H104.36V96.47H119.93V112.58H122.93ZM119.93 75.85H104.36V61.24H119.93V75.85ZM67.22 61.24H82.79V75.85H67.22V61.24ZM64.22 75.85H48.64V61.24H64.22V75.85ZM85.79 61.24H101.36V75.85H85.79V61.24ZM45.64 61.24V75.85H30.07V61.24H45.64ZM30.07 93.47V78.85H45.64V93.47H30.07ZM48.64 93.47V78.85H64.22V93.47H48.64ZM67.22 93.47V78.85H82.79V93.47H67.22ZM85.79 93.47V78.85H101.36V93.47H85.79ZM104.36 93.47V78.85H119.93V93.47H104.36Z" fill="currentColor"></path></g>
+</svg>
+        <div><div class="label">Activity table</div><div class="sub">One INSERT per run</div></div>
+      </div>
+      <div class="card" style="top:150px; height:56px;">
+        <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Lakebase">
+<g transform="translate(2 2) scale(1)"><path d="M21.9873 26.1678C19.538 25.3353 16.7272 24.8602 13.7305 24.8602C10.734 24.8603 7.92687 25.3354 5.47461 26.1678V17.6639H38.5V26.1678C36.0476 26.9668 33.2399 27.4237 30.2432 27.4237C27.2466 27.4237 24.4365 26.9668 21.9873 26.1678Z" fill="currentColor" opacity="0.45"/>
+<path d="M13.7698 28.4783C16.5661 28.4783 19.1996 28.8587 21.5266 29.531L22.4485 29.8083C24.7755 30.4806 27.409 30.8611 30.2053 30.8611C33.1877 30.861 35.9814 30.4277 38.4221 29.6697H38.5002V38.4939H5.47485V29.6697H5.552C7.99291 28.9116 10.7871 28.4783 13.7698 28.4783Z" fill="currentColor"/>
+<rect x="5.47485" y="5.5" width="33.0252" height="8.82439" fill="currentColor" opacity="0.45"/></g>
+</svg>
+        <div><div class="label">Stores, traces and ratings</div><div class="sub">Lakebase and MLflow</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="box panel" style="left:1034px; top:196px; width:184px; height:140px;">
+    <div class="head">Data owner</div>
+    <div class="body" style="display:block;">
+      <div class="card" style="top:22px; height:56px;">
+        <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="48" viewBox="0 0 48 48" fill="none" role="img" aria-label="Lakehouse Storage (Managed Tables)">
+<g transform="translate(2 2) scale(0.2933)"><path d="M126.77 25.11H23.23C21.2868 25.1126 19.4239 25.8857 18.0498 27.2598C16.6758 28.6339 15.9026 30.4968 15.9 32.44V47H122.45V44H18.9V32.44C18.9 31.2916 19.3562 30.1902 20.1682 29.3782C20.9803 28.5662 22.0816 28.11 23.23 28.11H126.77C127.918 28.11 129.02 28.5662 129.832 29.3782C130.644 30.1902 131.1 31.2916 131.1 32.44V117.56C131.1 118.708 130.644 119.81 129.832 120.622C129.02 121.434 127.918 121.89 126.77 121.89H23.23C22.0816 121.89 20.9803 121.434 20.1682 120.622C19.3562 119.81 18.9 118.708 18.9 117.56V58.26H15.9V117.56C15.9026 119.503 16.6758 121.366 18.0498 122.74C19.4239 124.114 21.2868 124.887 23.23 124.89H126.77C128.713 124.887 130.576 124.114 131.95 122.74C133.324 121.366 134.097 119.503 134.1 117.56V32.44C134.097 30.4968 133.324 28.6339 131.95 27.2598C130.576 25.8857 128.713 25.1126 126.77 25.11Z" fill="currentColor"></path><path d="M25.6 36.18C25.602 36.6364 25.7391 37.0821 25.9942 37.4606C26.2492 37.8392 26.6106 38.1337 27.0329 38.307C27.4552 38.4803 27.9193 38.5246 28.3668 38.4344C28.8142 38.3441 29.2249 38.1233 29.5469 37.7999C29.869 37.4764 30.088 37.0648 30.1763 36.617C30.2646 36.1692 30.2183 35.7052 30.0432 35.2837C29.8681 34.8622 29.572 34.502 29.1923 34.2486C28.8127 33.9952 28.3664 33.86 27.91 33.86C27.6058 33.86 27.3046 33.9201 27.0237 34.0368C26.7428 34.1535 26.4877 34.3245 26.273 34.5401C26.0584 34.7557 25.8885 35.0115 25.773 35.2929C25.6575 35.5743 25.5987 35.8758 25.6 36.18Z" fill="currentColor"></path><path d="M34.51 36.18C34.51 36.6388 34.6461 37.0874 34.901 37.4689C35.1559 37.8504 35.5183 38.1478 35.9422 38.3234C36.3661 38.499 36.8326 38.5449 37.2826 38.4554C37.7327 38.3659 38.146 38.1449 38.4705 37.8205C38.795 37.496 39.0159 37.0826 39.1054 36.6326C39.195 36.1826 39.149 35.7161 38.9734 35.2922C38.7978 34.8682 38.5005 34.5059 38.1189 34.251C37.7374 33.9961 37.2889 33.86 36.83 33.86C36.2147 33.86 35.6246 34.1044 35.1895 34.5395C34.7544 34.9746 34.51 35.5647 34.51 36.18Z" fill="currentColor"></path><path d="M43.43 36.18C43.43 36.6393 43.5663 37.0882 43.8217 37.47C44.0771 37.8517 44.44 38.149 44.8645 38.3243C45.289 38.4996 45.756 38.545 46.2063 38.4547C46.6566 38.3643 47.07 38.1424 47.394 37.8169C47.7181 37.4915 47.9382 37.0771 48.0266 36.6265C48.115 36.1758 48.0676 35.709 47.8905 35.2852C47.7134 34.8615 47.4145 34.4998 47.0316 34.2461C46.6488 33.9924 46.1993 33.858 45.74 33.86C45.1264 33.8627 44.5389 34.1082 44.106 34.543C43.673 34.9778 43.43 35.5664 43.43 36.18Z" fill="currentColor"></path><path d="M122.93 112.58V58.24H27.07V112.58H30.07V96.47H45.64V112.58H48.64V96.47H64.22V112.58H67.22V96.47H82.79V112.58H85.79V96.47H101.36V112.58H104.36V96.47H119.93V112.58H122.93ZM119.93 75.85H104.36V61.24H119.93V75.85ZM67.22 61.24H82.79V75.85H67.22V61.24ZM64.22 75.85H48.64V61.24H64.22V75.85ZM85.79 61.24H101.36V75.85H85.79V61.24ZM45.64 61.24V75.85H30.07V61.24H45.64ZM30.07 93.47V78.85H45.64V93.47H30.07ZM48.64 93.47V78.85H64.22V93.47H48.64ZM67.22 93.47V78.85H82.79V93.47H67.22ZM85.79 93.47V78.85H101.36V93.47H85.79ZM104.36 93.47V78.85H119.93V93.47H104.36Z" fill="currentColor"></path></g>
+</svg>
+        <div><div class="label">Use-case and audit tables</div><div class="sub">Owned by the data owner</div></div>
+      </div>
+    </div>
+  </div>
+
+  <svg id="wires" width="1240" height="652">
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto">
+        <path d="M0,0 L10,5 L0,10 z" fill="#143D4A"/>
+      </marker>
+    </defs>
+    <g stroke="#143D4A" stroke-width="2" fill="none">
+      <path d="M638,226 H671 M671,158 V294"/>
+      <path d="M638,520 H671 M671,452 V588" stroke-dasharray="6 4"/>
+    </g>
+    <g stroke="#143D4A" stroke-width="2" fill="none" marker-end="url(#arrow)">
+      <path d="M160,226 H241"/>
+      <path d="M392,226 H447"/>
+      <path d="M671,158 H723"/>
+      <path d="M671,226 H723"/>
+      <path d="M671,294 H723"/>
+      <path d="M974,294 H1033" stroke-dasharray="2 3"/>
+      <path d="M671,452 H723" stroke-dasharray="6 4"/>
+      <path d="M671,520 H723" stroke-dasharray="6 4"/>
+      <path d="M671,588 H723" stroke-dasharray="6 4"/>
+    </g>
+  </svg>
+
+  <div class="badge" style="left:190px; top:226px;">1</div>
+  <div class="badge" style="left:420px; top:226px;">2</div>
+  <div class="badge" style="left:697px; top:158px;">3</div>
+  <div class="badge" style="left:697px; top:226px;">4</div>
+  <div class="badge" style="left:697px; top:294px;">5</div>
+  <div class="badge" style="left:1002px; top:294px;">6</div>
+  <div class="badge" style="left:697px; top:452px;">7</div>
+  <div class="badge" style="left:697px; top:520px;">8</div>
+  <div class="badge" style="left:697px; top:588px;">9</div>
+
+</div>
+</div>
+</body>
+</html>

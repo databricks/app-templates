@@ -92,6 +92,14 @@ jd/tenacity - https://github.com/jd/tenacity
 Copyright tenacity authors
 License - https://github.com/jd/tenacity/blob/main/LICENSE
 
+open-telemetry/opentelemetry-python - https://github.com/open-telemetry/opentelemetry-python
+Copyright OpenTelemetry Authors
+License - https://github.com/open-telemetry/opentelemetry-python/blob/main/LICENSE
+
+open-telemetry/opentelemetry-python-contrib - https://github.com/open-telemetry/opentelemetry-python-contrib
+Copyright OpenTelemetry Authors
+License - https://github.com/open-telemetry/opentelemetry-python-contrib/blob/main/LICENSE
+
 ________________
 This Software contains code from the following open source projects, licensed under the MIT license:
 
@@ -247,6 +255,42 @@ express-rate-limit/express-rate-limit - https://github.com/express-rate-limit/ex
 Copyright (c) express-rate-limit authors
 License - https://github.com/express-rate-limit/express-rate-limit/blob/main/license.md
 
+shadcn-ui/ui - https://github.com/shadcn-ui/ui
+Copyright (c) 2023 shadcn
+License - https://github.com/shadcn-ui/ui/blob/main/LICENSE.md
+
+shadcn-ui/cn - https://github.com/shadcn-ui/cn
+Copyright (c) 2026 shadcn
+License - https://github.com/shadcn-ui/cn/blob/main/LICENSE
+
+assistant-ui/assistant-ui - https://github.com/assistant-ui/assistant-ui
+Copyright (c) 2026 AgentbaseAI Inc.
+License - https://github.com/assistant-ui/assistant-ui/blob/main/LICENSE
+
+KaTeX/KaTeX - https://github.com/KaTeX/KaTeX
+Copyright (c) 2013-2020 Khan Academy and other contributors
+License - https://github.com/KaTeX/KaTeX/blob/main/LICENSE
+
+lukilabs/beautiful-mermaid - https://github.com/lukilabs/beautiful-mermaid
+Copyright (c) 2026 Craft Docs
+License - https://github.com/lukilabs/beautiful-mermaid/blob/main/LICENSE
+
+dip/cmdk - https://github.com/dip/cmdk
+Copyright (c) 2022 Paco Coursey
+License - https://github.com/dip/cmdk/blob/main/LICENSE.md
+
+remarkjs/remark-gfm - https://github.com/remarkjs/remark-gfm
+Copyright (c) Titus Wormer
+License - https://github.com/remarkjs/remark-gfm/blob/main/license
+
+remarkjs/remark-math - https://github.com/remarkjs/remark-math
+Copyright (c) Junyoung Choi
+License - https://github.com/remarkjs/remark-math/blob/main/license
+
+fontsource/font-files - https://github.com/fontsource/font-files
+Copyright (c) 2023 fontsource
+License - https://github.com/fontsource/font-files/blob/main/LICENSE
+
 ________________
 This Software contains code from the following open source projects, licensed under the BSD 3-clause license:
 
@@ -282,6 +326,10 @@ motdotla/dotenv - https://github.com/motdotla/dotenv
 Copyright (c) 2015 Scott Motte
 License - https://github.com/motdotla/dotenv/blob/master/LICENSE
 
+Kludex/starlette - https://github.com/Kludex/starlette
+Copyright (c) 2018, Encode OSS Ltd
+License - https://github.com/Kludex/starlette/blob/main/LICENSE.md
+
 ________________
 This Software contains code from the following open source projects, licensed under the ISC license:
 
@@ -308,3 +356,14 @@ This Software contains code from the following open source projects, licensed un
 
 porsager/postgres - https://github.com/porsager/postgres
 License - https://github.com/porsager/postgres/blob/master/LICENSE
+
+________________
+This Software contains code from the following open source projects, licensed under the SIL Open Font License 1.1:
+
+rsms/inter - https://github.com/rsms/inter
+Copyright (c) 2016 The Inter Project Authors
+License - https://github.com/rsms/inter/blob/master/LICENSE.txt
+
+IBM/plex - https://github.com/IBM/plex
+Copyright (c) 2017 IBM Corp.
+License - https://github.com/IBM/plex/blob/master/LICENSE.txt

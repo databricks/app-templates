@@ -1,0 +1,18 @@
+resources:
+  experiments:
+    agent_traces:
+      name: ${workspace.root_path}/${var.project}-traces
+      trace_location:
+        uc_trace_location:
+          catalog: ${resources.schemas.ops.catalog_name}
+          schema: ${resources.schemas.ops.name}
+          table_prefix: agent_traces
+      lifecycle:
+        prevent_destroy: true
+      permissions:
+        - group_name: ${var.agent_apps_group}
+          level: CAN_EDIT
+        - group_name: ${var.ops_group}
+          level: CAN_READ
+        - group_name: ${var.eval_group}
+          level: CAN_EDIT

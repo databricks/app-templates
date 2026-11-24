@@ -1,0 +1,19 @@
+resources:
+  sql_warehouses:
+    app_warehouse:
+      name: ${var.project}-app-${bundle.target}
+      warehouse_type: PRO
+      enable_serverless_compute: true
+      cluster_size: Small
+      min_num_clusters: 1
+      max_num_clusters: 2
+      auto_stop_mins: 15
+      tags:
+        custom_tags: ${var.cost_tags}
+      permissions:
+        - group_name: ${var.app_users_group}
+          level: CAN_USE
+        - group_name: ${var.agent_apps_group}
+          level: CAN_USE
+        - group_name: ${var.ops_group}
+          level: CAN_USE

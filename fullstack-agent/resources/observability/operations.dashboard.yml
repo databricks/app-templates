@@ -1,0 +1,12 @@
+resources:
+  dashboards:
+    operations:
+      display_name: ${var.display_name} assistant operations
+      file_path: ./operations.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+      dataset_catalog: ${var.catalog}
+      dataset_schema: ${var.project}_ops
+      embed_credentials: false
+      permissions:
+        - group_name: ${var.ops_group}
+          level: CAN_READ

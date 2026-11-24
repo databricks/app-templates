@@ -1,0 +1,23 @@
+resources:
+  jobs:
+    app_grants:
+      name: ${var.project}_app_grants
+      description: Grants the agent app's service principal read access to the reference and audit tables, and SELECT and MODIFY on the Activity table only.
+      run_as:
+        service_principal_name: ${var.data_owner_application_id}
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: project
+          default: ${var.project}
+        - name: agent_application_id
+          default: ""
+      tasks:
+        - task_key: audit_grants
+          notebook_task:
+            notebook_path: ../../sql/app/audit_grants.sql
+            warehouse_id: ${var.warehouse_id}
+        - task_key: reference_grants
+          notebook_task:
+            notebook_path: ../../sql/app/reference_grants.sql
+            warehouse_id: ${var.warehouse_id}

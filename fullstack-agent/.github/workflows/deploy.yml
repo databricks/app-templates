@@ -1,0 +1,96 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: ${{ github.ref_type == 'tag' && 'prod' || 'staging' }}
+    concurrency:
+      group: deploy-${{ github.ref_type == 'tag' && 'prod' || 'staging' }}
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      TARGET: ${{ github.ref_type == 'tag' && 'prod' || 'staging' }}
+      DATABRICKS_BUNDLE_TARGET: ${{ github.ref_type == 'tag' && 'prod' || 'staging' }}
+      DATABRICKS_AUTH_TYPE: github-oidc
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+      UV_FROZEN: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Bundle variables from the GitHub variables that are set
+        env:
+          GITHUB_VARIABLES: ${{ toJSON(vars) }}
+        run: |
+          mkdir -p ".databricks/bundle/$TARGET"
+          jq 'with_entries(select(.value != "") | .key |= ascii_downcase)' <<<"$GITHUB_VARIABLES" >".databricks/bundle/$TARGET/variable-overrides.json"
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: databricks/setup-cli@9b64c94a6d2b2e830592d80e9f14c26d32b42ad7 # v1.20.0
+      - run: uv tool install databricks-agentbricks==0.5.0
+      - run: scripts/check_bundle_name.sh "$TARGET"
+      - run: databricks bundle deploy -t "$TARGET"
+      - run: databricks bundle run -t "$TARGET" schema
+      - run: scripts/deploy_agent.sh "$TARGET"
+      - run: scripts/setup_identities.sh "$TARGET"
+      - if: env.TARGET == 'staging'
+        run: databricks bundle run -t "$TARGET" reset_data
+      - if: env.TARGET == 'staging'
+        run: uv run --exact pytest tests/integration tests/e2e -q
+      - if: env.TARGET == 'staging'
+        run: npx --prefix frontend playwright install --with-deps chromium
+      - if: env.TARGET == 'staging'
+        run: APP_TOKEN="$(scripts/test_user_token.sh one)" npm --prefix frontend run test:deployed
+      # A production repo runs this gate only when the agent side changes (a prompt, a tool or another critical agent change), not for a frontend-only or API-only change.
+      - name: Eval gate on the held-out split, compared with the last release
+        if: env.TARGET == 'staging'
+        run: uv run --frozen --package app python -m evals run --split test --release --max-tokens 1500000
+      - name: The prod app answers a signed-in request
+        if: env.TARGET == 'prod'
+        run: |
+          app_name="$(databricks bundle validate -t "$TARGET" -o json | jq -r .variables.agent_app_name.value)"
+          app_url="$(databricks apps get "$app_name" -o json | jq -r .url)"
+          token="$(uv run python -c 'from databricks.sdk import WorkspaceClient; print(WorkspaceClient().config.authenticate()["Authorization"].removeprefix("Bearer "))')"
+          echo "::add-mask::$token"
+          deadline=$((SECONDS + 300))
+          until curl -fsS --max-time 10 -o /dev/null -H "Authorization: Bearer $token" "$app_url/"; do
+            if ((SECONDS >= deadline)); then
+              echo "::error::$app_url/ did not answer within 5 minutes. The app's last 100 log lines follow."
+              databricks apps logs "$app_name" --tail-lines 100
+              exit 1
+            fi
+            sleep 10
+          done
+      - name: Rollback steps
+        if: failure() && env.TARGET == 'prod'
+        run: |
+          {
+            echo "## The prod deploy failed"
+            echo "1. Find the last good release: \`git tag --sort=-creatordate\`."
+            echo "2. Run this workflow on that tag: Actions, Deploy, Run workflow, then pick the tag."
+            echo "3. If this release ran a schema migration, restore the affected tables first (docs/runbook.md#recovery)."
+            echo "See docs/deployment.md#rollback."
+          } >>"$GITHUB_STEP_SUMMARY"

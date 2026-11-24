@@ -1,0 +1,36 @@
+resources:
+  jobs:
+    trace_retention:
+      name: ${var.project}_trace_retention
+      description: Deletes the trace rows and Apps auth events (app.auth) of an erased user (erased_user, an email or application ID) and every trace and app telemetry row older than retention_days, then vacuums those tables. The Apps HTTP access lines name the caller by user ID, not email, so they leave with the age delete. Deleted rows leave queries at once and storage after delta.deletedFileRetentionDuration and the next VACUUM. Task retries cover write conflicts with MLflow and Apps appending rows, and any other failure.
+      run_as:
+        service_principal_name: ${var.data_owner_application_id}
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: retention_days
+          default: ${var.trace_retention_days}
+        - name: erased_user
+          default: ""
+      schedule:
+        quartz_cron_expression: 0 0 2 * * ?
+        timezone_id: UTC
+      tasks:
+        - task_key: lifecycle
+          notebook_task:
+            notebook_path: ../../sql/observability/trace_retention.sql
+            warehouse_id: ${var.warehouse_id}
+            base_parameters:
+              schema: ${resources.experiments.agent_traces.trace_location.uc_trace_location.schema}
+              table_prefix: ${resources.experiments.agent_traces.trace_location.uc_trace_location.table_prefix}
+          max_retries: 2
+          min_retry_interval_millis: 60000
+        - task_key: app_telemetry
+          notebook_task:
+            notebook_path: ../../sql/observability/trace_retention.sql
+            warehouse_id: ${var.warehouse_id}
+            base_parameters:
+              schema: ${resources.experiments.agent_traces.trace_location.uc_trace_location.schema}
+              table_prefix: ${var.app_telemetry_table_prefix}
+          max_retries: 2
+          min_retry_interval_millis: 60000

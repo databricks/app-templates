@@ -1,0 +1,63 @@
+resources:
+  jobs:
+    schema:
+      name: ${var.project}_schema
+      description: Creates the audit and Activity tables with their row filter and the app users group's access, then the use case's tables, row filters, column masks, procedures and tool functions, runs the guarded migrations in sql/data/migrations.sql (see docs/development.md#schema-migrations), and grants the app users group the use case's tables and procedures. Runs on every deploy.
+      run_as:
+        service_principal_name: ${var.data_owner_application_id}
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: project
+          default: ${var.project}
+        - name: backoffice_group
+          default: ${var.backoffice_group}
+        - name: app_users_group
+          default: ${var.app_users_group}
+      tasks:
+        - task_key: audit_tables
+          notebook_task:
+            notebook_path: ../../sql/data/audit_tables.sql
+            warehouse_id: ${var.warehouse_id}
+        - task_key: tables
+          depends_on:
+            - task_key: audit_tables
+          notebook_task:
+            notebook_path: ../../sql/data/tables.sql
+            warehouse_id: ${var.warehouse_id}
+        - task_key: row_filters
+          depends_on:
+            - task_key: tables
+          notebook_task:
+            notebook_path: ../../sql/data/row_filters.sql
+            warehouse_id: ${var.warehouse_id}
+        - task_key: column_masks
+          depends_on:
+            - task_key: row_filters
+          notebook_task:
+            notebook_path: ../../sql/data/column_masks.sql
+            warehouse_id: ${var.warehouse_id}
+        - task_key: procedures
+          depends_on:
+            - task_key: column_masks
+          notebook_task:
+            notebook_path: ../../sql/data/procedures.sql
+            warehouse_id: ${var.warehouse_id}
+        - task_key: tool_functions
+          depends_on:
+            - task_key: procedures
+          notebook_task:
+            notebook_path: ../../sql/data/tool_functions.sql
+            warehouse_id: ${var.warehouse_id}
+        - task_key: migrations
+          depends_on:
+            - task_key: tool_functions
+          notebook_task:
+            notebook_path: ../../sql/data/migrations.sql
+            warehouse_id: ${var.warehouse_id}
+        - task_key: user_grants
+          depends_on:
+            - task_key: migrations
+          notebook_task:
+            notebook_path: ../../sql/data/user_grants.sql
+            warehouse_id: ${var.warehouse_id}

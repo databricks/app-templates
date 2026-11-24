@@ -121,16 +121,11 @@ uv run pytest tests/
 ./scripts/dev/start_server.sh
 ```
 
-```python
-from databricks_mcp import DatabricksMCPClient
-mcp_client = DatabricksMCPClient(
-    server_url="http://localhost:8000/mcp"
-)
-# List available MCP tools
-print(mcp_client.list_tools())
+```bash
+uv run query-local
 ```
 
-The script connects to your local MCP server without authentication and lists available tools.
+With the server running, `query-local` connects to it with a plain MCP client (no Databricks auth needed) and lists the available tools. Uncomment the example in `scripts/dev/query_local.py` to call an individual tool.
 
 #### End-to-end test your deployed MCP server
 

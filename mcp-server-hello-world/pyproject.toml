@@ -13,7 +13,7 @@ requires-python = ">=3.11"
 # Core dependencies required to run the MCP server
 dependencies = [
     "fastapi>=0.115.12",
-    "mcp[cli]>=1.14.0",
+    "mcp[cli]>=2.0",
     "uvicorn>=0.34.2",
     "databricks-sdk>=0.60.0",
     "pydantic>=2",
@@ -26,6 +26,7 @@ dev = [
     "databricks-sdk",
     "databricks-mcp",
     "pytest",
+    "pytest-asyncio",
     "requests"
 ]
 
@@ -37,6 +38,7 @@ dev = [
 
 [project.scripts]
 custom-mcp-server = "server.main:main"
+query-local = "scripts.dev.query_local:run_locally"
 
 [build-system]
 requires = ["hatchling"]

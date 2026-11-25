@@ -1,0 +1,44 @@
+bundle:
+  name: mlflow-review-app
+
+variables:
+  experiment_id:
+    description: ID of the MLflow experiment that holds the review queues.
+  sql_warehouse_id:
+    description: ID of the SQL warehouse used to read and write Unity Catalog traces.
+
+resources:
+  apps:
+    app:
+      name: 'mlflow-review-app'
+      description: 'Reviewer UI for MLflow Review Queues'
+      source_code_path: ./
+
+      # Start the app automatically on deploy.
+      lifecycle:
+        started: true
+
+      # Used only by the /setup page's "Grant access" button, to run the trace-table GRANTs as the user.
+      user_api_scopes:
+        - sql
+
+      # The resources which this app has access to.
+      resources:
+        - name: experiment
+          experiment:
+            experiment_id: ${var.experiment_id}
+            permission: CAN_EDIT
+        - name: sql-warehouse
+          sql_warehouse:
+            id: ${var.sql_warehouse_id}
+            permission: CAN_USE
+
+targets:
+  default:
+    default: true
+    workspace:
+      host: https://your-workspace.cloud.databricks.com
+
+    variables:
+      experiment_id: placeholder
+      sql_warehouse_id: placeholder

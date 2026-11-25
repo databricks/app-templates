@@ -68,6 +68,12 @@ A collection of templates for building full-stack Databricks Apps with [AppKit](
 
 <!-- appkit-end -->
 
+### MLflow
+
+| Template | Description | Dependencies |
+|----------|-------------|--------------|
+| `mlflow-review-app` | Python (FastAPI, MLflow SDK) reviewer app for MLflow Review Queues. You own the UI; the app checks that each reviewer is a queue member and saves their answers. | MLflow experiment, SQL warehouse |
+
 ### Showcase Examples
 
 End-to-end example apps that bundle a full Databricks App with seed data, SQL queries, and (where applicable) Lakeflow pipelines and provisioning scripts. See each template's `README.md` for the runbook.

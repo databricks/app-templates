@@ -1,0 +1,13 @@
+# Minimum safe versions for packages that templates pull in transitively.
+#
+# Synced from .scripts/source/constraints.txt by .scripts/sync-scripts.py:
+#   - requirements.txt templates load this with `-c constraints.txt`
+#   - pyproject.toml templates get the same list as [tool.uv] constraint-dependencies
+# Edit the source file, then re-run the sync; don't edit the synced copies.
+#
+# A constraint only applies when something already depends on the package, so
+# listing one here never adds a dependency. It does force pip/uv to upgrade an
+# older preinstalled or previously locked version.
+
+# GHSA-6q48-6c7w-9gw2 (critical): emSign root CAs with compromised intermediate keys
+certifi>=2026.10.18

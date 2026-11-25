@@ -1,0 +1,5 @@
+-c constraints.txt
+fastapi==0.164.0
+uvicorn==0.54.0
+mlflow-skinny[databricks]==3.18.0
+databricks-sdk==0.168.0

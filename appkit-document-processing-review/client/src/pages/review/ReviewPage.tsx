@@ -5,7 +5,7 @@ import { OverviewBox, OverviewPages } from './Overview';
 import { PageViewer } from './PageViewer';
 import { FieldList } from './FieldList';
 import { shortLabels, type Document, type Field, type FieldMeta } from './lib';
-import { walk, valuesByPath } from './walk';
+import { walk, valuesByPath } from '../../../../shared/walk';
 
 type DocRow = {
   id: string;
@@ -139,14 +139,15 @@ export function ReviewPage() {
       type_key: leaf.typeKey,
       group_name: leaf.groupName,
       item_index: leaf.itemIndex,
-      // The reviewer always reviews the model's own value. A previous approval
-      // shows up as the `human_changed` badge, not as the starting value.
+      // The reviewer always reviews the model's own value. A previous
+      // approval shows up as `approved_value` beside the box, not as the
+      // starting value: each approval is an independent opinion.
       value: leaf.value,
       model_value: leaf.value,
+      approved_value: approvedValue !== null && approvedValue !== leaf.value ? approvedValue : null,
       confidence: leaf.confidence,
       approver: approvedDoc ? (detail?.approver ?? null) : null,
       approved_at: approvedDoc ? (detail?.approved_at ?? null) : null,
-      human_changed: approvedValue !== null && approvedValue !== leaf.value,
       coord,
       page_id: pageId,
       image_file: imagePage === null ? null : (walked!.pageImages.get(imagePage) ?? null),

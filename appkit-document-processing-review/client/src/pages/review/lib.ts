@@ -22,11 +22,17 @@ export type Field = {
   value: string | null;
   /** What the model produced, kept so a correction can show what it replaced. */
   model_value: string | null;
+  /**
+   * This field's value in the most recent approval of the document, when that
+   * differs from the model's. Shown beside the box so a reviewer can see what
+   * the previous reviewer decided without inheriting it as their starting
+   * point: approvals are independent opinions of the model's own output.
+   */
+  approved_value: string | null;
   confidence: number | null;
   /** Approval state, from the latest approval of this document. */
   approver: string | null;
   approved_at: string | null;
-  human_changed: boolean | null;
   /** [x1, y1, x2, y2] in page pixels, or null when there is no citation. */
   coord: number[] | null;
   page_id: number | null;

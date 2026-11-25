@@ -39,6 +39,11 @@ TBLPROPERTIES ('delta.appendOnly' = 'true');
 -- document, and these columns are the most recent of them. In the log itself the
 -- same payload is just `approved_response`, because there a row IS one approval.
 --
+-- `latest_approved_response` is that reviewer's WHOLE copy, not a merge of
+-- every reviewer's corrections: approvals are independent opinions of the
+-- model's output, so an unchanged approval after a corrected one shows the
+-- model's values here. Read the log when `approval_count > 1`.
+--
 -- Assumes the input's key column is named `id`. If yours differs, change the
 -- references below.
 CREATE OR REPLACE VIEW <INPUT_TABLE>_approved AS

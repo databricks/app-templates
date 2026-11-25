@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Application, Request } from 'express';
 import { AuthenticationError, sql } from '@databricks/appkit';
-import { applyEdit, MAX_EDITS, MAX_PATH_LENGTH, MAX_VALUE_LENGTH } from '../apply-edit';
+import { applyEdits, MAX_EDITS, MAX_PATH_LENGTH, MAX_VALUE_LENGTH } from '../apply-edit';
 
 /**
  * Every SQL statement the app runs.
@@ -45,7 +45,7 @@ const ApproveBody = z.object({
   /**
    * Only the values the approver changed, keyed by the path the walker emits.
    * Bounded here and then checked against the server's own copy of the
-   * document in `applyEdit`, because the client is the only source of a path.
+   * document in `applyEdits`, because the client is the only source of a path.
    */
   edits: z
     .record(z.string().max(MAX_PATH_LENGTH), z.string().max(MAX_VALUE_LENGTH))
@@ -265,13 +265,12 @@ export function setupReviewRoutes(appkit: AppKitWithAnalytics) {
           res.status(404).json({ error: 'Document not found' });
           return;
         }
-        for (const [path, value] of Object.entries(edits)) {
-          if (!applyEdit(approved, path, value)) {
-            res.status(400).json({
-              error: `"${path}" is not an editable value in this document`,
-            });
-            return;
-          }
+        const rejected = applyEdits(approved, edits);
+        if (rejected !== null) {
+          res.status(400).json({
+            error: `"${rejected}" is not an editable value in this document`,
+          });
+          return;
         }
 
         await user.analytics.query(

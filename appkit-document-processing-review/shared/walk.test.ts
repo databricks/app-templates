@@ -31,8 +31,20 @@ const aiExtract = {
 const aiParseDocument = {
   document: {
     elements: [
-      { id: 0, type: 'text', content: 'OLD NAVY - 03788', confidence: 0.9, bbox: [{ coord: [48, 109, 583, 402], page_id: 0 }] },
-      { id: 1, type: 'table', content: 'DATE | CHARGES', confidence: 0.81, bbox: [{ coord: [1, 2, 3, 4], page_id: 0 }] },
+      {
+        id: 0,
+        type: 'text',
+        content: 'OLD NAVY - 03788',
+        confidence: 0.9,
+        bbox: [{ coord: [48, 109, 583, 402], page_id: 0 }],
+      },
+      {
+        id: 1,
+        type: 'table',
+        content: 'DATE | CHARGES',
+        confidence: 0.81,
+        bbox: [{ coord: [1, 2, 3, 4], page_id: 0 }],
+      },
     ],
     pages: [{ id: 0, image_uri: '/Volumes/c/s/v/parse0.jpg' }],
   },
@@ -97,17 +109,11 @@ describe('ai_parse_document output', () => {
   const { leaves, pageImages } = walk(aiParseDocument);
 
   test('each element is one leaf, keyed by its content path', () => {
-    expect(leaves.map((l) => l.path)).toEqual([
-      'document.elements[0].content',
-      'document.elements[1].content',
-    ]);
+    expect(leaves.map((l) => l.path)).toEqual(['document.elements[0].content', 'document.elements[1].content']);
   });
 
   test('element type lands in the type key, so labels differ per type', () => {
-    expect(leaves.map((l) => l.typeKey)).toEqual([
-      'document.elements.text',
-      'document.elements.table',
-    ]);
+    expect(leaves.map((l) => l.typeKey)).toEqual(['document.elements.text', 'document.elements.table']);
   });
 
   test('evidence is read from the leaf itself, not from a citation', () => {

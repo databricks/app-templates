@@ -67,12 +67,13 @@ export function FieldList({
   const blocked = missing.length > 0;
 
   /*
-    A reviewed document stays editable, but the button only wakes up once
-    something differs from what is already recorded: re-submitting an unchanged
-    document would append a duplicate event per value and say nothing new.
+    Approving with nothing changed is a real answer, not a no-op: it records
+    that this reviewer read the document and agrees with the model. Every
+    approval is an independent opinion of the model's own output, so a second
+    reviewer who agrees must be able to say so, and the button stays live
+    whether or not anything in the form differs.
   */
-  const dirty = fields.some((f) => edits[f.path] !== undefined && edits[f.path] !== (f.value ?? ''));
-  const actionLabel = reviewedAt ? 'Update' : 'Approve';
+  const actionLabel = reviewedAt ? 'Approve again' : 'Approve';
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -130,7 +131,7 @@ export function FieldList({
                     </Badge>
                   )}
                   <span className="flex-1" />
-                  {field.human_changed && (
+                  {field.approved_value !== null && (
                     <Badge variant="secondary" className="text-[10px]">
                       corrected
                     </Badge>
@@ -172,8 +173,10 @@ export function FieldList({
                     }
                   />
                 )}
-                {field.human_changed && field.model_value !== null && (
-                  <p className="mt-1 truncate text-[10px] text-muted-foreground">was {field.model_value} · model</p>
+                {field.approved_value !== null && (
+                  <p className="mt-1 truncate text-[10px] text-muted-foreground">
+                    {field.approved_value} · {field.approver ?? 'a reviewer'} approved
+                  </p>
                 )}
                 <p className="mt-1 truncate text-[10px] text-muted-foreground">
                   {schema.find((s) => s.field_name === field.type_key)?.value_type.replace(/<.*/, '<…>')} · {widget}
@@ -192,11 +195,7 @@ export function FieldList({
         </p>
       )}
 
-      <Button
-        className="mt-3 w-full"
-        disabled={blocked || approving || (reviewedAt !== null && !dirty)}
-        onClick={onApprove}
-      >
+      <Button className="mt-3 w-full" disabled={blocked || approving} onClick={onApprove}>
         {approving ? 'Saving…' : actionLabel}
       </Button>
     </div>

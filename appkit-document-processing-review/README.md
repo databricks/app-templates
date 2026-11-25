@@ -42,15 +42,33 @@ flowchart LR
 | `INPUT_TABLE_approved_log` | append-only: `id`, `approver`, `approved_at`, `approved_response`. One row per approval, so the full history is kept.                                                                |
 | `INPUT_TABLE_approved`     | view, one row per input document: `id`, `response`, `latest_approved_response`, `latest_approved_at`, `latest_approver`, `approval_count` (0 until approved). What downstream reads. |
 
-`approved_response` is the **same schema as `response`** with corrected values replaced;
-confidence scores and citations ride along untouched. So `response` vs
-`latest_approved_response` is a ready-made model-vs-human evaluation pair.
+`approved_response` is the **same schema as `response`** with corrected values replaced -
+a corrected number stays a number, a boolean stays a boolean, and text that does not parse
+as the leaf's own type is refused rather than coerced. Confidence scores and citations ride
+along untouched: the server accepts an edit only at a path the form itself generated, so
+evidence is unreachable by construction rather than by a list of protected field names. So
+`response` vs `latest_approved_response` is a ready-made model-vs-human evaluation pair.
 
-Each approval is an **independent review of the model's own output**: the form always starts
-from `response`, never from an earlier approval. Two reviewers of one document therefore
-produce two comparable opinions rather than one editing the other's, and the log keeps both.
-`approval_count` tells you which case you have: `1` is a clean evaluation pair, and `> 1`
-means read the log, where the rows are a disagreement set you can measure agreement on.
+### Each approval is an independent opinion
+
+The form always starts from `response`, never from an earlier approval, and **approving with
+nothing changed is a real answer** - it records that this reviewer read the document and
+agrees with the model. Where a previous approval differs, that value is shown beside the box
+with the approver's name, as information rather than as the starting point.
+
+Two reviewers of one document therefore produce two comparable opinions rather than one
+editing the other's, and the log keeps both. `approval_count` tells you which case you have:
+`1` is a clean evaluation pair, and `> 1` means read the log, where the rows are a
+disagreement set you can measure agreement on.
+
+What this costs you: the view's `latest_approved_response` is **the most recent reviewer's
+whole copy**, not a merge of everyone's corrections. If A corrects a total and B then
+approves the document unchanged, the view shows B's copy, with the model's total. That is
+the deliberate trade for approvals that cannot overwrite each other and for a read that
+never has to be ordered against a concurrent write. **If you want accumulated corrections
+rather than independent opinions, read the log** - every approval is there in full, with its
+approver and timestamp - or treat `approval_count > 1` as a review task rather than as a
+resolved document.
 
 ## Identity: user vs service principal
 
@@ -148,10 +166,12 @@ has no proxy to supply.
 ## Known gaps
 
 - No claim or lock on a document: two reviewers can approve the same one. That is why an
-  approval reviews the original rather than a previous approval, so neither pass can revert
-  the other; the view then resolves to the most recent of them (`approval_count` shows how
-  many, and the log holds every one). What it does not give you is a way to _assign_ a
-  document, so duplicate review happens by coincidence rather than on purpose.
+  approval reviews the original rather than a previous approval - neither pass can revert the
+  other **in the log**, which holds both in full. The view is the lossy part: it resolves to
+  the most recent approval's whole copy, so an unchanged approval after a corrected one does
+  hide that correction from anything reading only the view. `approval_count` tells you when
+  to look at the log instead. What none of this gives you is a way to _assign_ a document, so
+  duplicate review happens by coincidence rather than on purpose.
 - The queue is not paginated: it loads the first 1000 documents. For a larger corpus, point
   `INPUT_TABLE` at a view that filters to the slice a reviewer should work through.
 - Cross-page citation resolution is implemented but untested - no field in the sample

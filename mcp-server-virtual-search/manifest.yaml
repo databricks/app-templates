@@ -1,0 +1,22 @@
+version: 1
+name: "MCP Server - Virtual MCP with Tool Search"
+description: "Combine the tools of several Unity Catalog MCP services behind one MCP endpoint, with guided per-service sign-in and a Lakebase-backed tool-search endpoint that returns only the tools relevant to a task."
+
+resource_specs:
+  - name: "uc-volume"
+    description: "The Unity Catalog volume holding virtual_mcp_config.json, which lists the MCP services and tools to combine."
+    uc_securable_spec:
+      securable_type: "VOLUME"
+      permission: "READ_VOLUME"
+  - name: "postgres"
+    description: "The Lakebase database that stores the tool-search index."
+    postgres_spec:
+      permission: "CAN_CONNECT_AND_CREATE"
+  - name: "serving-endpoint"
+    description: "An embedding endpoint that returns 1024-dimension vectors, such as databricks-gte-large-en."
+    serving_endpoint_spec:
+      permission: "CAN_QUERY"
+
+user_api_scopes:
+  - "ai-gateway"
+  - "unity-catalog:read"

@@ -123,7 +123,8 @@ def get_current_time() -> str:
 ## MCP tools (UC functions, Genie, Vector Search, code interpreter)
 
 Databricks-hosted tools are exposed over MCP. ADK connects to an MCP server with an
-`MCPToolset`. This needs the `mcp` package — run `uv add "google-adk[mcp]"`.
+`MCPToolset`. The `mcp` package it needs is already installed, because the template depends
+on `google-adk[mcp]`.
 
 ```python
 from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset

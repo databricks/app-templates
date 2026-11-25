@@ -47,7 +47,7 @@ All handlers tag traces with: `mlflow.update_current_trace(metadata={"mlflow.tra
 
 - **LangGraph**: `DatabricksMultiServerMCPClient` wrapping `DatabricksMCPServer` objects. Tools fetched once at agent init via `.get_tools()`.
 - **OpenAI SDK**: `McpServer` used as async context manager per-request: `async with await init_mcp_server() as mcp_server:`
-- **ADK**: `MCPToolset` (with `StreamableHTTPConnectionParams`, `Authorization: Bearer` header) added to the agent's `tools` list. Requires the `mcp` extra (`google-adk[mcp]`).
+- **ADK**: `MCPToolset` (with `StreamableHTTPConnectionParams`, `Authorization: Bearer` header) added to the agent's `tools` list. Needs the `mcp` extra, which `agent-adk` installs by default (`google-adk[mcp]>=2.11.0`). That extra also satisfies litellm 1.106+, which imports `mcp>=2.2` on every tool-calling completion. `litellm` is capped below 1.106.3 to match google-adk's own extras, because 1.107.0 was a compromised release.
 
 ### Session/memory patterns
 

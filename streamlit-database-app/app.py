@@ -19,6 +19,14 @@ from databricks import sdk
 from psycopg import sql
 from psycopg_pool import ConnectionPool
 
+MAX_TASK_LENGTH = 500
+MARKDOWN_SPECIAL_CHARS = re.compile(r"([\\`*_{}\[\]()<>#+\-.!|~:$])")
+
+
+def escape_markdown(text):
+    """Backslash-escape markdown syntax so stored text renders literally (no links, images or formatting)."""
+    return MARKDOWN_SPECIAL_CHARS.sub(r"\\\1", text)
+
 # Database connection setup
 workspace_client = sdk.WorkspaceClient()
 postgres_password = None
@@ -139,7 +147,7 @@ def display_todos():
                     st.rerun(scope="fragment")
             
             with col2:
-                st.markdown(f"~~{task}~~ ✅" if completed else task)
+                st.markdown(f"~~{escape_markdown(task)}~~ ✅" if completed else escape_markdown(task))
                 st.caption(f"Created: {created_at.strftime('%Y-%m-%d %H:%M')}")
             
             with col3:
@@ -166,11 +174,13 @@ def main():
     # Add new todo section
     st.subheader("➕ Add New Todo")
     with st.form("add_todo_form", clear_on_submit=True):
-        new_task = st.text_input("Enter a new task:", placeholder="What do you need to do?")
+        new_task = st.text_input("Enter a new task:", placeholder="What do you need to do?", max_chars=MAX_TASK_LENGTH)
         submitted = st.form_submit_button("Add Todo", type="primary")
         
         if submitted and new_task.strip():
-            if add_todo(new_task.strip()):
+            if len(new_task.strip()) > MAX_TASK_LENGTH:
+                st.error(f"❌ Tasks can be at most {MAX_TASK_LENGTH} characters.")
+            elif add_todo(new_task.strip()):
                 st.success("✅ Todo added successfully!")
     
     st.markdown("---")

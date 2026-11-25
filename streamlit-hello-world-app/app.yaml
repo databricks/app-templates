@@ -1,5 +1,5 @@
 command: [
   "streamlit", 
   "run",
-  "app.py"
+  "server.py"
 ]

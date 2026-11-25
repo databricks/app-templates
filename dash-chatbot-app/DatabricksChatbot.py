@@ -1,7 +1,35 @@
+import logging
+
 import dash
 from dash import html, Input, Output, State, dcc
 import dash_bootstrap_components as dbc
 from model_serving_utils import query_endpoint
+
+logger = logging.getLogger(__name__)
+
+MAX_MESSAGE_CHARS = 4000
+MAX_HISTORY_MESSAGES = 40
+ALLOWED_ROLES = {'user', 'assistant'}
+MODEL_ERROR_MESSAGE = 'Sorry, the model could not answer. Please try again.'
+
+
+def sanitize_chat_history(chat_history):
+    """Rebuild the client-held chat history from its user and assistant messages.
+
+    The history lives in a browser-side dcc.Store, so callers can send any
+    roles, content types and sizes.
+    """
+    if not isinstance(chat_history, list):
+        return []
+    return [
+        {'role': msg['role'], 'content': msg['content'][:MAX_MESSAGE_CHARS]}
+        for msg in chat_history
+        if isinstance(msg, dict)
+        and isinstance(msg.get('role'), str)
+        and msg['role'] in ALLOWED_ROLES
+        and isinstance(msg.get('content'), str)
+    ]
+
 
 class DatabricksChatbot:
     def __init__(self, app, endpoint_name, height='600px'):
@@ -26,7 +54,8 @@ class DatabricksChatbot:
                 ], className='d-flex flex-column chat-body')
             ], className='chat-card mb-3'),
             dbc.InputGroup([
-                dbc.Input(id='user-input', placeholder='Type your message here...', type='text'),
+                dbc.Input(id='user-input', placeholder='Type your message here...', type='text',
+                          maxLength=MAX_MESSAGE_CHARS),
                 dbc.Button('Send', id='send-button', color='success', n_clicks=0, className='ms-2'),
                 dbc.Button('Clear', id='clear-button', color='danger', n_clicks=0, className='ms-2'),
             ], className='mb-3'),
@@ -64,11 +93,11 @@ class DatabricksChatbot:
         )(self._clear_chat)
 
     def _update_chat(self, send_clicks, user_submit, user_input, chat_history):
-        if not user_input:
+        if not isinstance(user_input, str) or not user_input.strip():
             return dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
-        chat_history = chat_history or []
-        chat_history.append({'role': 'user', 'content': user_input})
+        chat_history = sanitize_chat_history(chat_history)
+        chat_history.append({'role': 'user', 'content': user_input[:MAX_MESSAGE_CHARS]})
         chat_display = self._format_chat_display(chat_history)
         chat_display.append(self._create_typing_indicator())
 
@@ -78,24 +107,21 @@ class DatabricksChatbot:
         if not trigger or not trigger.get('trigger'):
             return dash.no_update, dash.no_update
 
-        chat_history = chat_history or []
-        if (not chat_history or not isinstance(chat_history[-1], dict)
-                or 'role' not in chat_history[-1]
-                or chat_history[-1]['role'] != 'user'):
+        chat_history = sanitize_chat_history(chat_history)
+        if not chat_history or chat_history[-1]['role'] != 'user':
             return dash.no_update, dash.no_update
 
         try:
-            assistant_response = self._call_model_endpoint(chat_history)
+            assistant_response = self._call_model_endpoint(chat_history[-MAX_HISTORY_MESSAGES:])
             chat_history.append({
                 'role': 'assistant',
                 'content': assistant_response
             })
         except Exception as e:
-            error_message = f'Error: {str(e)}'
-            print(error_message)  # Log the error for debugging
+            logger.exception('Error calling model endpoint: %r', e)
             chat_history.append({
                 'role': 'assistant',
-                'content': error_message
+                'content': MODEL_ERROR_MESSAGE
             })
 
         chat_display = self._format_chat_display(chat_history)
@@ -108,12 +134,8 @@ class DatabricksChatbot:
         return dash.no_update, dash.no_update
 
     def _call_model_endpoint(self, messages, max_tokens=128):
-        try:
-            print('Calling model endpoint...')
-            return query_endpoint(self.endpoint_name, messages, max_tokens)["content"]
-        except Exception as e:
-            print(f'Error calling model endpoint: {str(e)}')
-            raise
+        print('Calling model endpoint...')
+        return query_endpoint(self.endpoint_name, messages, max_tokens)["content"]
 
     def _format_chat_display(self, chat_history):
         return [

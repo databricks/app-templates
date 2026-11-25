@@ -13,7 +13,9 @@ import type { ChatMessage } from '@databricks/chatbot-core';
 import {
   findLoginURLFromCredentialErrorMessage,
   findConnectionNameFromCredentialErrorMessage,
+  isTrustedLoginURL,
 } from '@/lib/oauth-error-utils';
+import { useAppConfig } from '@/contexts/AppConfigContext';
 
 interface MessageOAuthErrorProps {
   error: string;
@@ -30,16 +32,23 @@ export const MessageOAuthError = ({
 }: MessageOAuthErrorProps) => {
   const [showDetails, setShowDetails] = useState(false);
 
-  const loginUrl = findLoginURLFromCredentialErrorMessage(error);
+  const { workspaceHost } = useAppConfig();
+  const parsedLoginUrl = findLoginURLFromCredentialErrorMessage(error);
+  const loginUrl =
+    parsedLoginUrl && isTrustedLoginURL(parsedLoginUrl, workspaceHost)
+      ? parsedLoginUrl
+      : undefined;
   const connectionName = findConnectionNameFromCredentialErrorMessage(error);
 
   // If we can't extract the required info, don't render
-  if (!loginUrl || !connectionName) {
+  if (!parsedLoginUrl || !connectionName) {
     return null;
   }
 
   const handleLogin = () => {
-    window.open(loginUrl, '_blank', 'noopener,noreferrer');
+    if (loginUrl) {
+      window.open(loginUrl, '_blank', 'noopener,noreferrer');
+    }
   };
 
   const handleRetry = () => {
@@ -79,10 +88,12 @@ export const MessageOAuthError = ({
         </p>
 
         <div className="mb-2 flex items-center gap-2">
-          <Button onClick={handleLogin} size="sm" className="gap-1.5">
-            <LogIn size={14} />
-            Login
-          </Button>
+          {loginUrl && (
+            <Button onClick={handleLogin} size="sm" className="gap-1.5">
+              <LogIn size={14} />
+              Login
+            </Button>
+          )}
           <Button
             onClick={handleRetry}
             variant="outline"

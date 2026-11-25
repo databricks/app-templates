@@ -10,10 +10,14 @@ import app_diagnostics  # noqa: E402
 app_diagnostics.install_diagnostics()
 # --- end diagnostics bootstrap ---
 
+import os
+
 import pandas as pd
 from dash import Dash, dcc, html
 import plotly.express as px
 import dash_bootstrap_components as dbc
+
+import security
 
 # Initialize the Dash app with Bootstrap styling
 dash_app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
@@ -33,5 +37,10 @@ dash_app.layout = dbc.Container([
     )
 ], fluid=True)
 
+security.init_app(dash_app.server, extra_script_sources=dash_app.csp_hashes())
+
 if __name__ == '__main__':
-    dash_app.run(debug=True)
+    # Databricks Apps sets PORT for Dash but not a host, and Dash defaults to
+    # 127.0.0.1, so bind all interfaces. Debug mode stays off (it exposes the
+    # Werkzeug debugger); set DASH_DEBUG=true to enable it for local development.
+    dash_app.run(host=os.getenv("HOST", "0.0.0.0"))

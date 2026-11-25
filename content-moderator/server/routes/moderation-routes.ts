@@ -90,35 +90,51 @@ const REVIEW_DECISIONS = [
   "revision_requested",
 ] as const;
 
+const Email = z.string().email().max(254);
+const Name = z.string().min(1).max(200);
+
 const CreateGuidelineBody = z.object({
   target: z.enum(CONTENT_TARGETS),
-  title: z.string().min(1),
-  description: z.string().optional(),
-  rules: z.string().min(1),
-  created_by: z.string().email(),
+  title: z.string().min(1).max(200),
+  description: z.string().max(2000).optional(),
+  rules: z.string().min(1).max(10000),
+  created_by: Email,
 });
 
 const UpdateGuidelineBody = z.object({
-  title: z.string().min(1).optional(),
-  description: z.string().optional(),
-  rules: z.string().min(1).optional(),
+  title: z.string().min(1).max(200).optional(),
+  description: z.string().max(2000).optional(),
+  rules: z.string().min(1).max(10000).optional(),
   is_active: z.boolean().optional(),
-  updated_by: z.string().email(),
+  updated_by: Email,
 });
 
 const CreateSubmissionBody = z.object({
-  title: z.string().min(1),
-  body: z.string().min(1),
+  title: z.string().min(1).max(300),
+  body: z.string().min(1).max(20000),
   target: z.enum(CONTENT_TARGETS),
-  author_name: z.string().min(1),
-  author_email: z.string().email(),
+  author_name: Name,
+  author_email: Email,
 });
 
 const CreateReviewBody = z.object({
-  reviewer_name: z.string().min(1),
-  reviewer_email: z.string().email(),
+  reviewer_name: Name,
+  reviewer_email: Email,
   decision: z.enum(REVIEW_DECISIONS),
-  feedback: z.string().optional(),
+  feedback: z.string().max(5000).optional(),
+});
+
+// Model output is untrusted: only store the expected shape, with bounded sizes.
+// Longer text is cut to the limits; the score is rounded for the INTEGER column.
+const AiAnalysisResponse = z.object({
+  compliance_score: z
+    .number()
+    .finite()
+    .transform((n) => Math.max(0, Math.min(100, Math.round(n)))),
+  issues: z
+    .array(z.string())
+    .transform((a) => a.slice(0, 50).map((s) => s.slice(0, 1000))),
+  suggestions: z.string().transform((s) => s.slice(0, 5000)),
 });
 
 const SERVING_ENDPOINT = process.env.SERVING_ENDPOINT;
@@ -148,6 +164,19 @@ function actorEmail(
   fallback: string,
 ): string {
   return req.header("x-forwarded-email") || fallback;
+}
+
+// A reviewer's decision takes precedence over a failed analysis.
+async function markAnalysisFailed(
+  appkit: AppKitWithLakebase,
+  submissionId: string,
+): Promise<void> {
+  await appkit.lakebase.query(
+    `UPDATE content_moderation.submissions
+     SET status = 'analysis_failed', updated_at = NOW()
+     WHERE id = $1::uuid AND status = 'pending_review'`,
+    [submissionId],
+  );
 }
 
 async function analyzeContent(
@@ -250,24 +279,37 @@ Evaluate the content against ALL guidelines above. Respond with ONLY valid JSON 
     const content = result.choices?.[0]?.message?.content ?? "";
 
     const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
+    let reply: unknown;
+    try {
+      reply = JSON.parse(jsonMatch?.[0] ?? "");
+    } catch {
       console.error("[moderation] Could not parse JSON from AI response");
+      await markAnalysisFailed(appkit, submissionId);
       return;
     }
 
-    const analysis = JSON.parse(jsonMatch[0]) as {
-      compliance_score: number;
-      issues: string[];
-      suggestions: string;
-    };
+    const parsedAnalysis = AiAnalysisResponse.safeParse(reply);
+    if (!parsedAnalysis.success) {
+      console.error(
+        "[moderation] AI response did not match the expected schema",
+      );
+      await markAnalysisFailed(appkit, submissionId);
+      return;
+    }
+    const analysis = parsedAnalysis.data;
 
     await appkit.lakebase.query(
-      `INSERT INTO content_moderation.ai_analyses
-        (submission_id, compliance_score, issues, suggestions, guidelines_snapshot, model)
-       VALUES ($1::uuid, $2, $3, $4, $5, $6)`,
+      `WITH a AS (
+         INSERT INTO content_moderation.ai_analyses
+           (submission_id, compliance_score, issues, suggestions, guidelines_snapshot, model)
+         VALUES ($1::uuid, $2, $3, $4, $5, $6)
+       )
+       UPDATE content_moderation.submissions
+       SET status = 'pending_review', updated_at = NOW()
+       WHERE id = $1::uuid AND status = 'analysis_failed'`,
       [
         submissionId,
-        Math.max(0, Math.min(100, analysis.compliance_score)),
+        analysis.compliance_score,
         JSON.stringify(analysis.issues),
         analysis.suggestions,
         guidelinesText,
@@ -302,6 +344,14 @@ export async function setupModerationRoutes(appkit: AppKitWithLakebase) {
   }
 
   appkit.server.extend((app) => {
+    app.param("id", (_req, res, next, id: string) => {
+      if (!z.guid().safeParse(id).success) {
+        res.status(400).json({ error: "Invalid id" });
+        return;
+      }
+      next();
+    });
+
     // --- Guidelines ---
 
     app.get("/api/guidelines", async (_req, res) => {
@@ -458,7 +508,7 @@ export async function setupModerationRoutes(appkit: AppKitWithLakebase) {
             ORDER BY analyzed_at DESC LIMIT 1
           ) a ON true
           ORDER BY
-            CASE WHEN s.status = 'pending_review' THEN 0
+            CASE WHEN s.status IN ('pending_review', 'analysis_failed') THEN 0
                  WHEN s.status = 'revision_requested' THEN 1
                  WHEN s.status = 'approved' THEN 2
                  ELSE 3

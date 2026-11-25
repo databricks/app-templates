@@ -15,7 +15,7 @@ Run the interactive setup script from the `e2e-chatbot-app-next/` directory:
 
 The script walks through the following steps interactively:
 
-1. **Prerequisites** — installs jq, nvm, Node 20, and the Databricks CLI if missing
+1. **Prerequisites** — installs jq, nvm, Node 22, and the Databricks CLI if missing
 2. **Databricks auth** — lets you select an existing profile or create a new one via `databricks auth login`
 3. **Serving endpoint** — prompts for your agent endpoint name (Agent Bricks or custom agent); validates it exists
 4. **Feedback widget** — if the endpoint has a linked MLflow experiment, offers to enable thumbs up/down feedback (default: yes). This automatically:

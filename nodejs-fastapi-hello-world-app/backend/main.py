@@ -16,6 +16,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
+from .security import SecurityMiddleware
+
 # --- Logging Setup ---
 logging.basicConfig(
     level=logging.INFO,
@@ -23,7 +25,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Simple FastAPI + React App")
+# Swagger UI and ReDoc pages rely on inline scripts that the CSP blocks
+app = FastAPI(title="Simple FastAPI + React App", docs_url=None, redoc_url=None)
+app.add_middleware(SecurityMiddleware)
 
 # --- API Routes ---
 @app.get("/api/hello")

@@ -16,6 +16,7 @@ import dash_bootstrap_components as dbc
 from dash import html
 from DatabricksChatbot import DatabricksChatbot
 from model_serving_utils import is_endpoint_supported
+import security
 
 # Ensure environment variable is set correctly
 serving_endpoint = os.getenv('SERVING_ENDPOINT')
@@ -69,5 +70,10 @@ else:
         ])
     ], fluid=True)
 
+security.init_app(app.server, extra_script_sources=app.csp_hashes())
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Databricks Apps sets PORT for Dash but not a host, and Dash defaults to
+    # 127.0.0.1, so bind all interfaces. Debug mode stays off (it exposes the
+    # Werkzeug debugger); set DASH_DEBUG=true to enable it for local development.
+    app.run(host=os.getenv("HOST", "0.0.0.0"))

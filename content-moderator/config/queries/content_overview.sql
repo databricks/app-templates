@@ -1,6 +1,6 @@
 SELECT
   COUNT(*) AS total_submissions,
-  SUM(CASE WHEN s.status = 'pending_review' THEN 1 ELSE 0 END) AS pending_count,
+  SUM(CASE WHEN s.status IN ('pending_review', 'analysis_failed') THEN 1 ELSE 0 END) AS pending_count,
   SUM(CASE WHEN s.status = 'approved' THEN 1 ELSE 0 END) AS approved_count,
   SUM(CASE WHEN s.status = 'rejected' THEN 1 ELSE 0 END) AS rejected_count,
   SUM(CASE WHEN s.status = 'revision_requested' THEN 1 ELSE 0 END) AS revision_count,

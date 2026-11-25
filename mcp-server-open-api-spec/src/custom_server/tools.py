@@ -81,10 +81,14 @@ def load_tools(mcp_server):
         Executes an API endpoint with the appropriate parameters
 
         Args:
-            endpoint_path: The API endpoint path to invoke
-            http_method: HTTP method for the request
+            endpoint_path: The API endpoint path to invoke; must match a path in the API
+                specification (path parameters filled in) and must not include a query string
+            http_method: HTTP method for the request; must be defined for the path in the spec
             parameters: Request parameters (for GET/DELETE: query params, for POST/PUT/PATCH: JSON body)
-            headers: Additional HTTP headers as key-value pairs
+            headers: Additional HTTP headers as key-value pairs. Only Accept, Accept-Language,
+                Content-Type, If-Match, If-None-Match, If-Modified-Since, Prefer and headers the
+                app owner has allowed are forwarded; others are refused. The UC connection
+                supplies authentication
 
         Returns:
             Dictionary containing the API response

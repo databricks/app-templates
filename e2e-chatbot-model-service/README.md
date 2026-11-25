@@ -120,7 +120,7 @@ Use our automated quickstart script for the fastest setup experience:
    > **Note:** `quickstart.sh` prompts directly for your Unity Catalog model service name (3-part UC name) and writes it to `DATABRICKS_MODEL_SERVICE` in `.env` for local development.
 
    The quickstart script will:
-   - **Install prerequisites** - Automatically installs jq, nvm, Node.js 20, and Databricks CLI
+   - **Install prerequisites** - Automatically installs jq, nvm, Node.js 22, and Databricks CLI
    - **Configure authentication** - Helps you select or create a Databricks CLI profile
    - **Configure the model service** - Prompts for your model service name (see note above)
    - **Database setup (optional)** - Choose persistent chat history or ephemeral mode

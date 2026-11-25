@@ -54,7 +54,7 @@ const isDatabricksMessageCitationLink = (
 const SAFE_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 
 // Returns the href if it is relative or uses a safe scheme, otherwise undefined.
-const sanitizeHref = (href?: string): string | undefined => {
+export const sanitizeHref = (href?: string): string | undefined => {
   if (!href || href === 'streamdown:incomplete-link') return href;
   try {
     const { protocol } = new URL(href, window.location.href);

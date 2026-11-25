@@ -26,9 +26,12 @@ const SCHEMA_EXISTS_SQL = `
 `;
 
 const ApproveReplenishmentBody = z.object({
-  quantity_ordered: z.number().int().min(1),
-  notes: z.string().optional(),
+  quantity_ordered: z.number().int().min(1).max(100_000),
+  notes: z.string().max(1000).optional(),
 });
+
+const EntityId = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
+const OrderId = z.guid();
 
 export const genieEnabled =
   !!process.env.DATABRICKS_GENIE_SPACE_ID &&
@@ -50,6 +53,20 @@ export async function setupInventoryRoutes(appkit: AppKitWithLakebase) {
   }
 
   appkit.server.extend((app) => {
+    for (const [name, schema] of [
+      ["storeId", EntityId],
+      ["productId", EntityId],
+      ["orderId", OrderId],
+    ] as const) {
+      app.param(name, (_req, res, next, value: string) => {
+        if (!schema.safeParse(value).success) {
+          res.status(400).json({ error: `Invalid ${name}` });
+          return;
+        }
+        next();
+      });
+    }
+
     // GET /api/config — feature flags for the client
     app.get("/api/config", (_req, res) => {
       res.json({ genieEnabled });
@@ -366,31 +383,39 @@ export async function setupInventoryRoutes(appkit: AppKitWithLakebase) {
           return;
         }
 
+        // Atomic: update the status and, on receipt, add the stock in one CTE.
+        // "received" is terminal: the row-level check makes a repeated (or
+        // concurrent) "received" update a no-op, so stock is only added once.
         const orderResult = await appkit.lakebase.query(
-          `UPDATE inventory.replenishment_orders
-           SET status = $1
-           WHERE id = $2::uuid
-           RETURNING id::text, store_id, product_id, quantity_ordered, status`,
+          `WITH updated AS (
+             UPDATE inventory.replenishment_orders
+             SET status = $1
+             WHERE id = $2::uuid AND status <> 'received'
+             RETURNING id::text, store_id, product_id, quantity_ordered, status
+           ), _stock AS (
+             UPDATE inventory.stock_levels sl
+             SET quantity_on_hand = sl.quantity_on_hand + u.quantity_ordered,
+                 quantity_on_order = GREATEST(0, sl.quantity_on_order - u.quantity_ordered),
+                 last_counted_at = NOW()
+             FROM updated u
+             WHERE u.status = 'received'
+               AND sl.store_id = u.store_id AND sl.product_id = u.product_id
+           )
+           SELECT * FROM updated`,
           [parsed.data.status, req.params.orderId],
         );
 
         if (orderResult.rows.length === 0) {
-          res.status(404).json({ error: "Order not found" });
-          return;
-        }
-
-        // When order is received, add to stock and zero out on_order
-        if (parsed.data.status === "received") {
-          const { store_id, product_id, quantity_ordered } =
-            orderResult.rows[0];
-          await appkit.lakebase.query(
-            `UPDATE inventory.stock_levels
-             SET quantity_on_hand = quantity_on_hand + $1,
-                 quantity_on_order = GREATEST(0, quantity_on_order - $1),
-                 last_counted_at = NOW()
-             WHERE store_id = $2 AND product_id = $3`,
-            [quantity_ordered, store_id, product_id],
+          const existing = await appkit.lakebase.query(
+            `SELECT 1 FROM inventory.replenishment_orders WHERE id = $1::uuid`,
+            [req.params.orderId],
           );
+          if (existing.rows.length > 0) {
+            res.status(409).json({ error: "Order has already been received" });
+          } else {
+            res.status(404).json({ error: "Order not found" });
+          }
+          return;
         }
 
         res.json(orderResult.rows[0]);

@@ -1,5 +1,7 @@
+import json
 import logging
 import os
+import re
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator, AsyncIterator, Optional
 from uuid import uuid4
@@ -18,6 +20,17 @@ from uuid_utils import uuid7
 from agent_server.history import normalize_history_items
 
 logger = logging.getLogger(__name__)
+
+# Clients resend the whole conversation in ``input``, so the conversation is bounded only
+# by the body limits in security.py; a per-item or item-count cap would reject every
+# later request in a thread once it was reached.
+MAX_CUSTOM_INPUTS_CHARS = 10_000
+# Background-mode resume appends "::attempt-N" to the original session id, or to the
+# server-generated response id ("resp_" + 24 hex) when the client sent no session id.
+SESSION_ID_PATTERN = re.compile(
+    r"^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|resp_[0-9a-f]{24})"
+    r"(::attempt-[0-9]{1,4})?$"
+)
 
 
 def _is_databricks_app_env() -> bool:
@@ -105,12 +118,32 @@ def get_session_id(request: ResponsesAgentRequest) -> str:
     ci = dict(request.custom_inputs or {})
 
     if "session_id" in ci and ci["session_id"]:
-        return str(ci["session_id"])
+        session_id = str(ci["session_id"])
+    elif request.context and getattr(request.context, "conversation_id", None):
+        session_id = str(request.context.conversation_id)
+    else:
+        return str(uuid7())
 
-    if request.context and getattr(request.context, "conversation_id", None):
-        return str(request.context.conversation_id)
+    if not SESSION_ID_PATTERN.fullmatch(session_id):
+        raise ValueError("session_id must be a UUID.")
+    return session_id
 
-    return str(uuid7())
+
+def check_request_limits(body: dict) -> None:
+    """Raise ``ValueError`` if a POST /invocations or /responses body is over the input limits."""
+    try:
+        request = ResponsesAgentRequest(**body)
+    except Exception:
+        # AgentServer rejects bodies that aren't a valid request with its own 400.
+        return
+    if len(json.dumps(request.custom_inputs or {}, default=str)) > MAX_CUSTOM_INPUTS_CHARS:
+        raise ValueError(f"custom_inputs too large (limit {MAX_CUSTOM_INPUTS_CHARS} characters).")
+    get_session_id(request)
+    # A background request that is resumed after a crash gets a new session id built from
+    # thread_id before session_id. Other requests ignore thread_id, as on main.
+    thread_id = (request.custom_inputs or {}).get("thread_id")
+    if body.get("background") and thread_id and not SESSION_ID_PATTERN.fullmatch(str(thread_id)):
+        raise ValueError("thread_id must be a UUID in background mode.")
 
 
 def get_databricks_host_from_env() -> str | None:

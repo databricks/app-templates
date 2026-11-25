@@ -7,7 +7,7 @@ Complete guide for building LangChain agents with MLflow tracing on Databricks.
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Node.js 18+ installed
+- Node.js 22.23.4+ installed
 - Databricks workspace access
 - Databricks CLI installed
 

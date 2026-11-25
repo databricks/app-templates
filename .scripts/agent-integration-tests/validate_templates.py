@@ -33,7 +33,11 @@ from validation_config import DEFAULT_CONFIG_PATH, load_validation_config
 from functional_runners import looks_like_login_page, assert_browser_installed
 
 AUTH_DIR = Path(__file__).parent / ".auth"
-STORAGE_STATE = AUTH_DIR / "dogfood.json"
+
+
+def storage_state_path(profile: str) -> Path:
+    """Saved SSO browser session for a profile (written by auth_setup.py)."""
+    return AUTH_DIR / f"{profile}.json"
 
 BUNDLE_TIMEOUT = 600
 QUERY_TIMEOUT = 60
@@ -195,10 +199,11 @@ def build_log_entries(logz_html: str, limit: int = 60, sources: tuple = ("BUILD"
 def _log_build_failure(app_name: str, profile: str, sources: tuple = ("BUILD", "APP", "SYSTEM")) -> None:
     """Log the app's build/runtime output — `databricks apps logs` is SSO-walled here."""
     _, url, _ = _apps_status(app_name, profile)
-    if not url or not STORAGE_STATE.exists():
+    state = storage_state_path(profile)
+    if not url or not state.exists():
         return
     try:
-        _, logz, _ = _browser_load(str(STORAGE_STATE), f"{url}/logz")
+        _, logz, _ = _browser_load(str(state), f"{url}/logz")
     except Exception as e:  # diagnostics only; never mask the deploy failure
         _log(f"(could not read {url}/logz: {e})")
         return
@@ -466,8 +471,9 @@ def test_validate_template(val_template, val_cfg, request):
     if request.config.getoption("--val-setup-only"):
         pytest.skip("--val-setup-only: shared app ensured, skipping deploy")
 
-    if not STORAGE_STATE.exists():
-        pytest.skip(f"no storageState at {STORAGE_STATE} — run auth_setup.py first")
+    storage_state = storage_state_path(val_cfg.profile)
+    if not storage_state.exists():
+        pytest.skip(f"no storageState at {storage_state} — run auth_setup.py first")
 
     ws_path = f"{val_cfg.workspace_source_root}/{val_template.name}"
     with tempfile.TemporaryDirectory(prefix=f"val-{val_template.name}-") as tmp:
@@ -483,7 +489,7 @@ def test_validate_template(val_template, val_cfg, request):
                 shared_app, val_cfg.profile, health_path_for(verify)
             )
             verify_serving(
-                verify, app_url, str(STORAGE_STATE),
+                verify, app_url, str(storage_state),
                 val_template.expect, val_template.obo_click,
             )
         except Exception:
@@ -592,8 +598,9 @@ def test_crash_diagnostics_deployed(lang, rel, stack_marker, val_cfg, shared_app
     traceback reaches /logz (marker + app.diagnostics logger + a stack)."""
     if request.config.getoption("--val-setup-only"):
         pytest.skip("--val-setup-only: shared app ensured, skipping deploy")
-    if not STORAGE_STATE.exists():
-        pytest.skip(f"no storageState at {STORAGE_STATE} — run auth_setup.py first")
+    storage_state = storage_state_path(val_cfg.profile)
+    if not storage_state.exists():
+        pytest.skip(f"no storageState at {storage_state} — run auth_setup.py first")
     assert_browser_installed()
 
     fixture_dir = Path(__file__).parent / rel
@@ -613,7 +620,7 @@ def test_crash_diagnostics_deployed(lang, rel, stack_marker, val_cfg, shared_app
     )
     assert url, "no app url to read /logz from"
 
-    _, logz, _ = _browser_load(str(STORAGE_STATE), f"{url}/logz", expect=[CRASH_CANARY])
+    _, logz, _ = _browser_load(str(storage_state), f"{url}/logz", expect=[CRASH_CANARY])
     # Log a short evidence snippet around the marker (proof the traceback reached
     # the log stream; useful for the run log / PR description).
     _idx = logz.find(CRASH_CANARY)

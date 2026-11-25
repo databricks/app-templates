@@ -86,7 +86,7 @@ def test_functional(ft, request):
             app_url, token = wait_for_app_ready_generic(
                 cfg.shared_app_name, cfg.profile, ft.launch.get("ready_path", "/")
             )
-            state = AUTH_DIR / "dogfood.json"
+            state = AUTH_DIR / f"{cfg.profile}.json"
             storage = str(state) if state.exists() else None
             if ft.test["kind"] in ("node-playwright", "py-playwright"):
                 if not storage:

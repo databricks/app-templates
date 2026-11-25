@@ -14,6 +14,99 @@ import { Router, type Request, type Response } from "express";
 import type { AgentInterface } from "../agent-interface.js";
 import { z } from "zod";
 
+const MAX_TEXT_LENGTH = 100_000;
+// Tool arguments and results (e.g. query results) can be larger than chat text.
+const MAX_TOOL_DATA_LENGTH = 1_000_000;
+const MAX_CONTENT_PARTS = 50;
+// Far above any chat history that fits in a model's context, but keeps
+// validation bounded: 10 MB of tiny items would be about a million of them.
+const MAX_INPUT_ITEMS = 10_000;
+const MAX_ID_LENGTH = 256;
+
+const text = z.string().max(MAX_TEXT_LENGTH);
+const toolData = z.string().max(MAX_TOOL_DATA_LENGTH);
+const id = z.string().max(MAX_ID_LENGTH);
+
+const contentPartSchema = z.union([
+  z.object({ type: z.enum(["input_text", "output_text", "text"]), text }),
+  z.object({
+    type: z.literal("function_call"),
+    name: id,
+    arguments: z.union([toolData, z.record(z.string(), z.unknown())]),
+  }),
+  z.object({ type: z.literal("function_call_output"), output: toolData }),
+]);
+
+const messageItemSchema = z.object({
+  type: z.literal("message").optional(),
+  id: id.optional(),
+  // "system" and "developer" are accepted for compatibility (the chat UI sends
+  // its title prompt as a system message) but are never passed to the agent as
+  // instructions; see below.
+  role: z.enum(["user", "assistant", "system", "developer"]),
+  content: z.union([text, z.array(contentPartSchema).max(MAX_CONTENT_PARTS)]),
+});
+
+const knownItemSchema = z.discriminatedUnion("type", [
+  messageItemSchema,
+  z.object({
+    type: z.literal("function_call"),
+    id: id.optional(),
+    call_id: id.optional(),
+    name: id,
+    arguments: toolData,
+  }),
+  z.object({
+    type: z.literal("function_call_output"),
+    call_id: id.optional(),
+    output: toolData,
+  }),
+  z.object({
+    type: z.literal("reasoning"),
+    id: id.optional(),
+    summary: z
+      .array(z.object({ type: z.literal("summary_text"), text }))
+      .max(MAX_CONTENT_PARTS),
+  }),
+  z.object({
+    type: z.literal("mcp_approval_request"),
+    id,
+    name: id,
+    arguments: toolData,
+    server_label: id.optional(),
+  }),
+  z.object({
+    type: z.literal("mcp_approval_response"),
+    id: id.optional(),
+    approval_request_id: id,
+    approve: z.boolean(),
+    reason: text.optional(),
+  }),
+]);
+
+// Must list every type in knownItemSchema, so a malformed item of a known type
+// is rejected instead of passing through as an unknown one.
+const KNOWN_ITEM_TYPES = new Set([
+  "message",
+  "function_call",
+  "function_call_output",
+  "reasoning",
+  "mcp_approval_request",
+  "mcp_approval_response",
+]);
+
+const inputItemSchema = z.union([
+  knownItemSchema,
+  // Other item types (e.g. web_search_call, item_reference) reach the agent's
+  // chat history as sent, so their size is capped as a whole.
+  z
+    .object({ type: id.refine((type) => !KNOWN_ITEM_TYPES.has(type)) })
+    .passthrough()
+    .refine((item) => JSON.stringify(item).length <= MAX_TOOL_DATA_LENGTH, {
+      message: `Item exceeds ${MAX_TOOL_DATA_LENGTH} characters`,
+    }),
+]);
+
 /**
  * Responses API request schema.
  *
@@ -21,26 +114,7 @@ import { z } from "zod";
  * OpenAI SDK wire format (input as string or array, optional model field).
  */
 const responsesRequestSchema = z.object({
-  input: z.union([
-    z.string(),
-    z.array(
-      z.union([
-        z.object({
-          role: z.enum(["user", "assistant", "system"]),
-          content: z.union([
-            z.string(),
-            z.array(
-              z.union([
-                z.object({ type: z.string(), text: z.string() }).passthrough(),
-                z.object({ type: z.string() }).passthrough(),
-              ])
-            ),
-          ]),
-        }),
-        z.object({ type: z.string() }).passthrough(),
-      ])
-    ),
-  ]),
+  input: z.union([text, z.array(inputItemSchema).max(MAX_INPUT_ITEMS)]),
   stream: z.boolean().optional().default(true),
   // Accept (and ignore) model field sent by the OpenAI SDK
   model: z.string().optional(),
@@ -72,8 +146,14 @@ export function createInvocationsRouter(agent: AgentInterface): ReturnType<typeo
           ? [{ role: "user" as const, content: parsed.data.input }]
           : parsed.data.input;
 
-      // Extract the latest user message
-      const userMessages = input.filter((msg: any) => msg.role === "user");
+      // Extract the latest user message. Only message items count: other item
+      // types aren't held to the text length cap.
+      const userMessages = input.filter(
+        (msg): msg is z.infer<typeof messageItemSchema> =>
+          "role" in msg &&
+          msg.role === "user" &&
+          (!("type" in msg) || msg.type === undefined || msg.type === "message")
+      );
       if (userMessages.length === 0) {
         return res.status(400).json({
           error: "No user message found in input",
@@ -96,6 +176,12 @@ export function createInvocationsRouter(agent: AgentInterface): ReturnType<typeo
       // Convert Responses API input to simple chat history for the agent.
       // Preserve tool call context for followup questions.
       const chatHistory = input.slice(0, -1).map((item: any) => {
+        // The agent's system prompt is set server-side; caller-supplied system
+        // and developer messages are treated as user turns so they can't override it.
+        if (item.role === "system" || item.role === "developer") {
+          item = { ...item, role: "user" };
+        }
+
         if (item.type === "function_call") {
           return {
             role: "assistant",

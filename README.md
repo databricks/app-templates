@@ -4,6 +4,8 @@ Pre-built templates for creating [Databricks Apps](https://docs.databricks.com/a
 
 See [Create an App from a Template](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/create-app-template) to get started.
 
+To contribute a template or a fix, see [CONTRIBUTING.md](CONTRIBUTING.md). It covers the synced files, dependency rules, and how to test a template end to end in your own workspace.
+
 ## Templates
 
 ### Hello World

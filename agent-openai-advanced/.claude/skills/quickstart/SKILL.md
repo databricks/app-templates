@@ -8,7 +8,7 @@ description: "Set up Databricks agent development environment. Use when: (1) Fir
 ## Prerequisites
 
 - **uv** (Python package manager)
-- **Node.js 20.19+, 22.12+, or 23+** (for frontend; Vite requires these; Node 21.x is not supported)
+- **Node.js 22.23.4+** (for frontend)
 - **Databricks CLI v0.283.0+**
 
 Check CLI version:

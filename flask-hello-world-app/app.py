@@ -15,10 +15,13 @@ from flask import Flask
 import logging
 import os
 
+import security
+
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
 app = Flask(__name__)
+security.init_app(app)
 
 @app.route('/')
 def hello_world():

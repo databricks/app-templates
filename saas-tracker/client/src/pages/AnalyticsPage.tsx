@@ -19,11 +19,23 @@ const tabClass = (active: boolean) =>
       : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
   }`;
 
+/** One row of config/queries/spend_overview.sql. */
+type SpendOverviewRow = {
+  active_count: number | string | null;
+  cancelled_count: number | string | null;
+  monthly_spend_cents: number | string | null;
+  annual_spend_cents: number | string | null;
+  renewals_next_30d: number | string | null;
+};
+
 function DashboardTab() {
-  const { data: overview, loading: overviewLoading } = useAnalyticsQuery(
+  const { data, loading: overviewLoading } = useAnalyticsQuery(
     "spend_overview",
     {},
   );
+  // Typegen runs non-blocking at build time (the tables are created by the app
+  // on first start), so the generated result type can be `unknown`.
+  const overview = data as SpendOverviewRow[] | null | undefined;
   const latest = overview && overview.length > 0 ? overview[0] : null;
 
   return (

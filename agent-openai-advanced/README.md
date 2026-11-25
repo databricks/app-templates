@@ -24,7 +24,7 @@ This template uses OpenAI Agents SDK [Sessions](https://openai.github.io/openai-
 How it works:
 - **Before each run**: The session retrieves prior conversation history and prepends it to the input
 - **After each run**: New items (user messages, assistant responses, tool calls) are automatically stored in the session
-- **Session ID**: Returned in `custom_outputs.session_id` — pass it back in subsequent requests to continue the conversation
+- **Session ID**: Returned in `custom_outputs.session_id` — pass it back in subsequent requests to continue the conversation. It must be a UUID or a value the server returned
 - **Deduplication**: If the client sends the full conversation history and the session already has it, only the latest message is forwarded to avoid duplication
 
 This template uses `AsyncDatabricksSession` from `databricks-openai`, which persists session data to a Databricks Lakebase instance. Session tables are created at server startup.
@@ -387,9 +387,9 @@ This will start the agent server and the chat app at http://localhost:8000.
 
    - [`uv` installation docs](https://docs.astral.sh/uv/getting-started/installation/)
    - [`nvm` installation](https://github.com/nvm-sh/nvm?tab=readme-ov-file#installing-and-updating)
-     - Run the following to use Node 20 LTS:
+     - Run the following to use Node 22.23.4 or later:
        ```bash
-       nvm use 20
+       nvm install 22 && nvm use 22
        ```
    - [`databricks CLI` installation](https://docs.databricks.com/aws/en/dev-tools/cli/install)
 

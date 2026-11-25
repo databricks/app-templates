@@ -42,9 +42,9 @@ This will start the agent server and the chat app at http://localhost:8000.
 
    - [`uv` installation docs](https://docs.astral.sh/uv/getting-started/installation/)
    - [`nvm` installation](https://github.com/nvm-sh/nvm?tab=readme-ov-file#installing-and-updating)
-     - Run the following to use Node 20 LTS:
+     - Run the following to use Node 22.23.4 or later:
        ```bash
-       nvm use 20
+       nvm install 22 && nvm use 22
        ```
    - [`databricks CLI` installation](https://docs.databricks.com/aws/en/dev-tools/cli/install)
 
@@ -151,6 +151,9 @@ Yes. This template uses MLflow's agent server, which comes with automatic tracin
 
 **Q: How can I extend this example with additional tools and capabilities?**
 This template can be extended by integrating additional MCP servers, Vector Search Indexes, UC Functions, and other Databricks tools. See the ["Agent Framework Tools Documentation"](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool).
+
+**Q: Can I trust the conversation history in a request?**
+No. This agent is stateless: the client sends the whole conversation in `input` on every request, so a caller can edit or invent earlier assistant and tool turns. The server caps the input size, but it does not verify prior turns, so don't base authorization decisions on anything in the history.
 
 ## Evaluating your agent
 

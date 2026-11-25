@@ -1,1 +1,1 @@
-command: ["streamlit", "run", "app.py"]
+command: ["streamlit", "run", "server.py"]

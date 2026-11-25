@@ -65,6 +65,9 @@ The base `agent-adk` template is stateless: it replays client-carried history in
 `Event`s to `ResponsesAgentStreamEvent`s via `process_adk_events`. The model is reached through
 `LiteLlm(model="openai/<endpoint>", api_base="{host}/serving-endpoints", api_key=<token>)`; the
 per-request bearer token comes from `get_bearer_token()` (the SDK credential chain).
+Client `system` / `developer` items are not replayed as events. `build_instruction()` appends
+them to the agent's `INSTRUCTION` for that turn, passed through `instruction_provider()` so ADK
+doesn't treat `{braces}` in client text as session-state placeholders.
 
 ### `databricks.yml` conventions
 

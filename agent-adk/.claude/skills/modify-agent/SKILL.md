@@ -56,29 +56,27 @@ def build_model(workspace_client):
     host = get_databricks_host(workspace_client)
     token = get_bearer_token(workspace_client)   # works for CLI, PAT, and App OAuth creds
     return LiteLlm(
-        model=f"openai/databricks-claude-sonnet-4-5",  # openai/<serving-endpoint-name>
+        model=f"openai/databricks-claude-sonnet-5-5",  # openai/<serving-endpoint-name>
         api_base=f"{host}/serving-endpoints",
         api_key=token,
         temperature=0.1,      # any extra kwargs pass through to LiteLLM
     )
 ```
 
-Change `databricks-claude-sonnet-4-5` to any endpoint your app can query (e.g.
-`databricks-gpt-5-2`, `databricks-meta-llama-3-3-70b-instruct`). Some workspaces require
-granting the app access to the serving endpoint in `databricks.yml` — see the **add-tools**
-skill and `examples/serving-endpoint.yaml`.
+Change `databricks-claude-sonnet-5-5` to any endpoint your app can query (e.g.
+`databricks-gpt-5-2`, `databricks-meta-llama-3-3-70b-instruct`). When you do, update the
+`llm-endpoint` resource's `name` in `databricks.yml` to match, so the app's service principal
+keeps `CAN_QUERY` on the model.
 
 ---
 
 ## Defining the agent and its instructions
 
 Unlike LangGraph's `create_agent`, ADK's `LlmAgent` takes the system prompt directly via
-`instruction`:
+`instruction`. Edit the `INSTRUCTION` constant in `agent_server/agent.py`:
 
 ```python
-from google.adk.agents import LlmAgent
-
-AGENT_INSTRUCTIONS = """You are a helpful data analyst assistant.
+INSTRUCTION = """You are a helpful data analyst assistant.
 
 You have access to:
 - Company sales data via Genie
@@ -86,15 +84,23 @@ You have access to:
 
 Always cite your sources when answering questions."""
 
-def create_agent(workspace_client):
+def create_agent(workspace_client, instruction: str = INSTRUCTION):
     return LlmAgent(
         name="agent",                     # must be a valid identifier
         model=build_model(workspace_client),
-        instruction=AGENT_INSTRUCTIONS,
+        instruction=instruction_provider(instruction),
         description="A helpful assistant.",
         tools=[get_current_time],
     )
 ```
+
+Each request, `stream_handler` calls `build_instruction(INSTRUCTION, messages)`, which appends
+any `system` / `developer` items the client sent after `INSTRUCTION`. So client system prompts
+reach the model, as in the other templates.
+
+`instruction_provider` passes the text to ADK as a callable. A plain string `instruction` is a
+template: ADK replaces `{name}` with session state and raises if the key is missing. Keep the
+callable if instructions may contain literal braces (JSON examples, client text).
 
 ---
 

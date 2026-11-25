@@ -19,10 +19,12 @@ from mlflow.types.responses import (
 )
 
 from agent_server.utils import (
+    build_instruction,
     get_bearer_token,
     get_databricks_host,
     get_session_id,
     get_user_workspace_client,
+    instruction_provider,
     process_adk_events,
     seed_session_history,
 )
@@ -37,10 +39,12 @@ logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
 
 sp_workspace_client = WorkspaceClient()
 
-# Serving endpoint used as the agent's LLM. Change to any endpoint your app can query.
-LLM_ENDPOINT = "databricks-claude-sonnet-4-5"
+# Serving endpoint used as the agent's LLM. If you change it, also update the `llm-endpoint`
+# resource in databricks.yml so the app's service principal can query the new endpoint.
+LLM_ENDPOINT = "databricks-claude-sonnet-5-5"
 APP_NAME = "agent_adk"
 AGENT_NAME = "agent"
+INSTRUCTION = "You are a helpful assistant."
 
 
 def get_current_time() -> str:
@@ -63,7 +67,7 @@ def build_model(workspace_client: WorkspaceClient) -> LiteLlm:
     )
 
 
-def create_agent(workspace_client: WorkspaceClient) -> LlmAgent:
+def create_agent(workspace_client: WorkspaceClient, instruction: str = INSTRUCTION) -> LlmAgent:
     tools = [get_current_time]
     # To give the agent Databricks-hosted MCP tools (UC functions, Genie, Vector Search, the
     # built-in code interpreter), add an MCPToolset. This needs the `mcp` package —
@@ -78,7 +82,7 @@ def create_agent(workspace_client: WorkspaceClient) -> LlmAgent:
     return LlmAgent(
         name=AGENT_NAME,
         model=build_model(workspace_client),
-        instruction="You are a helpful assistant.",
+        instruction=instruction_provider(instruction),
         description="A helpful assistant that can answer questions and use tools.",
         tools=tools,
     )
@@ -106,14 +110,15 @@ async def stream_handler(
     # For on-behalf-of user authentication, use get_user_workspace_client() instead:
     #   workspace_client = get_user_workspace_client()
     workspace_client = sp_workspace_client
-    agent = create_agent(workspace_client)
+    messages = to_chat_completions_input([i.model_dump() for i in request.input])
+    # A client's system/developer items become part of this turn's instruction.
+    agent = create_agent(workspace_client, build_instruction(INSTRUCTION, messages))
 
     # This template is stateless (the client carries conversation history in request.input).
     # Replay that history into a fresh ADK session and run the agent on the latest user turn.
     session_service = InMemorySessionService()
     adk_session_id = session_id or str(uuid4())
     user_id = "app-user"
-    messages = to_chat_completions_input([i.model_dump() for i in request.input])
     new_message = await seed_session_history(
         session_service, APP_NAME, user_id, adk_session_id, messages, AGENT_NAME
     )

@@ -70,6 +70,7 @@ templates:
   agent-openai-agents-sdk: { verify: spa }
   agent-openai-agents-sdk-multiagent: { verify: spa }
   agent-migration-from-model-serving: { verify: spa }
+  agent-adk: { verify: spa }
 
   # ---- Build-only (node / SPA; no deploy) ----
   nodejs-fastapi-hello-world-app: { verify: build }

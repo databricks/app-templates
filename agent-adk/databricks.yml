@@ -29,13 +29,14 @@ resources:
           experiment:
             experiment_id: ""
             permission: 'CAN_MANAGE'
-        # Foundation Model endpoints (e.g. databricks-claude-sonnet-4-5) are queryable by the
-        # app service principal by default, so no grant is needed for the shipped model. If you
-        # point LLM_ENDPOINT at a custom/provisioned serving endpoint, grant access here:
-        # - name: 'serving-endpoint'
-        #   serving_endpoint:
-        #     name: 'your-endpoint-name'
-        #     permission: 'CAN_QUERY'
+        # NOTE: grants the app's service principal CAN_QUERY on the LLM endpoint so
+        # the deployed app (and UI-created apps via manifest.yaml) can call the model
+        # without a manual grant. If you change LLM_ENDPOINT in agent_server/agent.py,
+        # update the name below to match.
+        - name: 'llm-endpoint'
+          serving_endpoint:
+            name: 'databricks-claude-sonnet-5-5'
+            permission: 'CAN_QUERY'
 
 targets:
   dev:

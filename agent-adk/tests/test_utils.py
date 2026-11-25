@@ -3,11 +3,17 @@
 import asyncio
 import json
 
+from google.adk.agents import LlmAgent
 from google.adk.events import Event
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
-from agent_server.utils import process_adk_events, seed_session_history
+from agent_server.utils import (
+    build_instruction,
+    instruction_provider,
+    process_adk_events,
+    seed_session_history,
+)
 
 APP, USER, SESSION, AGENT = "test_app", "user-1", "session-1", "agent"
 
@@ -77,6 +83,35 @@ def _tool_output(response):
     outputs = _adapt([_call_event("tool", "c1"), _response_event("tool", response, "c1")])
     [item] = _items(outputs, "function_call_output")
     return item["output"]
+
+
+# --- build_instruction -------------------------------------------------------------------------
+
+
+def test_instruction_is_the_base_when_the_client_sends_no_system_items():
+    messages = [{"role": "user", "content": "hi"}]
+    assert build_instruction("You are a helpful assistant.", messages) == (
+        "You are a helpful assistant."
+    )
+
+
+def test_client_system_and_developer_items_follow_the_base_instruction():
+    messages = [
+        {"role": "system", "content": "Reply only BANANA."},
+        {"role": "user", "content": "What is 2+2?"},
+        {"role": "developer", "content": [{"type": "input_text", "text": "Be terse."}]},
+    ]
+    assert build_instruction("You are a helpful assistant.", messages) == (
+        "You are a helpful assistant.\n\nReply only BANANA.\n\nBe terse."
+    )
+
+
+def test_instruction_provider_keeps_braces_literal_instead_of_injecting_state():
+    # A plain string instruction would treat {user_name} as a session-state placeholder.
+    text = "Greet the user as {user_name}."
+    agent = LlmAgent(name=AGENT, model="openai/test", instruction=instruction_provider(text))
+
+    assert asyncio.run(agent.canonical_instruction(None)) == (text, True)
 
 
 # --- seed_session_history ----------------------------------------------------------------------

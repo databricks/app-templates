@@ -574,6 +574,17 @@ async function generateTitleFromUserMessage({
   message: ChatMessage;
   maxMessageLength?: number;
 }) {
+  // Behind an agent (API_PROXY), every model call goes to the agent, so asking
+  // for a title would run the whole agent, tools included (#239). Use the first
+  // message instead.
+  if (process.env.API_PROXY) {
+    const text = message.parts
+      .find((part) => part.type === 'text')
+      ?.text.replace(/\s+/g, ' ')
+      .trim();
+    return text ? truncatePreserveWords(text, 80) : 'New chat';
+  }
+
   const model = await myProvider.languageModel('title-model');
 
   // Truncate each text part to the maxMessageLength

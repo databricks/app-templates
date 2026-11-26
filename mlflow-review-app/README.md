@@ -64,8 +64,7 @@ the helpers below, or read the reviewer from the `x-forwarded-email` header and 
 
 Some flows you can build this way:
 
-- **Several reviewers per trace, then an adjudicator.** Reviewers save drafts to your database; an
-  adjudicator compares them and saves only the final answer to MLflow (see Recipes).
+- **Several reviewers per trace, then an adjudicator** (below).
 - **Assign items to reviewers.** Keep an assignments table, and in your UI show each reviewer only
   the items from `review.listItems` that are assigned to them.
 - **Your own trace view.** Render `trace.spans` the way your team reads them: tool calls, retrieved
@@ -88,11 +87,32 @@ option of `ReviewQueue` decides who may save to MLflow through `review.saveAnswe
 
 ### Recipes
 
-Working examples in `recipes/`, each with tests in `tests/`:
+Small working examples in `recipes/`, tested in `tests/test_recipes.py`. Copy one over `app.py`:
 
-- [`recipes/adjudication`](recipes/adjudication/README.md): several reviewers per trace, then an
-  adjudicator. Reviewers save drafts to Lakebase; only adjudicators read the drafts and save the
-  final answer to MLflow. It shows custom routes, a Lakebase connection, and `can_write`.
+- [`recipes/custom-routes`](recipes/custom-routes/README.md): your own routes with the helpers above,
+  and `can_write` to make some reviewers read-only.
+- [`recipes/lakebase`](recipes/lakebase/README.md): connect to Lakebase and keep your own data (a
+  private note per reviewer and item) next to the MLflow answers.
+
+### Example: several reviewers, then an adjudicator
+
+Each trace gets answers from several reviewers, and an adjudicator decides the one answer that goes
+to MLflow. Build it from the two recipes:
+
+1. **Drafts in Lakebase.** Like the notes in the Lakebase recipe, keep a drafts table keyed by queue,
+   item and reviewer. Reviewers `PUT` their answers there. Call `check_item` and `check_answers`
+   first, so a draft has the same shape as an MLflow answer.
+2. **Reviewers can't save to MLflow.** Set `can_write` to allow only adjudicators, as in the
+   custom-routes recipe. `review.saveAnswers` then returns 403 for everyone else.
+3. **The adjudicator's routes.** One route returns every member's drafts for an item (only to
+   adjudicators; use `list_members` to drop drafts from people who left the queue). Another takes the
+   final answers and calls `save_answers`, then `set_status(..., "COMPLETE")`. The helpers skip
+   `can_write`, so your route decides who may call them.
+4. **Blind reviews.** Don't return other reviewers' drafts to reviewers, only a count per item if the
+   UI needs progress.
+
+Limit: queue members can still answer in the managed MLflow review UI, which this app doesn't
+control.
 
 ## Who can do what
 

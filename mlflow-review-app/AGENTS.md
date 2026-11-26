@@ -57,8 +57,8 @@ principal and get no access checks from the template: use the `ReviewQueue` help
 (`reviewer`, `check_item`, `check_answers`, `list_members`, `save_answers`, `set_status`), or read
 the reviewer from the `x-forwarded-email` header and check access yourself. Call them from the UI
 with `fetch`. Use plain `def` routes: the MLflow SDK is blocking, and FastAPI runs them in a thread
-pool. For a database, add a Lakebase resource and connect with `psycopg`. `recipes/adjudication/` is a
-working example (several reviewers per trace, then an adjudicator) with tests in `tests/`.
+pool. For a database, add a Lakebase resource and connect with `psycopg`. `recipes/custom-routes/` and
+`recipes/lakebase/` are working examples, tested in `tests/test_recipes.py`.
 
 ## Not available yet
 

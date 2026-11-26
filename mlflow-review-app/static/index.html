@@ -34,7 +34,7 @@ const [item] = await review.listItems(queue.id, { status: 'PENDING' });
 const { trace, questions } = await review.getItem(queue.id, item.id);
 await review.saveAnswers(queue.id, item.id, answers);</code></pre>
         <p class="small">
-          AGENTS.md lists every method. <code>recipes/</code> has an example with several reviewers and an adjudicator.
+          AGENTS.md lists every method. <code>recipes/</code> has examples of your own routes and of Lakebase.
         </p>
       </section>
       <p class="small" id="me"></p>

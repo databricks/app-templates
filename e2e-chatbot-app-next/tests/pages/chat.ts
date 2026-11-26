@@ -205,8 +205,11 @@ export class ChatPage {
   }
 
   public async isScrolledToBottom(): Promise<boolean> {
+    // use-stick-to-bottom aims 1px short of the bottom and eases there with a
+    // spring, so it can settle a few pixels away. Allow 10px; the library itself
+    // counts anything within 70px as "at the bottom".
     return this.scrollContainer.evaluate(
-      (el) => Math.abs(el.scrollHeight - el.scrollTop - el.clientHeight) < 1,
+      (el) => Math.abs(el.scrollHeight - el.scrollTop - el.clientHeight) <= 10,
     );
   }
 

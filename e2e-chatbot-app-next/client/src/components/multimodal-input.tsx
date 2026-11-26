@@ -24,9 +24,7 @@ import {
 } from './elements/prompt-input';
 import equal from 'fast-deep-equal';
 import type { UseChatHelpers } from '@ai-sdk/react';
-import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowDown, StopCircleIcon } from 'lucide-react';
-import { useScrollToBottom } from '@/hooks/use-scroll-to-bottom';
+import { StopCircleIcon } from 'lucide-react';
 import type { VisibilityType } from './visibility-selector';
 import type { Attachment, ChatMessage } from '@databricks/chatbot-core';
 import { softNavigateToChatId } from '@/lib/navigation';
@@ -201,40 +199,8 @@ function PureMultimodalInput({
     [setAttachments, uploadFile],
   );
 
-  const { isAtBottom, scrollToBottom } = useScrollToBottom();
-
-  useEffect(() => {
-    if (status === 'submitted') {
-      scrollToBottom();
-    }
-  }, [status, scrollToBottom]);
-
   return (
     <div className="relative flex w-full flex-col gap-4">
-      <AnimatePresence>
-        {!isAtBottom && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-            className="-top-12 -translate-x-1/2 absolute left-1/2 z-50"
-          >
-            <Button
-              data-testid="scroll-to-bottom-button"
-              className="rounded-full"
-              size="icon"
-              variant="outline"
-              onClick={(event) => {
-                event.preventDefault();
-                scrollToBottom();
-              }}
-            >
-              <ArrowDown />
-            </Button>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <input
         type="file"

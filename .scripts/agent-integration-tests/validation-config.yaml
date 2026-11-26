@@ -79,8 +79,32 @@ templates:
   rag-chat: { verify: build }
   agent-langchain-ts: { verify: build }
 
-  # ---- OBO (on-behalf-of-user) — NOT testable in this environment ----
-  mcp-server-open-api-spec: { verify: obo }   # user_api_scopes: catalog.connections
+  # ---- OBO (on-behalf-of-user) ----
+  # Testable on the shared app, which was created with the OBO scope union (see the
+  # validate-templates skill). An entry runs only once it declares a success-signal
+  # `expect` (and, for MCP servers, `mcp_calls`); entries without one are skipped.
+  # MCP server over a UC HTTP connection, called as the signed-in user (OBO
+  # catalog.connections). Needs the shared fixtures from the validate-templates skill:
+  # the `apps-e2e-httpbin` connection, and fixtures/mcp-openapi-httpbin-spec.json
+  # uploaded to the shared uc-volume at mcp-openapi-e2e/httpbin-spec.json. httpbin
+  # echoes the request, so the calls below show which headers reached the API.
+  mcp-server-open-api-spec:
+    verify: obo
+    expect: "Custom MCP Server"
+    replace:
+      "name: UC_CONNECTION_NAME\n  value: ''": "name: UC_CONNECTION_NAME\n  value: apps-e2e-httpbin"
+      "value: spec.json": "value: mcp-openapi-e2e/httpbin-spec.json"
+    mcp_calls:
+      - tool: list_api_endpoints
+        expect: ['"/headers"', '"/anything"']
+      # An allowed header reaches httpbin, through the connection, with the user's token.
+      - tool: invoke_api_endpoint
+        arguments: { endpoint_path: /headers, http_method: GET, headers: { Accept: application/json } }
+        expect: ['"ok": true', '"status_code": 200', '"Accept": "application/json"']
+      # A method-override header is refused before any request is made.
+      - tool: invoke_api_endpoint
+        arguments: { endpoint_path: /headers, http_method: GET, headers: { X-HTTP-Method-Override: DELETE } }
+        expect: ["is not allowed"]
   appkit-all-in-one: { verify: obo }
   appkit-analytics: { verify: obo }
   appkit-files: { verify: obo }

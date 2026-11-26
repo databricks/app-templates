@@ -35,8 +35,8 @@
   "license": "Unlicensed",
   "description": "Internal SaaS subscription tracker with spend analytics",
   "dependencies": {
-    "@databricks/appkit": "0.91.3",
-    "@databricks/appkit-ui": "0.91.3",
+    "@databricks/appkit": "0.98.0",
+    "@databricks/appkit-ui": "0.98.0",
     "@databricks/sdk-experimental": "0.17.0",
     "clsx": "2.1.1",
     "lucide-react": "0.546.0",

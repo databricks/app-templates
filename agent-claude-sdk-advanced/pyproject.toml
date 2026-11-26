@@ -1,0 +1,41 @@
+[project]
+name = "agent-server"
+version = "0.1.0"
+description = "MLflow-compatible agent server with FastAPI"
+readme = "README.md"
+authors = [
+    { name = "Agent Developer", email = "developer@example.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "claude-agent-sdk>=0.1.0",
+    "databricks-sdk>=0.79.0",
+    "fastapi>=0.115.12",
+    "uvicorn>=0.34.2",
+    "databricks-ai-bridge[agent-server]>=0.19.0",
+    "mlflow>=3.10.0",
+    "python-dotenv",
+    "pydantic-settings>=2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "databricks-openai>=0.12.1",
+    "hatchling>=1.27.0",
+    "openai>=1.0.0",
+    "pytest>=7.0.0",
+    "pytest-playwright>=0.6.0",
+    "pytest-xdist>=3.8.0",
+]
+
+[project.scripts]
+quickstart = "scripts.quickstart:main"
+start-app = "scripts.start_app:main"
+start-server = "agent_server.start_server:main"
+agent-evaluate = "agent_server.evaluate_agent:evaluate"
+discover-tools = "scripts.discover_tools:main"
+preflight = "scripts.preflight:main"

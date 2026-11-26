@@ -94,6 +94,7 @@ DIAGNOSTICS_PY_TARGETS = {
     "flask-hello-world-app": ".",
     "flask-database-app": ".",
     "flask-postgres-app": ".",
+    "django-postgres-app": ".",
     "gradio-hello-world-app": ".",
     "gradio-chatbot-app": ".",
     "gradio-data-app": ".",

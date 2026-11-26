@@ -1,0 +1,6 @@
+-c constraints.txt
+django>=5.2.19
+psycopg[binary]>=3.3.6
+databricks-sdk>=0.157.0
+gunicorn>=26.2.0
+whitenoise>=6.12.0

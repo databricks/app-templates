@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Review App setup</title>
+    <link rel="stylesheet" href="/_review/setup.css" />
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="i-lock" viewBox="0 0 24 24">
+        <rect x="3" y="11" width="18" height="11" rx="2" />
+        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+      </symbol>
+      <symbol id="i-plug" viewBox="0 0 24 24"><path d="M12 22v-5M9 8V2M15 8V2M18 8v4a6 6 0 0 1-12 0V8z" /></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10" />
+        <path d="M12 8v4M12 16h.01" />
+      </symbol>
+    </svg>
+    <main>
+      <header class="top">
+        <div>
+          <div class="eyebrow">MLflow Review App</div>
+          <h1 id="title">Set up this app</h1>
+          <p class="sub" id="sub">Three steps before reviewers can start. This page checks what the app can access.</p>
+        </div>
+        <span class="sp">Service principal <code id="sp" title="">…</code></span>
+      </header>
+
+      <ol class="steps" aria-label="Setup steps">
+        <li class="step" id="step-resources"><b>1 · App resources</b><span>Checking…</span></li>
+        <li class="step" id="step-access"><b>2 · Trace tables</b><span>Checking…</span></li>
+        <li class="step" id="step-share"><b>3 · Share with reviewers</b><span>After step 2</span></li>
+      </ol>
+
+      <section class="card action" id="action" data-tone="loading" aria-labelledby="action-title" aria-live="polite">
+        <div class="ico">
+          <svg aria-hidden="true"><use id="action-icon" href="#i-lock" /></svg>
+        </div>
+        <div>
+          <h2 id="action-title">Checking the app's access…</h2>
+          <p id="action-text"></p>
+          <ul class="chips" id="chips"></ul>
+          <p class="alert" id="grant-warn" role="note" hidden></p>
+          <ul class="results" id="grant-result"></ul>
+          <div class="btns">
+            <button id="grant" class="btn primary" type="button" hidden>Grant access</button>
+            <a id="open-app" class="btn primary" href="/" hidden>Open the review app →</a>
+            <button id="copy" class="btn" type="button" hidden>Copy SQL</button>
+            <button id="copy-link" class="btn" type="button" hidden>Copy app link</button>
+            <button id="recheck" class="btn" type="button" hidden>Check again</button>
+            <span class="note" id="action-note"></span>
+          </div>
+        </div>
+      </section>
+
+      <h2 class="label">Checks</h2>
+      <section class="card list" aria-label="Checks">
+        <ul class="rows" id="rows"></ul>
+        <details id="passed" hidden>
+          <summary><span class="dot ok"></span><span id="passed-text"></span><span class="show">Show</span></summary>
+          <ul class="rows" id="passed-rows"></ul>
+        </details>
+      </section>
+
+      <section class="card share" id="share" aria-labelledby="share-title">
+        <div>
+          <h3 id="share-title">3 · Share with reviewers</h3>
+          <p>
+            Give reviewers <b>Can use</b> on this app in its permissions. Each one sees only the queues they're a member
+            of, so you can give Can use to all workspace users.
+          </p>
+        </div>
+        <a class="btn" href="/">Open the review app →</a>
+      </section>
+    </main>
+    <dialog id="confirm" aria-labelledby="confirm-title">
+      <h2 id="confirm-title">Grant the app access to these tables?</h2>
+      <p>The app's service principal <code id="confirm-sp"></code> gets:</p>
+      <ul class="grants" id="confirm-list"></ul>
+      <p class="note">
+        Only the trace tables of <code id="confirm-dest"></code>, the TRACE_DESTINATION in app.yaml. The GRANTs run as
+        you.
+      </p>
+      <div class="btns">
+        <button id="confirm-grant" class="btn primary" type="button">Grant access</button>
+        <button id="confirm-cancel" class="btn" type="button">Cancel</button>
+      </div>
+    </dialog>
+    <script type="module" src="/_review/setup.js"></script>
+  </body>
+</html>

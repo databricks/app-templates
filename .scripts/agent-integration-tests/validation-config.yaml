@@ -49,6 +49,10 @@ templates:
   gradio-data-app: { verify: html, expect: "Taxi fare distribution" }
   shiny-data-app: { verify: html, expect: "Data Playground" }
 
+  # ---- Tier 2b: experiment + sql-warehouse ----
+  # The start page's own heading (static/index.html), not a framework page.
+  mlflow-review-app: { verify: html, expect: "Your review app is running" }
+
   # ---- Tier 3: postgres (Lakebase Autoscaling) ----
   streamlit-postgres-app: { verify: html, expect: "Todo List App" }
   dash-postgres-app: { verify: html, expect: "Todo List App" }

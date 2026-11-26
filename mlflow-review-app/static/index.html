@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MLflow Review App</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body class="page">
+    <!-- The app's start page. This file is yours: replace it with your own UI (see README.md). -->
+    <main class="landing">
+      <div class="eyebrow">MLflow Review App</div>
+      <h1>Your review app is running</h1>
+      <p class="sub">This is the template's start page. Replace it with your own review UI.</p>
+
+      <section class="card setup-status">
+        <div>
+          <b>Set up the app</b>
+          <p>The setup page checks what the app can access and grants it the trace tables.</p>
+        </div>
+        <a class="btn" href="/setup">Open setup →</a>
+      </section>
+
+      <section class="card tile">
+        <h2>Build your review UI</h2>
+        <p>
+          Replace the files in <code>static/</code> with your own UI, in plain JavaScript or any framework. Get queues,
+          traces and answers from the template's client, which checks that each reviewer is a queue member:
+        </p>
+        <pre><code>import { review } from '/_review/review.js';
+
+const [queue] = await review.listQueues();
+const [item] = await review.listItems(queue.id, { status: 'PENDING' });
+const { trace, questions } = await review.getItem(queue.id, item.id);
+await review.saveAnswers(queue.id, item.id, answers);</code></pre>
+        <p class="small">
+          AGENTS.md lists every method. <code>recipes/</code> has examples of your own routes and of Lakebase.
+        </p>
+      </section>
+      <p class="small" id="me"></p>
+    </main>
+    <script type="module" src="/landing.js"></script>
+  </body>
+</html>

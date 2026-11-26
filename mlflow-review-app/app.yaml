@@ -1,0 +1,14 @@
+command: ['uvicorn', 'app:app']
+env:
+  # Set from the app resources below (Apps "valueFrom" = the resource key).
+  - name: MLFLOW_EXPERIMENT_ID
+    valueFrom: experiment
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+  # The experiment's trace destination, `catalog.schema.prefix` (the /setup page shows it). "Grant
+  # access" grants only these trace tables, so an experiment editor can't redirect the grants.
+  - name: TRACE_DESTINATION
+    value: ''
+  # Optional: comma-separated queue ids to show. Empty = every queue the reviewer is a member of.
+  - name: REVIEW_QUEUE_IDS
+    value: ''

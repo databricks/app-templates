@@ -1,0 +1,184 @@
+/* Styles for the start page. This file is yours. */
+:root {
+  --bg: #f6f7f9;
+  --card: #fff;
+  --fg: #0f1419;
+  --muted: #5d6879;
+  --line: #eaecf0;
+  --soft: #f2f4f7;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-soft: #eef4ff;
+  --ok: #12b76a;
+  --ok-text: #067647;
+  --warn: #b54708;
+  --bad: #d92d3a;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 4px 16px rgba(16, 24, 40, 0.04);
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --fg: #e6edf3;
+    --muted: #9aa4b2;
+    --line: #262c36;
+    --soft: #21262d;
+    --accent: #2f6fec;
+    --accent-hover: #4c8dff;
+    --accent-soft: #1b2a44;
+    --ok: #3fb950;
+    --ok-text: #3fb950;
+    --warn: #f0a35e;
+    --bad: #ff6b6b;
+    --shadow: none;
+    color-scheme: dark;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+[hidden] {
+  display: none !important;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font:
+    14px/1.5 -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a {
+  color: var(--accent);
+}
+code,
+pre {
+  font: 12.5px/1.5 var(--mono);
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+}
+.btn {
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  border-radius: 9px;
+  padding: 8px 14px;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--fg);
+  text-decoration: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+.btn:hover {
+  border-color: var(--muted);
+}
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn.primary:hover {
+  background: var(--accent-hover);
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.btn:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.small {
+  font-size: 13px;
+  color: var(--muted);
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--muted);
+}
+
+/* Start page */
+.landing {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 56px 24px 64px;
+}
+.eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+h1 {
+  font-size: 30px;
+  letter-spacing: -0.02em;
+  margin: 6px 0 6px;
+  font-weight: 650;
+}
+.sub {
+  color: var(--muted);
+  margin: 0 0 28px;
+  font-size: 15px;
+}
+.setup-status {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+}
+.setup-status p {
+  margin: 0;
+  color: var(--muted);
+}
+.setup-status .btn {
+  margin-left: auto;
+}
+.tile {
+  margin: 16px 0 20px;
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+.tile h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 620;
+}
+.tile p {
+  margin: 0;
+  color: var(--muted);
+}
+.tile pre {
+  margin: 0;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--soft);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+@media (max-width: 700px) {
+  .setup-status {
+    flex-wrap: wrap;
+  }
+}

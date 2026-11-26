@@ -209,21 +209,3 @@ def test_scripts_load_only_from_the_app(boot):
     client, _, _ = boot()
     csp = client.get("/").headers["content-security-policy"]
     assert "script-src 'self';" in csp
-
-
-def test_the_gateway_lists_only_trace_queues(monkeypatch):
-    """MLflow 3.18 can't parse DATASET queues, so the gateway never asks for them."""
-    from mlflow.store.entities.paged_list import PagedList
-
-    from review_queue import MlflowGateway
-    from review_queue import gateway as gw_module
-
-    asked = []
-
-    def fake_list(experiment_id, *, filter_string=None, page_token=None):
-        asked.append(filter_string)
-        return PagedList([], None)
-
-    monkeypatch.setattr(gw_module.rq, "list_review_queues", fake_list)
-    assert MlflowGateway("1", None).list_queues() == []
-    assert asked == ["queue_type=USER", "queue_type=CUSTOM"]

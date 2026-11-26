@@ -84,8 +84,6 @@ class MlflowGateway:
 
     @_upstream
     def list_queues(self) -> list[dict]:
-        # Only trace queues. Dataset-backed queues (DATASET) take expectations on dataset records, and
-        # MLflow 3.18's ReviewQueueType cannot parse them, so an unfiltered list fails.
         return [
             {
                 "id": q.queue_id,
@@ -94,8 +92,7 @@ class MlflowGateway:
                 "pending_item_count": q.pending_item_count,
                 "total_item_count": q.total_item_count,
             }
-            for queue_type in ("USER", "CUSTOM")
-            for q in _all(rq.list_review_queues, self.exp, filter_string=f"queue_type={queue_type}")
+            for q in _all(rq.list_review_queues, self.exp)
         ]
 
     @_upstream

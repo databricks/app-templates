@@ -188,7 +188,7 @@ class ReviewBackend:
             raise _not_found("Queue")
 
     def _queue_items(self, queue_id: str, status: str | None = None) -> list[dict]:
-        # shortcut: trace items only; dataset records (DATASET_RECORD) are skipped until a customer asks.
+        # shortcut: trace items only; add dataset records when a customer asks.
         return [i for i in self.gw.list_items(queue_id, status) if i.get("kind") == "V4_TRACE" and i.get("trace_id")]
 
     def _find_item(self, queue_id: str, item_id: str) -> dict:

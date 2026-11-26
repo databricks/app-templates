@@ -11,7 +11,7 @@ import time
 
 import pytest
 import uvicorn
-from conftest import ALICE, ALL_GOOD, ANN, SP, FakeGateway
+from conftest import ALICE, ALL_GOOD, ANN, SP, TABLE_PREFIX, FakeGateway
 
 from app import create_app
 from review_queue import ReviewQueue
@@ -36,11 +36,15 @@ def browser():
 def serve():
     servers = []
 
-    def _serve(fake: FakeGateway) -> str:
+    def _serve(fake: FakeGateway, pinned: str | None = TABLE_PREFIX) -> str:
         with socket.socket() as s:
             s.bind(("127.0.0.1", 0))
             port = s.getsockname()[1]
-        server = uvicorn.Server(uvicorn.Config(create_app(ReviewQueue(gateway=fake)), port=port, log_level="warning"))
+        server = uvicorn.Server(
+            uvicorn.Config(
+                create_app(ReviewQueue(gateway=fake, trace_destination=pinned)), port=port, log_level="warning"
+            )
+        )
         threading.Thread(target=server.run, daemon=True).start()
         while not server.started:
             time.sleep(0.02)
@@ -62,12 +66,15 @@ def open_as(browser, url, scheme="light"):
     return page, errors
 
 
-def test_start_page_shows_setup_status(browser, serve):
+def test_start_page_links_to_setup_without_checking_it(browser, serve):
     page, errors = open_as(browser, serve(FakeGateway(privileges=dict(MISSING_MODIFY))) + "/")
-    page.get_by_text("Finish the app setup").wait_for()
-    assert page.locator("#status-text").inner_text() == "1 item to fix before reviewers can start."
+    requests = []
+    page.on("request", lambda r: requests.append(r.url))
+    page.reload(wait_until="networkidle")
+    page.get_by_text(f"Signed in as {ALICE}").wait_for()
     assert page.get_by_role("link", name="Open setup →").get_attribute("href") == "/setup"
-    page.screenshot(path=f"{SHOTS}/start-1-todo.png", full_page=True)
+    assert not any("/api/review-queue/setup" in u for u in requests)  # no setup checks on each visit
+    page.screenshot(path=f"{SHOTS}/start-1.png", full_page=True)
     assert errors == []
 
 
@@ -83,6 +90,13 @@ def test_setup_one_table_missing_grant_ready(browser, serve, scheme):
     assert page.locator("#rows .row").count() == 1  # only the missing check is listed
     page.screenshot(path=f"{SHOTS}/setup-1-missing-{scheme}.png", full_page=True)
     page.get_by_role("button", name="Grant access").click()
+    # The dialog names every table and privilege before anything runs.
+    dialog = page.locator("#confirm")
+    dialog.wait_for()
+    assert dialog.locator("li").all_inner_texts() == [f"MODIFY, SELECT on {ANN}"]
+    assert TABLE_PREFIX in page.locator("#confirm-dest").inner_text()
+    page.screenshot(path=f"{SHOTS}/setup-5-confirm-{scheme}.png")
+    page.locator("#confirm-grant").click()
     page.get_by_text("Everything the app needs is in place").wait_for()
     assert "5 of 5 ready" in page.locator("#step-access").inner_text()
     assert page.locator("#grant").is_hidden()
@@ -102,9 +116,28 @@ def test_setup_shows_each_failed_grant_and_lets_you_try_again(browser, serve):
     fake = FakeGateway(privileges=dict(MISSING_MODIFY), owners={"cat": ALICE}, deny_statements=["GRANT"])
     page, errors = open_as(browser, serve(fake) + "/setup")
     page.get_by_role("button", name="Grant access").click()
+    page.locator("#confirm-grant").click()
     page.get_by_text("You can't grant all of these tables").wait_for()
     assert "PERMISSION_DENIED" in page.locator("#grant-result").inner_text()
     assert page.locator("#step-access").get_attribute("data-state") == "bad"
     page.get_by_role("button", name="Try again").wait_for()
     page.screenshot(path=f"{SHOTS}/setup-4-grant-failed.png", full_page=True)
+    assert errors == []
+
+
+def test_cancel_in_the_grant_dialog_grants_nothing(browser, serve):
+    fake = FakeGateway(privileges=dict(MISSING_MODIFY), owners={"cat": ALICE})
+    page, errors = open_as(browser, serve(fake) + "/setup")
+    page.get_by_role("button", name="Grant access").click()
+    page.locator("#confirm-cancel").click()
+    assert page.locator("#confirm").is_hidden()
+    assert fake.statements == []
+    assert errors == []
+
+
+def test_setup_asks_to_pin_the_trace_destination(browser, serve):
+    page, errors = open_as(browser, serve(FakeGateway(privileges=dict(MISSING_MODIFY)), pinned=None) + "/setup")
+    page.get_by_text("Set TRACE_DESTINATION in app.yaml to").wait_for()
+    assert page.locator("#grant").is_hidden()
+    page.locator("#action").screenshot(path=f"{SHOTS}/setup-6-pin.png")
     assert errors == []

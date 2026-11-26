@@ -151,12 +151,6 @@ h1 {
 .setup-status .btn {
   margin-left: auto;
 }
-.setup-status[data-state='ready'] .dot {
-  background: var(--ok);
-}
-.setup-status[data-state='todo'] .dot {
-  background: var(--warn);
-}
 .tile {
   margin: 16px 0 20px;
   padding: 22px 24px;

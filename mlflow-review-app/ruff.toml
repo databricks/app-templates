@@ -1,0 +1,7 @@
+# Lint and format: `ruff check . && ruff format --check .`
+line-length = 120
+target-version = "py311"
+
+[lint]
+# pycodestyle, pyflakes, isort, bugbear, pyupgrade, ruff.
+select = ["E", "W", "F", "I", "B", "UP", "RUF"]

@@ -105,14 +105,14 @@ class FakeGateway:
         return [dict(q) for q in QUESTIONS] if queue_id == "rq-shared" else []
 
     def experiment_tags(self):
-        tags = {"mlflow.experiment.databricksTraceDestinationPath": "cat.sch"}
+        tags = {"mlflow.experiment.databricksTraceDestinationPath": TABLE_PREFIX}
         if self.table_prefix:
             for k, v in {"Span": "spans", "Log": "logs", "Annotation": "annotations"}.items():
                 tags[f"mlflow.experiment.databricksTrace{k}StorageTable"] = f"{self.table_prefix}_otel_{v}"
         return tags
 
     def get_trace(self, location, trace_id):
-        if (location, trace_id) != ("cat.sch", "t1"):
+        if (location, trace_id) != (TABLE_PREFIX, "t1"):
             return None
         return {
             "trace_info": {
@@ -187,6 +187,7 @@ def boot():
 
     def _boot(fake: FakeGateway | None = None, **config):
         fake = fake or FakeGateway()
+        config.setdefault("trace_destination", TABLE_PREFIX)
         rq = ReviewQueue(gateway=fake, **config)
         client = TestClient(create_app(rq))
         return client, fake, rq

@@ -8,7 +8,7 @@ user owns the UI. The template owns `review_queue/` (routes, access checks, `/se
 - Edit only files in `static/`, plus your own routes in `app.py` (below). You may replace
   `static/` completely (any framework, any build step, as long as the built files are served from
   `static/` and `static/index.html` is the entry page).
-- `static/index.html` is only a start page (setup status and a link to `/setup`). Replace it with
+- `static/index.html` is only a start page (a link to `/setup`). Replace it with
   the review UI.
 - Do not edit `review_queue/` or `security.py`. They hold the access checks that keep
   reviewers to their own queues, and the security headers.
@@ -16,7 +16,7 @@ user owns the UI. The template owns `review_queue/` (routes, access checks, `/se
 - Trace data and answers are untrusted text. Use `textContent` or your framework's escaping.
   Never put them in `innerHTML`.
 - Do not add inline `<script>` tags. The server's Content-Security-Policy allows only scripts from
-  the app itself.
+  the app itself (`script-src 'self'`).
 
 ## Client API (`import { review } from '/_review/review.js'`)
 
@@ -57,8 +57,8 @@ principal and get no access checks from the template: use the `ReviewQueue` help
 (`reviewer`, `check_item`, `check_answers`, `list_members`, `save_answers`, `set_status`), or read
 the reviewer from the `x-forwarded-email` header and check access yourself. Call them from the UI
 with `fetch`. Use plain `def` routes: the MLflow SDK is blocking, and FastAPI runs them in a thread
-pool. For a database, add a Lakebase resource and connect with `psycopg`. README.md "Build your own
-review flow" has examples, including several reviewers per trace with an adjudicator.
+pool. For a database, add a Lakebase resource and connect with `psycopg`. `recipes/adjudication/` is a
+working example (several reviewers per trace, then an adjudicator) with tests in `tests/`.
 
 ## Not available yet
 

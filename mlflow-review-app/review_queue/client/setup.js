@@ -17,7 +17,7 @@ const isSql = (fix) => fix?.startsWith('GRANT');
 const nameOf = (c) => c.label || c.name;
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 let sql = ''; // the GRANT statements still needed, for Copy SQL
-let pending = []; // the checks Grant access is fixing: [{ fix, label }]
+let pending = []; // the checks Grant access is fixing: [{ fix, label, check }]
 let lastGrant = null; // results of the last Grant click for those checks, kept until every grant is in place
 
 function step(id, state, text) {
@@ -88,7 +88,9 @@ async function load() {
   const badAccess = access.filter((c) => c.ok !== true);
   const grants = badAccess.filter((c) => isSql(c.fix));
   sql = grants.map((c) => c.fix).join('\n');
-  if (!lastGrant) pending = grants.map((c) => ({ fix: c.fix, label: nameOf(c) }));
+  if (!lastGrant) pending = grants.map((c) => ({ fix: c.fix, label: nameOf(c), check: c }));
+  $('confirm-sp').textContent = String(data.service_principal ?? '');
+  $('confirm-dest').textContent = data.trace_destination ?? '';
   const ready = !badResources.length && !badAccess.length;
   if (ready) lastGrant = null;
   renderChecks([...resources, ...access]);
@@ -188,7 +190,21 @@ async function load() {
   }
 }
 
-$('grant').addEventListener('click', async () => {
+// Grant access first lists every table and privilege, so the clicker sees what they grant.
+$('grant').addEventListener('click', () => {
+  $('confirm-list').replaceChildren(
+    ...pending.map(({ check }) => {
+      const [privs, object] = check.name.split(' on ');
+      return el('li', {}, el('b', {}, privs), ` on ${object}`);
+    })
+  );
+  $('confirm').showModal();
+  $('confirm-grant').focus();
+});
+$('confirm-cancel').addEventListener('click', () => $('confirm').close());
+
+$('confirm-grant').addEventListener('click', async () => {
+  $('confirm').close();
   const button = $('grant');
   button.disabled = true;
   button.textContent = 'Granting…';

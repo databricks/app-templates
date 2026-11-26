@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -48,6 +49,8 @@ class ReviewQueue:
         experiment_id: Default: MLFLOW_EXPERIMENT_ID.
         warehouse_id: Default: DATABRICKS_WAREHOUSE_ID.
         queue_ids: Only these queues are shown. Default: REVIEW_QUEUE_IDS (comma-separated), or every queue.
+        trace_destination: The experiment's trace destination, `catalog.schema.prefix`. "Grant access"
+            grants only its trace tables, and refuses to run until it is set. Default: TRACE_DESTINATION.
         can_write: Who may save answers and set status from the browser (`review.saveAnswers`,
             `review.setStatus`). Default: every queue member. Return False to keep a reviewer's answers
             out of MLflow, for example when reviewers save drafts to your own database and an
@@ -61,6 +64,7 @@ class ReviewQueue:
         experiment_id: str | None = None,
         warehouse_id: str | None = None,
         queue_ids: list[str] | None = None,
+        trace_destination: str | None = None,
         can_write: Callable[[str, str], bool] | None = None,
         gateway: Any = None,
     ):
@@ -72,6 +76,7 @@ class ReviewQueue:
         )
         self.backend = ReviewBackend(self.gw, queue_ids=queue_ids)
         self.can_write = can_write
+        self.trace_destination = trace_destination or os.environ.get("TRACE_DESTINATION", "").strip() or None
         self.router = self._routes()
 
     def mount(self, app: FastAPI) -> None:
@@ -153,18 +158,18 @@ class ReviewQueue:
             return be.get_item(queue_id, item_id, reviewer(request))
 
         @r.put("/queues/{queue_id}/items/{item_id}/answers")
-        def answers(request: Request, queue_id: str, item_id: str, body: dict = Body(default_factory=dict)):
+        def answers(request: Request, queue_id: str, item_id: str, body: Annotated[dict, Body(default_factory=dict)]):
             self._check_write(request, queue_id)
             return self.save_answers(request, queue_id, item_id, body.get("answers"))
 
         @r.put("/queues/{queue_id}/items/{item_id}/status")
-        def status(request: Request, queue_id: str, item_id: str, body: dict = Body(default_factory=dict)):
+        def status(request: Request, queue_id: str, item_id: str, body: Annotated[dict, Body(default_factory=dict)]):
             self._check_write(request, queue_id)
             return self.set_status(request, queue_id, item_id, body.get("status"))
 
         @r.get("/setup")
         def setup(request: Request):
-            return run_checks(self.gw, reviewer(request))
+            return run_checks(self.gw, reviewer(request), self.trace_destination)
 
         # The service principal cannot grant itself tables it does not own, so the GRANTs run as the
         # signed-in user, through the `sql` user scope.
@@ -174,6 +179,6 @@ class ReviewQueue:
             token = request.headers.get("x-forwarded-access-token")
             if not token:
                 raise ReviewError(NO_GRANT_SCOPE, 401)
-            return run_grants(self.gw, token)
+            return run_grants(self.gw, token, self.trace_destination)
 
         return r

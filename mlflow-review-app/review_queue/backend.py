@@ -17,12 +17,15 @@ from __future__ import annotations
 import math
 import re
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 # No leading dot, so ".." cannot change an MLflow path.
 _ID = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._:-]{0,255}")
 TRACE_LOCATION_TAG = "mlflow.experiment.databricksTraceDestinationPath"
 STATUSES = {"PENDING", "COMPLETE", "DECLINED"}
+# Longest comment or text answer, in characters, when the question sets no max_length.
+MAX_TEXT_CHARS = 10_000
 
 
 class ReviewError(Exception):
@@ -72,9 +75,6 @@ class ReviewBackend:
         mine = []
         for q in self.gw.list_queues():
             if self.allowed_queues and q["id"] not in self.allowed_queues:
-                continue
-            # shortcut: trace items only; add dataset records when a customer asks.
-            if q.get("queue_type") == "DATASET":
                 continue
             if self._is_member(q["id"], email):
                 mine.append({**q, "display_name": q.get("display_name") or q["id"]})
@@ -129,8 +129,12 @@ class ReviewBackend:
             if not isinstance(answer, dict):
                 raise ReviewError(f"Answer for {name!r} must be an object.")
             validate_value(q, answer.get("value"))
-            if answer.get("rationale") is not None and not q.get("enable_comment"):
-                raise ReviewError(f"Question {name!r} does not allow a comment.")
+            rationale = answer.get("rationale")
+            if rationale is not None:
+                if not q.get("enable_comment"):
+                    raise ReviewError(f"Question {name!r} does not allow a comment.")
+                if not isinstance(rationale, str) or len(rationale) > MAX_TEXT_CHARS:
+                    raise ReviewError(f"Comment for {name!r} must be text of at most {MAX_TEXT_CHARS} characters.")
         return questions
 
     # ---- writes ----
@@ -151,7 +155,7 @@ class ReviewBackend:
                 name=name,
                 kind="expectation" if questions[name].get("type") == "EXPECTATION" else "feedback",
                 value=answer["value"],
-                rationale=str(answer["rationale"]) if answer.get("rationale") else None,
+                rationale=answer.get("rationale") or None,
                 reviewer=email,
                 overrides=prior[name]["assessment_id"] if name in prior else None,
             )
@@ -159,7 +163,7 @@ class ReviewBackend:
 
     def set_status(self, queue_id: str, item_id: str, email: str, status: Any) -> dict:
         self._require_member(queue_id, email)
-        if status not in STATUSES:
+        if not isinstance(status, str) or status not in STATUSES:
             raise ReviewError("Invalid status.")
         self._find_item(queue_id, item_id)
         # Limit: MLflow stamps completed_by as the service principal. Each answer still names the reviewer.
@@ -184,6 +188,7 @@ class ReviewBackend:
             raise _not_found("Queue")
 
     def _queue_items(self, queue_id: str, status: str | None = None) -> list[dict]:
+        # shortcut: trace items only; dataset records (DATASET_RECORD) are skipped until a customer asks.
         return [i for i in self.gw.list_items(queue_id, status) if i.get("kind") == "V4_TRACE" and i.get("trace_id")]
 
     def _find_item(self, queue_id: str, item_id: str) -> dict:
@@ -241,8 +246,8 @@ def validate_value(q: dict, value: Any) -> None:
         if (lo is not None and value < lo) or (hi is not None and value > hi):
             raise bad
     elif "text" in q:
-        limit = q["text"].get("max_length")
-        if not isinstance(value, str) or not value.strip() or (limit and len(value) > int(limit)):
+        limit = min(int(q["text"].get("max_length") or MAX_TEXT_CHARS), MAX_TEXT_CHARS)
+        if not isinstance(value, str) or not value.strip() or len(value) > limit:
             raise bad
     else:
         raise bad

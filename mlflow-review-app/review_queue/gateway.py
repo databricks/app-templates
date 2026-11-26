@@ -84,6 +84,8 @@ class MlflowGateway:
 
     @_upstream
     def list_queues(self) -> list[dict]:
+        # Only trace queues. Dataset-backed queues (DATASET) take expectations on dataset records, and
+        # MLflow 3.18's ReviewQueueType cannot parse them, so an unfiltered list fails.
         return [
             {
                 "id": q.queue_id,
@@ -92,7 +94,8 @@ class MlflowGateway:
                 "pending_item_count": q.pending_item_count,
                 "total_item_count": q.total_item_count,
             }
-            for q in _all(rq.list_review_queues, self.exp)
+            for queue_type in ("USER", "CUSTOM")
+            for q in _all(rq.list_review_queues, self.exp, filter_string=f"queue_type={queue_type}")
         ]
 
     @_upstream
@@ -207,11 +210,13 @@ class MlflowGateway:
         getter = {"catalog": self.ws.catalogs.get, "schema": self.ws.schemas.get, "table": self.ws.tables.get}[kind]
         return getter(name).owner or ""
 
+    def _as_user(self, user_token: str) -> WorkspaceClient:
+        return WorkspaceClient(host=self.ws.config.host, token=user_token, auth_type="pat")
+
     def run_sql_as_user(self, user_token: str, statement: str) -> tuple[bool, str | None]:
         """Runs one statement with the signed-in user's token (the app's `sql` user scope)."""
         try:
-            user = WorkspaceClient(host=self.ws.config.host, token=user_token, auth_type="pat")
-            res = user.statement_execution.execute_statement(
+            res = self._as_user(user_token).statement_execution.execute_statement(
                 statement=statement,
                 warehouse_id=self.warehouse_id,
                 wait_timeout="30s",

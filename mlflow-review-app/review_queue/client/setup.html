@@ -76,6 +76,19 @@
         <a class="btn" href="/">Open the review app →</a>
       </section>
     </main>
+    <dialog id="confirm" aria-labelledby="confirm-title">
+      <h2 id="confirm-title">Grant the app access to these tables?</h2>
+      <p>The app's service principal <code id="confirm-sp"></code> gets:</p>
+      <ul class="grants" id="confirm-list"></ul>
+      <p class="note">
+        Only the trace tables of <code id="confirm-dest"></code>, the TRACE_DESTINATION in app.yaml. The GRANTs run as
+        you.
+      </p>
+      <div class="btns">
+        <button id="confirm-grant" class="btn primary" type="button">Grant access</button>
+        <button id="confirm-cancel" class="btn" type="button">Cancel</button>
+      </div>
+    </dialog>
     <script type="module" src="/_review/setup.js"></script>
   </body>
 </html>

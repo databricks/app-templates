@@ -20,6 +20,9 @@ TABLE_TAGS = {
     # Answers are written here.
     "mlflow.experiment.databricksTraceAnnotationStorageTable": (["MODIFY", "SELECT"], "Answers: read and write"),
 }
+# `catalog.schema.prefix`: the tables above are `<prefix>_otel_spans`, `_otel_logs` and `_otel_annotations`.
+DESTINATION_TAG = "mlflow.experiment.databricksTraceDestinationPath"
+TABLE_SUFFIXES = dict(zip(TABLE_TAGS, ["_otel_spans", "_otel_logs", "_otel_annotations"], strict=True))
 
 _NAME_PART = re.compile(r"[A-Za-z0-9_-]{1,255}")
 _PRINCIPAL = re.compile(r"[A-Za-z0-9@._+-]{1,255}")
@@ -44,9 +47,39 @@ def grant_sql(kind: str, name: str, privileges: list[str], principal: str) -> st
     return f"GRANT {privs} ON {kind.upper()} {_quote(name)} TO `{principal}`"
 
 
-def trace_securables(tags: dict[str, str]) -> list[tuple[str, str, list[str]]]:
+def trace_tables(tags: dict[str, str], pinned: str | None) -> list[tuple[str, list[str]]]:
+    """The trace tables the app needs: (name, privileges).
+
+    Experiment editors can change the tags that name these tables. So the tables must be the ones of
+    `pinned` (TRACE_DESTINATION in app.yaml), which only app editors can change; otherwise an
+    experiment editor could choose what an admin's Grant click grants.
+    """
+    tables = [(tag, tags[tag], privs) for tag, (privs, _) in TABLE_TAGS.items() if tags.get(tag)]
+    if not tables:
+        return []
+    destination = tags.get(DESTINATION_TAG, "")
+    if len(destination.split(".")) != 3:
+        raise ReviewError("The experiment's trace destination is not a Unity Catalog `catalog.schema.prefix`.")
+    if not pinned:
+        raise PinError(f"Set TRACE_DESTINATION in app.yaml to {destination} and redeploy the app.")
+    if destination != pinned:
+        raise PinError(
+            f"The experiment's trace destination is {destination}, but app.yaml sets TRACE_DESTINATION to "
+            f"{pinned}. If {destination} is right, change TRACE_DESTINATION and redeploy the app."
+        )
+    for tag, name, _ in tables:
+        if name != f"{destination}{TABLE_SUFFIXES[tag]}":
+            raise ReviewError(f"{name} is not a trace table of {destination}; check the experiment tag {tag}.")
+    return [(name, privs) for _, name, privs in tables]
+
+
+class PinError(ReviewError):
+    """The trace destination is not pinned, or the experiment no longer matches the pin."""
+
+
+def trace_securables(tags: dict[str, str], pinned: str | None) -> list[tuple[str, str, list[str]]]:
     """Every catalog, schema and trace table the app needs: (kind, name, privileges)."""
-    tables = [(tags[tag], privs) for tag, (privs, _) in TABLE_TAGS.items() if tags.get(tag)]
+    tables = trace_tables(tags, pinned)
     schemas = sorted({t.rsplit(".", 1)[0] for t, _ in tables})
     catalogs = sorted({s.split(".")[0] for s in schemas})
     return (
@@ -93,7 +126,7 @@ def can_user_grant(gw, kind: str, name: str, user: str) -> dict[str, Any]:
     return {"owner": owner} if any("@" not in o for o in owners) else {"can": False, "owner": owner}
 
 
-def run_checks(gw, user: str | None = None) -> dict[str, Any]:
+def run_checks(gw, user: str | None = None, pinned: str | None = None) -> dict[str, Any]:
     checks: list[dict] = []
 
     def resource_fix(what: str, how: str) -> str:
@@ -131,7 +164,23 @@ def run_checks(gw, user: str | None = None) -> dict[str, Any]:
         )
 
     tags = exp_tags if isinstance(exp_tags, dict) else {}
-    securables = trace_securables(tags)
+    try:
+        securables = trace_securables(tags, pinned)
+    except PinError as e:
+        checks.append({"name": "Trace destination", "group": "access", "ok": False, "fix": str(e)})
+        return {"service_principal": sp, "trace_destination": pinned, "checks": checks}
+    except ReviewError as e:
+        location_fix = "Use an experiment whose traces are stored in Unity Catalog, and don't edit its trace tags."
+        checks.append(
+            {
+                "name": "Unity Catalog trace location",
+                "group": "access",
+                "ok": False,
+                "detail": str(e),
+                "fix": location_fix,
+            }
+        )
+        return {"service_principal": sp, "trace_destination": pinned, "checks": checks}
     if not securables:
         if exp_tags is not None:
             checks.append(
@@ -143,7 +192,7 @@ def run_checks(gw, user: str | None = None) -> dict[str, Any]:
                     "fix": "Use an experiment whose traces are stored in Unity Catalog.",
                 }
             )
-        return {"service_principal": sp, "checks": checks}
+        return {"service_principal": sp, "trace_destination": pinned, "checks": checks}
 
     for kind, name, privs in securables:
         base = {
@@ -175,19 +224,20 @@ def run_checks(gw, user: str | None = None) -> dict[str, Any]:
                 **({"owner": grant["owner"]} if grant.get("owner") else {}),
             }
         )
-    return {"service_principal": sp, "checks": checks}
+    return {"service_principal": sp, "trace_destination": pinned, "checks": checks}
 
 
-def run_grants(gw, user_token: str) -> dict[str, Any]:
+def run_grants(gw, user_token: str, pinned: str | None) -> dict[str, Any]:
     """Runs the GRANTs as the signed-in user, so the service principal gets the trace tables.
 
-    UC accepts a GRANT only from someone who may manage that securable, so a user without that
-    right gets a per-grant error.
+    Grants only the tables of the pinned trace destination (see `trace_tables`). UC accepts a GRANT
+    only from someone who may manage that securable, so a user without that right gets a per-grant
+    error.
     """
     if not gw.warehouse_id:
         raise ReviewError("No SQL warehouse is set; add the sql-warehouse resource first.")
     sp = gw.service_principal()
-    securables = trace_securables(gw.experiment_tags())
+    securables = trace_securables(gw.experiment_tags(), pinned)
     if not securables:
         raise ReviewError("This experiment does not store traces in Unity Catalog.")
     statements = [grant_sql(k, n, p, sp) for k, n, p in securables]  # validate every name before any GRANT runs

@@ -9,6 +9,8 @@ headers or check where requests come from, so this ASGI middleware does both:
   connections whose ``Origin`` is not this app's URL (``DATABRICKS_APP_URL``)
   or listed in ``ALLOWED_ORIGINS`` (comma-separated). A missing Origin is
   allowed (non-browser clients); ``Origin: null`` is always rejected.
+- Rejects request bodies over ``MAX_BODY_BYTES`` with 413, so one request
+  cannot fill the app's memory.
 """
 
 import logging
@@ -22,7 +24,7 @@ logger = logging.getLogger(__name__)
 CONTENT_SECURITY_POLICY = "; ".join(
     [
         "default-src 'self' https: wss:",
-        "script-src 'self' https:",
+        "script-src 'self'",
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: blob:",
         "media-src 'self'",
@@ -44,6 +46,8 @@ SECURITY_HEADERS = {
 }
 
 STATE_CHANGING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+# The review API takes small JSON bodies; 1 MiB leaves plenty of room.
+MAX_BODY_BYTES = 1024 * 1024
 ORIGIN_FORMAT = re.compile(r"^https://[a-zA-Z0-9\-.]+(:[0-9]{1,5})?$")
 LOCALHOST_ORIGIN = re.compile(r"^http://(localhost|127\.0\.0\.1)(:[0-9]{1,5})?$")
 
@@ -84,6 +88,12 @@ class SecurityMiddleware:
                     headers.setdefault(name, value)
             await send(message)
 
+        async def reject(status, text):
+            await send_with_headers(
+                {"type": "http.response.start", "status": status, "headers": [(b"content-type", b"text/plain")]}
+            )
+            await send({"type": "http.response.body", "body": text})
+
         is_websocket = scope["type"] == "websocket"
         if is_websocket or scope["method"] in STATE_CHANGING_METHODS:
             origin = next(
@@ -96,17 +106,32 @@ class SecurityMiddleware:
                     await receive()
                     await send({"type": "websocket.close", "code": 1008})
                 else:
-                    await send_with_headers(
-                        {
-                            "type": "http.response.start",
-                            "status": 403,
-                            "headers": [(b"content-type", b"text/plain")],
-                        }
-                    )
-                    await send({"type": "http.response.body", "body": b"Forbidden"})
+                    await reject(403, b"Forbidden")
                 return
 
         if is_websocket:
             return await self.app(scope, receive, send)
 
-        await self.app(scope, receive, send_with_headers)
+        # Read the whole body before the app runs, and stop at the limit. Chunked bodies have no
+        # Content-Length, so count the bytes instead of trusting the header.
+        body = b""
+        more_body = True
+        while more_body:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            body += message.get("body", b"")
+            if len(body) > MAX_BODY_BYTES:
+                return await reject(413, b"Request body too large")
+            more_body = message.get("more_body", False)
+
+        replayed = False
+
+        async def replay():
+            nonlocal replayed
+            if replayed:
+                return await receive()
+            replayed = True
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        await self.app(scope, replay, send_with_headers)

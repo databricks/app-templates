@@ -3,3 +3,5 @@
 pytest==9.2.0
 httpx==0.28.1
 playwright==1.65.2
+# recipes/adjudication
+psycopg[binary]==3.3.9

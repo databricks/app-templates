@@ -13,13 +13,12 @@
       <h1>Your review app is running</h1>
       <p class="sub">This is the template's start page. Replace it with your own review UI.</p>
 
-      <section class="card setup-status" id="status" data-state="loading" aria-live="polite">
-        <span class="dot" aria-hidden="true"></span>
+      <section class="card setup-status">
         <div>
-          <b id="status-title">Checking the app setup…</b>
-          <p id="status-text"></p>
+          <b>Set up the app</b>
+          <p>The setup page checks what the app can access and grants it the trace tables.</p>
         </div>
-        <a class="btn" id="status-link" href="/setup" hidden>Open setup →</a>
+        <a class="btn" href="/setup">Open setup →</a>
       </section>
 
       <section class="card tile">
@@ -35,7 +34,7 @@ const [item] = await review.listItems(queue.id, { status: 'PENDING' });
 const { trace, questions } = await review.getItem(queue.id, item.id);
 await review.saveAnswers(queue.id, item.id, answers);</code></pre>
         <p class="small">
-          AGENTS.md lists every method. README.md has an example with several reviewers and an adjudicator.
+          AGENTS.md lists every method. <code>recipes/</code> has an example with several reviewers and an adjudicator.
         </p>
       </section>
       <p class="small" id="me"></p>

@@ -67,7 +67,7 @@ def test_a_save_writes_as_the_reviewer_and_overrides_only_their_own_answer(boot)
     assert r.status_code == 200, r.text
     assert r.json() == {"saved": ["correct", "tone", "score"]}
     writes = {c[3]["name"]: c for c in fake.writes()}
-    assert writes["correct"][1:3] == ("cat.sch", "t1")
+    assert writes["correct"][1:3] == ("cat.sch.tr", "t1")
     assert writes["correct"][3] == {
         "name": "correct",
         "kind": "feedback",
@@ -160,3 +160,70 @@ def test_no_trace_location_is_a_clear_error():
     fake.experiment_tags = lambda: {}
     with pytest.raises(Exception, match="no Unity Catalog trace location"):
         ReviewBackend(fake).get_item("rq-shared", "i1", ALICE)
+
+
+@pytest.mark.parametrize(
+    "rationale",
+    [{"x": 1}, ["x"], 5, "x" * 10_001],  # not text, or too long
+)
+def test_a_comment_must_be_short_text(boot, rationale):
+    client, fake, _ = boot()
+    answers = {"tone": {"value": "ok", "rationale": rationale}}
+    r = client.put(f"{API}/queues/rq-shared/items/i1/answers", headers=ALICE_H, json={"answers": answers})
+    assert r.status_code == 400
+    assert fake.writes() == []
+
+
+def test_text_answers_are_capped_even_without_max_length():
+    from review_queue.backend import ReviewError, validate_value
+
+    q = {"title": "notes", "text": {}}
+    validate_value(q, "x" * 10_000)
+    with pytest.raises(ReviewError):
+        validate_value(q, "x" * 10_001)
+    with pytest.raises(ReviewError):
+        validate_value({"title": "notes", "text": {"max_length": 5}}, "x" * 6)
+
+
+@pytest.mark.parametrize("status", [[], {}, None, 1])
+def test_a_malformed_status_is_a_400(boot, status):
+    client, fake, _ = boot()
+    r = client.put(f"{API}/queues/rq-shared/items/i1/status", headers=ALICE_H, json={"status": status})
+    assert r.status_code == 400
+    assert fake.writes() == []
+
+
+def test_a_body_over_the_limit_is_a_413(boot):
+    client, fake, _ = boot()
+    big = {"answers": {"tone": {"value": "ok", "rationale": "x" * (1024 * 1024)}}}
+    r = client.put(f"{API}/queues/rq-shared/items/i1/answers", headers=ALICE_H, json=big)
+    assert r.status_code == 413
+    # Chunked, so no Content-Length to trust.
+    chunks = iter([b'{"answers": {"tone": {"value": "ok", "rationale": "', b"x" * (1024 * 1024), b'"}}}'])
+    r = client.put(f"{API}/queues/rq-shared/items/i1/answers", headers=ALICE_H, content=chunks)
+    assert r.status_code == 413
+    assert fake.writes() == []
+
+
+def test_scripts_load_only_from_the_app(boot):
+    client, _, _ = boot()
+    csp = client.get("/").headers["content-security-policy"]
+    assert "script-src 'self';" in csp
+
+
+def test_the_gateway_lists_only_trace_queues(monkeypatch):
+    """MLflow 3.18 can't parse DATASET queues, so the gateway never asks for them."""
+    from mlflow.store.entities.paged_list import PagedList
+
+    from review_queue import MlflowGateway
+    from review_queue import gateway as gw_module
+
+    asked = []
+
+    def fake_list(experiment_id, *, filter_string=None, page_token=None):
+        asked.append(filter_string)
+        return PagedList([], None)
+
+    monkeypatch.setattr(gw_module.rq, "list_review_queues", fake_list)
+    assert MlflowGateway("1", None).list_queues() == []
+    assert asked == ["queue_type=USER", "queue_type=CUSTOM"]

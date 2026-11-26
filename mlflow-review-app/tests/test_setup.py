@@ -120,3 +120,52 @@ def test_pages_are_served_with_the_security_headers(boot, path, text):
     assert r.status_code == 200
     assert text in r.text
     assert "frame-ancestors 'none'" in r.headers["content-security-policy"]
+
+
+class Repointed(FakeGateway):
+    """An experiment editor pointed a trace table tag at a table outside the trace destination."""
+
+    def __init__(self, tag: str, value: str, **kw):
+        super().__init__(**kw)
+        self.edit = (tag, value)
+
+    def experiment_tags(self):
+        return {**super().experiment_tags(), self.edit[0]: self.edit[1]}
+
+
+@pytest.mark.parametrize(
+    "tag, value",
+    [
+        ("mlflow.experiment.databricksTraceAnnotationStorageTable", "finance.payroll.salaries"),
+        ("mlflow.experiment.databricksTraceSpanStorageTable", "cat.sch.other_otel_spans"),  # another trace set
+        ("mlflow.experiment.databricksTraceDestinationPath", "cat.sch"),  # not catalog.schema.prefix
+    ],
+)
+def test_grant_refuses_tables_outside_the_trace_destination(boot, tag, value):
+    client, fake, _ = boot(Repointed(tag, value, privileges={}))
+    r = client.post(f"{API}/setup/grant", headers=with_token())
+    assert r.status_code == 400
+    assert fake.statements == []
+    checks = client.get(f"{API}/setup", headers=as_(ALICE)).json()["checks"]
+    location = [c for c in checks if c["name"] == "Unity Catalog trace location"]
+    assert location and location[0]["ok"] is False
+    assert not any("GRANT" in c.get("fix", "") for c in checks)
+
+
+@pytest.mark.parametrize(
+    "pinned, says",
+    [
+        (None, "Set TRACE_DESTINATION in app.yaml to cat.sch.tr "),
+        ("cat.sch.other", "app.yaml sets TRACE_DESTINATION to cat.sch.other."),  # the experiment was repointed
+    ],
+)
+def test_grant_needs_the_pinned_trace_destination(boot, pinned, says):
+    client, fake, _ = boot(FakeGateway(privileges={}), trace_destination=pinned)
+    r = client.post(f"{API}/setup/grant", headers=with_token())
+    assert r.status_code == 400
+    assert says in r.json()["error"]
+    assert fake.statements == []
+    checks = client.get(f"{API}/setup", headers=as_(ALICE)).json()["checks"]
+    pin = [c for c in checks if c["name"] == "Trace destination"]
+    assert pin and pin[0]["ok"] is False and says in pin[0]["fix"]
+    assert not any("GRANT" in c.get("fix", "") for c in checks)

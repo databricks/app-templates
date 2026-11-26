@@ -63,11 +63,14 @@ templates:
   # The conversational chat UI is a platform-provided Vite SPA proxied at / (served
   # by a separate CHAT_APP_PORT process, not template source), so there is no
   # per-template text to assert — verify the real built app via its JS/CSS assets.
-  agent-langgraph: { verify: spa }
-  agent-langgraph-advanced: { verify: spa }
-  agent-non-conversational: { verify: api }   # API-only (/invocations), no chat UI at /
-  agent-openai-advanced: { verify: spa }
-  agent-openai-agents-sdk: { verify: spa }
+  # Agent app.yaml files take LLM_MODEL from the `llm-endpoint` resource; the shared
+  # app binds the same model under `serving-endpoint`, so map the key for the deploy.
+  # prepare_source re-writes app.yaml without quotes before replacements run.
+  agent-langgraph: { verify: spa, replace: { 'valueFrom: llm-endpoint': 'valueFrom: serving-endpoint' } }
+  agent-langgraph-advanced: { verify: spa, replace: { 'valueFrom: llm-endpoint': 'valueFrom: serving-endpoint' } }
+  agent-non-conversational: { verify: api, replace: { 'valueFrom: llm-endpoint': 'valueFrom: serving-endpoint' } }   # API-only (/invocations), no chat UI at /
+  agent-openai-advanced: { verify: spa, replace: { 'valueFrom: llm-endpoint': 'valueFrom: serving-endpoint' } }
+  agent-openai-agents-sdk: { verify: spa, replace: { 'valueFrom: llm-endpoint': 'valueFrom: serving-endpoint' } }
   agent-openai-agents-sdk-multiagent: { verify: spa }
   agent-migration-from-model-serving: { verify: spa }
   agent-adk: { verify: spa }

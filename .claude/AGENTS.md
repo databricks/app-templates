@@ -77,7 +77,7 @@ doesn't treat `{braces}` in client text as session-state placeholders.
 - Lakebase resources use `permission: 'CAN_CONNECT_AND_CREATE'`
 - Lakebase templates use `<your-lakebase-instance-name>` as placeholder — quickstart replaces it
 - Templates do not define a DAB-managed experiment resource (`resources.experiments`); instead, the app resource references an experiment by ID (initially empty), and quickstart fills in the literal experiment ID
-- Agent templates declare a `serving_endpoint` app resource named `llm-endpoint` (permission `CAN_QUERY`) whose `name` matches the model hardcoded in `agent_server/agent.py`. This grants the app's service principal query access to the model on deploy (and, via the matching `manifest.yaml` `serving_endpoint_spec`, on UI-based creation) without a manual grant. Change the model in both `agent.py` and this resource together.
+- Agent templates declare a `serving_endpoint` app resource named `llm-endpoint` (permission `CAN_QUERY`) whose `name` is the agent's model. `databricks.yml` and `app.yaml` set `LLM_MODEL` from it (`value_from` / `valueFrom: "llm-endpoint"`), and `agent_server/agent.py` reads `LLM_MODEL`, falling back to the same model name for local runs. This grants the app's service principal query access to the model on deploy (and, via the matching `manifest.yaml` `serving_endpoint_spec`, on UI-based creation) without a manual grant. To change the model, change this resource's `name` (and the fallback in `agent.py`).
 
 ### `app.yaml` files
 

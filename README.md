@@ -82,6 +82,20 @@ End-to-end example apps that bundle a full Databricks App with seed data, SQL qu
 | `saas-tracker` | Internal tool for tracking team SaaS subscriptions, owners, costs, and renewals with Lakebase persistence and Genie spend analytics. | SQL warehouse, Database, Genie Space |
 | `vacation-rentals` | Vacation rental ops dashboard with revenue analytics from a SQL Warehouse, a booking queue with Lakebase-backed flags and agent notes, and an embedded Genie chat panel. | SQL warehouse, Database, Genie Space |
 
+## Lakebase Provisioned authentication
+
+The `*-database-app` and `e2e-chatbot-*` Node templates use credentials from
+`/api/2.0/database/credentials` as the Postgres password. General Databricks
+OAuth tokens remain the authentication for workspace API calls.
+
+For database connections configured through `PG*` variables, the templates
+resolve the Provisioned instance name by matching `PGHOST` against the instances
+visible to the caller. Set `LAKEBASE_INSTANCE_NAME` to skip this lookup, for
+example during local development. The app service principal needs the database
+resource binding with `CAN_CONNECT_AND_CREATE`; local development uses your
+Databricks identity and its database permissions. The Node templates also
+support an explicit `POSTGRES_URL` and running without a database.
+
 ## Diagnosing a crashed or hung app
 
 Every template installs a zero-dependency diagnostics bootstrap at startup

@@ -26,7 +26,8 @@
     "db:pull": "drizzle-kit pull",
     "db:check": "drizzle-kit check",
     "db:up": "drizzle-kit up",
-    "test": "npm run test:with-db && npm run test:ephemeral",
+    "test": "npm run test:lakebase-auth && npm run test:with-db && npm run test:ephemeral",
+    "test:lakebase-auth": "node --import tsx packages/auth/tests/lakebase-auth.test.ts",
     "test:with-db": "PLAYWRIGHT=True TEST_MODE=with-db npx playwright test",
     "test:ephemeral": "PLAYWRIGHT=True TEST_MODE=ephemeral npx playwright test"
   },

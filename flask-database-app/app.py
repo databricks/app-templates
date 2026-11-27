@@ -15,6 +15,7 @@ import secrets
 import psycopg
 import os
 import time
+import uuid
 from databricks import sdk
 from psycopg import sql
 from psycopg_pool import ConnectionPool
@@ -26,14 +27,33 @@ workspace_client = sdk.WorkspaceClient()
 postgres_password = None
 last_password_refresh = 0
 connection_pool = None
+database_instance_name = os.getenv("LAKEBASE_INSTANCE_NAME")
 
 def refresh_oauth_token():
     """Refresh OAuth token if expired."""
-    global postgres_password, last_password_refresh
+    global postgres_password, last_password_refresh, database_instance_name
     if postgres_password is None or time.time() - last_password_refresh > 900:
         print("Refreshing PostgreSQL OAuth token")
         try:
-            postgres_password = workspace_client.config.oauth_token().access_token
+            if not database_instance_name:
+                # Resource bindings supply PGHOST, but not the instance name required by credentials.
+                pg_host = os.getenv("PGHOST")
+                database_instance_name = next(
+                    (
+                        instance.name
+                        for instance in workspace_client.database.list_database_instances()
+                        if pg_host and pg_host in (instance.read_write_dns, instance.read_only_dns)
+                    ),
+                    None,
+                )
+            if not database_instance_name:
+                raise ValueError("No Lakebase instance matches PGHOST; set LAKEBASE_INSTANCE_NAME")
+            credential = workspace_client.database.generate_database_credential(
+                request_id=str(uuid.uuid4()), instance_names=[database_instance_name]
+            )
+            if not credential.token:
+                raise ValueError("Lakebase returned an empty credential")
+            postgres_password = credential.token
             last_password_refresh = time.time()
         except Exception as e:
             print(f"❌ Failed to refresh OAuth token: {str(e)}")
@@ -44,7 +64,8 @@ def get_connection_pool():
     """Get or create the connection pool."""
     global connection_pool
     if connection_pool is None:
-        refresh_oauth_token()
+        if not refresh_oauth_token():
+            raise RuntimeError("Failed to generate Lakebase credential")
         conn_string = (
             f"dbname={os.getenv('PGDATABASE')} "
             f"user={os.getenv('PGUSER')} "

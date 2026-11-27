@@ -1,0 +1,18 @@
+command: ['npm', 'run', 'start']
+env:
+  # Bound by the installer from the resources declared in manifest.yaml.
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+  - name: DATABRICKS_VOLUME_FILES
+    valueFrom: files
+
+  # The table holding the AI function output to review: id STRING, response VARIANT.
+  # A Unity Catalog table can also be bound as a resource (securable_type: TABLE),
+  # but it is kept here as plain config so one app can be pointed at a different
+  # table without re-binding resources. Editable from the app's Environment tab.
+  #
+  # The app derives the two output objects by convention:
+  #   <INPUT_TABLE>_approved_log   append-only, the app's only write target
+  #   <INPUT_TABLE>_approved       the view everything downstream reads
+  - name: INPUT_TABLE
+    value: 'catalog.schema.your_ai_function_output'

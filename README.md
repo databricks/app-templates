@@ -66,6 +66,7 @@ A collection of templates for building full-stack Databricks Apps with [AppKit](
 | `appkit-files` | Node.js app with file browser for Databricks Volumes | Volume |
 | `appkit-serving` | Node.js app with Databricks Model Serving endpoint integration | Serving Endpoint |
 | `appkit-lakebase` | Node.js app with Lakebase Autoscaling (Postgres) CRUD operations | Database |
+| `appkit-document-processing-review` | Node.js human-in-the-loop review of AI document-processing output (`ai_extract`, `ai_parse_document`, `ai_classify`) with bounding-box evidence on the page image, a form generated from the data at runtime, and a Unity Catalog approval log | SQL warehouse, Volume |
 
 <!-- appkit-end -->
 

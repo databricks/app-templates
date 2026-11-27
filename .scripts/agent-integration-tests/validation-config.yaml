@@ -83,6 +83,9 @@ templates:
   mcp-server-open-api-spec: { verify: obo }   # user_api_scopes: catalog.connections
   appkit-all-in-one: { verify: obo }
   appkit-analytics: { verify: obo }
+  # Needs INPUT_TABLE plus the two output objects (see the template README),
+  # so it has no success signal in the shared app and skips like its siblings.
+  appkit-document-processing-review: { verify: obo }
   appkit-files: { verify: obo }
   appkit-genie: { verify: obo }
   appkit-lakebase: { verify: obo }

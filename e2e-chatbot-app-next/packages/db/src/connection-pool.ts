@@ -5,29 +5,27 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import type postgres from 'postgres';
 import * as schema from './schema';
 import { getConnectionUrl, getSchemaName } from './connection';
-import { getDatabricksToken } from '@databricks/chatbot-auth';
 
 // Connection pool management
 let sqlConnection: postgres.Sql | null = null;
-let currentToken: string | null = null;
+let currentConnectionUrl: string | null = null;
 
 async function getConnection(): Promise<postgres.Sql> {
   const { default: postgres } = await import('postgres');
-  // Get the current token to check if it's changed
-  const freshToken = await getDatabricksToken();
+  // Resolve once so the pool and its rotation check use the same credential.
+  const connectionUrl = await getConnectionUrl();
 
   // If we have a connection but the token has changed, we need to recreate the connection
   // This ensures we're always using a valid token
-  if (sqlConnection && currentToken !== freshToken) {
+  if (sqlConnection && currentConnectionUrl !== connectionUrl) {
     console.log('[DB Pool] Token changed, closing existing connection pool');
     await sqlConnection.end();
     sqlConnection = null;
-    currentToken = null;
+    currentConnectionUrl = null;
   }
 
   // Create a new connection if needed
   if (!sqlConnection) {
-    const connectionUrl = await getConnectionUrl();
     sqlConnection = postgres(connectionUrl, {
       max: 10, // connection pool size
       idle_timeout: 20, // close idle connections after 20 seconds
@@ -37,7 +35,7 @@ async function getConnection(): Promise<postgres.Sql> {
       max_lifetime: 60 * 10, // 10 minutes max connection lifetime
     });
 
-    currentToken = freshToken;
+    currentConnectionUrl = connectionUrl;
     console.log('[DB Pool] Created new connection pool with fresh OAuth token');
   }
 

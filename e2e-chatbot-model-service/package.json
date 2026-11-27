@@ -2,11 +2,7 @@
   "name": "@databricks/e2e-chatbot-app",
   "version": "1.0.0",
   "private": true,
-  "workspaces": [
-    "client",
-    "server",
-    "packages/*"
-  ],
+  "workspaces": ["client", "server", "packages/*"],
   "engines": {
     "node": ">=22.23.4",
     "npm": ">=8.0.0"
@@ -30,7 +26,8 @@
     "db:pull": "drizzle-kit pull",
     "db:check": "drizzle-kit check",
     "db:up": "drizzle-kit up",
-    "test": "npm run test:with-db && npm run test:ephemeral",
+    "test": "npm run test:lakebase-auth && npm run test:with-db && npm run test:ephemeral",
+    "test:lakebase-auth": "node --import tsx packages/auth/tests/lakebase-auth.test.ts",
     "test:with-db": "PLAYWRIGHT=True TEST_MODE=with-db npx playwright test",
     "test:ephemeral": "PLAYWRIGHT=True TEST_MODE=ephemeral npx playwright test"
   },

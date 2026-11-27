@@ -140,6 +140,13 @@ export function getCachedCliHost(): string | null {
   return null;
 }
 
+export function getCachedCliWorkspaceId(): string | null {
+  if (Date.now() < cliHostCacheTime + CLI_HOST_CACHE_DURATION) {
+    return cliWorkspaceId;
+  }
+  return null;
+}
+
 // ============================================================================
 // OAuth Authentication (Service Principal)
 // ============================================================================
@@ -218,15 +225,22 @@ export async function getDatabricksOAuthToken(): Promise<string> {
 
 // Cache for CLI host information
 let cliHostCache: string | null = null;
+let cliWorkspaceId: string | null = null;
 let cliHostCacheTime = 0;
 const CLI_HOST_CACHE_DURATION = 10 * 60 * 1000; // Cache for 10 minutes
 
 /**
  * Get the current user's identity using the Databricks CLI
  */
-export async function getDatabricksUserIdentity(): Promise<string> {
+export async function getDatabricksUserIdentity(
+  forceRefresh = false,
+): Promise<string> {
   // Check if we have a valid cached identity
-  if (cliUserIdentity && Date.now() < cliUserIdentityExpiresAt) {
+  if (
+    !forceRefresh &&
+    cliUserIdentity &&
+    Date.now() < cliUserIdentityExpiresAt
+  ) {
     return cliUserIdentity;
   }
 
@@ -266,6 +280,8 @@ export async function getDatabricksUserIdentity(): Promise<string> {
     }
 
     const responseHost = authData.details?.host;
+    cliWorkspaceId =
+      authData.details?.configuration?.workspace_id?.value || null;
 
     // Cache user identity
     cliUserIdentity = username;

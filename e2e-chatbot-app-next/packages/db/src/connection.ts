@@ -2,7 +2,7 @@
  * Database connection utilities using centralized Databricks authentication
  */
 import {
-  getDatabricksToken,
+  getLakebaseToken,
   getAuthMethodDescription,
   getDatabaseUsername,
 } from '@databricks/chatbot-auth';
@@ -20,7 +20,7 @@ export { getSchemaName, isDatabaseAvailable };
 
 /**
  * Build PostgreSQL connection URL, supporting both POSTGRES_URL and PG* variables
- * with either OAuth (service principal) or PAT-based database credentials
+ * with either Lakebase OAuth credentials or an explicit connection string
  */
 export async function getConnectionUrl(): Promise<string> {
   // Option 1: Use POSTGRES_URL if provided
@@ -38,7 +38,7 @@ export async function getConnectionUrl(): Promise<string> {
   }
 
   // Get authentication token and username using centralized auth module
-  const token = await getDatabricksToken();
+  const token = await getLakebaseToken();
   const username = await getDatabaseUsername();
   console.log(
     `[Connection] Using ${getAuthMethodDescription()} authentication with user: ${username}`,

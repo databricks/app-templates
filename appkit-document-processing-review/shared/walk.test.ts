@@ -96,7 +96,7 @@ describe('ai_extract output', () => {
 
   test('indexes citations and page images for the UI to resolve', () => {
     expect(citations.get(3)).toEqual({ coord: [51, 660, 1457, 1481], pageId: 0 });
-    expect(pageImages.get(1)).toBe('page1.jpg');
+    expect(pageImages.get(1)).toBe('/Volumes/c/s/v/page1.jpg');
   });
 
   test('numeric-looking strings get the number widget', () => {
@@ -125,7 +125,7 @@ describe('ai_parse_document output', () => {
   });
 
   test('pages are found under document, not metadata', () => {
-    expect(pageImages.get(0)).toBe('parse0.jpg');
+    expect(pageImages.get(0)).toBe('/Volumes/c/s/v/parse0.jpg');
   });
 });
 
@@ -141,7 +141,52 @@ describe('ai_classify output', () => {
 
   test('a page with no citations is still available, so the reviewer can read it', () => {
     expect(citations.size).toBe(0);
-    expect(pageImages.get(0)).toBe('classify0.jpg');
+    expect(pageImages.get(0)).toBe('/Volumes/c/s/v/classify0.jpg');
+  });
+});
+
+/* Real ai_classify output, versions 2.1 (recommended) and 2.0: `response` is an array. */
+describe('ai_classify 2.x output', () => {
+  const v21 = {
+    error_message: null,
+    metadata: { version: '2.1' },
+    response: [
+      { confidence_score: 0.85, value: 'lodging' },
+      { confidence_score: 0.8, value: 'meals' },
+    ],
+  };
+
+  test('each label is a value with its confidence, and metadata is not a field', () => {
+    expect(walk(v21).leaves.map((l) => [l.path, l.value, l.confidence])).toEqual([
+      ['response[0]', 'lodging', 0.85],
+      ['response[1]', 'meals', 0.8],
+    ]);
+  });
+
+  test('2.0 labels are bare strings', () => {
+    const v20 = { error_message: null, metadata: { version: '2.0' }, response: ['lodging'] };
+    expect(walk(v20).leaves.map((l) => [l.path, l.value])).toEqual([['response[0]', 'lodging']]);
+  });
+
+  test('a null response has nothing to review, rather than exposing the metadata', () => {
+    expect(walk({ response: null, error_message: 'failed', metadata: { version: '2.1' } }).leaves).toEqual([]);
+  });
+});
+
+describe('page images', () => {
+  test('keep their full path, so images in a subfolder of the volume resolve', () => {
+    const { pageImages } = walk({
+      response: {},
+      metadata: { pages: [{ id: 0, image_uri: '/Volumes/c/s/v/run_7/p0.png' }] },
+    });
+    expect(pageImages.get(0)).toBe('/Volumes/c/s/v/run_7/p0.png');
+  });
+});
+
+describe('field names containing a dot', () => {
+  test('carry their own segments, so the dot is not read as nesting', () => {
+    const { leaves } = walk({ response: { 'unit.price': { value: 70.8 } } });
+    expect(leaves[0]).toMatchObject({ path: 'response.unit.price', segments: ['response', 'unit.price'] });
   });
 });
 
@@ -158,6 +203,31 @@ describe('shapes with no recognised envelope', () => {
     const { leaves } = walk({ response: { odd: {} } });
     expect(leaves).toHaveLength(1);
     expect(leaves[0]).toMatchObject({ path: 'response.odd', kind: 'json' });
+  });
+
+  test('an object or array value is shown read-only', () => {
+    const { leaves } = walk({ response: { o: { value: { a: 1 } }, l: { value: [1] } } });
+    expect(leaves.map((l) => [l.path, l.kind])).toEqual([
+      ['response.o', 'json'],
+      ['response.l', 'json'],
+    ]);
+  });
+
+  test('evidence beside unwrapped fields is never a leaf, but a field of that name is', () => {
+    const { leaves } = walk({
+      response: {
+        addr: { street: { value: '1 Main' }, confidence_score: 0.5, citation_ids: [1] },
+        bbox: { value: 'a field called bbox' },
+      },
+    });
+    expect(leaves.map((l) => l.path)).toEqual(['response.addr.street', 'response.bbox']);
+  });
+
+  test('a parse element with no content has nothing to review', () => {
+    const { leaves } = walk({
+      document: { elements: [{ id: 0, type: 'figure', bbox: [{ coord: [1, 2, 3, 4], page_id: 0 }] }] },
+    });
+    expect(leaves).toEqual([]);
   });
 
   test('an empty array contributes no leaves', () => {

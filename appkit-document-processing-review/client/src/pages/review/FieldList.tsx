@@ -15,6 +15,8 @@ type Props = {
   /** Set when this reviewer has already reviewed every value in the document. */
   reviewedAt: string | null;
   error: string | null;
+  /** False until the selected document has loaded. */
+  loaded: boolean;
 };
 
 /** Form generated from the discovered schema, in the order the table returns. */
@@ -29,6 +31,7 @@ export function FieldList({
   approving,
   reviewedAt,
   error,
+  loaded,
 }: Props) {
   // Both of these are built once per document instead of once per row: with a
   // scan per row, a document with many fields costs O(N^2) on every keystroke.
@@ -64,7 +67,10 @@ export function FieldList({
   */
   // Blocking depends on emptiness alone, which holds with or without confidence.
   const missing = fields.filter((f) => widgetOf(f) !== 'json' && valueOf(f).trim() === '');
-  const blocked = missing.length > 0;
+  // No values at all means the AI call failed or found nothing; approving that
+  // would record the failure as agreed. The server refuses it too.
+  const empty = loaded && fields.length === 0;
+  const blocked = !loaded || empty || missing.length > 0;
 
   /*
     Approving with nothing changed is a real answer, not a no-op: it records
@@ -188,7 +194,12 @@ export function FieldList({
       </div>
 
       {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
-      {blocked && (
+      {empty && (
+        <p className="mt-3 text-xs text-destructive">
+          The model returned no values for this document, so there is nothing to approve.
+        </p>
+      )}
+      {missing.length > 0 && (
         <p className="mt-3 text-xs text-destructive">
           {missing.length} value{missing.length === 1 ? '' : 's'} still needs a value before this document can be
           approved.

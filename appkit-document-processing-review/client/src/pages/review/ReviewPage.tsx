@@ -265,6 +265,7 @@ export function ReviewPage() {
           approving={approving}
           reviewedAt={reviewedAt}
           error={approveError}
+          loaded={detail !== null && !loadingDetail}
         />
         {docMeta?.approved && <p className="mt-2 text-[10px] text-muted-foreground">{docMeta.approver}</p>}
       </div>

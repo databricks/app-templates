@@ -1,4 +1,4 @@
--- One-time setup for Intelligent Document Extraction Review.
+-- One-time setup for the Document Processing Review template.
 --
 -- Replace <INPUT_TABLE> with your fully qualified table name and <INPUT_LEAF>
 -- with just its last part, then run this once against your warehouse.
@@ -8,8 +8,8 @@
 --   <INPUT_TABLE>_approved      what everything downstream reads
 --
 -- `response` can hold the output of any AI function that produces VARIANT:
--- ai_extract, ai_parse_document, or a scalar function such as ai_classify
--- wrapped into a struct. The app discovers the shape at runtime.
+-- ai_extract, ai_parse_document or ai_classify, used as returned. The app
+-- discovers the shape at runtime.
 
 -- 1. Approval log. One row per document per approver per approval, append-only,
 -- so a re-approval adds a row and the full sequence is preserved.

@@ -16,11 +16,11 @@ Any table with `id STRING` and a `response VARIANT` holding AI function output.
 Confidence and evidence are optional, so a function that provides neither still
 gives an editable, approvable form.
 
-| Input                                 | Values discovered                                         | Confidence         | Evidence on the page    |
-| ------------------------------------- | --------------------------------------------------------- | ------------------ | ----------------------- |
-| `ai_extract`                          | one per field, arrays flattened to `line_items[0].amount` | yes                | citation bbox per value |
-| `ai_parse_document`                   | one per element (`content`)                               | yes                | bbox per element        |
-| `ai_classify` (wrapped into a struct) | one per label                                             | no - badges hidden | page shown, no boxes    |
+| Input                          | Values discovered                                         | Confidence                                            | Evidence on the page    |
+| ------------------------------ | --------------------------------------------------------- | ----------------------------------------------------- | ----------------------- |
+| `ai_extract`                   | one per field, arrays flattened to `line_items[0].amount` | yes                                                   | citation bbox per value |
+| `ai_parse_document`            | one per element (`content`)                               | yes                                                   | bbox per element        |
+| `ai_classify` 2.x, as returned | one per returned label                                    | 2.1 with `enableConfidenceScores`; else badges hidden | none - no page image    |
 
 ## Lineage
 
@@ -44,10 +44,13 @@ flowchart LR
 
 `approved_response` is the **same schema as `response`** with corrected values replaced -
 a corrected number stays a number, a boolean stays a boolean, and text that does not parse
-as the leaf's own type is refused rather than coerced. Confidence scores and citations ride
-along untouched: the server accepts an edit only at a path the form itself generated, so
-evidence is unreachable by construction rather than by a list of protected field names. So
-`response` vs `latest_approved_response` is a ready-made model-vs-human evaluation pair.
+as the leaf's own type is refused rather than coerced, as is a number a double cannot hold
+exactly. A value the model left `null` has no type to keep, so a reviewer's entry there is
+recorded as text; a value that is itself an object or array is shown read-only. Confidence
+scores, citations and bounding boxes ride along untouched: the server accepts an edit only
+at a value the form itself generated, and the walker never offers `confidence_score`,
+`citation_ids` or `bbox` as one. A document with no values at all (a failed AI call) cannot
+be approved. So `response` vs `latest_approved_response` is a ready-made model-vs-human evaluation pair.
 
 ### Each approval is an independent opinion
 
@@ -97,7 +100,7 @@ SELECT path AS id,
        ai_parse_document(content, map('imageOutputPath', '/Volumes/my/schema/page_images')) AS response
 FROM READ_FILES('/Volumes/my/schema/pdfs', format => 'binaryFile');
 
--- 2. extract the fields you care about (or ai_classify, wrapped into a struct)
+-- 2. extract the fields you care about (or ai_classify with version 2.1, used as returned)
 CREATE OR REPLACE TABLE my.schema.extracted AS
 SELECT id, ai_extract(...) AS response FROM my.schema.parsed;
 ```
@@ -115,7 +118,8 @@ SELECT id, ai_extract(...) AS response FROM my.schema.parsed;
 ## Setup
 
 1. Create the app with the two scopes above and bind the resources: SQL warehouse as
-   `sql-warehouse`, page-image volume as `files`.
+   `sql-warehouse`, page-image volume as `files`. Images load from the full `image_uri` the
+   output recorded, so they can be in any folder of that volume, but not in another volume.
 2. Set `INPUT_TABLE` in `app.yaml` to your `catalog.schema.table`. The two output
    objects are derived from it by name, so there is nothing else to configure.
 3. Create them: `npm run setup`, which reads `INPUT_TABLE`,
@@ -150,7 +154,7 @@ has no proxy to supply.
   `server/security.ts`, the same baseline as the other AppKit templates.
 - **`to_json(...)` arrives already parsed** from AppKit in some cases. Both client and
   server accept a string or an object; asserting either one fails silently.
-- **Shape discovery runs in TypeScript** (`client/src/pages/review/walk.ts`), not SQL -
+- **Shape discovery runs in TypeScript** (`shared/walk.ts`, used by client and server), not SQL -
   recursion over arbitrary VARIANT is awkward in SQL, and payloads are small (20 KB for
   a page of parse output). Unit tests pin the three shapes, the volume policy and the
   edit validation.
@@ -176,4 +180,7 @@ has no proxy to supply.
   `INPUT_TABLE` at a view that filters to the slice a reviewer should work through.
 - Cross-page citation resolution is implemented but untested - no field in the sample
   corpora cites page 2.
+- Numbers beyond about 15 significant digits lose precision in `approved_response` even when
+  unedited, because the server rebuilds the document with `JSON.parse`. Extract long
+  identifiers as strings.
 - Pinned to AppKit 0.98.0, matching the other AppKit templates.

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Application, Request } from 'express';
 import { AuthenticationError, sql } from '@databricks/appkit';
-import { applyEdits, MAX_EDITS, MAX_PATH_LENGTH, MAX_VALUE_LENGTH } from '../apply-edit';
+import { applyEdits, editablePaths, MAX_EDITS, MAX_PATH_LENGTH, MAX_VALUE_LENGTH } from '../apply-edit';
 
 /**
  * Every SQL statement the app runs.
@@ -265,10 +265,16 @@ export function setupReviewRoutes(appkit: AppKitWithAnalytics) {
           res.status(404).json({ error: 'Document not found' });
           return;
         }
+        // A failed AI call leaves nothing to review; approving it would log
+        // the failure as agreed. The form disables Approve for the same case.
+        if (editablePaths(approved).size === 0) {
+          res.status(400).json({ error: 'This document has no values to approve' });
+          return;
+        }
         const rejected = applyEdits(approved, edits);
         if (rejected !== null) {
           res.status(400).json({
-            error: `"${rejected}" is not an editable value in this document`,
+            error: `"${rejected}" was not saved: only values shown in the form can be edited, and a number or true/false must be written as one (for example 12.5)`,
           });
           return;
         }

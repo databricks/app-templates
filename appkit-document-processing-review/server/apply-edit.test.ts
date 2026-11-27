@@ -60,6 +60,43 @@ describe('applyEdit', () => {
     expect(d.metadata.pages[0].image_uri).toBe('/Volumes/c/s/v/page_1.png');
   });
 
+  /*
+    The walker offers nothing outside `response` once that key exists, so a
+    null response, or ai_classify's array response, cannot expose metadata.
+  */
+  it('refuses metadata edits when response is null or an array', () => {
+    for (const response of [null, ['lodging']]) {
+      const d = { ...doc(), response, error_message: null };
+      expect(edit(d, 'metadata.citations[0].bbox[0].coord[0]', '0')).toBe(false);
+      expect(edit(d, 'metadata.pages[0].image_uri', 'other.png')).toBe(false);
+      expect(edit(d, 'metadata.citations[0].id', '9')).toBe(false);
+      expect(edit(d, 'error_message', 'x')).toBe(false);
+      expect(d.metadata).toEqual(doc().metadata);
+    }
+  });
+
+  it('edits a field whose name contains a dot, which ai_extract allows', () => {
+    const d = { response: { 'unit.price': { value: 70.8 }, 'store.name': { value: 'OLD NAVY' } } };
+    expect(edit(d, 'response.unit.price', '9.99')).toBe(true);
+    expect(edit(d, 'response.store.name', 'Old Navy')).toBe(true);
+    expect(d.response).toEqual({ 'unit.price': { value: 9.99 }, 'store.name': { value: 'Old Navy' } });
+  });
+
+  it('refuses a path that is ambiguous between a dotted key and a nested one', () => {
+    const d = { response: { 'a.b': { value: 'flat' }, a: { b: { value: 'nested' } } } };
+    expect(edit(d, 'response.a.b', 'x')).toBe(false);
+    expect(d.response['a.b'].value).toBe('flat');
+    expect(d.response.a.b.value).toBe('nested');
+  });
+
+  it('edits fields literally named __proto__ or constructor without touching Object.prototype', () => {
+    const d = JSON.parse('{"response":{"__proto__":{"value":"a"},"constructor":{"value":"b"}}}') as unknown;
+    expect(edit(d, 'response.__proto__', 'A')).toBe(true);
+    expect(edit(d, 'response.constructor', 'B')).toBe(true);
+    expect(JSON.stringify(d)).toBe('{"response":{"__proto__":{"value":"A"},"constructor":{"value":"B"}}}');
+    expect(({} as Record<string, unknown>).value).toBeUndefined();
+  });
+
   it('refuses prototype-reaching segments and does not pollute Object.prototype', () => {
     const d = doc();
     expect(edit(d, '__proto__.polluted', 'yes')).toBe(false);
@@ -91,6 +128,49 @@ describe('applyEdit', () => {
     form sent. Text that is not of the leaf's type is refused rather than
     coerced, which keeps a typo out of the data.
   */
+  it('refuses editing a value that is itself an object or an array', () => {
+    const d = { response: { o: { value: { a: 1 } }, l: { value: [1, 2] } } };
+    expect(edit(d, 'response.o', 'hello')).toBe(false);
+    expect(edit(d, 'response.l', 'hello')).toBe(false);
+    expect(d.response).toEqual({ o: { value: { a: 1 } }, l: { value: [1, 2] } });
+  });
+
+  it('refuses evidence beside unwrapped fields and on elements with no content', () => {
+    const d = { response: { addr: { street: { value: '1 Main' }, confidence_score: 0.5, citation_ids: [1] } } };
+    expect(edit(d, 'response.addr.confidence_score', '1')).toBe(false);
+    expect(edit(d, 'response.addr.citation_ids[0]', '7')).toBe(false);
+    expect(d.response.addr).toMatchObject({ confidence_score: 0.5, citation_ids: [1] });
+    const e = { document: { elements: [{ id: 0, type: 'figure', bbox: [{ coord: [1, 2, 3, 4], page_id: 0 }] }] } };
+    expect(edit(e, 'document.elements[0].bbox[0].coord[0]', '0')).toBe(false);
+    expect(edit(e, 'document.elements[0].type', 'text')).toBe(false);
+  });
+
+  it('refuses a number that cannot be stored exactly instead of rounding it', () => {
+    const d = { response: { n: { value: 1 } } };
+    for (const v of ['12345678901234567890', '9007199254740993', '1.0000000000000000001']) {
+      expect(edit(d, 'response.n', v)).toBe(false);
+    }
+    expect(d.response.n.value).toBe(1);
+    expect(edit(d, 'response.n', '9007199254740991')).toBe(true);
+    expect(edit(d, 'response.n', '109303.32')).toBe(true);
+    expect(d.response.n.value).toBe(109303.32);
+    // Underflow to zero, and a decimal point hiding an unsafe integer.
+    expect(edit(d, 'response.n', `0.${'0'.repeat(323)}1`)).toBe(false);
+    expect(edit(d, 'response.n', '100000000000000000000000.0')).toBe(false);
+    expect(edit(d, 'response.n', '9007199254740993.0')).toBe(false);
+    expect(d.response.n.value).toBe(109303.32);
+    // Spellings of the same decimal are fine.
+    for (const [typed, stored] of [
+      ['-12.50', -12.5],
+      ['007', 7],
+      ['3.0', 3],
+      ['-0', 0],
+    ] as const) {
+      expect(edit(d, 'response.n', typed)).toBe(true);
+      expect(Object.is(d.response.n.value, stored)).toBe(true);
+    }
+  });
+
   it('writes a corrected value back in the leaf type the model used', () => {
     const d = doc();
     expect(edit(d, 'response.total', '12.75')).toBe(true);
@@ -121,7 +201,7 @@ describe('applyEdit', () => {
 
 describe('editablePaths', () => {
   it('offers exactly the walker leaves, and nothing from metadata', () => {
-    expect([...editablePaths(doc())].sort()).toEqual([
+    expect([...editablePaths(doc()).keys()].sort()).toEqual([
       'response.line_items[0].amount',
       'response.plain',
       'response.taxable',
@@ -131,7 +211,7 @@ describe('editablePaths', () => {
   });
 
   it('offers indexed leaves for an array under response', () => {
-    expect([...editablePaths({ response: ['a', 'b'] })]).toEqual(['response[0]', 'response[1]']);
+    expect([...editablePaths({ response: ['a', 'b'] }).keys()]).toEqual(['response[0]', 'response[1]']);
   });
 
   it('offers nothing for a document the form cannot render', () => {
@@ -153,7 +233,9 @@ describe('applyEdits', () => {
   it('shares one allowlist across a whole payload', () => {
     const d = doc();
     const edits = Object.fromEntries(
-      [...editablePaths(d)].filter((p) => p !== 'response.total' && p !== 'response.taxable').map((p) => [p, 'x'])
+      [...editablePaths(d).keys()]
+        .filter((p) => p !== 'response.total' && p !== 'response.taxable')
+        .map((p) => [p, 'x'])
     );
     expect(applyEdits(d, edits)).toBe(null);
     expect(Object.keys(edits).length).toBeLessThanOrEqual(MAX_EDITS);
